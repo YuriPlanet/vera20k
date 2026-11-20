@@ -301,11 +301,12 @@ pub(crate) fn trace_line_samples<T>(run: impl FnOnce() -> T) -> (T, Vec<DriveCoo
 }
 
 /// Retained inputs to native4CC360. Cell identities remain live through
-/// nested lookups, which can restamp an aliased shared Dummy.
-pub(crate) struct CellObstructionProbe<'a> {
-    pub source: CellRef<'a>,
-    pub target: CellRef<'a>,
-    pub previous: CellRef<'a>,
+/// nested lookups, which can restamp an aliased shared Dummy. The probe
+/// borrows the walk's cells, so a step copies none of them.
+pub(crate) struct CellObstructionProbe<'p, 'a> {
+    pub source: &'p CellRef<'a>,
+    pub target: &'p CellRef<'a>,
+    pub previous: &'p CellRef<'a>,
     pub sample: DriveCoord,
     pub shot: LineOfFireShot,
 }
@@ -355,7 +356,7 @@ fn houses_allied(
 /// While Ares plays, `GetObstacle 1006E540` answers instead
 /// (`ares_obstacle`).
 pub(crate) fn cell_blocks_line_of_fire<'a>(
-    probe: CellObstructionProbe<'a>,
+    probe: CellObstructionProbe<'_, 'a>,
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
@@ -375,7 +376,7 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
 
 /// 0x004CC360's verdict and geometry tail for the sampled `cell`.
 fn native_obstacle<'a>(
-    probe: CellObstructionProbe<'a>,
+    probe: CellObstructionProbe<'_, 'a>,
     cell: CellRef<'a>,
     packed: (i16, i16),
     interner: &StringInterner,
@@ -388,13 +389,13 @@ fn native_obstacle<'a>(
     };
     let blocks = |cell: &CellRef<'_>| {
         if probe.shot.subject_to_cliffs
-            && effective(cell).wrapping_sub(effective(&probe.previous)) >= CLIFF_STEP_LEVELS
-            && effective(cell) > effective(&probe.source)
+            && effective(cell).wrapping_sub(effective(probe.previous)) >= CLIFF_STEP_LEVELS
+            && effective(cell) > effective(probe.source)
         {
             return true;
         }
         if !probe.shot.subject_to_walls
-            || cell == &probe.target
+            || cell == probe.target
             || probe.source.signed_level() > probe.target.signed_level()
         {
             return false;
@@ -456,7 +457,7 @@ fn native_obstacle<'a>(
 ///   of 256 leptons over `MapClass::GetCellFloorHeight @ 0x00578080` at the
 ///   sample, is at or above the sample.
 fn ares_obstacle<'a>(
-    probe: &CellObstructionProbe<'a>,
+    probe: &CellObstructionProbe<'_, 'a>,
     cell: CellRef<'a>,
     interner: &StringInterner,
     rules: &RuleSet,
@@ -469,12 +470,12 @@ fn ares_obstacle<'a>(
     let shot = &probe.shot;
     let cliff = || {
         shot.subject_to_cliffs
-            && level(&cell) - level(&probe.previous) >= CLIFF_STEP_LEVELS
-            && level(&cell) - level(&probe.source) > 0
+            && level(&cell) - level(probe.previous) >= CLIFF_STEP_LEVELS
+            && level(&cell) - level(probe.source) > 0
     };
     let wall = || {
         if !shot.subject_to_walls
-            || cell == probe.target
+            || &cell == probe.target
             || probe.source.signed_level() as u8 > probe.target.signed_level() as u8
         {
             return false;
@@ -646,7 +647,7 @@ fn walk_arm<'a>(
         let source = lookup((sx, sy));
         (source, lookup((tx, ty)))
     };
-    let mut previous = source.clone();
+    let mut previous = None;
     let mut offset = [0i32; 3];
     // Phobos `FindFirstObstacle`'s loop (`Ext/Bullet/Hooks.Obstacles.cpp:64`)
     // runs `maxDelta + isTargetingCheck` times, and its only VERA caller is
@@ -669,9 +670,10 @@ fn walk_arm<'a>(
         if matches!(arm, WalkArm::Stock)
             && let Some(hit) = cell_blocks_line_of_fire(
                 CellObstructionProbe {
-                    source: source.clone(),
-                    target: target.clone(),
-                    previous: previous.clone(),
+                    source: &source,
+                    target: &target,
+                    // The source cell before the first step (0x004CC22F).
+                    previous: previous.as_ref().unwrap_or(&source),
                     sample: DriveCoord {
                         x: sample[0],
                         y: sample[1],
@@ -709,7 +711,7 @@ fn walk_arm<'a>(
             }
         }
         //4CC2C2 reads previous before XYZ accumulators advance.
-        previous = current;
+        previous = Some(current);
         for i in 0..3 {
             offset[i] = offset[i].wrapping_add(delta[i]);
         }

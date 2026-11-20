@@ -74,7 +74,7 @@ fn building_sale_sentinel_suppresses_only_the_victim_building_loss() {
             1,
             KillSource::House(Some(killer)),
             KillCallback::Terminal,
-            UninitContext::with_rules(&rules),
+            UninitContext::new(&rules),
         );
         assert_eq!(sim.houses[&victim].stats().losses(), losses);
         assert_eq!(sim.houses[&killer].stats().kills(), 1);
@@ -105,13 +105,13 @@ fn nested_zero_health_uninit_books_no_loss_before_the_outer_kill() {
     let (mut sim, rules) = accounting_fixture(EntityCategory::Structure, 0);
     let owner = sim.intern("VICTIM");
     let killer = sim.intern("KILLER");
-    sim.uninit_with_context(1, UninitContext::with_rules(&rules));
+    sim.uninit_with_context(1, UninitContext::new(&rules));
     assert_eq!(sim.houses[&owner].stats().buildings_lost(), 0);
     sim.record_the_kill(
         1,
         KillSource::House(Some(killer)),
         KillCallback::Terminal,
-        UninitContext::with_rules(&rules),
+        UninitContext::new(&rules),
     );
     assert_eq!(sim.houses[&owner].stats().buildings_lost(), 1);
 }

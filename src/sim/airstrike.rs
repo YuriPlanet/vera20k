@@ -286,7 +286,6 @@ impl Simulation {
                     aircraft,
                     Some(TargetKind::Entity(target)),
                     rules,
-                    None,
                     effects,
                 );
                 let _ = self.mission_queue_exact(
@@ -340,8 +339,8 @@ impl Simulation {
                 self.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
-            let _ = self.assign_target_represented(id, None, rules, None, effects);
-            let _ = self.assign_destination_represented(id, None, rules, None, effects);
+            let _ = self.assign_target_represented(id, None, rules, effects);
+            let _ = self.assign_destination_represented(id, None, rules, effects);
         }
         self.substrate.airstrike_manager_mut(owner).unwrap().active = false;
         if let Some(target) = target.filter(|&id| {
@@ -477,7 +476,7 @@ impl Simulation {
                     .entities
                     .get(owner)
                     .and_then(|e| self.houses.get(&e.owner()))
-                    .is_some_and(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()))
+                    .is_some_and(|h| h.is_controlled_by_human(self.session.rule_policy()))
             {
                 // IsHumanPlayer (`0x0041D5A5 CALL 0x0050B6F0`): in a campaign
                 // the human or `PlayerControl=` flag. In a multiplayer game it

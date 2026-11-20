@@ -36,7 +36,6 @@
 //!   executable (`tools.native_inspect calls` and `find-bytes`).
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::position_world_xy;
@@ -44,7 +43,8 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use super::{
-    TeamMember, TeamMemberTypeIdentity, TeamRules, member_type_identity, script_action_at,
+    AiTriggerFeedbackRules, TeamMember, TeamMemberTypeIdentity, member_type_identity,
+    script_action_at,
 };
 
 /// `Recruit`'s penalty on a candidate outside the team's group, added to
@@ -345,7 +345,6 @@ impl Simulation {
         entity_id: u64,
         constrained: bool,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let Some(slot) = self.team_can_add(team_id, entity_id, constrained, rules) else {
@@ -403,7 +402,7 @@ impl Simulation {
                 .attach_team_member_trigger_tag(team_id, entity_id);
         }
         if centreless {
-            self.team_calc_center(team_id, rules, registry);
+            self.team_calc_center(team_id, rules);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.altered = true;
@@ -445,7 +444,7 @@ impl Simulation {
             .entities
             .get(entity_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()))
         {
             self.trigger_runtime
                 .clear_team_member_trigger_tag(team_id, entity_id);
@@ -492,7 +491,13 @@ impl Simulation {
                     && !entity.lifecycle.in_limbo()
             });
         if idles && !no_idle && !self.object_placement_scope_active() {
-            crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
+            crate::sim::world::enter_idle_mode(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             if !other_initiated && let Some(head) = team.members.first_mut() {
@@ -581,7 +586,6 @@ impl Simulation {
         slot: usize,
         walks: &mut RecruitWalks,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let vm = &self.team_script_vm;
@@ -712,7 +716,7 @@ impl Simulation {
             return false;
         };
         self.team_member_clear_target(winner, rules);
-        self.team_add_member(team_id, winner, false, rules, registry, frame_effects);
+        self.team_add_member(team_id, winner, false, rules, frame_effects);
         true
     }
 
@@ -727,9 +731,9 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
+        let feedback_rules = AiTriggerFeedbackRules::new(&rules.general);
         self.team_script_vm
-            .record_trigger_outcome(team_id, &team_rules);
+            .record_trigger_outcome(team_id, &feedback_rules);
         self.team_remove_all_members(team_id, rules, frame_effects);
         Self::clear_team_trigger_tag(&mut self.substrate, &mut self.trigger_runtime, team_id);
         self.team_script_vm.teams.remove(&team_id);

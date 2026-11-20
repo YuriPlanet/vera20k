@@ -668,7 +668,7 @@ impl NativeScene {
                 self.sim
                     .set_unit_null_destination(self.unit, &self.rules, None, effects);
                 self.sim
-                    .assign_target_represented(self.unit, None, &self.rules, None, effects)
+                    .assign_target_represented(self.unit, None, &self.rules, effects)
                     .unwrap();
             }
             "update_bunker" => crate::sim::docking::bunker_install::update_bunker(
@@ -682,7 +682,6 @@ impl NativeScene {
                 answer = Some(i32::from(self.sim.foot_enter_tank_bunker(
                     self.unit,
                     &self.rules,
-                    None,
                     effects,
                 )))
             }

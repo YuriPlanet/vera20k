@@ -17,6 +17,9 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::{FacingClass, ground_pose};
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
+/// Only the live type store can request a fresh projection for a registered actor.
+pub(in crate::sim) struct LiveTypeStore(());
+
 impl Simulation {
     /// Installed Ares TechnoClass_Update1004B320..1004B39C, hooked at6F9E50:
     /// sample Object+8C before GetCell5F6960 and Cell+EC, then reuse the one
@@ -66,13 +69,17 @@ impl Simulation {
     /// team script actions 44 and 45 (`0x006E94AA`, `0x006E9511`) write
     /// nothing else, and Ares' visceroid merge
     /// (`UnitClass_UpdatePosition_Visceroid @ 1004C530`) only Health besides.
-    /// The Type facts VERA caches, which native reads from the Type, follow;
-    /// house tracking and Health are left as native leaves them.
+    /// The Type facts VERA caches, which native reads from the Type, follow
+    /// ([`Self::replace_live_type`]), the locomotor's included; the locomotor
+    /// object itself, house tracking and Health are left as native leaves
+    /// them.
     pub(crate) fn store_techno_type(&mut self, id: u64, destination: &ObjectType, rules: &RuleSet) {
         self.replace_live_type(id, destination, rules);
     }
 
-    /// Publish a registered actor's new type and refresh the facts read from it.
+    /// Publish a registered actor's new type and refresh the facts read from
+    /// it, the locomotor's type caches included
+    /// ([`LocomotorState::rebind_type_caches`]).
     fn replace_live_type(
         &mut self,
         id: u64,
@@ -85,7 +92,10 @@ impl Simulation {
         let actor = self.substrate.entities.get_mut(id)?;
         actor.type_ref = new_type;
         actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
-        actor.refresh_type_projection(Some(destination), rules);
+        actor.refresh_after_type_store(LiveTypeStore(()), destination, rules);
+        if let Some(locomotor) = actor.locomotor.as_mut() {
+            locomotor.rebind_type_caches(destination);
+        }
         Some(actor)
     }
 
@@ -139,12 +149,7 @@ impl Simulation {
         {
             self.house_removed_from_game(id, rules, effects);
         }
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            id,
-            HouseTracking::remove_tracking,
-        );
+        HouseTracking::unregister_object(&mut self.substrate, &mut self.houses, id);
 
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -201,12 +206,7 @@ impl Simulation {
         if reset_mind_control {
             self.phobos_reset_mind_control_on_convert(id, destination, rules, effects);
         }
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            id,
-            HouseTracking::add_tracking,
-        );
+        HouseTracking::register_object(&mut self.substrate, &mut self.houses, id);
         if self
             .substrate
             .entities
@@ -227,10 +227,7 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.recompute_ares_attached_stats(rules, &self.interner);
         }
-        self.destroy_spotlight_for_parent(
-            id,
-            UninitContext::with_rules(rules).with_effects(effects),
-        );
+        self.destroy_spotlight_for_parent(id, UninitContext::new(rules).with_effects(effects));
         self.construct_spotlight(id, rules);
         let frame = self.session.binary_frame();
         let Some(actor) = self.substrate.entities.get_mut(id) else {
@@ -531,15 +528,15 @@ impl Simulation {
             return;
         }
         let old_owner = entity.owner();
-        let mode_nonzero = self.session.game_mode_nonzero();
+        let policy = self.session.rule_policy();
         let old_human = self
             .houses
             .get(&old_owner)
-            .is_some_and(|house| house.is_controlled_by_human(mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(policy));
         let new_human = self
             .houses
             .get(&new_owner)
-            .is_some_and(|house| house.is_controlled_by_human(mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(policy));
         if old_human == new_human {
             return;
         }
@@ -644,7 +641,6 @@ impl Simulation {
                 destination: None,
             },
             rules,
-            registry,
             effects,
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -787,12 +783,12 @@ impl Simulation {
                     self.free_unit(id, victim, rules, None, effects);
                 }
             } else if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.capture_manager = Some(
-                    Box::new(crate::sim::capture_manager::CaptureManagerState::constructed(
+                entity.capture_manager = Some(Box::new(
+                    crate::sim::capture_manager::CaptureManagerState::constructed(
                         max_capture,
                         infinite,
-                    )),
-                );
+                    ),
+                ));
             }
         } else if has_manager {
             self.free_all_captures(id, rules, None, effects);

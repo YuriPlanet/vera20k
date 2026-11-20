@@ -184,7 +184,6 @@ impl Simulation {
             id,
             Some(TargetKind::Bullet(target_bullet)),
             rules,
-            overlay_registry,
             frame_effects,
         );
         // Buildings skip the idle-to-attack transition: QueueMission(Attack,
@@ -266,8 +265,7 @@ impl Simulation {
                 .and_then(|bullet| bullet.payload().installed_weapon());
             let retired = self.retire_non_entity_object(
                 id,
-                crate::sim::world::UninitContext::new(rules, ctx.overlay_registry)
-                    .with_effects(ctx.effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(ctx.effects),
             );
             debug_assert!(retired, "an Intercepted bullet is stored");
             // `LimboLaunch`'s self-damage tail: the owner is in limbo and its
@@ -363,8 +361,7 @@ impl Simulation {
         }
         let retired = self.retire_non_entity_object(
             id,
-            crate::sim::world::UninitContext::new(rules, ctx.overlay_registry)
-                .with_effects(ctx.effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(ctx.effects),
         );
         debug_assert!(retired, "an interceptor bullet is stored");
         true

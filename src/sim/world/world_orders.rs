@@ -9,9 +9,141 @@ use super::{SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
+use crate::sim::control_authority::{CommandCapability, ControlScope, ControlScopeTable};
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::scenario_session::{NativePlayerIdentity, ScenarioSession};
+
+/// Read-only control queries over the current session and House slots.
+/// The admitted seat authorizes orders. Native represented-viewer queries
+/// continue to use the original House flags and PlayerPtr. The borrowed
+/// world holds its House roster fixed while this projection uses the table.
+#[derive(Clone)]
+pub struct ControlProjection<'a> {
+    session: &'a ScenarioSession,
+    houses: &'a Houses,
+    source: Option<(i8, InternedId)>,
+    scopes: Option<std::sync::Arc<ControlScopeTable>>,
+}
+
+impl<'a> ControlProjection<'a> {
+    /// Use the native viewer queries with this session's own House storage.
+    pub fn for_native_view(session: &'a ScenarioSession, houses: &'a Houses) -> Self {
+        Self {
+            session,
+            houses,
+            source: None,
+            scopes: None,
+        }
+    }
+
+    pub fn native_player_on(&self, owner: InternedId, viewer: Option<InternedId>) -> bool {
+        match self.session.native_player_identity() {
+            NativePlayerIdentity::PlayerPointer => viewer == Some(owner),
+            NativePlayerIdentity::HouseFlags => self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human() || house.player_control()),
+        }
+    }
+
+    pub(super) fn uses_player_pointer(&self) -> bool {
+        self.session.native_player_identity() == NativePlayerIdentity::PlayerPointer
+    }
+
+    pub fn local_command_house(&self) -> Option<InternedId> {
+        if self.session.has_custom_control_grants() {
+            self.source.map(|(_, house)| house)
+        } else {
+            self.native_player_pointer()
+        }
+    }
+
+    fn native_player_pointer(&self) -> Option<InternedId> {
+        // HouseClass::IsHumanPlayer reads the saved A83D4C PlayerPtr at 50B716.
+        self.session.current_house()
+    }
+
+    pub fn native_current_player(&self, owner: InternedId) -> bool {
+        self.native_player_on(owner, self.native_player_pointer())
+    }
+
+    pub(super) const fn source(&self) -> Option<(i8, InternedId)> {
+        self.source
+    }
+
+    fn granted_scope(&self, owner: InternedId) -> Option<ControlScope> {
+        self.session
+            .has_custom_control_grants()
+            .then(|| match self.source {
+                Some((_, primary)) if primary == owner => ControlScope::OwnFull,
+                Some((source, _)) => self.scopes.as_ref().map_or(ControlScope::None, |table| {
+                    table.get(source as usize, owner)
+                }),
+                None => ControlScope::None,
+            })
+    }
+
+    pub(super) fn has_delegated_full_control(&self, owner: InternedId) -> bool {
+        self.granted_scope(owner) == Some(ControlScope::FullControl)
+    }
+
+    pub(super) fn permits(&self, owner: InternedId, capability: CommandCapability) -> Option<bool> {
+        self.granted_scope(owner)
+            .map(|scope| scope.permits(capability))
+    }
+
+    /// Native object-order queries used IsHumanPlayer in the stock case.
+    pub fn can_order(&self, owner: InternedId) -> bool {
+        self.permits(owner, CommandCapability::Tactical)
+            .unwrap_or_else(|| self.native_current_player(owner))
+    }
+
+    /// Orders whose stock producer compares the acting object's exact owner.
+    pub fn can_order_from(&self, owner: InternedId, player: InternedId) -> bool {
+        self.permits(owner, CommandCapability::Tactical)
+            .unwrap_or(owner == player)
+    }
+
+    /// Authority for an input feature scoped to the sender's own production queue.
+    pub fn can_manage_primary_house(&self, owner: InternedId, player: InternedId) -> bool {
+        self.permits(owner, CommandCapability::PrimaryHouse)
+            .unwrap_or(owner == player)
+    }
+
+    /// Management whose stock producer compares the acting object's exact owner.
+    pub fn can_manage_from(&self, owner: InternedId, player: InternedId) -> bool {
+        self.permits(owner, CommandCapability::FullControl)
+            .unwrap_or(owner == player)
+    }
+
+    /// Same native House predicate as the stock SellWall input query.
+    pub fn can_manage(&self, owner: InternedId) -> bool {
+        self.permits(owner, CommandCapability::FullControl)
+            .unwrap_or_else(|| self.native_current_player(owner))
+    }
+
+    /// TeamAssign731060, TeamRecall7311C0, TypeSelect 732580/732770 and
+    /// Unselect_If_Not_Owned 6DA770 read PlayerControl in mode 0. Other
+    /// modes use HouseClass::IsHumanPlayer. Delegated actors use Tactical.
+    pub fn can_select(&self, owner: InternedId) -> bool {
+        self.permits(owner, CommandCapability::Tactical)
+            .unwrap_or_else(|| match self.session.native_player_identity() {
+                NativePlayerIdentity::PlayerPointer => self.native_current_player(owner),
+                NativePlayerIdentity::HouseFlags => self
+                    .houses
+                    .get(&owner)
+                    .is_some_and(|house| house.player_control()),
+            })
+    }
+
+    fn can_order_as_native_owner(&self, owner: InternedId, player: InternedId) -> bool {
+        self.permits(owner, CommandCapability::Tactical)
+            .unwrap_or_else(|| owner == player && self.native_current_player(owner))
+    }
+}
 
 /// Techno `+0x338`: the native InfantryType index of the infantryman that
 /// captured this object. The Techno constructor stores -1 (`0x006F2EC8`). An
@@ -210,14 +342,14 @@ impl Simulation {
                 if outcome.consumed {
                     self.uninit_with_context(
                         actor_id,
-                        super::UninitContext::new(rules, registry).with_effects(effects),
+                        super::UninitContext::new(rules).with_effects(effects),
                     );
                 }
                 return Ok(outcome);
             } else {
                 //5203F7..52046D: each callback finishes before the next live
                 // read. Radio+274 addresses slot zero, not the broadcast walk.
-                let context = super::UninitContext::new(rules, registry).with_effects(effects);
+                let context = super::UninitContext::new(rules).with_effects(effects);
                 self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
                 crate::sim::radio::transmit_to_contact(
                     self,
@@ -281,7 +413,7 @@ impl Simulation {
             cell(destination) != cell(approach)
         };
         if reissue {
-            self.assign_destination_represented(actor_id, Some(nav), rules, registry, effects)
+            self.assign_destination_represented(actor_id, Some(nav), rules, effects)
                 .map_err(|error| format!("Thief {actor_id} destination: {error}"))?;
         }
         Ok(VehicleCaptureOutcome::default())
@@ -424,11 +556,29 @@ impl Simulation {
         keys: HealArmKeys,
         rules: &RuleSet,
     ) -> Option<UnitRepairAction> {
+        self.unit_repair_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            issuing_house,
+            keys,
+            rules,
+        )
+    }
+
+    pub fn unit_repair_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        issuing_house: InternedId,
+        keys: HealArmKeys,
+        rules: &RuleSet,
+    ) -> Option<UnitRepairAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
         if actor.category() != EntityCategory::Unit
-            || actor.owner() != issuing_house
-            || !self.house_is_human_player(actor.owner())
+            || !control.can_order_as_native_owner(actor.owner(), issuing_house)
             || combat::combat_weapon::weapon_damage_value(
                 actor,
                 actor_type,
@@ -628,14 +778,32 @@ impl Simulation {
         keys: HealArmKeys,
         rules: &RuleSet,
     ) -> Option<AresHeal> {
+        self.ares_infantry_heal_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            issuing_house,
+            keys,
+            rules,
+        )
+    }
+
+    pub fn ares_infantry_heal_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        issuing_house: InternedId,
+        keys: HealArmKeys,
+        rules: &RuleSet,
+    ) -> Option<AresHeal> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
         let target = self.substrate.entities.get(target_id)?;
         let target_type = self.object_type(target.type_ref(), rules)?;
         if actor.category() != EntityCategory::Infantry
             || target_id == actor_id
-            || actor.owner() != issuing_house
-            || !self.house_is_human_player(actor.owner())
+            || !control.can_order_as_native_owner(actor.owner(), issuing_house)
             || combat::combat_weapon::weapon_damage_value(
                 actor,
                 actor_type,
@@ -673,6 +841,23 @@ impl Simulation {
         force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
+        self.unit_building_click_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            force_fire,
+            rules,
+        )
+    }
+
+    fn unit_building_click_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        force_fire: bool,
+        rules: &RuleSet,
+    ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
         // Phobos `UnitClass_WhatAction_Grinding` (`0x740134`,
@@ -694,7 +879,7 @@ impl Simulation {
             return None;
         }
         if actor.category() != EntityCategory::Unit
-            || !self.house_is_human_player(actor.owner())
+            || !control.can_order(actor.owner())
             || !combat::combat_weapon::is_ally_by_object(
                 Some(&self.house_alliances),
                 &self.interner,
@@ -797,6 +982,25 @@ impl Simulation {
         force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
+        self.entry_click_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            base,
+            force_fire,
+            rules,
+        )
+    }
+
+    pub fn entry_click_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        base: EntryBaseAction,
+        force_fire: bool,
+        rules: &RuleSet,
+    ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
         let select = base == EntryBaseAction::Select;
@@ -808,18 +1012,22 @@ impl Simulation {
                 let ask_building = select
                     || (target.category() == EntityCategory::Structure && target_obj.grinding);
                 let building = if ask_building {
-                    self.unit_building_click_action(actor_id, target_id, force_fire, rules)
+                    self.unit_building_click_action_with(
+                        control, actor_id, target_id, force_fire, rules,
+                    )
                 } else {
                     None
                 };
                 if building == Some(EntryClickAction::NoEnter) {
                     return building;
                 }
-                self.passenger_click_action(actor_id, target_id, rules)
+                self.passenger_click_action(control, actor_id, target_id, rules)
                     .or(building)
             }
             EntityCategory::Infantry => {
-                if let Some(action) = self.passenger_click_action(actor_id, target_id, rules) {
+                if let Some(action) =
+                    self.passenger_click_action(control, actor_id, target_id, rules)
+                {
                     return Some(action);
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
@@ -831,8 +1039,9 @@ impl Simulation {
                 // grinder answers the type gates under any base action when
                 // `Grinding.AllowAllies=yes`, otherwise only on Select. The
                 // stock row below keeps its own current-player owner gate.
-                if self.house_is_human_player(actor.owner())
+                if control.can_order(actor.owner())
                     && !target.is_warped_out()
+                    && !target_obj.is_1x1_with_undeploy()
                     && combat::combat_weapon::is_ally_by_object(
                         Some(&self.house_alliances),
                         &self.interner,
@@ -869,7 +1078,7 @@ impl Simulation {
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 if !select
-                    || !self.house_is_human_player(actor.owner())
+                    || !control.can_order(actor.owner())
                     || target.category() != EntityCategory::Structure
                 {
                     return None;
@@ -935,6 +1144,7 @@ impl Simulation {
     /// [`can_load_query`]: crate::sim::radio::receive::can_load_query
     fn passenger_click_action(
         &self,
+        control: &ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
@@ -954,7 +1164,7 @@ impl Simulation {
             &self.interner,
             actor.owner(),
             target.owner(),
-        ) || !self.house_is_human_player(actor.owner())
+        ) || !control.can_order(actor.owner())
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
@@ -976,7 +1186,7 @@ impl Simulation {
             return None;
         }
         if infantry {
-            if !self.techno_player_controllable(actor_id, rules) {
+            if !self.local_techno_controllable_with(control, actor_id, rules) {
                 return None;
             }
             if self.object_type(actor.type_ref(), rules)?.balloon_hover {
@@ -1117,57 +1327,39 @@ impl Simulation {
                 && crate::sim::movement::air_movement::current_fly_height(entity, terrain) != 0)
     }
 
+    pub fn control_projection(&self) -> ControlProjection<'_> {
+        let source = self
+            .session
+            .has_custom_control_grants()
+            .then(|| self.local_grant_source())
+            .flatten();
+        ControlProjection {
+            session: &self.session,
+            houses: &self.houses,
+            source,
+            scopes: source.and_then(|_| self.session.control_scope_table(&self.houses)),
+        }
+    }
+
     pub fn house_is_human_player(&self, owner: InternedId) -> bool {
         Self::is_human_player(&self.session, &self.houses, owner)
     }
 
-    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` over the two fields it reads,
+    /// HouseClass::IsHumanPlayer @ 0x0050B6F0 over the saved native inputs,
     /// for callers that hold the object store mutably.
     pub(crate) fn is_human_player(
-        session: &crate::sim::scenario_session::ScenarioSession,
-        houses: &crate::sim::houses::Houses,
+        session: &ScenarioSession,
+        houses: &Houses,
         owner: InternedId,
     ) -> bool {
-        //50B716 loads A83D4C, the persisted native current-house input.
-        //Presentation viewer binding cannot change this receiver's result.
-        Self::is_human_player_on(session, houses, owner, session.current_house())
+        ControlProjection::for_native_view(session, houses).native_current_player(owner)
     }
 
-    /// [`Self::is_human_player`] asked on the client whose `PlayerPtr`
-    /// (`[0x00A83D4C]`, read at `0x0050B716`) is `player`: a represented
-    /// network client's own house, or the current house.
-    pub(crate) fn is_human_player_on(
-        session: &crate::sim::scenario_session::ScenarioSession,
-        houses: &crate::sim::houses::Houses,
-        owner: InternedId,
-        player: Option<InternedId>,
-    ) -> bool {
-        // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
-        // mode zero uses the two native human/control flags.
-        if session.game_mode_nonzero() {
-            player == Some(owner)
-        } else {
-            houses
-                .get(&owner)
-                .is_some_and(|h| h.is_controlled_by_human(false))
-        }
-    }
-
-    /// The owner arm the selection keys share: TeamAssign731060 and
-    /// TeamRecall7311C0, TypeSelect's `0x00732580`/`0x00732770`,
-    /// `Tactical::Unselect_If_Not_Owned @ 0x006DA770`, and the P, Health and
-    /// Veterancy keys. Mode zero reads House+0x1ED (`PlayerControl`) directly,
-    /// while a nonzero mode calls House::IsHumanPlayer50B6F0 (current-house
-    /// identity). Keep this distinct from `house_is_human_player`: its
-    /// mode-zero branch also admits the separate `IsHuman` flag.
-    pub fn house_controls_selection(&self, owner: InternedId) -> bool {
-        if self.session.game_mode_nonzero() {
-            self.house_is_human_player(owner)
-        } else {
-            self.houses
-                .get(&owner)
-                .is_some_and(|house| house.player_control())
-        }
+    pub fn local_actor_can_order(&self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| self.control_projection().can_order(entity.owner()))
     }
 
     /// gamemd.exe TeamAssign731060/TeamClear7310D0: owner admission precedes
@@ -1175,13 +1367,13 @@ impl Simulation {
     /// other eligible objects in that group return to -1. No life/limbo gate.
     /// Shared by the committed command and its pending input projection.
     pub(super) fn assigned_control_group(
-        &self,
+        control: &ControlProjection<'_>,
         entity: &crate::sim::game_entity::GameEntity,
         current: i32,
         group: i32,
         selected: &std::collections::HashSet<u64>,
     ) -> i32 {
-        if !(0..10).contains(&group) || !self.house_controls_selection(entity.owner()) {
+        if !(0..10).contains(&group) || !control.can_select(entity.owner()) {
             current
         } else if selected.contains(&entity.stable_id()) {
             group
@@ -1197,19 +1389,21 @@ impl Simulation {
             return false;
         }
         let selected = selected.iter().copied().collect();
+        let control = self.control_projection();
         let changes: Vec<_> = self
             .substrate
             .entities
             .iter_sorted()
             .filter_map(|(id, entity)| {
                 let current = entity.control_group();
-                let next = self.assigned_control_group(entity, current, group, &selected);
+                let next =
+                    Self::assigned_control_group(&control, entity, current, group, &selected);
                 (next != current).then_some((id, next))
             })
             .collect();
         // VERA network adaptation: the key's store is local to one client, so
         // a network game keeps it in the local player's slot, off +214.
-        let local = self.session.game_mode().is_network();
+        let local = self.session.execution_topology().is_lockstep();
         for (id, group) in changes {
             let entity = self.substrate.entities.get_mut(id).unwrap();
             if local {
@@ -1234,6 +1428,36 @@ impl Simulation {
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
     pub fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
+        self.techno_controllable_for(id, rules, None, |owner| self.house_is_human_player(owner))
+    }
+
+    pub fn local_techno_controllable(&self, id: u64, rules: &RuleSet) -> bool {
+        self.local_techno_controllable_with(&self.control_projection(), id, rules)
+    }
+
+    pub fn local_techno_controllable_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        if !self.session.has_custom_control_grants() {
+            return self.techno_player_controllable(id, rules);
+        }
+        self.substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| control.can_order(actor.owner()))
+            && self.techno_controllable_for(id, rules, Some(control), |_| true)
+    }
+
+    fn techno_controllable_for(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        control: Option<&ControlProjection<'_>>,
+        player_actor: impl FnOnce(InternedId) -> bool,
+    ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -1250,10 +1474,17 @@ impl Simulation {
                 return true;
             }
             if object.construction_yard
-                && !(self.owner_is_human(actor.owner())
-                    && self.session.game_mode_nonzero()
-                    && self.session.game_options().mcv_redeploy
-                    && actor.mind_control.controller().is_none())
+                && !(self
+                    .session
+                    .rule_policy()
+                    .allows_construction_yard_redeploy()
+                    && self.construction_yard_redeploy_core_gate(
+                        actor,
+                        rules,
+                        self.owner_is_human(actor.owner())
+                            || control
+                                .is_some_and(|view| view.has_delegated_full_control(actor.owner())),
+                    ))
             {
                 return false;
             }
@@ -1268,9 +1499,7 @@ impl Simulation {
             }
             return crate::sim::production::undeploy_target(rules, &object.id).is_some();
         }
-        if !self.house_is_human_player(actor.owner())
-            || actor.bunker.link().installed_in().is_some()
-        {
+        if !player_actor(actor.owner()) || actor.bunker.link().installed_in().is_some() {
             return false;
         }
         // Phobos `NoManualMove` settles the whole predicate for a non-building
@@ -1308,12 +1537,34 @@ impl Simulation {
     /// its current weapon (vt+0x3F4) typed and not vt+0x37C
     /// (`GameEntity::is_under_emp`). `is_armed` stands in for the weapon test.
     pub fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
+        self.techno_active_for(id, rules, |owner| self.house_is_human_player(owner))
+    }
+
+    pub fn local_techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
+        self.local_techno_is_active_with(&self.control_projection(), id, rules)
+    }
+
+    pub fn local_techno_is_active_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        self.techno_active_for(id, rules, |owner| control.can_order(owner))
+    }
+
+    fn techno_active_for(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        player_actor: impl FnOnce(InternedId) -> bool,
+    ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         !actor.deactivated.is_offline()
             && !actor.is_under_emp()
-            && self.house_is_human_player(actor.owner())
+            && player_actor(actor.owner())
             && self
                 .object_type(actor.type_ref(), rules)
                 .is_some_and(|object| {
@@ -1403,10 +1654,20 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
     ) -> Option<EngineerBuildingAction> {
+        self.engineer_building_action_with(&self.control_projection(), actor_id, target_id, rules)
+    }
+
+    pub fn engineer_building_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> Option<EngineerBuildingAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         if actor.category() != EntityCategory::Infantry
             || !self.object_type(actor.type_ref(), rules)?.engineer
-            || !self.house_is_human_player(actor.owner())
+            || !control.can_order(actor.owner())
         {
             return None;
         }
@@ -1529,6 +1790,21 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
+        self.infiltrator_building_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            rules,
+        )
+    }
+
+    pub fn infiltrator_building_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> bool {
         let (Some(actor), Some(target)) = (
             self.substrate.entities.get(actor_id),
             self.substrate.entities.get(target_id),
@@ -1537,7 +1813,7 @@ impl Simulation {
         };
         if actor.category() != EntityCategory::Infantry
             || target.category() != EntityCategory::Structure
-            || !self.house_is_human_player(actor.owner())
+            || !control.can_order(actor.owner())
         {
             return false;
         }
@@ -1925,7 +2201,7 @@ impl Simulation {
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may
         //change either object; reload the Infantry after returning.
-        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
+        let context = super::UninitContext::new(rules).with_effects(frame_effects);
         self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
@@ -2026,7 +2302,7 @@ impl Simulation {
                 self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
                 self.uninit_with_context(
                     engineer_id,
-                    super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                    super::UninitContext::new(rules).with_effects(frame_effects),
                 );
                 return Ok(BuildingEntryResult {
                     bridge_state_changed: receipt.bridge_state_changed,
@@ -2133,7 +2409,7 @@ impl Simulation {
             self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
             self.uninit_with_context(
                 engineer_id,
-                super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             );
             return Ok(BuildingEntryResult {
                 bridge_state_changed: changed,
@@ -2152,7 +2428,6 @@ impl Simulation {
         let mut changed = crate::sim::world::bridge_orchestrator::repair_from_engineer(
             self,
             rules,
-            registry,
             engineer_id,
             frame_effects,
         )
@@ -2166,13 +2441,13 @@ impl Simulation {
         })?;
         //519D17..519D36 descends Infantry's registry with +28(hut,false).
         //Clearing NavCom does not stop a retained Walk head/destination.
-        self.expire_infantry_bridge_hut_targets(building_id, rules, registry, frame_effects);
+        self.expire_infantry_bridge_hut_targets(building_id, rules, frame_effects);
         changed |= self.scatter_building_infantry(building_id, rules, registry, frame_effects)?;
         //51A025 consumption raises own Tag48 before virtual UnInit.
         self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
         self.uninit_with_context(
             engineer_id,
-            super::UninitContext::new(rules, registry).with_effects(frame_effects),
+            super::UninitContext::new(rules).with_effects(frame_effects),
         );
         Ok(BuildingEntryResult {
             bridge_state_changed: changed,
@@ -2233,13 +2508,7 @@ impl Simulation {
             true
         } else {
             action == Some(InfiltrateAction::Sabotage)
-                && self.infantry_per_cell_sabotage(
-                    infantry_id,
-                    building_id,
-                    rules,
-                    registry,
-                    frame_effects,
-                )
+                && self.infantry_per_cell_sabotage(infantry_id, building_id, rules, frame_effects)
         };
         if consumed {
             self.dispatch_object_tag_event(
@@ -2247,11 +2516,11 @@ impl Simulation {
                 48,
                 Some(infantry_id),
                 None,
-                super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             );
             self.uninit_with_context(
                 infantry_id,
-                super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             );
             return Ok(entered);
         }
@@ -2360,7 +2629,6 @@ impl Simulation {
                 self,
                 rules,
                 cell,
-                overlay_registry,
                 frame_effects,
             );
             if let Some(hut) = self.substrate.entities.get_mut(building_id) {

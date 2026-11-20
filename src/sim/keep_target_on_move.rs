@@ -220,7 +220,7 @@ fn clear_latched_target(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let _ = sim.assign_target_represented(id, None, rules, registry, effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.set_phobos_keep_target_on_move(false);
     }

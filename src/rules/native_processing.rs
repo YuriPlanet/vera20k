@@ -2506,13 +2506,16 @@ impl ProcessedRulesLayers {
             .map(move |member| (member.native_stored_id.as_str(), state(member)))
     }
 
-    /// `[CombatDamage] DeathWeapon=` (Rules+FDC) after the last pass.
+    /// `[CombatDamage] AmmoCrateDamage=` (ReadCombatDamage 66BBDE) after the
+    /// last pass.
     pub(crate) fn ammo_crate_damage(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
             .rules_ammo_crate_damage
     }
 
+    /// `[CombatDamage] TiberiumExplosionDamage=` (Rules+568, ReadCombatDamage
+    /// 66BC37) after the last pass.
     pub(crate) fn tiberium_explosion_damage(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -2559,6 +2562,7 @@ impl ProcessedRulesLayers {
             .map(|member| &member.tiberium_ext)
     }
 
+    /// `[CombatDamage] DeathWeapon=` (Rules+FDC) after the last pass.
     pub(crate) fn combat_damage_death_weapon(&self) -> Option<&str> {
         self.native_type_construction_trace
             .registry_state()
@@ -9020,8 +9024,6 @@ impl RulesPassProcessor {
                         if let Some(types) = types {
                             state.types = types;
                         }
-                        let delay = raw.read_int("SW.Deferment", state.deferment);
-                        state.deferment = if delay < 0 { 20 } else { delay };
                         state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
                         if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
                             state.owner = match owner.to_ascii_lowercase().as_str() {

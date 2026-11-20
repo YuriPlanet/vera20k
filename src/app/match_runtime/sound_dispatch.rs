@@ -106,6 +106,19 @@ fn collect_eva_object(
     }
 }
 
+/// The text-only counterpart of [`collect_eva_object`], for alerts whose sim
+/// event carries no subject type (base/harvester under attack, ally under
+/// attack, infiltration). Same gate: a disabled switch passes `None`, so no
+/// row is collected at all.
+fn collect_eva_text(
+    hud_text: &mut Option<&mut Vec<crate::app::input::messages::HudMessage>>,
+    label: &'static str,
+) {
+    if let Some(messages) = hud_text.as_deref_mut() {
+        messages.push(crate::app::input::messages::HudMessage::EvaTextLine { label });
+    }
+}
+
 /// Append each already-admitted event in producer order, including multi-cue
 /// events. Simulation owns feedback admission and its Main draws at damage
 /// time; this adapter never advances a random stream.
@@ -685,7 +698,7 @@ pub(super) fn dispatch_sim_sound_events(
                     continue;
                 }
                 GameSoundEvent::Eva {
-                    event: outcome_eva_event(kind, !sim.session().game_mode_nonzero()).to_string(),
+                    event: outcome_eva_event(kind, sim.session().uses_campaign_world()).to_string(),
                     type_override: None,
                 }
             }
@@ -917,6 +930,14 @@ pub(super) fn dispatch_sim_sound_events(
                     event: cue.to_string(),
                     type_override: None,
                 });
+                collect_eva_text(
+                    &mut hud_text,
+                    if miner {
+                        "VERA:EvaHarvesterUnderAttack"
+                    } else {
+                        "VERA:EvaBaseUnderAttack"
+                    },
+                );
                 if let Some(siren) = base_under_attack_siren(miner, rules) {
                     output.push(siren);
                 }
@@ -933,6 +954,7 @@ pub(super) fn dispatch_sim_sound_events(
                     event: "EVA_OurAllyIsUnderAttack".to_string(),
                     type_override: None,
                 });
+                collect_eva_text(&mut hud_text, "VERA:EvaAllyUnderAttack");
                 if let Some(siren) = base_under_attack_siren(false, rules) {
                     output.push(siren);
                 }
@@ -1209,6 +1231,16 @@ pub(super) fn dispatch_sim_sound_events(
                         event,
                         type_override: None,
                     });
+                }
+                // The spy's own "funds stolen" line: same arm as its voice.
+                if radar_accepted
+                    && local_is_infiltrator
+                    && matches!(
+                        effect,
+                        crate::sim::spy_infiltration::InfiltrationEffect::Cash
+                    )
+                {
+                    collect_eva_text(&mut hud_text, "VERA:EvaCashStolen");
                 }
                 continue;
             }
@@ -3704,8 +3736,10 @@ mod tests {
     fn construction_detection_uses_the_shared_extension_building_gate() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
+        // The Iron Curtain keeps its stock handler under Ares, so its line
+        // comes off the list index: slot 0 is EVA_NuclearSiloDetected.
         let ini = crate::sim::arena_fixture::clear_ground_ini(
-            "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=PsychicReveal\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
+            "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=IronCurtain\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
         );
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
             &ini,

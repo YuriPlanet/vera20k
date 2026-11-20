@@ -989,9 +989,8 @@ fn unit_hold_still(
         rules,
         effects,
     );
-    let _ =
-        sim.assign_destination_represented(unit, None, rules, effects.overlay_registry(), effects);
-    let _ = sim.assign_target_represented(unit, None, rules, effects.overlay_registry(), effects);
+    let _ = sim.assign_destination_represented(unit, None, rules, effects);
+    let _ = sim.assign_target_represented(unit, None, rules, effects);
     let _ = sim.mission_queue_exact(
         unit,
         MissionId::from_known(MissionType::Sleep),
@@ -1167,7 +1166,6 @@ fn unit_docking(
                 unit,
                 Some(NavTargetRef::object(from)),
                 rules,
-                effects.overlay_registry(),
                 effects,
             );
             return RadioResponse::Docking;
@@ -1478,7 +1476,7 @@ fn unit_run_away(sim: &mut Simulation, unit: u64, rules: &RuleSet, effects: Fram
         None,
         ScatterFlags::new(true, false),
         rules,
-        effects.overlay_registry(),
+        Some(rules.overlay_registry()),
         effects,
     ) {
         log::debug!("RUN_AWAY unit {unit} did not scatter: {cause}");
@@ -1714,7 +1712,7 @@ fn aircraft_dock_now(
             .close_door(ticks, now);
     }
     if sender.is_some_and(|sender| sim.is_evacuation_civilian(sender, rules)) {
-        sim.assign_target_represented(aircraft, None, rules, effects.overlay_registry(), effects)
+        sim.assign_target_represented(aircraft, None, rules, effects)
             .expect("civilian evacuation aircraft target");
         sim.assign_aircraft_destination(aircraft, None, rules, effects);
         let _ = sim.mission_queue_exact(
@@ -1996,13 +1994,7 @@ fn foot_move_here(
         sim.mission_host_promote(foot, now, rules);
     }
     // 0x004D91E1..0x004D91EB: the class setter vt+0x480(*P, 1).
-    let _ = sim.assign_destination_represented(
-        foot,
-        payload.target,
-        rules,
-        effects.overlay_registry(),
-        effects,
-    );
+    let _ = sim.assign_destination_represented(foot, payload.target, rules, effects);
     // 0x004D91F1..0x004D920D: UpdateTimer (+0xC8) = {Frame, -, 0}. Inside a
     // mission dispatch (Mission_Enter's DOCKING) the MissionClass::AI
     // epilogue overwrites it; reached at order time (the Infantry setter's
@@ -2028,7 +2020,7 @@ fn foot_run_away(sim: &mut Simulation, foot: u64, rules: &RuleSet, effects: Fram
         .slot(0)
         .is_some_and(|contact| entity.navigation.nav_com() == Some(NavTargetRef::object(contact)));
     if aimed_at_contact {
-        sim.assign_null_destination(foot, rules, effects.overlay_registry(), effects);
+        sim.assign_null_destination(foot, rules, Some(rules.overlay_registry()), effects);
     }
     let mission = |sim: &Simulation| {
         sim.substrate
@@ -2065,7 +2057,7 @@ fn foot_run_away(sim: &mut Simulation, foot: u64, rules: &RuleSet, effects: Fram
         None,
         ScatterFlags::new(true, true),
         rules,
-        effects.overlay_registry(),
+        Some(rules.overlay_registry()),
         effects,
     ) {
         log::debug!("RUN_AWAY foot {foot} did not scatter: {cause}");

@@ -132,7 +132,6 @@ fn synced_cargo_reverts_on_exit_and_no_revert_keeps_the_transport_house() {
     depart_cargo_head(
         &mut sim,
         &rules,
-        None,
         apc,
         DepartureRoute::Vehicle,
         |_, _| Ok(()),
@@ -155,7 +154,6 @@ fn synced_cargo_reverts_on_exit_and_no_revert_keeps_the_transport_house() {
     depart_cargo_head(
         &mut sim,
         &rules,
-        None,
         apc,
         DepartureRoute::Vehicle,
         |_, _| Ok(()),

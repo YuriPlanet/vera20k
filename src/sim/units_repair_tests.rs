@@ -176,7 +176,6 @@ fn the_unit_reload_rate_repairs_linked_units_on_its_period() {
         &mut sim,
         &rules,
         airfield,
-        None,
         FrameEffects::default(),
     );
     assert_eq!(health(&sim, tank), 200, "frame 1 is off the period");
@@ -185,7 +184,6 @@ fn the_unit_reload_rate_repairs_linked_units_on_its_period() {
         &mut sim,
         &rules,
         airfield,
-        None,
         FrameEffects::default(),
     );
     assert_eq!(health(&sim, tank), 208, "frame 2 repairs");

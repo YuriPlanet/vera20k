@@ -210,25 +210,24 @@ impl IniSection {
             let Some(value) = patch.get(key) else {
                 continue;
             };
-            let Some(index) = self.fresh_index.as_ref() else {
+            let Some(index) = self.fresh_index.as_mut() else {
                 self.set(key, value);
                 continue;
             };
-            match find_crc_index_value(index, ini_name_crc(key)).copied() {
+            let crc = ini_name_crc(key);
+            match find_crc_index_value(index, crc).copied() {
                 Some(PhysicalEntry::First(at)) => {
-                    *self.entries.get_mut(&self.key_order[at]).unwrap() = value.to_owned();
+                    *self
+                        .entries
+                        .get_mut(&self.key_order[at])
+                        .expect("every key_order key has its entry") = value.to_owned();
                 }
                 Some(PhysicalEntry::Duplicate(at)) => {
                     self.duplicate_entries[at].2 = value.to_owned();
                 }
                 None => {
-                    let at = self.key_order.len();
+                    insert_source_index(index, crc, PhysicalEntry::First(self.key_order.len()));
                     self.insert_initial(key, value);
-                    insert_source_index(
-                        self.fresh_index.as_mut().unwrap(),
-                        ini_name_crc(key),
-                        PhysicalEntry::First(at),
-                    );
                 }
             }
         }
@@ -390,6 +389,10 @@ pub struct IniFile {
     /// which nothing loads into again, does not keep it.
     #[serde(skip)]
     next_iterator_key: i32,
+    /// The text loaded into this INI and the Ares `[Child]:[Base]` copies
+    /// charged against it. Only loads read it, like the `+` counter.
+    #[serde(skip)]
+    ares_copies: ares_syntax::CopyBudget,
 }
 
 impl<'de> serde::Deserialize<'de> for IniFile {
@@ -408,6 +411,7 @@ impl<'de> serde::Deserialize<'de> for IniFile {
             first_section,
             fresh_section_index: None,
             next_iterator_key: 0,
+            ares_copies: ares_syntax::CopyBudget::default(),
         })
     }
 }
@@ -419,6 +423,7 @@ impl IniFile {
             first_section: HashMap::new(),
             fresh_section_index: None,
             next_iterator_key: 0,
+            ares_copies: ares_syntax::CopyBudget::default(),
         }
     }
 
@@ -695,7 +700,9 @@ impl IniFile {
             if patch.first_section.get(&section.name) != Some(&patch_index) {
                 continue;
             }
-            let selected = patch.section(&section.name).unwrap();
+            let selected = patch
+                .section(&section.name)
+                .expect("the name is one of patch's own sections");
             if let Some(index) = self.section_position(&section.name) {
                 self.sections[index].overlay_source(selected);
             } else if add_sections {
@@ -720,7 +727,9 @@ impl IniFile {
             }
             // The typed pass must consume the same section as its native
             // readers, even when the CRC index selects a later occurrence.
-            let patch_section = patch.section(&physical.name).unwrap();
+            let patch_section = patch
+                .section(&physical.name)
+                .expect("the name is one of patch's own sections");
             if let Some(index) = self.first_section.get(&physical.name).copied() {
                 self.sections[index].overlay_rules_pass(patch_section);
             } else {
@@ -965,7 +974,8 @@ fn insert_source_index<T: Copy>(pairs: &mut Vec<(i32, T)>, crc: i32, value: T) {
     let mut selected = Vec::with_capacity(pairs.len() + 1);
     for &(existing, _) in pairs.iter() {
         if selected.last().is_none_or(|&(last, _)| last != existing) {
-            selected.push((existing, *find_crc_index_value(pairs, existing).unwrap()));
+            let value = find_crc_index_value(pairs, existing).expect("existing is a CRC in pairs");
+            selected.push((existing, *value));
         }
     }
     let at = selected.partition_point(|&(existing, _)| existing < crc);

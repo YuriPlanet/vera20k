@@ -11,7 +11,6 @@
 use super::Simulation;
 use super::lifecycle::UninitContext;
 use crate::map::resolved_terrain::NativeCellQuery;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
@@ -28,7 +27,6 @@ use crate::util::retail_trig::TrigTable;
 struct RocketProcessHost<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     trig: &'a TrigTable,
     id: u64,
     frame: u32,
@@ -88,7 +86,7 @@ impl RocketHost for RocketProcessHost<'_> {
             self.id,
             DriveCoord { x, y, z },
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             self.frame_effects,
         );
     }
@@ -119,11 +117,19 @@ impl RocketHost for RocketProcessHost<'_> {
     }
     fn mark(&mut self, put: bool) {
         if put {
-            self.sim
-                .foot_mark_put(self.id, self.rules, self.registry, self.frame_effects);
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.frame_effects,
+            );
         } else {
-            self.sim
-                .foot_mark_remove(self.id, self.rules, self.registry, self.frame_effects);
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.frame_effects,
+            );
         }
     }
     fn submit_display(&mut self) {
@@ -240,7 +246,7 @@ impl RocketHost for RocketProcessHost<'_> {
         self.bridge_state_changed |= crate::sim::combat::world_receiver::apply_area_damage(
             self.sim,
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             ProjectileCoord::new(coord[0], coord[1], coord[2]),
             damage,
             warhead_type,
@@ -293,22 +299,18 @@ impl RocketHost for RocketProcessHost<'_> {
         };
         self.bridge_state_changed |= self.sim.commit_logic_projectile_detonations(
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             &[detonation],
             self.frame_effects,
         );
         // UnInit (vtable +0xF8) of the never-Fired Bullet.
-        self.sim.destroy_unfired_projectile(
-            bullet_id,
-            self.rules,
-            self.registry,
-            self.frame_effects,
-        );
+        self.sim
+            .destroy_unfired_projectile(bullet_id, self.rules, self.frame_effects);
     }
     fn uninit(&mut self) {
         self.sim.uninit_with_context(
             self.id,
-            UninitContext::new(self.rules, self.registry).with_effects(self.frame_effects),
+            UninitContext::new(self.rules).with_effects(self.frame_effects),
         );
     }
 }
@@ -351,7 +353,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> RocketProcessOutcome {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -373,7 +374,6 @@ impl Simulation {
         let mut host = RocketProcessHost {
             sim: self,
             rules,
-            registry,
             trig,
             id,
             frame,
@@ -1199,7 +1199,6 @@ pub(super) mod retail_tests {
             v3,
             Some(crate::sim::combat::TargetKind::Entity(target)),
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("the V3 takes the tank as its target");

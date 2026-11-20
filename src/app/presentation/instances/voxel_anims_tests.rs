@@ -76,7 +76,6 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
                 .unwrap();
             sim.process_pending_delete_with(
                 rules,
-                Some(rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
                 1,
                 sim.session().started(),
@@ -208,7 +207,6 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
                 .unwrap();
             sim.process_pending_delete_with(
                 rules,
-                Some(rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
                 1,
                 sim.session().started(),
@@ -261,7 +259,6 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
             .unwrap();
         sim.process_pending_delete_with(
             rules,
-            Some(rules.overlay_registry()),
             crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),

@@ -71,7 +71,6 @@ impl Simulation {
             super::super::object_entry::classify_object(
                 self,
                 rules,
-                Some(registry),
                 CellObjectMember::Entity(id),
                 cell,
                 InfantryEntryArgs::REPAIR,
@@ -101,7 +100,6 @@ impl Simulation {
             super::super::object_entry::classify_object(
                 self,
                 rules,
-                Some(registry),
                 CellObjectMember::Entity(id),
                 cells.lookup_world(coord.x, coord.y),
                 InfantryEntryArgs::REPAIR,
@@ -160,7 +158,7 @@ impl Simulation {
             return rejected;
         }
         if let Some(terrain_id) = buildable_terrain {
-            let context = UninitContext::new(rules, Some(registry)).with_effects(effects);
+            let context = UninitContext::new(rules).with_effects(effects);
             let _ = self.retire_non_entity_object(terrain_id, context);
         }
         let dirty = self
@@ -239,7 +237,7 @@ impl Simulation {
             rules,
             effects,
         );
-        let context = UninitContext::new(rules, Some(registry)).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         //44082D/440856 reread type/owner for the final0/final1 pair. No live
         //source, cached radius or567DA0 border belongs to this early arm.
         for final_pass in [false, true] {
@@ -335,7 +333,6 @@ impl Simulation {
             super::super::object_entry::classify_object(
                 self,
                 rules,
-                registry,
                 CellObjectMember::Entity(id),
                 cell,
                 InfantryEntryArgs::REPAIR,
@@ -367,10 +364,7 @@ impl Simulation {
                 })
             });
         if let Some(fence) = own_fence {
-            self.uninit_with_context(
-                fence,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.uninit_with_context(fence, UninitContext::new(rules).with_effects(effects));
         }
     }
 
@@ -437,7 +431,7 @@ impl Simulation {
         } else if to_overlay[0].is_some() {
             (vec![(0, 0)], to_overlay.as_slice())
         } else if ty.gate {
-            (ty.foundation.cell_offsets(), GATE_WALLS)
+            (ty.foundation.cell_offsets().collect(), GATE_WALLS)
         } else {
             return;
         };
@@ -457,7 +451,9 @@ impl Simulation {
             });
             if owned {
                 //44065C/440720 ignore House4FCE80's answer; only the cue is suppressed.
-                self.sell_wall_at_cell(&house, x as i16, y as i16, true, rules, registry, effects);
+                self.sell_wall_at_cell(
+                    &house, None, x as i16, y as i16, true, rules, registry, effects,
+                );
             }
         }
     }

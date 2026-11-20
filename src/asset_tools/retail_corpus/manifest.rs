@@ -47,7 +47,7 @@ pub struct CandidateReport {
 /// Collect the entire candidate before opening a new destination. Never updates
 /// the checked-in reference, merges partial fields, or overwrites an existing file.
 /// The caller must mount all disk MIXes using
-/// `root::open_manager(root, true, AresSetting::Auto, ArchiveFamily::Yr)`.
+/// `root::open_manager(root, true, AresSetting::Auto, &ArchiveNames::default())`.
 pub fn export_candidate(am: &AssetManager, destination: &Path) -> Result<CandidateReport, String> {
     reject_ambient_write()?;
     let manifest = collect_manifest(am)?;

@@ -36,6 +36,8 @@ pub(crate) struct MatchDiagnosticsState {
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
     replay_artifact_sha256: Option<String>,
+    /// The startup refusal the active segment already logged.
+    replay_startup_refusal: Option<String>,
 }
 
 enum ReplayPlaybackState {
@@ -316,7 +318,7 @@ impl MatchDiagnosticsState {
         runtime: &mut crate::sim::runtime::SimRuntime,
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<crate::sim::trigger_runtime::TriggerEffect>> {
         let replay = match self.replay_playback.take() {
             Some(ReplayPlaybackState::Loading(replay)) => replay,
             other => {
@@ -325,9 +327,10 @@ impl MatchDiagnosticsState {
             }
         };
         match crate::sim::replay::ReplayPlayback::prepare(runtime, replay, source, map_hash) {
-            Ok(playback) => {
+            Ok(mut playback) => {
+                let effects = playback.take_initial_effects();
                 self.replay_playback = Some(ReplayPlaybackState::Playing(playback));
-                Ok(())
+                Ok(effects)
             }
             Err(error) => {
                 self.replay_playback = Some(ReplayPlaybackState::Failed(format!("{error:#}")));
@@ -489,16 +492,19 @@ impl MatchDiagnosticsState {
         if self.is_replay_playback() {
             return None;
         }
+        let sim = &runtime.simulation;
         // Trainer changes are deliberately outside the ordinary command log.
         // The caller closes the valid prefix before the first such mutation;
         // never emit an apparently replayable continuation afterward.
         #[cfg(feature = "debug-tools")]
-        if runtime.simulation.trainer_modified() {
+        if sim.trainer_modified() {
             self.replay_log = None;
             return None;
         }
+        if self.replay_log.is_none() {
+            self.replay_startup_refusal = None;
+        }
         Some(self.replay_log.get_or_insert_with(|| {
-            let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
                 pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
                 version: crate::sim::replay::REPLAY_VERSION,
@@ -518,7 +524,7 @@ impl MatchDiagnosticsState {
         launch: Option<&crate::skirmish_launch::SkirmishLaunchSession>,
         source: Option<&crate::map::source::LoadedMapSource>,
         map_hash: Option<u64>,
-        every_frame_network: bool,
+        options: crate::sim::replay::ReplayStartOptions,
     ) {
         let Some(log) = self.replay_log.as_mut().filter(|log| {
             log.startup.is_none()
@@ -532,18 +538,33 @@ impl MatchDiagnosticsState {
         };
         match crate::sim::replay::ReplayStartup::capture(
             runtime,
-            launch,
+            crate::sim::replay::ReplayLaunchInput::Slots(launch),
             source,
             map_hash,
             crate::app::types::SIM_TICK_MS,
-            every_frame_network,
+            options,
         ) {
             Ok(startup) => {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
+            Err(error) => {
+                if let Some(refusal) = self.new_replay_startup_refusal(&error) {
+                    log::warn!("This match's replay cannot be replayed: {refusal}");
+                }
+            }
         }
+    }
+
+    /// A segment reports each refusal once. A network match retries startup on
+    /// every frame pass while it waits at frame zero, and gets the same answer.
+    fn new_replay_startup_refusal(&mut self, error: &anyhow::Error) -> Option<String> {
+        let refusal = format!("{error:#}");
+        if self.replay_startup_refusal.as_deref() == Some(refusal.as_str()) {
+            return None;
+        }
+        self.replay_startup_refusal = Some(refusal.clone());
+        Some(refusal)
     }
 
     /// Persist and consume the active segment. `Ok(None)` when there is no
@@ -806,7 +827,7 @@ mod tests {
     fn sample_log_with(seed: u64, map_name: &str, state_hash: u64) -> ReplayLog {
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
-            version: 71,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 15,
             seed,
             map_name: map_name.to_owned(),
@@ -862,6 +883,51 @@ mod tests {
     }
 
     #[test]
+    fn a_segment_logs_its_replay_startup_refusal_once() {
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(
+            crate::sim::world::Simulation::with_seed(17),
+        );
+        let mut diagnostics = MatchDiagnosticsState::default();
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        let refusal = anyhow::anyhow!("generated/legacy maps lack authored replay startup");
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_none());
+        // The next segment reports its own refusal.
+        diagnostics.replay_log = None;
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+    }
+
+    #[test]
+    fn source_grants_allow_an_automatic_replay_segment() {
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+        use crate::sim::house_state::HouseState;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        for (name, human) in [("Shared", true), ("Third", false)] {
+            let owner = sim.intern(name);
+            sim.register_house(HouseState::new(owner, 0, None, human, 0, 1));
+        }
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.session_mut_for_test()
+            .install_shared_house_sources_for_test(vec![0, 0], Some(0));
+        sim.install_control_grants(vec![ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+        let mut diagnostics = MatchDiagnosticsState::default();
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_some());
+        assert!(diagnostics.replay_log.is_some());
+        assert!(diagnostics.replay_startup_refusal.is_none());
+    }
+
+    #[test]
     fn service_before_first_frame_is_flushed_without_inventing_a_tick() {
         use crate::sim::replay::ScenarioServiceInput;
         let root = test_path("initial-service");
@@ -877,7 +943,12 @@ mod tests {
         let log = ReplayLog::load(&flush.path).unwrap();
         assert_eq!(log.header.seed, 17);
         assert!(log.ticks.is_empty());
-        assert_eq!(log.initial_scenario_services, [ScenarioServiceInput::Pause]);
+        assert_eq!(
+            log.initial_scenario_services,
+            [crate::sim::replay::RecordedServiceInput::Scenario(
+                ScenarioServiceInput::Pause
+            )]
+        );
         assert!(diagnostics.replay_log.is_none());
         std::fs::remove_dir_all(root).unwrap();
     }

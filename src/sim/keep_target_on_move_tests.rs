@@ -49,8 +49,7 @@ fn scene(keys: &str) -> (Simulation, RuleSet, InternedId, u64, u64) {
             tank,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the tank holds the target"
@@ -76,7 +75,7 @@ fn issue_move(
     )];
     assert!(sim.issue_local_commands(commands));
     sim.transfer_local_commands();
-    sim.apply_due_commands(&[], rules, 100, None, Default::default());
+    sim.apply_due_commands(&[], rules, 100, Default::default());
 }
 
 #[test]

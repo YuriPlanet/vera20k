@@ -312,8 +312,7 @@ pub(super) fn emit(
             .unlimbo_detonate_keep_target
             .then(|| object_target(target))
             .flatten();
-        let _ =
-            world.assign_target_represented(owner_id, kept, rules, overlay_registry, run.effects());
+        let _ = world.assign_target_represented(owner_id, kept, rules, run.effects());
         let reselect = world
             .substrate
             .entities
@@ -324,7 +323,7 @@ pub(super) fn emit(
             // logic pass, whose voice latch is set.
             world.techno_select(
                 owner_id,
-                UninitContext::new(rules, overlay_registry).with_effects(run.effects()),
+                UninitContext::new(rules).with_effects(run.effects()),
             );
         }
     } else {

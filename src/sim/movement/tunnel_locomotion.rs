@@ -53,13 +53,11 @@ const ARRIVAL_DISTANCE: i32 = 20;
 /// default-rate simulation leaves at 1.0.
 const FRAME_SCALE: f64 = 1.0;
 
-
 /// `MapClass::Get_Ground_Height 0x578080(&coord)` in leptons, as
 /// `ProcessPreDigOut 0x7298F0` reads it on every frame (`0x72991D`). `None` is
 /// what the caller answers when it has no terrain to query, the one case that
 /// falls back to [`TunnelRuntime::ground_z`].
 pub(crate) type GroundQuery<'a> = &'a dyn Fn(DriveCoord) -> Option<i32>;
-
 
 impl TunnelRuntime {
     /// `DigTimer.start` and `DigTimer.duration`. `Z_Adjust 0x729EDA` divides the
@@ -346,7 +344,7 @@ fn position_world(position: &crate::sim::movement::ground_pose::Position) -> Dri
 fn facing_toward(from: DriveCoord, to: DriveCoord) -> u16 {
     let dx = f64::from(to.x - from.x);
     let north = f64::from(from.y - to.y);
-    let turn = dx.atan2(north);
+    let turn = libm::atan2(dx, north);
     let units = turn * (65536.0 / std::f64::consts::TAU);
     (units.round() as i64).rem_euclid(65536) as u16
 }

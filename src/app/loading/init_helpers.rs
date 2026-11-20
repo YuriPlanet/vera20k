@@ -81,8 +81,8 @@ pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option
         "temperat.pal",
     ];
     for name in palette_names {
-        if let Some(data) = asset_manager.get_ref(name)
-            && let Ok(palette) = Palette::from_bytes(data)
+        if let Some(palette) =
+            crate::render::sidebar_cameo_atlas::load_cameo_palette(asset_manager, name)
         {
             log::info!("Sidebar cameos using palette {}", name);
             return Some(palette);
@@ -712,11 +712,7 @@ pub(crate) fn finish_presentation_assets(
             }
         }
     };
-    let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
-        crate::assets::fnt_file::FntFile::from_bytes(data)
-            .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
-            .ok()
-    });
+    let fnt_file = crate::render::shell_ui_style_assets::load_game_font(asset_manager);
     let building_zshape =
         crate::render::building_zshape::BuildingZShape::load(gpu, batch, asset_manager);
     if building_zshape.is_none() {

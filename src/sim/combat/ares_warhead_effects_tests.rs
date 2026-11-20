@@ -184,7 +184,6 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
         super::fire_error_world::FireSubject {
             world: sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: actor,
             obj: rules.object("TARGET").unwrap(),
@@ -394,7 +393,6 @@ fn immune_to_berserk_overrides_the_psychedelic_fire_error() {
         let code = super::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.entities().get(firer).unwrap(),
             obj: rules.object("FIRER").unwrap(),

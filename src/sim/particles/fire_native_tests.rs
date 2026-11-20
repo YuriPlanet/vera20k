@@ -162,11 +162,7 @@ fn fire_system_matches_native_sweep_spawns_particles_and_damage_to_retirement() 
                 .is_some_and(|system| system.in_logic_vector())
             {
                 super::fire::tick_system_with(&mut sim, rules, id, &mut world);
-                super::system_ai::finish_system_visit(
-                    &mut sim,
-                    id,
-                    UninitContext::with_rules(rules),
-                );
+                super::system_ai::finish_system_visit(&mut sim, id, UninitContext::new(rules));
             }
             assert_eq!(
                 world.swept,

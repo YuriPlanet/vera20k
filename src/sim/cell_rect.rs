@@ -825,6 +825,10 @@ impl CellReservationGrid {
         self.dummy_mask
     }
 
+    pub(crate) fn restore_saved_dummy_mask(&mut self, mask: u128) {
+        self.dummy_mask = mask;
+    }
+
     /// Reconstruct only the split `+0xDC` state of the fixed fallback
     /// CellClass; real-cell reservation authority is deliberately untouched.
     ///

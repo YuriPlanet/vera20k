@@ -78,7 +78,6 @@ pub(crate) fn mission_eaten(
             id,
             Some(NavTargetRef::object(building)),
             rules,
-            registry,
             effects,
         );
     }

@@ -14,11 +14,7 @@ use winit::keyboard::KeyCode;
 
 /// Whether this game watches its match instead of playing in it.
 pub(crate) fn active(state: &AppState) -> bool {
-    state
-        .match_state
-        .live_network
-        .as_ref()
-        .is_some_and(|live| live.watching())
+    state.match_state.session.local_connection_watches() && state.match_state.live_network.is_some()
 }
 
 /// Whether this game watches and sees the whole map: on the observer's
@@ -35,12 +31,10 @@ pub(crate) fn whole_map(state: &AppState) -> bool {
 /// A watcher still catching up to the match plays minutes of it at speed:
 /// its sounds stay off meanwhile, as a returning player's do.
 pub(crate) fn catching_up(state: &AppState, now_ms: u32) -> bool {
-    let Some(live) = state
-        .match_state
-        .live_network
-        .as_ref()
-        .filter(|live| live.watching())
-    else {
+    if !active(state) {
+        return false;
+    }
+    let Some(live) = state.match_state.live_network.as_ref() else {
         return false;
     };
     let frame = state
@@ -161,6 +155,10 @@ fn follow_next(state: &mut AppState) {
         .reset_cameo_seed();
     state.match_state.refresh_relation_colors();
     show_sight(state);
+    // No House update reports the radar of the House now followed: its
+    // housing opens or closes to that House's as a change there would.
+    let available = crate::app::presentation::building_anim::local_has_radar(state);
+    crate::app::presentation::building_anim::set_local_tactical_radar(state, available);
     state.platform.window.request_redraw();
 }
 

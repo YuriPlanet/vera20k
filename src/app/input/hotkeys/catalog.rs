@@ -35,7 +35,6 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
         let mut all = RETAIL_COMMANDS.to_vec();
         all.extend_from_slice(&CAMERA_COMMANDS);
         all.extend_from_slice(&SHORTCUT_COMMANDS);
-        #[cfg(feature = "verax")]
         all.extend_from_slice(&VERA_COMMANDS);
         all.extend_from_slice(&PHOBOS_COMMANDS);
         all
@@ -102,7 +101,7 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
 /// the same setting, but Thread Stats', Ferry's, Relation Colours' and the two
 /// Formation commands', which have none; each category literal is [`VERA_CATEGORY_KEY`].
-const SHORTCUT_COMMANDS: [CommandMetadata; 12] = [
+const SHORTCUT_COMMANDS: [CommandMetadata; 13] = [
     command!(
         HotkeyCommand::PerformanceStats,
         "PerformanceStats",
@@ -197,6 +196,14 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 12] = [
         "VERA:RelationColors",
         "VERA:HotkeyCategory",
         "VERA:RelationColorsDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::ConvenienceHelp,
+        "ConvenienceHelp",
+        "VERA:ConvenienceHelp",
+        "VERA:HotkeyCategory",
+        "VERA:ConvenienceHelpHelp",
         None
     ),
 ];
@@ -900,9 +907,8 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
     ),
 ];
 
-/// VeraX's own commands, registered after every retail one. The CSF has no
+/// VERA's own commands, registered after every retail one. The CSF has no
 /// entries, so their names come from VERA's language files.
-#[cfg(feature = "verax")]
 const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     HotkeyCommand::AutoLoad,
     "AutoLoad",

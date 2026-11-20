@@ -218,7 +218,7 @@ fn a_dying_target_stops_the_fire_sweep() {
             sim,
             rules,
             system,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
         ));
         sim.particle_systems().get(system).unwrap().coords()
     };

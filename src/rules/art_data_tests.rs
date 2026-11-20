@@ -155,6 +155,15 @@ fn test_object_shp_candidates_no_new_theater() {
 }
 
 #[test]
+fn object_shp_candidates_take_an_image_whose_second_byte_is_high() {
+    // INI byte 0xE9 widens to `é`, two UTF-8 bytes: the prefix test must not
+    // cut it.
+    let reg = ArtRegistry::empty();
+    let candidates = object_shp_candidates(Some(&reg), "A\u{e9}X", "tem", "TEMPERATE");
+    assert_eq!(candidates, ["A\u{c9}X.SHP", "A\u{c9}X.TEM"]);
+}
+
+#[test]
 fn test_object_shp_candidates_with_new_theater() {
     let reg: ArtRegistry = ArtRegistry::empty();
     let candidates: Vec<String> = object_shp_candidates(Some(&reg), "GAPOWR", "tem", "TEMPERATE");

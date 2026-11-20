@@ -1,32 +1,93 @@
 use super::*;
 use crate::rules::house_colors::{HouseColorIndex, house_text_rgb};
 use crate::sim::house_state::{HouseState, MatchStatistics};
+use crate::skirmish_modes::MpModeClass;
+
+#[test]
+fn alliance_order_admission_uses_the_admitted_policy_in_skirmish() {
+    let Fixture {
+        mut sim, mut rules, ..
+    } = fixture();
+    rules.general.allies_allowed = true;
+    rules.general.ally_change_allowed = true;
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .ally_change_allowed = true;
+
+    let mode = SessionMode::Skirmish;
+    let stock = mode.stock_rule_policy(Some(MpModeClass::Battle));
+    sim.install_session_admission(
+        mode,
+        Some(MpModeClass::Battle),
+        stock.with_uses_campaign_diplomacy(true),
+    );
+    assert!(alliance_change_allowed(sim.session(), &rules));
+    sim.install_session_admission(
+        mode,
+        Some(MpModeClass::Battle),
+        stock.with_allows_manual_alliances(false),
+    );
+    assert!(!alliance_change_allowed(sim.session(), &rules));
+}
 
 /// Entry: the sidebar gadget 0x006538FE and Request_Diplomacy_Menu 0x006ABC40.
 #[test]
 fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
     use DiplomacyRequest::{Hotkey, SidebarButton};
     use RequestedState::{Diplomacy, MissionBriefing, Nothing};
+    let campaign = SessionMode::from_game_mode(0);
+    let offline = SessionMode::from_game_mode(5);
     let coop = Some(MpModeClass::Cooperative);
     let battle = Some(MpModeClass::Battle);
     for (request, mode, class, expected) in [
-        (SidebarButton, SessionMode::Campaign, None, MissionBriefing),
-        (Hotkey, SessionMode::Campaign, None, Nothing),
-        (SidebarButton, SessionMode::Skirmish, battle, Diplomacy),
-        (Hotkey, SessionMode::Skirmish, battle, Diplomacy),
+        (SidebarButton, campaign, None, MissionBriefing),
+        (Hotkey, campaign, None, Nothing),
+        (SidebarButton, offline, battle, Diplomacy),
+        (Hotkey, offline, battle, Diplomacy),
+        (SidebarButton, SessionMode::Other, None, Diplomacy),
+        (Hotkey, SessionMode::Other, None, Diplomacy),
         (SidebarButton, SessionMode::Lan, battle, Diplomacy),
         (SidebarButton, SessionMode::Lan, coop, MissionBriefing),
         (SidebarButton, SessionMode::Wol, coop, MissionBriefing),
         // Tab writes 8 even in co-op; the gadget's co-op test is LAN/WOL only.
         (Hotkey, SessionMode::Lan, coop, Diplomacy),
-        (SidebarButton, SessionMode::Skirmish, coop, Diplomacy),
+        (SidebarButton, offline, coop, Diplomacy),
     ] {
         assert_eq!(
-            requested_state(request, mode, class),
+            requested_state(
+                request,
+                mode.execution_topology(),
+                mode.stock_rule_policy(class)
+            ),
             expected,
             "{request:?} in {mode:?} with {class:?}"
         );
     }
+
+    let lan = SessionMode::Lan;
+    let briefing = lan
+        .stock_rule_policy(battle)
+        .with_network_diplomacy_briefing(true);
+    assert_eq!(
+        requested_state(SidebarButton, lan.execution_topology(), briefing),
+        MissionBriefing
+    );
+    assert_eq!(
+        requested_state(Hotkey, lan.execution_topology(), briefing),
+        Diplomacy
+    );
+
+    let rules = offline
+        .stock_rule_policy(battle)
+        .with_uses_campaign_diplomacy(true);
+    assert_eq!(
+        requested_state(SidebarButton, offline.execution_topology(), rules),
+        MissionBriefing
+    );
+    assert_eq!(
+        requested_state(Hotkey, offline.execution_topology(), rules),
+        Nothing
+    );
 }
 
 struct Fixture {
@@ -93,7 +154,6 @@ const SKIRMISH: DiplomacyRules<'static> = DiplomacyRules {
     allies_allowed: true,
     quick_coop: false,
     local_inactive: false,
-    game_mode_nonzero: true,
     listeners: &[true; 8],
 };
 
@@ -110,6 +170,45 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
         },
         |_| None,
     )
+}
+
+#[test]
+fn a_connection_watcher_adds_no_row_and_a_native_observer_keeps_light_grey() {
+    let mut scene = fixture();
+    scene.sim.install_session_mode(SessionMode::Wol);
+    let before = rows(&scene, SKIRMISH).rows;
+    scene.sim.install_watcher();
+    assert!(scene.sim.session().observer_houses().is_empty());
+    assert_eq!(rows(&scene, SKIRMISH).rows, before);
+    assert_eq!(crate::sim::crates::human_player_count(&scene.sim), 1);
+    assert_eq!(scene.sim.houses().len(), 4);
+
+    let mut classic = fixture();
+    classic.sim.install_session_mode(SessionMode::Wol);
+    let country = classic.sim.intern("Russians");
+    let observer = classic.sim.intern("ClassicObserver");
+    let mut house = HouseState::new(observer, 0, Some(country), true, 0, 10);
+    house.set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle(
+        "Classic Observer",
+    ));
+    classic.sim.houses_mut_for_test().register(house);
+    classic
+        .sim
+        .session_mut_for_test()
+        .install_observer_houses_for_test(vec![observer]);
+    let light_grey = HouseUiSources {
+        csf: None,
+        computer: "Computer",
+        schemes: &classic.schemes,
+        colors: &classic.colors,
+    }
+    .named_scheme_rgb("LightGrey")
+    .unwrap();
+    let rows = rows(&classic, SKIRMISH).rows;
+    assert_eq!(rows.len(), 8);
+    let visible = rows[4].as_ref().unwrap();
+    assert_eq!(visible.name, "Classic Observer");
+    assert_eq!(visible.rgb, light_grey);
 }
 
 fn ally(sim: &mut Simulation, asker: &str, other: &str) {

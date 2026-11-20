@@ -43,6 +43,7 @@ pub(crate) mod sidebar_render;
 pub(crate) mod sidebar_surface;
 pub(crate) mod sidebar_text;
 pub(crate) mod state;
+pub(crate) mod super_timer_groups;
 pub(crate) mod super_timers;
 pub(crate) mod sw_sidebar;
 pub(crate) mod sw_sidebar_build;

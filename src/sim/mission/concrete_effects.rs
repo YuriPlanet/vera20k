@@ -145,7 +145,6 @@ pub(crate) struct RepresentedConcreteMissionEffects<'r> {
     /// Class setter type/contact/timer inputs; overlay data belongs to the
     /// moving Infantry receiver's current-cell admission query.
     rules: &'r crate::rules::ruleset::RuleSet,
-    overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'r>,
     /// vt+0x480's mode 0 (keep NavQueue) instead of 1. Only Unit741970
     /// reads it; Infantry51AA40 and Aircraft41AA80 pass it to Foot4D94B0,
@@ -156,12 +155,10 @@ pub(crate) struct RepresentedConcreteMissionEffects<'r> {
 impl<'r> RepresentedConcreteMissionEffects<'r> {
     pub(crate) fn new(
         rules: &'r crate::rules::ruleset::RuleSet,
-        overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'r>,
     ) -> Self {
         Self {
             rules,
-            overlay_registry,
             frame_effects,
             keep_queue: false,
         }
@@ -236,7 +233,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
                 receiver,
                 destination,
                 rules,
-                self.overlay_registry,
+                Some(self.rules.overlay_registry()),
             )
     }
 
@@ -314,14 +311,8 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         // `0x00443B90`), which hands a target it refuses to this base setter
         // as NULL (`0x00443BA9`, `0x00443BFE`): the same-target test then
         // compares NULL, so a refused current target is cleared.
-        let requested = requested.filter(|_| {
-            sim.building_admits_target(
-                prepared.receiver,
-                requested,
-                self.rules,
-                self.overlay_registry,
-            )
-        });
+        let requested = requested
+            .filter(|_| sim.building_admits_target(prepared.receiver, requested, self.rules));
         let entity = sim
             .substrate
             .entities
@@ -393,7 +384,11 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             entity.clear_live_path_head();
         }
         if represented_assign_target_admitted(entity, requested, stored, self.rules.ares_form()) {
-            sim.assign_target_fire_teardown(prepared.receiver, self.rules, self.overlay_registry);
+            sim.assign_target_fire_teardown(
+                prepared.receiver,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+            );
         }
         //51B2B1..51B33F: an Infiltrate= infantryman with no NavCom heads for
         // a building target it may enter (vt+0x480(target, 1)).
@@ -443,7 +438,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             sim.assign_null_destination(
                 prepared.receiver,
                 self.rules,
-                self.overlay_registry,
+                Some(self.rules.overlay_registry()),
                 self.frame_effects,
             );
             return true;
@@ -476,7 +471,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                             prepared.receiver,
                             requested,
                             rules,
-                            self.overlay_registry,
+                            Some(self.rules.overlay_registry()),
                             self.frame_effects,
                         )
                         .expect("represented Infantry destination dependencies must be available");
@@ -528,10 +523,8 @@ impl Simulation {
         receiver: u64,
         requested: NavTargetRef,
         rules: &crate::rules::ruleset::RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
-        let effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, FrameEffects::empty());
+        let effects = RepresentedConcreteMissionEffects::new(rules, FrameEffects::empty());
         effects.class_setter_represents(self, receiver)
             && effects.destination_available(self, receiver, Some(requested))
     }

@@ -554,8 +554,9 @@ pub(crate) fn drain_first_slot(
 }
 
 /// The two `HouseClass::Add_Tiberium_Credits` calls (`0x004F9610`, at
-/// `0x0073E4A9` and `0x0073E4C9`) for one drained slot, paid to the unload
-/// building's owner (`vt+0x3C`): the slot's amount, then the purifier bonus
+/// `0x0073E4A9` and `0x0073E4C9`, [`Simulation::give_tiberium`]) for one
+/// drained slot, paid to the unload building's owner (`vt+0x3C`): the
+/// slot's amount, then the purifier bonus
 /// `P × PurifierBonus × amount` when it is above zero, where P counts the
 /// owner's purifiers plus `AIVirtualPurifiers[difficulty]` for a computer
 /// house outside the campaign (`0x0073E3D5..0x0073E408`). A slave's deposit
@@ -593,27 +594,10 @@ pub(crate) fn pay_refinery_owner(
         sim.ares_deposit_tiberium(building, slot, amount, bonus, rules);
     } else {
         use crate::util::native_x87::MaskedX87Ordering;
-        let income = crate::sim::house_state::income_mult_for_owner(
-            &sim.houses,
-            &sim.interner,
-            rules,
-            &owner_name,
-        );
-        let value = rules
-            .tiberium_types
-            .get(slot)
-            .expect("native refinery payment requires its live Tiberium slot")
-            .value;
-        let Some(house) = sim.houses.get_mut(&owner) else {
-            return;
-        };
-        house
-            .economy_mut()
-            .add_tiberium_credits(value, amount, income);
+        let slot = usize::from(slot.0);
+        sim.give_tiberium(owner, amount, slot, rules);
         if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
-            house
-                .economy_mut()
-                .add_tiberium_credits(value, bonus, income);
+            sim.give_tiberium(owner, bonus, slot, rules);
         }
     }
     // The dock accumulates the cash the deposit actually credited; the

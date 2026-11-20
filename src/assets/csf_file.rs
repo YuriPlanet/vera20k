@@ -74,7 +74,21 @@ struct CsfText {
 impl CsfFile {
     /// Parse a CSF file from raw bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        if data.len() < MIN_FILE_SIZE {
+        // +0x10 is reserved.
+        let (
+            Some(magic),
+            Some(version),
+            Some(label_count),
+            Some(string_count),
+            Some(stored_language),
+        ) = (
+            read_u32_le(data, 0),
+            read_u32_le(data, 4),
+            read_u32_le(data, 8),
+            read_u32_le(data, 12),
+            read_u32_le(data, 20),
+        )
+        else {
             return Err(AssetError::ParseError {
                 format: "CSF".to_string(),
                 detail: format!(
@@ -83,9 +97,8 @@ impl CsfFile {
                     MIN_FILE_SIZE
                 ),
             });
-        }
+        };
 
-        let magic: u32 = read_u32_le(data, 0);
         if magic != HEADER_MAGIC {
             return Err(AssetError::ParseError {
                 format: "CSF".to_string(),
@@ -96,22 +109,15 @@ impl CsfFile {
             });
         }
 
-        let version: u32 = read_u32_le(data, 4);
-        let label_count: u32 = read_u32_le(data, 8);
-        let string_count = read_u32_le(data, 12);
         if label_count == 0 || string_count == 0 {
             return Err(AssetError::ParseError {
                 format: "CSF".to_string(),
                 detail: "header label and string counts must both be nonzero".to_string(),
             });
         }
-        // +0x10 is reserved. Version 2+
-        // stores the language DWORD at +0x14; older tables force language 0.
-        let language = if version >= 2 {
-            read_u32_le(data, 20)
-        } else {
-            0
-        };
+        // Version 2+ stores the language DWORD at +0x14; older tables force
+        // language 0.
+        let language = if version >= 2 { stored_language } else { 0 };
 
         // The header counts are validated but are not the loop bound: retail
         // walks records until the next read/magic check fails. Bound the map
@@ -209,10 +215,16 @@ impl CsfFile {
     ///100608C0's admission is distinct from LoadFile's base-header checks:
     /// supplemental zero counts are valid, and the base language never changes.
     fn append_ares(&mut self, data: &[u8], ignore_language: bool) -> bool {
-        if data.len() < MIN_FILE_SIZE
-            || read_u32_le(data, 0) != HEADER_MAGIC
-            || (read_u32_le(data, 4) as i32) < 2
-            || (!ignore_language && ![self.language, u32::MAX].contains(&read_u32_le(data, 20)))
+        let (Some(magic), Some(version), Some(language)) = (
+            read_u32_le(data, 0),
+            read_u32_le(data, 4),
+            read_u32_le(data, 20),
+        ) else {
+            return false;
+        };
+        if magic != HEADER_MAGIC
+            || (version as i32) < 2
+            || (!ignore_language && ![self.language, u32::MAX].contains(&language))
         {
             return false;
         }
@@ -477,65 +489,47 @@ fn parse_label_entry(data: &[u8], offset: usize) -> Result<(String, CsfText, usi
 
 /// One header/value decoder serves base tables and in-place Ares overrides.
 fn parse_label_header(data: &[u8], offset: usize) -> Result<(String, u32, usize), ()> {
-    // Need at least 12 bytes: 4 (LBL magic) + 4 (pair count) + 4 (name length).
-    if offset + 12 > data.len() {
-        return Err(());
-    }
-
-    let magic: u32 = read_u32_le(data, offset);
-    if magic != LABEL_MAGIC {
-        return Err(());
-    }
-
-    let pair_count: u32 = read_u32_le(data, offset + 4);
-    let name_len: u32 = read_u32_le(data, offset + 8);
-    let name_start: usize = offset + 12;
-    let name_end: usize = name_start + name_len as usize;
-
-    if name_end > data.len() {
-        return Err(());
-    }
-
-    let label_name = crate::util::native_string::widen_bytes(&data[name_start..name_end]);
-
-    Ok((label_name, pair_count, name_end))
+    // 12 bytes, 4 (LBL magic) + 4 (pair count) + 4 (name length), then the
+    // name. A header or name the buffer does not hold is an error.
+    let header = || {
+        let rest = data.get(offset..)?;
+        if read_u32_le(rest, 0)? != LABEL_MAGIC {
+            return None;
+        }
+        let pair_count: u32 = read_u32_le(rest, 4)?;
+        let name_len = read_u32_le(rest, 8)? as usize;
+        let name = rest.get(12..)?.get(..name_len)?;
+        let label_name = crate::util::native_string::widen_bytes(name);
+        Some((label_name, pair_count, offset + 12 + name_len))
+    };
+    header().ok_or(())
 }
 
-fn parse_value(data: &[u8], mut pos: usize, stored_key: &str) -> Result<(CsfText, usize), ()> {
-    if pos + 8 > data.len() {
-        return Err(());
-    }
-
-    let str_magic: u32 = read_u32_le(data, pos);
-    let has_extra = str_magic == STRING_EXTRA_MAGIC;
-
-    if str_magic != STRING_MAGIC && str_magic != STRING_EXTRA_MAGIC {
-        return Err(());
-    }
-
-    let char_count: u32 = read_u32_le(data, pos + 4);
-    let byte_count: usize = char_count as usize * 2; // UTF-16-LE: 2 bytes per char.
-    pos += 8;
-
-    if pos + byte_count > data.len() {
-        return Err(());
-    }
-
-    let value = decode_csf_string(&data[pos..pos + byte_count], stored_key);
-    pos += byte_count;
-
-    // Skip the extra value if present (used for audio cue names, not display text).
-    if has_extra {
-        if pos + 4 > data.len() {
-            return Err(());
+fn parse_value(data: &[u8], pos: usize, stored_key: &str) -> Result<(CsfText, usize), ()> {
+    let value = || {
+        let rest = data.get(pos..)?;
+        let str_magic: u32 = read_u32_le(rest, 0)?;
+        let has_extra = str_magic == STRING_EXTRA_MAGIC;
+        if str_magic != STRING_MAGIC && str_magic != STRING_EXTRA_MAGIC {
+            return None;
         }
-        let extra_len: u32 = read_u32_le(data, pos);
-        pos += 4 + extra_len as usize;
-        if pos > data.len() {
-            return Err(());
+
+        // UTF-16-LE: 2 bytes per char.
+        let byte_count = (read_u32_le(rest, 4)? as usize).checked_mul(2)?;
+        let text = rest.get(8..)?.get(..byte_count)?;
+        let mut next = pos + 8 + byte_count;
+
+        // Skip the extra value if present (used for audio cue names, not display text).
+        if has_extra {
+            let extra_len = read_u32_le(data, next)? as usize;
+            next = next.checked_add(4)?.checked_add(extra_len)?;
+            if next > data.len() {
+                return None;
+            }
         }
-    }
-    Ok((value, pos))
+        Some((decode_csf_string(text, stored_key), next))
+    };
+    value().ok_or(())
 }
 
 /// Decode a CSF-encoded string: bitwise-NOT each byte, interpret as UTF-16-LE,

@@ -163,8 +163,10 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
-    /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
-    /// VERA-only input preference; off by default.
+    /// `[VERA] RightClickOrders=`: left selects, right issues context orders,
+    /// and a double-click on an object selects its type on screen (the T key's
+    /// screen pass, done without the key). VERA-only input preference; off by
+    /// default.
     pub(crate) right_click_orders: bool,
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. Off
     /// unless the player turns it on, so a new install leaves the pointer free.
@@ -229,6 +231,8 @@ pub(crate) struct RetailOptionsProfile {
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] SkirmishCheats=` enables the command line in offline skirmish.
+    pub(crate) skirmish_cheats: bool,
     /// `[VERA] SuperweaponLimit=`: the skirmish Game Options' Superweapon Limit.
     /// Each superweapon may be built that many times and each building
     /// charges its own shot (`docs/superweapon-limit.md`). Like Terrain
@@ -301,7 +305,7 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) skipped_update: String,
     /// `[VERA] OnlineName=`: the name of the last successful online sign-in,
     /// as a guest or an account; empty, the default, until one succeeds.
-    /// Only that sign-in changes it ([`Self::commit_online_name`]).
+    /// A successful sign-in sets it and deleting that account clears it.
     pub(crate) online_name: String,
     /// `[VERA] OnlineLocale=`: the country (`WOL:Locale%02d`) the player chose
     /// on their player card, which every online sign-in sends; 0, the
@@ -319,6 +323,18 @@ pub(crate) struct RetailOptionsProfile {
     /// voice never names it. Client presentation only: no sim, audio, state
     /// hash or network protocol reads it. Off by default.
     pub(crate) detailed_eva_text: bool,
+    /// `[VERA] ConvenienceHelp=`: VERA's umbrella switch for the quick status
+    /// rows drawn as extra world tags — building repair and ammo reload today,
+    /// more convenience lines later. Client presentation only: no sim, audio,
+    /// state hash or network protocol reads it. Off by default.
+    pub(crate) convenience_help: bool,
+    /// `[VERA] BuildingProductionQueue=`: a BuildingType PRODUCE queues
+    /// behind a running or completed building instead of being dropped or
+    /// abandoning the held product. The next building starts only after the
+    /// held one is placed. A rule switch (`rules::personal_rules`): offline
+    /// scenarios read it as `[General] BuildingProductionQueue=yes`; network
+    /// rooms play without it. Off by default, so gamemd play is unchanged.
+    pub(crate) building_production_queue: bool,
     /// `[VERA] CompactSuperTimers=`: the battlefield's super weapon timer
     /// list shows at most six lines, the player's own first, with an arrow
     /// that opens and scrolls the rest
@@ -326,6 +342,13 @@ pub(crate) struct RetailOptionsProfile {
     /// list stacks every line as gamemd does (`TacticalClass::Draw`
     /// `0x006D4941..0x006D4B25`). Client presentation only.
     pub(crate) compact_super_timers: bool,
+    /// `[VERA] GroupedSuperTimers=`: the timer list shows one line per
+    /// team and super weapon type, with how many are ready and the nearest
+    /// countdown, in place of one line per Super
+    /// (`app::presentation::super_timer_groups`). Takes precedence over
+    /// `CompactSuperTimers`. Off by default, so the list stacks every line
+    /// as gamemd does. Client presentation only.
+    pub(crate) grouped_super_timers: bool,
     /// `[VERA] SuperweaponBuildingTimers=`: every building that provides one
     /// of the player's super weapons draws its countdown above itself
     /// (`app::presentation::ui_overlays`). A scenario starts from this value
@@ -406,6 +429,7 @@ impl Default for RetailOptionsProfile {
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            skirmish_cheats: false,
             superweapon_limit: 0,
             solo_skirmish: false,
             commander_feedback: true,
@@ -422,7 +446,10 @@ impl Default for RetailOptionsProfile {
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             detailed_eva_text: false,
+            convenience_help: false,
+            building_production_queue: false,
             compact_super_timers: false,
+            grouped_super_timers: false,
             superweapon_building_timers: false,
         }
     }
@@ -440,7 +467,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 37],
+    pub(crate) vera: [(&'static str, String); 41],
 }
 
 impl RetailOptionsLoad {
@@ -668,6 +695,7 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.skirmish_cheats = vera.read_bool("SkirmishCheats", self.skirmish_cheats);
             self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
@@ -682,8 +710,13 @@ impl RetailOptionsProfile {
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             self.detailed_eva_text = vera.read_bool("DetailedEvaText", self.detailed_eva_text);
+            self.convenience_help = vera.read_bool("ConvenienceHelp", self.convenience_help);
+            self.building_production_queue =
+                vera.read_bool("BuildingProductionQueue", self.building_production_queue);
             self.compact_super_timers =
                 vera.read_bool("CompactSuperTimers", self.compact_super_timers);
+            self.grouped_super_timers =
+                vera.read_bool("GroupedSuperTimers", self.grouped_super_timers);
             self.superweapon_building_timers = vera.read_bool(
                 "SuperweaponBuildingTimers",
                 self.superweapon_building_timers,
@@ -876,8 +909,20 @@ impl RetailOptionsProfile {
                     format_bool(self.detailed_eva_text).to_string(),
                 ),
                 (
+                    "ConvenienceHelp",
+                    format_bool(self.convenience_help).to_string(),
+                ),
+                (
+                    "BuildingProductionQueue",
+                    format_bool(self.building_production_queue).to_string(),
+                ),
+                (
                     "CompactSuperTimers",
                     format_bool(self.compact_super_timers).to_string(),
+                ),
+                (
+                    "GroupedSuperTimers",
+                    format_bool(self.grouped_super_timers).to_string(),
                 ),
                 (
                     "SuperweaponBuildingTimers",
@@ -888,6 +933,10 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("SuperweaponLimit", self.superweapon_limit.to_string()),
+                (
+                    "SkirmishCheats",
+                    format_bool(self.skirmish_cheats).to_string(),
+                ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 (
                     "MinimapBeacons",
@@ -2580,6 +2629,39 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 
+    /// The build queue is a player option, off by default, with no ruleset
+    /// presence: it round-trips through VERA.INI like the other VERA boxes.
+    #[test]
+    fn convenience_help_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").convenience_help);
+        let mut profile = read(b"[VERA]\nConvenienceHelp=yes\nUnowned=keep\n");
+        assert!(profile.convenience_help);
+        let written = profile.transform_settings(b"[VERA]\nConvenienceHelp=yes\nUnowned=keep\n");
+        assert!(read(&written).convenience_help);
+        profile.convenience_help = false;
+        let written = profile.transform_settings(&written);
+        assert!(!read(&written).convenience_help);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn building_production_queue_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").building_production_queue);
+        let mut profile = read(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
+        assert!(profile.building_production_queue);
+        let written =
+            profile.transform_settings(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
+        assert!(read(&written).building_production_queue);
+        profile.building_production_queue = false;
+        let written = profile.transform_settings(&written);
+        assert!(!read(&written).building_production_queue);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
     #[test]
     fn compact_super_timers_defaults_off_and_round_trips_through_the_vera_section() {
         let startup = RetailStartupOptions::default();
@@ -2605,14 +2687,21 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
     }
 
     #[test]
-    fn terrain_deformation_defaults_off_and_round_trips_through_the_vera_section() {
+    fn skirmish_checkboxes_default_off_and_round_trip_through_the_vera_section() {
         let startup = RetailStartupOptions::default();
         let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
-        assert!(!read(b"").terrain_deformation);
+        let defaults = read(b"");
+        assert!(!defaults.terrain_deformation && !defaults.skirmish_cheats);
         let mut profile = read(b"[VERA]\nTerrainDeformation=yes\n");
         assert!(profile.terrain_deformation);
-        assert!(read(&profile.transform_settings(b"")).terrain_deformation);
+        assert!(!profile.skirmish_cheats);
+        profile.skirmish_cheats = true;
+        let written = profile.transform_settings(b"");
+        let enabled = read(&written);
+        assert!(enabled.terrain_deformation && enabled.skirmish_cheats);
         profile.terrain_deformation = false;
-        assert!(!read(&profile.transform_settings(b"")).terrain_deformation);
+        profile.skirmish_cheats = false;
+        let disabled = read(&profile.transform_settings(&written));
+        assert!(!disabled.terrain_deformation && !disabled.skirmish_cheats);
     }
 }

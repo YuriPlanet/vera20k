@@ -316,7 +316,6 @@ fn ground_command_fixture(
             id,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -977,7 +976,7 @@ fn simulation_ground_command(
     shift: bool,
 ) -> CommandEnvelope {
     let cell = sim
-        .cell_click_destination(owner, id, clicked, shift, rules, None)
+        .cell_click_destination(owner, id, clicked, shift, rules)
         .unwrap()
         .unwrap();
     CommandEnvelope::new(
@@ -1109,6 +1108,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
             let expected = ground_command_nav_target(&dispatch["after"]).unwrap();
             assert_eq!(NavTargetRef::cell(target_rx, target_ry), expected);
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &decoded.payload,
                 &rules,
@@ -1150,6 +1150,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
         };
         if let Some(stop) = stop {
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::Stop { entity_id: id },
                 &rules,
@@ -1170,6 +1171,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
         );
         assert!(matches!(decoded.payload, Command::Move { .. }));
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &decoded.payload,
             &rules,
@@ -1217,6 +1219,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
     };
     assert!(
         sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1265,11 +1268,11 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
             fixture_cell(&input["clicked"]),
             ground_command_shift(input),
             &rules,
-            Some(&registry),
         )
         .unwrap()
         .unwrap();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Move {
             entity_id: id,
@@ -1345,11 +1348,11 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
                 fixture_cell(&input["clicked"]),
                 ground_command_shift(input),
                 &rules,
-                Some(&registry),
             )
             .unwrap()
             .unwrap();
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1408,7 +1411,7 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
             .unwrap();
         assert_eq!(class["args"][1], 1);
         assert_eq!(class["true_ret8_bytes"], "c20800");
-        let Some((mut sim, rules, registry, id)) = ground_command_fixture(row, &class["before"])
+        let Some((mut sim, rules, _registry, id)) = ground_command_fixture(row, &class["before"])
         else {
             return;
         };
@@ -1423,7 +1426,7 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
             .unwrap()
             .native_cell_identity((xy.0.try_into().unwrap(), xy.1.try_into().unwrap()));
         let answer = sim
-            .foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, &rules, Some(&registry))
+            .foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, &rules)
             .unwrap();
         let native_entry = calls
             .iter()
@@ -1439,7 +1442,6 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
                 crate::sim::components::DriveCoord::cell(xy.0, xy.1, 0),
                 answer,
                 &rules,
-                Some(&registry),
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
@@ -1510,7 +1512,6 @@ fn initialized_cell_what_action_matches_every_original_query() {
                         shift: ground_command_shift(input),
                     },
                     &rules,
-                    Some(&registry),
                 )
                 .unwrap();
             assert_eq!(
@@ -1566,7 +1567,8 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
                     }
             })
             .unwrap();
-        let Some((sim, rules, registry, id)) = ground_command_fixture(row, &click["before"]) else {
+        let Some((sim, rules, _registry, id)) = ground_command_fixture(row, &click["before"])
+        else {
             return;
         };
         if !unit {
@@ -1601,7 +1603,6 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
                     fixture_cell(&input["clicked"]),
                     ground_command_shift(input),
                     &rules,
-                    Some(&registry),
                 ),
                 Ok(None),
                 "{name}: original input emits no Move event"
@@ -1636,11 +1637,11 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
             fixture_cell(&row["inputs"][0]["clicked"]),
             false,
             &rules,
-            Some(&registry),
         )
         .unwrap()
         .unwrap();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Move {
             entity_id: id,

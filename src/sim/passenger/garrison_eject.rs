@@ -75,7 +75,6 @@ fn garrison_sellbuilding_exit_cells(rx: u16, ry: u16, width: u16, height: u16) -
 fn choose_garrison_exit_cell(
     sim: &Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     rx: u16,
     ry: u16,
     width: u16,
@@ -92,7 +91,6 @@ fn choose_garrison_exit_cell(
                     cells.lookup((cx as i16, cy as i16)),
                     InfantryEntryArgs::REPAIR,
                     rules,
-                    registry,
                 ),
                 Ok(InfantryEntryClass::Clear)
             )
@@ -116,7 +114,7 @@ pub(crate) fn uninit_garrison_passenger_without_exit(
     context: UninitContext<'_>,
 ) {
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
-        pax.clear_carrier_relation();
+        pax.passenger_role_mut().clear_carrier_relation();
     }
     sim.uninit_with_context(passenger_id, context);
 }
@@ -182,7 +180,7 @@ fn place_garrison_passenger_at_cell(
         return false;
     };
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
-        pax.clear_carrier_relation();
+        pax.passenger_role_mut().clear_carrier_relation();
     }
     // SellBuilding4580xx's virtual FootUnlimbo reaches the full Techno6F6CA0
     // publication and Foot4D72F4 coefficient copy. Keep the enclosing borrowed
@@ -197,7 +195,6 @@ fn place_garrison_passenger_at_cell(
         requested,
         PlacementEvidence::EvaluateMark,
         rules,
-        context.registry(),
     ) else {
         return false;
     };
@@ -227,14 +224,8 @@ fn place_garrison_passenger_at_cell(
     // Use its existing target/path owner. Native51B25D..51B26D also clears a
     // reciprocal +2A8 pair; Rust has no corresponding state. That native-only
     // observation does not establish the pair's identity or retail use here.
-    sim.assign_target_represented(
-        passenger_id,
-        None,
-        rules,
-        context.registry(),
-        context.effects(),
-    )
-    .expect("a revealed garrison occupant has a represented target setter");
+    sim.assign_target_represented(passenger_id, None, rules, context.effects())
+        .expect("a revealed garrison occupant has a represented target setter");
     sellbuilding_direct_scatter_handoff(
         sim,
         rules,
@@ -300,22 +291,13 @@ fn eject_garrison_passengers_at_edges(
     };
     let initial_count = occupants.ids().len();
 
-    let exit_cell = choose_garrison_exit_cell(
-        sim,
-        rules,
-        uninit_context.registry(),
-        rx,
-        ry,
-        width,
-        height,
-        first_occupant_id,
-    )
-    .or_else(|| match mode {
-        GarrisonEjectMode::PlayerSell => {
-            Some(garrison_inside_foundation_fallback(rx, ry, width, height))
-        }
-        GarrisonEjectMode::Release | GarrisonEjectMode::Hunt => None,
-    });
+    let exit_cell = choose_garrison_exit_cell(sim, rules, rx, ry, width, height, first_occupant_id)
+        .or_else(|| match mode {
+            GarrisonEjectMode::PlayerSell => {
+                Some(garrison_inside_foundation_fallback(rx, ry, width, height))
+            }
+            GarrisonEjectMode::Release | GarrisonEjectMode::Hunt => None,
+        });
     let mut ejected: usize = 0;
 
     let Some((exit_rx, exit_ry)) = exit_cell else {
@@ -385,7 +367,7 @@ pub(crate) fn kill_building_occupants(
     let Some(building) = sim.substrate.entities.get_mut(building_id) else {
         return;
     };
-    let occupants = &mut building.passenger_state_mut().occupants;
+    let occupants = &mut building.passenger_role_mut().occupants;
     occupants.reset_fire_index();
     let initial_count = occupants.ids().len();
     for index in (0..initial_count).rev() {
@@ -437,7 +419,7 @@ pub(crate) fn kill_building_occupants(
         uninit_garrison_passenger_without_exit(sim, id, context);
     }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-        building.passenger_state_mut().occupants.clear();
+        building.passenger_role_mut().occupants.clear();
     }
     // Ares 3.0 100136C0 (hook 0x458729): an emptied raided building goes back.
     if ares {
@@ -479,7 +461,7 @@ pub(crate) fn sell_building_occupants(
     // SellBuilding457DEB clears CurrentFireIdx before testing Occupants.Count,
     // including CheckAutoSellOrCivilian's red-health call on an empty building.
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-        building.passenger_state_mut().occupants.reset_fire_index();
+        building.passenger_role_mut().occupants.reset_fire_index();
         if building.passenger_role().occupants().is_empty() {
             return 0;
         }
@@ -493,13 +475,13 @@ pub(crate) fn sell_building_occupants(
         width,
         height,
         mode,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) else {
         return 0;
     };
 
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-        building.passenger_state_mut().occupants.clear();
+        building.passenger_role_mut().occupants.clear();
     }
     // Ares 3.0 100136C0 (hook 0x4581CD): an emptied raided building goes back.
     if rules.ares_form() {
@@ -622,7 +604,10 @@ pub(crate) mod tests {
                 .ids()
                 .contains(&stable_id)
         {
-            building.garrison_mut_for_test().add_for_test(stable_id);
+            building
+                .passenger_role_mut_for_test()
+                .occupants_mut()
+                .add_for_test(stable_id);
         }
         stable_id
     }
@@ -706,7 +691,10 @@ pub(crate) mod tests {
             .set_foundation_for_test("2x2".to_string().into());
         building.set_owner_for_test(americans);
         building.set_type_ref_for_test(sim.interner.intern(type_id));
-        building.garrison_mut_for_test().add_for_test(passenger_id);
+        building
+            .passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(passenger_id);
         sim.substrate.entities.insert(building);
         assert!(matches!(
             sim.reveal_entity_with_rules(building_id, rules),
@@ -921,7 +909,8 @@ pub(crate) mod tests {
                     .entities
                     .get_mut(20)
                     .unwrap()
-                    .garrison_mut_for_test();
+                    .passenger_role_mut_for_test()
+                    .occupants_mut();
                 // Preserve the fixture's supplied preexisting vector order.
                 cargo.set_ids_for_test(vec![22, 21]);
                 cargo.set_fire_index_for_test(4);
@@ -1047,7 +1036,8 @@ pub(crate) mod tests {
             .entities
             .get_mut(20)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_ids_for_test(vec![22, 21]);
         // A supplied rejection of Rust's Reveal dependency, corresponding to
         // the original procedure's failed-last-Unlimbo control. This does not
@@ -1098,14 +1088,14 @@ pub(crate) mod tests {
         insert_hidden_passenger(&mut sim, 12, 10, "Neutral");
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             None,
             "slot 0 drives the scan; a later valid passenger must not be probed"
         );
 
         insert_hidden_passenger(&mut sim, 11, 10, "Neutral");
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             Some((12, 12))
         );
     }
@@ -1118,7 +1108,7 @@ pub(crate) mod tests {
         insert_map_infantry(&mut sim, &rules, 12, 12);
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             Some((12, 12)),
             "one exterior infantry leaves a free sub-cell, so slot-0 Can_Enter_Cell accepts"
         );
@@ -1127,7 +1117,7 @@ pub(crate) mod tests {
         insert_map_infantry(&mut sim, &rules, 12, 12);
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             Some((12, 11)),
             "full exterior infantry sub-cells reject the selected cell and continue the scan"
         );
@@ -1448,7 +1438,8 @@ pub(crate) mod tests {
             .entities
             .get_mut(building_id)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_fire_index_for_test(4);
         let rng_before = sim.scenario_rng.state();
 

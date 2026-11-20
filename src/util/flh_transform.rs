@@ -279,7 +279,7 @@ pub fn phobos_flh_source(
             .expect("the atan table answers finite radians")
             .bits(),
     );
-    let (sin, cos) = radians.sin_cos();
+    let (sin, cos) = (libm::sinf(radians), libm::cosf(radians));
     let matrix = rotate_z(glam::Mat4::IDENTITY, sin, cos);
     let matrix = match turret_offset {
         Some(offset) => translate_xyz(

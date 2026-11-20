@@ -112,13 +112,7 @@ fn network_move_flash_ingress_and_replay_do_not_touch_animation_state() {
         );
         sim.admit_frame_commands(&due, RuleSet::empty_for_test(), FrameEffects::default());
         let tail = sim
-            .dispatch_owned_commands(
-                &due,
-                RuleSet::empty_for_test(),
-                1,
-                None,
-                FrameEffects::default(),
-            )
+            .dispatch_owned_commands(&due, RuleSet::empty_for_test(), 1, FrameEffects::default())
             .unwrap();
         assert_eq!(tail, (0, false), "ingress must not execute twice");
         assert_eq!(sim.frame_command_admissions, [flash]);

@@ -1942,12 +1942,16 @@ fn next_previous_search_and_candidate_gates_match_original_execution() {
             "{}: retained display search",
             row.id
         );
+        let control = sim.control_projection();
         for visit in &row.visits {
             let entity = sim.entities().get(visit.id).unwrap();
             let accepted = match visit.gate.as_str() {
-                "local_gate" => {
-                    entity_pick::is_local_player_selectable_object(&sim, Some(&rules), entity)
-                }
+                "local_gate" => entity_pick::is_local_player_selectable_object(
+                    sim.interner(),
+                    &control,
+                    Some(&rules),
+                    entity,
+                ),
                 "dynamic_gate" => {
                     entity_pick::selection_dynamic_prefix(
                         entity,

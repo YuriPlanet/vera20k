@@ -648,7 +648,7 @@ impl Simulation {
             // `ClearAllTargets @ 0x6B7BB0` body: status Idle, NewTarget
             // cleared, in-flight missiles released to the tracker. Reuse the
             // oracle-verified owner rather than a second partial reset.
-            clear_all_spawn_targets(self, id, rules, registry, effects);
+            clear_all_spawn_targets(self, id, rules, effects);
         }
     }
 
@@ -684,7 +684,7 @@ impl Simulation {
             return;
         }
         // ResetTarget runs before the node walk.
-        clear_all_spawn_targets(self, id, rules, registry, effects);
+        clear_all_spawn_targets(self, id, rules, effects);
         let victims: Vec<(u64, i32)> = self
             .substrate
             .entities
@@ -1370,13 +1370,12 @@ pub(crate) fn spawn_manager_ai(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_id: u64,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         ai(&mut host);
     }
@@ -1397,7 +1396,7 @@ pub(crate) fn commit_spawn_manager_pool(
     let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::with_rules(rules).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) else {
         return;
     };
@@ -1428,13 +1427,12 @@ pub(crate) fn notify_pointer_expired(
     listener_id: u64,
     expired_id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         listener_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         pointer_expired(&mut host, expired_id);
     }
@@ -1448,13 +1446,12 @@ pub(crate) fn clear_all_spawn_targets(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         clear_all_targets(&mut host);
     }
@@ -1973,13 +1970,10 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         requested.put_location(launch);
         requested.copy_level_from(&owner_position);
         let context = self.context.with_unlimbo_facing(Some(launch_dir));
-        let Some((position, placement)) = self.sim.unlimbo_class_entry(
-            child,
-            requested,
-            PlacementEvidence::EvaluateMark,
-            rules,
-            context.registry(),
-        ) else {
+        let Some((position, placement)) =
+            self.sim
+                .unlimbo_class_entry(child, requested, PlacementEvidence::EvaluateMark, rules)
+        else {
             return;
         };
         let _ = self.sim.try_reveal_entity_with_context(
@@ -2048,11 +2042,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                 // (`GetCenterCoords` -> `MapClass::TryGetCellAt`), except for
                 // a Building target, which keeps the object so its own
                 // footprint stays the aim point.
-                let attack_cell = {
-                    {
-                        self.phobos_hooks() && self.missile_spawn_attack_cell()
-                    }
-                };
+                let attack_cell = { { self.phobos_hooks() && self.missile_spawn_attack_cell() } };
                 let target_cell = match (attack_cell, target) {
                     (true, Some(TargetKind::Entity(id))) => self
                         .sim
@@ -2111,7 +2101,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child,
             target,
             self.context.rules(),
-            None,
             FrameEffects::default(),
         );
     }
@@ -2190,13 +2179,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn push(&mut self, child: u64, target: Option<TargetKind>) {
-        self.sim.kamikaze_push(
-            child,
-            target,
-            self.context.rules(),
-            self.context.registry(),
-            self.context.effects(),
-        );
+        self.sim
+            .kamikaze_push(child, target, self.context.rules(), self.context.effects());
     }
 
     fn restart_kamikaze(&mut self) {

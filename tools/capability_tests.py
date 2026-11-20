@@ -124,6 +124,13 @@ CAPABILITIES: tuple[Capability, ...] = (
         "trainer/event hooks debug-tools adds.",
     ),
     Capability(
+        "perf",
+        ("perf",),
+        "Offline performance recording: a per-frame CSV of every SIM and "
+        "render phase and the path, process and GPU counters under perf/.",
+        focus=("perf_recorder",),
+    ),
+    Capability(
         "wasm",
         ("wasm",),
         "Browser host support; desktop feature-isolation compilation. The "

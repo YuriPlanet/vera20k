@@ -42,8 +42,11 @@ provide compatibility references. No Ares DLL or C# simulation is loaded.
 - `Deliver.Types` preserves duplicates and resolves existing, category-distinct
   types at the ordered rules read. Omitted or empty reads retain prior values;
   `none` clears the list. Unknown or ambiguous names are skipped.
-- `SW.Deferment` defaults to 20 frames. Negative values use the same 20-frame
-  fallback; zero delivers immediately. Pending requests freeze the payload,
+- `SW.Deferment` is the common superweapon read every Ares type shares (Ares'
+  integer parser, so `$30` is 30). Text it cannot parse leaves the value an
+  earlier layer read. Unset and negative values wait 20 frames
+  (`SW_UnitDelivery::Activate`, `10075920`); zero delivers immediately.
+  Pending requests freeze the payload,
   resolved owner, target, settings and deadline. They use the wrapping simulation
   frame clock and run newest-first in the global superweapon-effect phase.
 - `Deliver.Owner` accepts invoker, Neutral, Special and Civilian. These resolve

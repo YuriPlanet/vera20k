@@ -199,8 +199,9 @@ fn gate_piece(
     use std::cell::RefCell;
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
+    let zshape_skips = std::cell::RefCell::default();
     let presented =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
     let input = ShpInputs {
         runtime,
         frame: &presented,
@@ -208,6 +209,7 @@ fn gate_piece(
         overlay_atlas: None,
         unit_atlas: None,
         voxel_images: &voxel_images,
+        zshape_skips: &zshape_skips,
         depth_tested_images: None,
         camera: [-1000.0, -1000.0],
         render_size: [5000, 5000],

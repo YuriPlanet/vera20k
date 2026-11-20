@@ -27,7 +27,8 @@ pub use layout::{
     compute_random_map_setup_layout, compute_responsive_choose_map_modal_layout,
     compute_responsive_layout, compute_responsive_layout_for_rows,
     compute_responsive_random_map_setup_layout,
-    compute_responsive_saved_seed_layout, compute_saved_seed_layout, player_name_edit_client_rect,
+    compute_responsive_saved_seed_layout, compute_responsive_setups_layout, compute_saved_seed_layout,
+    compute_setups_layout, player_name_edit_client_rect,
     player_name_edit_text_rect, random_map_setup_control_at, random_map_setup_control_at_view,
     random_map_setup_dropdown_rect,
     random_map_setup_dropdown_row_at, saved_seed_control_at,
@@ -37,7 +38,7 @@ pub(crate) use state::status_help_key_for_hover_with_catalog;
 pub use state::{
     AcceptOutcome, ChooseMapContext, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,
     ChooseMapPrompt, ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection, favorite_key,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, RANDOM_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection, favorite_key,
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, MainRngRanged,
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
     PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, ADVANCED_RANGE, PlayerNameEditState,

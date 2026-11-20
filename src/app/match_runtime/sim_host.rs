@@ -114,6 +114,9 @@ pub(crate) struct SimHost {
     /// Every object type the local sidebar has asked of this scenario's
     /// frames ([`Self::ask_sidebar_types`]), which each frame answers.
     sidebar_types: SidebarTypes,
+    /// Whether frames capture VERA's Convenience Help status rows
+    /// ([`Self::show_status_rows`]); off, the capture skips them.
+    status_rows: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -327,6 +330,9 @@ impl SimHost {
     /// The simulation's pending radar-terrain marks
     /// (`SimRuntime::take_radar_terrain_dirty`), or `None` with none to take
     /// or no world; asked read-only first, as [`Self::take_departed_senders`].
+    /// The marks are hand-off state for the minimap that no frame records, so
+    /// taking them keeps the frame: a lent tick comes back first, as for any
+    /// write, but a frame captured since stands.
     pub(crate) fn take_radar_terrain_marks(&mut self) -> Option<Vec<(u16, u16)>> {
         if !self.lent
             && !self
@@ -335,7 +341,9 @@ impl SimHost {
         {
             return None;
         }
-        self.write_sim(SimWrite::Presentation)
+        self.reclaim(true);
+        self.runtime
+            .as_mut()
             .map(SimRuntime::take_radar_terrain_dirty)
     }
 
@@ -397,7 +405,11 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Box::new(PresentationFrame::capture(runtime, &self.sidebar_types));
+            let frame = Box::new(PresentationFrame::capture(
+                runtime,
+                &self.sidebar_types,
+                self.status_rows,
+            ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
@@ -416,6 +428,19 @@ impl SimHost {
             return;
         }
         self.sidebar_types = self.sidebar_types.union(types);
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture VERA's Convenience Help status rows, or stop.
+    /// A home frame captured the other way is dropped, so the next read
+    /// captures it; a lent tick's frame stands until the tick comes back.
+    pub(crate) fn show_status_rows(&mut self, on: bool) {
+        if self.status_rows == on {
+            return;
+        }
+        self.status_rows = on;
         if !self.lent {
             self.forget_frame();
         }
@@ -443,6 +468,18 @@ impl SimHost {
     pub(crate) fn tick_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
         self.reclaim(true);
         self.forget_frame();
+        let runtime = self.runtime.as_mut()?;
+        Some((runtime, &mut self.frame_checksums))
+    }
+
+    /// [`Self::tick_parts`] for a tick about to be lent ([`Self::lend`]):
+    /// the frame stands, so the tick publishes the frame the last read
+    /// captured instead of capturing the world again. Before it leaves, the
+    /// caller writes only what no frame records: the unit voice visit
+    /// interest, the hash interval and the profiling switch
+    /// (`sim_tick`'s threaded dispatch).
+    pub(crate) fn lend_parts(&mut self) -> Option<(&mut SimRuntime, &mut FrameChecksumState)> {
+        self.reclaim(true);
         let runtime = self.runtime.as_mut()?;
         Some((runtime, &mut self.frame_checksums))
     }
@@ -865,6 +902,28 @@ mod tests {
             .mark_radar_terrain_dirty_for_test([(3, 4)]);
         assert_eq!(host.take_radar_terrain_marks(), Some(vec![(3, 4)]));
         assert!(host.take_radar_terrain_marks().is_none());
+    }
+
+    /// A tick's tail captures the home frame for the sidebar; taking the
+    /// radar marks and setting up the next tick keep it, so lending that
+    /// tick publishes it instead of capturing the world a second time.
+    #[test]
+    fn a_tick_lent_after_its_setup_publishes_the_frame_already_captured() {
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        host.write_sim(SimWrite::Debug)
+            .unwrap()
+            .simulation
+            .mark_radar_terrain_dirty_for_test([(3, 4)]);
+        assert!(host.frame().is_some());
+        assert_eq!(host.take_radar_terrain_marks(), Some(vec![(3, 4)]));
+        let (runtime, _) = host.lend_parts().unwrap();
+        runtime
+            .simulation
+            .prepare_unit_voice_visits(Default::default());
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        assert_eq!(host.snapshot_costs.get().captures, 1);
+        assert!(host.take_job_result().is_some());
     }
 
     #[test]

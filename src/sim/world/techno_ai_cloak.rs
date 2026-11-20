@@ -377,10 +377,9 @@ fn tick_building_cloak(
     };
     match edge {
         // 0x00454E7F..0x00454E9E: the system goes through its vt+0x20 with 1.
-        Some(BuildingFadeEdge::Cloaked) => sim.delete_natural_particle_system(
-            id,
-            UninitContext::new(rules, registry).with_effects(effects),
-        ),
+        Some(BuildingFadeEdge::Cloaked) => {
+            sim.delete_natural_particle_system(id, UninitContext::new(rules).with_effects(effects))
+        }
         // 0x00454F29..0x00454F6C: with no system and a NaturalParticleLocation=
         // other than the zero coordinate (0x0089C848), Unlimbo's constructor
         // runs again. A type with a system at the zero offset gets it at
@@ -437,7 +436,7 @@ fn tick_building_cloak(
         .and_then(|entity| entity.cloak.as_mut())
         .map(|cloak| cloak.start_cloaking(now, facts.cloaking_speed, false));
     if start.is_some_and(|start| start.transitioned) {
-        start_cloaking_detach(sim, id, rules, registry, effects);
+        start_cloaking_detach(sim, id, rules, effects);
     }
     if start.is_some_and(|start| start.play_sound) {
         emit_cloak_transition_sound(sim, id, rules, false);
@@ -544,9 +543,8 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
     if fully_cloaked
         && player.is_some_and(|player| player != owner)
         && !sensor_visible_to_player(sim, id)
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
     {
-        entity.selection.deselect();
+        sim.object_deselect(id);
     }
     // 6F4F46 checks the field before invoking CanAutoCloak and its range query.
     if !owner_cloak_field_bit(sim, owner, cell.0, cell.1) {
@@ -571,7 +569,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
         // sensor-count resident callback `0x006F4EB0`, argument zero.
         .map(|cloak| cloak.start_cloaking(facts.current_frame, facts.cloaking_speed, false));
     if start.is_some_and(|start| start.transitioned) {
-        start_cloaking_detach(sim, id, rules, registry, FrameEffects::default());
+        start_cloaking_detach(sim, id, rules, FrameEffects::default());
     }
     if start.is_some_and(|start| start.play_sound) {
         emit_cloak_transition_sound(sim, id, rules, false);
@@ -581,7 +579,6 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
             targeter_id,
             Some(TargetKind::Entity(id)),
             rules,
-            registry,
             FrameEffects::default(),
         );
     }
@@ -687,22 +684,20 @@ fn start_cloaking_detach(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    sim.detach_all(
-        id,
-        false,
-        UninitContext::new(rules, registry).with_effects(effects),
-    );
+    sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
     // Detach_All's anim arm, gated per anim type by Phobos `DetachOnCloak=`
     // (`Ext/AnimType/Body.cpp:112`, hook `0x425174`).
     sim.detach_attached_anims_for_cloak(id, rules);
     let player = sim.session.current_house();
-    if let Some(entity) = sim.substrate.entities.get_mut(id)
-        && player != Some(entity.owner())
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| player != Some(entity.owner()))
     {
-        entity.selection.deselect();
+        sim.object_deselect(id);
     }
 }
 
@@ -999,7 +994,7 @@ pub(super) fn tick_stock_cloak_producer(
         .and_then(|entity| entity.cloak.as_mut())
         .map(|cloak| cloak.tick(facts, &mut sim.scenario_rng));
     if result.is_some_and(|result| result.began_cloaking) {
-        start_cloaking_detach(sim, id, rules, registry, effects);
+        start_cloaking_detach(sim, id, rules, effects);
     }
     if result.is_some_and(|result| result.completed_cloak) {
         // The 1 → 2 completion at `0x006FBA98` snapshots the still-admitted
@@ -1010,17 +1005,12 @@ pub(super) fn tick_stock_cloak_producer(
         // each receiver's passive-acquire provenance byte `+0x50C` first, which
         // `represented_assign_target_admitted` reproduces.
         let retained = sensor_targeters_in_native_dispatch_order(sim, id);
-        sim.detach_all(
-            id,
-            false,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
         for targeter_id in retained {
             let _ = sim.assign_target_represented(
                 targeter_id,
                 Some(TargetKind::Entity(id)),
                 rules,
-                registry,
                 effects,
             );
         }

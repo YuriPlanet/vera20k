@@ -10,8 +10,7 @@ use super::geometry::NativeRadarSurfaceGeometry;
 use super::helpers::{
     COLOR_SHROUD, MINIMAP_HEIGHT, MINIMAP_WIDTH, OverlayPixel, TerrainPixel, TerrainPixels,
     compute_aspect_fit, overlay_radar_color, radar_color_for_cell, radar_colors_for_cell,
-    set_pixel, structural_bridge_radar_color, terrain_brightness_for_theater,
-    world_to_minimap_pixel,
+    set_pixel, structural_bridge_radar_color, world_to_minimap_pixel,
 };
 use super::minimap::{MinimapCellRadarSource, MinimapOverlayDatum};
 use super::terrain::{NativeRadarCellColors, NativeRadarTerrainSurface};
@@ -140,7 +139,7 @@ impl MinimapPlayfieldProjection {
                 map_pixel_h,
             ))
         };
-        let terrain_brightness = terrain_brightness_for_theater(theater_name);
+        let terrain_brightness = crate::map::theater::theater_radar_brightness(theater_name);
         let mut terrain_pixels =
             Vec::with_capacity(geometry.map_or(0, |geometry| geometry.valid_cell_count));
         let mut overlays_by_cell = BTreeMap::new();

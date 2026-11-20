@@ -12,6 +12,7 @@
 //! audio/ or net/.
 
 use crate::map::resolved_terrain::TerrainTileAnimation;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::{AnimDrawRuntime, AnimWorldCoord};
 use crate::sim::components::AnimClassSpawnDescriptor;
@@ -122,6 +123,10 @@ impl<'a> SimView<'a> {
 
     pub fn entities(&self) -> &'a crate::sim::entity_store::EntityStore {
         self.simulation.entities()
+    }
+
+    pub fn control_projection(&self) -> crate::sim::world::ControlProjection<'a> {
+        self.simulation.control_projection()
     }
 
     pub fn session(&self) -> &'a crate::sim::scenario_session::ScenarioSession {
@@ -268,6 +273,7 @@ impl SimRuntime {
         command: &crate::sim::command::Command,
     ) -> bool {
         self.simulation.apply_command_with_overlays(
+            None,
             owner,
             command,
             &self.resources.rules,
@@ -713,7 +719,7 @@ mod tests {
         let mut changed_id = original.clone();
         changed_id.set_native_unique_id_for_test(None);
         assert_ne!(hash(original), hash(&changed_id));
-        restored.uninit_with_context(doomed, UninitContext::with_rules(&rules));
+        restored.uninit_with_context(doomed, UninitContext::new(&rules));
         assert_eq!(
             restored
                 .terrain_objects
@@ -722,13 +728,7 @@ mod tests {
                 .native_unique_id(),
             ids[0].1
         );
-        restored.process_pending_delete_with(
-            &rules,
-            Some(rules.overlay_registry()),
-            Default::default(),
-            1,
-            true,
-        );
+        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
         assert!(restored.terrain_objects.get(doomed).is_none());
         assert_eq!(
             restored.native_identity_cursor(),
@@ -893,7 +893,6 @@ where
         rules,
         overlay_registry,
         &map_data.basic,
-        &map_data.special_flags,
         (map_data.header.width as u16, map_data.header.height as u16),
     )?;
     Ok(())
@@ -958,7 +957,7 @@ where
         let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map_data.ini,
-            descriptor.game_mode_nonzero,
+            descriptor.rule_policy,
         );
         sim.initialize_trigger_definitions(map_data, &teams, None, None, None);
         sim.initialize_phobos_global_values(rules);
@@ -1044,7 +1043,8 @@ where
         sim,
         &map_data.terrain_objects,
         &mut construction_rules,
-        theater_name.eq_ignore_ascii_case("SNOW"),
+        crate::rules::object_image::ImageTheater::from_name(theater_name)
+            == crate::rules::object_image::ImageTheater::Snow,
         terrain_mode,
     )?;
     let rules = construction_rules.rules();
@@ -1056,7 +1056,6 @@ where
         let stats = initialize_native_tiberium_queues(
             sim,
             &map_data.basic,
-            &map_data.special_flags,
             rules,
             overlay_registry,
             (map_data.header.width as u16, map_data.header.height as u16),
@@ -1134,7 +1133,6 @@ where
 pub(crate) fn initialize_native_tiberium_queues(
     sim: &mut Simulation,
     basic: &crate::map::basic::BasicSection,
-    special_flags: &crate::map::basic::SpecialFlagsSection,
     rules: &RuleSet,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     native_rect: (u16, u16),
@@ -1143,7 +1141,7 @@ pub(crate) fn initialize_native_tiberium_queues(
     crate::rules::overlay_types::TiberiumImageError,
 > {
     sim.ore_growth_config
-        .reload_for_scenario(basic, special_flags, &sim.session);
+        .reload_for_scenario(basic, &sim.session);
     let overlay_grid = sim.overlay_grid.as_ref();
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))
@@ -1288,7 +1286,7 @@ where
             &tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            descriptor.game_mode_nonzero,
+            descriptor.rule_policy.crates(),
             &mut host,
         )
         .run(packs)?
@@ -1441,6 +1439,17 @@ pub fn map_wall_owner_candidate_from_building(
     }
 }
 
+/// Failure to finalize the initial world after its Houses have been built.
+#[derive(Debug, thiserror::Error)]
+pub enum ScenarioFinalizeError {
+    #[error(transparent)]
+    ControlGrants(#[from] crate::sim::control_authority::ControlGrantError),
+    #[error(transparent)]
+    Overlay(#[from] crate::sim::crates::RuntimeOverlayError),
+    #[error(transparent)]
+    StageCarryOver(#[from] crate::sim::campaign_carry_over::StageCarryOverError),
+}
+
 /// Post-funnel scenario finalization shared by the app loader and the
 /// headless loader (F09). The ordering is part of the construction contract:
 /// ore-spawner terrain seeding, map-wall owner reconstruction from the
@@ -1451,11 +1460,13 @@ pub fn finalize_constructed_scenario(
     map_data: &crate::map::map_file::MapFile,
     rules: &RuleSet,
     house_roster: &crate::map::houses::HouseRoster,
+    construction_rules: RulePolicy,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-) -> Result<
-    crate::sim::scenario_post_map::ScenarioPostMapOutput,
-    crate::sim::crates::RuntimeOverlayError,
-> {
+    stage_carry_over: Option<&crate::sim::campaign_carry_over::StageCarryOver>,
+) -> Result<crate::sim::scenario_post_map::ScenarioPostMapOutput, ScenarioFinalizeError> {
+    if let Some(launch) = skirmish_session {
+        sim.install_control_grants(launch.control_grants().to_vec())?;
+    }
     // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
     // fresh Set_Defaults true (0x00683610); only Ares' visceroid reads it,
     // so a game without Ares keeps the default.
@@ -1540,11 +1551,7 @@ pub fn finalize_constructed_scenario(
     }
     // The caller submits one immutable initialization command; Simulation owns
     // every match-affecting write and Scenario RNG draw in the post-map tail.
-    let campaign_map = sim
-        .session
-        .campaign_mission_counter()
-        .filter(|_| !sim.session.game_mode_nonzero())
-        .map(|_| map_data);
+    let campaign_map = sim.session.campaign_mission_counter().map(|_| map_data);
     let output =
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
@@ -1553,13 +1560,17 @@ pub fn finalize_constructed_scenario(
             rules,
             overlay_registry,
             house_roster,
+            construction_rules,
             skirmish_session,
             campaign_map,
+            stage_home_global: stage_carry_over
+                .and_then(|record| record.globals())
+                .map(|globals| globals[0]),
         })?;
-    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(
-        rules,
-        Some(overlay_registry),
-    ));
+    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(rules));
+    if let Some(record) = stage_carry_over {
+        sim.restore_stage_carry_over(record, rules)?;
+    }
     // Fresh source changes and Anim intensity reads transfer together to the
     // lighting owner. Discarding this prefix loses pre-building CellAnim light.
     Ok(output)
@@ -1592,7 +1603,16 @@ fn finalization_keeps_populated_neighbor_counts() {
         .unwrap()
         .retained_neighbor_counts()
         .to_vec();
-    finalize_constructed_scenario(&mut sim, &map, &rules, &roster, None).unwrap();
+    finalize_constructed_scenario(
+        &mut sim,
+        &map,
+        &rules,
+        &roster,
+        RulePolicy::stock_campaign(),
+        None,
+        None,
+    )
+    .unwrap();
     assert_eq!(
         sim.overlay_grid
             .as_ref()

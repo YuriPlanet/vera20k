@@ -102,25 +102,20 @@ fn map_wall(sim: &mut Simulation, overlay: u8, data: u8) {
 }
 
 /// The class `Can_Enter_Cell` code of mover `id` for the wall cell (16, 15).
-fn entry(
-    sim: &Simulation,
-    rules: &RuleSet,
-    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-    id: u64,
-) -> Result<u8, String> {
+fn entry(sim: &Simulation, rules: &RuleSet, id: u64) -> Result<u8, String> {
     let cell = sim
         .resolved_terrain
         .as_ref()
         .unwrap()
         .native_cell_identity((16, 15));
-    sim.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules, Some(registry))
+    sim.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules)
 }
 
 #[test]
 fn a_wall_built_in_play_refuses_a_mover_that_cannot_shoot_it() {
     let (mut sim, rules, registry) = wall_fixture();
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(0));
+        assert_eq!(entry(&sim, &rules, id), Ok(0));
     }
     assert!(
         sim.spawn_object_at_height_with_overlay_registry(
@@ -137,7 +132,7 @@ fn a_wall_built_in_play_refuses_a_mover_that_cannot_shoot_it() {
     );
     // Unarmed: Infantry `0x0051C1EB`, Unit `0x0073F48F`.
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(7), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(7), "{id}");
     }
 }
 
@@ -146,7 +141,7 @@ fn a_map_wall_destroyed_in_play_admits_movers_again() {
     let (mut sim, rules, registry) = wall_fixture();
     map_wall(&mut sim, 2, 0);
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(7), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(7), "{id}");
     }
     let destroyed = damage_wall_overlay_with_terrain(
         sim.overlay_grid.as_mut().unwrap(),
@@ -159,17 +154,17 @@ fn a_map_wall_destroyed_in_play_admits_movers_again() {
     );
     assert_eq!(destroyed.destroyed_cells, vec![(16, 15)]);
     for id in [ENGINEER, TRUCK] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(0), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(0), "{id}");
     }
 }
 
 #[test]
 fn a_mover_that_can_shoot_a_wall_prices_it_by_its_owner() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     map_wall(&mut sim, 2, 0);
     // Unowned: `Is_Ally_ByIndex` (`0x004F9A10`) rejects index -1.
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(5), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(5), "{id}");
     }
     let owner = sim.intern("Americans");
     sim.overlay_grid
@@ -177,7 +172,7 @@ fn a_mover_that_can_shoot_a_wall_prices_it_by_its_owner() {
         .unwrap()
         .set_wall_owner(16, 15, owner);
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(4), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(4), "{id}");
     }
     // A house that names the mover's House an ally: only the mover's own
     // Allies bits count.
@@ -191,48 +186,48 @@ fn a_mover_that_can_shoot_a_wall_prices_it_by_its_owner() {
         .or_default()
         .insert("AMERICANS".into());
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(5), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(5), "{id}");
     }
     sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("RUSSIANS".into());
     for id in [WALLI, WALLV] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(4), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(4), "{id}");
     }
 }
 
 #[test]
 fn only_a_unit_takes_the_wood_route_against_a_wooden_wall() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     map_wall(&mut sim, 3, 0);
     // Unit `0x0073F4B3..0x0073F4C4`: `Wood=` against `Armor=wood`.
-    assert_eq!(entry(&sim, &rules, &registry, WOODV), Ok(5));
+    assert_eq!(entry(&sim, &rules, WOODV), Ok(5));
     // Infantry asks `0x00772AC0`, which tests `Wall=` alone.
-    assert_eq!(entry(&sim, &rules, &registry, WOODI), Ok(7));
+    assert_eq!(entry(&sim, &rules, WOODI), Ok(7));
     map_wall(&mut sim, 2, 0);
-    assert_eq!(entry(&sim, &rules, &registry, WOODV), Ok(7));
+    assert_eq!(entry(&sim, &rules, WOODV), Ok(7));
 }
 
 #[test]
 fn infantry_ignores_a_wall_at_its_last_damage_stage() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     // Damage stage 3 of `DamageLevels=3` (`0x0051C1C9..0x0051C1DC`).
     map_wall(&mut sim, 2, 0x30);
     for id in [WALLI, ENGINEER] {
-        assert_eq!(entry(&sim, &rules, &registry, id), Ok(0), "{id}");
+        assert_eq!(entry(&sim, &rules, id), Ok(0), "{id}");
     }
     // The Unit arm has no such test.
-    assert_eq!(entry(&sim, &rules, &registry, WALLV), Ok(5));
+    assert_eq!(entry(&sim, &rules, WALLV), Ok(5));
     map_wall(&mut sim, 2, 0x20);
-    assert_eq!(entry(&sim, &rules, &registry, ENGINEER), Ok(7));
+    assert_eq!(entry(&sim, &rules, ENGINEER), Ok(7));
 }
 
 #[test]
 fn the_land_row_refuses_after_the_wall_arm() {
-    let (mut sim, rules, registry) = wall_fixture();
+    let (mut sim, rules, _) = wall_fixture();
     map_wall(&mut sim, 2, 0);
-    assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(5));
+    assert_eq!(entry(&sim, &rules, WALLI), Ok(5));
     // The arm accumulates 5, then the ground row read after the object list
     // (Infantry `0x0051C750`) refuses whatever it accumulated.
     sim.resolved_terrain
@@ -242,7 +237,7 @@ fn the_land_row_refuses_after_the_wall_arm() {
         .unwrap()
         .speed_costs
         .foot = Some(crate::rules::terrain_rules::test_speed_percent(0));
-    assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(7));
+    assert_eq!(entry(&sim, &rules, WALLI), Ok(7));
 }
 
 /// Ordinary authored CAFNCB and MTNK/AP, without spawned actors, supplied
@@ -1019,7 +1014,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         );
         // Original native controls reseed all three streams after setup. These
         // explicit component inputs do not claim native whole-load RNG parity.
-        sim.process_pending_delete_with(rules, Some(registry), FrameEffects::default(), 0, true);
+        sim.process_pending_delete_with(rules, FrameEffects::default(), 0, true);
         for expected in case["initial_patch"].as_array().unwrap() {
             assert_cell(sim, expected, &neighbor_domain);
         }
@@ -1220,13 +1215,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                 &sim.dirty_cells.tactical_for_test()[tactical_start..],
                 expected_tactical
             );
-            sim.process_pending_delete_with(
-                rules,
-                Some(registry),
-                FrameEffects::default(),
-                0,
-                true,
-            );
+            sim.process_pending_delete_with(rules, FrameEffects::default(), 0, true);
             assert_eq!(rng(sim), step["after"]["rng"]);
             assert_eq!(
                 json!(sim.substrate.pending_delete.len()),

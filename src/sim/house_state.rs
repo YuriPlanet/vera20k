@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::playfield::local_to_packed_cell;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
 use crate::sim::houses::Houses;
@@ -1257,6 +1258,12 @@ impl HouseState {
         self.player_control = true;
     }
 
+    /// An authored lockstep role makes its primary House human. The map's
+    /// PlayerControl byte remains independent of the source's order authority.
+    pub(crate) fn admit_campaign_role(&mut self) {
+        self.is_human = true;
+    }
+
     /// The House's reinforcement edge ([`determine_waypoint_edge`]).
     pub(crate) fn assign_waypoint_edge(&mut self, edge: u8) {
         self.waypoint_edge = edge;
@@ -1391,7 +1398,10 @@ impl HouseState {
 
     // ---- Sub-owners: their own operations carry the rules ----------------
 
-    pub(crate) fn tracking_mut(&mut self) -> &mut crate::sim::house_tracking::HouseTracking {
+    pub(super) fn tracking_mut(
+        &mut self,
+        _: crate::sim::house_tracking::TrackingWrite,
+    ) -> &mut crate::sim::house_tracking::HouseTracking {
         &mut self.tracking
     }
 
@@ -1811,6 +1821,16 @@ impl HouseState {
 
     pub const fn economy(&self) -> &Economy {
         &self.economy
+    }
+
+    /// `HouseClass::Available_Storage @ 0x004F69D0`: the storage capacity
+    /// (`+0x310`) minus the House store's total (`+0x2FC`,
+    /// `StorageClass::GetTotalAmount`), which only Ares fills
+    /// (`sim::ares_tiberium_storage`).
+    pub(crate) fn available_storage(&self) -> i32 {
+        self.tracking
+            .storage_capacity()
+            .wrapping_sub(self.economy.ares_storage().house_store().total_amount())
     }
 
     pub const fn strategy_emergency(&self) -> &HouseStrategyEmergencyState {
@@ -2772,7 +2792,7 @@ impl HouseState {
         difficulty: HouseDifficulty,
         general: &crate::rules::ruleset::GeneralRules,
         country: crate::rules::ruleset::CountryDifficultyBiases,
-        game_mode_nonzero: bool,
+        policy: RulePolicy,
         array_index: i32,
         frame: i32,
     ) {
@@ -2786,7 +2806,7 @@ impl HouseState {
             if speed_scaled {
                 value = X::mul(value, X::load_f64(bias));
             }
-            if game_mode_nonzero {
+            if policy.uses_country_difficulty_biases() {
                 value = X::mul(value, X::load_f64(country));
             }
             X::store_f64_masked_chop(value)
@@ -2899,21 +2919,8 @@ impl HouseState {
     /// Unlimbo BasePlan satisfaction and the early House-update activation.
     /// `HouseClass::IsControlledByHuman @ 0x0050B730` supplies the former;
     /// `HouseClass__Update @ 0x004F8440` inlines the same branch shape.
-    pub const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
-        self.is_human || (!game_mode_nonzero && self.player_control)
-    }
-
-    /// HouseClass's power (AI_AssessPower508CBD..508CF0), radar
-    /// (UpdateTacticalRadarAvailability508ECD..508EF1) and SpySat
-    /// (Update_SpySat508FA2..508FDF) scans share this discovery admission.
-    /// Source: original gamemd instructions. Noncampaign scans admit hidden
-    /// providers, including the current player's; campaign computer Houses
-    /// do too. Only controlled campaign Houses require Techno+41B.
-    pub(crate) const fn building_services_require_discovery(
-        &self,
-        game_mode_nonzero: bool,
-    ) -> bool {
-        !game_mode_nonzero && self.is_controlled_by_human(game_mode_nonzero)
+    pub const fn is_controlled_by_human(&self, policy: RulePolicy) -> bool {
+        self.is_human || (policy.counts_player_control_as_human() && self.player_control)
     }
 
     /// The cell the house bases itself around: the alternate base centre
@@ -2993,8 +3000,8 @@ impl HouseState {
     /// accepts any nonzero AutoBaseBuilding or signed `CurrentIQ >=
     /// Rules+0x143C`, then writes AutoBaseBuilding, Production, and
     /// AutocreateAllowed in that order without touching AITriggersActive.
-    pub(crate) fn update_ai_activation(&mut self, game_mode_nonzero: bool, iq_production: i32) {
-        if self.is_controlled_by_human(game_mode_nonzero)
+    pub(crate) fn update_ai_activation(&mut self, policy: RulePolicy, iq_production: i32) {
+        if self.is_controlled_by_human(policy)
             || (!self.ai_activation.auto_base_building && self.current_iq < iq_production)
         {
             return;
@@ -3092,15 +3099,18 @@ impl HouseState {
     }
 
     /// HouseClass::Update4F85BE/4F86FE admits the whole-Vox wait on
-    /// exact zero of+298. Campaign victory also requires AllowWin+27C<=0.
+    /// exact zero of+298. The victory arm at 4F85FF/4F8605 compares
+    /// the AllowWin count at +27C signed when the policy requires it.
     pub(crate) fn pending_outcome(
         &self,
         frame: i32,
-        game_mode_nonzero: bool,
+        policy: RulePolicy,
     ) -> Option<HouseOutcomeKind> {
         let kind = self.outcome()?.kind;
         (self.allow_win_timer.expired(frame)
-            && (kind == HouseOutcomeKind::Defeat || game_mode_nonzero || self.allow_win_tags <= 0))
+            && (kind == HouseOutcomeKind::Defeat
+                || !policy.victory_requires_cleared_allow_win_tags()
+                || self.allow_win_tags <= 0))
             .then_some(kind)
     }
 
@@ -3561,7 +3571,10 @@ mod ai_activation_latch_tests {
             house.ai_activation.ai_triggers_active = true;
             house.ai_activation.auto_base_building = auto_base;
 
-            house.update_ai_activation(true, threshold);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                threshold,
+            );
 
             assert_eq!(house.ai_activation.production, expected);
             assert_eq!(house.ai_activation.autocreate_allowed, expected);
@@ -3577,7 +3590,8 @@ mod ai_activation_latch_tests {
     fn house_ai_activation_uses_mode_sensitive_control_predicate() {
         let mut campaign_current = HouseState::new(Default::default(), 0, None, true, 0, 10);
         campaign_current.current_iq = 5;
-        campaign_current.update_ai_activation(false, 5);
+        campaign_current
+            .update_ai_activation(crate::rules::rule_policy::RulePolicy::stock_campaign(), 5);
         assert_eq!(
             campaign_current.ai_activation,
             HouseAiActivationLatches::default()
@@ -3587,21 +3601,28 @@ mod ai_activation_latch_tests {
             HouseState::new(Default::default(), 0, None, false, 0, 10);
         campaign_player_control.player_control = true;
         campaign_player_control.current_iq = 5;
-        campaign_player_control.update_ai_activation(false, 5);
+        campaign_player_control
+            .update_ai_activation(crate::rules::rule_policy::RulePolicy::stock_campaign(), 5);
         assert_eq!(
             campaign_player_control.ai_activation,
             HouseAiActivationLatches::default()
         );
 
         let mut skirmish_player_control = campaign_player_control.clone();
-        skirmish_player_control.update_ai_activation(true, 5);
+        skirmish_player_control.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert!(skirmish_player_control.ai_activation.production);
         assert!(skirmish_player_control.ai_activation.autocreate_allowed);
         assert!(skirmish_player_control.ai_activation.auto_base_building);
 
         let mut skirmish_current = HouseState::new(Default::default(), 0, None, true, 0, 10);
         skirmish_current.current_iq = 5;
-        skirmish_current.update_ai_activation(true, 5);
+        skirmish_current.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             skirmish_current.ai_activation,
             HouseAiActivationLatches::default()
@@ -3619,11 +3640,17 @@ mod ai_activation_latch_tests {
             auto_base_building: false,
         };
         let below_threshold = split.ai_activation;
-        split.update_ai_activation(true, 5);
+        split.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(split.ai_activation, below_threshold);
 
         split.current_iq = 5;
-        split.update_ai_activation(true, 5);
+        split.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             split.ai_activation,
             HouseAiActivationLatches {
@@ -3638,7 +3665,10 @@ mod ai_activation_latch_tests {
         deployed.current_iq = i32::MIN;
         deployed.enable_ai_deploy_latches();
         assert!(!deployed.ai_activation.autocreate_allowed);
-        deployed.update_ai_activation(true, 5);
+        deployed.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             deployed.ai_activation,
             HouseAiActivationLatches {
@@ -3660,9 +3690,15 @@ mod ai_activation_latch_tests {
             house.difficulty = difficulty;
             house.economy.add_credits(4321);
 
-            house.update_ai_activation(true, 5);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                5,
+            );
             let once = house.ai_activation;
-            house.update_ai_activation(true, 5);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                5,
+            );
 
             assert_eq!(house.ai_activation, once);
             assert_eq!(
@@ -3686,6 +3722,8 @@ mod ai_activation_latch_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
 
     #[test]
     fn flag_to_die_producer_and_update_gate_match_original_execution() {
@@ -3761,9 +3799,10 @@ mod outcome_tests {
     #[test]
     fn gsi_01_04_savour_gates_exact_frame_and_defeat_restarts_pending_victory() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let policy = ScenarioGameMode::Skirmish.stock_rule_policy(None);
         assert!(house.accept_win_result(100, 90, false));
-        assert!(!house.pending_outcome(189, true).is_some());
-        assert!(house.pending_outcome(190, true).is_some());
+        assert!(house.pending_outcome(189, policy).is_none());
+        assert!(house.pending_outcome(190, policy).is_some());
 
         let mut replaced = HouseState::new(Default::default(), 0, None, true, 0, 10);
         assert!(replaced.accept_win_result(100, 90, false));
@@ -3789,26 +3828,32 @@ mod outcome_tests {
     #[test]
     fn announce_preserves_the_shared_timer_and_campaign_allow_win_gate() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let policy = ScenarioGameMode::Campaign.stock_rule_policy(None);
         let paused = crate::sim::timer::CdTimer::from_raw(-1, 60);
         house.supply_allow_win_tag_state(1, paused);
         assert!(house.accept_win_result(100, 90, true));
         assert_eq!(house.outcome_timer(), paused, "67 must not write a timer");
-        assert!(!house.pending_outcome(1000, false).is_some());
+        assert!(house.pending_outcome(1000, policy).is_none());
         house.resume_result_timer(1000);
         assert_eq!(house.outcome_timer().duration(), 60);
         assert!(
-            !house.pending_outcome(1060, false).is_some(),
+            house.pending_outcome(1060, policy).is_none(),
             "AllowWin count blocks Win"
         );
+        let ungated = policy.with_allow_win_tags(AllowWinTagsPolicy::Ignore);
+        assert_eq!(
+            house.pending_outcome(1060, ungated),
+            Some(HouseOutcomeKind::Victory)
+        );
         house.removed_allow_win_tag(1060);
-        assert!(!house.pending_outcome(1119, false).is_some());
-        assert!(house.pending_outcome(1120, false).is_some());
+        assert!(house.pending_outcome(1119, policy).is_none());
+        assert!(house.pending_outcome(1120, policy).is_some());
 
         let mut loss = HouseState::new(Default::default(), 0, None, true, 0, 10);
         loss.supply_allow_win_tag_state(5, crate::sim::timer::CdTimer::default());
         assert!(loss.accept_lose_result(0, 90, true));
         assert!(
-            loss.pending_outcome(0, false).is_some(),
+            loss.pending_outcome(0, policy).is_some(),
             "68 preserves expired ctor timer; no AllowWin gate"
         );
     }
@@ -3817,6 +3862,32 @@ mod outcome_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod difficulty_tests {
     use super::{HouseDifficulty, HouseState, NativeF64Bits};
+
+    #[test]
+    fn campaign_can_admit_country_difficulty_biases() {
+        use crate::rules::ruleset::{CountryDifficultyBiases, GeneralRules};
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
+        let general = GeneralRules::default();
+        let country = CountryDifficultyBiases {
+            rof: NativeF64Bits::from_bits(0.5f64.to_bits()),
+            ..CountryDifficultyBiases::default()
+        };
+        let campaign_policy = ScenarioGameMode::Campaign.stock_rule_policy(None);
+        let skirmish_policy = ScenarioGameMode::Skirmish.stock_rule_policy(None);
+        let mut rof_for = |policy| {
+            house.set_difficulty(HouseDifficulty::Normal, &general, country, policy, 0, 0);
+            house.rof_bias()
+        };
+        let campaign_rof = rof_for(campaign_policy);
+        let skirmish_rof = rof_for(skirmish_policy);
+        assert_ne!(campaign_rof, skirmish_rof);
+        assert_eq!(
+            rof_for(campaign_policy.with_uses_country_difficulty_biases(true)),
+            skirmish_rof
+        );
+    }
 
     #[test]
     fn native_difficulty_values_are_hardest_first() {
@@ -3895,7 +3966,10 @@ mod difficulty_tests {
                         build_time: scalar("build_time"),
                     }
                 },
-                input["mode"].as_i64().unwrap() != 0,
+                crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                    input["mode"].as_i64().unwrap() as i32,
+                )
+                .stock_rule_policy(None),
                 input["array_index"].as_i64().unwrap() as i32,
                 100,
             );

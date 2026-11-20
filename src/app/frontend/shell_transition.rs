@@ -155,7 +155,8 @@ impl ShellSlideKind {
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options slides VERA's page buttons and its Mods button under
     /// retail's Keyboard.
-    /// Skirmish slides VERA's Game Options between Start Game and Choose Map.
+    /// Skirmish slides VERA's Game Options between Start Game and Choose Map,
+    /// and VERA's Setups under Choose Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -168,7 +169,7 @@ impl ShellSlideKind {
                         .stacked
                         .len() as u32
                 }
-                ShellSlideKind::Skirmish => spec.top_buttons + 1,
+                ShellSlideKind::Skirmish => spec.top_buttons + 2,
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -288,9 +289,9 @@ pub(crate) enum ShellExitThen {
     ChooseMapUse(crate::ui::skirmish_shell::ChooseMapSelection),
     /// Choose Map Cancel: `0x6B` slides out and `0x102` shows again.
     ChooseMapCancel,
-    /// Choose Map Create Random Map: `0x6B` slides out and hides
-    /// (`0x005E6A03..0x005E6A0B`) before the random-map dialog runs.
-    ChooseMapRandomMap,
+    /// Open the generator after Choose Map slides out. Use Map from the
+    /// Random Maps folder loads and accepts the selected seed.
+    ChooseMapRandomMap(Option<crate::map::rmg::saved_seeds::SavedSeedFile>),
     /// Random map Use Map: `0x105` slides out (`0x00595C42` ->
     /// `0x00622720`), then the chooser selects the map and runs its Use Map
     /// (`0x005E6A16..0x005E6B2F`) while it stays hidden.
@@ -381,7 +382,7 @@ impl ShellExitThen {
             | Self::NetworkSetupChooseMap(dialog)
             | Self::NetworkStart { dialog, .. } => ShellSlideKind::NetworkSetup(*dialog),
             Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
-            Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
+            Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap(_) => {
                 ShellSlideKind::ChooseMap
             }
             Self::RandomMapUse | Self::RandomMapCancel => ShellSlideKind::RandomMap,
@@ -1013,7 +1014,8 @@ pub(crate) fn skirmish_slide_target(
 ) -> Option<ShellSlideKind> {
     use crate::ui::skirmish_shell::SkirmishShellDialog;
     Some(match shell.top_dialog()? {
-        SkirmishShellDialog::Skirmish => ShellSlideKind::Skirmish,
+        // VERA's Setups page covers `0x102` without a slide of its own.
+        SkirmishShellDialog::Skirmish | SkirmishShellDialog::Setups => ShellSlideKind::Skirmish,
         SkirmishShellDialog::ChooseMap => ShellSlideKind::ChooseMap,
         SkirmishShellDialog::RandomMap | SkirmishShellDialog::SeedBrowser => {
             ShellSlideKind::RandomMap
@@ -1579,8 +1581,8 @@ mod tests {
         );
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
         // Retail `0x102` slides Start Game and Choose Map; VERA's Game Options
-        // slides between them.
-        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (3, true, true));
+        // slides between them and its Setups under them.
+        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA leaves Network out
         // and slides its six page buttons under Keyboard, then its Mods
         // button where the build has mods.

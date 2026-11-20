@@ -1170,11 +1170,10 @@ pub enum DeliveryOwner {
 }
 
 /// UnitDelivery settings. No setting changes stock superweapon behavior.
+/// Its delay is the common `SW.Deferment` read (`AresSuperWeaponLaunch`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct UnitDeliveryRules {
     pub types: Vec<DeliveryType>,
-    /// Effective frame delay; the Ares negative sentinel is normalized to 20.
-    pub deferment: i32,
     pub owner: DeliveryOwner,
     pub base_normal: bool,
     pub activation_sound: Option<String>,
@@ -1184,7 +1183,6 @@ impl Default for UnitDeliveryRules {
     fn default() -> Self {
         Self {
             types: Vec::new(),
-            deferment: 20,
             owner: DeliveryOwner::Invoker,
             base_normal: true,
             activation_sound: None,
@@ -1340,7 +1338,9 @@ pub(crate) struct AresSuperWeaponLaunch {
     #[serde(default)]
     mutate: AresMutateRules,
     /// `SW.Deferment` (Nullable<int> +0x254), read by every type; the
-    /// Dominator's state machine waits it out (Activate 100707C0).
+    /// Dominator's state machine waits it out (Activate 100707C0), and
+    /// UnitDelivery's (Activate 10075920) waits 20 frames when it is unset
+    /// or negative.
     #[serde(default)]
     deferment: Option<i32>,
     /// SW_PsychicDominator's fields (Initialize 10070990, LoadFromINI 10070A40).
@@ -1457,6 +1457,12 @@ impl AresParaDropPlane {
     }
 }
 
+/// VERA's bound on a `ParaDrop*.Count=`. Ares resizes the plane list by the
+/// raw value (`SW_ParaDrop::LoadFromINI`'s GetParadropPlane, no upper bound),
+/// so a value near `i32::MAX` exhausts memory there. Outside data never stops
+/// the game: the count clamps here, far above any drop a mod flies.
+const PARADROP_PLANE_LIMIT: i32 = 1024;
+
 impl AresParaDropRules {
     /// The planes kept for `owner`, if LoadFromINI inserted its list.
     pub(crate) fn planes(&self, owner: &AresParaDropOwner) -> Option<&[AresParaDropPlane]> {
@@ -1509,7 +1515,8 @@ impl AresParaDropRules {
     /// many as its Side's). Each goes through GetParadropPlane (100739E0):
     /// `.Count` (ReadInteger, default the list's size, or the count above
     /// for a new list) resizes the list, a negative count to none, and each
-    /// plane is parsed in place ([`AresParaDropPlane::read`]). Keys are
+    /// plane is parsed in place ([`AresParaDropPlane::read`]); VERA clamps the
+    /// count at [`PARADROP_PLANE_LIMIT`]. Keys are
     /// composed in 0x40-byte buffers, which 25-byte type IDs cannot fill.
     pub(crate) fn read_pass(
         &mut self,
@@ -1523,8 +1530,11 @@ impl AresParaDropRules {
         let mut read = |owner, base: &str, new_count: usize| {
             let (planes, inserted) = self.try_emplace(owner);
             let current = if inserted { new_count } else { planes.len() };
-            let count = section.read_int(&format!("{base}.Count"), current as i32);
-            planes.resize(count.max(0) as usize, AresParaDropPlane::default());
+            let current = i32::try_from(current).unwrap_or(PARADROP_PLANE_LIMIT);
+            let count = section
+                .read_int(&format!("{base}.Count"), current)
+                .clamp(0, PARADROP_PLANE_LIMIT);
+            planes.resize(count as usize, AresParaDropPlane::default());
             for (index, plane) in planes.iter_mut().enumerate() {
                 plane.read(section, base, index, &aircraft, &types);
             }
@@ -2797,6 +2807,33 @@ mod tests {
             (2.5, 9.25)
         );
         assert_eq!(rules.super_weapon("B").unwrap().money_amount, 500);
+    }
+
+    /// `ParaDrop.Count=` and its Side and Country variants clamp at VERA's
+    /// plane bound instead of sizing the list by the raw value.
+    #[test]
+    fn paradrop_counts_clamp_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Drop]\nParaDrop.Count=1000000\nParaDrop.Soviet.Count=-5\n\
+             ParaDrop.Russians.Count=1000000\n",
+        );
+        let mut paradrop = AresParaDropRules::default();
+        paradrop.read_pass(
+            ini.section_or_empty("Drop"),
+            &["Soviet".to_owned()],
+            &[("Russians".to_owned(), 0)],
+            |_| None,
+            |_| None,
+        );
+        let count = |owner| paradrop.planes(&owner).map(<[_]>::len);
+        let limit = Some(PARADROP_PLANE_LIMIT as usize);
+        assert_eq!(count(AresParaDropOwner::Default), limit);
+        assert_eq!(count(AresParaDropOwner::Side(0)), Some(0));
+        assert_eq!(
+            count(AresParaDropOwner::Country("Russians".to_owned())),
+            limit
+        );
     }
 
     #[test]

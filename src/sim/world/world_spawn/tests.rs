@@ -4,26 +4,26 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::rng::SimRng;
 
+const CONSTRUCTOR_RULES: &str = "[InfantryTypes]\n0=E1\n1=SLAV\n\n\
+     [VehicleTypes]\n0=MTNK\n1=CARRIER\n2=SMIN\n\n\
+     [AircraftTypes]\n0=ORCA\n1=HORN\n\n\
+     [BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n3=YAREFN\n4=ANYWHERE\n\n\
+     [E1]\nStrength=100\nSpeed=4\n\n\
+     [SLAV]\nStrength=125\nSpeed=4\nStorage=4\n\n\
+     [MTNK]\nStrength=300\nSpeed=6\n\n\
+     [CARRIER]\nStrength=800\nSpeed=4\nSpawns=HORN\nSpawnsNumber=3\nSpawnRegenRate=600\nSpawnReloadRate=25\n\n\
+     [SMIN]\nStrength=2000\nSpeed=3\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
+     [ORCA]\nStrength=200\nSpeed=8\n\n\
+     [HORN]\nStrength=75\nSpeed=14\nAmmo=1\n\n\
+     [BASE]\nStrength=500\nFoundation=2x2\n\n\
+     [UP1]\nStrength=100\nFoundation=1x1\n\n\
+     [UP2]\nStrength=100\nFoundation=1x1\n\n\
+     [YAREFN]\nStrength=2000\nFoundation=2x2\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
+     [ANYWHERE]\nStrength=1\nFoundation=1x1\nPlaceAnywhere=yes\n";
+
 fn constructor_rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=E1\n1=SLAV\n\n\
-         [VehicleTypes]\n0=MTNK\n1=CARRIER\n2=SMIN\n\n\
-         [AircraftTypes]\n0=ORCA\n1=HORN\n\n\
-         [BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n3=YAREFN\n4=ANYWHERE\n\n\
-         [E1]\nStrength=100\nSpeed=4\n\n\
-         [SLAV]\nStrength=125\nSpeed=4\nStorage=4\n\n\
-         [MTNK]\nStrength=300\nSpeed=6\n\n\
-         [CARRIER]\nStrength=800\nSpeed=4\nSpawns=HORN\nSpawnsNumber=3\nSpawnRegenRate=600\nSpawnReloadRate=25\n\n\
-         [SMIN]\nStrength=2000\nSpeed=3\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
-         [ORCA]\nStrength=200\nSpeed=8\n\n\
-         [HORN]\nStrength=75\nSpeed=14\nAmmo=1\n\n\
-         [BASE]\nStrength=500\nFoundation=2x2\n\n\
-         [UP1]\nStrength=100\nFoundation=1x1\n\n\
-         [UP2]\nStrength=100\nFoundation=1x1\n\n\
-         [YAREFN]\nStrength=2000\nFoundation=2x2\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
-         [ANYWHERE]\nStrength=1\nFoundation=1x1\nPlaceAnywhere=yes\n",
-    ))
-    .expect("constructor fixture rules parse")
+    RuleSet::from_ini(&IniFile::from_str(CONSTRUCTOR_RULES))
+        .expect("constructor fixture rules parse")
 }
 
 /// Eight original51DFF0 floor/Place controls, including full Scenario buffers.
@@ -276,7 +276,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {
         let raw_z = row["input"]["raw_z"].as_i64().unwrap() as i32;
-        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture();
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture();
         let id = sim
             .construct_object_limbo_at_height(
                 "ENGINEER",
@@ -305,9 +305,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
         let outcome = sim.try_reveal_entity_with_context(
             id,
             request,
-            UninitContext::with_rules(&rules)
-                .with_registry(Some(&registry))
-                .with_unlimbo_facing(Some(128)),
+            UninitContext::new(&rules).with_unlimbo_facing(Some(128)),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         let entity = sim.substrate.entities.get(id).unwrap();
@@ -353,7 +351,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
             sim.try_reveal_entity_with_context(
                 failed,
                 refused,
-                UninitContext::with_rules(&rules).with_unlimbo_facing(Some(128))
+                UninitContext::new(&rules).with_unlimbo_facing(Some(128))
             ),
             RevealOutcome::Failed(_)
         ));
@@ -1634,22 +1632,22 @@ fn assert_generated_projection_rejects_before_mutation(
     }
 }
 
-fn constructor_overlay_registry() -> crate::rules::overlay_types::OverlayTypeRegistry {
-    crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
-        &IniFile::from_str(
-            "[OverlayTypes]\n0=TESTORE\n1=TESTWALL\n\
-             [TESTORE]\nTiberium=yes\nLand=Tiberium\n\
-             [TESTWALL]\nWall=yes\nCrushable=yes\nLand=Wall\n",
-        ),
-        None,
-    )
+/// The constructor rules with an ore and a wall OverlayType: the match's
+/// overlay table is its rules'.
+fn constructor_overlay_rules() -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "{CONSTRUCTOR_RULES}\n[OverlayTypes]\n0=TESTORE\n1=TESTWALL\n\
+         [TESTORE]\nTiberium=yes\nLand=Tiberium\n\
+         [TESTWALL]\nWall=yes\nCrushable=yes\nLand=Wall\n"
+    )))
+    .expect("constructor overlay rules parse")
 }
 
 #[test]
 fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
     let seed = 0xC701_0017;
-    let rules = constructor_rules();
-    let registry = constructor_overlay_registry();
+    let rules = constructor_overlay_rules();
+    let registry = rules.overlay_registry();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
@@ -1701,7 +1699,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
             ],
             &rules,
             None,
-            Some(&registry),
+            Some(registry),
         ),
         2,
     );
@@ -1731,7 +1729,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
             ore_runtime.1,
             0,
             &rules,
-            &registry,
+            registry,
         )
         .expect("non-wall overlay must not veto runtime Unit Unlimbo");
     assert_eq!(
@@ -1752,8 +1750,8 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
 #[test]
 fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spent() {
     let seed = 0xC701_0018;
-    let rules = constructor_rules();
-    let registry = constructor_overlay_registry();
+    let rules = constructor_overlay_rules();
+    let registry = rules.overlay_registry();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
     install_constructor_flat_terrain(&mut sim);
@@ -1798,7 +1796,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
             7,
             PlacementEvidence::EvaluateMark,
             &rules,
-            Some(&registry),
+            Some(registry),
             crate::sim::world::FrameEffects::default(),
         )
         .is_none()
@@ -2845,7 +2843,7 @@ fn authored_upgrade_turret_waits_for_the_host_to_aim_before_firing() {
     let desired = fire_coord::building_direction_to(&sim, &rules, host, target).unwrap();
     assert!(i32::from(initial.wrapping_sub(desired) as i16).abs() > 0x0800);
     assert_eq!(
-        sim.selected_weapon_fire_error(&rules, 1, target, true, None),
+        sim.selected_weapon_fire_error(&rules, 1, target, true),
         FireError::Facing,
         "an installed turret must admit the native facing gate",
     );
@@ -2878,7 +2876,7 @@ fn authored_upgrade_turret_waits_for_the_host_to_aim_before_firing() {
                 "GetFireFacing44D80A must use the host Current for an installed turret",
             );
         }
-        let before = sim.selected_weapon_fire_error(&rules, 1, target, true, None);
+        let before = sim.selected_weapon_fire_error(&rules, 1, target, true);
         let output = sim
             .advance_app_frame(
                 &[],

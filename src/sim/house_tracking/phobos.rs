@@ -52,7 +52,7 @@ impl HouseTracking {
     }
 
     fn change_phobos_limbo_count(&mut self, entity: &GameEntity, delta: i32) {
-        if entity.tracking_facts.insignificant || entity.tracking_facts.dont_score() {
+        if entity.tracking_facts().insignificant || entity.tracking_facts().dont_score() {
             return;
         }
         self.change_phobos_limbo_count_by(entity.category(), entity.type_ref(), delta);
@@ -129,7 +129,7 @@ impl Simulation {
     pub(crate) fn begin_phobos_map_objects(&mut self) {
         self.substrate.phobos_limbo_control.enabled = false;
         for house in self.houses.values_mut() {
-            house.tracking_mut().phobos_limbo_counts = Default::default();
+            house.tracking_mut(WRITE).phobos_limbo_counts = Default::default();
         }
     }
 
@@ -139,7 +139,9 @@ impl Simulation {
                 && entity.lifecycle.in_limbo()
                 && let Some(house) = self.houses.get_mut(&entity.owner())
             {
-                house.tracking_mut().change_phobos_limbo_count(entity, 1);
+                house
+                    .tracking_mut(WRITE)
+                    .change_phobos_limbo_count(entity, 1);
             }
         }
         self.substrate.phobos_limbo_control.enabled = true;
@@ -153,7 +155,9 @@ impl Simulation {
                 && entity.phobos_placement.has_been_placed
                 && let Some(house) = self.houses.get_mut(&entity.owner())
             {
-                house.tracking_mut().change_phobos_limbo_count(entity, -1);
+                house
+                    .tracking_mut(WRITE)
+                    .change_phobos_limbo_count(entity, -1);
             }
             entity.phobos_placement.has_been_placed = true;
         }
@@ -168,7 +172,9 @@ impl Simulation {
             && let Some(entity) = self.substrate.entities.get(id)
             && let Some(house) = self.houses.get_mut(&entity.owner())
         {
-            house.tracking_mut().change_phobos_limbo_count(entity, 1);
+            house
+                .tracking_mut(WRITE)
+                .change_phobos_limbo_count(entity, 1);
         }
     }
 
@@ -181,7 +187,9 @@ impl Simulation {
             && entity.lifecycle.in_limbo()
             && let Some(house) = self.houses.get_mut(&entity.owner())
         {
-            house.tracking_mut().change_phobos_limbo_count(entity, -1);
+            house
+                .tracking_mut(WRITE)
+                .change_phobos_limbo_count(entity, -1);
         }
         self.substrate.phobos_limbo_control.deletion_depth += 1;
     }
@@ -203,10 +211,14 @@ impl Simulation {
             && entity.lifecycle.in_limbo()
         {
             if let Some(house) = self.houses.get_mut(&entity.owner()) {
-                house.tracking_mut().change_phobos_limbo_count(entity, -1);
+                house
+                    .tracking_mut(WRITE)
+                    .change_phobos_limbo_count(entity, -1);
             }
             if let Some(house) = self.houses.get_mut(&new_owner) {
-                house.tracking_mut().change_phobos_limbo_count(entity, 1);
+                house
+                    .tracking_mut(WRITE)
+                    .change_phobos_limbo_count(entity, 1);
             }
         }
         // The same 0x007015C9 hook requests both Foot houses independently

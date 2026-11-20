@@ -11,6 +11,7 @@
 
 use crate::map::houses::HouseRoster;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::crates::CratePlacement;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -24,9 +25,12 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) rules: &'a RuleSet,
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
+    /// Fresh map rules, which can differ from a legacy replay's live rules.
+    pub(crate) construction_rules: RulePolicy,
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
     /// Every fresh campaign installation, including continuation and retry.
     pub(crate) campaign_map: Option<&'a crate::map::map_file::MapFile>,
+    pub(crate) stage_home_global: Option<bool>,
 }
 
 /// Presentation/logging facts returned after authoritative initialization.
@@ -102,31 +106,34 @@ impl Simulation {
         // Runtime rebuilds use this same sim-owned publication seam. Crate
         // placement below reads the newly published canonical grid.
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);
+        let uses_launch_houses = !self.session.uses_campaign_world();
 
         #[cfg(any(test, feature = "test-support"))]
         let mut skirmish_order = [None; 4];
-        let crates = if input.skirmish_session.is_some() {
-            let player_count = crate::sim::crates::human_player_count(self);
-            #[cfg(any(test, feature = "test-support"))]
-            {
-                skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
-            }
-            let placement = crate::sim::crates::place_scenario_start_crates(
-                self,
-                input.rules,
-                input.overlay_registry,
-                player_count,
-                FrameEffects::default(),
-            )?;
-            // Startup OverlayClass::Mark completes synchronously before native
-            // proceeds to AI credits; the placement refreshed the bridge
-            // records and navigation from the now-final CellClass state.
-            Some(placement)
-        } else {
-            None
-        };
+        let uses_match_crates = input.construction_rules.uses_match_crates();
+        let crates =
+            if uses_match_crates && (input.skirmish_session.is_some() || !uses_launch_houses) {
+                let player_count = crate::sim::crates::human_player_count(self);
+                #[cfg(any(test, feature = "test-support"))]
+                {
+                    skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
+                }
+                let placement = crate::sim::crates::place_scenario_start_crates(
+                    self,
+                    input.rules,
+                    input.overlay_registry,
+                    player_count,
+                    FrameEffects::default(),
+                )?;
+                // Startup OverlayClass::Mark completes synchronously before native
+                // proceeds to AI credits; the placement refreshed the bridge
+                // records and navigation from the now-final CellClass state.
+                Some(placement)
+            } else {
+                None
+            };
 
-        if self.session.game_mode_nonzero() {
+        if self.session.rule_policy().runs_ai_strategy() {
             // ScenarioClass::Post_Map_Init006869EA..00686A2B starts every
             // nonhuman/nonpassive House's timer, before its credit grant.
             // The timer writes consume no RNG and do not affect credits or
@@ -157,9 +164,7 @@ impl Simulation {
             );
         } else {
             // A map House's Allies= is read only in GameMode0 (0x006877B9).
-            if self.session.campaign_mission_counter().is_none()
-                && !self.session.game_mode_nonzero()
-            {
+            if self.session.campaign_mission_counter().is_none() && !uses_launch_houses {
                 self.install_house_alliances(
                     crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(
                         input.house_roster.alliance_map(),
@@ -173,8 +178,8 @@ impl Simulation {
         // (`0x006869A6`) follows the starting units and crates; the AI credits
         // and alliances after it change no owner or Limbo state it reads. The
         // base query is PlayerPtr's, so a network game stamps no shared Dummy.
-        let player_view = if self.session.game_mode_nonzero() {
-            let network = self.session.game_mode().is_network();
+        let player_view = if uses_launch_houses {
+            let network = self.session.execution_topology().is_lockstep();
             let cells = self.resolved_terrain.as_ref().map(|terrain| {
                 crate::map::resolved_terrain::NativeCellQuery::for_local_input(terrain, network)
             });
@@ -186,7 +191,7 @@ impl Simulation {
         // Post_Map_Init's Special-House pass (lookup `0x006869AB..0x006869BC`,
         // alliances `0x00686A9E..0x00686AC1`), in the same GameMode>0 segment
         // as the AI credits and before the Secret Lab call (`0x00686AFE`) below.
-        if self.session.game_mode_nonzero() {
+        if uses_launch_houses {
             #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[3] = Some(ScenarioPostMapStep::SpecialAllies);
@@ -205,7 +210,7 @@ impl Simulation {
         // Full_Init687BC8..687BF1 skips that pass in GameMode0 (campaign).
         // Generated/.SED maps have a separate684990 call, but the admitted
         // generated family is noncampaign. Restore never reruns this owner.
-        if self.session.game_mode_nonzero() {
+        if uses_launch_houses {
             Self::assign_secret_lab_production(
                 &mut self.interner,
                 &mut self.scenario_rng,
@@ -223,42 +228,15 @@ impl Simulation {
         }
 
         // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
-        // and the particle/OreTwinkle tail. Every nonnull House participates;
-        // restore never enters this fresh-only owner or repeats its credits.
+        // and the particle/OreTwinkle tail. Restore never enters this
+        // fresh-only owner or repeats its credits.
         if input.fill_silos {
-            for owner in self.houses.order().to_vec() {
-                let income = crate::sim::house_state::income_mult_for_owner(
-                    &self.houses,
-                    &self.interner,
-                    input.rules,
-                    self.interner.resolve(owner),
-                );
-                let Some(house) = self.houses.get_mut(&owner) else {
-                    continue;
-                };
-                // Native dereferences Tiberium[0], even if its Value is0.
-                // Do not substitute a name/default or silently skip an invalid
-                // empty registry on an enabled nonempty-House scenario.
-                let value = input
-                    .rules
-                    .tiberium_types
-                    .types()
-                    .first()
-                    .expect("native FillSilos requires Tiberium registry slot0")
-                    .value;
-                let capacity = house.tracking().storage_capacity();
-                house
-                    .economy_mut()
-                    .fill_silos_fresh_empty_store(value, capacity, income);
-            }
+            self.fill_silos(input.rules);
         }
 
         // Fill_In_Data684F81..684F89: Map4ADCD0(1,0) visits mobile sources
         // before the later first-House full pass. This does not consume +24B.
-        self.initialize_scenario_sight(crate::sim::world::UninitContext::new(
-            input.rules,
-            Some(input.overlay_registry),
-        ));
+        self.initialize_scenario_sight(crate::sim::world::UninitContext::new(input.rules));
 
         // Original684C30 performs586BF0 after the zone rebuilds and before its
         // particle/twinkle tail. This command is fresh-load-only: restore writes
@@ -296,15 +274,12 @@ impl Simulation {
         // Basic Read68A601..68A656 reads both indexes with current defaults;
         // fresh SetDefaults683622/683628 initializes both to699.
         let opening_view_cell = input.campaign_map.and_then(|map| {
-            assert!(
-                input.skirmish_session.is_none() && !self.session.game_mode_nonzero(),
-                "campaign opening view requires the campaign family"
-            );
-            let incoming = self
-                .session
-                .campaign_restart_carry_over()
-                .expect("campaign record");
-            let waypoint = if incoming.globals()[0] {
+            let incoming = input.stage_home_global.unwrap_or_else(|| {
+                self.session
+                    .campaign_restart_carry_over()
+                    .is_some_and(|record| record.globals()[0])
+            });
+            let waypoint = if incoming {
                 map.basic.alt_home_cell
             } else {
                 map.basic.home_cell
@@ -334,6 +309,64 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             skirmish_order,
         })
+    }
+
+    /// `[Basic] FillSilos=`, `Fill_In_Data 0x00684F02..0x00684F7C`: each
+    /// House of the House array in order takes its Available_Money once as a
+    /// budget; while that budget exceeds the first Tiberium's `Value=` and
+    /// Available_Storage (`0x004F69D0`, read each pass) is positive, it gets
+    /// one unit of tiberium type 0 through GiveTiberium (`0x00684F58`) and
+    /// the budget loses that Value. The stock GiveTiberium pays cash and
+    /// stores nothing, so the budget ends the loop; when the money takes its
+    /// Ares form, a campaign or human House stores each unit in its silos
+    /// until Available_Storage reaches 0.
+    ///
+    /// VERA reads GiveTiberium's inputs once per House
+    /// ([`Self::tiberium_gift`]) and Available_Storage again only after a
+    /// gift that can store: nothing else in the loop moves them.
+    ///
+    /// gamemd fails on two inputs, where VERA carries on: with no Tiberium
+    /// type it reads `Tiberium[0]` without a count check (`0x00684F36`), and
+    /// VERA fills nothing; and a pass that changes neither the budget (a
+    /// first `Value=0`) nor Available_Storage repeats forever, so VERA ends
+    /// that House's fill after it. A negative Value still runs until the
+    /// budget wraps, as natively.
+    fn fill_silos(&mut self, rules: &RuleSet) {
+        let Some(value) = rules
+            .tiberium_types
+            .types()
+            .first()
+            .map(|tiberium| tiberium.value)
+        else {
+            log::warn!(
+                "[Basic] FillSilos=yes, but the rules define no Tiberium type to fill the silos with"
+            );
+            return;
+        };
+        for owner in self.houses.order().to_vec() {
+            let Some(gift) = self.tiberium_gift(owner, 0, rules) else {
+                continue;
+            };
+            let Some(house) = self.houses.get_mut(&owner) else {
+                continue;
+            };
+            let mut budget = house.economy().available_money();
+            let mut free = house.available_storage();
+            while budget > value && free > 0 {
+                let before = free;
+                gift.give(
+                    house.economy_mut(),
+                    crate::util::native_x87::NativeF32Bits::ONE,
+                );
+                if gift.stores() {
+                    free = house.available_storage();
+                }
+                budget = budget.wrapping_sub(value);
+                if value == 0 && free == before {
+                    break;
+                }
+            }
+        }
     }
 
     /// `Post_Map_Init`'s Special-House pass. Before its per-House loop
@@ -542,8 +575,10 @@ mod tests {
             rules,
             overlay_registry: overlays,
             house_roster,
+            construction_rules: RulePolicy::stock_campaign(),
             skirmish_session: None,
             campaign_map: None,
+            stage_home_global: None,
         }
     }
 
@@ -807,7 +842,7 @@ mod tests {
             let record = previous.save_campaign_carry_over();
             let mut sim = Simulation::from_descriptor(&Default::default());
             sim.session
-                .initialize_campaign_startup(1, 7, None, 1, record)
+                .initialize_campaign_startup(1, 7, None, 1, record, None)
                 .unwrap();
             Simulation::set_trigger_variable(
                 &sim.session,
@@ -877,6 +912,7 @@ mod tests {
                     None,
                     0,
                     crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    None,
                 )
                 .unwrap();
             let before = sim.rng_state();
@@ -933,6 +969,7 @@ mod tests {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
@@ -1197,5 +1234,135 @@ mod tests {
             "Special",
             "H"
         ));
+    }
+
+    /// Rules for `[Basic] FillSilos=`: Riparius, the first Tiberium, worth
+    /// `value` (no `[Tiberiums]` type when `None`), and a SILO of `storage`.
+    fn fill_silos_rules(value: Option<i32>, storage: i32) -> RuleSet {
+        let tiberium = value.map_or(String::new(), |value| {
+            format!("[Tiberiums]\n0=Riparius\n[Riparius]\nValue={value}\n")
+        });
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "{tiberium}[BuildingTypes]\n0=SILO\n[SILO]\nStrength=300\nStorage={storage}\n"
+        )))
+        .unwrap()
+    }
+
+    /// Registers House `name` holding `credits`, with a SILO when `silo`.
+    fn fill_silos_house(
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        (name, human, credits, silo): (&str, bool, i32, bool),
+    ) -> crate::sim::intern::InternedId {
+        let owner = sim.interner.intern(name);
+        let cell = 2 + 3 * sim.houses.order().len() as u16;
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, human, credits, 10,
+            ));
+        if silo {
+            sim.spawn_object("SILO", name, cell, cell, 0, rules)
+                .unwrap();
+        }
+        owner
+    }
+
+    /// The post-map pass with `[Basic] FillSilos=` set to `fill`.
+    fn finish_with_fill_silos(sim: &mut Simulation, rules: &RuleSet, fill: bool) {
+        let overlays = OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
+        let roster = HouseRoster::default();
+        let mut input = generic_post_map_input(rules, &overlays, &roster);
+        input.fill_silos = fill;
+        sim.finalize_scenario_post_map(input).unwrap();
+    }
+
+    /// `Fill_In_Data 0x00684F02..0x00684F7C` with the stock GiveTiberium
+    /// against the native rows of `tools/house_money_oracle.py`: the flag,
+    /// the capacity, the budget against Value, a negative Value's wrap and
+    /// the score's.
+    #[test]
+    fn fill_silos_matches_the_original() {
+        let corpus: serde_json::Value =
+            serde_json::from_str(crate::test_fixture::text("tools/house_money_oracle.json"))
+                .unwrap();
+        let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
+        let rows = corpus["fill_silos"].as_array().unwrap();
+        for row in rows {
+            assert_eq!(
+                row["income_ppm"], 1_000_000,
+                "IncomeMult 1.0 without a country"
+            );
+            let capacity = int(&row["capacity"]);
+            let rules = fill_silos_rules(Some(int(&row["value"])), capacity);
+            let mut sim = Simulation::new();
+            let house = ("Americans", false, int(&row["balance"]), capacity != 0);
+            let owner = fill_silos_house(&mut sim, &rules, house);
+            let economy = sim.houses.get_mut(&owner).unwrap().economy_mut();
+            economy.set_score_for_test(int(&row["score"]));
+            economy.set_spent_for_test(int(&row["spent"]));
+            finish_with_fill_silos(&mut sim, &rules, row["enabled"].as_bool().unwrap());
+            let economy = sim.houses[&owner].economy();
+            let expected = &row["expected"];
+            assert_eq!(
+                (economy.credits(), economy.score(), economy.spent_credits()),
+                (
+                    int(&expected["balance"]),
+                    int(&expected["score"]),
+                    int(&expected["spent"])
+                ),
+                "{}",
+                row["name"]
+            );
+        }
+        assert_eq!(rows.len(), 9);
+    }
+
+    /// With the money in its Ares form FillSilos gives through Ares'
+    /// GiveTiberium (`10024290`): a human House's units fill its silos until
+    /// Available_Storage (`0x004F69D0`) reaches 0, scoring 5 each and paying
+    /// nothing, while a computer House in a skirmish is paid cash.
+    #[test]
+    fn ares_fill_silos_fills_a_human_house_silos() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = fill_silos_rules(Some(25), 3);
+        let mut sim = Simulation::new();
+        sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        let human = fill_silos_house(&mut sim, &rules, ("Americans", true, 5000, true));
+        let computer = fill_silos_house(&mut sim, &rules, ("Russians", false, 5000, true));
+        finish_with_fill_silos(&mut sim, &rules, true);
+        let stored = |owner| {
+            let economy = sim.houses[&owner].economy();
+            let store = economy.ares_storage().house_store().total_amount();
+            (store, economy.credits(), economy.score())
+        };
+        assert_eq!(stored(human), (3, 5000, 15));
+        assert_eq!(stored(computer), (0, 9975, 995));
+    }
+
+    /// A first Tiberium worth nothing never lowers the budget and the stock
+    /// GiveTiberium stores nothing, so gamemd's loop never ends: VERA ends
+    /// the House's fill after that first pass, which scores 5 and pays 0.
+    #[test]
+    fn fill_silos_ends_with_a_worthless_first_tiberium() {
+        let rules = fill_silos_rules(Some(0), 1);
+        let mut sim = Simulation::new();
+        let owner = fill_silos_house(&mut sim, &rules, ("Americans", false, 100, true));
+        finish_with_fill_silos(&mut sim, &rules, true);
+        let economy = sim.houses[&owner].economy();
+        assert_eq!((economy.credits(), economy.score()), (100, 5));
+    }
+
+    /// Rules without a `[Tiberiums]` type leave FillSilos nothing to give:
+    /// gamemd reads `Tiberium[0]` unchecked (`0x00684F36`); VERA fills
+    /// nothing and the scenario starts.
+    #[test]
+    fn fill_silos_without_a_tiberium_type_fills_nothing() {
+        let rules = fill_silos_rules(None, 1);
+        assert!(rules.tiberium_types.types().is_empty());
+        let mut sim = Simulation::new();
+        let owner = fill_silos_house(&mut sim, &rules, ("Americans", false, 5000, true));
+        finish_with_fill_silos(&mut sim, &rules, true);
+        let economy = sim.houses[&owner].economy();
+        assert_eq!((economy.credits(), economy.score()), (5000, 0));
     }
 }

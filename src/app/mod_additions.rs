@@ -33,31 +33,16 @@ const FILE_LIMIT: u64 = 8 * 1024 * 1024;
 /// ([`is_addition`]): Yuri's Revenge's own files, such as `rulesmd.ini`, its
 /// mode and theater INIs, and a campaign mission's, such as `all04dmd.ini`
 /// (`select_campaign_named_ini_for_full_init`). Here are the rest: the files
-/// beside them, the Mental Omega names of the Rules, Art, AI, sound, theater,
-/// theme and campaign files (`util::ini_roots`), the files a launcher writes
-/// for a match, VERA's settings, and Red Alert 2's own.
-const GAME_INIS: [&str; 32] = [
+/// beside them, the files a launcher writes for a match, VERA's settings,
+/// and Red Alert 2's own. The selected mod's declared root and catalog names
+/// are supplied by the process asset owner rather than listed here.
+const GAME_INIS: [&str; 17] = [
     "langrule.ini",
     "tmcj4f.ini",
     "spawn.ini",
     "spawnmap.ini",
     "vera.ini",
     "verarules.ini",
-    "rulesmo.ini",
-    "artmo.ini",
-    "aimo.ini",
-    "soundmo.ini",
-    "evamo.ini",
-    "temperatmo.ini",
-    "snowmo.ini",
-    "urbanmo.ini",
-    "desertmo.ini",
-    "lunarmo.ini",
-    "urbannmo.ini",
-    "thememo.ini",
-    "battlemo.ini",
-    "missionmo.ini",
-    "mapselmo.ini",
     "rules.ini",
     "art.ini",
     "ai.ini",
@@ -82,11 +67,8 @@ const NOTES: [&str; 10] = [
 /// cooperative one too, or on a random map, which reads its rules while it is
 /// made.
 pub(crate) fn reach(startup: &crate::app::match_bootstrap::LoadingStartup) -> bool {
-    startup.session_mode().is_nonzero()
+    startup.match_spec().rules().mod_map_additions()
         && !crate::map::rmg::is_seed_selection(startup.physical_map_file())
-        && !startup.launch_session().is_some_and(|launch| {
-            launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
-        })
 }
 
 /// What a mod's folder adds to each map, in the order the game lists the
@@ -98,6 +80,91 @@ pub(crate) struct MapAdditions {
 }
 
 impl MapAdditions {
+    /// Paste the selected client mode's code into the authored map through
+    /// the same merge as other additions. The client may also ask for map
+    /// object replacement or another mode-dependent INI. Those are not a
+    /// plain INI merge and must not be silently ignored.
+    pub(crate) fn client_mode(
+        assets: &crate::assets::asset_manager::AssetManager,
+        map: &str,
+        mode: &crate::skirmish_launch::SkirmishLaunchMode,
+    ) -> Result<Option<Self>, String> {
+        let Some(client) = assets.client_install() else {
+            return Ok(None);
+        };
+        let Some(map) = client
+            .maps
+            .iter()
+            .find(|entry| entry.file_name.eq_ignore_ascii_case(map))
+        else {
+            return Ok(None);
+        };
+        let supports_mode = |mode_name: &str| {
+            map.game_modes
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(mode_name))
+        };
+        // Blueprints retain the native mode identity, not its menu filter.
+        // Resolve its filter from the same roster to reproduce the map bytes.
+        let roster;
+        let mode_name = if mode.map_filter.is_empty() {
+            roster = crate::skirmish_modes::skirmish_modes_from_assets(assets)
+                .map_err(|error| error.to_string())?;
+            let mut matching = roster.iter().filter(|row| {
+                row.id == mode.id
+                    && row.class == mode.class
+                    && row.override_file.eq_ignore_ascii_case(&mode.override_file)
+                    && supports_mode(&row.map_filter)
+            });
+            let recorded = matching
+                .next()
+                .ok_or_else(|| format!("This mod does not have recorded mode {}.", mode.id))?;
+            if matching.any(|row| !row.map_filter.eq_ignore_ascii_case(&recorded.map_filter)) {
+                return Err(format!(
+                    "This replay does not identify which mode {} to use.",
+                    mode.id
+                ));
+            }
+            recorded.map_filter.as_str()
+        } else {
+            mode.map_filter.as_str()
+        };
+        if !supports_mode(mode_name) {
+            return Err(format!(
+                "This map does not support the {mode_name} mode. Choose another map or mode."
+            ));
+        }
+        let Some(path) = client
+            .modes
+            .iter()
+            .find(|entry| entry.name.eq_ignore_ascii_case(mode_name))
+            .and_then(|entry| entry.map_code.as_deref())
+        else {
+            return Ok(None);
+        };
+        let file = read_file(path)
+            .map_err(|error| format!("Could not read map code from {}: {error}", path.display()))?;
+        if [
+            "GameModeIncludes",
+            "ReplaceMapAircraft",
+            "ReplaceMapInfantry",
+            "ReplaceMapUnits",
+            "ReplaceMapStructures",
+            "ReplaceMapTerrain",
+        ]
+        .iter()
+        .any(|section| file.section(section).is_some())
+        {
+            return Err(format!(
+                "The {mode_name} mode uses map code this build cannot apply. Choose another mode."
+            ));
+        }
+        Ok(Some(Self {
+            names: vec![path.display().to_string()],
+            files: vec![file],
+        }))
+    }
+
     /// The additions of the mod in `dir`; `None` when the folder holds none,
     /// holds another file the game reads (see the module), or cannot be
     /// listed. `roots` are the INI files this game reads under names

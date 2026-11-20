@@ -435,6 +435,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             state,
             crate::app::input::sidebar_eva::EVA_NEW_CONSTRUCTION_OPTIONS,
         );
+        crate::app::input::messages::post_eva_new_construction(state);
     }
 
     let display_credits = state

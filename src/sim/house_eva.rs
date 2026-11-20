@@ -80,23 +80,19 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     let ares = rules.ares_form();
     let now = sim.session.binary_frame() as i32;
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let delay = speak_delay_frames(rules, sim.session.game_options());
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if !house.is_controlled_by_human(game_mode_nonzero) {
+    if !house.is_controlled_by_human(sim.session.rule_policy()) {
         return;
     }
     let available = house.economy().available_money();
     let factories = house.tracking().funds_nag_factories();
-    // `0x004F8BFF..0x004F8C21`: capacity `+0x310` and `ftol(+0x2FC total)`.
+    // `0x004F8BFF..0x004F8C21` inlines Available_Storage: capacity `+0x310`
+    // minus `ftol(+0x2FC total)` (`HouseState::available_storage`).
     let capacity = house.tracking().storage_capacity();
-    let stored = if ares {
-        house.economy().ares_storage().house_store().total_amount()
-    } else {
-        0
-    };
+    let free = house.available_storage();
     let mut timer = *house.eva_funds_timer();
     let mut guard = house.eva_low_power_guard();
 
@@ -123,11 +119,12 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // minus `ftol(+0x2FC)` below 30, capacity above 50) re-arms it without a
     // line. The store stays empty in YR (`crate::sim::economy`), so capacity
     // would have to be both below 30 and above 50: it never re-arms.
-    // When Ares plays the store fills (`sim::ares_tiberium_storage`), and Ares
-    // 3.0 HouseClass_Update_SilosNeededEVA (10024AE0, hook 0x4F8C23) speaks
+    // When the money takes its Ares form (`RuleSet::ares_form`) the store
+    // fills (`sim::ares_tiberium_storage`), and Ares 3.0
+    // HouseClass_Update_SilosNeededEVA (10024AE0, hook 0x4F8C23) speaks
     // `EVA_SilosNeeded` before the re-arm. RESIDUAL (client): it also prints
     // `[General] Message.SilosNeeded` for MessageDelay in the House's colour.
-    if timer.expired(now) && capacity.wrapping_sub(stored) < 30 && capacity > 50 {
+    if timer.expired(now) && free < 30 && capacity > 50 {
         if ares {
             sim.sound_events.emit(SimSoundEvent::HouseEva {
                 owner,
@@ -151,7 +148,13 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // false). Native runs it for the local player's House only; VERA for
     // each human-controlled one, as this whole body.
     if ares && short {
-        sim.ares_set_firestorm_state(owner, false, rules, None, FrameEffects::default());
+        sim.ares_set_firestorm_state(
+            owner,
+            false,
+            rules,
+            Some(rules.overlay_registry()),
+            FrameEffects::default(),
+        );
     }
     if !short {
         guard = false;
@@ -365,8 +368,8 @@ mod tests {
 
         // Only the first Limbo recounts (`0x004458CE`); ChangeOwner moves a
         // limbo factory's counter all the same.
-        sim.techno_limbo_with_rules(yard, &rules, None);
-        sim.techno_limbo_with_rules(yard, &rules, None);
+        sim.techno_limbo_with_rules(yard, &rules);
+        sim.techno_limbo_with_rules(yard, &rules);
         assert_eq!(counts(&sim, owner), [1, 1, 0, 0, 0]);
         sim.change_owner_with_rules(
             yard,
@@ -454,7 +457,7 @@ mod tests {
         let (mut sim, owner) = sim_with_house(5_000, true);
         structure(&mut sim, &rules, "GASILO", 3);
         let give = |sim: &mut Simulation, units: f32| {
-            sim.ares_give_tiberium(owner, NativeF32Bits::from_bits(units.to_bits()), 0, &rules);
+            sim.give_tiberium(owner, NativeF32Bits::from_bits(units.to_bits()), 0, &rules);
         };
         give(&mut sim, 1960.0);
         assert!(run_frames(&mut sim, &rules, 3).is_empty());

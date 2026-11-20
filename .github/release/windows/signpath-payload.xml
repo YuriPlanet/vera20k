@@ -11,5 +11,9 @@
     <pe-file path="uninstaller.exe" product-name="VERA20k                                                     " product-version="${version}                                             ">
       <authenticode-sign />
     </pe-file>
+    <!-- Microsoft's DirectX Shader Compiler (fetch-dxc.ps1), shipped as Microsoft released and signed it. -->
+    <pe-file path="dxcompiler.dll">
+      <authenticode-verify />
+    </pe-file>
   </zip-file>
 </artifact-configuration>

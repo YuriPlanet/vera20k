@@ -164,7 +164,6 @@ fn commit(
     let navigation = run.finish();
     sim.absorb_noncombat_damage_effects(
         rules,
-        overlay_registry,
         commit.effects,
         commit.under_attack_events,
         navigation,

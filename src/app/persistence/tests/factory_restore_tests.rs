@@ -360,7 +360,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                 if label != "unpublished-complete" {
                     assert!(
                         !crate::sim::production::dispatch_production_changes_for_tests(
-                            &mut saved, &rules, None
+                            &mut saved, &rules
                         )
                     );
                     assert!(

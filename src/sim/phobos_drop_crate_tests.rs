@@ -65,7 +65,7 @@ fn destroy(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry
         id,
         KillSource::Techno(None),
         KillCallback::Terminal,
-        UninitContext::new(rules, Some(registry)),
+        UninitContext::new(rules),
     );
 }
 

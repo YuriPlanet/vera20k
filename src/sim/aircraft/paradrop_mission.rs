@@ -112,7 +112,6 @@ pub(super) fn overfly(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
@@ -156,7 +155,7 @@ pub(super) fn overfly(
         )
     });
     if over_playfield {
-        super::drop_payload::drop_payload(sim, id, rules, registry, frame_effects);
+        super::drop_payload::drop_payload(sim, id, rules, frame_effects);
         // `0x00415A00` returns the type's carrying/end delay instead of the
         // stock frames (`Ext/Aircraft/Hooks.cpp:1265-1286`). The passenger
         // count is read after the drop, as the hook does.

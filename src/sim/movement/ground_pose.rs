@@ -906,10 +906,9 @@ impl Simulation {
         id: u64,
         height: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
+        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         let marked = self
             .substrate
             .entities

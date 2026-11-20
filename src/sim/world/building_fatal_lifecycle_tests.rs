@@ -364,7 +364,6 @@ impl Fixture {
                 unit,
                 Some(TargetKind::Entity(building)),
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
@@ -1440,7 +1439,6 @@ impl Fixture {
 
         restored.process_pending_delete_with(
             &self.rules,
-            Some(&self.registry),
             crate::sim::world::FrameEffects::default(),
             1,
             false,
@@ -1653,7 +1651,6 @@ fn assert_ready_fatal_routes(corpus: &Value) {
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
                 &fixture.rules,
-                Some(&fixture.registry),
                 crate::sim::world::FrameEffects::default(),
                 1,
                 false,
@@ -1676,7 +1673,6 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
         fixture.sim.process_pending_delete_with(
             &fixture.rules,
-            Some(&fixture.registry),
             crate::sim::world::FrameEffects::default(),
             1,
             false,
@@ -1778,7 +1774,6 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
     fixture.sim.process_pending_delete_with(
         &fixture.rules,
-        Some(&fixture.registry),
         crate::sim::world::FrameEffects::default(),
         1,
         false,

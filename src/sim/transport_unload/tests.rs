@@ -196,7 +196,7 @@ impl Fixture {
             } else {
                 let pax = self.spawn("E1", cell.0, cell.1, 0);
                 assert_eq!(
-                    self.sim.techno_limbo_with_rules(pax, &self.rules, None),
+                    self.sim.techno_limbo_with_rules(pax, &self.rules),
                     ConcealOutcome::Concealed
                 );
                 pax
@@ -576,7 +576,6 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
             &mut fx.sim,
             &fx.rules,
             transport,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
     }
@@ -763,7 +762,7 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
             );
         } else {
             assert!(matches!(
-                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, None, effects, true),
+                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, effects, true),
                 super::EjectOutcome::Placed
             ));
         }
@@ -1207,7 +1206,7 @@ fn phobos_failed_shore_search_takes_the_cannot_unload_arm() {
         .position
         .set_exact_z_leptons_for_test(Some(input["height"].as_i64().unwrap() as i32));
     assert_eq!(
-        super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, None, FrameEffects::default()),
+        super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, FrameEffects::default()),
         16,
         "the CannotUnload arm returns the Unload mission epilogue"
     );
@@ -1267,7 +1266,7 @@ fn hover_unload_failed_shore_search_assigns_the_retained_fallback_cell() {
             .set_exact_z_leptons_for_test(Some(input["height"].as_i64().unwrap() as i32));
         let rng = serde_json::to_value(&fx.sim.scenario_rng).unwrap();
         assert_eq!(
-            super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, None, FrameEffects::default(),),
+            super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, FrameEffects::default()),
             expected["delay"].as_i64().unwrap() as i32
         );
         let entity = fx.sim.substrate.entities.get(lcrf).unwrap();
@@ -1400,13 +1399,7 @@ fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
         // nonnull handoff BEFORE Hover Process consumes it. This is not an
         // assertion that the target survives a completed ordinary frame.
         assert_eq!(
-            super::unit_mission_unload(
-                &mut fx.sim,
-                &fx.rules,
-                carrier,
-                None,
-                FrameEffects::default()
-            ),
+            super::unit_mission_unload(&mut fx.sim, &fx.rules, carrier, FrameEffects::default(),),
             10
         );
         assert_eq!(
@@ -1474,7 +1467,7 @@ fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
             // The current handler waits on the existing Hover destination;
             // it does not search again or drop cargo into the water.
             assert_eq!(
-                super::unit_mission_unload(sim, &fx.rules, carrier, None, FrameEffects::default()),
+                super::unit_mission_unload(sim, &fx.rules, carrier, FrameEffects::default()),
                 10
             );
         }
@@ -1818,7 +1811,7 @@ fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
     // UnInit's Limbo announcement finds the aircraft still alive; its class
     // destructor (`0x00414125`) announces the removal on the next tick.
     fx.sim
-        .uninit_with_context(shad, UninitContext::with_rules(&fx.rules));
+        .uninit_with_context(shad, UninitContext::new(&fx.rules));
     assert_eq!(transporter(&fx), Some(shad), "a live hull's Limbo keeps it");
     fx.tick();
     assert_eq!(transporter(&fx), None, "the aircraft's removal clears it");
@@ -1887,7 +1880,7 @@ fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
     let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
     assert_eq!(
-        fx.sim.techno_limbo_with_rules(bggy, &fx.rules, None),
+        fx.sim.techno_limbo_with_rules(bggy, &fx.rules),
         ConcealOutcome::Concealed
     );
     let cargo = fx
@@ -2019,7 +2012,7 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
     let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
     assert_eq!(
-        fx.sim.techno_limbo_with_rules(bggy, &fx.rules, None),
+        fx.sim.techno_limbo_with_rules(bggy, &fx.rules),
         ConcealOutcome::Concealed
     );
     let cargo = fx
@@ -2151,7 +2144,7 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
     let bfrt = fx.spawn("BFRT", 20, 20, 0);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
     assert_eq!(
-        fx.sim.techno_limbo_with_rules(bggy, &fx.rules, None),
+        fx.sim.techno_limbo_with_rules(bggy, &fx.rules),
         ConcealOutcome::Concealed
     );
     let cargo = fx
@@ -2281,7 +2274,6 @@ fn unit_unload_waits_on_the_locomotors_is_moving() {
             &mut fx.sim,
             &fx.rules,
             bfrt,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         (delay, handler_state(&fx, bfrt))
@@ -2333,7 +2325,6 @@ fn jumpjet_transport_unload_waits_on_the_moving_byte_in_the_hold() {
             &mut fx.sim,
             &fx.rules,
             hind,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         (delay, handler_state(&fx, hind))
@@ -2678,7 +2669,6 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                         &mut fx.sim,
                         &fx.rules,
                         transport,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                         true
                     ),
@@ -2782,7 +2772,6 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
             &mut fx.sim,
             &fx.rules,
             carrier,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
@@ -3057,7 +3046,6 @@ fn phobos_no_queue_up_to_unload_empties_the_cargo_in_one_dispatch() {
             &mut fx.sim,
             &fx.rules,
             transport,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         let revealed = passengers.iter().filter(|&&id| fx.revealed(id)).count();

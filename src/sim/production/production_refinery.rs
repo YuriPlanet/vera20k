@@ -58,7 +58,7 @@ pub(crate) fn spawn_building_free_unit(
             let human = sim
                 .houses
                 .get(&entity.owner())
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
             if human
                 && entity.production_start_price() != 0
                 && entity.production_start_price() <= rules.type_cost(object)
@@ -217,7 +217,7 @@ fn try_spawn_building_free_unit(
     );
     sim.uninit_with_context(
         free_unit_id,
-        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(effects),
+        crate::sim::world::UninitContext::new(rules).with_effects(effects),
     );
     log::warn!(
         "Completed refinery {} could not place free unit {}; refunded {} to {}",
@@ -310,21 +310,14 @@ fn refund_free_unit(
     let Some(owner_id) = interner.get(owner) else {
         return 0;
     };
-    let Some(object) = rules.object(unit_type) else {
-        return 0;
-    };
     let refund = match (
+        rules.object(unit_type),
         houses.get(&owner_id),
-        Simulation::house_cost_factors_for(houses, owner_id, object),
+        Simulation::house_cost_factors(houses, owner_id),
     ) {
-        (Some(house), Some(factors)) => super::type_refund(
-            rules,
-            object,
-            house,
-            &factors,
-            session.game_mode_nonzero(),
-            true,
-        ),
+        (Some(object), Some(house), Some(factors)) => {
+            super::type_refund(rules, object, house, &factors, session.rule_policy(), true)
+        }
         _ => return 0,
     };
     crate::sim::credit_income::add_credits(houses, owner_id, refund);

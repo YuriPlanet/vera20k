@@ -275,7 +275,6 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     fn drain_deferred(&mut self) -> Result<(), Self::Error> {
         self.sim.process_pending_delete_with(
             self.rules,
-            None,
             crate::sim::world::FrameEffects::default(),
             0,
             false,

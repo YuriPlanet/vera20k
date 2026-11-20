@@ -46,7 +46,7 @@ fn adjacent_allowed_list_filters_providers() {
         place_ok(&sim, &rules, 11, 10),
         "POWER is an allowed provider"
     );
-    sim.uninit_with_context(power, crate::sim::world::UninitContext::new(&rules, None));
+    sim.uninit_with_context(power, crate::sim::world::UninitContext::new(&rules));
     assert!(!place_ok(&sim, &rules, 11, 10));
 }
 
@@ -89,7 +89,7 @@ fn adjacent_prohibit_distance_scans_the_larger_ring() {
         !place_ok(&sim, &rules, 11, 10),
         "POWER three cells away is inside the prohibit ring"
     );
-    sim.uninit_with_context(power, crate::sim::world::UninitContext::new(&rules, None));
+    sim.uninit_with_context(power, crate::sim::world::UninitContext::new(&rules));
     assert!(
         place_ok(&sim, &rules, 11, 10),
         "the nearer REFINERY admits once POWER is gone"

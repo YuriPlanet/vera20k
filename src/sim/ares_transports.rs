@@ -88,7 +88,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         // Native always has the type; a call without its rules (a fixture's
@@ -132,7 +131,7 @@ impl Simulation {
         let owner = entity.owner();
         let owner_name = self.interner.resolve(owner).to_owned();
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         for (index, reference) in types.iter().enumerate() {
             if matches!(
                 reference.category,
@@ -198,14 +197,9 @@ impl Simulation {
                             effects,
                         );
                     }
-                    let _ = self.add_cargo_passenger_chain(
-                        id,
-                        &[(payload, payload_type.size)],
-                        context,
-                    );
+                    // A building's cargo shares VERA's carrier relation.
+                    let _ = self.add_cargo_members(id, &[(payload, payload_type.size)], context);
                     if let Some(passenger) = self.substrate.entities.get_mut(payload) {
-                        // A building's cargo shares VERA's carrier relation.
-                        passenger.set_inside_transport(id, false);
                         // AbortMotion (`0x004DF0D0`).
                         passenger.navigation.stop_moving();
                     }
@@ -264,7 +258,6 @@ impl Simulation {
         let _ = crate::sim::passenger::depart_cargo_head(
             self,
             rules,
-            registry,
             id,
             crate::sim::passenger::DepartureRoute::Hospital,
             |sim, patient| {

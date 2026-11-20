@@ -224,6 +224,37 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
     }
 }
 
+#[test]
+fn virtual_purifiers_use_admitted_rules_and_the_raw_human_byte() {
+    use crate::sim::house_state::HouseState;
+    use crate::sim::miner::miner_system::effective_purifier_count;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let rules =
+        RuleSet::from_ini(&IniFile::from_str("[General]\nAIVirtualPurifiers=3,3,3\n")).unwrap();
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let custom_rules = campaign_rules.with_uses_ai_economy(true);
+    for (mode, policy, human, expected) in [
+        (campaign, campaign_rules, false, 0),
+        (skirmish, skirmish.stock_rule_policy(None), false, 3),
+        (campaign, custom_rules, false, 3),
+        (campaign, custom_rules, true, 0),
+    ] {
+        let mut sim = Simulation::new();
+        sim.install_session_admission(mode, None, policy);
+        let owner = sim.intern("Americans");
+        let mut house = HouseState::new(owner, 0, None, human, 0, 10);
+        house.set_player_control_for_test(true);
+        sim.houses.register(house);
+        assert_eq!(
+            effective_purifier_count(&sim, &rules, "Americans"),
+            expected
+        );
+    }
+}
+
 // Ares replaces the stock payment (DepositTiberium 10044230, hooks
 // 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
 #[test]
@@ -337,7 +368,8 @@ pub(super) fn world_with(
             .flat_map(|y| (0..33).map(move |x| common_raw_terrain_cell(x, y, 0, false)))
             .collect(),
     );
-    crate::map::resolved_terrain::install_ordinary_repair_test_catalog(&mut terrain);
+    // The scenes' native map is Clear: the Recalc(-1) a Mark runs keeps it.
+    crate::map::resolved_terrain::install_clear_test_catalog(&mut terrain, 0);
     let terrain_rules = crate::rules::terrain_rules::TerrainRules::from_ini(ini);
     let costs = terrain_rules
         .semantics_for_land_type(0)

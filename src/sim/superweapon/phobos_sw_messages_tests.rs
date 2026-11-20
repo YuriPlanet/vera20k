@@ -159,7 +159,7 @@ fn a_sold_unit_uses_the_types_eva_sold_override() {
         &mut sim,
         &named,
         id,
-        crate::sim::world::UninitContext::new(&named, None),
+        crate::sim::world::UninitContext::new(&named),
     ));
     assert_eq!(sold_eva(&sim), vec!["EVA_LinkedSW".to_string()]);
 
@@ -172,7 +172,7 @@ fn a_sold_unit_uses_the_types_eva_sold_override() {
         &mut sim,
         &absent,
         id,
-        crate::sim::world::UninitContext::new(&absent, None),
+        crate::sim::world::UninitContext::new(&absent),
     ));
     assert_eq!(
         sold_eva(&sim),
@@ -189,7 +189,7 @@ fn a_sold_unit_uses_the_types_eva_sold_override() {
         &mut sim,
         &blank,
         id,
-        crate::sim::world::UninitContext::new(&blank, None),
+        crate::sim::world::UninitContext::new(&blank),
     ));
     assert_eq!(
         sold_eva(&sim),
@@ -228,7 +228,7 @@ DisplayIncome=yes
         &mut sim,
         &rules,
         id,
-        UninitContext::new(&rules, None).with_effects(effects),
+        UninitContext::new(&rules).with_effects(effects),
     ));
     let texts = texts.into_inner();
     assert_eq!(texts.len(), 1, "one DisplayIncome label");

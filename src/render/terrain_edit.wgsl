@@ -12,13 +12,17 @@ struct TerrainOutput {
 struct AdmittedPixel { index: u32, candidate: i32 };
 
 // Native Z of the row `world_y` falls in, for a blit whose top row and height
-// are `top_height` (world pixels), walked with `z_gradient` and `z_adjust`.
+// are `top_height` (world pixels), walked with `z_gradient` and `z_adjust`
+// from the rows it seeds from in a view `view_height` high (fx_params.w).
 // `candidate_range` in terrain_draw.rs bounds this walk on the CPU.
-fn edit_z(world_y: f32, top_height: vec2f, z_adjust: f32, z_gradient: u32) -> i32 {
-    let height = max(i32(round(top_height.y)), 1);
+fn edit_z(world_y: f32, top_height: vec2f, z_adjust: f32, z_gradient: u32, view_height: f32) -> i32 {
     let top = i32(round(top_height.x));
-    let row = clamp(i32(floor(world_y)) - top, 0, height - 1);
-    return native_row_z(z_gradient, top - i32(round(camera.camera_pos.y + camera.native_z_origin_y)),
+    let seed = shp_seed_rows(vec2i(top, top + max(i32(round(top_height.y)), 1)), z_gradient,
+        tactical_view_rows(view_height));
+    let height = max(seed.y - seed.x, 1);
+    let row = clamp(i32(floor(world_y)) - seed.x, 0, height - 1);
+    return native_row_z(z_gradient & 0xFFu,
+        seed.x - native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan),
         height, i32(round(z_adjust)), row);
 }
 
@@ -27,8 +31,8 @@ fn own_pixel(input: VertexOutput) -> AdmittedPixel {
     // Native compressed zero runs advance both destinations without touching
     // either one. The source index owns this stencil, including black colors.
     if index == 0u { discard; }
-    return AdmittedPixel(index,
-        edit_z(input.world_pos.y, input.rect_top_height, input.z_adjust, input.z_gradient));
+    return AdmittedPixel(index, edit_z(input.world_pos.y, input.rect.yw, input.z_adjust,
+        input.z_gradient, input.fx_params.w));
 }
 
 fn snapshot_z(input: VertexOutput) -> i32 {
@@ -74,7 +78,9 @@ struct EditRecord {
     // z_adjust bits, z_gradient, source_palette, 1 for a shadow.
     params: vec4u,
     // A bit per earlier edit of the window this one replays.
-    earlier: vec4u,
+    earlier: vec2u,
+    // The instance's fx_params.w, the view height a raw frame clips to.
+    view_height: f32,
 };
 @group(3) @binding(1) var<uniform> edits: array<EditRecord, 64>;
 
@@ -94,7 +100,7 @@ fn replayed_pixel(edit: EditRecord, position: vec2f) -> ReplayedPixel {
     let texel = source_texel(edit.uv.xy + t * edit.uv.zw);
     let world_y = edit.quad.y + t.y * edit.quad.w;
     return ReplayedPixel(textureLoad(source_indices, texel, 0).r, texel,
-        edit_z(world_y, edit.quad.yw, bitcast<f32>(edit.params.x), edit.params.y));
+        edit_z(world_y, edit.quad.yw, bitcast<f32>(edit.params.x), edit.params.y, edit.view_height));
 }
 
 // The pixel as the earlier edits of this window left it: its Z, the last
@@ -104,7 +110,7 @@ struct Replayed { z: i32, body: u32, halves: u32 };
 fn replay_earlier(input: VertexOutput) -> Replayed {
     var state = Replayed(snapshot_z(input), 0u, 0u);
     let slot = input.command_ordinal - 1u;
-    let earlier = edits[slot].earlier.xy;
+    let earlier = edits[slot].earlier;
     for (var j = 0u; j < slot; j++) {
         if ((select(earlier.x, earlier.y, j >= 32u) >> (j % 32u)) & 1u) == 0u { continue; }
         let edit = edits[j];

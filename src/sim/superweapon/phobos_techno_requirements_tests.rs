@@ -170,7 +170,7 @@ fn phobos_aux_counts_present_insignificant_techno_but_not_its_limbo() {
     );
     recheck(&mut sim, &rules, owner);
     assert!(active(&sim, owner));
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     assert!(
         !allowed(&sim, &rules),
         "Phobos's limbo hook excludes Insignificant"
@@ -229,8 +229,8 @@ fn phobos_limbo_gates_survive_save_transfer_and_uninit() {
     let id = sim
         .spawn_object_at_height("E1", OWNER, 12, 10, 0, 0, &rules)
         .unwrap();
-    sim.techno_limbo_with_rules(id, &rules, None);
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
+    sim.techno_limbo_with_rules(id, &rules);
     sim.spawn_from_map(&[], Some(&rules));
     assert!(
         !allowed(&sim, &rules),
@@ -265,7 +265,7 @@ fn phobos_limbo_gates_survive_save_transfer_and_uninit() {
             FrameEffects::default(),
         )
         .unwrap();
-    restored.techno_limbo_with_rules(id, &rules, None);
+    restored.techno_limbo_with_rules(id, &rules);
     restored.change_owner_with_rules(id, other, &rules, None, FrameEffects::default());
     assert!(restored.houses[&owner].tech_recheck_pending());
     assert!(restored.houses[&other].tech_recheck_pending());
@@ -316,7 +316,7 @@ fn phobos_techno_gates_count_installed_upgrade_on_its_host() {
         temporary,
         host,
         &rules,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert!(allowed(&sim, &rules), "the host owns the installed upgrade");
     assert!(!super_weapon_available(&sim, &rules, owner, "BlockSpecial"));

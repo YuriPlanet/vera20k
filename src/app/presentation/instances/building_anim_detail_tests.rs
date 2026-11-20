@@ -63,7 +63,8 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
             .object("GAPOWR")
             .unwrap()
             .foundation
-            .cell_offsets();
+            .cell_offsets()
+            .collect::<Vec<_>>();
         terrain
             .cells()
             .iter()
@@ -135,7 +136,7 @@ fn emit(
     let building = sim.entities().get(plant).unwrap();
     let frame = crate::app::presentation::frame::PresentationFrame::capture(
         &scene.runtime,
-        &Default::default(),
+        &Default::default(), false,
     );
     let record = frame.object(plant).unwrap();
     let order = NativeDisplayOrder::from_world(&sim, None);
@@ -222,6 +223,7 @@ fn emit(
             tactical: [0, 0, 800, 600],
             zoom: 1.0,
             axis: crate::render::batch::DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail,
             detail_level,

@@ -210,7 +210,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(foot) = self.substrate.entities.get(id) else {
@@ -228,7 +227,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         let _ = self.mission_queue_exact(
@@ -282,7 +280,7 @@ impl Simulation {
             y: coordinate.y,
             z: coordinate.z,
         };
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.dispatch_object_tag_event(building_id, 1, Some(id), None, context);
 
         //519790..519865: VoiceDie (local human only), then DieSound.
@@ -445,7 +443,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
-        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
+        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         while self
             .substrate
             .entities
@@ -456,7 +454,6 @@ impl Simulation {
             let removed = depart_cargo_head(
                 self,
                 rules,
-                registry,
                 transport,
                 DepartureRoute::Vehicle,
                 |sim, passenger| {
@@ -504,7 +501,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self.substrate.entities.get(id).map(GameEntity::owner) else {
@@ -565,7 +561,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         true
@@ -585,7 +580,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(foot) = self.substrate.entities.get(id) else {
@@ -609,7 +603,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         let now = self.session.binary_frame();
@@ -632,7 +625,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
@@ -643,7 +635,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|foot| foot.ares.vehicle_driver.vehicle_seek())
         {
-            return self.ares_enter_nearest_vehicle(id, rules, registry, effects);
+            return self.ares_enter_nearest_vehicle(id, rules, effects);
         }
         let mut best = None;
         let mut best_distance = i32::MAX;
@@ -681,7 +673,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         let now = self.session.binary_frame();
@@ -709,7 +700,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         if !can_auto_deploy_here(self, id, rules) {
@@ -731,7 +721,6 @@ impl Simulation {
             id,
             Some(NavTargetRef::object(best)),
             rules,
-            registry,
             effects,
         );
         transmit(

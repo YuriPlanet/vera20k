@@ -26,8 +26,8 @@
 //! ends with (the sound prefix, pending overlay Recalcs) still runs at its
 //! slot. The state hash and the save form read a sleeper as settled.
 //!
-//! It marks plain buildings (no weapon, factory, super weapon, occupants or
-//! sound of their own, at full health, on Guard) and standing infantry (on
+//! It marks plain buildings (no weapon, factory, super weapon or sound of
+//! their own, empty, at full health, on Guard) and standing infantry (on
 //! Guard or Area Guard, at full health, standing ready with no target,
 //! order or fear). Everything else stays awake. A game where an extension
 //! plays marks nothing ([`Simulation::extension_steps_unsorted`]): its
@@ -42,7 +42,6 @@
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
@@ -127,7 +126,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> SleepVisit {
         if !self.idle_sleep.on {
@@ -195,7 +193,7 @@ impl Simulation {
                 .as_ref()
                 .is_some_and(|grid| grid.has_dirty())
         {
-            let _ = self.commit_no_fire(rules, registry, effects);
+            let _ = self.commit_no_fire(rules, effects);
         }
         SleepVisit::Counted
     }
@@ -301,7 +299,11 @@ impl Simulation {
     /// The frame plain idle building `id` may sleep until and its owner
     /// note, or `None` to stay awake.
     fn building_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
-        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
+        // Techno70D997 may update campaign discovery on an otherwise idle turn.
+        if self.extension_steps_unsorted(rules)
+            || self.session.uses_local_player_shroud()
+            || !self.session.rule_policy().allows_idle_object_sleep()
+        {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;
@@ -314,7 +316,9 @@ impl Simulation {
             && object.super_weapon2.is_none()
             && !object.is_gattling
             && !object.has_turret
-            && !object.can_be_occupied
+            // A garrisonable building may sleep while it stands empty (the
+            // state test below): an occupant's admission and ejection write
+            // it, which wakes it. City maps are mostly such houses.
             && object.ambient_sound.is_none()
             && object.working_sound.is_none()
             && object.not_working_sound.is_none()
@@ -432,7 +436,10 @@ impl Simulation {
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
-        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
+        if self.extension_steps_unsorted(rules)
+            || self.session.uses_local_player_shroud()
+            || !self.session.rule_policy().allows_idle_object_sleep()
+        {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;

@@ -505,6 +505,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     assert!(
         sim.undeploy_building(
             yarefn,
+            false,
             &rules,
             Some(registry()),
             crate::sim::world::FrameEffects::default()
@@ -743,6 +744,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
 
     assert!(sim.undeploy_building(
         refinery,
+        false,
         &rules,
         Some(registry()),
         crate::sim::world::FrameEffects::default()

@@ -167,7 +167,6 @@ impl Simulation {
         id: u64,
         attacker: Option<u64>,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -177,7 +176,7 @@ impl Simulation {
             return false;
         }
         if entity.health.current() > 0 {
-            let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+            let context = UninitContext::new(rules).with_effects(frame_effects);
             if attacker.is_some() {
                 self.dispatch_object_tag_event(id, 38, Some(id), None, context);
             }
@@ -240,14 +239,11 @@ impl Simulation {
             rules,
             frame_effects,
         );
-        self.stun(
-            id,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
-        );
+        self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
         self.kill_passengers(
             id,
             attacker,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
+            UninitContext::new(rules).with_effects(frame_effects),
         );
         // RTTI is read after the synchronous tail calls at 0x004DECA2.
         // Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
@@ -303,7 +299,7 @@ impl Simulation {
                 RockingState::spin_for_crash(&mut entity.rocking, vel_sideways, vel_forwards);
             }
         }
-        self.detach_all_pointer_expired(id, rules, registry, frame_effects);
+        self.detach_all_pointer_expired(id, rules, frame_effects);
         true
     }
 
@@ -339,7 +335,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let terrain = self.resolved_terrain.as_ref();
@@ -365,7 +360,7 @@ impl Simulation {
         };
         let counter = runtime.advance_fall(true);
         if placed {
-            let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+            let context = UninitContext::new(rules).with_effects(frame_effects);
             self.substrate.display.remove(id);
             self.unmark_entity_remove(id, context);
             let dropped = crate::sim::components::DriveCoord {
@@ -413,7 +408,7 @@ impl Simulation {
             return false;
         }
         self.substrate.aircraft_tracker_remove(id);
-        self.set_object_height(id, 0, rules, overlay_registry, frame_effects);
+        self.set_object_height(id, 0, rules, frame_effects);
         let bridge_state_changed =
             self.fire_death_weapon(id, rules, overlay_registry, frame_effects);
         Self::play_crash_impact_sound(
@@ -424,10 +419,7 @@ impl Simulation {
             id,
             rules,
         );
-        self.uninit_with_context(
-            id,
-            UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
-        );
+        self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
         bridge_state_changed
     }
 
@@ -489,7 +481,7 @@ impl Simulation {
                 false
             }
         } else if crashable {
-            self.set_object_height(id, 0, rules, overlay_registry, frame_effects);
+            self.set_object_height(id, 0, rules, frame_effects);
             let bridge_state_changed = if balloon_hover {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
             } else {
@@ -502,10 +494,7 @@ impl Simulation {
                 );
                 false
             };
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
             bridge_state_changed
         } else if self
             .substrate
@@ -615,7 +604,7 @@ impl Simulation {
                 self.record_manipulated_kill(
                     id,
                     id,
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
             }
             if let Some(weapon) = weapon {
@@ -657,14 +646,11 @@ impl Simulation {
                 );
                 // Release7462E2/74637A destroys this Bullet before the next
                 // constructor, including its common pointer-expiry broadcast.
-                self.destroy_unfired_projectile(bullet_id, rules, registry, effects);
+                self.destroy_unfired_projectile(bullet_id, rules, effects);
             }
         }
         if self.substrate.entities.contains(id) {
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(effects));
         }
         bridge_state_changed
     }
@@ -906,7 +892,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(transport)
-                .and_then(|entity| entity.cargo_mut())
+                .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                 .and_then(|cargo| cargo.unload_first())
                 .map(|(passenger, _size)| passenger)
             else {
@@ -918,7 +904,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(passenger)
                 && entity.passenger_role().inside_transport_id() == Some(transport)
             {
-                entity.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
             }
             let nested = if nested_by_self {
                 Some(passenger)

@@ -63,7 +63,14 @@ fn scene(list: Option<&str>) -> (Simulation, RuleSet, u64, u64) {
         transport_crossing_required: false,
     });
     let team = vm
-        .construct_team(team_type, owner, true, 0, false, None)
+        .construct_team(
+            team_type,
+            owner,
+            crate::rules::rule_policy::TeamLimitScope::PerHouse,
+            0,
+            false,
+            None,
+        )
         .expect("team");
     (sim, rules, team, tank)
 }
@@ -123,7 +130,6 @@ fn liberating_a_considered_member_frees_its_slot() {
         tank,
         false,
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     {

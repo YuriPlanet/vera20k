@@ -73,7 +73,6 @@ pub(crate) fn mission_capture(
             id,
             Some(NavTargetRef::object(building)),
             rules,
-            registry,
             effects,
         );
     }
@@ -118,7 +117,7 @@ pub(crate) fn mission_capture(
                     .is_some_and(|object| object.occupier))
     });
     if hunts {
-        let _ = sim.assign_target_represented(id, None, rules, registry, effects);
+        let _ = sim.assign_target_represented(id, None, rules, effects);
         sim.assign_null_destination(id, rules, registry, effects);
         let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(

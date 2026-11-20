@@ -50,7 +50,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(requested) = requested else {
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return;
         };
         let high = requested.object_id().is_some_and(|target| {
@@ -63,7 +63,7 @@ impl Simulation {
             })
         });
         if high {
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return;
         }
         let entering = self.substrate.entities.get(id).is_some_and(|entity| {
@@ -87,10 +87,16 @@ impl Simulation {
         };
         self.aircraft_pad_departure(id, destination, rules, frame_effects);
         let Some(destination) = destination else {
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return;
         };
-        if !self.begin_foot_destination(id, true, rules, None, frame_effects) {
+        if !self.begin_foot_destination(
+            id,
+            true,
+            rules,
+            Some(rules.overlay_registry()),
+            frame_effects,
+        ) {
             return;
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
@@ -572,7 +578,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -604,7 +609,7 @@ impl Simulation {
                 .fly_building_at(cell)
                 .is_some_and(|building| entity.radio_contacts.contains(building));
             if !contact {
-                crate::sim::aircraft::enter_idle_mode_for(self, id, rules, registry, frame_effects);
+                crate::sim::aircraft::enter_idle_mode_for(self, id, rules, frame_effects);
                 return false;
             }
         }

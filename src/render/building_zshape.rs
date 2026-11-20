@@ -76,38 +76,6 @@ pub fn decode_zshape_frame(bytes: &[u8], shp: &ShpFile) -> Option<ZShapeFrame> {
     })
 }
 
-/// Frame 0 of a z-shape SHP as biased `R8` texels over the full header canvas.
-///
-/// Returns `(width, height, texels)`; texels are `zshape_remap(byte) + 128`.
-pub fn decode_zshape_canvas(shp: &ShpFile) -> Option<(u32, u32, Vec<u8>)> {
-    let frame = shp.frames.first()?;
-    let width = u32::from(shp.width);
-    let height = u32::from(shp.height);
-    if width == 0 || height == 0 {
-        return None;
-    }
-    let neutral = ZSHAPE_TEXEL_BIAS as u8;
-    let mut texels = vec![neutral; (width * height) as usize];
-    let fw = usize::from(frame.frame_width);
-    let fh = usize::from(frame.frame_height);
-    for y in 0..fh {
-        let cy = y + usize::from(frame.frame_y);
-        if cy >= height as usize {
-            break;
-        }
-        for x in 0..fw {
-            let cx = x + usize::from(frame.frame_x);
-            if cx >= width as usize {
-                break;
-            }
-            let byte = frame.pixels.get(y * fw + x).copied().unwrap_or(0);
-            let signed = i32::from(zshape_remap(byte)) + ZSHAPE_TEXEL_BIAS;
-            texels[cy * width as usize + cx] = signed.clamp(0, 255) as u8;
-        }
-    }
-    Some((width, height, texels))
-}
-
 impl BuildingZShape {
     /// Load `BUILDNGZ.SHA` through the retail file boundary and upload it.
     /// `None` when the asset is missing or unparsable (callers fall back to

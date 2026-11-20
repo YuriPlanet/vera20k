@@ -225,7 +225,7 @@ impl Simulation {
                 hover.head = None;
             }
         }
-        self.set_unit_null_destination(id, rules, None, effects);
+        self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
         self.substrate.hover_halt(id);
     }
 
@@ -366,7 +366,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
-        let registry = effects.overlay_registry();
+        let registry = Some(rules.overlay_registry());
         self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
         let mut out = HoverProcessOutcome::default();
         self.hover_process_movement(id, true, rules, registry, &mut out, effects)?;
@@ -386,7 +386,7 @@ impl Simulation {
         if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
             return Ok(out);
         }
-        self.hover_process_tail(id, rules, registry, effects);
+        self.hover_process_tail(id, rules, effects);
         Ok(out)
     }
 
@@ -549,7 +549,7 @@ impl Simulation {
             {
                 return Ok(Arrival::Return);
             }
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             self.substrate.hover_halt(id);
         } else if code != 0 {
             //514982..5149EA.
@@ -653,13 +653,7 @@ impl Simulation {
 
     /// Process 0x00514A21..0x00514C12: the altitude controller and the
     /// Shove tail and the water DropAsBomb gate.
-    fn hover_process_tail(
-        &mut self,
-        id: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
-    ) {
+    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         Self::hover_altitude(
             &self.session,
             &mut self.substrate,
@@ -667,17 +661,11 @@ impl Simulation {
             id,
             rules,
         );
-        self.hover_spin_tail(id, rules, registry, effects);
+        self.hover_spin_tail(id, rules, effects);
     }
 
     /// Original Process suffix514AD0..514C12, after altitude adjustment.
-    fn hover_spin_tail(
-        &mut self,
-        id: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
-    ) {
+    fn hover_spin_tail(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         //514AD0..514AD5: an object not spinning on entry skips the entire
         // tail, including water admission. Power_Off516BF0 starts the spin.
         let was_spinning = self
@@ -711,7 +699,7 @@ impl Simulation {
         if drop {
             self.drop_as_bomb(
                 id,
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
             // Phobos hook 0x514C07 (`Ext/Techno/Hooks.cpp:997-1006`): the
             // shutdown calls DropAsBomb and then marks the techno, so the
@@ -917,7 +905,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(());
         }
         if path_word(entity, 0).is_some() {
@@ -980,13 +968,7 @@ impl Simulation {
                 cell,
                 self.playfield_bounds(),
                 self.resolved_terrain.as_ref(),
-            ) && self.hover_can_enter(
-                id,
-                (cell.0 as i16, cell.1 as i16),
-                direction,
-                rules,
-                registry,
-            )? == 6
+            ) && self.hover_can_enter(id, (cell.0 as i16, cell.1 as i16), direction, rules)? == 6
                 && self.hover_ally_cell(id, cell, rules, registry, effects)?
             {
                 return Ok(());
@@ -1052,7 +1034,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(true);
         }
         self.scatter_blocked_track_cell(
@@ -1081,7 +1063,7 @@ impl Simulation {
             .foot_path_zone_precheck(id, destination, rules)
             .map_err(|cause| self.hover_error(id, cause))?
         {
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(());
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1098,7 +1080,7 @@ impl Simulation {
             ) < rules.general.close_enough
             && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
         {
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1116,7 +1098,7 @@ impl Simulation {
             }
         } else {
             //5167D5..51681B: give up, with the retained scold sound.
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1151,7 +1133,6 @@ impl Simulation {
         cell: (i16, i16),
         direction: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<u8, FrameAdvanceError> {
         let terrain = self
             .resolved_terrain
@@ -1177,7 +1158,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         )
         .map_err(|cause| self.hover_error(id, cause))
     }
@@ -1223,7 +1203,7 @@ impl Simulation {
             //5152D1..51532E: the invalid-tube arm (module residual): the
             //drop, then one more null destination.
             self.hover_drop_track(id, rules, effects);
-            self.set_unit_null_destination(id, rules, None, effects);
+            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(7);
         }
         let location = ground_pose::position_world_coord(&entity.position);
@@ -1288,7 +1268,7 @@ impl Simulation {
         if probe_structural != entity.on_bridge() {
             self.substrate.latch_foot_68b(id);
         }
-        let code = self.hover_can_enter(id, cell, direction, rules, registry)?;
+        let code = self.hover_can_enter(id, cell, direction, rules)?;
         match code {
             0 => {
                 //515A1C: Per_Cell_Process(2), then the claim and the shift.
@@ -1423,7 +1403,12 @@ impl Simulation {
                     if let Some(entity) = self.substrate.entities.get_mut(id) {
                         hover_stop_moving(entity);
                     }
-                    self.set_unit_null_destination(id, rules, None, effects);
+                    self.set_unit_null_destination(
+                        id,
+                        rules,
+                        Some(rules.overlay_registry()),
+                        effects,
+                    );
                     return Ok(7);
                 }
                 //515902..5159E1: scatter the head cell; the head drops.
@@ -1521,7 +1506,7 @@ mod tests {
             hover.shove_steps = input["steps"].as_i64().unwrap_or(2) as i32;
             entity.locomotor = Some(loco);
             sim.substrate.entities.insert(entity);
-            sim.hover_spin_tail(1, &rules, None, FrameEffects::default());
+            sim.hover_spin_tail(1, &rules, FrameEffects::default());
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
                 entity.was_dropped_as_bomb(),
@@ -1567,7 +1552,7 @@ mod tests {
             hover.shove_steps = 1;
             entity.locomotor = Some(loco);
             sim.substrate.entities.insert(entity);
-            sim.hover_spin_tail(1, &rules, None, FrameEffects::default());
+            sim.hover_spin_tail(1, &rules, FrameEffects::default());
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_eq!(entity.was_dropped_as_bomb(), drops, "land {land}");
             assert_eq!(entity.hover_shutdown(), drops, "land {land}");

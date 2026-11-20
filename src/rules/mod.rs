@@ -352,6 +352,7 @@ pub mod radar_event_config;
 mod radial_indicator_tests;
 pub mod recoil;
 pub mod retail_sources;
+pub mod rule_policy;
 pub(crate) mod rules_type_references;
 pub mod ruleset;
 pub mod secret_lab;

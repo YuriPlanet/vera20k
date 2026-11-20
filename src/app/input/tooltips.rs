@@ -403,14 +403,12 @@ fn ares_enemy_ui_name<'r>(
     viewer: crate::sim::intern::InternedId,
 ) -> Option<&'r str> {
     object.enemy_ui_name().filter(|_| {
-        entity.owner() != viewer
-            && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(sim.house_alliances()),
-                sim.interner(),
-                entity.owner(),
-                viewer,
-            )
-            && !entity.shows_production_to(viewer)
+        !crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(sim.house_alliances()),
+            sim.interner(),
+            entity.owner(),
+            viewer,
+        ) && !entity.shows_production_to(viewer)
     })
 }
 
@@ -922,11 +920,9 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
     // 4AE580, before the ordinary object/shroud tooltip lookup.
-    regions.push(region(
-        ID_TACTICAL_TIP,
-        tactical_tip_rect(state),
-        &|| dynamic_tip_text(cursor, || tactical_tip_text(state)),
-    ));
+    regions.push(region(ID_TACTICAL_TIP, tactical_tip_rect(state), &|| {
+        dynamic_tip_text(cursor, || tactical_tip_text(state))
+    }));
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
     // Gadget idle republishes these retained House values each unlocked pump.
@@ -2160,10 +2156,9 @@ mod tests {
         tips.on_mouse_move(20, 20, 0);
         tips.poll(1000);
         assert_eq!(tips.active().unwrap().text, expected);
-        runtime.simulation.techno_limbo_with_context(
-            entity_id,
-            UninitContext::with_rules(&runtime.resources.rules),
-        );
+        runtime
+            .simulation
+            .techno_limbo_with_context(entity_id, UninitContext::new(&runtime.resources.rules));
         let text = tactical_world_tip_text(
             runtime.view(),
             &runtime.resources.rules,

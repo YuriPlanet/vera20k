@@ -331,7 +331,7 @@ impl Simulation {
         // 0x0051A507..0x0051A51C: the building's Tag hears event 1 with the
         // planter as actor on every arrival, before the refusals below.
         // Synchronous actions may change either object; both are reloaded.
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.dispatch_object_tag_event(building, 1, Some(id), None, context);
         let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
@@ -407,7 +407,6 @@ impl Simulation {
         id: u64,
         building: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let frame = self.session.binary_frame();
@@ -433,7 +432,7 @@ impl Simulation {
                     .pending_c4_detonation
                     .plant(frame as i32, fuse, id);
             }
-            let context = UninitContext::new(rules, registry).with_effects(effects);
+            let context = UninitContext::new(rules).with_effects(effects);
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             return true;
         }

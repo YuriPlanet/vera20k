@@ -35,7 +35,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
             HouseDifficulty::Normal,
             &general,
             CountryDifficultyBiases::default(),
-            false,
+            crate::rules::rule_policy::RulePolicy::stock_campaign(),
             index as i32,
             0,
         );

@@ -32,7 +32,7 @@ use crate::rules::object_type::{FactoryType, ObjectCategory};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;
 use crate::sim::intern::InternedId;
-use crate::sim::world::Simulation;
+use crate::sim::world::{ControlProjection, Simulation};
 
 /// Logic frames between two looks at the groups.
 const CHECK_INTERVAL: u64 = 8;
@@ -116,10 +116,16 @@ fn counted_as(kind: Kind) -> Option<ObjectCategory> {
 }
 
 /// The kind of an own, live factory building that can rotate.
-fn factory_kind(sim: &Simulation, rules: &RuleSet, id: u64, owner: InternedId) -> Option<Kind> {
+fn factory_kind(
+    sim: &Simulation,
+    control: &ControlProjection<'_>,
+    rules: &RuleSet,
+    id: u64,
+    owner: InternedId,
+) -> Option<Kind> {
     let entity = sim.entities().get(id)?;
     if !entity.is_alive()
-        || entity.owner() != owner
+        || !control.can_manage_primary_house(entity.owner(), owner)
         || entity.category() != EntityCategory::Structure
     {
         return None;
@@ -155,9 +161,10 @@ impl PrimaryRotationState {
         selected: &[u64],
         until: u64,
     ) -> Option<(usize, Vec<Command>)> {
+        let control = sim.control_projection();
         let mut kinds: Vec<(Kind, Vec<u64>)> = Vec::new();
         for &id in selected {
-            let Some(kind) = factory_kind(sim, rules, id, owner) else {
+            let Some(kind) = factory_kind(sim, &control, rules, id, owner) else {
                 continue;
             };
             match kinds.iter_mut().find(|(seen, _)| *seen == kind) {
@@ -214,11 +221,12 @@ impl PrimaryRotationState {
         now: u64,
         until: u64,
     ) -> Vec<Command> {
+        let control = sim.control_projection();
         let mut orders = Vec::new();
         self.groups.retain_mut(|group| {
             group
                 .members
-                .retain(|&id| factory_kind(sim, rules, id, owner) == Some(group.kind));
+                .retain(|&id| factory_kind(sim, &control, rules, id, owner) == Some(group.kind));
             if group.members.len() < 2 {
                 return false;
             }

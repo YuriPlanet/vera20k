@@ -939,7 +939,6 @@ fn retail_walk_reads_each_object() {
         flying,
         600,
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_ne!(

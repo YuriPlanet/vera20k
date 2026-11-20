@@ -308,18 +308,13 @@ impl LoadingRequest {
     pub(crate) fn replay(
         startup: &crate::sim::replay::ReplayStartup,
         map_beside: Option<&str>,
-    ) -> Self {
-        let mut session = startup.launch_session().clone();
-        if let Some(map) = map_beside {
-            session.selected_map_file = Some(map.to_owned());
-        }
-        Self {
+    ) -> anyhow::Result<Self> {
+        let launch = startup.launch_descriptor(map_beside.unwrap_or(startup.map_name()))?;
+        Ok(Self {
             startup: LoadingStartup::Replay {
-                session,
+                launch: Box::new(launch),
                 game_mode: startup.game_mode(),
-                native_id_prefix: startup
-                    .native_id_prefix()
-                    .expect("validated replay startup"),
+                native_id_prefix: startup.native_id_prefix()?,
                 seed: crate::app::match_bootstrap::MatchSeed {
                     value: startup.seed(),
                     source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -330,7 +325,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
-        }
+        })
     }
 
     pub(crate) fn campaign(startup: crate::app::match_bootstrap::PreparedCampaignStartup) -> Self {
@@ -470,6 +465,21 @@ impl LoadingRequest {
                 );
             }
         }
+        // The client applies the code for its mode to the map it launches.
+        // The native mode object and the normal Rules layers still own their
+        // separate setup. Only the imported catalog's own maps take this code.
+        if self.startup().session_mode()
+            == crate::app::match_runtime::session::SessionMode::Skirmish
+            && let Some(session) = self.skirmish_launch_session()
+            && let Some(additions) = crate::app::mod_additions::MapAdditions::client_mode(
+                asset_manager,
+                self.selected_map_file(),
+                &session.mode,
+            )
+            .map_err(anyhow::Error::msg)?
+        {
+            loaded = loaded.with_mod_additions(&additions)?;
+        }
         match map_additions {
             Some(additions) => loaded.with_mod_additions(additions),
             None => Ok(loaded),
@@ -559,7 +569,11 @@ impl LoadingRequest {
             map_additions,
             progress,
         )?;
-        initial.retain_process_state(mapgen_retention, resident, self.startup().session_mode());
+        initial.retain_process_state(
+            mapgen_retention,
+            resident,
+            self.startup().match_spec().topology(),
+        );
         self.prepare_initial(initial)
     }
 
@@ -1071,7 +1085,7 @@ fn ordinary_country_loading_index(
     // A replay of a network game has the same cold Rules boundary as a live
     // match. An ordinary Country prefix would transfer the old world's writes
     // into that rebuilt registry after the initial map load.
-    if startup.session_mode().is_network()
+    if startup.match_spec().topology().is_lockstep()
         || matches!(
             startup,
             LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
@@ -1314,10 +1328,8 @@ fn prepare_session_for_loading(
         // The shell retains the recorded mode until its world is installed;
         // replay never admits a participant table or live connection.
         LoadingStartup::Replay {
-            session: launch,
-            game_mode,
-            ..
-        } => session.begin_replay(*game_mode, launch.local_player().name.clone()),
+            launch, game_mode, ..
+        } => session.begin_replay(*game_mode, launch.session().local_player().name.clone()),
         startup => session.begin_offline(
             startup.session_mode(),
             startup
@@ -1328,19 +1340,18 @@ fn prepare_session_for_loading(
 }
 
 /// VERA: a network match plays the rules its room took from its host
-/// (`HostRules`), which the room's agreement already compared, and so does
-/// a replay that recorded them; every other game, offline replays included,
-/// plays the player's own Options switches.
+/// (`HostRules`), which the room's agreement already compared. A replay
+/// applies the exact simulation switches recorded by its blueprint.
 fn play_startup_personal_rules(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
     startup: &LoadingStartup,
 ) {
     let room = match startup {
         LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
-        // A network match recorded the room's, none included.
-        LoadingStartup::Replay {
-            session, game_mode, ..
-        } if game_mode.is_network() => &session.options.host_rules,
+        LoadingStartup::Replay { launch, .. } => {
+            return process_assets
+                .use_personal_rules(launch.personal_rules().cloned().unwrap_or_default());
+        }
         _ => return process_assets.use_own_personal_rules(),
     };
     match room.personal_rules() {
@@ -1355,6 +1366,8 @@ fn play_startup_personal_rules(
 }
 
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
+    // Retiring the Radar FIFO can record an outgoing scenario service.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     state
         .frontend
         .multiplayer_shell_runtime
@@ -1409,6 +1422,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let outgoing = &mut state.match_state.match_presentation;
     outgoing.atlas_growth.cancel();
     outgoing.sprite_atlas = None;
+    outgoing.zshape_skips.get_mut().forget_frames();
     outgoing.unit_atlas = None;
     replace_loading_attempt(
         &mut state.frontend.loading_session,
@@ -2349,6 +2363,19 @@ fn poll_network_load_wait(
     }
     if poll == NetworkLoadPoll::TimedOut {
         let timed_out = native.progress_row.incomplete_remote_indices();
+        if state
+            .match_state
+            .session
+            .retire_cooperative_start_on_timeout(&timed_out)
+        {
+            // Retire the held result and its asset lease through the normal
+            // failure path before the world can be installed.
+            state.frontend.loading_session = Some(session);
+            let text =
+                crate::app::frontend::shell_pass::resolve_csf(state, "TXT_SYSTEM_NOT_RESPONDING")
+                    .into_owned();
+            return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
+        }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
             unreachable!()
         };

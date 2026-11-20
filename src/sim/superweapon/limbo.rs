@@ -142,15 +142,13 @@ fn limbo_create(
         (
             entity.category(),
             entity.type_ref(),
-            entity.tracking_facts.counts_toward_limbo_tracking(),
+            entity.tracking_facts().counts_toward_limbo_tracking(),
         )
     }) else {
         return;
     };
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house
-            .tracking_mut()
-            .add_limbo_delivered(id, limbo_id, category, type_id, counts);
+        house.add_limbo_delivered(id, limbo_id, category, type_id, counts);
         // `pOwner->RecheckTechTree = true` (`:120`).
         house.request_tech_recheck();
     }
@@ -199,7 +197,7 @@ pub(super) fn apply_limbo_kill(
             let Some(house) = sim.houses.get_mut(&target) else {
                 continue;
             };
-            let taken = house.tracking_mut().take_limbo_delivered(id, max);
+            let taken = house.take_limbo_delivered(id, max);
             kills.extend(taken);
             removed_id.push(id);
         }
@@ -210,7 +208,7 @@ pub(super) fn apply_limbo_kill(
                 e.owner(),
                 e.category(),
                 e.type_ref(),
-                e.tracking_facts.counts_toward_limbo_tracking(),
+                e.tracking_facts().counts_toward_limbo_tracking(),
             )
         }) else {
             continue;
@@ -218,11 +216,9 @@ pub(super) fn apply_limbo_kill(
         // `RemoveFromLimboTracking` happens here because the building is not
         // truly in limbo (`:240-243`).
         if counts && let Some(house) = sim.houses.get_mut(&owner) {
-            house
-                .tracking_mut()
-                .remove_limbo_delivered_tracking(category, type_id);
+            house.remove_limbo_delivered_tracking(category, type_id);
         }
-        let context = UninitContext::new(rules, overlay_registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         sim.stun(id, context);
         let _ = sim.techno_limbo_with_context(id, context);
         sim.record_kill_and_uninit(id, None, context);

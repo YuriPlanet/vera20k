@@ -67,6 +67,7 @@ pub mod cloak_disguise;
 pub mod command;
 pub mod command_queue;
 pub mod components;
+pub mod control_authority;
 pub(crate) mod conversion_health;
 pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
 pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
@@ -273,6 +274,7 @@ pub mod replay;
 mod replay_determinism_tests;
 pub mod runtime;
 pub mod selection;
+pub mod skirmish_cheats;
 
 // --- Snapshot serialization (mid-match save/load) ---
 pub mod snapshot;

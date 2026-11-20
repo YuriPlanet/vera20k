@@ -368,7 +368,7 @@ fn delete_passenger(
         }
     }
     let attacker = (!settings.dont_score).then_some(transport);
-    let context = crate::sim::world::UninitContext::with_rules(rules).with_effects(effects);
+    let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
     sim.kill_passengers(poor_guy, attacker, context);
     sim.record_kill_and_uninit(poor_guy, attacker, context);
     // `Body.Update.cpp:422-427`: a building transport with an ExtraPower
@@ -415,7 +415,7 @@ fn scaled_refund(
         object,
         house,
         &factors,
-        sim.session.game_mode_nonzero(),
+        sim.session.rule_policy(),
         true,
     );
     X::ftol_i32_low_masked(X::mul(

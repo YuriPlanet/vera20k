@@ -797,7 +797,7 @@ pub(super) fn choose_unit_crate_type<'r>(
     if chosen.is_some() {
         return chosen;
     }
-    let human = house.is_controlled_by_human(session.game_mode_nonzero());
+    let human = house.is_controlled_by_human(session.rule_policy());
     let bases = session.game_options().bases;
     let ids = rules.type_array_ids(ObjectCategory::Vehicle);
     let is_base_unit = |candidate: &crate::rules::object_type::ObjectType| {

@@ -72,7 +72,6 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
         observer,
         Some(TargetKind::Entity(id)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();
@@ -260,7 +259,6 @@ fn a_train_heading_back_to_the_playfield_stays_but_an_exiting_train_leaves() {
             id,
             Some(NavTargetRef::cell(destination.0, destination.1)),
             &rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();

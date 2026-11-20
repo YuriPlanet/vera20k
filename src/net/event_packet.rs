@@ -11,6 +11,7 @@ use crate::sim::command::{
     MEGAMISSION_SOURCE_KIND_OFFSET, RESPONSE_TIME_OPCODE,
 };
 use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
+use crate::util::read_helpers::{array_at, read_i32_le};
 
 /// Session constructor69768C writes +2808 (A8DA40), passed by64764C.
 pub const NATIVE_EVENT_PACKET_CAPACITY: usize = 0x22e;
@@ -73,13 +74,11 @@ impl EventPacketHeader {
 }
 
 pub fn live_command_frontier(bytes: &[u8]) -> Option<u64> {
-    (bytes.len() >= LIVE_EVENT_PREFIX_LEN + HEADER_LEN
-        && bytes.starts_with(&LIVE_EVENT_MAGIC)
-        && matches!(
-            bytes[LIVE_EVENT_PREFIX_LEN],
-            FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE
-        ))
-    .then(|| u64::from_le_bytes(bytes[4..LIVE_EVENT_PREFIX_LEN].try_into().unwrap()))
+    let (frontier, body) = bytes
+        .strip_prefix(&LIVE_EVENT_MAGIC)?
+        .split_first_chunk::<{ LIVE_EVENT_PREFIX_LEN - LIVE_EVENT_MAGIC.len() }>()?;
+    (body.len() >= HEADER_LEN && matches!(body[0], FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE))
+        .then(|| u64::from_le_bytes(*frontier))
 }
 
 fn body_offset(bytes: &[u8]) -> usize {
@@ -98,9 +97,7 @@ pub fn encode_frame_sync(info: FrameInfo) -> Result<[u8; HEADER_LEN], PacketEnco
     if info.house_id < 0 {
         return Err(PacketEncodeError::InvalidHouse);
     }
-    let mut bytes: [u8; HEADER_LEN] = info.encode().as_bytes()[..HEADER_LEN]
-        .try_into()
-        .expect("fixed packet header");
+    let mut bytes = array_at::<0, HEADER_LEN, _>(info.encode().as_bytes());
     bytes[0] = FRAME_SYNC_OPCODE;
     Ok(bytes)
 }
@@ -159,6 +156,9 @@ fn event_payload_len(opcode: u8) -> Option<u8> {
         }
         crate::sim::command::VERA_EJECT_BUNKER_OPCODE => Some(5),
         crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE => Some(1),
+        crate::sim::command::TARGET_HOUSE_OPCODE => {
+            Some(crate::sim::command::TARGET_HOUSE_PAYLOAD_LEN)
+        }
         // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
         // a game Ares plays in raises one (`context_order`'s trench Enter).
         crate::sim::command::ARES_TRENCH_REDIRECT_OPCODE => {
@@ -547,7 +547,11 @@ impl EventPacketCodec {
                         DecodeFailureKind::InvalidHouse,
                     ));
                 }
-                frame = i32::from_le_bytes(bytes[start + 3..start + 7].try_into().unwrap());
+                // The FRAMEINFO header's wire length covered this stamp.
+                let Some(stamp) = read_i32_le(bytes, start + 3) else {
+                    break;
+                };
+                frame = stamp;
             }
             let mut record = CommandRecord::encode(opcode, i32::from(house), frame, &[])
                 .expect("native table fits an Event payload");
@@ -597,10 +601,10 @@ impl EventPacketCodec {
                         ));
                     }
                     let mut actors = vec![actor_token(&record)];
-                    actors.extend(
+                    actors.extend_from_slice(
                         bytes[start + wire_len..start + wire_len + trailing]
-                            .chunks_exact(ACTOR_TOKEN_LEN)
-                            .map(|bytes| ActorToken::try_from(bytes).unwrap()),
+                            .as_chunks::<ACTOR_TOKEN_LEN>()
+                            .0,
                     );
                     actors
                 };
@@ -658,9 +662,7 @@ impl EventPacketCodec {
 }
 
 fn actor_token(record: &CommandRecord) -> ActorToken {
-    record.payload()[..ACTOR_TOKEN_LEN]
-        .try_into()
-        .expect("fixed actor token")
+    record.payload_field::<0, ACTOR_TOKEN_LEN>()
 }
 
 fn same_mission(left: &CommandRecord, right: &CommandRecord) -> bool {

@@ -102,6 +102,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     // ClickFire admits the Super and calls Launch; the cases' own effects
     // are each caller's to check.
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id,

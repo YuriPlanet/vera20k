@@ -169,7 +169,7 @@ fn refund_uses_the_same_restricted_factor_as_cost() {
         object,
         &scene.sim.houses[&scene.owner],
         &factors,
-        false,
+        scene.sim.session().rule_policy(),
         true,
     );
     assert_eq!(refund, priced(&scene, scene.owner, "MTNK"));

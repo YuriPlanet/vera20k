@@ -73,7 +73,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     let entity = sim.entities().get(actor_id).expect("spawned SHP entity");
     let presented = crate::app::presentation::frame::PresentationFrame::capture(
         &scene.runtime,
-        &Default::default(),
+        &Default::default(), false,
     );
     let record = presented.object(actor_id).unwrap();
     let type_id = sim.interner().resolve(entity.type_ref());
@@ -335,13 +335,12 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     let solid_y = (solid_index / source_size[0] as usize) as i32;
     let mut view = camera(source_size);
     view.camera_pos = shadow.instance.position;
-    // Choose the camera from the independently established native caller Z,
-    // so an incorrect producer adjustment cannot cancel out of this test.
+    // Choose the seed from the independently established native caller Z, so
+    // an incorrect producer adjustment cannot cancel out of this test. A pan
+    // (`native_z::ZSeed`) leaves the view, with the shadow at its top, alone.
     let screen_top_goal = DEFAULT_Z + expected_shadow_z - solid_y - candidate;
-    let desired_camera_row = shadow.instance.position[1].round() as i32 - screen_top_goal;
-    view.native_z_origin_y = desired_camera_row as f32 - view.camera_pos[1];
-    let screen_top = shadow.instance.position[1].round() as i32
-        - (view.camera_pos[1] + view.native_z_origin_y).round() as i32;
+    view.native_z_pan = screen_top_goal as f32;
+    let screen_top = shadow.instance.position[1].round() as i32 - view.native_z_origin_row();
     assert_eq!(
         sprite_row_z(
             ZGradient::Flat,

@@ -231,6 +231,37 @@ fn ares_whole_map_launch_from_the_cameo_explores_the_playable_diamond() {
 }
 
 #[test]
+fn ares_reveal_exclusions_follow_the_admitted_rules_in_network_play() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::skirmish_modes::MpModeClass;
+
+    let class = Some(MpModeClass::Battle);
+    let lan = ScenarioGameMode::Lan;
+    let local = ScenarioGameMode::Skirmish;
+    let stock = lan.stock_rule_policy(class);
+    for (mode, policy, reveals_excluded_cell) in [
+        (lan, stock, false),
+        (lan, stock.with_ares_psychic_reveal_exclusions(false), true),
+        (local, local.stock_rule_policy(class), true),
+    ] {
+        let (rules, mut sim, owner) = ares_scene("3,3");
+        sim.install_session_admission(mode, class, policy);
+        // This direct launch omits the frame's fog-dimension update.
+        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        let sw_type = sim.interner.get(REVEAL).unwrap();
+        let sw = rules.super_weapon(REVEAL).unwrap();
+        super::ares_launch(&mut sim, &rules, owner, sw_type, sw, (7, 29));
+
+        // With Size=(24,24), (7,29) is one of RevealHelper's excluded cells.
+        assert_eq!(
+            sim.fog.is_cell_revealed(owner, 7, 29),
+            reveals_excluded_cell
+        );
+        assert!(sim.fog.is_cell_revealed(owner, 8, 29));
+    }
+}
+
+#[test]
 fn ares_authored_radius_and_rectangle_reveal_only_their_cells() {
     let target = (25, 25);
     let (rules, mut sim, owner) = ares_scene("12");

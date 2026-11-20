@@ -779,11 +779,11 @@ fn predict_reference_height(
         ))
     };
     // `-LocomotionFacing.Current().GetRadian<65536>()`; `Math::cos`/`Math::sin`
-    // are the CRT's binary64 functions.
+    // are the CRT's binary64 functions, which `libm` reproduces on every target.
     let angle = -f64::from_bits(radians_from_facing16(facing).bits());
     let check = [
-        (f64::from(check_length) * angle.cos() + 0.5) as i32,
-        (f64::from(check_length) * angle.sin() + 0.5) as i32,
+        (f64::from(check_length) * libm::cos(angle) + 0.5) as i32,
+        (f64::from(check_length) * libm::sin(angle) + 0.5) as i32,
     ];
     if check == [0, 0] {
         // The native scan divides by `checkCoord`; a zero length is the
@@ -3435,7 +3435,6 @@ mod tests {
         assert_ne!(cutout_flight.current_speed_bits, 0);
     }
 
-
     /// Phobos `JumpjetStraightAscend` MovementAI hook (`0x54D600`,
     /// `Ext/Unit/Hooks.Jumpjet.cpp:413-437`): while the latch is set and the
     /// owner is in state 0/1, MovementAI writes no horizontal location and snaps
@@ -3465,20 +3464,13 @@ mod tests {
         host.straight_ascend = true;
         let mut flight = eastbound_flight(4.0);
         let before = host.location;
-        update_coordinates_and_altitude(
-            STATE_ASCEND,
-            destination,
-            &params,
-            &mut flight,
-            &mut host,
-        );
+        update_coordinates_and_altitude(STATE_ASCEND, destination, &params, &mut flight, &mut host);
         assert_eq!(
             (host.location[0], host.location[1]),
             (before[0], before[1]),
             "the horizontal step is skipped"
         );
         assert!(host.straight_ascend, "the latch survives inside the ascend");
-
     }
 
     /// The same hook past the ascend: any state after 0/1 clears the latch and
@@ -3492,13 +3484,7 @@ mod tests {
         host.straight_ascend = true;
         let mut flight = eastbound_flight(4.0);
         let before = host.location;
-        update_coordinates_and_altitude(
-            STATE_HOLD,
-            destination,
-            &params,
-            &mut flight,
-            &mut host,
-        );
+        update_coordinates_and_altitude(STATE_HOLD, destination, &params, &mut flight, &mut host);
         assert!(!host.straight_ascend, "the latch is one-shot");
         assert!(
             host.location[0] > before[0],

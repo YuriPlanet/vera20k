@@ -319,6 +319,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(
@@ -392,6 +393,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 .into_fresh_staged_simulation(
                     &descriptor,
                     FreshScenarioPrefix::Campaign {
+                        network: None,
                         native_rules_receipt: receipt,
                         rules: &rules,
                         map_data: &map,
@@ -492,6 +494,7 @@ fn fresh_campaign_constructs_registered_supers_without_supported_dispatch_bodies
                 ..Default::default()
             },
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt: receipt,
                 rules: &rules,
                 map_data: &map,
@@ -543,6 +546,7 @@ fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_
     let result = ScenarioBootstrapRng::new(31).into_fresh_staged_simulation(
         &ScenarioDescriptor::default(),
         FreshScenarioPrefix::Campaign {
+            network: None,
             native_rules_receipt: receipt,
             rules: &rules,
             map_data: &map,
@@ -590,6 +594,7 @@ fn fresh_campaign_rejects_unknown_country_factory_before_house_construction() {
     let result = ScenarioBootstrapRng::new(31).into_fresh_staged_simulation(
         &ScenarioDescriptor::default(),
         FreshScenarioPrefix::Campaign {
+            network: None,
             native_rules_receipt: receipt,
             rules: &rules,
             map_data: &map,

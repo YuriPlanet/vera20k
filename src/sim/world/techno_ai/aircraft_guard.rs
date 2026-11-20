@@ -222,13 +222,7 @@ impl GuardHost for WorldGuard<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        crate::sim::aircraft::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        crate::sim::aircraft::enter_idle_mode_for(self.sim, self.id, self.rules, self.ctx.effects);
     }
 
     fn in_radio_contact(&mut self) -> bool {
@@ -255,7 +249,6 @@ impl GuardHost for WorldGuard<'_> {
                 self.id,
                 None,
                 self.rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("aircraft dispatch");
@@ -295,7 +288,6 @@ impl GuardHost for WorldGuard<'_> {
                 self.id,
                 Some(TargetKind::Entity(unit)),
                 self.rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("aircraft dispatch");

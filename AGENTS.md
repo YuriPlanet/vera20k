@@ -36,10 +36,6 @@ defaults.
 
 ## Intent and autonomy
 
-The user often thinks aloud. Follow intent, keep exact technical values literal,
-and treat proposed causes as hypotheses. Investigate contradictory observations.
-Push back briefly with evidence; respect informed decisions.
-
 Complete authorized work without routine approval. Resolve discoverable questions;
 ask only for missing authority or consequential, undiscoverable preferences.
 Research/review alone does not authorize implementation. Preserve scope amendments,
@@ -189,6 +185,16 @@ state or decision logic, find existing writers and name the owner in the PR. Kee
 authoritative state private to its owning module and expose mutations through the
 owner. Extend or fix that owner instead of introducing competing state or duplicated
 decision logic, or widening visibility to reach its state or raw data.
+
+Write Rust, not C++ or Java in Rust syntax. When the borrow checker refuses code, fix
+who borrows what (split the borrow, pass a reference or an index, end a borrow sooner,
+reorder the writes) before reaching for `.clone()`, `Rc`, `RefCell`, `Arc` or a lock.
+Clone only where an owned copy is the intent, never per entity in a hot loop. Shared
+state gets an owner, not `Arc<Mutex<_>>`; parallel simulation work splits data by
+owner instead of sharing it behind a lock. Owners offer operations, not a `get_`/`set_`
+pair per field. Model gamemd's class tree with enums and data, not trait hierarchies.
+Loop with iterators; index where the index is itself the data (handles, slots,
+parallel arrays).
 
 Before porting a native function, search the code for its address (e.g. `703850`) and
 native name. Each native function has one Rust port, and new callers call it. Never

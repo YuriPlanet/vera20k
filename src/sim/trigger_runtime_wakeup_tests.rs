@@ -1,6 +1,7 @@
 //! Wakeup queues Guard through the existing Mission authority. Native
 //! Execute6DDB67 ->6E01C0 uses the live Trigger's Tag membership, not a House.
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::mission::MissionId;
 use crate::util::save_codec;
 
@@ -226,7 +227,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(&ai, &map.ini, RulePolicy::stock_campaign());
     for row in native["mission_from_name"].as_array().unwrap() {
         assert_eq!(
             MissionType::from_map_name(row["name"].as_str().unwrap()).unwrap() as i32,
@@ -435,7 +436,15 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     for candidate in [&mut sim, &mut restored] {
         let before: Vec<_> = prisoners
             .iter()
-            .map(|&id| candidate.substrate.entities.get(id).unwrap().mission.clone())
+            .map(|&id| {
+                candidate
+                    .substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .mission
+                    .clone()
+            })
             .collect();
         let rng = candidate.rng_state();
         poll(candidate);
@@ -462,13 +471,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             );
         }
         assert_eq!(candidate.rng_state(), rng);
-        candidate.process_pending_delete_with(
-            &rules,
-            Some(&overlays),
-            FrameEffects::default(),
-            1,
-            false,
-        );
+        candidate.process_pending_delete_with(&rules, FrameEffects::default(), 1, false);
         assert!(!candidate.trigger_runtime.has_live_tag(source_tag));
         assert!(!candidate.trigger_runtime.has_live_tag(wake_tag));
         assert!(candidate.trigger_runtime.trigger(source_live).is_none());
@@ -476,7 +479,13 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         candidate.session.set_binary_frame_for_test(1);
         for &id in &prisoners {
             candidate.mission_host_promote(id, 1, &rules);
-            let mission = candidate.substrate.entities.get(id).unwrap().mission.clone();
+            let mission = candidate
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .mission
+                .clone();
             assert_eq!(mission.current().known(), Some(MissionType::Guard));
             assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
         }

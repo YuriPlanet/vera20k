@@ -68,7 +68,9 @@ struct EditRecord {
     rect: [u32; 4],
     light: [u32; 4],
     params: [u32; 4],
-    earlier: [u32; 4],
+    earlier: [u32; 2],
+    view_height: f32,
+    _pad: u32,
 }
 
 impl EditRecord {
@@ -88,7 +90,9 @@ impl EditRecord {
                 instance.source_palette,
                 u32::from(command.draw.piece == TerrainPiece::Shadow),
             ],
-            earlier: [command.earlier as u32, (command.earlier >> 32) as u32, 0, 0],
+            earlier: [command.earlier as u32, (command.earlier >> 32) as u32],
+            view_height: instance.draw_state.fx_params[3],
+            _pad: 0,
         }
     }
 }
@@ -716,7 +720,7 @@ impl TerrainDrawRenderer {
                 _pad: 0.0,
 
                 native_z_origin_y: 0.0,
-                _native_z_pad: 0.0,
+                native_z_pan: 0.0,
             },
         }
     }
@@ -1831,7 +1835,11 @@ fn edit_source(webgl: bool) -> String {
     let vertex = shp[..shp
         .find("// One signed candidate owner")
         .expect("SHP projection boundary")]
-        .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "");
+        .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "")
+        .replace(
+            "@group(2) @binding(1) var t_zshape_skips: texture_2d<u32>;",
+            "",
+        );
     let entry_points = if webgl {
         include_str!("terrain_read_only.wgsl")
     } else {
@@ -1848,19 +1856,24 @@ fn resolve_source() -> String {
     super::tactical_shader::source(include_str!("terrain_read_only_resolve.wgsl"))
 }
 
-/// Signed candidate envelope of a destination edit, as `terrain_source` in
+/// Signed candidate envelope of a destination edit, as `edit_z` in
 /// terrain_edit.wgsl walks its rows (WGSL `round` ties to even). Rows are
 /// monotone, so the two end rows bound it. A gradient word other than a
-/// plain entry is not mirrored here and claims the whole range.
+/// plain entry, raw or not, is not mirrored here and claims the whole range.
 fn candidate_range(instance: &SpriteInstance, camera: CameraUniform) -> [i32; 2] {
-    use super::native_z::{ZGradient, sprite_row_z};
-    if instance.z_gradient > ZGradient::Vertical as u32 {
+    use super::native_z::{Z_GRADIENT_RAW_FRAME_FLAG, ZGradient, shp_seed_rows, sprite_row_z};
+    if instance.z_gradient & !Z_GRADIENT_RAW_FRAME_FLAG > ZGradient::Vertical as u32 {
         return [i32::MIN, i32::MAX];
     }
     let round = |value: f32| value.round_ties_even() as i32;
-    let height = round(instance.size[1]).max(1);
-    let screen_top =
-        round(instance.position[1]) - round(camera.camera_pos[1] + camera.native_z_origin_y);
+    let top = round(instance.position[1]);
+    let [top, bottom] = shp_seed_rows(
+        [top, top.saturating_add(round(instance.size[1]).max(1))],
+        instance.z_gradient,
+        camera.view_rows(instance.draw_state.fx_params[3]),
+    );
+    let height = bottom.saturating_sub(top).max(1);
+    let screen_top = top - camera.native_z_origin_row();
     let gradient = ZGradient::from_index(instance.z_gradient);
     let z_adjust = round(instance.z_adjust);
     let [first, last] =

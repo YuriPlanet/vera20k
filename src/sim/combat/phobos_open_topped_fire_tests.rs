@@ -76,8 +76,7 @@ fn scene(decloak_to_fire: bool) -> (Simulation, RuleSet, u64, u64) {
             rider,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the rider holds the target"

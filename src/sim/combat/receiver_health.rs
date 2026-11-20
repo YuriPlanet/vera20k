@@ -37,7 +37,6 @@ struct ReceiverHealthHost<'world, 'input, 'effects> {
     event: &'input EntityDamageEvent,
     caller_damage: &'input mut ReceiverDamage,
     rules: &'input RuleSet,
-    registry: Option<&'input OverlayTypeRegistry>,
     effects: FrameEffects<'effects>,
     execute_world_callbacks: bool,
     #[cfg(any(test, feature = "test-support"))]
@@ -108,7 +107,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
         use super::object_health::HealthCallback;
         let id = self.event.target_id;
-        let context = UninitContext::new(self.rules, self.registry).with_effects(self.effects);
+        let context = UninitContext::new(self.rules).with_effects(self.effects);
         match callback {
             //5F5486: a heal that changed Strength calls vt+148 Flash(7).
             HealthCallback::Changed => {
@@ -235,7 +234,6 @@ pub(super) fn commit_receiver_health(
     caller_damage: &mut ReceiverDamage,
     world: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     receiver_outcome: Option<ResolvedReceiveDamage>,
     effects: FrameEffects<'_>,
     execute_world_callbacks: bool,
@@ -325,7 +323,6 @@ pub(super) fn commit_receiver_health(
         event,
         caller_damage,
         rules,
-        registry,
         effects,
         execute_world_callbacks,
         #[cfg(any(test, feature = "test-support"))]
@@ -384,7 +381,7 @@ pub(super) fn commit_receiver_health(
                 victim_owner,
                 source_owner,
                 delta,
-                world.session.game_mode_nonzero(),
+                world.session.rule_policy(),
                 rules.ares_form(),
                 rules.general.ai_nearest_enemy,
             );

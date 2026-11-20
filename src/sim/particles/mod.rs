@@ -1278,7 +1278,7 @@ mod tests {
             &rules,
             None,
             None,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
 
         assert_eq!((particle.drift_x, particle.drift_y), (-2, 0));
@@ -1303,7 +1303,7 @@ mod tests {
             .unwrap()
             .done_spawning = true;
 
-        sim.retire_particle_system(first, crate::sim::world::UninitContext::with_rules(&rules));
+        sim.retire_particle_system(first, crate::sim::world::UninitContext::new(&rules));
 
         assert!(
             sim.particle_systems().contains_key(first),

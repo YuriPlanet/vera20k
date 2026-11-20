@@ -418,7 +418,7 @@ fn power_and_force_release(
         0x47,
         head,
         rules,
-        effects.overlay_registry(),
+        Some(rules.overlay_registry()),
         effects,
     );
     #[cfg(test)]

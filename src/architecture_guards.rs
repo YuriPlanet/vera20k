@@ -28,7 +28,7 @@ const LAYER_RULES: &[(&str, &[&str])] = &[
     ("assets", &["sim", "rules", "map", "render", "ui", "app"]),
     ("util", &["sim", "rules", "map", "render", "ui", "app"]),
     ("rules", &["sim", "map"]),
-    ("map", &["sim", "render", "app"]),
+    ("map", &["sim", "render", "app", "net", "ui"]),
     ("render", &["app"]),
     // render draws ui view models; ui stays render-agnostic.
     ("ui", &["app", "render", "skirmish_scenarios"]),
@@ -70,6 +70,98 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
         !FROZEN_EXCEPTIONS.iter().any(|(f, _)| f.starts_with("sim/")),
         "sim/ may never appear in FROZEN_EXCEPTIONS"
     );
+}
+
+/// The Phase 1 chains and construction layers read admitted rules and topology.
+/// Freeze the remaining raw simulation reads until their compatibility callers
+/// can move to the corresponding owner. The budget must fall with removals.
+#[test]
+fn production_scenario_mode_reads_stay_behind_admission() {
+    const COMPLETED_CHAINS: &[&str] = &[
+        "sim/ai_base_building.rs",
+        "sim/ai_base_site.rs",
+        "sim/ai_team_creation.rs",
+        "sim/ares_tiberium_storage.rs",
+        "sim/base_plan.rs",
+        "sim/combat/base_defense_response/admission.rs",
+        "sim/combat/base_defense_response.rs",
+        "sim/combat/greatest_threat.rs",
+        "sim/combat/world_fire.rs",
+        "sim/crates/pickup.rs",
+        "sim/crates/runtime.rs",
+        "sim/house_strategy.rs",
+        "sim/hunter_seeker.rs",
+        "sim/light_sources.rs",
+        "sim/mcv_deploy.rs",
+        "sim/miner/miner_system.rs",
+        "sim/miner/ore_scan.rs",
+        "sim/ore_growth.rs",
+        "sim/production/can_build.rs",
+        "sim/production/production_repair.rs",
+        "sim/production/production_sell.rs",
+        "sim/team_script_vm/actions.rs",
+        "sim/team_script_vm/membership.rs",
+        "sim/team_script_vm/reinforcements.rs",
+        "sim/world/aircraft_fire_location.rs",
+        "sim/world/house_defeat.rs",
+        "sim/world/idle_sleep.rs",
+        "sim/world/lifecycle.rs",
+        "sim/world/object_entry.rs",
+        "sim/world/shroud_refresh.rs",
+        "sim/world/world_spawn.rs",
+    ];
+    const LEGACY_READ_COUNT: usize = 17;
+
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut forbidden = Vec::new();
+    let mut remaining = Vec::new();
+    for file in source_files(&src_root) {
+        let Some(production) = &file.production else {
+            continue;
+        };
+        let no_raw_reads = file.rel.starts_with("rules/")
+            || file.rel.starts_with("map/")
+            || COMPLETED_CHAINS.contains(&file.rel.as_str());
+        let output = if no_raw_reads {
+            &mut forbidden
+        } else if file.rel.starts_with("sim/") {
+            &mut remaining
+        } else {
+            continue;
+        };
+        for (line, method) in raw_scenario_mode_reads(production) {
+            output.push(format!("{}:{line}: {method}", file.rel));
+        }
+    }
+    let fix = "Use ScenarioSession::rule_policy() for gameplay, \
+               execution_topology() for lockstep and the session's local-view owner for PlayerPtr. \
+               Keep exact legacy mode reads at compatibility boundaries.";
+    assert!(forbidden.is_empty(), "{fix}\n{}", forbidden.join("\n"));
+    assert_eq!(
+        remaining.len(),
+        LEGACY_READ_COUNT,
+        "{fix}\nReduce the raw-mode budget when removing a legacy read.\n{}",
+        remaining.join("\n"),
+    );
+}
+
+fn raw_scenario_mode_reads(production: &str) -> impl Iterator<Item = (usize, &'static str)> {
+    ["game_mode", "game_mode_nonzero"]
+        .into_iter()
+        .flat_map(move |method| {
+            production.match_indices(method).filter_map(move |(at, _)| {
+                let before = production[..at].trim_end();
+                let after = production[at + method.len()..].trim_start();
+                if !(before.ends_with('.') || before.ends_with("::")) || !after.starts_with('(') {
+                    return None;
+                }
+                let line = production.as_bytes()[..at]
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count();
+                Some((line + 1, method))
+            })
+        })
 }
 
 /// Production and tooling advance through `SimRuntime`, which supplies the
@@ -136,6 +228,8 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 // Includes parse_registry copying already resolved stored IDs.
                 ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),
+                // Phobos global type lists (`[Phobos]`), read as stored ids.
+                ("rules/phobos_globals.rs", 1),
             ],
         ),
     ];
@@ -164,6 +258,92 @@ fn raw_ini_walks_have_pinned_production_callers() {
         "raw INI walks called outside their pinned production sites, or a pin \
          is stale. Read values through the `ini_value` readers; pin a new \
          caller only to copy or show entries as stored."
+    );
+}
+
+/// Command producers use the read-only authority projection. Native
+/// House identity remains inside the engine and cannot authorize input.
+#[test]
+fn command_input_and_radar_do_not_read_raw_house_permissions() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = source_files(&src_root);
+    let tests = test_gated_files(files);
+    let input_and_radar = [
+        "app/input/",
+        "render/radar/",
+        "app/presentation/render/build_instances.rs",
+        "sim/world/move_cell_input.rs",
+    ];
+    let raw = [
+        "house_controls_selection",
+        "house_is_human_player",
+        "is_human_player_on",
+        "native_player_identity",
+        "NativePlayerIdentity",
+        "local_shared_house_source",
+        "control_scope_for_source",
+        "entity_owned_by_id",
+        "player_control",
+    ];
+    let mut violations = Vec::new();
+    for file in files {
+        if tests.contains(&file.rel)
+            || !input_and_radar
+                .iter()
+                .any(|root| file.rel.starts_with(root))
+        {
+            continue;
+        }
+        let Some(production) = &file.production else {
+            continue;
+        };
+        for symbol in raw {
+            if count_identifier(production, symbol) != 0 {
+                violations.push((file.rel.as_str(), symbol));
+            }
+        }
+        if file.rel.starts_with("app/input/") {
+            for symbol in ["techno_player_controllable", "techno_is_active"] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+        if file.rel.starts_with("app/input/") || file.rel == "sim/world/move_cell_input.rs" {
+            let compact: String = production.chars().filter(|c| !c.is_whitespace()).collect();
+            for comparison in [
+                "entity.owner()==",
+                "entity.owner()!=",
+                "==entity.owner()",
+                "!=entity.owner()",
+                "actor.owner()==issuing_house",
+                "actor.owner()!=issuing_house",
+            ] {
+                if compact.contains(comparison) {
+                    violations.push((file.rel.as_str(), comparison));
+                }
+            }
+        }
+        if file.rel.starts_with("render/radar/")
+            || file.rel == "app/presentation/render/build_instances.rs"
+        {
+            for symbol in [
+                "can_select",
+                "can_order",
+                "can_order_from",
+                "can_manage",
+                "can_manage_from",
+                "local_command_house",
+            ] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "use projected command permission for input and native viewer identity for radar: {violations:?}"
     );
 }
 
@@ -408,10 +588,12 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/production/factory_lifecycle.rs", 4),
                 ("sim/production/production_placement.rs", 4),
-                ("sim/production/production_queue.rs", 1),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/scenario_bootstrap.rs", 5),
-                ("sim/scenario_session.rs", 5),
+                // Local identity owner, legacy restoration and its accessor.
+                ("sim/scenario_session.rs", 4),
+                // Cheat input reads the local player only in offline skirmish.
+                ("sim/skirmish_cheats.rs", 1),
                 ("sim/snapshot.rs", 2),
                 // Ares IsTimerVisible (10032E80): whether the local player
                 // sees a Super's timer line; only the timer drawing asks.
@@ -421,28 +603,35 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // labels, and which lines an enemy's building may show; only
                 // the label capture (HudFacts) asks, which feeds drawing.
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/superweapon/psychic_reveal.rs", 1),
+                // The stock and Ares launches name the local player as the
+                // reveal's notification viewer; `reveal_notifies_viewer`
+                // reads it only outside a network game.
+                ("sim/superweapon/psychic_reveal.rs", 2),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
+                // A Temporal erase deselects its victim only with a current
+                // House (0x0071B167). Every game client has one; only
+                // headless runs skip it, and the selection is per client.
+                ("sim/temporal.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
                 ("sim/world/camera_home.rs", 2),
-                ("sim/world/command_schedule.rs", 3),
+                ("sim/world/command_schedule.rs", 2),
                 ("sim/world/fog_objects.rs", 1),
                 ("sim/world/gap_generator.rs", 1),
-                ("sim/world/house_defeat.rs", 9),
+                ("sim/world/house_defeat.rs", 8),
                 ("sim/world/jumpjet_cruise.rs", 1),
                 ("sim/world/lifecycle.rs", 7),
                 ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
-                ("sim/world/shroud_refresh.rs", 18),
+                ("sim/world/shroud_refresh.rs", 19),
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
                 // Includes the Ares Guard key's own-actor check (1005CAF0)
                 // in the input producer `area_guard_key_command`.
-                ("sim/world/world_commands.rs", 7),
+                ("sim/world/world_commands.rs", 4),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -451,7 +640,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "observer_houses",
-            &[("sim/scenario_session.rs", 6), ("sim/snapshot.rs", 1)],
+            &[("sim/scenario_session.rs", 1), ("sim/snapshot.rs", 1)],
         ),
         (
             "is_observer_house",
@@ -459,9 +648,14 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // The anim visibility gate and the SW chain skip both read
                 // the scenario's observer list, not a per-client choice.
                 ("sim/anim_class.rs", 1),
+                // Phobos dynamic TeamDelays skip observers when they count the
+                // launching houses; every peer holds the same room list.
+                ("sim/ai_team_creation.rs", 1),
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
                 ("sim/superweapon/chaining.rs", 1),
+                // The same offline command refuses a local observer.
+                ("sim/skirmish_cheats.rs", 1),
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
@@ -481,13 +675,11 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "house_is_human_player",
             &[
-                // What_Action's Tote rung (0x00417CC0): the clicked action.
-                ("sim/aircraft/carryall.rs", 1),
-                // What_Action's Detonate rung (0x006FFF8D): the clicked action.
-                ("sim/bomb.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),
+                // Phobos DisplayIncome pays the local player's own house only.
+                ("sim/building_display_income.rs", 1),
                 ("sim/capture_manager.rs", 1),
                 ("sim/combat/destruction_effects.rs", 1),
                 ("sim/combat/parasite.rs", 2),
@@ -507,20 +699,16 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/production_repair.rs", 1),
                 ("sim/production/production_sell.rs", 1),
                 ("sim/reverse_engineering.rs", 1),
-                ("sim/vehicle_theft.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
                 ("sim/world/lifecycle.rs", 1),
-                ("sim/world/move_cell_input.rs", 3),
                 ("sim/world/planning.rs", 1),
-                ("sim/world/selection_voice.rs", 4),
                 ("sim/world/shroud_refresh.rs", 2),
                 ("sim/world/techno_ai.rs", 1),
-                ("sim/world/world_commands.rs", 2),
                 // The Phobos Grinding cursor gate (Hooks.Grinding.cpp:68-89)
                 // reads the actor's player to answer the click action.
                 // The clicked actions, with Ares' infantry heal arm (0x0051E710).
-                ("sim/world/world_orders.rs", 13),
+                ("sim/world/world_orders.rs", 5),
             ],
         ),
         (
@@ -549,6 +737,13 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
                 ("sim/world/world_hash.rs", 1),
+            ],
+        ),
+        (
+            "local_view_identity",
+            &[
+                ("sim/scenario_session.rs", 1),
+                ("sim/world/command_schedule.rs", 1),
             ],
         ),
         (
@@ -1006,8 +1201,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
         }
         if emit {
             out.push_str(line);
-            out.push('\n');
         }
+        out.push('\n');
     }
     out
 }
@@ -1410,28 +1605,21 @@ fn composition_root_slots_are_owner_types() {
         ),
         (
             "GameEntity",
-            "should_be_dead",
-            "the AutoDeath latch (`sim/auto_death.rs`), the native death byte; its own AI reads it",
+            "building",
+            "a Building's own fields stored apart from the record every turn reads; each \
+             keeps its visibility and owning module, so the slot opens nothing that was closed",
         ),
         (
-            "GameEntity",
-            "phobos_revert_on_exit_latch",
-            "the PassengerSync owner/revert latch written by `sim/auto_death.rs` and read on exit",
+            "Simulation",
+            "phobos_falling_down",
+            "Phobos ScenarioExt::FallingDownTracker: a derived targeting cache of ids in \
+             AddUnique order, read by `sim/combat/greatest_threat`; not saved or hashed",
         ),
         (
-            "GameEntity",
-            "phobos_prevent_crew_escape",
-            "set by the Phobos ReceiveDamage arm and read by the crew-survival owner",
-        ),
-        (
-            "GameEntity",
-            "phobos_be_controlled_threat_frame",
-            "the mind-control threat-frame latch in `sim/capture_manager.rs`",
-        ),
-        (
-            "GameEntity",
-            "phobos_extra_threat_last_target_crd",
-            "the ExtraThreat scorer's last-coordinate cache (`sim/combat/extra_threat.rs`)",
+            "Simulation",
+            "auto_death_objects",
+            "Phobos ScenarioExt::AutoDeathObjects: ids in RegisterAutoDeath order, read by \
+             `sim/auto_death.rs` as the native vector does",
         ),
         (
             "Simulation",
@@ -1810,6 +1998,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
+        ("map/rmg/grid.rs", "cells_in_native_order_mut", RMG),
         ("map/rmg/scratch.rs", "get_mut", RMG),
         ("map/rmg/scratch.rs", "cells_mut", RMG),
         (
@@ -1840,6 +2029,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),
+        (
+            "sim/movement/locomotor.rs",
+            "tunnel_runtime_mut",
+            "the Tunnel locomotor's own state, handed to its class methods in \
+             tunnel_locomotion.rs, the one module that runs its Process switch",
+        ),
         ("sim/combat/laser.rs", "create", LASER),
         ("sim/combat/laser.rs", "construct", LASER),
         (
@@ -1975,9 +2170,20 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         (
             "rules/personal_rules.rs",
+            "set_building_production_queue",
+            "VERA's own switch with no native member: the Options page's Building Production \
+             Queue box, which the app passes in for the rules the next scenario reads",
+        ),
+        (
+            "rules/personal_rules.rs",
             "set_terrain_deformation",
             "VERA's own switch with no native member: the skirmish Game Options' Terrain \
              Deformation box, which the app passes in for the rules the next scenario reads",
+        ),
+        (
+            "rules/superweapon_type.rs",
+            "set_shots",
+            "runs only inside the rules load: Phobos SWTypeExt `SW.Shots=`",
         ),
         (
             "rules/superweapon_type.rs",
@@ -2291,6 +2497,22 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         (
             "sim/game_entity.rs",
+            "set_phobos_accumulated_income",
+            "Phobos DisplayIncome's accumulator, written by its own income pass \
+             (grinding, refinery dock, spy infiltration)",
+        ),
+        (
+            "sim/game_entity.rs",
+            "set_phobos_drop_crate",
+            "the Phobos TechnoExt DropCrate latch, installed once by `sim/phobos_drop_crate.rs`",
+        ),
+        (
+            "sim/game_entity.rs",
+            "set_phobos_drop_crate_type",
+            "the Phobos TechnoExt DropCrateType slot, installed beside the DropCrate latch",
+        ),
+        (
+            "sim/game_entity.rs",
             "set_phobos_original_passenger_owner",
             "the FootExt original-owner record serialized by Ext/Foot/Body.cpp:943",
         ),
@@ -2358,6 +2580,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/game_entity.rs",
             "set_phobos_construction_start_facing",
             "the one random start facing drawn for a new building",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_player_auto_repair",
+            "Phobos PlayerAutoRepair (`Ext/House/Hooks.cpp:819-824`): the command stores the \
+             toggle, and the building repair visit stops each repairing building when it is off",
         ),
         (
             "sim/house_state.rs",

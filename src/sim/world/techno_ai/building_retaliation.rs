@@ -136,7 +136,7 @@ impl Simulation {
             || !building_weapon0_aims(self, rules, id)
             || building.attack_target.target().is_some_and(|attack| {
                 let weapon = select_weapon(self, rules, id, Some(attack));
-                can_fire_at(self, rules, id, attack, weapon, overlay_registry)
+                can_fire_at(self, rules, id, attack, weapon)
             })
         {
             return ping;
@@ -158,7 +158,6 @@ impl Simulation {
                 id,
                 Some(TargetKind::Entity(source)),
                 rules,
-                overlay_registry,
                 crate::sim::world::FrameEffects::default(),
             );
         }

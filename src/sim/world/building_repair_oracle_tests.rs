@@ -821,7 +821,7 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
         HouseDifficulty::Easy,
         &rules.general,
         Default::default(),
-        true,
+        crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
         0,
         0,
     );

@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::team_script_vm::{TeamScriptMember, member_type_identity};
 
@@ -41,7 +42,8 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
             .unwrap()
             .map;
     map.ini.merge(&patch);
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     assert_eq!(
         registry
             .scripts

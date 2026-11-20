@@ -163,7 +163,7 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
     }
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
 }
 
@@ -217,7 +217,7 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
         FrameEffects::empty(),
     );
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
@@ -281,7 +281,7 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
         assert_eq!(counter(&sim, americans, (x, y)), 0, "{x},{y}");
     }
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
@@ -395,7 +395,7 @@ fn a_sold_allys_building_leaves_its_shared_sight_counted() {
         assert_eq!(counter(&sim, confederation, cell), -2, "{cell:?}");
     }
 
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     sim.refresh_fog(&config, &rules);
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     assert!(
@@ -496,7 +496,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
         |_, _| {},
         FrameEffects::empty(),
     );
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert_eq!(counter(&sim, americans, (x, y)), 0, "{x},{y}");
@@ -708,14 +708,7 @@ fn no_edge_make_enemy_counts_reveal_to_all_sight_again() {
         .collect();
     let computer = sim.interner.get("Russians").unwrap();
     for _ in 0..2 {
-        sim.make_enemy(
-            computer,
-            player,
-            &rules,
-            None,
-            FrameEffects::default(),
-            false,
-        );
+        sim.make_enemy(computer, player, &rules, FrameEffects::default(), false);
     }
     assert!(sim.house_alliances.as_map().is_empty());
     for (&cell, old) in cells.iter().zip(&before) {
@@ -731,7 +724,7 @@ fn no_edge_make_enemy_counts_reveal_to_all_sight_again() {
         |_, _| {},
         FrameEffects::empty(),
     );
-    sim.techno_limbo_with_context(id, UninitContext::with_rules(&rules));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     let config = sim.sight_reveal_config(&rules);
     sim.refresh_fog(&config, &rules);
@@ -781,14 +774,7 @@ fn make_enemy_alternate_reveal_restores_the_released_client_cache() {
 
     // MakeEnemy4F9FD8 releases allied Building sight before changing the
     // graph. Its4FA1E3 visitor then reaches4ADE68 with native250 clear.
-    sim.make_enemy(
-        computer,
-        player,
-        &rules,
-        None,
-        FrameEffects::default(),
-        false,
-    );
+    sim.make_enemy(computer, player, &rules, FrameEffects::default(), false);
     let restored = sim.fog.source_sight(id, player).unwrap();
     assert!(
         restored.latched,

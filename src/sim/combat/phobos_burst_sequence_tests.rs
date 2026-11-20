@@ -75,8 +75,7 @@ fn infantry_arena(weapon: &str) -> (Simulation, RuleSet, u64) {
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -355,8 +354,7 @@ fn a_unit_without_the_art_key_stays_stock() {
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok()
     );

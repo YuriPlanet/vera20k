@@ -5,6 +5,7 @@ use super::*;
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::movement::ground_pose::position_world_coord;
@@ -119,7 +120,8 @@ fn reinforcement_scene(
     )
     .unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_scenario_assets()?;
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     let mut sim = arena(&retail.rules);
     sim.install_team_ai_registry(&registry, &retail.rules);
     sim.session.install_waypoints(&map.waypoints);

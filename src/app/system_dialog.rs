@@ -1,6 +1,7 @@
 //! The system's own dialogs, for what the game window cannot show: a startup
-//! that never got a working window or renderer, a panic, and a start on the
-//! system's software renderer, whose window stays blank for minutes. A Windows
+//! that never got a working window or renderer, a panic, a graphics device
+//! lost at startup or while playing, and a start on the system's software renderer, whose
+//! window stays blank for minutes. A Windows
 //! release build has no console and the app bundle and AppImage none either,
 //! so without these the game would vanish with only the log knowing why. The
 //! first-launch game folder questions (`app_bundle`) use the same macOS alert
@@ -93,15 +94,46 @@ fn reraised_panic_text(payload: &(dyn Any + Send), worker: &Mutex<Option<String>
         .unwrap_or_else(|| message.to_owned())
 }
 
-fn show_crash(mut what: String) {
+fn show_crash(what: String) {
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    let (lost_device, retry) = {
+        let lost = crate::render::gpu::lost_device();
+        let retry = lost.and_then(|_| crate::app::persistence::startup_backend::record_loss());
+        (lost, retry)
+    };
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    let (lost_device, retry) = (None, None);
+    let (title, text) = crash_message(what, lost_device, retry);
+    show_fatal(&title, &text);
+}
+
+/// The box for a panic. After the graphics device was lost (`lost_device`
+/// is what the driver said), a panic is the loss's consequence: wgpu panics
+/// on the first buffer it maps on the dead device, which at startup comes
+/// before the frame loop could close the game (`App::close_after_graphics_loss`).
+/// The player then reads about the driver, not about an internal error, and
+/// which API the next start draws through when the loss came before startup
+/// finished (`retry`); the log keeps the panic.
+fn crash_message(
+    mut what: String,
+    lost_device: Option<&str>,
+    retry: Option<wgpu::Backend>,
+) -> (String, String) {
+    if let Some(error) = lost_device {
+        return graphics_lost_message(&GraphicsLost {
+            error: error.to_owned(),
+            saved: None,
+            retry,
+        });
+    }
     if let Some((end, _)) = what.char_indices().nth(600) {
         what.truncate(end);
         what.push('…');
     }
-    show_fatal(
-        &crate::i18n::tr("VERA:CrashTitle"),
-        &crate::i18n::tr_fill("VERA:CrashText", &[("panic", &what), ("log", &log_note())]),
-    );
+    (
+        crate::i18n::tr("VERA:CrashTitle"),
+        crate::i18n::tr_fill("VERA:CrashText", &[("panic", &what), ("log", &log_note())]),
+    )
 }
 
 /// Tell the player why startup failed, before the process exits.
@@ -150,6 +182,48 @@ fn software_renderer_message(adapter: &str) -> (String, String) {
             ],
         ),
     )
+}
+
+/// Why the game closed after its graphics device was lost
+/// (`App::close_after_graphics_loss`).
+pub(crate) struct GraphicsLost {
+    /// What the driver said (`GpuContext::device_lost`).
+    pub(crate) error: String,
+    /// The description the single-player match was saved under.
+    pub(crate) saved: Option<String>,
+    /// The API the next start draws through instead, when the loss came
+    /// before startup finished (`persistence::startup_backend::record_loss`).
+    pub(crate) retry: Option<wgpu::Backend>,
+}
+
+/// Tell the player that the graphics driver stopped, what was saved and
+/// where the log is. The game has left the screen by then.
+pub(crate) fn report_graphics_lost(lost: &GraphicsLost) {
+    let (title, message) = graphics_lost_message(lost);
+    show_fatal(&title, &message);
+}
+
+fn graphics_lost_message(lost: &GraphicsLost) -> (String, String) {
+    let mut text = vec![crate::i18n::tr("VERA:GraphicsLostText")];
+    if let Some(name) = &lost.saved {
+        text.push(crate::i18n::tr_fill(
+            "VERA:GraphicsLostSaved",
+            &[("name", name)],
+        ));
+    }
+    if let Some(api) = lost.retry {
+        let api = crate::app::persistence::startup_backend::api_name(api);
+        text.push(crate::i18n::tr_fill(
+            "VERA:GraphicsLostRetry",
+            &[("api", &api)],
+        ));
+    }
+    text.push(log_note());
+    text.push(crate::i18n::tr_fill(
+        "VERA:GraphicsLostDetails",
+        &[("error", &lost.error)],
+    ));
+    (crate::i18n::tr("VERA:GraphicsLostTitle"), text.join("\n\n"))
 }
 
 /// What the graphics failure advises on this system, as its text's label.
@@ -416,5 +490,42 @@ mod tests {
         assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
         assert!(text.contains("(Microsoft Basic Render Driver)"), "{text}");
         assert!(text.ends_with(&crate::i18n::tr(GRAPHICS_ADVICE)), "{text}");
+    }
+
+    #[test]
+    fn a_panic_after_the_device_was_lost_tells_about_the_driver() {
+        let panic = "panicked at wgpu/src/util/device.rs:72:18:\nFailed to get mapped range \
+                     for buffer created with mapped_at_creation"
+            .to_owned();
+        let (title, text) = crash_message(panic.clone(), None, None);
+        assert_eq!(title, crate::i18n::tr("VERA:CrashTitle"));
+        assert!(text.contains(&panic), "{text}");
+        let driver = "Unexpected error variant (driver implementation is at fault)";
+        let (title, text) = crash_message(panic.clone(), Some(driver), None);
+        assert_eq!(title, crate::i18n::tr("VERA:GraphicsLostTitle"));
+        assert!(text.ends_with(driver), "{text}");
+        assert!(!text.contains("mapped_at_creation"), "{text}");
+        assert!(!text.contains("DirectX 12"), "{text}");
+        // Lost before startup finished on Vulkan: the next start's API is named.
+        let (_, text) = crash_message(panic, Some(driver), Some(wgpu::Backend::Dx12));
+        assert!(text.contains("DirectX 12"), "{text}");
+    }
+
+    #[test]
+    fn the_graphics_lost_message_names_the_save_only_when_there() {
+        let lost = GraphicsLost {
+            error: "Device is lost".to_owned(),
+            saved: Some("Skirmish Game".to_owned()),
+            retry: None,
+        };
+        let (title, text) = graphics_lost_message(&lost);
+        assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
+        assert!(text.contains("\"Skirmish Game\""), "{text}");
+        assert!(text.ends_with("Device is lost"), "{text}");
+        let (_, text) = graphics_lost_message(&GraphicsLost {
+            saved: None,
+            ..lost
+        });
+        assert!(!text.contains("Skirmish Game"), "{text}");
     }
 }

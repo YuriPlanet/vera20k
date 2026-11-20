@@ -144,7 +144,7 @@ pub(crate) fn detonate(
     if warhead.create_gap != 0
         && let Some(owner) = house
     {
-        let context = crate::sim::world::UninitContext::new(rules, overlay_registry);
+        let context = crate::sim::world::UninitContext::new(rules);
         let _ = world.apply_warhead_create_gap(
             owner,
             [impact.x, impact.y, impact.z],
@@ -175,7 +175,7 @@ pub(crate) fn detonate(
             if !viewers.is_empty() {
                 let radius = warhead.reveal.clamp(0, i32::from(u16::MAX)) as u16;
                 let cell = ((impact.x / 256) as u16, (impact.y / 256) as u16);
-                let context = crate::sim::world::UninitContext::new(rules, overlay_registry);
+                let context = crate::sim::world::UninitContext::new(rules);
                 let notification = world.session.current_house();
                 for final_pass in [false, true] {
                     let _ = world.reveal_area(
@@ -477,7 +477,6 @@ pub(crate) fn detonate(
                 target_id,
                 source_id,
                 rules,
-                overlay_registry,
                 run.effects(),
             );
         }

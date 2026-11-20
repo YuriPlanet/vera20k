@@ -78,7 +78,6 @@ fn fixture_frame_with_sight(
     seat_fixture_clients(world, alliances, &[]);
     let context = crate::sim::world::UninitContext::new(
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
-        None,
     );
     for &event in sight {
         match event {
@@ -2246,7 +2245,7 @@ fn reveal_houses_filters_the_viewer_maps_a_sight_reaches() {
             None,
             &config,
             None,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         (
             world.fog.is_cell_revealed(americans, 10, 10),
@@ -2273,7 +2272,7 @@ fn reveal_houses_filters_the_viewer_maps_a_sight_reaches() {
         (true, true),
         "the type key overrides the country"
     );
-    }
+}
 /// A plane synced into its presentation copy matches a clone of it, from
 /// the first, whole sync through later ones that copy only the chunks the
 /// writes between them touched, far apart on the map.

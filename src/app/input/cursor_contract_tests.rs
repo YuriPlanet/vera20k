@@ -94,8 +94,10 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
         kind: HoverTargetKind::EnemyUnit,
     };
     let before = sim.state_hash();
+    let control = sim.control_projection();
     assert!(crate::app::input::context_order::vehicle_capture_action(
         &sim,
+        &control,
         &retail.rules,
         actor,
         target,
@@ -118,6 +120,7 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
     );
     assert!(!crate::app::input::context_order::vehicle_capture_action(
         &sim,
+        &control,
         &retail.rules,
         actor,
         target,
@@ -223,7 +226,6 @@ fn no_manual_fire_modifier_cursors(ares_way: bool) {
                         empty_cell_cursor(
                             &sim,
                             Some(&retail.rules),
-                            None,
                             sim.session().current_house(),
                             Some(actor),
                             (17, 16),
@@ -343,7 +345,6 @@ fn retail_cell_chords_have_their_native_cursors() {
         let feedback = empty_cell_cursor(
             &sim,
             Some(&retail.rules),
-            None,
             sim.session().current_house(),
             Some(actor),
             (30, 30),
@@ -379,7 +380,6 @@ fn retail_ctrl_alt_over_shroud_is_a_move_for_a_foot() {
         cursor_id_for_feedback(empty_cell_cursor(
             sim,
             Some(rules),
-            None,
             sim.session().current_house(),
             Some(tank),
             cell,
@@ -515,7 +515,6 @@ fn native_modifier_controls_match_production_cursor_queries() {
                     empty_cell_cursor(
                         &sim,
                         Some(&retail.rules),
-                        None,
                         sim.session().current_house(),
                         Some(actor),
                         (17, 16),

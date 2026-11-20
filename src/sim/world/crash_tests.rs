@@ -557,7 +557,7 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
                     && state["expiry_registered"] == true
             );
             if index == 0 {
-                sim.notify_pointer_expired(falling, UninitContext::with_rules(&rules));
+                sim.notify_pointer_expired(falling, UninitContext::new(&rules));
                 let repaired = sim.projectiles.get(id).unwrap();
                 assert_eq!(repaired.target(), ProjectileTarget::Cell { rx: 10, ry: 20 });
                 assert_eq!(expected["after_detonate"]["target"]["kind"], "cell");
@@ -566,7 +566,7 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
                     expected["after_detonate"]["source"].is_null()
                 );
             }
-            sim.destroy_unfired_projectile(id, &rules, None, FrameEffects::default());
+            sim.destroy_unfired_projectile(id, &rules, FrameEffects::default());
             assert!(sim.projectiles.get(id).is_none());
             assert!(!sim.substrate.logic.as_slice().contains(&id));
             assert_eq!(sim.substrate.display.layer_of(id), None);
@@ -719,7 +719,7 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
             sim.scenario_rng.native_state_hex(),
             expected["rng_after"]["scenario"]
         );
-        sim.destroy_unfired_projectile(id, &rules, None, FrameEffects::default());
+        sim.destroy_unfired_projectile(id, &rules, FrameEffects::default());
         assert!(sim.projectiles.get(id).is_none());
     }
     assert_eq!(sim.substrate.anims.len(), native_anims.len());
@@ -931,13 +931,7 @@ fn crash_matches_native_rows() {
         let mut fixture_input = input.clone();
         fixture_input["crashing"] = serde_json::json!(0);
         let (mut sim, rules) = fixture(&fixture_input);
-        let returned = sim.foot_crash(
-            1,
-            None,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        let returned = sim.foot_crash(1, None, &rules, crate::sim::world::FrameEffects::default());
         let name = input["name"].as_str().unwrap();
         assert_eq!(returned, row["returned"].as_bool().unwrap(), "{name}");
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -1004,13 +998,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         .filter(|call| call["call"] == "record_kill")
         .count() as u32;
     assert_eq!(callbacks, 1);
-    assert!(sim.foot_crash(
-        1,
-        None,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_crash(1, None, &rules, crate::sim::world::FrameEffects::default(),));
     assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
 
     let mut reached_impact = false;
@@ -1042,13 +1030,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         callbacks,
         "impact UnInit does not add a second loss"
     );
-    sim.process_pending_delete_with(
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-        1,
-        false,
-    );
+    sim.process_pending_delete_with(&rules, crate::sim::world::FrameEffects::default(), 1, false);
     assert!(!sim.substrate.entities.contains(1));
     assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
 }
@@ -1327,13 +1309,7 @@ fn ares_crash_spin_no_skips_the_spin_draws() {
     input["type_extra"] = serde_json::json!("CrashSpin=no");
     let (mut sim, rules) = fixture(&input);
     let before = sim.scenario_rng.state();
-    assert!(sim.foot_crash(
-        1,
-        None,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_crash(1, None, &rules, crate::sim::world::FrameEffects::default(),));
     assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
     assert_eq!(sim.scenario_rng.state(), before);
 }
@@ -2778,13 +2754,7 @@ fn phobos_crash_spin_zero_multiplier_skips_the_spin_and_its_draws() {
     input["type_extra"] = serde_json::json!("CrashSpin.Multiplier=0.0");
     let (mut sim, rules) = fixture(&input);
     let before = sim.scenario_rng.state();
-    assert!(sim.foot_crash(
-        1,
-        None,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_crash(1, None, &rules, crate::sim::world::FrameEffects::default()));
     assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
     assert_eq!(
         sim.scenario_rng.state(),

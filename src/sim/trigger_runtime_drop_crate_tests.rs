@@ -102,7 +102,7 @@ fn destroy(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet, id: u64
         id,
         crate::sim::combat::KillSource::Techno(None),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::new(rules, Some(&registry)),
+        crate::sim::world::UninitContext::new(rules),
     );
 }
 

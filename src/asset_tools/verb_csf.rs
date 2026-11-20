@@ -37,6 +37,7 @@ use crate::asset_tools::report::{CsfEntry, CsfReport, ErrorReport};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::csf_file::CsfFile;
 use crate::util::native_string::widen_bytes;
+use crate::util::read_helpers::read_u32_le;
 
 /// Default page size for `csf-grep`. A one-word grep over the retail table
 /// routinely matches hundreds of labels, and dumping them all buries the answer.
@@ -524,11 +525,11 @@ fn scan_raw_labels(data: &[u8]) -> RawScan {
 /// Read one label record. `None` ends the walk — the same "stop at the first
 /// failed read or magic check" rule the parser uses, so both see the same set.
 fn scan_one_label(data: &[u8], offset: usize) -> Option<(RawLabel, usize)> {
-    if read_u32_at(data, offset)? != LABEL_MAGIC {
+    if read_u32_le(data, offset)? != LABEL_MAGIC {
         return None;
     }
-    let pair_count = read_u32_at(data, offset.checked_add(4)?)?;
-    let name_len = read_u32_at(data, offset.checked_add(8)?)? as usize;
+    let pair_count = read_u32_le(data, offset.checked_add(4)?)?;
+    let name_len = read_u32_le(data, offset.checked_add(8)?)? as usize;
     let name_start = offset.checked_add(LABEL_RECORD_MIN_BYTES)?;
     let name_end = name_start.checked_add(name_len)?;
     let stored_key = widen_bytes(data.get(name_start..name_end)?);
@@ -536,12 +537,12 @@ fn scan_one_label(data: &[u8], offset: usize) -> Option<(RawLabel, usize)> {
     let mut pos = name_end;
     let mut value = String::new();
     for _ in 0..pair_count {
-        let str_magic = read_u32_at(data, pos)?;
+        let str_magic = read_u32_le(data, pos)?;
         let has_extra = str_magic == STRING_EXTRA_MAGIC;
         if str_magic != STRING_MAGIC && !has_extra {
             return None;
         }
-        let char_count = read_u32_at(data, pos.checked_add(4)?)? as usize;
+        let char_count = read_u32_le(data, pos.checked_add(4)?)? as usize;
         let byte_count = char_count.checked_mul(2)?; // UTF-16-LE.
         pos = pos.checked_add(8)?;
         let encoded = data.get(pos..pos.checked_add(byte_count)?)?;
@@ -553,7 +554,7 @@ fn scan_one_label(data: &[u8], offset: usize) -> Option<(RawLabel, usize)> {
 
         // The extra field holds an audio cue name, never display text.
         if has_extra {
-            let extra_len = read_u32_at(data, pos)? as usize;
+            let extra_len = read_u32_le(data, pos)? as usize;
             pos = pos.checked_add(4)?.checked_add(extra_len)?;
             if pos > data.len() {
                 return None;
@@ -574,15 +575,6 @@ fn decode_stored(encoded: &[u8]) -> String {
         .map(|pair| u16::from_le_bytes([!pair[0], !pair[1]]))
         .collect();
     String::from_utf16_lossy(&units)
-}
-
-/// Bounds-checked little-endian read. `util::read_helpers::read_u32_le` indexes
-/// directly and would panic on a truncated record — which retail-sourced bytes
-/// must never be able to do inside a tool that reports errors as values.
-fn read_u32_at(data: &[u8], offset: usize) -> Option<u32> {
-    let end = offset.checked_add(4)?;
-    let bytes: [u8; 4] = data.get(offset..end)?.try_into().ok()?;
-    Some(u32::from_le_bytes(bytes))
 }
 
 #[cfg(all(test, tests_asset_tools))]

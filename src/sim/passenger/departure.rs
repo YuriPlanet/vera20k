@@ -54,7 +54,6 @@ pub enum DepartureFailure {
 pub fn depart_cargo_head(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     transport_id: u64,
     route: DepartureRoute,
     attempt: impl FnOnce(&mut Simulation, u64) -> Result<(), DepartureFailure>,
@@ -65,7 +64,10 @@ pub fn depart_cargo_head(
         .entities
         .get_mut(transport_id)
         .ok_or(DepartureFailure::NoCargo)?;
-    let cargo = transport.cargo_mut().ok_or(DepartureFailure::NoCargo)?;
+    let cargo = transport
+        .passenger_role_mut()
+        .cargo_mut()
+        .ok_or(DepartureFailure::NoCargo)?;
     let removed = cargo.unload_first();
     // FUN_004DE710's empty-hold weapon reset occurs before placement for these
     // callers. Paradrop does not call RemoveGunner.
@@ -90,12 +92,18 @@ pub fn depart_cargo_head(
         route,
         DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::DeathEscape
     ) {
-        sim.phobos_revert_passenger_on_exit(transport_id, passenger_id, rules, registry, effects);
+        sim.phobos_revert_passenger_on_exit(
+            transport_id,
+            passenger_id,
+            rules,
+            Some(rules.overlay_registry()),
+            effects,
+        );
     }
     if route == DepartureRoute::Hospital
         && let Some(passenger) = sim.substrate.entities.get_mut(passenger_id)
     {
-        passenger.clear_carrier_relation();
+        passenger.passenger_role_mut().clear_carrier_relation();
     }
     // A failed Unlimbo re-attaches the passenger with `+0x82` untouched
     // (CargoClass::AddPassenger 0x004733A0 does not write it); only a
@@ -117,7 +125,6 @@ pub fn depart_cargo_head(
         restore_departure(
             sim,
             rules,
-            registry,
             link,
             passenger_id,
             passenger_size,
@@ -132,7 +139,6 @@ pub fn depart_cargo_head(
 fn restore_departure(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     link: CarrierLink,
     passenger_id: u64,
     passenger_size: f64,
@@ -150,7 +156,7 @@ fn restore_departure(
         // Defensive legacy repair of an already-broken cargo/limbo invariant.
         let _ = sim.techno_limbo_with_context(
             passenger_id,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
     }
     match route {
@@ -165,7 +171,7 @@ fn restore_departure(
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.finish_fall();
                     }
-                    passenger.set_carrier_link(link);
+                    passenger.passenger_role_mut().set_carrier_link(link);
                 }
             }
             DepartureFailure::NoCargo | DepartureFailure::GroundReveal(_) => {
@@ -189,7 +195,7 @@ fn restore_departure(
                 "invalid ground departure phase"
             );
             if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-                passenger.set_carrier_link(link);
+                passenger.passenger_role_mut().set_carrier_link(link);
             }
         }
     }
@@ -197,7 +203,7 @@ fn restore_departure(
     let _ = sim.add_cargo_passenger_chain(
         transport_id,
         &[(passenger_id, passenger_size)],
-        UninitContext::new(rules, registry).with_effects(effects),
+        UninitContext::new(rules).with_effects(effects),
     );
     if route == DepartureRoute::Absorber {
         // Mission_Unload's failed Unlimbo path first re-adds the passenger,
@@ -275,7 +281,7 @@ pub fn reveal_unloaded_passenger(
             passenger.passenger_role().inside_transport_id(),
             Some(transport_id)
         );
-        passenger.clear_carrier_relation();
+        passenger.passenger_role_mut().clear_carrier_relation();
     }
     let outcome = sim.try_reveal_entity_with_context(
         passenger_id,
@@ -284,7 +290,7 @@ pub fn reveal_unloaded_passenger(
             placement,
             logic_eligible: true,
         },
-        UninitContext::with_rules(rules)
+        UninitContext::new(rules)
             .with_effects(effects)
             .with_unlimbo_facing(unlimbo_facing),
     );

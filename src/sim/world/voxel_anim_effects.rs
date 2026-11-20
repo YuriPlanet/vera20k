@@ -131,8 +131,7 @@ impl Simulation {
         }
         let step = debris.begin_ai_visit();
         let type_id = debris.type_id();
-        let context =
-            UninitContext::new(rules, Some(rules.overlay_registry())).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         match step {
             VoxelAnimAiStep::Delete => {
                 self.uninit_with_context(id, context);

@@ -243,7 +243,6 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
             .unwrap();
         sim.process_pending_delete_with(
             rules,
-            Some(rules.overlay_registry()),
             crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),
@@ -360,7 +359,6 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
                 .unwrap();
             sim.process_pending_delete_with(
                 rules,
-                Some(rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
                 1,
                 sim.session().started(),

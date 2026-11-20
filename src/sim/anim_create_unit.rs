@@ -196,7 +196,6 @@ impl Simulation {
             crate::sim::aircraft::drop_payload::spawn_parachuted(
                 self,
                 rules,
-                overlay_registry,
                 unit,
                 DriveCoord {
                     x: placement.x,
@@ -224,10 +223,7 @@ impl Simulation {
             .is_some()
         };
         if !placed {
-            self.uninit_with_context(
-                unit,
-                UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
-            );
+            self.uninit_with_context(unit, UninitContext::new(rules).with_effects(frame_effects));
             return false;
         }
         if let Some(dir) = secondary
@@ -313,13 +309,7 @@ impl Simulation {
                     )
                 });
                 if fly && (content || airport_bound) {
-                    crate::sim::aircraft::enter_idle_mode_for(
-                        self,
-                        unit,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
+                    crate::sim::aircraft::enter_idle_mode_for(self, unit, rules, frame_effects);
                 } else if fly {
                     // `pFlyLoco->Move_To(pCell->GetCoordsWithBridge())`: the
                     // cell's centre and its structural deck when the cell has

@@ -130,7 +130,6 @@ impl Replay {
                     scene.miner,
                     Some(TargetKind::Entity(first)),
                     &scene.rules,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
@@ -378,6 +377,7 @@ impl Replay {
                 };
                 assert!(
                     s.sim.apply_command_with_overlays(
+                        None,
                         "Americans",
                         &command,
                         &s.rules,
@@ -498,7 +498,6 @@ impl Replay {
                         PointerExpiryControl::Uninit
                     },
                     &s.rules,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                 );
             }

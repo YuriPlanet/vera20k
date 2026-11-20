@@ -216,6 +216,8 @@ pub(crate) struct WolVisit {
     legacy_ui: bool,
     live_service: Option<live_service::LiveService>,
     requests: Vec<WolServiceRequest>,
+    /// Latest account form submission, including one still queued for the next poll.
+    account_attempt: u64,
     /// The WOLAPI credential store as the service last reported it.
     credentials: Vec<WolCredential>,
     /// `[0xB77AD0]`: the text the login sinks leave for `0x00786EF0`.
@@ -230,10 +232,6 @@ pub(crate) struct WolVisit {
     /// the match and cleared on runner entry (`0x00787973`); the chat sinks
     /// show nothing while it is set.
     in_game: bool,
-    /// VERA: this match started from VERA's own game room, which stays
-    /// joined through the match so its players return to it afterwards
-    /// (`finish` asks the lobby for it back).
-    pub(crate) back_to_room: bool,
     /// VERA: why the last online match ended, until the chat the player
     /// lands in exists.
     problem_line: Option<String>,
@@ -244,10 +242,6 @@ pub(crate) struct WolVisit {
     /// VERA: the lobby lets a room's players visit the public lobby, as
     /// its sign-in answered (docs/lobby-protocol.md "Visiting the lobby").
     lobby_visits: bool,
-    /// VERA: BC6's Continue after a co-op mission: the stage the kept
-    /// room's host takes when the room comes back. The runner's post-match
-    /// entry drops it unless it waits for that room.
-    pub(crate) cooperative_resume: Option<crate::app::shell_network_setup::CooperativeResume>,
     /// `![0xB77DC0]`: connected to a server. A WOLAPI creation
     /// (`0x00786485`) and a failed login clear it, a connect sets it, and a
     /// lost connection outside a match clears it.
@@ -306,17 +300,16 @@ impl WolVisit {
             legacy_ui: false,
             live_service: None,
             requests: Vec::new(),
+            account_attempt: 0,
             credentials: Vec::new(),
             last_error: None,
             last_login_result: None,
             motd: None,
             last_pager: None,
             in_game: false,
-            back_to_room: false,
             problem_line: None,
             lobby_watches: None,
             lobby_visits: false,
-            cooperative_resume: None,
             connected: false,
             disconnected: false,
             relogin: None,
@@ -584,7 +577,7 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
         )
     {
         // VERA's kept game room returns only to the custom lobby runner.
-        visit.back_to_room = false;
+        state.match_state.session.take_network_room_return();
     }
     live_service::match_returned(state);
     if !App::prepare_multiplayer_settings(

@@ -56,6 +56,7 @@
 use crate::sim::world::FrameEffects;
 
 use crate::map::entities::EntityCategory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
@@ -86,7 +87,7 @@ pub(crate) fn update_strategy(
     if !house.strategy_timer().expired(frame) {
         return;
     }
-    if house.is_controlled_by_human(sim.session.game_mode_nonzero()) {
+    if house.is_controlled_by_human(sim.session.rule_policy()) {
         // Ares4F9004 hook10034CD0 calls AI_TryFireSW for humans, after
         // the existing strategy timer gate, without restarting that timer.
         if rules.ares_form() {
@@ -124,9 +125,7 @@ pub(crate) fn update_ai_superweapon_delay(
         let Some(house) = sim.houses.get(&owner) else {
             return;
         };
-        if house.is_controlled_by_human(sim.session.game_mode_nonzero())
-            || house.multiplay_passive()
-        {
+        if house.is_controlled_by_human(sim.session.rule_policy()) || house.multiplay_passive() {
             return;
         }
         if delay > 0 {
@@ -137,7 +136,7 @@ pub(crate) fn update_ai_superweapon_delay(
                 house.start_ai_superweapon_delay(frame, delay);
             }
         }
-        if sim.session.game_mode_nonzero()
+        if !sim.session.uses_campaign_world()
             || sim
                 .houses
                 .get(&owner)
@@ -155,11 +154,7 @@ pub(crate) fn update_ai_superweapon_delay(
 /// conyard by cell squared distance. VERA has one published `base_center`
 /// (the launch waypoint owner), so both native center writes collapse to it.
 fn bias_base_center_to_nearest_conyard(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    use crate::sim::scenario_session::ScenarioGameMode;
-
-    if !rules.phobos_globals.ai_bias_spawn_cell
-        || sim.session.game_mode() == ScenarioGameMode::Campaign
-    {
+    if !rules.phobos_globals.ai_bias_spawn_cell || sim.session.uses_campaign_world() {
         return;
     }
     let Some(center) = sim
@@ -214,6 +209,7 @@ fn building_strategy(
     // `0x004FD538`: Phobos biases the retained start center toward the nearest
     // live construction yard when `AIBiasSpawnCell` is on in a non-campaign.
     bias_base_center_to_nearest_conyard(sim, rules, owner);
+    let policy = sim.session.rule_policy();
     pick_enemy(
         &sim.interner,
         &sim.session,
@@ -228,7 +224,7 @@ fn building_strategy(
         &sim.house_alliances,
         &mut sim.houses,
         owner,
-        sim.session.game_mode_nonzero(),
+        policy,
         rules.ares_form(),
         rules.general.ai_nearest_enemy,
     );
@@ -239,7 +235,7 @@ fn building_strategy(
     // gates the same `AI_TryFireSW` behind its timer.
     let strategy_side_sw = rules.phobos_globals.ai_superweapon_delay.is_none();
     if strategy_side_sw
-        && (sim.session.game_mode_nonzero()
+        && (policy.runs_ai_strategy()
             || sim
                 .houses
                 .get(&owner)
@@ -264,25 +260,19 @@ fn building_strategy(
     // slot 1 Check_Build_Need's answer (0 or 1), both asked before either
     // acts; from level 4 down, slot 0's sells off and hunts and slot 1's
     // runs Manage_Build_Queue.
-    if sim.session.game_mode_nonzero() {
-        let suppressed = sim
+    let no_factory = policy.runs_ai_strategy()
+        && sim
             .houses
             .get(&owner)
-            .is_none_or(|house| house.strategy_emergency().mode() == 3);
-        let no_factory = !suppressed && !has_live_factory(sim, rules, owner);
-        let build_need = crate::sim::ai_build_need::check_build_need(sim, rules, owner);
-        if no_factory {
-            last_legs_actions(sim, rules, owner, registry, frame_effects);
-        }
-        if build_need {
-            crate::sim::ai_build_need::manage_build_queue(
-                sim,
-                rules,
-                owner,
-                registry,
-                frame_effects,
-            );
-        }
+            .is_some_and(|house| house.strategy_emergency().mode() != 3)
+        && !has_live_factory(sim, rules, owner);
+    let build_need =
+        policy.runs_ai_strategy() && crate::sim::ai_build_need::check_build_need(sim, rules, owner);
+    if no_factory {
+        last_legs_actions(sim, rules, owner, registry, frame_effects);
+    }
+    if build_need {
+        crate::sim::ai_build_need::manage_build_queue(sim, rules, owner, registry, frame_effects);
     }
 
     sim.scenario_rng
@@ -376,7 +366,8 @@ fn pick_enemy(
     ares: bool,
     nearest_enemy: bool,
 ) {
-    if !session.game_mode_nonzero() {
+    let policy = session.rule_policy();
+    if !policy.runs_ai_strategy() {
         return;
     }
     let Some(house) = houses.get(&owner) else {
@@ -425,7 +416,7 @@ fn pick_enemy(
             owner,
             peer,
             1,
-            session.game_mode_nonzero(),
+            policy,
             ares,
             nearest_enemy,
         );
@@ -439,7 +430,7 @@ fn forget_defeated_enemy(
     house_alliances: &HouseAlliances,
     houses: &mut Houses,
     owner: InternedId,
-    game_mode_nonzero: bool,
+    policy: RulePolicy,
     ares: bool,
     nearest_enemy: bool,
 ) {
@@ -461,7 +452,7 @@ fn forget_defeated_enemy(
         owner,
         enemy,
         anger.wrapping_neg(),
-        game_mode_nonzero,
+        policy,
         ares,
         nearest_enemy,
     );
@@ -622,8 +613,8 @@ pub(crate) fn all_to_hunt(
 /// With no winner the enemy is cleared (`0x0050484F`).
 ///
 /// Ares 3.0 HouseClass_AddAnger_MultiplayPassive 10023FB0 (hook
-/// `0x00504796`): outside a campaign (`game_mode_nonzero`) the node update
-/// loop runs zero times for a `MultiplayPassive` peer; the enemy rescan
+/// `0x00504796`): the stock multiplayer policy skips the node update
+/// for a `MultiplayPassive` peer; the enemy rescan
 /// still runs. `ares` is the caller's `rules.ares_form()`.
 ///
 /// VERA `[General] AINearestEnemy=` (`nearest_enemy`, off by default): among
@@ -637,12 +628,13 @@ pub(crate) fn update_anger_nodes(
     owner: InternedId,
     peer: InternedId,
     delta: i32,
-    game_mode_nonzero: bool,
+    policy: RulePolicy,
     ares: bool,
     nearest_enemy: bool,
 ) {
-    let passive_peer =
-        ares && game_mode_nonzero && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
+    let passive_peer = ares
+        && policy.runs_ai_strategy()
+        && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
     let peer_is_registered = peer != owner && houses.contains_key(&peer);
     if peer_is_registered
         && !passive_peer

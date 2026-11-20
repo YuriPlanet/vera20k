@@ -138,11 +138,10 @@ fn fixture(row: &Value) -> Scene {
     // Native OTHER is a supplied radio object, neither House-listed nor
     // foundation-placed. Use membership owners to reproduce that prestate.
     let owner = s.sim.substrate.entities.get(s.other).unwrap().owner();
-    crate::sim::world::Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::unregister_object(
         &mut s.sim.substrate,
         &mut s.sim.houses,
         s.other,
-        crate::sim::house_tracking::HouseTracking::remove_tracking,
     );
     s.sim.houses.leave_house_base_lists(s.other, owner);
     for y in 20..23 {
@@ -629,7 +628,6 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 Some(owner),
                 PointerExpiryControl::Uninit,
                 &s.rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             );
         }

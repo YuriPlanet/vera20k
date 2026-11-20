@@ -83,17 +83,14 @@ fn scene() -> (Simulation, RuleSet, OverlayTypeRegistry, u64) {
     (sim, rules, registry, actor)
 }
 
-fn raise(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry, actor: u64) {
-    sim.dispatch_airborne_cell_tag_event(
-        actor,
-        super::super::UninitContext::new(rules, Some(registry)),
-    );
+fn raise(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
+    sim.dispatch_airborne_cell_tag_event(actor, super::super::UninitContext::new(rules));
 }
 
 #[test]
 fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_timer_writes() {
     for frame in [0, 1, 15, 16, 17, 31, 32, 0xffff_fff0, 0xffff_ffff] {
-        let (mut sim, rules, registry, actor) = scene();
+        let (mut sim, rules, _, actor) = scene();
         sim.session.set_binary_frame_for_test(frame);
         let rng = (
             sim.scenario_rng.logical_state(),
@@ -108,7 +105,7 @@ fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_time
             .unwrap()
             .sight_refresh_timers
             .timer(viewer);
-        raise(&mut sim, &rules, &registry, actor);
+        raise(&mut sim, &rules, actor);
         assert_eq!(
             sim.trigger_local_is_set_for_test(7),
             frame % 16 == 0,
@@ -137,7 +134,7 @@ fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_time
 #[test]
 fn airborne_cell_tag_reuses_marked_and_relative_height_admission() {
     for (marked, height, expected) in [(false, 500, false), (true, 207, false), (true, 208, true)] {
-        let (mut sim, rules, registry, actor) = scene();
+        let (mut sim, rules, _, actor) = scene();
         sim.session.set_binary_frame_for_test(16);
         Simulation::set_object_height_unmarked(
             &mut sim.substrate,
@@ -151,7 +148,7 @@ fn airborne_cell_tag_reuses_marked_and_relative_height_admission() {
             .unwrap()
             .lifecycle
             .set_cell_marked_for_test(marked);
-        raise(&mut sim, &rules, &registry, actor);
+        raise(&mut sim, &rules, actor);
         assert_eq!(
             sim.trigger_local_is_set_for_test(7),
             expected,
@@ -162,7 +159,7 @@ fn airborne_cell_tag_reuses_marked_and_relative_height_admission() {
 
 #[test]
 fn airborne_cell_tag_uses_physical_cell_and_ignores_arrival_bridge_suppression() {
-    let (mut sim, rules, registry, actor) = scene();
+    let (mut sim, rules, _, actor) = scene();
     sim.session.set_binary_frame_for_test(16);
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     let cell = terrain.native_cell_identity((15, 15));
@@ -182,17 +179,17 @@ fn airborne_cell_tag_uses_physical_cell_and_ignores_arrival_bridge_suppression()
         (15, 15)
     );
     assert!(!sim.substrate.entities.get(actor).unwrap().on_bridge());
-    raise(&mut sim, &rules, &registry, actor);
+    raise(&mut sim, &rules, actor);
     assert!(sim.trigger_local_is_set_for_test(7));
 }
 
 #[test]
 fn airborne_cell_tag_preserves_the_existing_country_predicate_and_one_shot_retirement() {
     for country in [0, 1] {
-        let (mut sim, rules, registry, actor) = scene();
+        let (mut sim, rules, _, actor) = scene();
         install_tag(&mut sim, &rules, 0, country, (15, 15), "1,56,0,7,0,0,0,0,A");
         sim.session.set_binary_frame_for_test(16);
-        raise(&mut sim, &rules, &registry, actor);
+        raise(&mut sim, &rules, actor);
         assert_eq!(sim.tag_dispatch_trace_for_test().len(), 1);
         assert_eq!(sim.trigger_local_is_set_for_test(7), country == 0);
         let identity = sim
@@ -204,7 +201,7 @@ fn airborne_cell_tag_preserves_the_existing_country_predicate_and_one_shot_retir
             sim.cell_trigger_tag_for_test(identity).is_none(),
             country == 0
         );
-        raise(&mut sim, &rules, &registry, actor);
+        raise(&mut sim, &rules, actor);
         assert_eq!(
             sim.tag_dispatch_trace_for_test().len(),
             if country == 0 { 1 } else { 2 }

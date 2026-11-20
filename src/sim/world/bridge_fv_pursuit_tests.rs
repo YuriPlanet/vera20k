@@ -335,6 +335,7 @@ fn command_paid_fv(
     sim.session.set_binary_frame_for_test(1);
     let owner = sim.resolve(sim.session.current_house().unwrap()).to_owned();
     assert!(sim.apply_command_with_overlays(
+        None,
         &owner,
         &Command::ForceAttackCell {
             attacker_id: id,
@@ -425,6 +426,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             .resolve(sim.substrate.entities.get(id).unwrap().owner())
                             .to_owned();
                         assert!(sim.apply_command_with_overlays(
+                            None,
                             &owner,
                             &Command::Stop { entity_id: id },
                             &runtime.resources.rules,

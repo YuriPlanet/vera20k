@@ -172,7 +172,6 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
         depart_cargo_head(
             sim,
             rules,
-            None,
             ifv,
             DepartureRoute::Vehicle,
             |sim, departing| {
@@ -630,7 +629,6 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
         depart_cargo_head(
             &mut sim,
             rules,
-            None,
             boat,
             DepartureRoute::Vehicle,
             |sim, departing| {
@@ -752,7 +750,6 @@ fn retail_ifv_boarding_and_departure_retry_keep_one_selection_owner() {
             depart_cargo_head(
                 &mut sim,
                 rules,
-                None,
                 ifv,
                 DepartureRoute::Vehicle,
                 |sim, departing| {
@@ -803,7 +800,6 @@ fn retail_empty_ifv_departure_resets_selection_without_a_passenger() {
             depart_cargo_head(
                 &mut sim,
                 rules,
-                None,
                 ifv,
                 DepartureRoute::Vehicle,
                 |_, _| { panic!("an empty hold must never attempt passenger placement") },
@@ -961,7 +957,6 @@ fn retail_temporal_gunner_unload_rearms_before_exit_and_retry() {
         depart_cargo_head(
             &mut sim,
             rules,
-            None,
             ifv,
             DepartureRoute::Vehicle,
             |sim, departing| {
@@ -1304,7 +1299,6 @@ fn retail_a_transport_sent_elsewhere_breaks_its_passengers_contact() {
         htk,
         Some(crate::sim::components::NavTargetRef::object(other)),
         rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert!(entity(&sim, htk).radio_contacts.is_empty());
@@ -1346,7 +1340,6 @@ fn retail_the_setters_break_spares_every_other_contact() {
             unit,
             Some(crate::sim::components::NavTargetRef::object(target)),
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
     };

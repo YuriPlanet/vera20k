@@ -206,10 +206,7 @@ fn snapshot(
         return;
     };
     sim.refresh_object_sight(id, rules, damage, frame_effects);
-    sim.refresh_object_sight_border(
-        id,
-        UninitContext::new(rules, None).with_effects(frame_effects),
-    );
+    sim.refresh_object_sight_border(id, UninitContext::new(rules).with_effects(frame_effects));
     if sound
         && let Some(camera) = rules.general.spy_plane_camera.clone()
         && let Some(plane) = sim.substrate.entities.get(id)

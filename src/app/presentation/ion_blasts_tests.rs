@@ -39,6 +39,7 @@ fn draws_centre_on_the_original_points() {
             [0.0, 0.0],
             [192.0, 128.0],
             detail as u32,
+            crate::render::native_z::DEFAULT_Z,
         );
         let centres: Vec<[i32; 2]> = draws
             .iter()

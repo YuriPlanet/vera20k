@@ -981,8 +981,6 @@ pub(crate) fn initial_projectile_range(
     }
 }
 
-
-
 /// `WeaponTypeExt::GetRangeWithModifiers`'s entity choice
 /// (`Ext/WeaponType/Body.cpp:400-410`): the entity whose AttachEffect range
 /// fold applies. A passenger inside an `OpenTopped` transport whose type
@@ -1018,7 +1016,6 @@ pub(crate) fn range_modifier_source<'a>(
         entity
     }
 }
-
 
 /// Resolve the open-topped carrier's `ObjectType` for a passenger. The Phobos
 /// `OpenTopped.*` hooks read the transport's type extension
@@ -1731,9 +1728,10 @@ impl Simulation {
             target,
             // `HouseClass::IsControlledByHuman @ 0x0050B730`, the predicate
             // the mission list reads.
-            owner_human: self.houses.get(&entity.owner()).is_some_and(|house| {
-                house.is_controlled_by_human(self.session.game_mode_nonzero())
-            }),
+            owner_human: self
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy())),
         }
     }
 
@@ -1856,15 +1854,31 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let game_mode_nonzero = self.session.game_mode_nonzero();
+        // The new country's list may attach even when this object holds no
+        // effect yet (Phobos `House/Hooks.cpp:342-343`), so the empty list
+        // only lets an owner change with no attach work return early.
+        let attach_country = self
+            .houses
+            .get(&new_owner)
+            .and_then(|house| house.country())
+            .map(|country| self.interner.resolve(country).to_owned())
+            .filter(|country| {
+                rules
+                    .country_rules(country)
+                    .and_then(|country| country.attach_effect_attach_on_owner_change)
+                    .unwrap_or(rules.attach_effect_globals().attach_on_owner_change)
+            });
+        if entity.phobos_attach_effects().is_empty() && attach_country.is_none() {
+            return;
+        }
         let old_human = self
             .houses
             .get(&old_owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         let new_human = self
             .houses
             .get(&new_owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         let human_and_computer = old_human != new_human;
         let has_transporter = entity.passenger_role().inside_transport_id().is_some();
         let effects = rules.attach_effect_types().types();
@@ -1913,21 +1927,9 @@ impl Simulation {
         // Phobos `House/Hooks.cpp:342-343`: the new country's list attaches
         // under `AttachEffect.AttachOnOwnerChange` (country value, else the
         // `[General]` fallback).
-        let country = self
-            .houses
-            .get(&new_owner)
-            .and_then(|house| house.country())
-            .map(|country| self.interner.resolve(country).to_owned());
-        let Some(country) = country else {
+        let Some(country) = attach_country else {
             return;
         };
-        let enabled = rules
-            .country_rules(&country)
-            .and_then(|country| country.attach_effect_attach_on_owner_change)
-            .unwrap_or(rules.attach_effect_globals().attach_on_owner_change);
-        if !enabled {
-            return;
-        }
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -3206,7 +3208,6 @@ impl Simulation {
         let navigation = run.finish();
         let _ = self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             commit.effects,
             commit.under_attack_events,
             navigation,
@@ -3957,6 +3958,7 @@ mod tests {
                 .finish_building_construction_for_test();
             assert!(sim.undeploy_building(
                 yard,
+                false,
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default()
@@ -5215,7 +5217,6 @@ mod tests {
                 target,
                 Some(crate::sim::combat::TargetKind::Cell(30, 30)),
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .is_ok()
@@ -6646,7 +6647,6 @@ AttachEffect.InitialDelays=3
             crate::sim::combat::fire_error_world::FireSubject {
                 world: &sim,
                 rules: &rules,
-                overlay_registry: None,
                 fog: None,
                 firer: sim.substrate.entities.get(attacker).unwrap(),
                 obj: rules.object("ATTACKER").unwrap(),

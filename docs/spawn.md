@@ -14,16 +14,26 @@ vera20k --probe [--ra2-dir <dir>] [--map <map-file>] [--mod <folder> | --no-mod]
 ```
 
 It reports the multiplayer `version` (`[Settings] ExpectedVersion`) and its parts
-(`build_identity`), the Battle mode's `rules_digest` (`ExpectedRulesDigest`) and each `GameMode`'s
-in `game_modes`, the `map` given (`file`, `byte_length`, `source_sha256` for
+(`build_identity`), the default mode's `rules_digest` (`ExpectedRulesDigest`) and every loaded
+mode's digest in `game_modes`, the `map` given (`file`, `byte_length`, `source_sha256` for
 `ExpectedMapDigest`, `effective_digest`) and its `max_start_waypoints`, the `Side=` values
 (`countries`), the `Color=` values (`colors`), the `campaigns` a single-player launch may start,
 and `"generate_map": true` when the build has the random-map command below. A build without it
 lacks the field and would start the game for `--generate-map`, so check it first.
+`max_offline_houses` is the most houses a launch with one human and no `[Relay]` section seats,
+120, as offline Skirmish does: `AIPlayers` up to 119, AI rows `Multi2` to `Multi120`, starts
+(`[SpawnLocations]`) and `[HouseTeams]` numbers 0 to 119. Every other launch seats at most 30
+houses, with starts and teams 0 to 29. A build that lacks the field seats 30 in every launch.
 The game folder comes from `config.toml` unless `--ra2-dir` names one, the mod from `config.toml`
 unless `--mod` or `--no-mod` chooses, and the Ares setting from VERA.INI unless `--ares` names the
 one `spawn.ini`'s `[Settings] Ares=` will. In the browser, `probe(map_name)` returns the same JSON
 text.
+
+The mode catalog is the selected mod's `[Files] Modes`, or `MPModesMD.ini` by default. The
+probe's default is loaded mode 1 when its class supports Skirmish, otherwise the first loaded
+Skirmish mode. For a launch selecting another `GameMode`, use that row's digest from
+`game_modes`. Custom ids are reported too; if the catalog has no mode 1, the launcher must name
+its chosen id explicitly in `spawn.ini`.
 
 ## Random maps
 
@@ -33,7 +43,7 @@ host made from it. Every player makes the file from the code, checks the digest,
 as an ordinary map, with that digest as `ExpectedMapDigest`.
 
 ```sh
-vera20k --generate-map (--code <VR1-…> | --sed <file>) --output <map-file> [--no-mod]
+vera20k --generate-map (--code <VR1-…> | --sed <file>) --output <map-file> [--mod <folder> | --no-mod]
 ```
 
 The input is a share code, in either case, or a `.SED` file whose `[RandomMap]` section holds the
@@ -42,7 +52,7 @@ options:
 | Key | Values |
 | --- | --- |
 | `Width`, `Height` | the same value: 0 to 3 for Small to Very Large, 4 to 7 for 160, 250, 350 and 500 cells |
-| `NumPlayers` | 2 to 30 |
+| `NumPlayers` | 2 to 120; a map for more than 30 plays offline |
 | `Seed` | 0 to 65535; required |
 | `MapType` | 0 archipelago, 1 continent, 2 team continent, 3 inland, 4 mountainous |
 | `Theater` | 0 temperate, 1 snow |
@@ -51,7 +61,8 @@ options:
 
 Out-of-range numbers are clamped as the dialog clamps them. Another theater, Urban Presence
 (`VeraUrban`) and the [Extras](random-map-extras.md) are refused for now, and so is a map that
-cannot place every player.
+cannot place every player. Generation uses the same default mode and its rules as the probe.
+If that mode disallows random maps, generation reports the mode id and refuses the request.
 
 It writes the map to `--output`, replacing that file only once the new one is complete: a
 multiplayer map named `Random Map <seed>` with its preview and start header. Then it prints

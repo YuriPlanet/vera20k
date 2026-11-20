@@ -20,6 +20,7 @@ use crate::assets::tmp_file::TmpFile;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 use crate::map::map_file::MapError;
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::object_image::ImageTheater;
 
 /// Marker for "no tile" after raw Pack5 compatibility translation.
 ///
@@ -63,6 +64,10 @@ struct TheaterDef {
     /// Theater control-file name. `Read_Theater_TileSets_INI` (`0x00545150`)
     /// appends the INI suffix to it (`IniRoots::theater_ini`).
     control_name: &'static str,
+    /// The radar's terrain brightness, `+0x58` of the TheaterType records at
+    /// `0x007E1B78 + index*0x70` that `CellClass::GetRadarColor` reads: 0.8
+    /// for Snow and 1.0 for every other theater.
+    radar_brightness: f32,
     /// File extension for TMP files (e.g., "tem" for temperate).
     extension: &'static str,
     /// Exact isometric, unit, and theater/ore palette filenames.
@@ -79,6 +84,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "TEMPERATE",
         TheaterDef {
             control_name: "temperat",
+            radar_brightness: 1.0,
             extension: "tem",
             iso_palette_name: "isotem.pal",
             unit_palette_name: "unittem.pal",
@@ -90,6 +96,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "SNOW",
         TheaterDef {
             control_name: "snow",
+            radar_brightness: 0.8,
             extension: "sno",
             iso_palette_name: "isosno.pal",
             unit_palette_name: "unitsno.pal",
@@ -107,6 +114,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "URBAN",
         TheaterDef {
             control_name: "urban",
+            radar_brightness: 1.0,
             extension: "urb",
             iso_palette_name: "isourb.pal",
             unit_palette_name: "uniturb.pal",
@@ -118,6 +126,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "LUNAR",
         TheaterDef {
             control_name: "lunar",
+            radar_brightness: 1.0,
             extension: "lun",
             iso_palette_name: "isolun.pal",
             unit_palette_name: "unitlun.pal",
@@ -129,6 +138,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "DESERT",
         TheaterDef {
             control_name: "desert",
+            radar_brightness: 1.0,
             extension: "des",
             iso_palette_name: "isodes.pal",
             unit_palette_name: "unitdes.pal",
@@ -140,6 +150,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "NEWURBAN",
         TheaterDef {
             control_name: "urbann",
+            radar_brightness: 1.0,
             extension: "ubn",
             iso_palette_name: "isoubn.pal",
             unit_palette_name: "unitubn.pal",
@@ -533,17 +544,16 @@ fn checked_tileset_ordinal(ordinal: u32) -> Result<u16, MapError> {
 }
 
 fn read_tileset_row(ini: &IniFile, ordinal: u32) -> Result<Option<(&IniSection, i32)>, MapError> {
-    let section_name = format!("TileSet{ordinal:04}");
-    let section = ini.section(&section_name);
-    let tiles_in_set = section.map_or(-1, |section| section.read_int("TilesInSet", -1));
+    // An absent section reads the -1 default, which ends the registry too.
+    let Some(section) = ini.section(&format!("TileSet{ordinal:04}")) else {
+        return Ok(None);
+    };
+    let tiles_in_set = section.read_int("TilesInSet", -1);
     if tiles_in_set == -1 {
         return Ok(None);
     }
     checked_tileset_ordinal(ordinal)?;
-    Ok(Some((
-        section.expect("nonterminating TilesInSet requires a section"),
-        tiles_in_set,
-    )))
+    Ok(Some((section, tiles_in_set)))
 }
 
 /// Parse a theater INI file into a TilesetLookup.
@@ -741,12 +751,20 @@ pub fn theater_names_and_extensions() -> impl Iterator<Item = (&'static str, &'s
         .map(|(name, def)| (*name, def.extension))
 }
 
-/// Look up the theater definition for a theater name (e.g., "TEMPERATE").
+/// The radar's terrain brightness for a theater name: that of the theater
+/// [`theater_def`] finds, 1.0 when it finds none.
+pub fn theater_radar_brightness(name: &str) -> f32 {
+    theater_def(name).map_or(1.0, |def| def.radar_brightness)
+}
+
+/// Look up the theater definition for a theater name (e.g., "TEMPERATE"):
+/// the definition of the theater `FindTheater @ 0x0048DBE0`
+/// ([`ImageTheater::from_name`]) finds for it, `None` when it finds none.
 fn theater_def(name: &str) -> Option<&'static TheaterDef> {
-    let upper: String = name.to_ascii_uppercase();
+    let theater = ImageTheater::from_name(name);
     THEATER_DEFS
         .iter()
-        .find(|(n, _)| *n == upper)
+        .find(|(identifier, _)| ImageTheater::from_name(identifier) == theater)
         .map(|(_, def)| def)
 }
 
@@ -1342,7 +1360,7 @@ fn apply_lunar_global_zeroing(
     cliff_ranges: &mut TheaterCliffRanges,
     rmg_tiles: &mut RmgTileKeys,
 ) {
-    if !theater_name.eq_ignore_ascii_case("LUNAR") {
+    if ImageTheater::from_name(theater_name) != ImageTheater::Lunar {
         return;
     }
     *bridge_set = None;
@@ -1491,16 +1509,16 @@ pub fn inject_template_tiles(
         .ok_or_else(|| format!("TMP {filename} missing from MIX archives"))?;
     let tmp = TmpFile::from_bytes(tmp_data)
         .map_err(|error| format!("TMP {filename} failed to parse: {error:#}"))?;
-    let cell_count = (tmp.template_width * tmp.template_height) as usize;
-    for sub_tile in 0..cell_count {
-        if tmp.tiles[sub_tile].is_none() {
-            continue;
+    // A map cell names its subtile in one byte, so a template's cells past
+    // the 256th can never be drawn.
+    for (sub_tile, cell) in (0..=u8::MAX).zip(&tmp.tiles) {
+        if cell.is_some() {
+            needed.insert(TileKey {
+                tile_id,
+                sub_tile,
+                variant: 0,
+            });
         }
-        needed.insert(TileKey {
-            tile_id,
-            sub_tile: sub_tile as u8,
-            variant: 0,
-        });
     }
     Ok(())
 }

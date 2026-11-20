@@ -167,14 +167,10 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
     // Original Techno destructor6F4607 ->405C00 stops its handle and forgets
     // pending/playing slots. Destroy between Selling44A9DF and the next head:
     // use the actual lifecycle producer, dispatcher and shared SFX consumer.
-    sim.uninit_with_context(
-        1,
-        crate::sim::world::UninitContext::with_rules(&retail.rules),
-    );
+    sim.uninit_with_context(1, crate::sim::world::UninitContext::new(&retail.rules));
     assert!(player.pending_unit_voice_owners().contains(&1));
     sim.process_pending_delete_with(
         &retail.rules,
-        None,
         crate::sim::world::FrameEffects::empty(),
         1,
         true,

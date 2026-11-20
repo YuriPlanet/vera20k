@@ -1,5 +1,6 @@
 //! Building storage-derived animation callers; original6C9650/445FE4/450CCB.
 use super::{RuleSet, Simulation, requested_damage_state};
+use crate::sim::ares_tiberium_storage::TiberiumStore;
 use crate::sim::storage_class::StorageAmounts;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, NativeF64Bits};
 
@@ -35,7 +36,7 @@ impl Default for BuildingStorage {
 }
 impl super::BuildingArt {
     /// The store leaves the building for its House at Added_To_Game
-    /// (`sim::ares_tiberium_storage`, while Ares plays).
+    /// (`sim::ares_tiberium_storage`, while the money takes its Ares form).
     pub(crate) fn take_storage_amounts(&mut self) -> [NativeF32Bits; 4] {
         std::mem::replace(&mut self.storage.amounts, StorageAmounts::EMPTY).amounts()
     }
@@ -46,20 +47,19 @@ impl super::BuildingArt {
     }
 }
 impl BuildingStorage {
-    ///6C9650 rounds after EACH float addition through signed _ftol lowEAX.
+    /// `StorageClass::GetTotalAmount @ 0x006C9650` of these four slots, through
+    /// its one port ([`TiberiumStore::total_amount`]).
     fn total(self) -> i32 {
-        self.amounts.amounts().into_iter().fold(0, |total, amount| {
-            X87::ftol_i32_low_masked(X87::add(X87::load_i32(total), X87::load_f32(amount)))
-        })
+        TiberiumStore::from_amounts(self.amounts.amounts()).total_amount()
     }
     /// gamemd's IDIV (445FE4, 450DAA, 450E12) traps on `Storage=0` under a
     /// stored total (and on MIN/-1); VERA carries on with the empty tier.
     fn tier(self, capacity: i32) -> i32 {
-        if self.total() == 0 {
+        let total = self.total();
+        if total == 0 {
             return 0;
         }
-        let numerator = self.total().wrapping_shl(2);
-        numerator.checked_div(capacity).unwrap_or(0)
+        total.wrapping_shl(2).checked_div(capacity).unwrap_or(0)
     }
     fn silo_frame(self, capacity: i32) -> i32 {
         if capacity <= 0 {
@@ -84,8 +84,8 @@ fn active_slot(tier: i32) -> Option<u8> {
 }
 impl Simulation {
     /// The building's storage as the art reads it: a store its House holds
-    /// in game (only while Ares plays) comes from that House
-    /// ([`Simulation::ares_ledger_store`]).
+    /// in game (only while the money takes its Ares form) comes from that
+    /// House ([`Simulation::ares_ledger_store`]).
     fn storage_view(&self, id: u64) -> Option<BuildingStorage> {
         let storage = self.entities().get(id)?.building_art.storage;
         if let Some(store) = self.ares_ledger_store(id) {

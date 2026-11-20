@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::sim::intern::InternedId;
 use crate::sim::production::ProductionCategory;
+use crate::util::read_helpers::array_at;
 
 /// Fixed byte width of one synchronized command record.
 pub const COMMAND_RECORD_LEN: usize = 0x6f;
@@ -426,16 +427,25 @@ impl CommandRecord {
 
     #[inline]
     pub fn frame_stamp(&self) -> i32 {
-        i32::from_le_bytes(
-            self.bytes[COMMAND_RECORD_FRAME_OFFSET..COMMAND_RECORD_PAYLOAD_OFFSET]
-                .try_into()
-                .expect("frame stamp is four bytes"),
-        )
+        i32::from_le_bytes(array_at::<COMMAND_RECORD_FRAME_OFFSET, 4, _>(&self.bytes))
     }
 
     #[inline]
     pub fn payload(&self) -> &[u8] {
         &self.bytes[COMMAND_RECORD_PAYLOAD_OFFSET..]
+    }
+
+    /// The `N` payload bytes at `AT`. A field that would run past the
+    /// payload fails the build, as [`array_at`] does.
+    #[inline]
+    pub fn payload_field<const AT: usize, const N: usize>(&self) -> [u8; N] {
+        const {
+            assert!(
+                AT + N <= COMMAND_RECORD_PAYLOAD_LEN,
+                "a field past the payload"
+            )
+        };
+        std::array::from_fn(|index| self.bytes[COMMAND_RECORD_PAYLOAD_OFFSET + AT + index])
     }
 
     #[inline]
@@ -539,8 +549,73 @@ pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
 /// sets its `PlayerAutoRepair` byte to the payload bit. Phobos adds a custom
 /// `EventClass` type for this; VERA keeps a one-byte wire record so the flag
 /// stays synchronized and replayable.
-pub const VERA_PLAYER_AUTO_REPAIR_OPCODE: u8 = 0x33;
+pub const VERA_PLAYER_AUTO_REPAIR_OPCODE: u8 = 0x34;
 pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
+pub const TARGET_HOUSE_OPCODE: u8 = 0x33;
+pub const TARGET_HOUSE_PAYLOAD_LEN: u8 = 2 + VERA_PAID_SUPER_PAYLOAD_LEN;
+
+/// An explicit third-party House for a VERA economic event. The enclosing
+/// record retains the issuing source in its native header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetHouseRecord {
+    pub target_house: u8,
+    pub command: CommandRecord,
+}
+
+impl TargetHouseRecord {
+    fn inner_payload_len(opcode: u8) -> Option<usize> {
+        match opcode {
+            PRODUCE_OPCODE | SUSPEND_OPCODE | ABANDON_OPCODE | ABANDON_ALL_OPCODE => Some(12),
+            PLACE_OPCODE => Some(16),
+            SpecialPlaceRecord::OPCODE => Some(8),
+            VERA_PAID_SUPER_OPCODE => Some(usize::from(VERA_PAID_SUPER_PAYLOAD_LEN)),
+            VERA_CYCLE_PRODUCER_OPCODE => Some(1),
+            _ => None,
+        }
+    }
+
+    pub fn encode(target_house: u8, command: &CommandRecord) -> Option<CommandRecord> {
+        if command.house_id() < 0 {
+            return None;
+        }
+        let length = Self::inner_payload_len(command.opcode())?;
+        let mut payload = [0; TARGET_HOUSE_PAYLOAD_LEN as usize];
+        payload[0] = target_house;
+        payload[1] = command.opcode();
+        payload[2..2 + length].copy_from_slice(&command.payload()[..length]);
+        CommandRecord::encode(
+            TARGET_HOUSE_OPCODE,
+            i32::from(command.house_id()),
+            command.frame_stamp(),
+            &payload,
+        )
+        .ok()
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != TARGET_HOUSE_OPCODE || record.house_id() < 0 {
+            return None;
+        }
+        // Local mirrors retain the fixed record tail beyond the transmitted body.
+        let payload = &record.payload()[..usize::from(TARGET_HOUSE_PAYLOAD_LEN)];
+        let opcode = payload[1];
+        let length = Self::inner_payload_len(opcode)?;
+        if payload[2 + length..].iter().any(|&byte| byte != 0) {
+            return None;
+        }
+        let command = CommandRecord::encode(
+            opcode,
+            i32::from(record.house_id()),
+            record.frame_stamp(),
+            &payload[2..2 + length],
+        )
+        .ok()?;
+        Some(Self {
+            target_house: payload[0],
+            command,
+        })
+    }
+}
 
 impl ObjectAction {
     pub const fn opcode(self) -> u8 {
@@ -608,10 +683,10 @@ impl SpecialPlaceRecord {
         (record.opcode() == Self::OPCODE).then(|| Self {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
-            type_index: i32::from_le_bytes(record.payload()[..4].try_into().unwrap()),
+            type_index: i32::from_le_bytes(record.payload_field::<0, 4>()),
             cell: (
-                i16::from_le_bytes(record.payload()[4..6].try_into().unwrap()),
-                i16::from_le_bytes(record.payload()[6..8].try_into().unwrap()),
+                i16::from_le_bytes(record.payload_field::<4, 2>()),
+                i16::from_le_bytes(record.payload_field::<6, 2>()),
             ),
         })
     }
@@ -1190,11 +1265,10 @@ fn write_production_fields(record: &mut CommandRecord, rtti: i32, index: i32, na
 }
 
 fn read_production_fields(record: &CommandRecord) -> (i32, i32, u32) {
-    let payload = record.payload();
     (
-        i32::from_le_bytes(payload[..4].try_into().expect("RTTI DWORD")),
-        i32::from_le_bytes(payload[4..8].try_into().expect("type index DWORD")),
-        u32::from_le_bytes(payload[8..12].try_into().expect("Naval DWORD")),
+        i32::from_le_bytes(record.payload_field::<0, 4>()),
+        i32::from_le_bytes(record.payload_field::<4, 4>()),
+        u32::from_le_bytes(record.payload_field::<8, 4>()),
     )
 }
 
@@ -1747,6 +1821,66 @@ impl Command {
         )
     }
 
+    /// Every interned type id the payload names. VERA's JSON replay boundary
+    /// (`ReplayPlayback::advance`) checks them against the interner before
+    /// playback, since `StringInterner::resolve` panics on an unknown id.
+    /// No `_` arm: a new variant that carries an id must be listed here.
+    pub(crate) fn interned_ids(&self) -> impl Iterator<Item = InternedId> {
+        let ids = match self {
+            Self::QueueProduction { type_id }
+            | Self::PlaceReadyBuilding { type_id, .. }
+            | Self::CancelProductionByType { type_id, .. } => [Some(*type_id), None],
+            Self::LaunchSuperWeapon { sw_type_id, .. } => [Some(*sw_type_id), None],
+            Self::CompletePaidSuperWeapon { selection, .. }
+            | Self::CancelPaidSuperWeapon { selection }
+            | Self::BeginPaidSuperWeapon { selection, .. } => {
+                [Some(selection.source), Some(selection.destination)]
+            }
+            Self::PlanningRecord { .. }
+            | Self::Select { .. }
+            | Self::Move { .. }
+            | Self::MoveToObject { .. }
+            | Self::Stop { .. }
+            | Self::Attack { .. }
+            | Self::AttackMove { .. }
+            | Self::Guard { .. }
+            | Self::DeployMcv { .. }
+            | Self::UndeployBuilding { .. }
+            | Self::SetRally { .. }
+            | Self::SuspendProduction { .. }
+            | Self::CycleProducerFocus { .. }
+            | Self::SellBuilding { .. }
+            | Self::ToggleRepair { .. }
+            | Self::EjectBunker { .. }
+            | Self::UnloadPassengers { .. }
+            | Self::CaptureBuilding { .. }
+            | Self::PlantC4 { .. }
+            | Self::ToggleInfantryDeploy { .. }
+            | Self::ForceAttackCell { .. }
+            | Self::SellWallAtCell { .. }
+            | Self::TogglePlayerAutoRepair { .. }
+            | Self::ExitMatch
+            | Self::SetGameSpeed { .. }
+            | Self::PlaceProducedMobile { .. }
+            | Self::Scatter { .. }
+            | Self::TogglePrimaryFactory { .. }
+            | Self::Cheer
+            | Self::MegaMission { .. }
+            | Self::Destruct
+            | Self::RemovePlayer { .. }
+            | Self::MoveFlash { .. }
+            | Self::Ally { .. }
+            | Self::LiveGameSpeed { .. }
+            | Self::SetBuildingOnLine { .. }
+            | Self::ArchiveObject { .. }
+            | Self::OpenOptions
+            | Self::SetLatencyFudge { .. }
+            | Self::SynchronizedRecord { .. }
+            | Self::AssignControlGroup { .. } => [None, None],
+        };
+        ids.into_iter().flatten()
+    }
+
     /// Classify local issue, not already-admitted replay/network input. The
     /// semantic paid source/destination commands consume a slot. The normal
     /// UI serializes all three paid actions, including cancellation, before
@@ -1894,6 +2028,32 @@ mod tests {
         NULL_TARGET_KIND, REPAIR_OPCODE, RepairRecord, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE,
         ScatterRecord, SellWallAtCellRecord, StopRecord,
     };
+
+    #[test]
+    fn explicit_economic_target_retains_the_native_source_and_only_wraps_economy() {
+        use super::{SpecialPlaceRecord, TargetHouseRecord};
+
+        let native = SpecialPlaceRecord {
+            house_id: 1,
+            frame: 42,
+            type_index: 5,
+            cell: (11, 20),
+        }
+        .encode()
+        .unwrap();
+        let mut targeted = TargetHouseRecord::encode(3, &native).unwrap();
+        assert_eq!(targeted.house_id(), 1);
+        assert_eq!(targeted.frame_stamp(), 42);
+        let decoded = TargetHouseRecord::decode(&targeted).unwrap();
+        assert_eq!(decoded.target_house, 3);
+        assert_eq!(decoded.command, native);
+
+        let exit = CommandRecord::encode(EXIT_OPCODE, 1, 42, &[]).unwrap();
+        assert!(TargetHouseRecord::encode(3, &exit).is_none());
+        assert!(TargetHouseRecord::encode(2, &targeted).is_none());
+        targeted.payload_mut()[10] = 1;
+        assert!(TargetHouseRecord::decode(&targeted).is_none());
+    }
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
         let hex = value.as_str().unwrap();

@@ -130,9 +130,10 @@ impl HouseFactoryAbandonment {
 /// [`settle_abandoned`]), and a BuildingType always takes the create path
 /// (`0x004C9C95..0x004C9C98`). The sidebar refuses a busy structure strip, so
 /// only a building PRODUCE sent before an earlier one executed reaches either
-/// branch. Phobos `[General] BuildingProductionQueue=yes` skips both the busy
-/// refusal (`0x4FA520`) and the held-product abandon (`0x4C9C7B`), so the
-/// PRODUCE appends to the factory queue instead.
+/// branch. `[General] BuildingProductionQueue=yes` (Phobos' key, which VERA's
+/// Building Production Queue option also sets through the scenario's rules)
+/// skips both the busy refusal (`0x4FA520`) and the held-product abandon
+/// (`0x4C9C7B`), so the PRODUCE appends to the factory queue instead.
 pub fn enqueue_by_type(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -448,10 +449,9 @@ pub(super) fn settle_abandoned(
     sim.production
         .edit_factories()
         .reset_for_abandon(holder, sim.session.binary_frame());
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     if let Some(category) = category
         && let Some(house) = sim.houses.get_mut(&owner_id)
-        && !house.is_controlled_by_human(game_mode_nonzero)
+        && !house.is_controlled_by_human(sim.session.rule_policy())
     {
         match UnitChoiceKind::of(category, naval) {
             Some(kind) => house.ai_unit_choices_mut().clear(kind),
@@ -650,10 +650,15 @@ pub fn cancel_production_for_owner(
     };
     let owner_id = sim.interner.intern(owner);
     let abandonment = HouseFactoryAbandonment::capture(sim, owner_id, category);
-    let outcome = sim
-        .production
-        .edit_factories()
-        .cancel_one(owner_id, category, type_id, all, build_cat);
+    let building_queue = rules.general.building_production_queue;
+    let outcome = sim.production.edit_factories().cancel_one(
+        owner_id,
+        category,
+        type_id,
+        all,
+        build_cat,
+        building_queue,
+    );
     match outcome {
         CancelOutcome::NoMatch => false,
         CancelOutcome::QueuedRemoved => true,

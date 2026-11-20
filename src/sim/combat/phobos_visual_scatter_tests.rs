@@ -68,8 +68,7 @@ fn arena(weapon_extra: &str) -> (Simulation, RuleSet, u64, u64) {
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"

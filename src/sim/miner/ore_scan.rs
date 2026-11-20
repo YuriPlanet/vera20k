@@ -143,14 +143,7 @@ pub(crate) fn search_for_tiberium_and_move(
     if cell == own {
         return Ok(true);
     }
-    super::miner_system::assign_miner_cell_destination(
-        sim,
-        rules,
-        id,
-        cell,
-        overlay_registry,
-        frame_effects,
-    );
+    super::miner_system::assign_miner_cell_destination(sim, rules, id, cell, frame_effects);
     Ok(false)
 }
 
@@ -194,8 +187,10 @@ fn foot_scan_for_tiberium(
     if cell_is_tiberium_land(sim, overlay_registry, own) {
         return Ok(Some(own));
     }
+    let checks_player_shroud = sim.session.uses_local_player_shroud();
     best_in_rings(sim, own, range, |sim, candidate| {
-        let Some(cell) = is_cell_harvestable(sim, rules, overlay_registry, id, candidate) else {
+        let Some(cell) = is_cell_harvestable(sim, rules, id, candidate, checks_player_shroud)
+        else {
             return Ok(None);
         };
         Ok(Some((
@@ -383,9 +378,9 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
 fn is_cell_harvestable(
     sim: &Simulation,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     candidate: (i32, i32),
+    checks_player_shroud: bool,
 ) -> Option<(u16, u16)> {
     let terrain = sim.resolved_terrain.as_ref();
     if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
@@ -399,7 +394,7 @@ fn is_cell_harvestable(
     // owner byte query the current client's shroud. The caller constructs
     // its packed candidate's centre, samples Map578080's floor (no bridge
     // rise), then calls Map586360 before even asking for the source zone.
-    if !sim.session.game_mode_nonzero()
+    if checks_player_shroud
         && sim
             .substrate
             .entities
@@ -445,7 +440,6 @@ fn is_cell_harvestable(
             native_cell,
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             rules,
-            overlay_registry,
         )
         .ok()?;
     (code == 0).then_some(cell)

@@ -243,13 +243,7 @@ impl Simulation {
                     f64::from_bits(warhead.interaction(armor).multiplier().bits()) != 0.0
                 });
             if !still_interceptable {
-                let _ = self.assign_target_represented(
-                    source_id,
-                    None,
-                    rules,
-                    overlay_registry,
-                    effects,
-                );
+                let _ = self.assign_target_represented(source_id, None, rules, effects);
             }
         }
     }

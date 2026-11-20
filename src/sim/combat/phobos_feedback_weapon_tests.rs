@@ -71,8 +71,7 @@ fn arena(gun_keys: &str, feedback_keys: &str) -> (Simulation, RuleSet, u64, u64)
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target"
@@ -141,8 +140,7 @@ fn carrier_arena(feedback_keys: &str) -> (Simulation, RuleSet, u64, u64) {
             rider,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the rider holds the target"

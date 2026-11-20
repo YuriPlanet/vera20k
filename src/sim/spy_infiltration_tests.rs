@@ -526,7 +526,6 @@ fn a_computer_spy_attacking_a_power_plant_goes_in() {
         spy,
         Some(TargetKind::Entity(plant)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();

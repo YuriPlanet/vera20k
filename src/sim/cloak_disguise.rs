@@ -1029,7 +1029,7 @@ impl crate::sim::world::Simulation {
         // VERA network adaptation, as HasOccurred53's: PlayerPtr differs per
         // client, so a network game answers the worn type alone. Dormant on
         // retail, whose only Agent (SPY) is built wearing its side's type.
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return None;
         }
         let side = self

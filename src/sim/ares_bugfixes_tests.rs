@@ -203,7 +203,12 @@ fn a_sale_past_its_survivors_leaves_none_for_its_death() {
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x44A8A2);
     let shed = spawn(&mut sim, &rules, "SHED", "Russians", 10, 10);
-    crate::sim::production::begin_selling(&mut sim, &rules, shed, false);
+    crate::sim::production::begin_selling(
+        &mut sim,
+        &rules,
+        shed,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     assert!(sim.substrate.entities.get(shed).unwrap().building_down());
     crate::sim::production::sell_stage_one(&mut sim, &rules, None, shed, FrameEffects::default());
     assert!(
@@ -333,7 +338,7 @@ fn a_teleporter_forgets_its_marked_cell_in_limbo() {
             z: 0,
         });
     assert!(marked(&sim).is_some());
-    let _ = sim.techno_limbo_with_context(cleg, UninitContext::new(&rules, None));
+    let _ = sim.techno_limbo_with_context(cleg, UninitContext::new(&rules));
     assert_eq!(marked(&sim), None);
 }
 

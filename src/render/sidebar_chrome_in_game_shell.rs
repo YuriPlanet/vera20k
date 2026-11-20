@@ -5,32 +5,37 @@
 //! to 0x00B0FA00 (0x0072FB2D..0x0072FB3D). Both paint through the converter
 //! built from SIDEBAR.PAL at 0x0072FC1F..0x0072FC2F, including Yuri.
 
-use super::{Palette, RenderedChromeEntry, SidebarSideRoute, render_side_entry};
+use super::{
+    Palette, RenderedChromeEntry, SidebarChromeAssetIdentity, SidebarSideRoute, SidebarThemeRoute,
+    render_side_entry,
+};
 
 /// Backgrounds use a separate converter from both radar and generic column art.
 /// Original72FBC0: side2 uses844BF8→UIBKGDY.PAL; other sides use844BF4→UIBKGD.PAL,
 /// constructing B0FBF0, which72F540 uses for BKGD*.SHP. Keep the selected source
 /// beside the decoded entries so production provenance describes these pixels.
 pub(super) fn load_backgrounds(
-    assets: &super::AssetManager,
-    mix: &super::MixArchive,
-    mix_name: &str,
+    route: SidebarThemeRoute<'_>,
     names: (&str, &str, &str),
     palette_name: &str,
-    ares: bool,
 ) -> Option<(
     [Option<RenderedChromeEntry>; 3],
-    super::SidebarChromeAssetIdentity,
+    [SidebarChromeAssetIdentity; 3],
+    SidebarChromeAssetIdentity,
 )> {
-    let (palette, source_archive) =
-        super::resolve_theme_palette_with_source(assets, mix, mix_name, palette_name, ares)?;
-    let entries = [names.0, names.1, names.2]
-        .map(|name| super::render_entry(assets, mix, name, &palette, 0, ares));
+    let (palette, source_archive) = route.palette(palette_name)?;
+    let names = [names.0, names.1, names.2];
+    let art = names.map(|name| route.render(name, &palette, 0));
+    let identities = std::array::from_fn(|index| SidebarChromeAssetIdentity {
+        logical_name: names[index].to_owned(),
+        source_archive: art[index].as_ref().map(|(_, source)| (*source).to_owned()),
+    });
     Some((
-        entries,
-        super::SidebarChromeAssetIdentity {
+        art.map(|entry| entry.map(|(rendered, _)| rendered)),
+        identities,
+        SidebarChromeAssetIdentity {
             logical_name: palette_name.to_string(),
-            source_archive: Some(source_archive),
+            source_archive: Some(source_archive.to_owned()),
         },
     ))
 }

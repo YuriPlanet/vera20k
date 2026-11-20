@@ -61,6 +61,7 @@ use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
 #[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
@@ -1189,7 +1190,7 @@ mod map_wall_owner_candidate_tests {
             crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
             id,
             EntityCategory::Structure,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
         );
     }
 
@@ -1598,7 +1599,7 @@ fn prepare_scenario_rules(
     prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
-    game_mode_nonzero: bool,
+    rule_policy: RulePolicy,
 ) -> Result<PreparedScenarioRules> {
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
@@ -1607,7 +1608,7 @@ fn prepare_scenario_rules(
                     crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
                         assets,
                         map_ini,
-                        game_mode_nonzero,
+                        rule_policy,
                     ),
                     rules_at_read,
                 )
@@ -1618,12 +1619,9 @@ fn prepare_scenario_rules(
         let loaded = owner
             .load_scenario(prefix, map_ini)
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
-        let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
-            assets,
-            map_ini,
-            game_mode_nonzero,
-        )
-        .map_err(anyhow::Error::msg)?;
+        let ai =
+            crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(assets, map_ini, rule_policy)
+                .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
     };
     Ok(PreparedScenarioRules {
@@ -1659,12 +1657,12 @@ impl MapLoadInitial {
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
-        session_mode: crate::sim::scenario_session::ScenarioGameMode,
+        topology: crate::sim::scenario_session::ExecutionTopology,
     ) {
         self.retained_campaign_special_flags = resident
             .as_deref()
             .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = if session_mode.is_network() {
+        self.retained_local_variables = if topology.is_lockstep() {
             None
         } else {
             resident
@@ -1811,7 +1809,11 @@ mod fresh_transport_tests {
         );
         let before = resident.state_hash();
         let mut initial = MapLoadInitial::from_test_map_source(map, source);
-        initial.retain_process_state(&mut Default::default(), Some(&mut resident), mode);
+        initial.retain_process_state(
+            &mut Default::default(),
+            Some(&mut resident),
+            mode.execution_topology(),
+        );
         assert_eq!(resident.state_hash(), before, "preparation is read-only");
         let mut staged = Simulation::new();
         if let Some(prior) = initial.retained_local_variables {
@@ -1948,27 +1950,35 @@ mod fresh_transport_tests {
     }
 }
 
-/// Snapshot the active Scenario multiplayer-start table into the live session.
-///
-/// Authored loads retain their parsed waypoint table. Accepted RMG loads have
-/// already copied setup staging into the active Scenario array before `.SED`
-/// regeneration, so the prefix plan—not regenerated map content—owns these
-/// start entries for loading markers, save/restore, and deterministic hashing.
-/// Installs the startup's GameMode into the scenario session, with the
-/// admitted MaxAhead for a network start. The frame tail's `Queue_AI` route
-/// reads this mode, so a LAN/WOL start must arrive as LAN/WOL.
+/// Installs the startup's live rules and exact GameMode, with the admitted
+/// MaxAhead for a network start. A replay can have a live policy distinct
+/// from its authored map's construction policy.
 pub(super) fn install_startup_session_mode(
     simulation: &mut crate::sim::world::Simulation,
     startup: &LoadingStartup,
 ) {
-    simulation.install_session_mode(startup.session_mode());
+    simulation.install_session_admission(
+        startup.session_mode(),
+        startup.launch_session().map(|launch| launch.mode.class),
+        startup.match_spec().rules(),
+    );
     if let LoadingStartup::Network(accepted) = startup {
         simulation.install_network_timing(accepted.max_ahead_frames());
         let wol = accepted.wol_start();
         simulation.install_wol_start(wol.tournament, wol.squad_lists.clone());
+    } else if let LoadingStartup::Replay { launch, .. } = startup
+        && let Some(network) = launch.network_start()
+    {
+        network.install(simulation);
     }
 }
 
+/// Project the active Scenario multiplayer-start table into the launch descriptor.
+///
+/// Authored loads retain their parsed waypoint table. Accepted RMG loads have
+/// already copied setup staging into the active Scenario array before `.SED`
+/// regeneration, so the prefix plan owns these start entries for loading
+/// markers, save/restore, and deterministic hashing.
 pub(crate) fn scenario_start_waypoints_for_load(
     map_data: &MapFile,
     projection: Option<&StockOfflinePrefixProjection>,
@@ -2206,6 +2216,7 @@ impl MapLoadInitial {
                 .expect("map Size produces a fresh cell array");
         let scenario_cell_extent = native_start_bounds.min_rx + native_start_bounds.width;
         let lighting_profiles = lighting::parse_lighting_profiles(&map_data.ini);
+        let rule_policy = RulePolicy::stock_multiplayer();
         let scenario_descriptor = crate::sim::scenario_session::ScenarioDescriptor {
             seed: match_seed,
             map_name: match_launch_descriptor
@@ -2215,7 +2226,7 @@ impl MapLoadInitial {
                 .or_else(|| map_data.basic.name.clone())
                 .unwrap_or_default(),
             theater: map_data.header.theater.clone(),
-            game_mode_nonzero: true,
+            rule_policy,
             no_damage: false,
             // Same nonzero-mode replacement as the match load: the launch
             // session's Harvester Truce byte, not the map's key.
@@ -2231,8 +2242,8 @@ impl MapLoadInitial {
             vein_growth_enabled: map_data.basic.vein_growth_enabled,
             // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
             // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-            tiberium_grows_flag: true,
-            tiberium_spreads_flag: true,
+            tiberium_grows_flag: rule_policy.uses_room_options(),
+            tiberium_spreads_flag: rule_policy.uses_room_options(),
             // Native Resize constructs a square cell-array extent of SizeW+SizeH.
             map_width: scenario_cell_extent,
             map_height: scenario_cell_extent,
@@ -2414,7 +2425,9 @@ impl MapLoadInitial {
             &map_data,
             &rules,
             &house_roster,
+            rule_policy,
             Some(&match_launch_descriptor),
+            None,
         )
         .expect("generated scenario post-map initialization");
         let crate_name_id =
@@ -2655,7 +2668,7 @@ pub(crate) fn load_map_initial_with_assets(
             crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(mode_rules.as_ref()),
             &synthetic_ini,
             tmcj4f.as_ref(),
-            full_init_entry_mode != crate::app::match_runtime::session::SessionMode::Campaign,
+            full_init_entry_mode.stock_rule_policy(None),
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3083,8 +3096,18 @@ fn load_map_first_step(
         mapgen_rng_continuation.is_some(),
         generated_construction_trace.is_some(),
     )?;
-    let game_mode_nonzero = campaign.is_none();
-    if !game_mode_nonzero {
+    // Fresh construction follows the admitted scenario family. A replay's
+    // recorded session mode is installed later for the simulation.
+    let construction_profile = if campaign.is_some() {
+        BootstrapRuleProfile::Campaign
+    } else {
+        BootstrapRuleProfile::Multiplayer
+    };
+    let rule_policy = startup
+        .match_spec_for_construction(construction_profile)
+        .rules();
+    let bootstrap_rule_profile = rule_policy.bootstrap();
+    if bootstrap_rule_profile == BootstrapRuleProfile::Campaign {
         map_data
             .special_flags
             .resolve_campaign_defaults(retained_campaign_special_flags.as_ref());
@@ -3168,7 +3191,7 @@ fn load_map_first_step(
                     full_init_entry_mode,
                     services.the_team_enabled,
                 )?;
-                let rules_prefix = if game_mode_nonzero {
+                let rules_prefix = if bootstrap_rule_profile.uses_multiplayer_rules() {
                     if let Some(preparation) = prepared_prefix {
                         crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
                             preparation,
@@ -3180,10 +3203,10 @@ fn load_map_first_step(
                         )
                     }
                 } else {
-                    assert!(
-                        prepared_prefix.is_none(),
-                        "campaign loading cannot consume an ordinary prefix"
-                    );
+                    if let Some(preparation) = prepared_prefix {
+                        native_rules_owner.cancel_prepared_noncampaign_scenario_prefix(preparation);
+                        anyhow::bail!("campaign loading cannot consume an ordinary prefix");
+                    }
                     crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
                         campaign_named_ini.as_ref(),
                     )
@@ -3194,7 +3217,7 @@ fn load_map_first_step(
                     rules_prefix,
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
-                    game_mode_nonzero,
+                    rule_policy,
                 )?
             };
             let (
@@ -3288,6 +3311,7 @@ fn load_map_first_step(
                                     .as_ref()
                                     .expect("campaign admission supplies its startup");
                                 FreshScenarioPrefix::Campaign {
+                                    network: None,
                                     native_rules_receipt,
                                     rules: &rules,
                                     map_data: &map_data,
@@ -3313,24 +3337,7 @@ fn load_map_first_step(
                             .or_else(|| map_data.basic.name.clone())
                             .unwrap_or_default(),
                         theater: map_data.header.theater.clone(),
-                        game_mode_nonzero,
-                        // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
-                        // replace active SpecialFlags from session staging.
-                        no_damage: !game_mode_nonzero
-                            && map_data.special_flags.inert.unwrap_or(false),
-                        // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
-                        // HarvesterImmune=`; a nonzero game mode replaces the map's flags
-                        // with the session staging word (`0x00687C16..0x00687C29`), whose
-                        // PregameSetup arm stores the session's Harvester Truce byte
-                        // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
-                        // lobby never sets the truce (`0x006AD89D` clears it), so every
-                        // skirmish leaves the bit off.
-                        harvester_immune: if game_mode_nonzero {
-                            skirmish_launch_session
-                                .is_some_and(|launch| launch.options.harvester_truce)
-                        } else {
-                            map_data.special_flags.harvester_immune.unwrap_or(false)
-                        },
+                        rule_policy,
                         free_radar: map_data.basic.free_radar.unwrap_or(false),
                         ignore_global_ai_triggers: map_data
                             .basic
@@ -3343,12 +3350,6 @@ fn load_map_first_step(
                         truck_crate: map_data.basic.truck_crate.unwrap_or(false),
                         ice_growth_enabled: map_data.basic.ice_growth_enabled,
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
-                        // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-                        // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: game_mode_nonzero
-                            || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: game_mode_nonzero
-                            || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,
                         map_height: scenario_cell_extent,
@@ -3365,7 +3366,13 @@ fn load_map_first_step(
                         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(
                             &lighting_profiles,
                         ),
-                    };
+                        ..Default::default()
+                    }
+                    .with_authored_special_flags(
+                        &map_data.special_flags,
+                        skirmish_launch_session
+                            .is_some_and(|launch| launch.options.harvester_truce),
+                    );
                             log::info!("Match seed: 0x{:08X}", scenario_descriptor.seed);
                             // Consume the paired RNG/native-ID prefix here: Fill and every later load
                             // constructor now mutate the same Simulation identity that reaches gameplay.
@@ -3984,7 +3991,9 @@ fn load_map_first_step(
             &map_data,
             rules_for_post_map,
             &house_roster,
+            rule_policy,
             match_launch_descriptor.as_ref(),
+            None,
         )?;
                                                                             if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");

@@ -487,13 +487,8 @@ fn mission_unload(
     // Ares 3.0 100174A0 (hook 0x0044D8A7): a loaded tunnel entrance unloads
     // one member of its owner's network (`sim::ares_tunnel`).
     if rules.ares()
-        && let Some(delay) = crate::sim::transport_unload::ares_tunnel_mission_unload(
-            sim,
-            rules,
-            id,
-            ctx.overlay_registry,
-            ctx.effects,
-        )
+        && let Some(delay) =
+            crate::sim::transport_unload::ares_tunnel_mission_unload(sim, rules, id, ctx.effects)
     {
         return Some(delay);
     }
@@ -509,7 +504,6 @@ fn mission_unload(
                 sim,
                 rules,
                 id,
-                ctx.overlay_registry,
                 ctx.effects,
             ),
         );
@@ -867,18 +861,16 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
     }
     // `0x00449817..0x00449833`: UnitRepair, UnitReload or Bunker
     // (`+0x16A9/+0x16AA/+0x16AB`) takes the contact arm.
-    if status == 1 && (obj.unit_repair || obj.unit_reload || obj.bunker) {
+    if status == 1
+        && (obj.unit_repair || obj.unit_reload || obj.bunker)
+        && let Some(depot) = sim.substrate.entities.get(id)
+    {
         //449839..44994A: scan contacts in slot order, raw GetCoords 3D
         //distance <64 (no Building foundation discount), then NEED_MOVE;
-        //on ROGER queue Repair and return 1 with no Scenario draw.
-        let contacts: Vec<_> = sim
-            .substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .radio_contacts
-            .iter_live()
-            .collect();
+        //on ROGER queue Repair and return 1 with no Scenario draw. Each
+        //NEED_MOVE runs the contact's receivers, so the scan walks the
+        //contacts as they stood when it began.
+        let contacts: Vec<_> = depot.radio_contacts.iter_live().collect();
         for contact in contacts {
             let Some(unit) = sim.substrate.entities.get(contact) else {
                 continue;
@@ -886,8 +878,11 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
             if unit.mission.effective() != MissionId::from_known(MissionType::Enter) {
                 continue;
             }
+            let Some(depot) = sim.substrate.entities.get(id) else {
+                break;
+            };
             let center = crate::sim::movement::ground_pose::object_get_coords(
-                sim.substrate.entities.get(id).unwrap(),
+                depot,
                 sim.resolved_terrain.as_ref(),
             );
             let position = crate::sim::movement::ground_pose::object_get_coords(
@@ -982,25 +977,9 @@ fn mission_attack(
     let Some((target, weapon)) = attack_prelude(sim, id, rules) else {
         return 1;
     };
-    let mut code = fire_error_at(
-        sim,
-        rules,
-        id,
-        Some(target),
-        weapon,
-        true,
-        ctx.overlay_registry,
-    );
+    let mut code = fire_error_at(sim, rules, id, Some(target), weapon, true);
     if code == FireError::Facing && voxel_turret_snaps(sim, id, rules, target) {
-        code = fire_error_at(
-            sim,
-            rules,
-            id,
-            Some(target),
-            weapon,
-            true,
-            ctx.overlay_registry,
-        );
+        code = fire_error_at(sim, rules, id, Some(target), weapon, true);
     }
     attack_arm(
         sim,
@@ -1026,7 +1005,6 @@ fn attack_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) -> Option<(Tar
             id,
             None,
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         clear_support_count(&mut sim.substrate, id);
@@ -1070,8 +1048,7 @@ fn attack_arm(
         }
         // `0x0044B0DE`: the drop tail (`+0x664 = 0` at `0x0044B0ED`).
         FireError::Ammo | FireError::Illegal | FireError::Cant | FireError::Range => {
-            let _ =
-                sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
+            let _ = sim.assign_target_represented(id, None, rules, ctx.effects);
             clear_support_count(&mut sim.substrate, id);
             //44B0F3..44B0FF: retain the Wait queued by planned dispatch.
             sim.planning_enter_idle(id, rules, true);
@@ -1772,16 +1749,7 @@ fn stock_delayed_fire(
                 WeaponSlot::Primary => 0,
                 WeaponSlot::Secondary => 1,
             };
-            if fire_error_at(
-                sim,
-                rules,
-                id,
-                Some(target),
-                weapon,
-                true,
-                ctx.overlay_registry,
-            ) == FireError::Ok
-            {
+            if fire_error_at(sim, rules, id, Some(target), weapon, true) == FireError::Ok {
                 *bridge_state_changed |= sim
                     .commit_fire_visit(
                         crate::sim::combat::world_fire::FireVisit::Building {
@@ -1900,7 +1868,7 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
         return;
     };
     let weapon = select_weapon(sim, rules, id, Some(target));
-    if can_fire_at(sim, rules, id, target, weapon, ctx.overlay_registry) {
+    if can_fire_at(sim, rules, id, target, weapon) {
         return;
     }
     if let TargetKind::Entity(target_id) = target
@@ -1915,7 +1883,7 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
     {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_target_represented(id, None, rules, ctx.effects);
 }
 
 impl Simulation {
@@ -1932,7 +1900,6 @@ impl Simulation {
         id: u64,
         requested: Option<TargetKind>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
@@ -1952,7 +1919,7 @@ impl Simulation {
             return true;
         }
         let weapon = select_weapon(self, rules, id, Some(target));
-        can_fire_at(self, rules, id, target, weapon, overlay_registry)
+        can_fire_at(self, rules, id, target, weapon)
     }
 
     /// The phase-level combat fixture's stand-in for a building's object-pass

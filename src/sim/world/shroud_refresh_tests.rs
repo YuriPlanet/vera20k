@@ -242,9 +242,7 @@ fn native_trigger_conceal_circle_and_immediate_two_pass_sweep_match_original() {
         }
         assert_eq!(rng_hashes(&sim), row["rng_before"], "{}", input["name"]);
         let ((returned, trace), draws) = crate::sim::rng::trace_draws(|| {
-            trace_reveal_calls(|| {
-                sim.trigger_conceal_at_waypoint(7, UninitContext::with_rules(&rules))
-            })
+            trace_reveal_calls(|| sim.trigger_conceal_at_waypoint(7, UninitContext::new(&rules)))
         });
         assert_eq!(returned, row["result"] == 1, "{}", input["name"]);
         let expected_walk: Vec<_> = row["conceal_probes"]
@@ -713,7 +711,7 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
             "[BuildingTypes]\n0=GTGCAN\n[GTGCAN]\nStrength=100\n",
         ))
         .unwrap();
-    let context = UninitContext::with_rules(&rules);
+    let context = UninitContext::new(&rules);
     for row in corpus["building_placement_controls"].as_array().unwrap() {
         let input = &row["input"];
         let (mut sim, _, owner) = fixture(&input["topology"]);
@@ -840,7 +838,7 @@ fn native_trigger_reveal_all_fifty_five_startup_actions_match_original_empty_res
             for control in controls {
                 let returned = sim.trigger_reveal_at_waypoint(
                     control["value"].as_i64().unwrap() as i32,
-                    UninitContext::with_rules(&rules),
+                    UninitContext::new(&rules),
                 );
                 assert_eq!(returned, control["returned"] == 1);
             }
@@ -1532,6 +1530,93 @@ fn a_campaign_enemy_jumpjet_is_discovered_flying_over_mapped_ground() {
     );
 }
 
+/// A Unit's cell arrival re-reveals its sight ([`Simulation::refresh_object_sight`],
+/// from `0x0073AC74`). The campaign player's first discovery of an enemy runs
+/// the enemy's Tag (event 4 at `0x006F4A18`), whose Create Crate action (108,
+/// `0x006DF69B`) places the crate from the match's overlay types, which the
+/// sight refresh reads from its rules.
+#[test]
+fn a_sight_discovery_runs_the_discovered_tags_create_crate_action() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x143);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
+    // A campaign: a noncampaign CellPUT discovers every object as it is placed.
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+    for (index, name, human) in [(0, "Americans", true), (1, "French", false)] {
+        let owner = sim.interner.intern(name);
+        sim.houses.register(HouseState::new(
+            owner,
+            index,
+            Some(owner),
+            human,
+            10_000,
+            10,
+        ));
+    }
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    let enemy = sim
+        .spawn_object("GTGCAN", "French", 20, 10, 0, &rules)
+        .unwrap();
+    let scout = sim
+        .spawn_object("E1", "Americans", 4, 10, 0, &rules)
+        .unwrap();
+    let map = crate::map::map_file::MapFile::from_bytes(
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+         [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n\
+         [Triggers]\nFOUND=French,<none>,Found,0,1,1,1,0\n\
+         [Events]\nFOUND=1,4,0,0\n[Tags]\nTAG=0,Found,FOUND\n\
+         [Actions]\nFOUND=1,108,0,0,0,0,0,0,A\n[Waypoints]\n0=14014\n"
+            .as_bytes(),
+    )
+    .unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
+            &crate::rules::ini_parser::IniFile::empty(),
+            &map.ini,
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+        ),
+        None,
+        None,
+        None,
+    );
+    sim.classify_map_triggers(&rules);
+    sim.session.install_waypoints(&map.waypoints);
+    sim.attach_object_trigger_tag(enemy, Some("TAG"));
+    let crates = |sim: &Simulation| {
+        let grid = sim.overlay_grid.as_ref().unwrap();
+        (0..32u16)
+            .flat_map(|y| (0..32u16).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                grid.cell(x, y).overlay_id.is_some_and(|id| {
+                    rules
+                        .overlay_registry()
+                        .flags(id)
+                        .is_some_and(|flags| flags.crate_type)
+                })
+            })
+            .count()
+    };
+    assert!(!sim.techno_discovered_by_viewer(enemy, player));
+
+    // It arrives four cells from the enemy (E1 Sight=5).
+    let entity = sim.substrate.entities.get_mut(scout).unwrap();
+    entity.position.set_rx_for_test(16);
+    sim.refresh_object_sight(scout, &rules, 0, FrameEffects::default());
+
+    assert!(sim.techno_discovered_by_viewer(enemy, player));
+    assert_eq!(crates(&sim), 1, "the Discovered Tag's crate");
+}
+
 /// A skirmish (or campaign) scene whose player (Americans) has mapped the
 /// west of the map only: the 12-cell radius around (6, 12).
 fn shroud_selection_fixture(
@@ -1708,14 +1793,7 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
             .unwrap()
             .set_multiplay_passive_for_test(input["passive"].as_bool().unwrap());
         let (_, calls) = trace_reveal_calls(|| {
-            sim.make_enemy(
-                computer,
-                player,
-                &rules,
-                None,
-                FrameEffects::default(),
-                false,
-            );
+            sim.make_enemy(computer, player, &rules, FrameEffects::default(), false);
         });
         assert_eq!(
             u8::from(sim.fog.sight_is_latched(id, player)),
@@ -1819,10 +1897,13 @@ fn initial_house_sight_matches_original_update_tail() {
                         map_height: 64,
                         fill_silos: false,
                         rules: &rules,
+                        construction_rules:
+                            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
                         overlay_registry: &overlays,
                         house_roster: &roster,
                         skirmish_session: None,
                         campaign_map: None,
+                        stage_home_global: None,
                     },
                 )
                 .unwrap();
@@ -1977,7 +2058,7 @@ fn a_rejected_owner_still_enters_the_client_map_once() {
         .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
         .expect("the computer house's tank");
     let ((), trace) = trace_reveal_calls(|| {
-        sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::with_rules(&rules));
+        sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(&rules));
     });
     assert_eq!(trace.map_calls, 1, "the rejected call still happens");
     assert!(trace.notifications.is_empty(), "and writes no cell");

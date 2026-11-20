@@ -626,7 +626,9 @@ impl WolLoginState {
     pub(crate) fn account_deleted(&mut self, name: &str) {
         if self.remembers(name) {
             self.remembered = None;
-            self.form = Some(WolAccountForm::sign_in(&self.online_name(), None));
+        }
+        if let Some(form) = &mut self.form {
+            form.forget_deleted_sign_in(name);
         }
     }
 
@@ -1292,7 +1294,14 @@ mod tests {
         assert!(globals.remember && globals.password == "n3w-password");
         login.signed_up(reset("Boris"), &mut globals);
         assert!(!globals.remember, "another account was never remembered");
+        login.form = Some(WolAccountForm::sign_in("Boris", Some("Tanya")));
+        login.form.as_mut().unwrap().insert_text("another-password");
         login.account_deleted("TANYA");
+        assert_eq!(login.online_name(), "Boris");
+        assert_eq!(
+            login.form.as_ref().unwrap().fields[1].text(),
+            "another-password"
+        );
         login.signed_up(reset("Tanya"), &mut globals);
         assert!(!globals.remember, "a deleted account is forgotten");
     }

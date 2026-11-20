@@ -622,18 +622,19 @@ fn pick_map_ini(archive: &MixArchive, transferred: bool) -> Result<IniFile, MapE
             validate_transfer_text(data)?;
         }
         match IniFile::from_bytes(data) {
-            Ok(ini) if ini.section("Map").is_some() => {
-                if !transferred {
-                    return Ok(ini);
+            Ok(ini) => match ini.section("Map").map(|map| map.name == "Map") {
+                Some(_) if !transferred => return Ok(ini),
+                Some(exact_name) => {
+                    if selected.is_some() || !exact_name {
+                        return Err(MapError::InvalidTransferContent("Ambiguous MIX map member"));
+                    }
+                    selected = Some(ini);
                 }
-                if selected.is_some() || ini.section("Map").unwrap().name != "Map" {
-                    return Err(MapError::InvalidTransferContent("Ambiguous MIX map member"));
-                }
-                selected = Some(ini);
-            }
-            Ok(ini) if transferred => validate_map_description(&ini)?,
+                None if transferred => validate_map_description(&ini)?,
+                None => {}
+            },
             Err(error) if transferred => return Err(error.into()),
-            _ => {}
+            Err(_) => {}
         }
     }
     selected.ok_or(MapError::MissingIsoMapPack)
@@ -645,13 +646,10 @@ pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
         .section("Map")
         .ok_or(MapError::MissingSection { name: "Map".into() })?;
 
-    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater name read
-    // (`0x00475870`, 0x80 bytes), `Fill` as a 0x20-byte ReadString, ReadInt
-    // `Level`, and ReadRect for both rectangles.
-    let theater: String = map_section
-        .read_name("Theater", 0x80)
-        .unwrap_or("TEMPERATE")
-        .to_uppercase();
+    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater read
+    // ([`crate::rules::object_image::read_map_theater`]), `Fill` as a
+    // 0x20-byte ReadString, ReadInt `Level`, and ReadRect for both rectangles.
+    let theater = crate::rules::object_image::read_map_theater(ini);
     let fill = map_section.read_string("Fill", "Clear", 0x20);
     let level = map_section.read_int("Level", 0);
 

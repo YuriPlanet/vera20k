@@ -114,6 +114,7 @@ fn capture_probe(
     let actor = sim.entities().get(engineer).unwrap();
     let owner = sim.interner.resolve(actor.owner()).to_owned();
     assert!(sim.apply_command_with_overlays(
+        None,
         &owner,
         &Command::CaptureBuilding {
             engineer_id: engineer,

@@ -125,14 +125,14 @@ where
             rules,
             source_house,
             owner,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
         )?,
         ParticleBehavesLike::Fire => super::fire::tick_particle(
             p,
             sim,
             rules,
             owner,
-            &mut super::fire::LiveFire(crate::sim::world::UninitContext::with_rules(rules)),
+            &mut super::fire::LiveFire(crate::sim::world::UninitContext::new(rules)),
         ),
         ParticleBehavesLike::Spark => {
             let motion = begin_particle_tick(p, gravity_as_stored_f32(rules.general.gravity)?)?;
@@ -272,12 +272,7 @@ pub(super) fn finish_system_visit(
 #[cfg(test)]
 pub fn tick_particle_systems(sim: &mut Simulation, rules: &RuleSet) {
     for id in sim.live_object_order_snapshot() {
-        tick_particle_system(
-            sim,
-            rules,
-            id,
-            crate::sim::world::UninitContext::with_rules(rules),
-        );
+        tick_particle_system(sim, rules, id, crate::sim::world::UninitContext::new(rules));
     }
 }
 
@@ -413,7 +408,7 @@ mod tests {
             &mut sim,
             &rules,
             system,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         let child = &sim.particle_systems().get(system).unwrap().particles()[0];
         assert_eq!(child.start_rgb(), [12, 34, 56]);
@@ -441,7 +436,7 @@ mod tests {
             &mut sim,
             &unknown_system_rules,
             system,
-            crate::sim::world::UninitContext::with_rules(&unknown_system_rules),
+            crate::sim::world::UninitContext::new(&unknown_system_rules),
         );
         let system = sim.particle_systems().get(system).unwrap();
         assert_eq!(system.lifetime(), old_lifetime - 1);
@@ -527,7 +522,7 @@ mod tests {
             &mut sim,
             &rules,
             host,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         ));
         let target = sim.entities().get(target).unwrap();
         assert_eq!(target.health.current(), 40);
@@ -594,7 +589,7 @@ mod tests {
             &mut sim,
             &rules,
             host,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         ));
         assert_eq!(
             sim.terrain_objects.objects().get(&tree).unwrap().health(),
@@ -677,7 +672,7 @@ mod tests {
                     &mut sim,
                     &rules,
                     host,
-                    crate::sim::world::UninitContext::with_rules(&rules),
+                    crate::sim::world::UninitContext::new(&rules),
                 ));
                 assert!(
                     !sim.entities().get(targets[0]).unwrap().berserk.is_active(),

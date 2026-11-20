@@ -213,7 +213,7 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
     assert!(allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(active(&sim, OWNER, NORMAL));
-    sim.techno_limbo_with_rules(auxiliary, &rules, None);
+    sim.techno_limbo_with_rules(auxiliary, &rules);
     assert!(!allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(!active(&sim, OWNER, NORMAL));
@@ -233,7 +233,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     };
     sim.sound_events.clear_for_test();
     let before = sim.state_hash();
-    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
+    sim.apply_command_with_overlays(None, OWNER, &command, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.state_hash(),
         before,
@@ -245,7 +245,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     );
     spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
     sim.sound_events.clear_for_test();
-    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
+    sim.apply_command_with_overlays(None, OWNER, &command, &rules, None, FrameEffects::default());
     assert!(!sim.super_weapons[&owner][&id].is_ready);
     assert!(
         sim.sound_events
@@ -268,7 +268,7 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
         .get_mut(&owner)
         .unwrap()
         .set_player_control_for_test(false);
-    assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.game_mode_nonzero()));
+    assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.rule_policy()));
     ready(&mut sim, NORMAL);
     let before = sim.state_hash();
     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));

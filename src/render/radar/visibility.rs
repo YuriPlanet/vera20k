@@ -9,24 +9,10 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
+use crate::sim::world::ControlProjection;
 
 use super::helpers::{parse_foundation_size, world_to_minimap_pixel};
 use super::tracker::{RadarObjectUpdate, RadarProjectionFacts};
-
-pub(super) fn radar_owner_is_human_player(
-    owner: InternedId,
-    local_owner: InternedId,
-    houses: &crate::sim::houses::Houses,
-    game_mode_nonzero: bool,
-) -> bool {
-    if game_mode_nonzero {
-        owner == local_owner
-    } else {
-        houses
-            .get(&owner)
-            .is_some_and(|house| house.is_human() || house.player_control())
-    }
-}
 
 fn radar_packed_cell_from_leptons(x: i32, y: i32) -> (i32, i32) {
     // Coord2Cell uses signed division and then narrows to signed words.
@@ -309,12 +295,11 @@ impl RadarRegistrationVisibilityFacts {
 
 pub(super) fn build_radar_object_update(
     entity: &impl crate::render::snapshot::SnapshotObject,
-    houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    game_mode_nonzero: bool,
+    control: &ControlProjection<'_>,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
@@ -349,9 +334,8 @@ pub(super) fn build_radar_object_update(
     );
     let facts = entity.radar();
     let foundation = facts.foundation;
-    let owner_is_human_player = local_owner.is_none_or(|local_owner| {
-        radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero)
-    });
+    let owner_is_human_player = local_owner
+        .is_none_or(|local_owner| control.native_player_on(entity.owner(), Some(local_owner)));
     let [coord_x, coord_y] = entity.center_xy();
     let current_cell = radar_fog_cell_from_leptons(coord_x, coord_y);
     // The type-5 call at `0x0070DA95..0x0070DAD7` converts raw Object+0x9C,
@@ -483,7 +467,10 @@ fn radar_edge_cell_in_playfield(
 
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
+    use super::super::helpers::test_radar_session;
     use super::*;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::map::tube_facts::TubeId;
     use crate::sim::ammo::TechnoAmmo;
@@ -588,12 +575,14 @@ mod tests {
         projection.native_surface = Some(surface);
         let update = build_radar_object_update(
             &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
-            &crate::sim::houses::Houses::default(),
             None,
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Campaign),
+                &crate::sim::houses::Houses::default(),
+            ),
             None,
             None,
             projection,
@@ -630,12 +619,11 @@ mod tests {
                 crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules)
                     .object(id)
                     .unwrap(),
-                sim.houses(),
                 None,
                 sim.fog(),
                 sim.house_alliances(),
                 true,
-                false,
+                &sim.control_projection(),
                 Some(&rules),
                 Some(sim.interner()),
                 visibility_projection(),
@@ -970,12 +958,14 @@ mod tests {
                 Some(&terrain),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
             ),
-            &crate::sim::houses::Houses::default(),
             None,
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Campaign),
+                &crate::sim::houses::Houses::default(),
+            ),
             None,
             None,
             projection,
@@ -1036,12 +1026,14 @@ mod tests {
         let visible = |fog: &FogState| {
             build_radar_object_update(
                 &crate::app::presentation::frame::ObjectRecord::of_test(&building),
-                &crate::sim::houses::Houses::default(),
                 Some(local),
                 fog,
                 &Default::default(),
                 false,
-                true,
+                &ControlProjection::for_native_view(
+                    &test_radar_session(ScenarioGameMode::Skirmish),
+                    &crate::sim::houses::Houses::default(),
+                ),
                 None,
                 None,
                 visibility_projection(),
@@ -1081,12 +1073,14 @@ mod tests {
                     Some(&terrain),
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                 ),
-                &crate::sim::houses::Houses::default(),
                 Some(local),
                 &fog,
                 &Default::default(),
                 false,
-                true,
+                &ControlProjection::for_native_view(
+                    &test_radar_session(ScenarioGameMode::Skirmish),
+                    &crate::sim::houses::Houses::default(),
+                ),
                 None,
                 None,
                 visibility_projection(),
@@ -1146,12 +1140,14 @@ mod tests {
             )]);
             let update = build_radar_object_update(
                 &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
-                &houses,
                 Some(local),
                 &fog,
                 &super::super::helpers::test_alliances(alliances),
                 false,
-                true,
+                &ControlProjection::for_native_view(
+                    &test_radar_session(ScenarioGameMode::Skirmish),
+                    &houses,
+                ),
                 Some(&rules),
                 Some(&interner),
                 visibility_projection(),
@@ -1187,12 +1183,14 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         let update = build_radar_object_update(
             &crate::app::presentation::frame::ObjectRecord::of_test(&entity),
-            &houses,
             Some(local),
             &fog,
             &Default::default(),
             false,
-            true,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Skirmish),
+                &houses,
+            ),
             Some(&rules),
             Some(&interner),
             visibility_projection(),

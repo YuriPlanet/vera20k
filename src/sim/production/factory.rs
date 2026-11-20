@@ -1770,6 +1770,7 @@ impl FactoryEdit<'_> {
         type_id: Option<InternedId>,
         all: bool,
         build_cat: Option<BuildCategory>,
+        _building_queue: bool,
     ) -> CancelOutcome {
         let Some(f) = self
             .registry
@@ -1789,20 +1790,21 @@ impl FactoryEdit<'_> {
         // stores 0 otherwise, as it does for a negative index at
         // `0x004FAA29`. A `BuildingType` with no `BuildCat=` is 0 too
         // (constructor `0x0045DD9A`/`0x0045DDC7`), which is VERA's `None`.
-        // The rewrite is unconditional, so it follows the `phobos` feature and
-        // not `[General] BuildingProductionQueue=`.
-        const PHOBOS_STRUCTURE_ABANDON: bool = true;
+        // The rewrite is unconditional in Phobos, so it follows the Phobos
+        // capability (compiled into every build) and not
+        // `[General] BuildingProductionQueue=`.
+        let structure_abandon = true;
         // Phobos' own guard inside that rewrite: a single cancel on a structure
         // strip holding no product skips the removal and takes the null-held
         // admit at `0x004FAB64`.
         let null_held_structure_skip = build_cat.is_some() && !all && f.object.is_none();
         let removes_queued_copies =
-            build_cat.is_none() || (PHOBOS_STRUCTURE_ABANDON && !null_held_structure_skip);
+            build_cat.is_none() || (structure_abandon && !null_held_structure_skip);
         // The rewrite is only reached past `0x004FAAC5..0x004FAAD2` (a queued
         // entry and an index). Its structure ABANDON_ALL ends at CheckSame
         // (`0x004FAB3D`), whose null-held test (`0x004FAB45`) returns at
         // `0x004FAC9B`, so with nothing held it never reaches the admit.
-        let rewrite_returns_null_held = PHOBOS_STRUCTURE_ABANDON
+        let rewrite_returns_null_held = structure_abandon
             && build_cat.is_some()
             && all
             && f.object.is_none()
@@ -2214,17 +2216,16 @@ mod tests {
                 false,
             );
             producer.lifecycle.set_in_limbo_for_test(false);
-            producer.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
+            *producer.tracking_facts_mut_for_test() = crate::sim::house_tracking::TrackingFacts::of(
                 EntityCategory::Structure,
                 rules.object("PRODUCER"),
                 &rules,
             );
             sim.substrate.entities.insert(producer);
-            crate::sim::world::Simulation::update_house_tracking(
+            crate::sim::house_tracking::HouseTracking::register_factory(
                 &mut sim.substrate,
                 &mut sim.houses,
                 1,
-                |tracking, entity| tracking.increment_factory_count(entity),
             );
             let mut power = PowerState::default();
             power.set_total_output_for_test(input["power_output"].as_i64().unwrap() as i32);
@@ -2783,7 +2784,7 @@ mod tests {
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
         let outcome =
             reg.edit()
-                .cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None);
+                .cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None, false);
         assert_eq!(outcome, CancelOutcome::QueuedRemoved);
         let q: Vec<InternedId> = reg
             .view(owner, ProductionCategory::Vehicle)
@@ -2817,7 +2818,7 @@ mod tests {
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
         let outcome =
             reg.edit()
-                .cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None);
+                .cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None, false);
         assert_eq!(
             outcome,
             CancelOutcome::QueuedRemoved,
@@ -2860,6 +2861,7 @@ mod tests {
             Some(a),
             false,
             Some(BuildCategory::Power),
+            false,
         );
         let view = reg.view(owner, ProductionCategory::Building).unwrap();
         if true {
@@ -2907,6 +2909,7 @@ mod tests {
                 Some(a),
                 all,
                 Some(BuildCategory::Power),
+                false,
             );
             let queued = reg
                 .view(owner, ProductionCategory::Building)
@@ -2955,6 +2958,7 @@ mod tests {
             Some(a),
             true,
             Some(BuildCategory::Power),
+            false,
         );
         let queue: Vec<InternedId> = reg
             .view(owner, ProductionCategory::Building)
@@ -2970,6 +2974,61 @@ mod tests {
             assert!(matches!(outcome, CancelOutcome::AbandonedActive(_)));
             assert_eq!(queue, vec![a, b, a], "vanilla leaves the queue intact");
         }
+    }
+
+    /// VERA's Building Production Queue is a player option available in a
+    /// default build. Shift + right-click sends ABANDON_ALL for the clicked
+    /// type, which must drain every queued copy of that type before the held
+    /// product, exactly as Phobos' unconditional rewrite does. Without the
+    /// option the default build keeps vanilla's queue-intact behavior.
+    #[test]
+    fn building_queue_option_drains_copies_in_a_default_build() {
+        let owner = InternedId::default();
+        let a = InternedId::from_index(1);
+        let b = InternedId::from_index(2);
+        let factory = || Factory {
+            owner,
+            category: ProductionCategory::Building,
+            object: Some(PendingObject {
+                type_id: a,
+                entity_id: None,
+                completion_accounted: false,
+            }),
+            balance: 600,
+            progress: 20,
+            queue: std::collections::VecDeque::from(vec![qe(a), qe(b), qe(a)]),
+            ..Factory::default()
+        };
+        let drain = |building_queue: bool| {
+            let mut reg = reg_with(owner, ProductionCategory::Building, factory());
+            let outcome = reg.edit().cancel_one(
+                owner,
+                ProductionCategory::Building,
+                Some(a),
+                true,
+                Some(BuildCategory::Power),
+                building_queue,
+            );
+            let queue: Vec<InternedId> = reg
+                .view(owner, ProductionCategory::Building)
+                .unwrap()
+                .queue
+                .iter()
+                .map(|e| e.type_id)
+                .collect();
+            (outcome, queue)
+        };
+
+        // With the option on, both A copies drain before the active A is
+        // abandoned, and B stays — in every build, Phobos or default.
+        let (outcome, queue) = drain(true);
+        assert!(matches!(outcome, CancelOutcome::AbandonedActive(_)));
+        assert_eq!(queue, vec![b], "all copies of the clicked type drain");
+
+        // With it off, Phobos still drains because its rewrite is
+        // unconditional; the option only matters to a build without Phobos.
+        let (_, queue) = drain(false);
+        assert_eq!(queue, vec![b]);
     }
 
     /// ABANDON_ALL (`0x004FAB01..0x004FAB0B`) removes every queued copy and
@@ -3005,7 +3064,7 @@ mod tests {
         let mut reg = reg_with(owner, ProductionCategory::Infantry, factory(a));
         assert_eq!(
             reg.edit()
-                .cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None),
+                .cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None, false),
             CancelOutcome::AbandonedActive(AbandonedObject {
                 type_id: a,
                 balance: 150,
@@ -3023,7 +3082,7 @@ mod tests {
         let mut reg = reg_with(owner, ProductionCategory::Infantry, factory(b));
         assert_eq!(
             reg.edit()
-                .cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None),
+                .cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None, false),
             CancelOutcome::QueuedRemoved,
             "another type's active build stays"
         );

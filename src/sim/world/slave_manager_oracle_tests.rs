@@ -365,7 +365,7 @@ fn place_slave(
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
-            UninitContext::with_rules(rules),
+            UninitContext::new(rules),
         );
         assert!(
             matches!(outcome, RevealOutcome::Revealed { .. }),

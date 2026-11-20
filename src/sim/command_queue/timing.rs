@@ -43,8 +43,14 @@ impl NetworkCommandTiming {
         // The authenticated WOL publisher can already be absent after the
         // loading wait's DestroyConnection684596. Session697E70 then falls
         // back to a remaining source; installation must keep those live rows.
-        assert!(host_house >= 0 && !processing_millis.is_empty());
-        assert!(processing_millis.keys().all(|house| *house >= 0));
+        assert!(
+            host_house >= 0 && !processing_millis.is_empty(),
+            "network timing is installed for an admitted host House and roster"
+        );
+        assert!(
+            processing_millis.keys().all(|house| *house >= 0),
+            "every admitted network House has an index"
+        );
         Self {
             host_house,
             frame_send_rate,
@@ -77,6 +83,10 @@ impl NetworkCommandTiming {
 
     pub(crate) fn admits_source(&self, house: i8) -> bool {
         self.processing_millis.contains_key(&house)
+    }
+
+    pub(crate) fn admitted_sources(&self) -> impl Iterator<Item = i8> + '_ {
+        self.processing_millis.keys().copied()
     }
 
     /// NodeNameTag removal5DAA8A..5DAB38 retires its timing sample too.

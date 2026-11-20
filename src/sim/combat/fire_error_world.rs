@@ -19,7 +19,6 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::game_entity::GameEntity;
@@ -48,7 +47,6 @@ pub(crate) fn passenger_fire_while_moving(
 pub(crate) struct FireSubject<'a> {
     pub world: &'a Simulation,
     pub rules: &'a RuleSet,
-    pub overlay_registry: Option<&'a OverlayTypeRegistry>,
     pub fog: Option<FireFog<'a>>,
     pub firer: &'a GameEntity,
     pub obj: &'a ObjectType,
@@ -433,9 +431,7 @@ impl<'a> FireSubject<'a> {
                 &self.world.houses,
                 firer.owner(),
             )
-            .is_some_and(|house| {
-                house.is_controlled_by_human(self.world.session.game_mode_nonzero())
-            }),
+            .is_some_and(|house| house.is_controlled_by_human(self.world.session.rule_policy())),
             owner_money: crate::sim::credit_income::available_money(
                 &self.world.houses,
                 firer.owner(),
@@ -831,7 +827,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
-                        overlay_registry: subject.overlay_registry,
+                        overlay_registry: Some(subject.rules.overlay_registry()),
                         alliances: subject.fog.map(|fog| fog.alliances),
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
@@ -860,7 +856,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
-                        overlay_registry: subject.overlay_registry,
+                        overlay_registry: Some(subject.rules.overlay_registry()),
                         alliances: subject.fog.map(|fog| fog.alliances),
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
@@ -1294,7 +1290,6 @@ mod terrain_target_tests {
         let subject = FireSubject {
             world: &world,
             rules,
-            overlay_registry: None,
             fog: None,
             firer,
             obj,

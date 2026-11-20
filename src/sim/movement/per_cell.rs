@@ -268,7 +268,6 @@ impl Simulation {
             cell,
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             rules,
-            registry,
         ) == Ok(7);
         if !refused
             || entity.on_bridge()
@@ -369,7 +368,7 @@ impl Simulation {
         if reason == PerCellReason::Arrival {
             // Ares 3.0 1004C530 (hook 0x739F21): a small visceroid arriving
             // on the one it seeks merges into it and ends here.
-            if ares && self.ares_visceroid_merge(id, rules, registry, effects) {
+            if ares && self.ares_visceroid_merge(id, rules, effects) {
                 return;
             }
             // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
@@ -407,7 +406,7 @@ impl Simulation {
         // arrival in a real cell fails it.
         if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
             self.refresh_object_sight(id, rules, 0, effects);
-            self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
+            self.refresh_object_sight_border(id, UninitContext::new(rules));
         }
         // Unit PerCell2 739EC0: after MCV retry, +6D1==0 admits
         // Ready(+200)73ACC2 -> Commence(+1EC)73ACD1, BEFORE full-cell
@@ -536,7 +535,7 @@ impl Simulation {
                 victim,
                 crate::sim::combat::KillSource::Techno(Some(id)),
                 crate::sim::combat::KillCallback::Terminal,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
             self.apply_lifecycle_request(
                 LifecycleRequest::Uninit {
@@ -544,7 +543,6 @@ impl Simulation {
                     reason: UninitReason::Crush,
                 },
                 rules,
-                registry,
                 effects,
             );
         }
@@ -885,7 +883,7 @@ impl Simulation {
             let Some(human) = self
                 .houses
                 .get(&unit.owner())
-                .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
+                .map(|house| house.is_controlled_by_human(self.session.rule_policy()))
             else {
                 return;
             };
@@ -1108,7 +1106,7 @@ impl Simulation {
                 if outcome.consumed {
                     //True joins ORIGINAL51A010: the actor's own event48 then
                     //UnInit. The separate AI hook raises no actor event48.
-                    let context = UninitContext::new(rules, registry).with_effects(effects);
+                    let context = UninitContext::new(rules).with_effects(effects);
                     self.dispatch_object_tag_event(id, 48, Some(id), None, context);
                     self.uninit_with_context(id, context);
                 }
@@ -1194,7 +1192,7 @@ impl Simulation {
             // and rock check.
             if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
                 self.refresh_object_sight(id, rules, 0, effects);
-                self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
+                self.refresh_object_sight_border(id, UninitContext::new(rules));
             }
             if reason == PerCellReason::Arrival
                 && self.infantry_arrival_drowns(id, rules, registry, effects)
@@ -1382,7 +1380,7 @@ impl Simulation {
         {
             return Ok(None);
         }
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.dispatch_object_tag_event(candidate, 1, Some(id), None, context);
         let (Some(infantry), Some(carrier)) = (
             self.substrate.entities.get(id),
@@ -1726,7 +1724,7 @@ impl Simulation {
             return Ok(false);
         }
         if crate::sim::passenger::building_can_be_occupied_by(self, rules, building, id) {
-            let context = UninitContext::new(rules, registry).with_effects(effects);
+            let context = UninitContext::new(rules).with_effects(effects);
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             crate::sim::passenger::add_garrison_occupant(
                 self, rules, id, building, registry, effects,
@@ -1871,7 +1869,7 @@ impl Simulation {
         self.per_cell_range_stop(id, rules, registry, effects);
         self.dispatch_foot_cell_tag_events(
             id,
-            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(effects),
         );
         // Foot4D8D31..4D8D53: a Foot whose structural deck disappeared
         // takes the same DropAsBomb as BlowUpBridge's deck traversal.
@@ -1886,7 +1884,7 @@ impl Simulation {
         if deck_gone {
             self.drop_as_bomb(
                 id,
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
         }
         // Foot4D8D59: an object that died in the Foot body skips the whole
@@ -1925,10 +1923,7 @@ impl Simulation {
             if ares {
                 self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
             }
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(effects));
             return;
         }
         // 0x004D8DA7..0x004D8DF5: another house's object arriving over the
@@ -1961,14 +1956,14 @@ impl Simulation {
             34,
             Some(id),
             None,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         self.promote_entity_playfield_membership_after_move(id);
         if let Some(cell) = cell {
             self.discover_on_open_ground_after_cell_entry(
                 id,
                 cell,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
         }
     }

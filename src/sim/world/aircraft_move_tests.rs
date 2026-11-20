@@ -726,14 +726,14 @@ SlowdownDistance=1000
             .unwrap()
             .navigation
             .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(11, 10)));
-        let (state, _) = sim.aircraft_move(plane, 2, &rules, None, FrameEffects::empty());
+        let (state, _) = sim.aircraft_move(plane, 2, &rules, FrameEffects::empty());
         state
     };
     // The stock own-cell test sees another cell and keeps the aircraft moving.
     assert_ne!(run("no"), 2, "the stock own-cell test does not arrive");
     // The distance test arrives: EnterIdleAndReturn writes no state.
     assert_eq!(run("yes"), 2, "the distance test takes the arrived arm");
-    }
+}
 /// The fixture's HORNET (Landable, not Spawned, with `extra` rules) at
 /// (15, 15), a tree on `tree`, `order` applied, and the first Cell NavCom the
 /// aircraft takes within 200 frames.

@@ -135,7 +135,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         .as_mut()
         .unwrap()
         .place_overlay(16, 16, ore, 0);
-    sim.assign_target_represented(tank, target, rules, Some(&registry), effects)
+    sim.assign_target_represented(tank, target, rules, effects)
         .unwrap();
     let removed = crate::sim::combat::world_receiver::collect_area(
         &mut sim,
@@ -166,7 +166,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         None
     );
 
-    sim.assign_target_represented(tank, target, rules, Some(&registry), effects)
+    sim.assign_target_represented(tank, target, rules, effects)
         .unwrap();
     let empty = crate::sim::combat::world_receiver::collect_area(
         &mut sim,

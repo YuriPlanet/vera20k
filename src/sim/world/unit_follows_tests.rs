@@ -4,6 +4,7 @@
 use super::{FrameEffects, Simulation, TickLane, UninitContext};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -99,7 +100,11 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
          [Actions]\nTRANSFER=1,14,0,{country},0,0,0,0,A\n\
          [Tags]\nTRANSFER_TAG=0,Transfer linked units,TRANSFER\n"
     ));
-    let teams = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map.ini, true);
+    let teams = TeamAiIniRegistry::from_sources(
+        &IniFile::empty(),
+        &map.ini,
+        RulePolicy::stock_multiplayer(),
+    );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(rules)), 3);
     sim.classify_map_triggers(rules);
@@ -212,10 +217,7 @@ fn uninit_clears_incoming_unit_link_but_preserves_orphan_follower_byte_after_res
 
     // UnitPointerExpired7446E0 clears its pointer after inherited forwards;
     // neither it nor the deleting destructor resets the surviving tail byte.
-    sim.uninit_with_context(
-        middle,
-        UninitContext::new(rules, Some(rules.overlay_registry())),
-    );
+    sim.uninit_with_context(middle, UninitContext::new(rules));
     assert_eq!(sim.entities().get(head).unwrap().unit_follower(), None);
     assert!(sim.entities().get(tail).unwrap().is_unit_follower());
     sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())

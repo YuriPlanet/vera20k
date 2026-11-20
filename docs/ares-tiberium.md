@@ -134,7 +134,10 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   `GiveTiberium`, which Ares' `10024290` (hook `4F9610`) makes: score
   `ftol(amount * 5)`; a campaign or human House fills its on-map `Storage=`
   buildings in House+68 order up to the free capacity (`+0x310` minus the
-  stored total; the rest is lost), any other House takes cash. Every build
+  stored total; the rest is lost), any other House takes cash. One switch
+  makes the stores live: the game's money takes its Ares form
+  (`RuleSet::ares_form`), which the deposit, the sale's payout, the merge,
+  the withdrawal, the spill and the silo nag below all ask. Every build
   also ports the stock arms reading the stores, which change nothing in a
   game whose stores stay empty: Spend_Money's drain (`0x004F97DD..0x004F9925`,
   single units at `ftol(Value * IncomeMult)` each, the excess back as the
@@ -142,7 +145,15 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   (`0x004F6990`, `0x006C9600`), the Added_To_Game merge (`0x00502B83`), the
   Removed_From_Game withdrawal (`0x00502801..0x00502821`, called by Limbo
   and ChangeOwner), and the sale's store payout through GiveTiberium
-  (`0x0044A232..0x0044A285`, `production/production_sell.rs`). A destroyed
+  (`0x0044A232..0x0044A285`, `production/production_sell.rs`).
+  `[Basic] FillSilos=` (`Fill_In_Data 0x00684F02..0x00684F7C`,
+  `sim/scenario_post_map.rs`) gives each House one unit at a time through
+  GiveTiberium while its starting money, a budget that loses the first
+  type's `Value=` a unit, exceeds that Value and Available_Storage
+  (`0x004F69D0`) stays positive: a campaign or human House's silos fill, any
+  other House is paid cash. Every GiveTiberium caller takes
+  `Simulation::tiberium_gift`, which picks Ares' body or the stock one
+  (FillSilos reads it once per House). A destroyed
   building loses `ceil` of each slot from its store and the House's
   (`10023DA0`, hook `441B30`, `combat/destruction_effects.rs`); with
   `TiberiumSpill` each unit draws `RandomRanged(256, 768)` and one
@@ -161,7 +172,7 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
 | `489270` | `10050DD0` | CellChainReact | Ported (`ares_cell_chain_react`) |
 | `48964F` | `10051000` | DamageArea_ChainReaction | Ported (`ares_area_damage_chain_reaction`) |
 | `739F21` | `1004C530` | UnitClass_UpdatePosition_Visceroid | Residual: needs stock visceroid AI |
-| `4F9610` | `10024290` | HouseClass_GiveTiberium_Storage | Ported (`ares_give_tiberium`) |
+| `4F9610` | `10024290` | HouseClass_GiveTiberium_Storage | Ported (`give_tiberium`, `tiberium_gift`) |
 | `73E4A2` | `10024BC0` | UnitClass_Mi_Unload_Storage | Ported (`ares_deposit_tiberium`) |
 | `522D75` | `10024B60` | InfantryClass_Slave_UnloadAt_Storage | Ported (`ares_deposit_tiberium`) |
 | `441B30` | `10023DA0` | BuildingClass_Destroy_Refinery | Ported (`ares_destroy_refinery_storage`) |
@@ -190,11 +201,6 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
 - `Message.SilosNeeded` is read but not printed: the nag needs a sim
   event carrying a message line in the House's colour (MessageDelay) to
   the client's message list; only the EVA line plays.
-- `[Basic] FillSilos=` (`Fill_In_Data 0x00684F02`) still pays cash in
-  a game that plays Ares; natively its Add_Tiberium_Credits is Ares' `10024290`,
-  which stores each unit for a campaign or human House, and its loop's
-  Available_Storage (`0x004F69D0`) then sees the fill. No stock map sets
-  the key.
 - Removed_From_Game's `keepTiberium` arm (cashes a store out without
   touching the House store) has no VERA caller; the `Weeder=` store
   (`+0x314`, `0x004F9700`) is not ported.

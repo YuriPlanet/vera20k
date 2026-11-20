@@ -3,6 +3,7 @@
 use super::*;
 use crate::headless_scenario::{HeadlessScenario, battle_session, load_session};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -243,15 +244,9 @@ fn packed_cell_dummy_keeps_its_pointer_across_restamps_and_reload() {
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(target)
     );
-    sim.team_member_assign_target(member, target, rules, None, FrameEffects::default());
+    sim.team_member_assign_target(member, target, rules, FrameEffects::default());
     let changed_token = sim.canonical_team_cell((-2, 0));
-    sim.team_assign_mission_target(
-        team,
-        Some(changed_token),
-        rules,
-        None,
-        FrameEffects::default(),
-    );
+    sim.team_assign_mission_target(team, Some(changed_token), rules, FrameEffects::default());
     assert_eq!(
         sim.entities().get(member).unwrap().attack_target.target(),
         Some(TargetKind::Cell(u16::MAX, 0)),
@@ -273,12 +268,13 @@ fn a_team_only_dummy_target_makes_its_live_coordinate_part_of_the_hash() {
     let map = IniFile::from_str(
         "[TeamTypes]\n0=TEAM\n[TEAM]\nScript=SCRIPT\nTaskForce=FORCE\n[ScriptTypes]\n0=SCRIPT\n[SCRIPT]\n0=2,0\n[TaskForces]\n0=FORCE\n[FORCE]\n0=1,E2\n",
     );
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     sim.install_team_ai_registry(&registry, &rules);
     let team_type = sim.interner.get("TEAM").unwrap();
     let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
     let target = sim.canonical_team_cell((-1, 0));
-    sim.team_assign_mission_target(team, Some(target), &rules, None, FrameEffects::default());
+    sim.team_assign_mission_target(team, Some(target), &rules, FrameEffects::default());
     let before = sim.state_hash();
     let _ = sim.canonical_team_cell((-2, 0));
     assert_ne!(

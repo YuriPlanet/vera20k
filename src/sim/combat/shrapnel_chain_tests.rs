@@ -83,7 +83,6 @@ impl PrismScene {
                 source,
                 Some(TargetKind::Entity(victim)),
                 &rules,
-                None,
                 FrameEffects::default(),
             )
             .unwrap();
@@ -688,7 +687,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
         if row["case"]["source_first"] == true {
             scene.world.notify_pointer_expired(
                 scene.source,
-                crate::sim::world::UninitContext::with_rules(&scene.rules),
+                crate::sim::world::UninitContext::new(&scene.rules),
             );
             check(&scene, &expected["after_source_before_damage"]);
         }
@@ -713,14 +712,13 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
         );
         run.finish();
         check(&scene, &expected["after_receiver"]);
-        scene.world.notify_pointer_expired(
-            tree_id,
-            crate::sim::world::UninitContext::with_rules(&scene.rules),
-        );
+        scene
+            .world
+            .notify_pointer_expired(tree_id, crate::sim::world::UninitContext::new(&scene.rules));
         check(&scene, &expected["after_repeat"]);
         scene.world.notify_pointer_expired(
             scene.source,
-            crate::sim::world::UninitContext::with_rules(&scene.rules),
+            crate::sim::world::UninitContext::new(&scene.rules),
         );
         check(&scene, &expected["after_source_expiry"]);
         assert_eq!(

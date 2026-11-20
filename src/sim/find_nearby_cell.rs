@@ -871,7 +871,6 @@ impl crate::sim::world::Simulation {
         target: (i16, i16),
         radii: std::ops::Range<i32>,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<(i16, i16)> {
         use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
@@ -889,7 +888,6 @@ impl crate::sim::world::Simulation {
                 },
                 EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .is_ok_and(|code| code == 0)
         })

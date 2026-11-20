@@ -106,7 +106,6 @@ mod implementation {
         let subject = FireSubject {
             world,
             rules,
-            overlay_registry: context.overlay_registry,
             fog: Some(world.fog.fire_view(&world.house_alliances)),
             firer: candidate,
             obj: candidate_type,

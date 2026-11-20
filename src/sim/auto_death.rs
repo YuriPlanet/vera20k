@@ -301,15 +301,15 @@ impl Simulation {
         };
         // `HouseClass::IsControlledByHuman`, the same mode-aware predicate the
         // AttachEffect owner-change hook reads.
-        let game_mode_nonzero = self.session.game_mode_nonzero();
+        let policy = self.session.rule_policy();
         let old_human = self
             .houses()
             .get(&old_owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(policy));
         let new_human = self
             .houses()
             .get(&new_owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(policy));
         let to_computer = to_computer.unwrap_or(master);
         let to_human = to_human.unwrap_or(master);
         let mut should = false;
@@ -544,7 +544,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
         };
@@ -617,7 +617,12 @@ impl Simulation {
                 entity.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
             });
             if !selling {
-                crate::sim::production::begin_selling(self, rules, id, false);
+                crate::sim::production::begin_selling(
+                    self,
+                    rules,
+                    id,
+                    crate::sim::building_construction::BuildingDown::commenced(0, false),
+                );
             }
             return true;
         }
@@ -662,7 +667,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
         };
@@ -672,7 +677,7 @@ impl Simulation {
         // `Absorbed` is Techno `+0x439` (`set_infantry_absorber_entry`).
         let absorbed = entity.house_tracking_latches().is_absorbed();
         let type_ref = entity.type_ref();
-        let counts_tracking = entity.tracking_facts.counts_toward_limbo_tracking();
+        let counts_tracking = entity.tracking_facts().counts_toward_limbo_tracking();
         // `:723-728`: a parasite leaves its victim first, so the delete cannot
         // strand the host linked to a gone rider. `ExitUnit 0x0062A4A0`.
         if category != crate::map::entities::EntityCategory::Structure {
@@ -687,9 +692,7 @@ impl Simulation {
             && counts_tracking
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            house
-                .tracking_mut()
-                .remove_limbo_delivered_tracking(category, type_ref);
+            house.remove_limbo_delivered_tracking(category, type_ref);
         }
         // `:739-743`: an absorbed passenger's `ExtraPower=` leaves with it, so
         // the absorber's owner reassesses power (House `+0x5778`). An absorbed

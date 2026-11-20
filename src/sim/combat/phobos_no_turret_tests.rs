@@ -60,7 +60,6 @@ fn fire_error(sim: &Simulation, rules: &RuleSet, attacker: u64, target: u64) -> 
     FireSubject {
         world: sim,
         rules,
-        overlay_registry: None,
         fog: None,
         firer,
         obj: rules.object("TRK").expect("TRK"),

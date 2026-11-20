@@ -433,6 +433,35 @@ pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     .max(1)
 }
 
+/// VERA's Convenience Help: what the running repair of `entity` still
+/// needs at `frame`, by [`repair_step`]'s own cadence: the frames until the
+/// step that reaches Strength, and what those steps cost. `None` while it is
+/// not repairing, is at Strength, or never finishes (a zero period or
+/// `RepairStep=`). An estimate: a house that runs out of money stops (or,
+/// under Ares, waits) sooner. Read only; the draw shows it.
+pub fn repair_remaining(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &ObjectType,
+    rules: &RuleSet,
+    frame: u32,
+) -> Option<(i32, i32)> {
+    let step = rules.general.repair_step;
+    let period =
+        crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
+    let missing = object.strength.saturating_sub(entity.health.current());
+    if !entity.building.repairing.on || step <= 0 || period <= 0 || missing <= 0 {
+        return None;
+    }
+    let steps = (missing - 1) / step + 1;
+    // A step is due on each frame that is a multiple of the period.
+    let first = (period - (frame as i32).rem_euclid(period)) % period;
+    let frames = first.saturating_add((steps - 1).saturating_mul(period));
+    Some((
+        frames,
+        steps.saturating_mul(repair_step_cost(rules, object)),
+    ))
+}
+
 /// `BuildingClass::UpdateRepairAndPower @ 0x00450630`, in the building's
 /// LogicVector visit. A building of an owner whose CurrentIQ (`+0x24C`)
 /// reaches `[IQ] RepairSell=`, on neither Construction nor Selling
@@ -461,7 +490,7 @@ pub(crate) fn update_repair_and_power(
         && sim
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     if extended_repair_house {
         let repairing = sim
             .houses
@@ -523,7 +552,7 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.game_mode_nonzero() || entity.ai_sell_repair.ai_sellable())
+    if !((sim.session.rule_policy().uses_ai_economy() || entity.ai_sell_repair.ai_sellable())
         && entity.ai_sell_repair.was_attacked_by_enemy()
         && house.authored_iq() as u32 >= rules.general.iq_sell_back as u32)
     {
@@ -570,7 +599,7 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     if house.repair_start_latch() || entity.building.repairing.on {
         return;
     }
-    let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let controlled = house.is_controlled_by_human(sim.session.rule_policy());
     if !(entity.building.has_been_captured.is_set()
         || entity.ai_sell_repair.ai_repairable()
         || controlled)
@@ -647,7 +676,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             && sim
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
         if !keeps_repairing && let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.building.repairing.on = false;
         }

@@ -513,8 +513,8 @@ fn draw_status_group<'a>(
         group_text.clone(),
         batch.surface_camera_bind_group(),
     );
-    // Phobos DigitalDisplay: each entry's backing then glyphs in list order,
-    // using the same GAME.FNT material.
+    // Phobos DigitalDisplay, then VERA's Convenience Help rows: each entry's
+    // backing then glyphs in list order, using the same GAME.FNT material.
     for (rectangles, text) in digital_text {
         draw_status_text_material(
             pass,

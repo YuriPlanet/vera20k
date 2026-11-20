@@ -88,7 +88,7 @@ pub(crate) fn apply(
     }
     // `!pType->UndeploysInto || (pType->ConstructionYard && !MCVRedeploy)`
     // (`:291-292`) is [`Simulation::can_undeploy_building_runtime`].
-    if !world.can_undeploy_building_runtime(target_id, rules) {
+    if !world.can_undeploy_building_runtime(target_id, false, rules) {
         return;
     }
     // `SetArchiveTarget(pCell)` then `Sell(1)` (`:351-353`). `Finish_undeploy`
@@ -105,7 +105,7 @@ pub(crate) fn apply(
             target.set_archive_target(Some(TargetKind::Cell(x, y)));
         }
     }
-    world.undeploy_building(target_id, rules, registry, effects);
+    world.undeploy_building(target_id, false, rules, registry, effects);
 }
 
 /// `pBuilding->SetArchiveTarget(nullptr)` (`:275`), so the pack-up does not

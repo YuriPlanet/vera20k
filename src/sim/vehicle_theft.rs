@@ -110,12 +110,13 @@ impl Simulation {
     /// Command producers and cursor feedback share this read-only action.
     pub fn ares_vehicle_capture_action(
         &self,
+        control: &crate::sim::world::ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
         self.substrate.entities.get(actor_id).is_some_and(|actor| {
-            self.house_is_human_player(actor.owner())
+            control.can_order(actor.owner())
                 && self
                     .ares_vehicle_capture_mode(actor_id, target_id, rules)
                     .is_some()
@@ -128,7 +129,6 @@ impl Simulation {
         &mut self,
         actor_id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         use crate::sim::components::NavTargetRef;
@@ -193,7 +193,6 @@ impl Simulation {
             actor_id,
             Some(NavTargetRef::object(target)),
             rules,
-            registry,
             effects,
         );
         let _ = self.mission_queue_exact(
@@ -237,9 +236,9 @@ impl Simulation {
             )
             .ok_or("capture actor has no InfantryType array index")?;
         let enter_sound = actor_type.vehicle_thief_sound(false).map(str::to_owned);
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let Some(mode) = self.ares_vehicle_capture_mode(actor_id, target_id, rules) else {
-            self.assign_destination_represented(actor_id, None, rules, registry, effects)
+            self.assign_destination_represented(actor_id, None, rules, effects)
                 .map_err(|e| format!("refused vehicle capture destination: {e}"))?;
             let from = self.substrate.entities.get(target_id).map(|target| {
                 crate::sim::movement::ground_pose::object_get_coords(
@@ -394,7 +393,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         self.mission_queue_exact(
             target_id,
             crate::sim::mission::MissionId::from_known(if human {
@@ -626,7 +625,7 @@ mod tests {
             Some(VehicleCaptureMode::Drive)
         );
         assert_eq!(sim.ares_vehicle_capture_mode(driver, locked, &rules), None);
-        assert!(sim.ares_enter_nearest_vehicle(driver, &rules, None, FrameEffects::default()));
+        assert!(sim.ares_enter_nearest_vehicle(driver, &rules, FrameEffects::default()));
         let seeking = sim.substrate.entities.get(driver).unwrap();
         assert_eq!(
             seeking.navigation.nav_com(),
@@ -647,7 +646,7 @@ mod tests {
             .lifecycle
             .set_object_alive_for_test(false);
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
-        assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, None, FrameEffects::default()));
+        assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, FrameEffects::default()));
         let stopped = sim.substrate.entities.get(driver).unwrap();
         assert!(!stopped.building_entry.should_enter_nearest_occupiable());
         assert!(!stopped.ares.vehicle_driver.vehicle_seek());

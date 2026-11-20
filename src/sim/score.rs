@@ -179,10 +179,8 @@ impl Simulation {
         // game (GameMode 3 or 4) mode vt+8 draws the empty backdrop instead
         // of the score dialog, so such a mode makes none of its draws there.
         // A skirmish in the mode gets the dialog.
-        if session.game_mode().is_network()
-            && session
-                .multiplayer_mode_class()
-                .is_some_and(|class| class.policy().skips_network_score_dialog)
+        if session.execution_topology().is_lockstep()
+            && session.rule_policy().skips_network_score_dialog()
         {
             return false;
         }
@@ -746,16 +744,17 @@ mod tests {
     #[test]
     fn cooperative_skips_the_score_draws_only_online() {
         use crate::sim::scenario_session::ScenarioGameMode;
-        for (game_mode, scored) in [
-            (ScenarioGameMode::Lan, false),
-            (ScenarioGameMode::Skirmish, true),
+        let cooperative = Some(crate::skirmish_modes::MpModeClass::Cooperative);
+        let lan = ScenarioGameMode::Lan;
+        let skirmish = ScenarioGameMode::Skirmish;
+        let lan_stock = lan.stock_rule_policy(cooperative);
+        for (mode, policy, scored) in [
+            (lan, lan_stock, false),
+            (lan, lan_stock.with_skips_network_score_dialog(false), true),
+            (skirmish, skirmish.stock_rule_policy(cooperative), true),
         ] {
             let mut sim = Simulation::with_seed(0x5C4E_F000);
-            sim.session.set_game_mode(game_mode);
-            sim.session.install_multiplayer_house_identity(
-                crate::skirmish_modes::MpModeClass::Cooperative,
-                Vec::new(),
-            );
+            sim.install_session_admission(mode, cooperative, policy);
             insert_house(
                 &mut sim,
                 HouseFixture {
@@ -779,7 +778,7 @@ mod tests {
                     &sim.houses
                 ),
                 scored,
-                "{game_mode:?}"
+                "{mode:?} {policy:?}"
             );
             assert_eq!(sim.terminal_score_snapshot().is_some(), scored);
             assert_eq!(sim.clone_scenario_rng().state() != before, scored);

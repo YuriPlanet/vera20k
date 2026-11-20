@@ -476,7 +476,6 @@ fn transact_money_gates_the_shot_on_the_firing_house_wallet() {
         crate::sim::combat::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.entities().get(firer).unwrap(),
             obj: rules.object("FIRER").unwrap(),

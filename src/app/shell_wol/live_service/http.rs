@@ -160,18 +160,70 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
             "/v1/accounts/reset",
             json!({"name": name, "code": code, "password": password}),
         ),
-        AccountRequest::Delete { name, password } => (
-            "/v1/accounts/delete",
-            json!({"name": name, "password": password}),
-        ),
+        AccountRequest::Delete {
+            identifier,
+            password,
+        } => {
+            let key = if identifier.contains('@') {
+                "email"
+            } else {
+                "name"
+            };
+            (
+                "/v1/accounts/delete",
+                json!({(key): identifier, "password": password}),
+            )
+        }
     }
+}
+
+fn account_result(
+    request: &super::AccountRequest,
+    response: Result<Value, RequestFailure>,
+) -> Result<super::AccountSuccess, String> {
+    use crate::ui::wol_account::valid_name;
+    let super::AccountRequest::Delete { identifier, .. } = request else {
+        return response
+            .map(|_| super::AccountSuccess::Accepted)
+            .map_err(sign_in_refusal);
+    };
+    let by_name = valid_name(identifier);
+    let reply = response.map_err(|failure| match failure {
+        RequestFailure::Account {
+            status: 400,
+            invalid_request: true,
+            ..
+        } if !by_name => crate::i18n::tr("VERA:DeleteUseUsername"),
+        other => sign_in_refusal(other),
+    })?;
+    // Older lobbies accept only usernames and return {}. Never infer a username
+    // from an email, or clear another sign-in on a malformed reply.
+    let canonical = reply["name"]
+        .as_str()
+        .filter(|name| valid_name(name) && (!by_name || name.eq_ignore_ascii_case(identifier)))
+        .or_else(|| {
+            (by_name && reply.as_object().is_some_and(|o| o.is_empty())).then_some(identifier)
+        });
+    canonical
+        .map(|name| super::AccountSuccess::Deleted(name.to_owned()))
+        .ok_or_else(|| crate::i18n::tr("VERA:DeleteNameUnavailable"))
 }
 
 impl Request {
     /// The periodic requests a waiting copy already covers: the 10 s retry
-    /// of a player's `renew_relay` and a watcher's `renew_watch`.
+    /// of a player's `renew_relay` and a watcher's `renew_watch`, and the
+    /// lobby's lists, asked for every few seconds.
     fn repeats(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Channels(kind), Self::Channels(other)) => kind == other,
+            (
+                Self::Matches {
+                    refused_options: None,
+                },
+                Self::Matches {
+                    refused_options: None,
+                },
+            ) => true,
             (
                 Self::Command {
                     operation, payload, ..
@@ -328,7 +380,7 @@ pub(super) enum Response {
     /// The answer to a [`Request::Account`], or the message to show.
     AccountAnswered {
         attempt: u64,
-        answer: Result<(), String>,
+        answer: Result<super::AccountSuccess, String>,
     },
     StartRejected {
         id: u64,
@@ -417,6 +469,7 @@ enum RequestFailure {
         /// `wrong_password` or `no_account`: the credential signs in to no
         /// account.
         bad_credential: bool,
+        invalid_request: bool,
         message: String,
     },
 }
@@ -616,6 +669,7 @@ impl RequestFailure {
         Self::Account {
             status,
             bad_credential: matches!(code, Some("wrong_password" | "no_account")),
+            invalid_request: code == Some("invalid_request"),
             message,
         }
     }
@@ -1024,6 +1078,29 @@ macro_rules! serial_driver {
         }
     }
 
+    /// A lobby list's answer. A failure that keeps the session says so once
+    /// until a list arrives again: the lobby asks every few seconds.
+    $($asynchronous)? fn list_finished(
+        &mut self,
+        result: Result<ChannelList, RequestFailure>,
+        refresh_failed: &mut bool,
+        output: &Sender<Response>,
+    ) {
+        match result {
+            Ok(channels) => {
+                *refresh_failed = false;
+                let _ = output.send(Response::Channels(channels));
+            }
+            Err(error) => {
+                if !platform_await!(self.session_failed(error, output))
+                    && !std::mem::replace(refresh_failed, true)
+                {
+                    let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
+                }
+            }
+        }
+    }
+
     $($asynchronous)? fn poll_finished(
         &mut self,
         result: Result<(), RequestFailure>,
@@ -1085,6 +1162,7 @@ macro_rules! serial_driver {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     let mut streams = stream::Streams::new(&client.base);
     let mut failed_polls = 0_u8;
+    let mut refresh_failed = false;
     let mut next_poll = Instant::now();
     let mut queued = VecDeque::new();
     loop {
@@ -1292,9 +1370,7 @@ macro_rules! serial_driver {
             }
             Some(Request::Account { attempt, request }) => {
                 let (path, body) = account_call(&request);
-                let answer = platform_await!(client.request(path, Some(&body)))
-                    .map(|_| ())
-                    .map_err(sign_in_refusal);
+                let answer = account_result(&request, platform_await!(client.request(path, Some(&body))));
                 let _ = output.send(Response::AccountAnswered { attempt, answer });
             }
             Some(Request::ForgetSignIn {
@@ -1315,20 +1391,12 @@ macro_rules! serial_driver {
                 }
             }
             Some(Request::Channels(kind)) => {
-                match platform_await!(client
+                let list = platform_await!(client
                     .request(&format!("/v1/channels?kind={kind}"), None))
                     .and_then(|value| {
                         serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))
-                    }) {
-                    Ok(channels) => {
-                        let _ = output.send(Response::Channels(channels));
-                    }
-                    Err(error) => {
-                        if !platform_await!(client.session_failed(error, &output)) {
-                            let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
-                        }
-                    }
-                }
+                    });
+                platform_await!(client.list_finished(list, &mut refresh_failed, &output));
             }
             Some(Request::Matches { refused_options }) => {
                 match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
@@ -1947,6 +2015,53 @@ mod tests {
     }
 
     #[test]
+    fn a_waiting_lobby_list_covers_the_next_one() {
+        let (requests, input) = std::sync::mpsc::channel();
+        let matches = |refused_options| Request::Matches { refused_options };
+        for request in [
+            Request::Channels(41),
+            Request::Channels(0),
+            matches(None),
+            matches(None),
+            matches(Some(1)),
+            matches(Some(1)),
+        ] {
+            requests.send(request).unwrap();
+        }
+        let mut queued = VecDeque::new();
+        queue_arrivals(&input, Some(&Request::Channels(41)), &mut queued);
+        let kept: Vec<_> = queued
+            .iter()
+            .map(|request| match request {
+                Request::Channels(kind) => u64::from(*kind),
+                Request::Matches { refused_options } => 100 + refused_options.unwrap_or(0),
+                _ => u64::MAX,
+            })
+            .collect();
+        assert_eq!(kept, [0, 100, 101, 101]);
+    }
+
+    #[test]
+    fn a_lobby_that_stops_listing_says_so_once_until_it_lists_again() {
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(1);
+        let mut failed = false;
+        let list = || ChannelList {
+            kind: 41,
+            channels: Vec::new(),
+        };
+        for _ in 0..2 {
+            client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
+        }
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
+        assert!(input.try_recv().is_err());
+        client.list_finished(Ok(list()), &mut failed, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
+        client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
+    }
+
+    #[test]
     fn newer_room_settings_replace_waiting_ones() {
         let (requests, input) = std::sync::mpsc::channel();
         let command = |id, operation, revision| Request::Command {
@@ -2062,6 +2177,44 @@ mod tests {
     /// account request's `name_unavailable` is a message, not a room's join
     /// code.
     #[test]
+    fn delete_uses_one_identifier_and_only_forgets_a_confirmed_username() {
+        use crate::ui::wol_account::{AccountRequest, AccountSuccess};
+        let delete = |identifier: &str| AccountRequest::Delete {
+            identifier: identifier.into(),
+            password: "example-password".into(),
+        };
+        let username = delete("tanya");
+        let email = delete("alias+yr@example.com");
+        assert_eq!(
+            account_call(&username).1,
+            json!({"name":"tanya","password":"example-password"})
+        );
+        assert_eq!(
+            account_call(&email).1,
+            json!({"email":"alias+yr@example.com","password":"example-password"})
+        );
+        assert_eq!(
+            account_result(&username, Ok(json!({}))),
+            Ok(AccountSuccess::Deleted("tanya".into()))
+        );
+        assert_eq!(
+            account_result(&email, Ok(json!({"name":"Tanya"}))),
+            Ok(AccountSuccess::Deleted("Tanya".into()))
+        );
+        assert!(account_result(&email, Ok(json!({}))).is_err());
+        assert!(account_result(&username, Ok(json!({"name":"SomeoneElse"}))).is_err());
+        let legacy = RequestFailure::answer(
+            "/v1/accounts/delete",
+            400,
+            br#"{"error":{"code":"invalid_request"}}"#,
+        );
+        assert_eq!(
+            account_result(&email, Err(legacy)),
+            Err(crate::i18n::tr("VERA:DeleteUseUsername"))
+        );
+    }
+
+    #[test]
     fn account_refusals_carry_the_lobby_message() {
         let refusal = |code: &str, message: &str| {
             json!({"error":{"code":code,"message":message}}).to_string()
@@ -2075,6 +2228,7 @@ mod tests {
             RequestFailure::Account {
                 status: 403,
                 bad_credential: true,
+                invalid_request: false,
                 message: "Sign in again with your password.".into(),
             }
         );

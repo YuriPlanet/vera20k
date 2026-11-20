@@ -60,6 +60,9 @@ pub(crate) struct RendererState {
     pub(crate) tooltip_blur: Option<crate::render::tooltip_blur::TooltipBlurRenderer>,
     /// The finished terrain layer, kept while its inputs hold still.
     pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,
+    /// gamemd's Z-buffer row seed, which lives as long as its Z buffer: one
+    /// per process, until the view's size changes.
+    pub(crate) native_z_seed: crate::render::native_z::ZSeed,
 }
 
 impl RendererState {

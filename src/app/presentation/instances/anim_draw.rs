@@ -18,7 +18,7 @@ use super::helpers::{
 use crate::app::presentation::render::draw_plan_lowering::{ObjectPieceInstance, ObjectTexture};
 use crate::render::batch::{DepthAxis, SpriteInstance};
 use crate::render::draw_state::DrawState;
-use crate::render::native_z::{ZGradient, pack_z_gradient};
+use crate::render::native_z::{ZGradient, pack_z_gradient, shp_frame_flag};
 use crate::render::palette_light::PaletteLight;
 use crate::render::sprite_atlas::{ShpSpriteEntry, ShpSpriteKey, SpriteAtlas, tiled_anim_key};
 use crate::render::tactical_draw_plan::RenderZPolicy;
@@ -218,7 +218,7 @@ pub(super) fn anim_draw_pieces(
             ZGradient::Vertical
         },
         false,
-    );
+    ) | shp_frame_flag(entry.is_none_or(|entry| entry.extended));
     if flat {
         // Flat423798 subtracts3; the ordinary body subtracts2 at423803.
         body.z_adjust -= 1.0;
@@ -375,7 +375,7 @@ fn tiled_column(
     tile.tint = [1.0; 3];
     tile.alpha = 1.0;
     tile.draw_state = DrawState::from_native_selector(0, (input.flags & 6) as u8);
-    tile.z_gradient = pack_z_gradient(ZGradient::Vertical, false);
+    tile.z_gradient = pack_z_gradient(ZGradient::Vertical, false) | shp_frame_flag(entry.extended);
     let mut tiles = Vec::new();
     for k in 0.. {
         // The row and Z term relative to the ordinary body's.

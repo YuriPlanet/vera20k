@@ -67,6 +67,8 @@ pub(crate) mod display_target;
 mod frame;
 pub mod frontend;
 mod game_data_check;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+mod graphics_lost;
 mod handler;
 mod hidden_run;
 mod in_game;
@@ -95,7 +97,7 @@ pub(crate) mod os_clipboard;
 pub(crate) mod phobos_version;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;
-#[cfg(feature = "telemetry-dashboard")]
+#[cfg(any(feature = "telemetry-dashboard", feature = "perf"))]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
 pub(crate) mod random_map_file;
@@ -117,6 +119,7 @@ pub(crate) mod shell_route;
 mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
+mod shell_skirmish_setups;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]
@@ -403,7 +406,7 @@ impl App {
     /// skips. The panic hook has already written the log and `except.txt`.
     pub fn save_replay_after_panic(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            crate::app::match_runtime::sim_tick::flush_replay_log(state);
+            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(state);
         }
     }
 }

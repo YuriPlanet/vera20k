@@ -4,7 +4,6 @@
 //! Cell action is Move.
 
 use super::*;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
@@ -42,19 +41,19 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2]) {
 fn flashes(
     sim: &Simulation,
     rules: &RuleSet,
-    overlays: &OverlayTypeRegistry,
     selection: &[u64],
     receivers: &[u64],
     cell: (u16, u16),
 ) -> Vec<CommandEnvelope> {
     let owner = sim.session().current_house().unwrap();
     let mut queued = Vec::new();
+    let control = sim.control_projection();
     for &receiver in receivers {
         push_move_flash(
             &mut queued,
             sim,
+            &control,
             rules,
-            Some(overlays),
             owner,
             7,
             selection,
@@ -71,12 +70,10 @@ fn retail_move_click_flashes_once_for_the_first_receiver() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
-    let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let (sim, [first, second]) = scene(&retail.rules);
     let queued = flashes(
         &sim,
         &retail.rules,
-        &overlays,
         &[first, second],
         &[second, first],
         (15, 12),
@@ -85,17 +82,7 @@ fn retail_move_click_flashes_once_for_the_first_receiver() {
     assert_eq!(queued[0].execute_tick, 7);
     assert_eq!(queued[0].payload, Command::MoveFlash { rx: 15, ry: 12 });
     // The second selected object alone never reaches the latch.
-    assert!(
-        flashes(
-            &sim,
-            &retail.rules,
-            &overlays,
-            &[second, first],
-            &[first],
-            (15, 12),
-        )
-        .is_empty()
-    );
+    assert!(flashes(&sim, &retail.rules, &[second, first], &[first], (15, 12),).is_empty());
 }
 
 #[test]
@@ -103,7 +90,6 @@ fn retail_no_move_cell_click_spawns_no_flash() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
-    let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let (sim, [first, second]) = scene(&retail.rules);
     let owner = sim.session().current_house().unwrap();
     assert_eq!(
@@ -116,21 +102,10 @@ fn retail_no_move_cell_click_spawns_no_flash() {
                 shift: false,
             },
             &retail.rules,
-            Some(&overlays),
         ),
         Ok(crate::sim::world::MoveAction::NoMove)
     );
-    assert!(
-        flashes(
-            &sim,
-            &retail.rules,
-            &overlays,
-            &[first, second],
-            &[first],
-            WATER,
-        )
-        .is_empty()
-    );
+    assert!(flashes(&sim, &retail.rules, &[first, second], &[first], WATER,).is_empty());
 }
 
 #[test]

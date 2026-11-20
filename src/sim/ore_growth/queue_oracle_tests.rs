@@ -710,7 +710,6 @@ fn compare_case(row: &Value) {
             );
             constructors.process_pending_delete_with(
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 crate::sim::world::FrameEffects::default(),
                 1,
                 false,
@@ -1148,13 +1147,7 @@ fn compare_authored_natural_phases(
             "{name}: every changed cell"
         );
         previous_cells.clone_from_slice(&actual.overlay_grid.as_ref().unwrap().cells().to_vec());
-        actual.process_pending_delete_with(
-            rules,
-            Some(registry),
-            FrameEffects::default(),
-            1,
-            false,
-        );
+        actual.process_pending_delete_with(rules, FrameEffects::default(), 1, false);
     }
     assert_eq!(json!(construction_count), native["constructed_overlays"]);
     assert_eq!(

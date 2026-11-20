@@ -153,7 +153,7 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
             sim.houses
                 .get_mut(&houses[index])
                 .unwrap()
-                .tracking_mut()
+                .tracking_mut_for_test()
                 .set_buildings_for_test(int(&house["tracked_buildings"]));
         }
         sim.houses.reorder_for_test(
@@ -463,7 +463,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     sim.session.set_binary_frame_for_test(16);
     sim.raise_house_tags(house, &rules, None, FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
-    sim.techno_limbo_with_context(factory, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(factory, UninitContext::new(&rules));
     assert_eq!(sim.houses[&house].tracking().buildings(), 3);
     sim.session.set_binary_frame_for_test(24);
     sim.raise_house_tags(house, &rules, None, FrameEffects::default());

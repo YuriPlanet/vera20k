@@ -98,10 +98,10 @@ impl Simulation {
         let infantry = entity.category() == EntityCategory::Infantry;
         let airborne = point.z.wrapping_sub(floor) > 0xd0;
         let placed = if airborne {
-            let context = UninitContext::new(rules, registry).with_effects(effects);
+            let context = UninitContext::new(rules).with_effects(effects);
             self.techno_limbo_with_context(id, context);
             crate::sim::aircraft::drop_payload::spawn_parachuted(
-                self, rules, registry, id, point, spot, effects,
+                self, rules, id, point, spot, effects,
             )
             .is_ok()
         } else {
@@ -111,7 +111,7 @@ impl Simulation {
             // before class Unlimbo and restore it on refusal. Native clears+11C
             // immediately after success100447E7, before any callbacks below.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
             }
             let (sub_x, sub_y) = (
                 SimFixed::from_num(point.x & 255),
@@ -136,19 +136,19 @@ impl Simulation {
                     on_bridge,
                 }
             };
-            self.unlimbo_crew(rules, id, unlimbo, Some(facing), registry, effects)
+            self.unlimbo_crew(rules, id, unlimbo, Some(facing), effects)
         };
         if !placed {
             if let Some(link) = prior_carrier
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
-                entity.set_carrier_link(link);
+                entity.passenger_role_mut().set_carrier_link(link);
             }
             return false;
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.clear_carrier_relation();
-            entity.clear_transporter();
+            entity.passenger_role_mut().clear_carrier_relation();
+            entity.passenger_role_mut().clear_transporter();
         }
         // Phobos `FootClass_LeaveTransport` (0x4DE722): unlisted here.
         self.remove_transport_reloader(id);
@@ -196,10 +196,7 @@ impl Simulation {
             entity.building_entry.clear_occupy_seeks();
         }
         if selected {
-            self.techno_select(
-                id,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.techno_select(id, UninitContext::new(rules).with_effects(effects));
         }
         true
     }
@@ -211,14 +208,13 @@ impl Simulation {
         id: u64,
         dying: DyingTransport,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         self.record_the_kill(
             id,
             KillSource::Techno(dying.attacker),
             KillCallback::Terminal,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         self.discard_constructed_limbo(id, rules, effects);
     }
@@ -331,7 +327,7 @@ impl Simulation {
                                 count.wrapping_sub(killed)
                             };
                         } else {
-                            self.discard_ares_pilot(id, dying, rules, registry, effects);
+                            self.discard_ares_pilot(id, dying, rules, effects);
                         }
                     }
                 }
@@ -403,7 +399,7 @@ impl Simulation {
                         ) {
                             self.trigger_runtime.transfer_object_tag(unit_id, id);
                         } else {
-                            self.discard_ares_pilot(id, dying, rules, registry, effects);
+                            self.discard_ares_pilot(id, dying, rules, effects);
                         }
                     }
                 }
@@ -429,7 +425,6 @@ impl Simulation {
             let result = depart_cargo_head(
                 self,
                 rules,
-                registry,
                 unit_id,
                 DepartureRoute::DeathEscape,
                 |sim, id| {
@@ -437,8 +432,14 @@ impl Simulation {
                         && if chance > 0 {
                             sim.scenario_rng.next_range_u32_inclusive(1, 100) as i32 <= chance
                         } else if chance < 0 && unit_fallback {
-                            cell.is_some_and(|cell| matches!(sim.foot_can_enter(id, cell,
-                            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR, rules, registry), Ok(0 | 2)))
+                            cell.is_some_and(|cell| {
+                                matches!(sim.foot_can_enter(
+                            id,
+                            cell,
+                            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+                            rules,
+                        ), Ok(0 | 2))
+                            })
                         } else {
                             false
                         };
@@ -456,7 +457,7 @@ impl Simulation {
                         sim.record_kill_and_uninit(
                             id,
                             dying.attacker,
-                            UninitContext::new(rules, registry).with_effects(effects),
+                            UninitContext::new(rules).with_effects(effects),
                         );
                     }
                     Ok(())

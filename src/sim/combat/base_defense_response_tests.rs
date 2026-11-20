@@ -5,6 +5,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
@@ -13,6 +14,7 @@ use crate::sim::intern::{test_intern, test_interner};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::team_script_vm::{
     TeamMemberTypeIdentity, TeamScriptAction, TeamScriptDefinition, TeamScriptMember,
     TeamTaskForceDefinition, TeamTaskForceEntry, TeamTypeDefinition,
@@ -106,9 +108,61 @@ fn respond(sim: &mut Simulation, rules: &RuleSet) {
 }
 
 #[test]
+fn armed_victim_can_skip_base_defense_without_writing_the_attacker_cooldown() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(concat!(
+        "[General]\nBaseDefenseDelay=.25\n[AI]\nComputerBaseDefenseResponse=-1\n",
+        "[VehicleTypes]\n0=ATTACKER\n[ATTACKER]\nStrength=100\nThreatPosed=50\n",
+        "[BuildingTypes]\n0=VICTIM\n[VICTIM]\nStrength=100\nPrimary=GUN\n",
+        "[GUN]\nDamage=10\nRange=5\nWarhead=HE\n[HE]\n"
+    )))
+    .unwrap();
+    let campaign_calls_for_help =
+        RulePolicy::stock_campaign().with_uses_campaign_base_defense(false);
+    for (mode, policy, responds) in [
+        (
+            ScenarioGameMode::Campaign,
+            RulePolicy::stock_campaign(),
+            false,
+        ),
+        (
+            ScenarioGameMode::Skirmish,
+            RulePolicy::stock_multiplayer(),
+            true,
+        ),
+        (ScenarioGameMode::Campaign, campaign_calls_for_help, true),
+    ] {
+        let mut sim = response_world(41, (5, 0));
+        sim.session.install_admission(mode, None, policy);
+        let before = sim
+            .substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .base_defense_response
+            .cooldown();
+        respond(&mut sim, &rules);
+        let after = sim
+            .substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .base_defense_response
+            .cooldown();
+        assert_eq!(
+            after,
+            if responds {
+                CdTimer::started(41, 225)
+            } else {
+                before
+            },
+            "{mode:?}"
+        );
+    }
+}
+
+#[test]
 fn retail_player_control_on_a_building_hit_suppresses_only_campaign_ai_response() {
     use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
-    use crate::sim::scenario_session::ScenarioGameMode;
 
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;

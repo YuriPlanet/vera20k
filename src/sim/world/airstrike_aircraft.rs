@@ -128,7 +128,7 @@ impl Simulation {
                 self.substrate.entities.get_mut(plane).unwrap(),
                 MissionId::from_known(MissionType::Attack),
             );
-            self.assign_target_represented(plane, Some(target), rules, None, effects)
+            self.assign_target_represented(plane, Some(target), rules, effects)
                 .expect("constructed aircraft target setter");
             let placed = self.with_object_placement_scope(|sim| {
                 sim.reveal_constructed_object_at_height(
@@ -380,7 +380,7 @@ mod tests {
                     .mission
                     .set_current_for_test(MissionId::from_known(MissionType::Attack), 5);
                 plane.ammo_mut().unwrap().set_current_for_test(2);
-                sim.assign_target_represented(id, target, &rules, None, FrameEffects::default())
+                sim.assign_target_represented(id, target, &rules, FrameEffects::default())
                     .unwrap();
                 let plane = sim.substrate.entities.get(id).unwrap();
                 // A NULL request jumps to the store (0x006FCDF3), keeping

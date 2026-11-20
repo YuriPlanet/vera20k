@@ -59,14 +59,46 @@ fn paint_create_box(
         });
     }
     let mut controls = Vec::new();
-    super::wol_lobby::paint_room_limits(
+    super::wol_lobby::paint_room_players(
         atlas,
         &mut controls,
         &mut labels,
-        picker,
-        &layout.room,
+        picker.limits.players,
+        layout.room.players,
         ShellScale::RETAIL,
     );
+    paint_control(
+        &mut controls,
+        &atlas.control_chrome(),
+        ControlPaint::Checkbox {
+            rect: layout.room.spectators,
+            checked: picker.limits.spectators,
+        },
+        ShellScale::RETAIL,
+    );
+    for (key, rect, align) in [
+        (
+            "VERA:MaxPlayers",
+            layout.room.players_label,
+            ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+        ),
+        (
+            "VERA:AllowSpectators",
+            crate::ui::skirmish_shell::checkbox_text_rect(
+                layout.room.spectators,
+                ShellScale::RETAIL,
+            ),
+            ShellAlign::V_CENTER,
+        ),
+    ] {
+        labels.push(PaintLabel {
+            text: crate::i18n::tr(key).into(),
+            rect,
+            align,
+            rgb: SHELL_LABEL_TEXT_RGB,
+            path_a_reveal: None,
+        });
+    }
     let draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas

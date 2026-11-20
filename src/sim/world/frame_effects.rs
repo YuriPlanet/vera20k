@@ -5,7 +5,6 @@
 //! Simulation retains no callback, device or input state. Tooling/replay
 //! explicitly omit client effects and consume their recorded commands.
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{CommandEnvelope, CommandRecord};
 
@@ -127,7 +126,6 @@ pub struct FrameEffects<'a> {
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
     selection_voice_suppressed: bool,
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
-    overlay_registry: Option<&'a OverlayTypeRegistry>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
     command_applied: Option<&'a dyn Fn(&Simulation, &CommandRecord, bool)>,
     bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::flying_text::BountyText)>,
@@ -153,7 +151,6 @@ impl<'a> FrameEffects<'a> {
             local_planning: None,
             selection_voice_suppressed: false,
             network_commands: None,
-            overlay_registry: None,
             before_logic: None,
             command_applied: None,
             bounty_text: None,
@@ -169,7 +166,6 @@ impl<'a> FrameEffects<'a> {
             outcome_wait: None,
             local_planning: None,
             network_commands: None,
-            overlay_registry: None,
             before_logic: None,
             command_applied: None,
             bounty_text: None,
@@ -367,21 +363,6 @@ impl<'a> FrameEffects<'a> {
 
     pub(super) fn selection_voice_enabled(self) -> bool {
         !self.selection_voice_suppressed
-    }
-
-    /// Bind the match's OverlayTypeClass table for receivers the frame reaches
-    /// without one of their own: the radio bus hands its receivers only the
-    /// rules and these effects.
-    pub(crate) fn with_overlay_registry(self, registry: Option<&'a OverlayTypeRegistry>) -> Self {
-        Self {
-            overlay_registry: registry.or(self.overlay_registry),
-            ..self
-        }
-    }
-
-    /// The overlay table [`Self::with_overlay_registry`] bound, if any.
-    pub(crate) const fn overlay_registry(self) -> Option<&'a OverlayTypeRegistry> {
-        self.overlay_registry
     }
 
     /// Stop/Release must complete at their native call sites before a later

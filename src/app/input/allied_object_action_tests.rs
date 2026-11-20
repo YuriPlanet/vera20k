@@ -205,7 +205,6 @@ fn no_manual_fire_object_click(ares_way: bool) {
                 crate::app::input::commands::ordinary_cell_move_goal(
                     &sim,
                     &battle.rules,
-                    Some(&overlays),
                     owner,
                     actor,
                     (12, 10),

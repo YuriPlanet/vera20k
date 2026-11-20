@@ -154,7 +154,7 @@ const ZONE_BASE_COSTS: [i32; passability::TERRAIN_TYPE_COUNT] = [1, 0, 0, 1, 1, 
 /// `parent` links to the next coarser level (`level + 1`) and is zero at the
 /// top level. `zone_type` is the reduced 0..7 type consumed by the movement-zone
 /// passability matrix and base-cost table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ZoneRecord {
     pub zone_id: ZoneId,
     pub parent: ZoneId,
@@ -198,7 +198,7 @@ impl ZoneRecord {
 }
 
 /// Ordered edge record. The order inside a zone's edge list is load-bearing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ZoneEdgeRecord {
     pub neighbor: ZoneId,
     pub flag: u8,
@@ -211,7 +211,7 @@ impl ZoneEdgeRecord {
 }
 
 /// One hierarchy level. Index 0 is the invalid sentinel zone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZoneLevelGraph {
     records: Vec<Option<ZoneRecord>>,
     edges: Vec<Vec<ZoneEdgeRecord>>,
@@ -429,6 +429,61 @@ pub struct ZoneHierarchy {
 }
 
 impl ZoneHierarchy {
+    pub(crate) fn saved_levels(&self) -> &[ZoneLevelGraph; ZONE_PRECHECK_LEVELS] {
+        &self.levels
+    }
+
+    /// Retain native record IDs and ordered edges after a custom checkpoint.
+    /// Rebuild precheck answers from the validated history on demand.
+    pub(crate) fn from_saved_levels(
+        levels: [ZoneLevelGraph; ZONE_PRECHECK_LEVELS],
+        dimensions: (u16, u16),
+        native_source_size: Option<(i32, i32)>,
+    ) -> Result<Self, &'static str> {
+        let cell_count = usize::from(dimensions.0) * usize::from(dimensions.1);
+        let native_slot_count = native_source_size
+            .and_then(|(width, height)| width.checked_add(height)?.checked_add(1))
+            .and_then(|side| usize::try_from(side).ok())
+            .and_then(|side| side.checked_mul(side))
+            .unwrap_or(cell_count);
+        for (index, graph) in levels.iter().enumerate() {
+            let slots = graph.records.len();
+            if (graph.width, graph.height) != dimensions
+                || graph.cell_zone_ids.len() != cell_count
+                || graph.edges.len() != slots
+                || slots == 0
+            {
+                return Err("saved zone level dimensions or record slots differ");
+            }
+            let parent_slots = levels
+                .get(index + 1)
+                .map_or(1, |parent| parent.records.len());
+            let valid = |zone: ZoneId| (zone as usize) < slots;
+            if graph.records.iter().enumerate().any(|(slot, record)| {
+                record.is_some_and(|record| {
+                    record.zone_id as usize != slot
+                        || record.parent as usize >= parent_slots
+                        || usize::from(record.zone_type) >= passability::TERRAIN_TYPE_COUNT
+                })
+            }) || graph
+                .edges
+                .iter()
+                .flatten()
+                .any(|edge| !valid(edge.neighbor))
+                || graph.cell_zone_ids.iter().any(|&zone| !valid(zone))
+                || graph.native_padding_zone_ids.iter().any(|(&slot, &zone)| {
+                    slot >= native_slot_count || zone == ZONE_INVALID || !valid(zone)
+                })
+            {
+                return Err("saved zone level references an invalid slot");
+            }
+        }
+        Ok(Self {
+            levels,
+            memo: PrecheckMemo::default(),
+        })
+    }
+
     /// Fold the retained navigation history, including ordered native edges.
     /// Original584550 appends/replaces records after local changes;581F90 can
     /// produce a different graph from the same current Cell facts. Record+20

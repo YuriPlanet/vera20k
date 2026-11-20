@@ -148,7 +148,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
         id,
         crate::map::entities::EntityCategory::Structure,
-        crate::sim::world::UninitContext::with_rules(rules),
+        crate::sim::world::UninitContext::new(rules),
     );
     let events = scenario
         .runtime

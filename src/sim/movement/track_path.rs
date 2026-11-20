@@ -309,7 +309,12 @@ impl Simulation {
         //Unit receiver may already have cleared (Cell(0,0) refuses).
         let probe = destination.unwrap_or(super::foot_coordinate::NULL_COORD);
         if !self.foot_path_zone_precheck(id, probe, rules)? {
-            self.set_unit_null_destination(id, rules, None, frame_effects);
+            self.set_unit_null_destination(
+                id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
             return Ok(FootPathOutcome::Returned);
         }
         //4B28F5..4B2917: a null destination returns.
@@ -412,9 +417,9 @@ impl Simulation {
             actor.foot_retarget_after_stop.mark_stopped_cannot_fire();
         }
         if let Some((team_id, _)) = self.team_script_vm.team_for_member(id) {
-            self.team_scan_limit(team_id, rules, registry, frame_effects);
+            self.team_scan_limit(team_id, rules, frame_effects);
         }
-        let _ = self.assign_target_represented(id, None, rules, registry, frame_effects);
+        let _ = self.assign_target_represented(id, None, rules, frame_effects);
     }
 
     /// 0x4B2E77..0x4B2F1A / 0x6A24C7..: a stopped Foot holding a target it
@@ -494,7 +499,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         )?;
         match code {
             3 => {
@@ -605,7 +609,12 @@ impl Simulation {
         };
         clear_track_head(actor);
         if actor.navigation.nav_queue().is_empty() {
-            self.set_unit_null_destination(id, rules, None, frame_effects);
+            self.set_unit_null_destination(
+                id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
             return false;
         }
         actor.navigation.stop_moving();
@@ -626,7 +635,12 @@ impl Simulation {
             return;
         };
         if actor.navigation.nav_queue().is_empty() {
-            self.set_unit_null_destination(id, rules, None, frame_effects);
+            self.set_unit_null_destination(
+                id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
         } else {
             actor.navigation.stop_moving();
             self.unit_enter_idle_mode(id, rules, false, frame_effects);
@@ -675,7 +689,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         // A quiet unit is owed no setter (`world::quiet_units`).
@@ -696,13 +709,13 @@ impl Simulation {
         let Some(requested) = actor.navigation.nav_com() else {
             return;
         };
-        if !self.destination_setter_available(id, requested, rules, registry) {
+        if !self.destination_setter_available(id, requested, rules) {
             return;
         }
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.navigation.stop_moving();
         }
-        self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
+        self.assign_destination_represented(id, Some(requested), rules, frame_effects)
             .expect("checked deferred destination setter");
     }
 
@@ -1216,12 +1229,19 @@ impl Simulation {
             if teleporter {
                 let _ = self.unit_teleporter_arm(id, None, rules);
             }
-            if !dock_fast_return && self.unit_factory_exit_arm(id, None, rules, None, frame_effects)
+            if !dock_fast_return
+                && self.unit_factory_exit_arm(
+                    id,
+                    None,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                )
             {
                 return true;
             }
             self.unit_destination_power_on(id, rules);
-            self.foot_null_destination(id, rules, None, frame_effects);
+            self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return true;
         };
         // 7424B1..7424F0 casts the requested receiver to CellClass. A Foot
@@ -1239,7 +1259,13 @@ impl Simulation {
         // the repair destination as a factory-exit order while Enter is pending.
         // Source: gamemd.exe instructions 0x00742C14..0x00742E47.
         if !dock_fast_return
-            && self.unit_factory_exit_arm(id, Some(requested), rules, None, frame_effects)
+            && self.unit_factory_exit_arm(
+                id,
+                Some(requested),
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            )
         {
             return true;
         }
@@ -1250,7 +1276,12 @@ impl Simulation {
                     UnitDockArm::Cell((rx, ry)) => NavTargetRef::Cell { rx, ry },
                     UnitDockArm::Null => {
                         self.unit_destination_power_on(id, rules);
-                        self.foot_null_destination(id, rules, None, frame_effects);
+                        self.foot_null_destination(
+                            id,
+                            rules,
+                            Some(rules.overlay_registry()),
+                            frame_effects,
+                        );
                         return true;
                     }
                 }
@@ -1260,7 +1291,13 @@ impl Simulation {
         if !dock_fast_return {
             self.unit_destination_power_on(id, rules);
         }
-        if !self.begin_foot_destination(id, true, rules, None, frame_effects) {
+        if !self.begin_foot_destination(
+            id,
+            true,
+            rules,
+            Some(rules.overlay_registry()),
+            frame_effects,
+        ) {
             if dock_fast_return && let Some(actor) = self.substrate.entities.get_mut(id) {
                 actor.navigation.path_replay_mut().clear_live_head();
             }
@@ -1331,7 +1368,7 @@ impl Simulation {
                         id,
                         coord,
                         rules,
-                        frame_effects.overlay_registry(),
+                        Some(rules.overlay_registry()),
                         frame_effects,
                     );
                     true
@@ -1347,7 +1384,7 @@ impl Simulation {
                         coord,
                         rules,
                         is_harvester,
-                        frame_effects.overlay_registry(),
+                        Some(rules.overlay_registry()),
                         frame_effects,
                     )
                     .unwrap_or_else(|error| {

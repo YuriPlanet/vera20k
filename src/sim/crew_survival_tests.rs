@@ -382,8 +382,7 @@ fn building_crew_keeps_distinct_native_caller_placement_and_rng() {
         id,
         unlimbo,
         None,
-        None,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     )));
     let entity = sim.substrate.entities.get(id).unwrap();
     let foot = row["events"]
@@ -675,7 +674,10 @@ fn pending_house_death_skips_crew_rolls_but_retains_every_cell_mark() {
             },
             FrameEffects::default(),
         );
-        assert_eq!(marks, foundation_cells(10, 10, &"3x3".into()));
+        assert_eq!(
+            marks,
+            foundation_cells(10, 10, &"3x3".into()).collect::<Vec<_>>()
+        );
         if pending {
             assert_eq!(sim.substrate.entities.keys_sorted(), before_ids);
             assert_eq!(sim.scenario_rng.logical_state(), expected);
@@ -879,10 +881,7 @@ fn a_bio_reactor_releases_its_absorbed_infantry_before_its_crew() {
     }
     let mut expected_marks = Vec::new();
     let mut owed = 1;
-    for cell in foundation_cells(10, 10, &"2x2".into())
-        .into_iter()
-        .skip(absorbed.len())
-    {
+    for cell in foundation_cells(10, 10, &"2x2".into()).skip(absorbed.len()) {
         if owed > 0 && replay.next_range_u32_inclusive(0, 2) == 1 {
             let _engineer = replay.next_range_u32_inclusive(0, 99);
             let _constructor = replay.next_u32();
@@ -1889,7 +1888,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
     } else {
         assert!(sim.techno_select(
             actor,
-            crate::sim::world::UninitContext::with_rules(&rules).with_effects(effects),
+            crate::sim::world::UninitContext::new(&rules).with_effects(effects),
         ));
     }
     let selected = |sim: &Simulation, id: u64| {
@@ -1928,7 +1927,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
         .set_selected_for_test(false);
     assert!(sim.techno_select(
         passenger,
-        crate::sim::world::UninitContext::new(&rules, None).with_effects(
+        crate::sim::world::UninitContext::new(&rules).with_effects(
             crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
         ),
     ));
@@ -2468,7 +2467,7 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
         None,
         reactor,
         None,
-        &foundation_cells(10, 10, &"2x2".into()),
+        &foundation_cells(10, 10, &"2x2".into()).collect::<Vec<_>>(),
         crate::sim::world::FrameEffects::default(),
     );
     for &id in &absorbed {
@@ -2532,7 +2531,8 @@ fn ares_fourth_side_crew_and_survivor_defaults_follow_side_extension() {
 }
 
 /// Unit ReceiveDamage737F80..737F92 clears +82 before the low-altitude
-/// Crashable early exit737FB0; Transporter+11C and cargo stay attached.
+/// Crashable early exit737FB0, which an airborne hull takes; Transporter+11C
+/// and cargo stay attached.
 #[test]
 fn open_topped_death_clears_rider_flags_before_crashable_exit() {
     use crate::sim::passenger::{BoardingArm, board_passenger};
@@ -2569,6 +2569,13 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
             Some((hull, true))
         );
     }
+    // Airborne, below KillPassengers' 0xD0: a grounded one lets them out (#2958).
+    sim.substrate
+        .entities
+        .get_mut(hull)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(100));
     let before = sim.scenario_rng.state();
     sim.release_dying_unit_passengers(
         &rules,
@@ -2652,7 +2659,7 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
         .ares_capture_vehicle(thief, hull, &rules, Some(&overlays), Default::default())
         .unwrap();
     assert!(captured.consumed);
-    sim.uninit_with_context(thief, UninitContext::new(&rules, Some(&overlays)));
+    sim.uninit_with_context(thief, UninitContext::new(&rules));
     let passenger = spawn(&mut sim, &rules, "ENGINEER", "Americans", 17, 15);
     assert!(board_passenger(
         &mut sim,

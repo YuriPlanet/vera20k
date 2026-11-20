@@ -178,7 +178,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         );
         let actor = self
             .substrate
@@ -220,7 +219,7 @@ impl Simulation {
             .and_then(|l| l.walk_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         if !self.foot_path_zone_precheck(id, destination, rules)? {
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         } else {
             //75AFEE..75B083: +4F4 precedes a fresh read of physical+48 and
             //the live destination. CloseEnough is independent from code6's
@@ -243,7 +242,12 @@ impl Simulation {
                 current.z.wrapping_sub(destination.z),
             ) < rules.general.close_enough;
             if close && actor.tether.partner().is_none() {
-                self.assign_null_destination(id, rules, None, frame_effects);
+                self.assign_null_destination(
+                    id,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                );
             } else if actor.navigation.path_runtime().retries_left() != 0 {
                 //The test is before the decrement: 1->0 does not run the
                 //exhaustion tail until a later failed Process invocation.
@@ -304,7 +308,7 @@ impl Simulation {
             .and_then(|loco| loco.walk_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         if actor.in_playfield() && !self.foot_can_reach_navigation_cell(id, destination, rules)? {
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         }
         //75B18A asks a nonnull target's+4C even when3D5 will then be false.
         let target = self
@@ -329,7 +333,7 @@ impl Simulation {
                 && actor.attack_target.target().is_some()
                 && !self.foot_can_reach_navigation_cell(id, coordinate, rules)?
             {
-                self.assign_target_represented(id, None, rules, None, frame_effects)
+                self.assign_target_represented(id, None, rules, frame_effects)
                     .map_err(|error| format!("{error:?}"))?;
             }
         }

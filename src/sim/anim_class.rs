@@ -2715,7 +2715,7 @@ impl Simulation {
                     None,
                     final_pass,
                     &config,
-                    crate::sim::world::UninitContext::with_rules(rules),
+                    crate::sim::world::UninitContext::new(rules),
                     crate::sim::vision::MapRevealProjection::Transient,
                     self.session.current_house(),
                 );
@@ -2959,7 +2959,13 @@ impl Simulation {
             self.reveal_drop_zone_from_anim(rules, initial_world_coord);
         }
         if descriptor.delay == 0 {
-            self.anim_start(stable_id, config, rules, None, frame_effects)?;
+            self.anim_start(
+                stable_id,
+                config,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            )?;
         }
         if let Some(owner) = descriptor.owner {
             self.set_anim_owner_object(stable_id, Some(owner), rules);
@@ -4026,8 +4032,7 @@ impl Simulation {
             if rules.ares_form() {
                 self.uninit_with_context(
                     infantry,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
                 return true;
             }
@@ -5603,8 +5608,8 @@ impl Simulation {
     /// reads `Report=` into it only when `StartSound=` resolved to `-1`
     /// (`0x00428344..0x004283BC`); `config.start_sound` holds that slot.
     ///
-    /// Constructor-time starts pass no overlay registry; no retail marking
-    /// anim has fewer than two frames, so none marks from there.
+    /// Constructor-time starts read the match's overlay types too, so a
+    /// one-frame marking anim (no retail anim has one) marks at construction.
     fn anim_start(
         &mut self,
         id: AnimId,
@@ -7261,7 +7266,6 @@ mod tests {
             sim.detach_all_pointer_expired(
                 building_id,
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             );
             for phase in ["owner_expiry", "anim_expiry"] {
@@ -10452,7 +10456,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let anim_id = fires[0].expect("slot zero");
 
         // The building is alive: only Building Limbo 4458E4 retires the fires.
-        sim.techno_limbo_with_rules(building_id, &rules, None);
+        sim.techno_limbo_with_rules(building_id, &rules);
 
         let building = sim.substrate.entities.get(building_id).unwrap();
         assert!(building.is_object_alive());

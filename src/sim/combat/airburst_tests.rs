@@ -141,9 +141,7 @@ fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
     assert_eq!(world.main_rng.native_state_hex(), main);
     assert_eq!(world.mapgen_rng.native_state_hex(), mapgen);
     let ids: Vec<_> = children.iter().map(|(id, _)| **id).collect();
-    assert!(
-        world.retire_non_entity_object(request.projectile_id, UninitContext::with_rules(&rules))
-    );
+    assert!(world.retire_non_entity_object(request.projectile_id, UninitContext::new(&rules)));
     // Parent removal must leave the children alive. Each owns its source,
     // cell target, Logic slot and expiry registration through existing owners.
     assert!(ids.iter().all(|id| world.projectiles.get(*id).is_some()));
@@ -153,7 +151,7 @@ fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
             .all(|id| world.projectiles.get(*id).unwrap().source_id() == 0)
     );
     for id in ids {
-        world.retire_non_entity_object(id, UninitContext::with_rules(&rules));
+        world.retire_non_entity_object(id, UninitContext::new(&rules));
     }
     world.flush_pending_delete();
     assert!(world.projectiles.is_empty());
@@ -180,7 +178,7 @@ fn stock_airburst_children_reach_shared_damage_and_expire() {
         .map(|(id, _)| *id)
         .min()
         .unwrap();
-    world.retire_non_entity_object(request.projectile_id, UninitContext::with_rules(&rules));
+    world.retire_non_entity_object(request.projectile_id, UninitContext::new(&rules));
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
         for frame in 101..106 {
             world.session.set_binary_frame_for_test(frame);
@@ -222,7 +220,7 @@ fn stock_airburst_reads_live_source_and_requires_a_represented_parent() {
     let (mut world, rules, source, request) = scene(600);
     // Keep the old packet's source intentionally stale. The authoritative
     // Bullet pointer expiry must determine every newly constructed child.
-    world.notify_pointer_expired(source, UninitContext::with_rules(&rules));
+    world.notify_pointer_expired(source, UninitContext::new(&rules));
     detonate(&mut world, &rules, request);
     let children: Vec<_> = world
         .projectiles

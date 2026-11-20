@@ -20,6 +20,9 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::MAX_SIGHT_RANGE;
 use crate::sim::world::Simulation;
 
+/// Grants the type projection its write to the actor's retained house-count inputs.
+pub(in crate::sim) struct TypeProjectionWrite(());
+
 /// Existing initialization differences are explicit here. In particular map
 /// import currently omits Ship state and Fly Idle setup.
 /// This is a Rust compatibility policy, not a claim of native equivalence.
@@ -402,7 +405,8 @@ impl Simulation {
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
-            ge.install_passenger_hold(obj.passengers as u32, obj.size_limit);
+            ge.passenger_role_mut()
+                .install_hold(obj.passengers as u32, obj.size_limit);
         }
 
         // TechnoClass::Init_Managers — manager-owned children are committed
@@ -496,11 +500,24 @@ impl Simulation {
 }
 
 impl GameEntity {
-    /// Derived reads of the live Type pointer. Construction and Ares in-place
-    /// conversion10043740 share these caches without replaying constructors,
+    pub(in crate::sim) fn refresh_after_type_store(
+        &mut self,
+        _: crate::sim::game_entity::LiveTypeStore,
+        destination: &ObjectType,
+        rules: &RuleSet,
+    ) {
+        self.refresh_type_projection(Some(destination), rules);
+    }
+
+    /// Derived reads of the live Type pointer. Construction, native bare type
+    /// stores and Ares conversion10043740 share these caches without replaying constructors,
     /// manager allocation, passenger setup or discovery-history writes.
-    pub(crate) fn refresh_type_projection(&mut self, object: Option<&ObjectType>, rules: &RuleSet) {
-        stamp_scoring_flags(self, object, rules);
+    pub(in crate::sim) fn refresh_type_projection(
+        &mut self,
+        object: Option<&ObjectType>,
+        rules: &RuleSet,
+    ) {
+        self.stamp_scoring_flags(TypeProjectionWrite(()), object, rules);
         if let Some(object) = object {
             self.sight.stamp_type_sight(object.sight);
             self.crushable_facts = CrushableFacts::stamp(object);
@@ -532,27 +549,6 @@ fn install_authored_bridge(ge: &mut GameEntity, origin: ComponentOrigin) {
             loco.store_ground_layer(true);
         }
         ge.on_bridge.store(true);
-    }
-}
-
-/// Copy the rules-derived scoring and house-count flags onto a freshly built
-/// entity.
-///
-/// Every spawn path calls this, so a type that must not appear on the score
-/// screen is honored no matter how the object came into the world. The flags
-/// are copied rather than looked up later because the score bookkeeping and
-/// the house counts run in the lifecycle authority, which deliberately holds
-/// no `RuleSet` borrow.
-fn stamp_scoring_flags(
-    ge: &mut GameEntity,
-    obj: Option<&crate::rules::object_type::ObjectType>,
-    rules: &RuleSet,
-) {
-    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
-    if let Some(multiplier) =
-        crate::sim::house_tracking::retained_plant_multiplier(ge.category(), obj, rules)
-    {
-        ge.ares.factory_plant_multiplier = Some(multiplier);
     }
 }
 

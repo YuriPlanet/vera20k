@@ -29,20 +29,15 @@
 //! supplies one.
 //!
 //! Ares fills those stores (`Refinery.UseStorage`, Ares
-//! `HouseClass_GiveTiberium_Storage @ 10024290`), so the wallet also keeps
-//! them (`sim::ares_tiberium_storage::AresTiberiumStorage`), empty unless
-//! Ares plays. The two arms that read them are ported for it: Spend_Money's
-//! silo drain and Available_Money's storage value. They run in every game
-//! and keep the empty boundary while the stores are empty.
+//! `HouseClass_GiveTiberium_Storage @ 10024290`), so the wallet keeps them
+//! (`sim::ares_tiberium_storage::AresTiberiumStorage`), empty unless the
+//! game's money takes its Ares form (`RuleSet::ares_form`). The two arms
+//! that read them are ported for it: Spend_Money's silo drain and
+//! Available_Money's storage value. They run in every game and keep the
+//! empty boundary while the stores are empty.
 //!
-//! `Fill_In_Data`'s exact `[Basic] FillSilos=` path (`0x00684F02..0x00684F7C`)
-//! is a fresh-start cash/score writer, not a storage fill: it retains
-//! the initial Available_Money as a local budget. While that budget exceeds
-//! the first Tiberium's Value and Available_Storage is positive, it calls
-//! Add_Tiberium_Credits with amount1.0/type0 and subtracts Value from the
-//! local budget. The credit callee writes no storage.
-//! Native `Set_Defaults @ 0x00683893` clears the flag. It is absent in the
-//! inspected stock multiplayer map/mode corpus; custom true remains accepted.
+//! `[Basic] FillSilos=` (`Fill_In_Data 0x00684F02..0x00684F7C`) pays through
+//! GiveTiberium at a scenario's start (`sim::scenario_post_map`).
 //!
 //! Never depends on render/ui/audio/net (sim invariant #1). The wallet is
 //! serialized and hashed.
@@ -66,7 +61,7 @@ pub struct Economy {
     /// to it, and the score screen reads it.
     score: i32,
     /// The House store (`+0x2FC`) and its buildings' stores, which only
-    /// Ares fills; empty unless Ares plays.
+    /// Ares fills; empty unless the money takes its Ares form.
     #[serde(default)]
     storage: AresTiberiumStorage,
     /// House `+0x314`, the TS-era weed store (`StorageClass`, four
@@ -93,7 +88,7 @@ impl Economy {
     }
 
     /// Ares' tiberium storage (`sim::ares_tiberium_storage`), empty unless
-    /// Ares plays.
+    /// the money takes its Ares form.
     pub(crate) fn ares_storage(&self) -> &AresTiberiumStorage {
         &self.storage
     }
@@ -145,40 +140,15 @@ impl Economy {
     /// `HouseClass::Available_Money @ 0x004F6990`: `ftol(storage value *
     /// IncomeMult + balance)`. For empty storage and finite native IncomeMult,
     /// this is exactly the retained signed balance for every i32 balance.
-    /// Nonempty/native-save and nonfinite-income inputs remain outside this
-    /// represented domain; the two consumed oracle controls use empty storage.
+    /// Native saves and a nonfinite income remain outside the represented
+    /// domain; the two consumed oracle controls use empty storage.
     ///
-    /// When Ares plays the stored tiberium's value is added
-    /// ([`AresTiberiumStorage::available_money`]). One body serves every
-    /// game: only Ares' deposits fill the store, and an empty store leaves
-    /// the balance, as above.
+    /// When the money takes its Ares form the stored tiberium's value is
+    /// added ([`AresTiberiumStorage::available_money`]). One body serves
+    /// every game: only Ares fills the store, and an empty store leaves the
+    /// balance, as above.
     pub fn available_money(&self) -> i32 {
         self.storage.available_money(self.credits)
-    }
-
-    /// Fresh empty-store arm of FillInData684F2A..684F6B. Source/controls:
-    /// tools/house_money_oracle.py, original binary pinned by its sidecar.
-    /// The local budget is sampled once; AddTib changes cash/score only.
-    /// Capacity is HouseTracking's retained+310, never a Building scan.
-    ///
-    /// Fresh House/Building6C95E0 zeroes amount stores; Added502B83 merges
-    /// those zero Building amounts. Team Full fills Foot cargo, while ordinary
-    /// unload4F9610 pays cash (Weeder uses separate+314). Thus capacity alone
-    /// decides AvailableStorage on this fresh history. Native saves/nonempty
-    /// stores must not enter here; this is not a general4F69D0 port.
-    pub(crate) fn fill_silos_fresh_empty_store(
-        &mut self,
-        value: i32,
-        capacity: i32,
-        income: NativeF32Bits,
-    ) {
-        let mut budget = self.available_money();
-        // Preserve signed comparison and SUB32, including custom zero/negative
-        // Values. A division shortcut or safety clamp changes native behavior.
-        while budget > value && capacity > 0 {
-            self.add_tiberium_credits(value, NativeF32Bits::ONE, income);
-            budget = budget.wrapping_sub(value);
-        }
     }
 
     /// `HouseClass::Add_Credits @ 0x004F9950..0x004F9962`: the complete body
@@ -200,7 +170,7 @@ impl Economy {
     /// negative one, is taken and zeroed, and the rest would drain the silos
     /// (`0x004F97DD..`, empty here). What was taken joins `+0x2DC`.
     ///
-    /// When Ares plays that drain runs
+    /// When the money takes its Ares form that drain finds units
     /// (`AresTiberiumStorage::drain_for_spend`): the stored units it sells
     /// join what was taken, and the last unit's excess is the new balance.
     pub(crate) fn spend_money(&mut self, amount: i32) {
@@ -209,8 +179,8 @@ impl Economy {
             amount
         } else {
             let taken = std::mem::take(&mut self.credits);
-            // Runs in every game: an empty store, which only Ares' deposits
-            // fill, drains nothing and leaves the balance at 0.
+            // Runs in every game: an empty store, which only Ares fills,
+            // drains nothing and leaves the balance at 0.
             let (drained, change) = self.storage.drain_for_spend(amount.wrapping_sub(taken));
             self.credits = change;
             taken.wrapping_add(drained)
@@ -226,8 +196,10 @@ impl Economy {
     }
 
     /// `HouseClass::Add_Tiberium_Credits @ 0x004F9610` for `amount` units
-    /// of a tiberium. Each operation follows4F9610..4F9664 in native PC53/chop
-    /// order, with the caller's stored float amount and HouseType+148 income.
+    /// of a tiberium: the stock GiveTiberium body, which its callers reach
+    /// through `Simulation::tiberium_gift`. Each operation follows
+    /// 4F9610..4F9664 in native PC53/chop order, with the caller's stored
+    /// float amount and HouseType+148 income.
     /// The signed per-type Value is read at payment, not summed from cargo.
     /// Both sums include their prior integer before _ftol's low32 result.
     pub(crate) fn add_tiberium_credits(
@@ -446,38 +418,5 @@ mod tests {
                 row["name"]
             );
         }
-    }
-
-    #[test]
-    fn fresh_fill_silos_money_arm_matches_the_original() {
-        let mut compared = 0;
-        for row in rows("fill_silos") {
-            // The flag belongs to the scenario caller; its false arm is
-            // covered through the actual map loader in the retail chain.
-            if !row["enabled"].as_bool().unwrap() {
-                continue;
-            }
-            let mut wallet = Economy::new(int(&row["balance"]));
-            wallet.set_score_for_test(int(&row["score"]));
-            wallet.set_spent_for_test(int(&row["spent"]));
-            wallet.fill_silos_fresh_empty_store(
-                int(&row["value"]),
-                int(&row["capacity"]),
-                supplied_float(row["income_ppm"].as_f64().unwrap() / 1e6),
-            );
-            let expected = &row["expected"];
-            assert_eq!(
-                (wallet.credits(), wallet.score(), wallet.spent_credits()),
-                (
-                    int(&expected["balance"]),
-                    int(&expected["score"]),
-                    int(&expected["spent"])
-                ),
-                "{}",
-                row["name"]
-            );
-            compared += 1;
-        }
-        assert_eq!(compared, 8);
     }
 }

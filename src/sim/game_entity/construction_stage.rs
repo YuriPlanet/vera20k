@@ -52,6 +52,14 @@ impl GameEntity {
                 .building_sale
                 .is_some_and(BuildingDown::undeploy_order)
     }
+    pub(crate) fn sale_admitted_delegated_redeploy(&self) -> bool {
+        self.building_down()
+            && self
+                .building
+                .building_sale
+                .and_then(BuildingDown::delegated_owner)
+                == Some(self.owner())
+    }
     /// `BuildingClass::Mission_Selling @ 0x00449C30`'s stage visit: its `+0x6DD`
     /// read (`0x00449C99`) and stage 0's clear (`0x0044AB61`).
     pub(crate) fn advance_building_down(&mut self, status: &mut u32) -> PackUpFrame {

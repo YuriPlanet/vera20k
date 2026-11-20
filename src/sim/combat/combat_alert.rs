@@ -67,7 +67,7 @@ pub(crate) fn raise_combat_alert(
     // `!pTargetHouse->IsControlledByCurrentPlayer()` (`:90`). The simulation
     // has no local player; "a human controls the House" is the recorded
     // approximation, and the app keeps only its own player's event.
-    if !house.is_controlled_by_human(world.session.game_mode_nonzero()) {
+    if !house.is_controlled_by_human(world.session.rule_policy()) {
         return;
     }
     // `pHouseExt->CombatAlertTimer.HasTimeLeft()` (`:95`): the native timer

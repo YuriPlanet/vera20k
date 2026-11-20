@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::projectile::{
     ProjectileCollisionPolicy, ProjectileCoord, ProjectilePayload, ProjectileSpawn,
@@ -166,7 +167,11 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
                  [Waypoints]\n0=16014\n"
             ),
         );
-        let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
+        let teams = TeamAiIniRegistry::from_sources(
+            &IniFile::from_str(""),
+            &map.ini,
+            RulePolicy::stock_campaign(),
+        );
         sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
@@ -195,7 +200,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
                 victim,
                 KillSource::Techno(Some(killer)),
                 KillCallback::Terminal,
-                UninitContext::new(&rules, Some(&overlay)),
+                UninitContext::new(&rules),
             );
             assert_eq!(loss_count(&sim), index as u32 + 1);
             assert!(
@@ -496,7 +501,7 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
             .filter(|trigger| trigger.type_index == source)
             .all(|trigger| !trigger.pending)
     );
-    sim.process_pending_delete_with(&rules, Some(&overlay), FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
     assert!(
         sim.trigger_runtime
             .triggers
@@ -557,13 +562,7 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
             assert!(!sim.trigger_runtime.cell_tags.contains_key(&cell));
             assert!(!sim.trigger_runtime.locals_set.contains(&7));
             assert!(!sim.trigger_runtime.tag(other).unwrap().dispatch_guard);
-            sim.process_pending_delete_with(
-                &rules,
-                Some(&overlays),
-                FrameEffects::default(),
-                1,
-                true,
-            );
+            sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
             sim.validate_restored_trigger_runtime(rules.ares_form())
                 .unwrap();
         }
@@ -619,7 +618,7 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
             .iter()
             .all(|&id| sim.trigger_runtime.trigger(id).is_some())
     );
-    sim.process_pending_delete_with(&rules, Some(&overlay), FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
     assert!(
         linked
             .iter()
@@ -1349,7 +1348,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
     assert!(sim.add_cargo_passenger_chain(
         transport,
         &[(reinforcement, 1.0)],
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     ));
     sim.substrate
         .entities
@@ -1523,7 +1522,7 @@ fn retail_sov01_script_context() -> Option<(
         crate::util::sha256::sha256_hex(&raw_map),
         "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
     );
-    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, RulePolicy::stock_campaign());
     // The map's Rules over the retail root depend on those files alone, so
     // they are processed once per test process; each caller gets copies.
     let (rules, water, overlay) = crate::test_fixture::once_per_process("SOV01 rules", || {
@@ -1718,7 +1717,7 @@ fn script20_retail_sov01_transport_tails_set_the_authored_landing_flags() {
         let registry = TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::from_str(""),
             &map.ini,
-            false,
+            RulePolicy::stock_campaign(),
         );
         let stock = registry
             .scripts
@@ -1955,7 +1954,7 @@ fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
         (false, true, vec![6, 4], vec![6, 4, 85]),
         (false, false, vec![], vec![]),
     ] {
-        let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+        let (mut sim, rules, _overlays, houses) = event_ingress_fixture();
         // RecordKill raises 85 on the game's Ares switch.
         let expected = if rules.ares() { with_ares } else { stock };
         let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
@@ -1977,7 +1976,7 @@ fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
             victim,
             source,
             KillCallback::Terminal,
-            crate::sim::world::UninitContext::new(&rules, Some(&overlays)),
+            crate::sim::world::UninitContext::new(&rules),
         );
         assert_eq!(
             sim.trigger_runtime
@@ -1994,7 +1993,7 @@ fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
 #[test]
 fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship() {
     use crate::sim::combat::{KillCallback, KillSource};
-    let Some((mut sim, rules, overlay, map)) = retail_sov01_script_context() else {
+    let Some((mut sim, rules, _overlay, map)) = retail_sov01_script_context() else {
         return;
     };
     for (name, country) in [("Americans", "Americans"), ("Alliance", "Alliance")] {
@@ -2056,17 +2055,14 @@ fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship
             victim,
             KillSource::Techno(None),
             KillCallback::Terminal,
-            crate::sim::world::UninitContext::new(&rules, Some(&overlay)),
+            crate::sim::world::UninitContext::new(&rules),
         );
         assert_eq!(
             sim.trigger_runtime.trigger(landing).unwrap().enabled,
             index == 6,
             "landing must enable exactly on the seventh target"
         );
-        sim.uninit_with_context(
-            victim,
-            crate::sim::world::UninitContext::new(&rules, Some(&overlay)),
-        );
+        sim.uninit_with_context(victim, crate::sim::world::UninitContext::new(&rules));
     }
 }
 
@@ -2276,6 +2272,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
     // (0x0064C4FB..0x0064C50D). Order the Yuri through the class receiver, as
     // the computer's own AI does.
     assert!(sim.apply_command_with_overlays(
+        None,
         "House0",
         &Command::Attack {
             attacker_id: source,
@@ -2644,7 +2641,7 @@ fn install_map_triggers(sim: &mut Simulation, map: &crate::map::map_file::MapFil
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            true,
+            RulePolicy::stock_multiplayer(),
         ),
         None,
         None,
@@ -2811,7 +2808,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
                 sim.houses
                     .get_mut(&owner)
                     .unwrap()
-                    .tracking_mut()
+                    .tracking_mut_for_test()
                     .set_for_test(
                         totals[0].as_i64().unwrap() as i32,
                         &[],
@@ -3271,16 +3268,12 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     // must not disappear behind the persistent per-cell dirty-list dedup gate.
     assert!(sim.change_visible_map_area(
         [4, 40, 54, 12],
-        crate::sim::world::UninitContext::with_rules(
-            crate::rules::ruleset::RuleSet::empty_for_test()
-        )
+        crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
     ));
     assert_eq!(sim.playfield_revision(), 2);
     assert!(sim.change_visible_map_area(
         [4, 40, 54, 12],
-        crate::sim::world::UninitContext::with_rules(
-            crate::rules::ruleset::RuleSet::empty_for_test()
-        )
+        crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
     ));
     assert_eq!(sim.playfield_revision(), 3);
     assert!(sim.dirty_cells.radar().is_empty());
@@ -3420,7 +3413,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
 
     assert!(sim.change_visible_map_area(
         ACTION40_GROWN,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(sim.substrate.entities.get(2).unwrap().in_playfield());
@@ -3441,13 +3434,13 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
 
     assert!(sim.change_visible_map_area(
         [30, 20, 8, 6],
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert!(!sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(!sim.substrate.entities.get(2).unwrap().in_playfield());
     assert!(sim.change_visible_map_area(
         ACTION40_GROWN,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(sim.substrate.entities.get(2).unwrap().in_playfield());
@@ -3536,7 +3529,7 @@ fn action40_sees_for_corpses_and_player_controlled_houses_not_wrecks() {
     let rules = action40_rules();
     assert!(sim.change_visible_map_area(
         ACTION40_GROWN,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     let revealed = objects
         .iter()
@@ -3574,7 +3567,7 @@ fn action40_network_see_writes_only_the_owners_map() {
     assert!(rules.general.ally_reveal);
     assert!(sim.change_visible_map_area(
         ACTION40_GROWN,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     let (rx, ry) = cells[0];
     assert!(sim.fog.is_cell_revealed(owner, rx, ry));
@@ -4072,7 +4065,7 @@ fn mission_announce_then_end_uses_the_player_house_and_shared_timer() {
     );
     assert!(sim.ready_outcome_for_owner(player).is_none());
     let kind = sim.houses[&player]
-        .pending_outcome(15, false)
+        .pending_outcome(15, sim.session.rule_policy())
         .expect("native shared timer admits the current House");
     sim.houses.get_mut(&player).unwrap().complete_outcome(kind);
     sim.session.admit_outcome(kind);

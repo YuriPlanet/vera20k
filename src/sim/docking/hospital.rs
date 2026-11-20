@@ -113,7 +113,6 @@ pub(crate) fn mission_repair(
             let _ = depart_cargo_head(
                 sim,
                 rules,
-                registry,
                 hospital,
                 DepartureRoute::Hospital,
                 |sim, patient| {

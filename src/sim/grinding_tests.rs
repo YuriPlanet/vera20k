@@ -110,7 +110,7 @@ fn grinding_type_gates_drive_the_seek_and_the_radio_answer() {
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
     assert!(!rules.object("GRINDER").unwrap().phobos_grinding.allow_owner);
     assert!(!sim.can_grind_techno(grinder, civ, &rules));
-    assert!(!sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
+    assert!(!sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
     assert_eq!(
         can_load_query(&sim, grinder, civ, &rules),
         RadioResponse::Negatory
@@ -336,7 +336,6 @@ fn mission_eaten_clears_a_destination_the_grinder_type_refuses() {
         civ,
         Some(NavTargetRef::object(grinder)),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert!(

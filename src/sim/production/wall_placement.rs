@@ -181,12 +181,12 @@ pub(crate) fn autofill_walls(
         return;
     };
     let owner_name = sim.interner.resolve(owner).to_owned();
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy();
     let node_gate = rules.phobos_globals.ai_node_walls_only
         && sim
             .houses
             .get(&owner)
-            .is_some_and(|house| !house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| !house.is_controlled_by_human(policy));
     let mut placed_any = false;
     for direction in CARDINAL_DIRECTIONS {
         let gap = scan_autofill_direction(

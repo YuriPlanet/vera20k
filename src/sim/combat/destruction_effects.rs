@@ -718,7 +718,12 @@ impl Simulation {
         // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
         // sensor array ahead of the gap and RevealToAll steps.
         if rules.ares() {
-            self.ares_sensor_array_dispatch(building_id, false, rules, None);
+            self.ares_sensor_array_dispatch(
+                building_id,
+                false,
+                rules,
+                Some(rules.overlay_registry()),
+            );
         }
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
@@ -743,7 +748,8 @@ impl Simulation {
         // building releases its sight for the current house
         // (`ReReveal(0, 0, 1, PlayerPtr)`).
         if object.reveal_to_all
-            && (self.session.game_mode().is_network() || !self.house_is_human_player(owner))
+            && (self.session.execution_topology().is_lockstep()
+                || !self.house_is_human_player(owner))
         {
             //441718 excludes only this represented player's own building.
             self.rereveal_sight_to_current_house(building_id, rules, true);
@@ -868,9 +874,10 @@ impl Simulation {
         // 10. Ares 3.0 BuildingClass_Destroy_Refinery (10023DA0, hook
         // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
         // the building and House, spilling with TiberiumSpill
-        // (`sim::ares_tiberium_storage`). The stock spill has no store to
-        // read without Ares.
-        if rules.ares() {
+        // (`sim::ares_tiberium_storage`), when the money takes its Ares form
+        // (`RuleSet::ares_form`), as everything that fills the store. The
+        // stock spill has no store to read without it.
+        if rules.ares_form() {
             self.ares_destroy_refinery_storage(building_id, rules, effects);
         }
 

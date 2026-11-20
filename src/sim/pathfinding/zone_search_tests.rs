@@ -425,7 +425,6 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
             target_cell,
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             &rules,
-            None,
         )
         .expect("Capture target admission uses the live Building NavCom"),
         crate::sim::movement::infantry_entry::InfantryEntryClass::Clear
@@ -468,7 +467,6 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
                     previous_cell: Some(terrain.native_cell_identity(previous)),
                 },
                 &rules,
-                None,
             )
             .expect("live Capture corridor admission"),
             0,

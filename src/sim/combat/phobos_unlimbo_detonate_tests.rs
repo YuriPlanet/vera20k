@@ -43,7 +43,7 @@ fn scene(warhead_ini: &str) -> (Simulation, RuleSet, u64, u64) {
 /// `LimboLaunch=` shot does.
 fn limboed_scene(warhead_ini: &str) -> (Simulation, RuleSet, u64, u64) {
     let (mut sim, rules, firer, target) = scene(warhead_ini);
-    sim.techno_limbo_with_rules(firer, &rules, None);
+    sim.techno_limbo_with_rules(firer, &rules);
     assert!(
         sim.substrate
             .entities
@@ -217,7 +217,6 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
         weapon,
         Some(bullet),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert!(
@@ -277,7 +276,6 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
         weapon,
         Some(1),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert!(

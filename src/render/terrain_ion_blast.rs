@@ -8,7 +8,7 @@
 //! whose native Z lies above the row's threshold
 //! `low16(seed - AdjustForZ(z) - y - 3)` (`0x0053D6A2..0x0053D6B9`,
 //! `0x0053D72F`; the seed is the ZBuffer's `+0x24`, here
-//! `native_z::DEFAULT_Z`) takes the destination pixel its byte's move names
+//! `native_z::ZSeed`'s) takes the destination pixel its byte's move names
 //! ([`displacement`]). Native edits in
 //! place, top row first. Every byte the generator writes moves a pixel up from
 //! a row below, which that blast has not written yet, so reading a snapshot

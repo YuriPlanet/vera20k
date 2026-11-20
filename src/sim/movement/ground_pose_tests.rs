@@ -1372,7 +1372,6 @@ fn set_height_on_a_marked_object_re_marks_it_at_the_head_of_its_cell() {
         1,
         30,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(next_in_cell(&sim, 1), Some(Entity(2)));
@@ -1409,7 +1408,6 @@ fn set_height_on_an_unmarked_object_writes_z_without_marking_it() {
         1,
         60,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(1).unwrap();

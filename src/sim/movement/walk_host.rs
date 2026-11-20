@@ -50,7 +50,7 @@ impl Simulation {
             true
         };
         if arrived {
-            self.assign_null_destination(id, rules, None, effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if let Some(actor) = self.substrate.entities.get_mut(id) {
                 //75BF38 invokes Foot4D3710(0.0), independently of setter admission.
                 actor

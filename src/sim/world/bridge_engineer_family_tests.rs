@@ -88,7 +88,6 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         let (argument, family) = engineer_repair_family(&mut live, engineer).unwrap();

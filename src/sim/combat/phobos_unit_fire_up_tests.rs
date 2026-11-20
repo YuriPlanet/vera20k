@@ -93,8 +93,7 @@ fn arena_with_art(firer_extra: &str, weapon_extra: &str, art: &str) -> (Simulati
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            None,
-            FrameEffects::empty(),
+            FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"

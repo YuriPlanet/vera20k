@@ -81,7 +81,7 @@ fn cargo(sim: &Simulation, transport: u64) -> Vec<u64> {
 }
 
 fn limbo(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    let _ = sim.techno_limbo_with_context(id, UninitContext::new(rules, None));
+    let _ = sim.techno_limbo_with_context(id, UninitContext::new(rules));
 }
 
 /// `Ext/Techno/Body.Update.cpp:142-153`: the type key is read before the limbo

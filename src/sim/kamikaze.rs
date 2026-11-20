@@ -66,7 +66,6 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::{MissionId, MissionType};
@@ -137,6 +136,14 @@ impl KamikazeTracker {
     /// the timer restarted at the restored frame.
     pub(crate) fn restart_after_load(&mut self, frame: u32) {
         self.timer = CdTimer::started(frame as i32, CLEAR_RESTART_FRAMES);
+    }
+
+    pub(crate) fn saved_continuation_timer(&self) -> CdTimer {
+        self.timer
+    }
+
+    pub(crate) fn restore_continuation_timer(&mut self, timer: CdTimer) {
+        self.timer = timer;
     }
 
     /// Whether `child` has a node: its `+0x6CA` while it is alive.
@@ -224,7 +231,6 @@ pub(crate) fn update(host: &mut impl KamikazeHost, frame: u32) {
 struct WorldHost<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -243,8 +249,7 @@ impl KamikazeHost for WorldHost<'_> {
     }
 
     fn crash(&mut self, child: u64) {
-        self.sim
-            .foot_crash(child, None, self.rules, self.registry, self.effects);
+        self.sim.foot_crash(child, None, self.rules, self.effects);
     }
 
     fn location_xy(&self, child: u64) -> [i32; 2] {
@@ -286,13 +291,9 @@ impl KamikazeHost for WorldHost<'_> {
             .ok()
             .zip(u16::try_from(y).ok())
             .map(|(x, y)| TargetKind::Cell(x, y));
-        let _ = self.sim.assign_target_represented(
-            child,
-            cell,
-            self.rules,
-            None,
-            FrameEffects::default(),
-        );
+        let _ =
+            self.sim
+                .assign_target_represented(child, cell, self.rules, FrameEffects::default());
     }
 
     fn queue_attack(&mut self, child: u64) {
@@ -316,7 +317,6 @@ impl Simulation {
         child: u64,
         target: Option<TargetKind>,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let target_xy = target.and_then(|target| {
@@ -331,7 +331,6 @@ impl Simulation {
             &mut WorldHost {
                 sim: self,
                 rules,
-                registry,
                 effects,
             },
             child,
@@ -356,7 +355,6 @@ impl Simulation {
             &mut WorldHost {
                 sim: self,
                 rules,
-                registry: None,
                 effects,
             },
             frame,

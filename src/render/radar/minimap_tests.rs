@@ -3,6 +3,7 @@
 //! Tests coordinate mapping, owner color logic, pixel setting, and viewport math.
 //! Explicit retail/GPU integration lives in the adjacent minimap_gpu_tests module.
 
+use super::super::helpers::test_radar_session;
 use super::*;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::playfield::PlayfieldBounds;
@@ -12,6 +13,7 @@ use crate::rules::color_scheme::ColorSchemeEntry;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
 use crate::sim::components::Position;
 use crate::sim::intern::test_intern;
+use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::vision::FogState;
 use std::collections::{BTreeSet, HashMap};
 
@@ -669,7 +671,10 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
             &fog,
             &Default::default(),
             false,
-            true,
+            &ControlProjection::for_native_view(
+                &test_radar_session(ScenarioGameMode::Skirmish),
+                &houses,
+            ),
             Some(&rules),
             Some(&interner),
             pixel_cell,
@@ -684,7 +689,7 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
 }
 
 #[test]
-fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_human() {
+fn radar_pixel_player_identity_is_independent_of_discovery_policy() {
     let local = test_intern("Local");
     let (entities, interner, mut houses) = radar_gate_fixture("SecondHuman");
     let second = test_intern("SecondHuman");
@@ -699,34 +704,96 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
     };
     let rules = radar_gate_rules("");
 
-    assert!(radar_pixel_candidate_eligible(
-        entry,
-        &radar_frame(&entities, &interner, None, 0),
-        &houses,
-        Some(local),
-        &fog,
-        &Default::default(),
-        false,
-        false,
-        Some(&rules),
-        Some(&interner),
-        Some((0, 0)),
-        None,
-    ));
-    assert!(!radar_pixel_candidate_eligible(
-        entry,
-        &radar_frame(&entities, &interner, None, 0),
-        &houses,
-        Some(local),
-        &fog,
-        &Default::default(),
-        false,
-        true,
-        Some(&rules),
-        Some(&interner),
-        Some((0, 0)),
-        None,
-    ));
+    let mut sim = crate::sim::world::Simulation::new();
+    let frame = radar_frame(&entities, &interner, None, 0);
+    for (mode, campaign_discovery, expected) in [
+        (ScenarioGameMode::Campaign, true, true),
+        (ScenarioGameMode::Campaign, false, true),
+        (ScenarioGameMode::Skirmish, false, false),
+        (ScenarioGameMode::Skirmish, true, false),
+    ] {
+        let policy = mode
+            .stock_rule_policy(None)
+            .with_uses_campaign_discovery(campaign_discovery);
+        sim.install_session_admission(mode, None, policy);
+        assert_eq!(
+            radar_pixel_candidate_eligible(
+                entry,
+                &frame,
+                &houses,
+                Some(local),
+                &fog,
+                &Default::default(),
+                false,
+                &ControlProjection::for_native_view(sim.session(), &houses),
+                Some(&rules),
+                Some(&interner),
+                Some((0, 0)),
+                None,
+            ),
+            expected,
+            "{mode:?} with campaign discovery {campaign_discovery}"
+        );
+    }
+}
+
+#[test]
+fn a_control_grant_does_not_reveal_the_ordered_house_on_radar() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=DOT\n[DOT]\nStrength=100\nSpeed=4\nSight=0\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let local = sim.interner().get("Americans").unwrap();
+    let granted = sim.interner().get("Russians").unwrap();
+    let tank = sim
+        .spawn_object("DOT", "Russians", 6, 6, 0, &rules)
+        .unwrap();
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Lan);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(local));
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(0, std::num::NonZeroU8::new(5).unwrap(), [1]);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 1,
+        house: 0,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    let projection = sim.control_projection();
+    assert!(projection.can_order(granted));
+
+    let fog = FogState::new(32, 32);
+    let frame = radar_frame(sim.entities(), sim.interner(), None, 0);
+    let entry = RadarTrackerEntry {
+        stable_id: tank,
+        x: 0,
+        y: 0,
+    };
+    let pixel_visible = |viewer| {
+        radar_pixel_candidate_eligible(
+            entry,
+            &frame,
+            sim.houses(),
+            Some(viewer),
+            &fog,
+            sim.house_alliances(),
+            false,
+            &projection,
+            Some(&rules),
+            Some(sim.interner()),
+            Some((6, 6)),
+            None,
+        )
+    };
+    assert!(!pixel_visible(local));
+    assert!(pixel_visible(granted));
 }
 
 #[test]
@@ -750,7 +817,10 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        true,
+        &ControlProjection::for_native_view(
+            &test_radar_session(ScenarioGameMode::Skirmish),
+            &houses
+        ),
         Some(&rules),
         Some(&interner),
         Some((0, 0)),
@@ -768,7 +838,10 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        true,
+        &ControlProjection::for_native_view(
+            &test_radar_session(ScenarioGameMode::Skirmish),
+            &houses
+        ),
         Some(&rules),
         Some(&interner),
         Some((0, 0)),
@@ -790,7 +863,10 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        true,
+        &ControlProjection::for_native_view(
+            &test_radar_session(ScenarioGameMode::Skirmish),
+            &houses
+        ),
         Some(&rules),
         Some(&interner),
         Some((0, 0)),
@@ -823,7 +899,10 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         &fog,
         &Default::default(),
         true,
-        true,
+        &ControlProjection::for_native_view(
+            &test_radar_session(ScenarioGameMode::Skirmish),
+            &houses
+        ),
         Some(&hidden),
         Some(&interner),
         Some((0, 0)),
@@ -837,7 +916,10 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         &fog,
         &Default::default(),
         true,
-        true,
+        &ControlProjection::for_native_view(
+            &test_radar_session(ScenarioGameMode::Skirmish),
+            &houses
+        ),
         Some(&restored),
         Some(&interner),
         Some((0, 0)),
@@ -869,7 +951,10 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
         &fog,
         &Default::default(),
         false,
-        true,
+        &ControlProjection::for_native_view(
+            &test_radar_session(ScenarioGameMode::Skirmish),
+            &houses
+        ),
         Some(&radar_gate_rules("")),
         Some(&interner),
         Some((0, 0)),

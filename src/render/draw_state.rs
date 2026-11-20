@@ -156,9 +156,12 @@ pub struct DrawDecision {
 /// `remap_row` is the palette-ramp selection. `fx_params.x` is the final alpha
 /// multiplier selected by the native translucency bits; `fx_params.y` preserves
 /// those selector bits for diagnostics; `fx_params.z` is unused (1.0);
-/// for voxel unit bodies (`Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG`, split or not),
-/// `fx_params.w` carries the tactical scissor height in world pixels (zero
-/// means full viewport). This shader-specific transport does not alter effects.
+/// for voxel unit bodies (`Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG`, split or not)
+/// and raw SHP frames (`Z_GRADIENT_RAW_FRAME_FLAG`), `fx_params.w` carries
+/// the tactical scissor height in world pixels (zero means full viewport);
+/// for a body with an extended z-shape, its slot in the skip table
+/// (`render::zshape_skips`), 1-based, 0 for none. This shader-specific
+/// transport does not alter effects.
 /// `sinking_row` is the retained world row a voxel draw with FX_SINKING_CLIP
 /// clips at. An effect that changes an object's light, such as the Iron
 /// Curtain's tint, scales the intensity its `PaletteLight` carries, as the

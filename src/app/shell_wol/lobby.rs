@@ -51,8 +51,10 @@ const PUBLIC_LOBBY_TITLE: &str = "VERA20K Online";
 const PUBLIC_LOBBY_BASE: usize = 2;
 /// `0x00788800`/`0x00789B60`: at most 150 x 100 ms for the leave.
 const LEAVE_WAIT: Duration = Duration::from_millis(15_000);
-/// `SetTimer(0, 30000)`: the game list; `SetTimer(1, 53000)`: the lobbies.
-const GAMES_PERIOD: Duration = Duration::from_millis(30_000);
+/// The game list. VERA asks every 5 s, so a game someone creates shows up
+/// soon; native `SetTimer(0, 30000)` asked every 30.
+const GAMES_PERIOD: Duration = Duration::from_millis(5_000);
+/// `SetTimer(1, 53000)`: the lobbies.
 const LOBBIES_PERIOD: Duration = Duration::from_millis(53_000);
 /// Refresh `0x55D` disables itself for `SetTimer(0x55D, 3000)`.
 const REFRESH_HOLD: Duration = Duration::from_millis(3000);
@@ -152,7 +154,6 @@ enum Step {
     },
     /// VERA: after a match from VERA's own room, behind a wait box until the
     /// lobby gives the room back or closes it.
-    ReturningToRoom,
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
@@ -1018,8 +1019,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         // first, and a failed login ends it (the welcome).
         visit.relogin = Some(postmatch);
         // The lost connection took the kept game room with it.
-        visit.back_to_room = false;
-        visit.cooperative_resume = None;
+        state.match_state.session.take_network_room_return();
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
         state.frontend.wol_lobby_art = None;
@@ -1042,9 +1042,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG, false);
     let now = Instant::now();
-    let returning = postmatch && visit.back_to_room;
+    let returning = postmatch && state.match_state.session.awaiting_wol_room_return();
     if !returning {
-        visit.cooperative_resume = None;
+        state.match_state.session.take_network_room_return();
     }
     let resume = !postmatch && visit.lobby.is_some();
     if resume {
@@ -1128,7 +1128,8 @@ fn list_lobbies(state: &mut AppState) {
 /// box shows, whose button gives up the room for the chat lobby.
 fn await_room(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
-        lobby.step = Step::ReturningToRoom;
+        // MatchSession owns the room return. This list only fills the rows.
+        lobby.step = Step::Ready;
     }
     // The chat lobbies still come, so leaving the room later finds one.
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
@@ -1149,17 +1150,14 @@ pub(super) fn room_refused(state: &mut AppState) {
 }
 
 pub(super) fn awaiting_room(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
+    state.match_state.session.awaiting_wol_room_return()
 }
 
 /// VERA: the kept room is gone (it closed, or the player gave up waiting).
 /// The runner goes on as after any match: the chat-lobby list, then a join.
 /// The join itself leaves the room on the lobby if it is still there.
 fn room_not_returned(state: &mut AppState, closed: bool) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-        visit.cooperative_resume = None;
-    }
+    state.match_state.session.take_network_room_return();
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -1186,11 +1184,10 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         log::debug!("WOL room reopened after the wait ended");
         return;
     }
-    let mut resume = None;
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-        resume = visit.cooperative_resume.take();
-    }
+    let resume = match state.match_state.session.take_network_room_return() {
+        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative } => cooperative,
+        _ => None,
+    };
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
     if let Some(lobby) = lobby_mut(state) {
@@ -1247,7 +1244,7 @@ fn open_game_room(
     state: &mut AppState,
     listed: &[WolMember],
     observe: bool,
-    resume: Option<crate::app::shell_network_setup::CooperativeResume>,
+    resume: Option<crate::app::match_runtime::session::CooperativeResume>,
 ) -> bool {
     let me = nickname(state);
     let host = listed
@@ -1869,8 +1866,15 @@ fn refill_games(state: &mut AppState) {
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
     }
+    let layout = layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
+        // VERA: the list is refilled every few seconds, and a pointer resting
+        // on a row keeps that row's status help.
+        if lobby.ui.popup.is_none() {
+            lobby.ui.hover_games(&layout, x, y);
+        }
     }
 }
 
@@ -2703,9 +2707,7 @@ pub(crate) fn watch_admitted(state: &mut AppState) -> bool {
     }
     lobby.step = Step::Ready;
     close_wait(state);
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-    }
+    state.match_state.session.take_network_room_return();
     true
 }
 
@@ -3159,6 +3161,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
 
 /// A lobby box or wait-box button released.
 pub(super) fn box_command(state: &mut AppState, control: u16) {
+    let returning_to_room = awaiting_room(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -3207,8 +3210,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             super::buddy::stopped(state);
         }
         WAIT_DISCONNECT
-            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
-                && matches!(lobby.step, Step::ReturningToRoom) =>
+            if lobby.wait.as_ref().is_some_and(|wait| wait.shown) && returning_to_room =>
         {
             room_not_returned(state, false);
         }
@@ -4419,10 +4421,26 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((POPUP_PASSWORD, layout.password)),
                 layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
                 layout.ranked.map(|rect| (CREATE_RANKED, rect)),
-                layout.watching.map(|(_, rect)| (CREATE_WATCHING, rect)),
+                layout.watching.map(|rect| (CREATE_WATCHING, rect)),
             ]
             .into_iter()
             .flatten()
+            .map(|(id, rect)| {
+                if layout.name.is_some() && !matches!(id, POPUP_OK | POPUP_CANCEL) {
+                    let label = layout.setting_label(rect);
+                    (
+                        id,
+                        crate::ui::shell::geom::RectPx::new(
+                            label.x,
+                            rect.y,
+                            rect.x + rect.w - label.x,
+                            rect.h,
+                        ),
+                    )
+                } else {
+                    (id, rect)
+                }
+            })
             .collect()
         }
         WolPopupKind::Password(_) => {
@@ -4568,7 +4586,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     CREATE_CLAN => rects.clan,
                     CREATE_LIMIT => Some(rects.limit),
                     CREATE_RANKED => rects.ranked,
-                    CREATE_WATCHING => rects.watching.map(|(_, rect)| rect),
+                    CREATE_WATCHING => rects.watching,
                     _ => rects.observe,
                 };
                 if window.is_some_and(|window| {
@@ -5239,6 +5257,16 @@ mod tests {
 
     fn names(lobby: &WolLobby) -> Vec<&str> {
         lobby.members.iter().map(|m| m.name.as_str()).collect()
+    }
+
+    /// VERA lists the games again five seconds on, so a new game shows up
+    /// soon; the lobbies keep native `SetTimer(1, 53000)`.
+    #[test]
+    fn a_runner_lists_the_games_again_after_five_seconds() {
+        let now = Instant::now();
+        let lobby = new_runner(Runner::Lobby, false, false, now, true);
+        assert_eq!(lobby.games_at - now, Duration::from_secs(5));
+        assert_eq!(lobby.lobbies_at - now, Duration::from_secs(53));
     }
 
     /// The user-list sink sorts a chat lobby's users but keeps a game

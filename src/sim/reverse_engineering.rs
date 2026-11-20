@@ -192,7 +192,7 @@ impl Simulation {
             hijacker,
             house,
             &factors,
-            self.session.game_mode_nonzero(),
+            self.session.rule_policy(),
             false,
         );
         if let Some(receiver) = self.substrate.entities.get(grinder).map(|b| b.owner()) {

@@ -83,13 +83,7 @@ impl crate::sim::world::Simulation {
             return Ok((false, false));
         }
         let old_layer = self.entity_display_layer(id, rules);
-        let landed = self.advance_fall(
-            id,
-            rules.general.parachute_max_fall_rate,
-            rules,
-            registry,
-            effects,
-        );
+        let landed = self.advance_fall(id, rules.general.parachute_max_fall_rate, rules, effects);
         let mut changed = false;
         // `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
         // `OnParachuted` for every falling-down Techno, before the `IsABomb`
@@ -677,7 +671,6 @@ impl crate::sim::world::Simulation {
         stable_id: u64,
         max_fall_rate: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -692,7 +685,7 @@ impl crate::sim::world::Simulation {
         )
         .wrapping_add(rate);
         let marked = entity.lifecycle.cell_marked();
-        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
+        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         if marked {
             self.unmark_entity_remove(stable_id, context);
         }
@@ -723,7 +716,7 @@ impl crate::sim::world::Simulation {
         // SetHeight(0) (`0x005F3F7A`) runs before the falling byte clears
         // (`0x005F3F86`). Descent does not displace the locomotor, so there
         // is no piggyback to unwind here.
-        self.set_object_height(stable_id, 0, rules, registry, effects);
+        self.set_object_height(stable_id, 0, rules, effects);
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return true;
         };
@@ -870,7 +863,6 @@ mod canopy_tests {
                 id,
                 -3,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 crate::sim::world::FrameEffects::default(),
             );
         }

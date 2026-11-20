@@ -6,7 +6,6 @@
 
 use super::{FrameEffects, SimFireEvent, SimSoundEvent, Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{DeathEffects, UnderAttackEvent};
 
@@ -133,7 +132,6 @@ impl DamageConsequences {
         self,
         world: &mut Simulation,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> DamageCommitReceipt {
         let Self {
@@ -145,7 +143,7 @@ impl DamageConsequences {
         for &dead_id in &effects.immediate_uninit_ids {
             world.uninit_with_context(
                 dead_id,
-                UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                UninitContext::new(rules).with_effects(frame_effects),
             );
         }
 

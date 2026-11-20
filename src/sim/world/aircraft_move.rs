@@ -4,7 +4,6 @@
 //! live objects and NavCom reservations; the search and the Rate epilogue
 //! draw Scenario RNG. Executable witnesses: tools/spatial_oracle/aircraft_move.*.
 use super::{FrameEffects, Simulation};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::{enter_idle_mode_for, move_mission};
 use crate::sim::components::NavTargetRef;
@@ -28,7 +27,6 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (u8, i32) {
         move_mission::move_visit(
@@ -37,7 +35,6 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                registry,
                 effects,
             },
         )
@@ -51,7 +48,6 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (u8, i32) {
         crate::sim::aircraft::carryall::move_visit(
@@ -60,7 +56,6 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                registry,
                 effects,
             },
         )
@@ -191,7 +186,6 @@ struct WorldMove<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -215,7 +209,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.registry, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, self.effects);
     }
 
     fn assign_attack_cell(&mut self) {
@@ -352,7 +346,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.registry, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, self.effects);
     }
 
     fn tote_target(&mut self) -> Option<u64> {
@@ -403,13 +397,8 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             let target = self
                 .nav()
                 .map(|nav| crate::sim::combat::TargetKind::from(nav).into());
-            self.sim.team_assign_mission_target(
-                team,
-                target,
-                self.rules,
-                self.registry,
-                self.effects,
-            );
+            self.sim
+                .team_assign_mission_target(team, target, self.rules, self.effects);
         }
     }
 
@@ -478,17 +467,29 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn mark(&mut self, down: bool) {
         if down {
-            self.sim
-                .foot_mark_put(self.id, self.rules, self.registry, self.effects);
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.effects,
+            );
         } else {
-            self.sim
-                .foot_mark_remove(self.id, self.rules, self.registry, self.effects);
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.effects,
+            );
         }
     }
 
     fn unload(&mut self) {
-        self.sim
-            .carryall_unload(self.id, self.rules, self.registry, self.effects);
+        self.sim.carryall_unload(
+            self.id,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            self.effects,
+        );
     }
 
     fn unit_below(&mut self) -> Option<u64> {
@@ -514,7 +515,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn pick_up(&mut self, unit: u64) {
         self.sim
-            .carryall_pick_up(self.id, unit, self.rules, self.registry, self.effects);
+            .carryall_pick_up(self.id, unit, self.rules, self.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

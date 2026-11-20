@@ -250,7 +250,6 @@ fn distributed_explicit_attack_retains_target_and_elite_burst() {
                 scene.aegis,
                 Some(target),
                 &scene.rules,
-                None,
                 FrameEffects::default(),
             )
             .unwrap();
@@ -306,7 +305,7 @@ fn distributed_list_only_expiry_uses_common_broadcast_and_first_removal() {
     // Refreshing the existing derived expiry index occurs inside this owner.
     scene
         .sim
-        .detach_all_pointer_expired(target, &scene.rules, None, FrameEffects::default());
+        .detach_all_pointer_expired(target, &scene.rules, FrameEffects::default());
     let source = scene.sim.substrate.entities.get(scene.aegis).unwrap();
     assert_eq!(
         source
@@ -319,7 +318,7 @@ fn distributed_list_only_expiry_uses_common_broadcast_and_first_removal() {
     assert_eq!(source.distributed_fire_history(), [Some(shot.target)]);
     scene
         .sim
-        .notify_pointer_expired(target, super::UninitContext::new(&scene.rules, None));
+        .notify_pointer_expired(target, super::UninitContext::new(&scene.rules));
     let source = scene.sim.substrate.entities.get(scene.aegis).unwrap();
     assert_eq!(
         source.distributed_fire_candidates(),
@@ -336,7 +335,7 @@ fn distributed_list_only_expiry_uses_common_broadcast_and_first_removal() {
     assert_eq!(scene.sim.mapgen_rng.state(), mapgen);
     scene
         .sim
-        .detach_all_pointer_expired(target, &scene.rules, None, FrameEffects::default());
+        .detach_all_pointer_expired(target, &scene.rules, FrameEffects::default());
     assert_eq!(
         scene
             .sim
@@ -446,7 +445,6 @@ fn distributed_normal_load_clears_all_classes_before_strong_reference_validation
         actors[0],
         Some(TargetKind::Entity(actors[1])),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();
@@ -703,7 +701,6 @@ fn distributed_building_attack_takes_the_common_history_tail() {
         pillbox,
         Some(TargetKind::Entity(target)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();

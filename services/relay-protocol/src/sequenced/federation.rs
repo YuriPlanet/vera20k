@@ -114,7 +114,7 @@ pub(crate) fn roster_table(
             Ipv4Addr::new(entry[0], entry[1], entry[2], entry[3]),
             u16::from_le_bytes([entry[4], entry[5]]),
         );
-        let sources = read_u32(entry, 6);
+        let sources = read_u32(entry, 6)?;
         if sources == 0
             || sources >> MAX_PEERS != 0
             || union & sources != 0
@@ -126,7 +126,7 @@ pub(crate) fn roster_table(
         union |= sources;
         relays.push((endpoint, sources));
     }
-    Ok((bytes[4..20].try_into().unwrap(), relays))
+    Ok((field(bytes, 4)?, relays))
 }
 
 fn wrap_stream(key: &SecretKey, room: &[u8; 16], nonce: &[u8]) -> [u8; 32] {
@@ -501,7 +501,7 @@ impl Federation {
             .mac(LINK_DOMAIN, &bytes[..bytes.len() - MAC_LEN])
             .verify_slice(&bytes[bytes.len() - MAC_LEN..])
             .map_err(|_| RelayError::Authentication)?;
-        self.links[position].received.accept(read_u64(bytes, 21))?;
+        self.links[position].received.accept(read_u64(bytes, 21)?)?;
         Ok((
             position,
             bytes[29],
@@ -826,7 +826,7 @@ impl Federation {
         }
         for entry in payload[1..].chunks_exact(SILENCE_ENTRY) {
             let source = &mut ordering.sources[usize::from(entry[0])];
-            let heard = now_ms.saturating_sub(u64::from(read_u32(entry, 1)));
+            let heard = now_ms.saturating_sub(u64::from(read_u32(entry, 1)?));
             source.heard_ms = source.heard_ms.max(heard);
         }
         link.reports_silence = true;
@@ -853,7 +853,7 @@ impl Federation {
             return Err(RelayError::Malformed);
         }
         for entry in payload[1..].chunks_exact(CHECKSUM_FORWARD_ENTRY) {
-            ordering.record_checksum(entry[0], read_u32(entry, 1), read_u32(entry, 5), true);
+            ordering.record_checksum(entry[0], read_u32(entry, 1)?, read_u32(entry, 5)?, true);
         }
         Ok(())
     }
@@ -877,12 +877,12 @@ impl Federation {
             if source >= MAX_PEERS || sources & (1 << source) == 0 {
                 return Err(RelayError::Malformed);
             }
-            let tick = read_u32(entry, 4);
+            let tick = read_u32(entry, 4)?;
             ordering.sources[usize::from(source)].pace = Some(PaceReport {
                 pace,
                 frames_per_second: u16::from_le_bytes([entry[2], entry[3]]),
                 tick_micros: (tick != 0).then_some(tick),
-                at_ms: now_ms.saturating_sub(u64::from(read_u32(entry, 8))),
+                at_ms: now_ms.saturating_sub(u64::from(read_u32(entry, 8)?)),
             });
         }
         Ok(())
@@ -907,9 +907,9 @@ impl Federation {
         {
             return Err(RelayError::Malformed);
         }
-        let ack = read_u64(payload, 33);
-        let first = read_u64(payload, 41);
-        let sealed = read_u32(payload, 49);
+        let ack = read_u64(payload, 33)?;
+        let first = read_u64(payload, 41)?;
+        let sealed = read_u32(payload, 49)?;
         let sources = self.links[position].sources;
         let from_coordinator = self.links[position].index == 0;
         let mut entries = Vec::with_capacity(usize::from(payload[85]));
@@ -918,9 +918,9 @@ impl Federation {
             if payload.len() < offset + ENTRY_HEADER {
                 return Err(RelayError::Malformed);
             }
-            let frame = read_u32(payload, offset);
+            let frame = read_u32(payload, offset)?;
             let source = payload[offset + 4];
-            let batch_id = read_u64(payload, offset + 5);
+            let batch_id = read_u64(payload, offset + 5)?;
             let length = usize::from(u16::from_le_bytes([
                 payload[offset + 13],
                 payload[offset + 14],
@@ -956,21 +956,21 @@ impl Federation {
             return Err(RelayError::Malformed);
         }
         let link = &mut self.links[position];
-        link.ready = read_u32(payload, 0) & sources;
+        link.ready = read_u32(payload, 0)? & sources;
         let flags = payload[4];
         link.cancelled |= flags & CANCEL_START != 0;
         if flags & MATCH_STARTED != 0 {
             link.heard_started = Some(now_ms);
             self.peer_failed |= flags & MATCH_FAILED != 0;
         }
-        link.agreement = payload[53..85].try_into().unwrap();
+        link.agreement = field(payload, 53)?;
         if link.index == 0 {
-            link.start_at = read_u64(payload, 5);
+            link.start_at = read_u64(payload, 5)?;
         }
-        let sent_ms = read_u64(payload, 13);
-        let echo_ms = read_u64(payload, 21);
+        let sent_ms = read_u64(payload, 13)?;
+        let echo_ms = read_u64(payload, 21)?;
         if echo_ms != 0 && echo_ms <= now_ms {
-            let hold = u64::from(read_u32(payload, 29));
+            let hold = u64::from(read_u32(payload, 29)?);
             let rtt = (now_ms - echo_ms).saturating_sub(hold);
             // Their clock minus ours, from the midpoints of both legs.
             let offset = (2 * i128::from(sent_ms)
@@ -1030,7 +1030,7 @@ impl RelayServer {
         if bytes.len() < LINK_HEADER + MAC_LEN {
             return Err(RelayError::Malformed);
         }
-        let id: [u8; 16] = bytes[4..20].try_into().unwrap();
+        let id: [u8; 16] = field(bytes, 4)?;
         let room = self.rooms.get_mut(&id).ok_or(RelayError::Unregistered)?;
         let federation = room.federation.as_mut().ok_or(RelayError::Unregistered)?;
         let (position, kind, payload) = federation.open(bytes)?;
@@ -1814,7 +1814,7 @@ mod tests {
             departures.extend(
                 page.into_iter()
                     .filter(|entry| entry[0] == DEPARTURE_EVENT)
-                    .map(|entry| (read_u32(&entry, 9), entry[13..].to_vec())),
+                    .map(|entry| (read_u32(&entry, 9).unwrap(), entry[13..].to_vec())),
             );
         }
         assert_eq!(

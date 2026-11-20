@@ -65,23 +65,17 @@ impl FrameInfo {
         if record.opcode() != FRAMEINFO_EVENT_OPCODE {
             return None;
         }
-        let payload = record.payload();
         Some(Self {
             house_id: record.house_id(),
             event_frame: record.frame_stamp(),
             checksum: u32::from_le_bytes(
-                payload[FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET
-                    ..FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET + size_of::<u32>()]
-                    .try_into()
-                    .expect("FRAMEINFO checksum is four bytes"),
+                record.payload_field::<FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET, { size_of::<u32>() }>(),
             ),
             timing_word: u16::from_le_bytes(
-                payload[FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET
-                    ..FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET + size_of::<u16>()]
-                    .try_into()
-                    .expect("FRAMEINFO timing word is two bytes"),
+                record
+                    .payload_field::<FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET, { size_of::<u16>() }>(),
             ),
-            delay: payload[FRAMEINFO_DELAY_PAYLOAD_OFFSET],
+            delay: record.payload()[FRAMEINFO_DELAY_PAYLOAD_OFFSET],
         })
     }
 

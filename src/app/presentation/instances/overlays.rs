@@ -247,6 +247,8 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub tactical: [u32; 4],
     pub zoom: f32,
     pub axis: crate::render::batch::DepthAxis,
+    /// This frame's Z-buffer row seed (`native_z::ZSeed`).
+    pub z_seed: i32,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
@@ -1138,7 +1140,8 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             palette_light,
             alpha: 1.0,
             z_adjust: body_z.z_adjust,
-            z_gradient: pack_z_gradient(body_z.gradient, false),
+            z_gradient: pack_z_gradient(body_z.gradient, false)
+                | native_z::shp_frame_flag(spr.extended),
             ..Default::default()
         };
         if body_z.shape.is_some_and(|shape| {
@@ -1590,7 +1593,7 @@ fn native_terrain_instance(
         tint,
         palette_light,
         alpha: 1.0,
-        z_gradient: gradient,
+        z_gradient: gradient | native_z::shp_frame_flag(sprite.extended),
         z_adjust: super::helpers::lifted_z_adjust(lift_px, class_z),
         ..Default::default()
     }

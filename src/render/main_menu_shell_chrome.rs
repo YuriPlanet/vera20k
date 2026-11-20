@@ -18,6 +18,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::chrome_atlas::{ChromeAtlasEntry, ChromePiece, pack_chrome_atlas};
 use crate::render::gpu::GpuContext;
+use crate::render::shell_ui_style_assets::{decode_ui_pcx, decode_ui_shp, ui_art_candidates};
 
 /// SDBTNANM.SHP frames baked for the first-paint slide ramp. The reveal animates
 /// "active" buttons through frames 5..=10 and "inactive" slots through 11..=16,
@@ -280,16 +281,14 @@ fn read_main_menu_button_palette(assets: &AssetManager) -> Result<Palette> {
 }
 
 fn read_main_menu_button_shape(assets: &AssetManager) -> Result<ShpFile> {
-    let load = assets
-        .load_file_from_mix("SDBTNANM.SHP")
-        .context("Required game-menu artwork SDBTNANM.SHP is missing or unreadable")?;
-    let shp = ShpFile::from_bytes(&load.bytes).context("Could not parse SDBTNANM.SHP")?;
-    anyhow::ensure!(
-        shp.frames.len() >= 5,
-        "SDBTNANM.SHP has {} frames; game-menu buttons require frames 2, 3 and 4",
-        shp.frames.len()
-    );
-    Ok(shp)
+    read_menu_shp(assets, "SDBTNANM.SHP", |shp| {
+        anyhow::ensure!(
+            shp.frames.len() >= 5,
+            "SDBTNANM.SHP has {} frames; game-menu buttons require frames 2, 3 and 4",
+            shp.frames.len()
+        );
+        Ok(shp)
+    })
 }
 
 fn render_main_menu_button_frames(shp: &ShpFile, palette: &Palette) -> Result<Vec<ChromePiece>> {
@@ -415,8 +414,7 @@ const IMAGE_STATIC_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 /// A kind-2 image static's PCX (the PCX cache `0x006BA140`), keyed to its
 /// transparent colour and labelled by its lower-case name.
 fn render_image_static_pcx(assets: &AssetManager, file: &str) -> Option<ChromePiece> {
-    let bytes = assets.get_ref(file)?;
-    let pcx = PcxFile::from_bytes(bytes)
+    let pcx = read_ui_pcx(assets, file)
         .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
         .ok()?;
     let mut rgba = pcx.to_rgba(None);
@@ -672,10 +670,71 @@ fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
 /// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`
 /// (SHELL.PAL is read at `0x0072ABDC`), the shared palette conversion.
 fn read_named_palette(assets: &AssetManager, name: &str) -> Result<Palette> {
-    let bytes = assets
-        .get_ref(name)
-        .with_context(|| format!("Palette {name} is missing or unreadable"))?;
-    Palette::from_bytes(bytes).with_context(|| format!("Could not parse palette {name}"))
+    decode_ui_art(assets, name, |bytes| {
+        Palette::from_bytes(bytes).with_context(|| format!("Could not parse palette {name}"))
+    })
+}
+
+pub(super) fn decode_ui_art<T>(
+    assets: &AssetManager,
+    name: &str,
+    decode: impl Fn(&[u8]) -> Result<T>,
+) -> Result<T> {
+    let mut first_error = None;
+    for candidate in ui_art_candidates(assets, name) {
+        match decode(candidate.bytes) {
+            Ok(art) => {
+                log::debug!("UI art {name} from {}", candidate.source);
+                return Ok(art);
+            }
+            Err(error) => {
+                log::debug!(
+                    "UI art {name} from {} was rejected: {error:#}",
+                    candidate.source
+                );
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    Err(first_error
+        .unwrap_or_else(|| anyhow::anyhow!("UI artwork {name} is missing or unreadable")))
+}
+
+pub(super) fn read_ui_pcx(assets: &AssetManager, file: &str) -> Result<PcxFile> {
+    decode_ui_art(assets, file, |bytes| {
+        if assets.mod_selected() {
+            decode_ui_pcx(bytes)
+        } else {
+            PcxFile::from_bytes(bytes)
+        }
+        .map_err(Into::into)
+    })
+}
+
+/// The normal menu shapes pass through LoadFileFromMIX's sticky cache. The
+/// selected mod's UI can fall through rejected copies of a shape.
+fn read_menu_shp<T>(
+    assets: &AssetManager,
+    name: &str,
+    read: impl Fn(ShpFile) -> Result<T>,
+) -> Result<T> {
+    let decode = |bytes: &[u8]| {
+        let shp = if assets.mod_selected() {
+            decode_ui_shp(bytes)
+        } else {
+            ShpFile::from_bytes(bytes)
+        }
+        .with_context(|| format!("Could not parse {name}"))?;
+        read(shp)
+    };
+    if assets.mod_selected() {
+        decode_ui_art(assets, name, decode)
+    } else {
+        let load = assets.load_file_from_mix(name).with_context(|| {
+            format!("Required game-menu artwork {name} is missing or unreadable")
+        })?;
+        decode(&load.bytes)
+    }
 }
 
 fn push_optional_shp(
@@ -698,9 +757,10 @@ fn render_shp_entry(
     frame: usize,
     tag: Option<&str>,
 ) -> Option<ChromePiece> {
-    let load = assets.load_file_from_mix(file_name)?;
-    let shp = ShpFile::from_bytes(&load.bytes).ok()?;
-    shp_frame_entry(&shp, file_name, palette, frame, tag).ok()
+    read_menu_shp(assets, file_name, |shp| {
+        shp_frame_entry(&shp, file_name, palette, frame, tag)
+    })
+    .ok()
 }
 
 /// Every frame of one SHP, parsed once, labelled `<file>:<prefix>#<frame>`.
@@ -710,25 +770,22 @@ fn render_shp_frames(
     palette: &Palette,
     tag_prefix: &str,
 ) -> Vec<ChromePiece> {
-    let Some(load) = assets.load_file_from_mix(file_name) else {
-        return Vec::new();
-    };
-    let Ok(shp) = ShpFile::from_bytes(&load.bytes) else {
-        log::warn!("Could not parse {file_name}");
-        return Vec::new();
-    };
-    (0..shp.frames.len())
-        .map_while(|frame| {
-            shp_frame_entry(
-                &shp,
-                file_name,
-                palette,
-                frame,
-                Some(&format!("{tag_prefix}#{frame}")),
-            )
-            .ok()
-        })
-        .collect()
+    read_menu_shp(assets, file_name, |shp| {
+        anyhow::ensure!(!shp.frames.is_empty(), "{file_name} has no frames");
+        (0..shp.frames.len())
+            .map(|frame| {
+                shp_frame_entry(
+                    &shp,
+                    file_name,
+                    palette,
+                    frame,
+                    Some(&format!("{tag_prefix}#{frame}")),
+                )
+            })
+            .collect()
+    })
+    .map_err(|error| log::debug!("Could not load {file_name}: {error:#}"))
+    .unwrap_or_default()
 }
 
 /// One frame placed on its full SHP canvas.
@@ -777,8 +834,7 @@ fn shp_frame_entry(
 
 /// A PCX in its own palette, full canvas.
 fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
-    let bytes = assets.get_ref(file_name)?;
-    let pcx = PcxFile::from_bytes(bytes).ok()?;
+    let pcx = read_ui_pcx(assets, file_name).ok()?;
     Some(ChromePiece {
         label: file_name.to_ascii_lowercase(),
         width: pcx.width as u32,
@@ -843,6 +899,35 @@ mod tests {
         assert_eq!(frames.len(), 5, "extra reveal frames remain optional");
         assert_eq!(frames[4].label, "sdbtnanm.shp:wave#4");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn menu_buttons_try_a_compatible_mod_shape_before_stock() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+        let shape = |count: u16| {
+            let mut bytes = vec![0u8; 8 + usize::from(count) * 24];
+            bytes[2..4].copy_from_slice(&1u16.to_le_bytes());
+            bytes[4..6].copy_from_slice(&1u16.to_le_bytes());
+            bytes[6..8].copy_from_slice(&count.to_le_bytes());
+            bytes
+        };
+        let install = audio_test_install("shell-button-install");
+        let mod_dir = TestDirectory::new("shell-button-mod");
+        install.write_mix("langmd.mix", "SDBTNANM.SHP", &shape(5));
+        mod_dir.write_mix("expandmd99.mix", "SDBTNANM.SHP", &shape(4));
+        mod_dir.write_mix("expandmd98.mix", "SDBTNANM.SHP", &shape(6));
+        std::fs::write(install.path().join("SDBTNANM.PAL"), [0u8; 768]).unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let frames = load_main_menu_button_frames(&assets).unwrap();
+        assert_eq!(frames.len(), 6);
     }
 
     #[test]

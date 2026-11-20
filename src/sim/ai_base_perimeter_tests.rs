@@ -35,7 +35,7 @@ fn campaign_perimeter(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,

@@ -361,6 +361,14 @@ fn hover(state: &AppState) -> Option<Hover> {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    let selected = crate::app::input::context_order::projected_order_selection(
+        sim,
+        state.rules(),
+        &selected,
+        object
+            .and_then(crate::app::input::entity_pick::HoverObject::techno)
+            .map(|target| target.stable_id),
+    );
     // The Cell's What_Action without mouse-over (`0x00653C9A`).
     let query = ActionQuery::new(state, sim, &selected, false);
     let armed = state
@@ -517,6 +525,8 @@ fn centre_view_on_pick(state: &mut AppState) {
         return;
     }
     crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
+    // A complete redraw, and the Z seed back to DEFAULT_Z (`0x00653EA5..0x00653EBA`).
+    state.renderer.native_z_seed.reset();
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

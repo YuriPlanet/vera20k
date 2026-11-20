@@ -80,7 +80,7 @@ fn entry(
         .as_ref()
         .unwrap()
         .native_cell_identity((16, 15));
-    sim.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules, Some(registry))
+    sim.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules)
 }
 
 /// Unit `0x73F495`: the secondary answers the wall only under the key.

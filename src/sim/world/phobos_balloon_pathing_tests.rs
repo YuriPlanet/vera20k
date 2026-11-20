@@ -45,13 +45,13 @@ fn balloon_hover_pathing_fix_lets_an_airborne_balloon_enter_an_occupied_cell() {
     let (sim, rules, balloon, _) = scene(true, true, true, true);
     let cell = Cell::Real(10 * 32 + 20);
     assert_eq!(
-        sim.foot_can_enter(balloon, cell, InfantryEntryArgs::REPAIR, &rules, None),
+        sim.foot_can_enter(balloon, cell, InfantryEntryArgs::REPAIR, &rules),
         Ok(0)
     );
 
     let (sim, rules, balloon, _) = scene(false, true, true, true);
     assert_ne!(
-        sim.foot_can_enter(balloon, cell, InfantryEntryArgs::REPAIR, &rules, None),
+        sim.foot_can_enter(balloon, cell, InfantryEntryArgs::REPAIR, &rules),
         Ok(0)
     );
 }
@@ -87,8 +87,7 @@ fn balloon_hover_pathing_fix_requires_an_airborne_balloon_type() {
             grounded,
             Cell::Real(10 * 32 + 20),
             InfantryEntryArgs::REPAIR,
-            &rules,
-            None
+            &rules
         ),
         Ok(0)
     );
@@ -107,8 +106,7 @@ fn balloon_hover_pathing_fix_requires_an_airborne_balloon_type() {
             tank,
             Cell::Real(10 * 32 + 20),
             InfantryEntryArgs::REPAIR,
-            &rules,
-            None
+            &rules
         ),
         Ok(0)
     );

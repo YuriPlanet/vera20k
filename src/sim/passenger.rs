@@ -380,7 +380,7 @@ impl BuildingOccupants {
     }
 
     /// FireAt6FF065..6FF085: INC DWORD, then signed IDIV by live count.
-    fn advance_fire_index(&mut self) {
+    pub(crate) fn advance_fire_index(&mut self) {
         let count = self.count();
         if count > 0 {
             self.fire_index = self.fire_index.wrapping_add(1) % count;
@@ -389,6 +389,12 @@ impl BuildingOccupants {
     /// SellBuilding457DEB and KillOccupants4585CA clear the cursor first.
     fn reset_fire_index(&mut self) {
         self.fire_index = 0;
+    }
+    /// Ares repairs +69C after all transfers or after the occupant hit returns.
+    pub(crate) fn repair_fire_index(&mut self) {
+        if self.fire_index >= self.count() {
+            self.reset_fire_index();
+        }
     }
     fn clear(&mut self) {
         self.ids.clear();
@@ -400,9 +406,10 @@ impl BuildingOccupants {
         (!self.ids.is_empty()).then(|| self.ids.remove(0))
     }
     /// BuildingPointerExpired44EAC0..44EB02 removes the first matching
-    /// vector entry by shifting, without changing +69C. Its caller owns
-    /// the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
-    fn remove_expired(&mut self, id: u64) {
+    /// vector entry by shifting, without changing +69C or the rider's link,
+    /// which the damage or expiry owner clears at its own stage. Its caller
+    /// owns the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
+    pub(crate) fn remove_expired(&mut self, id: u64) {
         if let Some(index) = self.ids.iter().position(|&entry| entry == id) {
             self.ids.remove(index);
         }
@@ -422,71 +429,6 @@ impl BuildingOccupants {
     }
 }
 
-/// Only the passenger module can obtain a mutable role on a registered entity.
-pub(crate) struct PassengerWrite(());
-
-impl GameEntity {
-    fn passenger_state_mut(&mut self) -> &mut PassengerRole {
-        self.passenger_role_for_update(PassengerWrite(()))
-    }
-
-    /// Install the new Techno's CargoClass capacity without replacing its
-    /// independently stored building occupants or Transporter pointer.
-    pub(crate) fn install_passenger_hold(&mut self, capacity: u32, size_limit: f64) {
-        let cargo = self.ensure_cargo_hold();
-        cargo.capacity = capacity;
-        cargo.size_limit = size_limit;
-    }
-
-    pub(crate) fn cargo_mut(&mut self) -> Option<&mut PassengerCargo> {
-        self.passenger_state_mut().cargo_mut()
-    }
-
-    pub(crate) fn ensure_cargo_hold(&mut self) -> &mut PassengerCargo {
-        self.passenger_state_mut().ensure_hold()
-    }
-
-    pub(crate) fn set_inside_transport(&mut self, transport_id: u64, open_topped: bool) {
-        self.passenger_state_mut()
-            .set_inside_transport(transport_id, open_topped);
-    }
-
-    pub(crate) fn clear_carrier_relation(&mut self) {
-        self.passenger_state_mut().clear_carrier_relation();
-    }
-
-    pub(crate) fn clear_transporter(&mut self) {
-        self.passenger_state_mut().clear_transporter();
-    }
-
-    pub(crate) fn set_carrier_link(&mut self, link: CarrierLink) {
-        self.passenger_state_mut().set_carrier_link(link);
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn garrison_mut_for_test(&mut self) -> &mut BuildingOccupants {
-        &mut self.passenger_state_mut().occupants
-    }
-
-    pub(crate) fn advance_garrison_fire_index(&mut self) {
-        self.passenger_state_mut().occupants.advance_fire_index();
-    }
-
-    /// Ares repairs +69C after all transfers or after the occupant hit returns.
-    pub(crate) fn repair_garrison_fire_index(&mut self) {
-        let occupants = &mut self.passenger_state_mut().occupants;
-        if occupants.fire_index() >= occupants.count() {
-            occupants.reset_fire_index();
-        }
-    }
-
-    /// Remove one vector reference, preserving the cursor and the rider's
-    /// link until the damage/expiry owner reaches that distinct stage.
-    pub(crate) fn remove_garrison_reference(&mut self, id: u64) {
-        self.passenger_state_mut().occupants.remove_expired(id);
-    }
-}
-
 impl ObjectSubstrate {
     /// Admission follows successful Limbo or construction in Limbo. No
     /// callback runs between the building append and the rider link.
@@ -501,12 +443,14 @@ impl ObjectSubstrate {
         let occupants = &mut self
             .entities
             .get_mut(building)?
-            .passenger_state_mut()
+            .passenger_role_mut()
             .occupants;
         occupants.add(rider);
         let count = occupants.count();
         if let Some(rider) = self.entities.get_mut(rider) {
-            rider.set_inside_transport(building, false);
+            rider
+                .passenger_role_mut()
+                .set_inside_transport(building, false);
         }
         Some(count)
     }
@@ -521,7 +465,7 @@ impl ObjectSubstrate {
         let Some(rider) = self
             .entities
             .get_mut(source)
-            .and_then(|building| building.passenger_state_mut().occupants.remove_head())
+            .and_then(|building| building.passenger_role_mut().occupants.remove_head())
         else {
             return false;
         };
@@ -545,10 +489,12 @@ impl Simulation {
             if let Some(passenger) = self.substrate.entities.get_mut(id)
                 && let Some(link) = passenger.passenger_role().carrier_link()
             {
-                passenger.set_carrier_link(CarrierLink {
-                    open_topped: false,
-                    ..link
-                });
+                passenger
+                    .passenger_role_mut()
+                    .set_carrier_link(CarrierLink {
+                        open_topped: false,
+                        ..link
+                    });
             }
         }
     }
@@ -647,11 +593,10 @@ impl Simulation {
         context: UninitContext<'_>,
     ) -> bool {
         if let Some(entity) = self.substrate.entities.get_mut(passenger) {
-            entity.set_carrier_link(CarrierLink {
+            entity.passenger_role_mut().board_carrier(CarrierLink {
                 transport_id: carrier,
                 open_topped: rider,
             });
-            entity.passenger_state_mut().transporter = Some(carrier);
         }
         if rider {
             let _ = self.enter_open_topped(passenger, context.rules(), context.effects());
@@ -671,11 +616,10 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
-            passenger.set_carrier_link(CarrierLink {
+            passenger.passenger_role_mut().board_carrier(CarrierLink {
                 transport_id: carrier,
                 open_topped,
             });
-            passenger.passenger_state_mut().transporter = Some(carrier);
         }
         if open_topped {
             let registered = self.enter_open_topped(passenger, rules, effects);
@@ -720,11 +664,35 @@ impl Simulation {
         // Every native Techno has CargoClass even when Type.Passengers is0.
         // Make its empty hold at the first raw Cargo attach; ordinary
         // capacity admission remains a caller policy.
-        let cargo = transport.ensure_cargo_hold();
+        let cargo = transport.passenger_role_mut().ensure_hold();
         // The existing size cache belongs to Cargo as well: ordinary callers
         // supply their admitted type size; retries retain the popped size.
         // Native quantity is the chain length, not its configured capacity.
         cargo.board_forced_chain(head_first);
+        true
+    }
+
+    /// [`Self::add_cargo_passenger_chain`] for members that enter the hold
+    /// without a transport arm's Transporter or `+0x82` write: a building's
+    /// cargo, a Carryall's pickup, and paradrop and reinforcement loading.
+    /// Native membership is the chain itself; VERA's carrier relation is its
+    /// inverse, so the hold's owner writes it as the chain takes the member.
+    pub(crate) fn add_cargo_members(
+        &mut self,
+        transport_id: u64,
+        head_first: &[(u64, f64)],
+        context: UninitContext<'_>,
+    ) -> bool {
+        if !self.add_cargo_passenger_chain(transport_id, head_first, context) {
+            return false;
+        }
+        for &(member, _) in head_first {
+            if let Some(entity) = self.substrate.entities.get_mut(member) {
+                entity
+                    .passenger_role_mut()
+                    .set_inside_transport(transport_id, false);
+            }
+        }
         true
     }
 }
@@ -816,6 +784,22 @@ impl PassengerRole {
         self.transporter = None;
     }
 
+    /// Install the new Techno's CargoClass capacity without replacing its
+    /// independently stored building occupants or Transporter pointer.
+    pub(crate) fn install_hold(&mut self, capacity: u32, size_limit: f64) {
+        let cargo = self.ensure_hold();
+        cargo.capacity = capacity;
+        cargo.size_limit = size_limit;
+    }
+
+    /// A transport arm's arrival (Infantry `0x0051A45E..0x0051A46E`, Unit
+    /// `0x0073A740..0x0073A768`) or Ares abduction (10054A80): the carrier
+    /// relation with `+0x82`, and Transporter naming the same hull.
+    fn board_carrier(&mut self, link: CarrierLink) {
+        self.set_carrier_link(link);
+        self.transporter = Some(link.transport_id);
+    }
+
     /// The whole carrier relation, for a caller that restores it.
     pub(crate) fn carrier_link(&self) -> Option<CarrierLink> {
         let (transport_id, open_topped) = match &self.role {
@@ -882,6 +866,12 @@ impl PassengerRole {
     /// The Building vector is independent of Cargo and the carrier relation.
     pub fn occupants(&self) -> &BuildingOccupants {
         &self.occupants
+    }
+
+    /// The vector's cursor and expiry steps; admission and transfer, which
+    /// also write the rider's link, are [`ObjectSubstrate`]'s.
+    pub(crate) fn occupants_mut(&mut self) -> &mut BuildingOccupants {
+        &mut self.occupants
     }
 
     /// Install a supplied Building-vector prior across the core/client test
@@ -1382,7 +1372,7 @@ pub(crate) fn board_passenger(
     if absorber_entry {
         sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
-    let context = UninitContext::new(rules, registry).with_effects(effects);
+    let context = UninitContext::new(rules).with_effects(effects);
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         if absorber_entry {
             sim.substrate.set_infantry_absorber_entry(pax_id, false);
@@ -1439,7 +1429,9 @@ pub(crate) fn board_passenger(
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
     }
     let boarded = if arm.building() {
-        sim.add_cargo_passenger_chain(carrier_id, &[(pax_id, pax_size)], context)
+        // A building's cargo shares VERA's carrier relation; Transporter
+        // (`+0x11C`, `PassengerRole::transporter`) stays as it is.
+        sim.add_cargo_members(carrier_id, &[(pax_id, pax_size)], context)
     } else {
         sim.add_passenger_with_context(carrier_id, &[(pax_id, pax_size)], context)
     };
@@ -1460,23 +1452,19 @@ pub(crate) fn board_passenger(
         if arm == BoardingArm::InfantryTransport
             && let Some(passenger) = sim.substrate.entities.get_mut(pax_id)
         {
-            passenger.clear_carrier_relation();
-            passenger.passenger_state_mut().transporter = prior_transporter;
+            let role = passenger.passenger_role_mut();
+            role.clear_carrier_relation();
+            role.transporter = prior_transporter;
         }
         let _ = sim.reveal_entity_with_context(pax_id, context);
         return false;
     }
-    if arm.building()
+    // Boarding keeps the passenger's TarCom and passive flag: neither arm
+    // nor Limbo writes them.
+    if arm == BoardingArm::InfantryBuilding
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
     {
-        // A building's cargo shares VERA's carrier relation; Transporter
-        // (`+0x11C`, `PassengerRole::transporter`) stays as it is. Boarding keeps the
-        // passenger's TarCom and passive flag: neither arm nor Limbo writes
-        // them.
-        pax.set_inside_transport(carrier_id, open_topped && !arm.building());
-        if arm == BoardingArm::InfantryBuilding {
-            pax.navigation.stop_moving();
-        }
+        pax.navigation.stop_moving();
     }
     if arm.building() {
         if arm == BoardingArm::UnitAbsorber && extra_power {
@@ -1500,7 +1488,7 @@ pub(crate) fn board_passenger(
     }
     if arm == BoardingArm::UnitTransport {
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
-        sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
+        sim.open_topped_passengers_take_target(pax_id, None, rules, effects);
     }
     // Phobos `TechnoClass_EnterTransport` (0x71067B): a qualifying
     // passenger joins the scenario reloader list.
@@ -1605,7 +1593,7 @@ pub(crate) fn try_fast_enter(
         return false;
     }
     // DoEnterNow: the transport's Tag hears event 1 first.
-    let context = UninitContext::new(rules, registry).with_effects(effects);
+    let context = UninitContext::new(rules).with_effects(effects);
     sim.dispatch_object_tag_event(target, 1, Some(id), None, context);
     let arm = if pax_category == EntityCategory::Infantry {
         BoardingArm::InfantryTransport
@@ -1664,7 +1652,7 @@ pub fn add_garrison_occupant(
     {
         return Ok(false);
     }
-    let context = UninitContext::new(rules, registry).with_effects(effects);
+    let context = UninitContext::new(rules).with_effects(effects);
     if !occupier {
         if assaulter {
             garrison_eject::kill_building_occupants(sim, building_id, Some(pax_id), context);
@@ -1827,18 +1815,14 @@ impl Simulation {
                     );
                 if let Some(target) = passenger_entity.lift.target() {
                     let keep = can_fire
-                        && !world.phobos_fire_while_moving_forbids(
-                            passenger, target, true, rules,
-                        );
+                        && !world.phobos_fire_while_moving_forbids(passenger, target, true, rules);
                     if !keep {
                         plans.push((passenger, true));
                     }
                 }
                 if let Some(target) = passenger_entity.temporal.warp_target() {
                     let keep = can_fire
-                        && !world.phobos_fire_while_moving_forbids(
-                            passenger, target, false, rules,
-                        );
+                        && !world.phobos_fire_while_moving_forbids(passenger, target, false, rules);
                     if !keep {
                         plans.push((passenger, false));
                     }
@@ -1918,7 +1902,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(transport_id)
-                .and_then(|entity| entity.cargo_mut())
+                .and_then(|entity| entity.passenger_role_mut().cargo_mut())
         {
             cargo.disembark(id);
         }
@@ -2129,7 +2113,6 @@ impl Simulation {
         transport_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(transport) = self.substrate.entities.get(transport_id) else {
@@ -2163,13 +2146,7 @@ impl Simulation {
         for passenger in passengers {
             // Original71056C dispatches each receiver's virtual+3C8, including
             // Infantry51B1F0's synchronous action/path/latch effects.
-            let _ = self.assign_target_represented(
-                passenger,
-                target,
-                rules,
-                overlay_registry,
-                frame_effects,
-            );
+            let _ = self.assign_target_represented(passenger, target, rules, frame_effects);
         }
     }
 }
@@ -2612,7 +2589,11 @@ impl Simulation {
                     EntityCategory::Unit => entity
                         .reload_unit_ammo(object, now, crate::rules::ares_switch::ares_way())
                         .is_ok(),
-                    _ => entity.reload_techno_ammo(object, now, crate::rules::ares_switch::ares_way()),
+                    _ => entity.reload_techno_ammo(
+                        object,
+                        now,
+                        crate::rules::ares_switch::ares_way(),
+                    ),
                 }
             });
             if reloaded {

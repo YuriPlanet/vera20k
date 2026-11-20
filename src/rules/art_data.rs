@@ -1986,7 +1986,7 @@ impl ArtRegistry {
             if let Some(config) = config {
                 let key =
                     anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                        .unwrap()
+                        .expect("index is within states")
                         .to_ascii_uppercase();
                 self.anim_runtime_configs.insert(key, config);
             }
@@ -2003,7 +2003,7 @@ impl ArtRegistry {
         self.anim_type_images.clear();
         for (index, (_, image)) in states.iter().enumerate() {
             let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                .unwrap()
+                .expect("index is within states")
                 .to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 config.image = image.image().to_owned();
@@ -2035,7 +2035,7 @@ impl ArtRegistry {
     ) {
         for (index, (_, references)) in states.iter().enumerate() {
             let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                .unwrap()
+                .expect("index is within states")
                 .to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 references.apply_to(config);
@@ -3171,8 +3171,14 @@ fn normalize_id(value: &str) -> Option<String> {
     }
 }
 
+/// Compares the first two bytes, so a name whose second character is not
+/// ASCII never matches and never splits a character.
 fn has_hardcoded_new_theater_prefix(upper_image: &str) -> bool {
-    upper_image.len() >= 2 && NEW_THEATER_PREFIXES.iter().any(|&p| p == &upper_image[..2])
+    upper_image.as_bytes().get(..2).is_some_and(|head| {
+        NEW_THEATER_PREFIXES
+            .iter()
+            .any(|prefix| prefix.as_bytes() == head)
+    })
 }
 
 fn push_shp_pair(candidates: &mut Vec<String>, base_name: &str, theater_ext: &str) {
