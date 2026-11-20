@@ -1,7 +1,7 @@
 //! An in-process, single-threaded network simulation of one relay room under
 //! a virtual clock, for the integration tests of the adaptive transport
-//! (services/relay/adaptive-transport/spec.md §13.2) and the measurements
-//! of its results.md. The production `RelayServer` and `ClientSession` run
+//! (services/relay/adaptive-transport/spec.md §13.2) and the `relay_netsim`
+//! example's measurements. The production `RelayServer` and `ClientSession` run
 //! unchanged; this module supplies the network, the clock, the observation
 //! and a client (`adaptive_client`) that drives `ClientSession` as the game
 //! does. Built only for tests and the `test-support` feature.
@@ -849,7 +849,7 @@ impl Simulation {
         let report = self.report();
         if let Some(trace) = self.trace.as_mut() {
             trace.relay_history = self.relay.ordering_history(ROOM);
-            trace.mac_counts = self.relay.take_mac_failure_counts();
+            trace.session_alerts = self.relay.take_session_alerts();
             trace.client_mac_failures = self
                 .clients
                 .iter()

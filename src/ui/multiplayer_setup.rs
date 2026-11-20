@@ -91,13 +91,12 @@ const ROSTER_BOX_MARGIN: (i32, i32) = (5, 3);
 const ROSTER_INSET: i32 = 5;
 const ROSTER_SPARE_W: i32 = 34;
 /// The roster's entries at their full width, from their left edge: a row's
-/// Player, Side, Colour, Start and Team cells, as left edge and width, after
-/// its ping at the left; a header's caption, the host's Add AI and, at the
-/// row's right end, its Join: text like the rows', no button art. A
-/// narrower column narrows them all ([`RosterColumns`]).
+/// Player, Side, Colour, Start and Team cells, as left edge and width; a
+/// header's caption, the host's Add AI and, at the row's right end, its Join:
+/// text like the rows', no button art. A narrower column narrows them all
+/// ([`RosterColumns`]).
 const ROSTER_W: i32 = 751;
 const ROSTER_CELLS: [(i32, i32); 5] = [(18, 260), (286, 156), (450, 57), (515, 57), (580, 57)];
-const ROSTER_PING_W: i32 = 16;
 const ROSTER_CAPTION_W: i32 = 260;
 const ROSTER_ADD_AI: (i32, i32) = (286, 91);
 const ROSTER_JOIN_W: i32 = 91;
@@ -295,10 +294,12 @@ pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
 /// The room's Terrain Deformation ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const TERRAIN_DEFORMATION: u16 = 0x7F12;
+/// The room's Building Production Queue ([`HostRules`](crate::skirmish_launch::HostRules)).
+pub(crate) const BUILDING_QUEUE: u16 = 0x7F13;
 /// The room's Superweapon Limit, a trackbar in VERA's Game Options only
 /// ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const SUPERWEAPON_LIMIT: u16 = 0x7F14;
-pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
+pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
     BRIDGES,
     ALLYING,
     NO_YURI,
@@ -306,10 +307,11 @@ pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
     NO_SPY,
     NO_STOLEN_TECH,
     TERRAIN_DEFORMATION,
+    BUILDING_QUEUE,
 ];
 /// Their labels in VERA's language files; the retail string table has none
 /// for them.
-pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
     "VERA:DestroyableBridges",
     "VERA:InGameAllying",
     "VERA:NoYuri",
@@ -317,21 +319,18 @@ pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
     "VERA:NoSpy",
     "VERA:NoStolenTech",
     "VERA:TerrainDeformation",
+    "VERA:BuildingProductionQueue",
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
 pub(crate) const COUNTRIES: [u16; 8] = [0x6A1, 0x510, 0x513, 0x51E, 0x514, 0x51F, 0x520, 0x521];
 pub(crate) const COLORS: [u16; 8] = [0x6A2, 0x522, 0x523, 0x524, 0x525, 0x526, 0x527, 0x528];
 pub(crate) const STARTS: [u16; 8] = [0x6A3, 0x6A4, 0x6A5, 0x6A6, 0x6A7, 0x6A8, 0x6AA, 0x6AB];
-/// WOL-only C2/C9 controls: Page (modal 0xCF), the emote button and the
-/// per-row ping statics 0x754+row (helper 004E34A0).
+/// WOL-only C2/C9 controls: Page (modal 0xCF) and the emote button.
 pub(crate) const PAGE: u16 = 0x5C2;
 pub(crate) const EMOTE: u16 = 0x3ED;
-pub(crate) const PING_ICONS: u16 = 0x754;
 /// The map thumbnail.
 pub(crate) const MAP_PREVIEW: u16 = 0x468;
-/// C9's "Preview unavailable" static over the map thumbnail `0x468`.
-pub(crate) const NO_PREVIEW: u16 = 0x71F;
 
 /// The service whose setup dialog this is. Every shared helper keeps one
 /// code path and branches on GameMode 3/4 like the native helpers do.
@@ -388,20 +387,6 @@ impl SetupDialog {
         } else {
             VISIBLE_SETUP_ROWS
         }
-    }
-}
-
-/// WOL__SetPlayerPing 007A0EA0: icon -1/0/1/2 at thresholds 0/300/500, art
-/// pingg/pingy/pingr.pcx through 004E34A0. Negative pings show no image.
-pub(crate) const fn ping_icon(ping: i32) -> Option<u8> {
-    if ping < 0 {
-        None
-    } else if ping < 300 {
-        Some(0)
-    } else if ping < 500 {
-        Some(1)
-    } else {
-        Some(2)
     }
 }
 
@@ -822,13 +807,11 @@ pub(crate) struct SetupView {
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
     /// [`ROOM_CHECKBOXES`]' states.
-    pub(crate) room_checks: [bool; 7],
+    pub(crate) room_checks: [bool; 8],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
     pub(crate) headers: [Option<SetupHeader>; MODERN_SETUP_ROWS],
-    /// C2/C9 ping statics; always empty on BC/BD.
-    pub(crate) ping_icons: [Option<u8>; MODERN_SETUP_ROWS],
     /// The box open over VERA's room.
     pub(crate) open_box: Option<RoomBox>,
     /// Team Starts: Teams is set and the map has starts to give.
@@ -846,9 +829,6 @@ pub(crate) struct SetupView {
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
-    /// C9's `0x71F` shows, and `0x468` is hidden (WOL `Z3`).
-    pub(crate) no_preview: bool,
-    pub(crate) preview_hidden: bool,
     pub(crate) cooperative: bool,
     pub(crate) cooperative_description: Option<String>,
 }
@@ -1344,8 +1324,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) roster_bottom: i32,
     pub(crate) flags: [RectPx; MODERN_SETUP_ROWS],
     pub(crate) acceptance: [RectPx; MODERN_SETUP_ROWS],
-    /// C2/C9 ping statics and emote button; `None` on BC/BD.
-    pub(crate) ping_icons: Option<[RectPx; MODERN_SETUP_ROWS]>,
+    /// C2/C9 emote button; `None` on BC/BD.
     pub(crate) emote: Option<RectPx>,
     pub(crate) chat: RectPx,
     pub(crate) chat_log: RectPx,
@@ -1353,7 +1332,7 @@ pub(crate) struct MultiplayerSetupLayout {
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
     /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
-    pub(crate) room_checkboxes: [RectPx; 7],
+    pub(crate) room_checkboxes: [RectPx; 8],
     /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
     pub(crate) superweapon_limit_label: RectPx,
     /// VERA's team bar under the roster, with the Teams count's label, the
@@ -1371,10 +1350,6 @@ pub(crate) struct MultiplayerSetupLayout {
     /// VERA's missing-map offer, a screen-centred two-button box.
     pub(crate) map_offer: crate::ui::shell::modal::QuitConfirmLayout,
     pub(crate) map_preview: RectPx,
-    /// C9's hidden `0x71F` static ("Preview unavailable"): placed by
-    /// `0x0060B950` alone, so it keeps its template place while `0x468`
-    /// is right-anchored. `None` on BC/BD/C2.
-    pub(crate) no_preview: Option<RectPx>,
     pub(crate) cooperative_description: RectPx,
     pub(crate) mode_label: RectPx,
     pub(crate) map_label: RectPx,
@@ -1516,9 +1491,6 @@ impl MultiplayerSetupLayout {
                     rect(42, icon_y(row), 28, 21)
                 }
             }),
-            ping_icons: dialog
-                .wol()
-                .then(|| std::array::from_fn(|row| rect(27, icon_y(row), 16, 21))),
             emote: dialog.wol().then(|| rect(596, 533, 27, 24)),
             // The NewEdit paints inside its one-pixel resource frame.
             chat: rect(12, chat_y + 1, chat_w - 2, 19),
@@ -1530,7 +1502,7 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
-            room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 8],
             superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             team_bar: None,
             teams_label: RectPx::new(0, 0, 0, 0),
@@ -1555,7 +1527,6 @@ impl MultiplayerSetupLayout {
             game_options: None,
             map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
             cooperative_description: rect(60, 98, 540, 143),
-            no_preview: (dialog.wol() && !host).then(|| rect(650, 37, 145, 113)),
             map_preview: scale.scale_rect(anchor_rect(
                 crate::ui::shell::descriptor::AnchorRule::RightAnchor,
                 RectPx::new(preview_x, 23, 96, 69),
@@ -1600,25 +1571,27 @@ impl MultiplayerSetupLayout {
         let options = crate::ui::shell::modal::menu_box(SHELL_BASE_W, SHELL_BASE_H)
             .translate(window.x / 2, 0);
         let popup = |x, y, w, h| base(options.x + x, options.y + y, w, h);
+        let form_row = |index| crate::ui::shell::modal::game_options_form_row(options, index);
         // The same two columns as the checkboxes below: each trackbar's
         // label in the left one, the trackbar (its art's own width) starting
         // the right one.
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
-            *label = popup(24, 32 + 30 * index as i32, 185, 17);
+            *label = scale.scale_rect(form_row(index).0);
         }
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
-                *bar = popup(215, 30 + 30 * index as i32, 129, 21);
+                *bar = scale.scale_rect(form_row(index).1);
             }
             // Superweapon Limit under Unit Count.
             if *id == SUPERWEAPON_LIMIT {
-                *bar = popup(215, 30 + 30 * OPTION_TRACKBARS.len() as i32, 129, 21);
+                *bar = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).1);
             }
         }
-        self.superweapon_limit_label = popup(24, 32 + 30 * OPTION_TRACKBARS.len() as i32, 185, 17);
-        // Two columns of six under the trackbars and Superweapon Limit, the
-        // left one over the art: the native five and Destroyable Bridges,
-        // then In-game Allying, the four bans and Terrain Deformation.
+        self.superweapon_limit_label = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).0);
+        // Two columns under the trackbars and Superweapon Limit, the left one
+        // over the art: the native five, Destroyable Bridges and Building
+        // Production Queue, then In-game Allying, the four bans and Terrain
+        // Deformation.
         let row = |index: i32| 154 + 22 * index;
         let left_option = |index| popup(24, row(index), 185, 17);
         let right_option = |index| popup(215, row(index), 226, 17);
@@ -1633,6 +1606,7 @@ impl MultiplayerSetupLayout {
             right_option(3),
             right_option(4),
             right_option(5),
+            left_option(6),
         ];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, options.w, options.h),
@@ -1744,8 +1718,8 @@ impl MultiplayerSetupLayout {
         }
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
-    /// header's caption, Add AI and Join along its band, and a row's ping
-    /// and cells along its line.
+    /// header's caption, Add AI and Join along its band, and a row's cells
+    /// along its line.
     pub(crate) fn arrange_roster(&mut self, places: &[RosterPlace]) {
         let scale = self.page.scale;
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
@@ -1771,9 +1745,6 @@ impl MultiplayerSetupLayout {
                     .cells
                     .map(|(dx, w)| rect(x + dx, y, w, ROSTER_ROW_H));
                 self.roster_rows[position] = rect(x, y, columns.w, ROSTER_ROW_H);
-            }
-            if let Some(icons) = &mut self.ping_icons {
-                icons[position] = rect(x, y, ROSTER_PING_W, ROSTER_ROW_H);
             }
         }
         // Each header's group: it and the rows under it.
@@ -1820,9 +1791,6 @@ impl MultiplayerSetupLayout {
             self.header_controls[row] = (move_up(join), move_up(add_ai));
             self.flags[row] = move_up(self.flags[row]);
             self.acceptance[row] = move_up(self.acceptance[row]);
-            if let Some(icons) = &mut self.ping_icons {
-                icons[row] = move_up(icons[row]);
-            }
         }
     }
     pub(crate) fn control_rect(&self, id: u16) -> Option<RectPx> {
@@ -1852,18 +1820,12 @@ impl MultiplayerSetupLayout {
         {
             return Some(*rect);
         }
-        if let Some(icons) = &self.ping_icons
-            && (PING_ICONS..PING_ICONS + 8).contains(&id)
-        {
-            return Some(icons[usize::from(id - PING_ICONS)]);
-        }
         match id {
             PREVIOUS_ROWS => Some(self.roster_navigation[0]),
             NEXT_ROWS => Some(self.roster_navigation[1]),
             CHAT => Some(self.chat),
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
-            NO_PREVIEW => self.no_preview,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
@@ -2122,10 +2084,9 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
-            room_checks: [false; 7],
+            room_checks: [false; 8],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
-            ping_icons: [None; MODERN_SETUP_ROWS],
             open_box: None,
             team_starts_enabled: true,
             team_colors_enabled: true,
@@ -2136,8 +2097,6 @@ mod tests {
             mode_label: String::new(),
             map_label: String::new(),
             selected_map_index: None,
-            no_preview: false,
-            preview_hidden: false,
             cooperative: false,
             cooperative_description: None,
         }

@@ -1,8 +1,7 @@
-//! VERA's offline WOL test service: a developer stand-in behind the same
-//! request/event boundary a real service will use, chosen by
-//! `[VERA] WolTestService=`. It is not gamemd behavior: it lets
-//! the Internet screens (login `0x10F`, lobby `0x113`, setup C2/C9) be
-//! opened and clicked without a server.
+//! VERA's offline WOL test service: a stand-in behind the live service's
+//! request/event boundary, which only shell captures select. It is not
+//! gamemd behavior: it lets the Internet screens (login `0x10F`, lobby
+//! `0x113`, setup C2/C9) be opened and clicked without a server.
 //!
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
@@ -27,7 +26,9 @@
 
 use super::lobby::WolJoined;
 use super::service::{WolHighScoreRecord, WolLadderRecord};
-use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
+use super::{
+    SERVER_STATUS_READY, WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent,
+};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
@@ -38,9 +39,6 @@ use crate::ui::wol_lobby::{
 };
 use crate::ui::wol_login::WolCredential;
 use crate::util::time::Instant;
-
-/// Event 9's status that completes the server-list wait.
-const SERVER_STATUS_READY: u32 = 0x0004_012F;
 
 /// Replies per poll; each may queue further requests (a list reply asks to
 /// join, a join asks for both lists).
@@ -549,8 +547,18 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::LocaleCount => {
             WolServiceEvent::LocaleCount(crate::ui::wol_persona::LOCALE_COUNT)
         }
-        // VERA online's account requests: the stand-in lobby accepts each.
-        WolServiceRequest::Account(_) => WolServiceEvent::Account(Ok(())),
+        // This stand-in has no registered email index.
+        WolServiceRequest::Account { request, .. } => {
+            use crate::ui::wol_account::{AccountRequest, AccountSuccess, valid_name};
+            let answer = match request {
+                AccountRequest::Delete { identifier, .. } if valid_name(&identifier) => {
+                    Ok(AccountSuccess::Deleted(identifier))
+                }
+                AccountRequest::Delete { .. } => Err(crate::i18n::tr("VERA:DeleteUseUsername")),
+                _ => Ok(AccountSuccess::Accepted),
+            };
+            WolServiceEvent::Account(answer)
+        }
         // Nobody plays, so no match can be watched.
         WolServiceRequest::ListMatches => WolServiceEvent::Matches(Vec::new()),
         WolServiceRequest::Watch { .. } => {

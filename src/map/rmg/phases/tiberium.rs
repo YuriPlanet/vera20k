@@ -15,6 +15,7 @@
 //! Native: `RandomMapGenerator::CreateTiberium @ 0x005A23A0` (the driver) and
 //! its field placer `RandomMapGenerator::PlaceTiberiumField @ 0x005A28C0`.
 
+use crate::map::playfield::PlayfieldBounds;
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
@@ -23,7 +24,6 @@ use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt_f32};
 use crate::util::native_x87::X87Chop53;
 
 use super::regions::Regions;
-use super::zones::diamond_frame_contains;
 use crate::util::native_heap::NativeHeap;
 
 /// Ore/gem overlay base indices (`0x66` / `0x1B`).
@@ -65,9 +65,8 @@ pub struct TiberiumArgs {
     /// `RMGMinimumTiberium` / `RMGMaximumTiberium`.
     pub min_tib: i32,
     pub max_tib: i32,
-    pub map_w: i32,
-    /// Playfield local rect `{x, y, w, h}`.
-    pub local_rect: [i32; 4],
+    /// The playfield: the padded `Size` width and the LocalSize.
+    pub playfield: PlayfieldBounds,
 }
 
 /// Everything the phase borrows.
@@ -448,14 +447,10 @@ fn place_field(
             let Some(cell) = ctx.grid.get(nx, ny) else {
                 continue;
             };
-            if !diamond_frame_contains(
-                args.map_w,
-                args.local_rect,
-                nx,
-                ny,
-                cell.level,
-                cell.slope != 0,
-            ) {
+            if !args
+                .playfield
+                .contains_height_aware_packed(nx, ny, cell.level as i8, cell.slope)
+            {
                 continue;
             }
             if !ctx.ids.is_clear(cell.tile) {
@@ -534,8 +529,7 @@ mod tests {
                 tib_option: 50,
                 min_tib: 900,
                 max_tib: 1050,
-                map_w,
-                local_rect: [2, 5, gen_w, gen_h],
+                playfield: PlayfieldBounds::from_normalized_local_size(map_w, 2, 5, gen_w, gen_h),
             },
             stride,
         )
@@ -704,8 +698,9 @@ mod tests {
             tib_option: field("tib_option"),
             min_tib: field("min_tib"),
             max_tib: field("max_tib"),
-            map_w: 16,
-            local_rect: rect,
+            playfield: PlayfieldBounds::from_normalized_local_size(
+                16, rect[0], rect[1], rect[2], rect[3],
+            ),
         }
     }
 

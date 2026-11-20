@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -52,7 +53,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.resolve_type_handles(&rules);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
@@ -70,7 +71,8 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     let member = sim
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
@@ -170,16 +172,14 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
     };
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = runtime.resources.rules.overlay_registry();
     sim.team_assign_mission_target(
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),
         &rules,
-        Some(&overlays),
         FrameEffects::default(),
     );
     let rng = sim.rng_state();
-    sim.team_coordinate_attack(team, &rules, Some(&overlays), FrameEffects::default());
+    sim.team_coordinate_attack(team, &rules, FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().focus,
         Some(TeamTarget::Object(tree))
@@ -227,13 +227,14 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         let team = sim
             .team_script_vm
             .create_team(receiver, script, vec![id], 0);
-        sim.team_assign_mission_target(team, target, &rules, None, FrameEffects::default());
+        sim.team_assign_mission_target(team, target, &rules, FrameEffects::default());
         let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
         state.focus = focus;
         state.zone = sold;
         teams.push((team, expected_target, expected_focus, id));
     }
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
@@ -262,12 +263,12 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         .get_mut(&team)
         .unwrap()
         .mission_target = Some(TeamTarget::Cell { x: 516, y: 3 }); // same allocation as4,4
-    sim.stop_all_targeting_cell(4, 4, &rules, Some(&overlays), FrameEffects::default());
+    sim.stop_all_targeting_cell(4, 4, &rules, FrameEffects::default());
     assert_eq!(sim.team_script_vm.team(team).unwrap().mission_target, None);
     let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
     state.mission_target = Some(TeamTarget::Cell { x: -1, y: 0 });
     state.focus = Some(TeamTarget::Cell { x: 9, y: 9 });
-    sim.stop_all_targeting_cell(12, 12, &rules, Some(&overlays), FrameEffects::default());
+    sim.stop_all_targeting_cell(12, 12, &rules, FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!((state.mission_target, state.focus), (None, None));
 }
@@ -285,7 +286,6 @@ fn object_detach_clears_team_targets_without_expiring_zone_or_members() {
     sim.stop_all_targeting_on_detach(
         44,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         FrameEffects::default(),
     );
     let state = sim.team_script_vm.team(team).unwrap();
@@ -309,13 +309,12 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
         let source = sim
             .spawn_object("SHK", "Americans", 11, 12, 0, &rules)
             .unwrap();
-        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, None, FrameEffects::default()));
+        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, FrameEffects::default()));
         if !automatic {
             sim.assign_target_represented(
                 source,
                 Some(TargetKind::Entity(coil)),
                 &rules,
-                None,
                 FrameEffects::default(),
             )
             .unwrap();
@@ -520,7 +519,6 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
         team,
         Some(TeamTarget::Object(old)),
         &rules,
-        None,
         FrameEffects::default(),
     );
     for &member in &members {
@@ -528,14 +526,12 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
             member,
             TeamTarget::Object(old),
             &rules,
-            None,
             FrameEffects::default(),
         );
         sim.team_member_set_destination(
             member,
             Some(TeamTarget::Object(old)),
             &rules,
-            None,
             FrameEffects::default(),
         );
     }
@@ -723,8 +719,12 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
         i64::from(rules.general.patrol_scan_frames()),
         row["ticks"].as_i64().unwrap()
     );
-    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-        .unwrap();
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     assert_eq!(
         teams
             .scripts
@@ -794,7 +794,7 @@ fn a_member_detached_inside_a_placement_scope_stays_in_its_team() {
     let mut sim = Simulation::with_seed(0x4D9736);
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
-    let context = crate::sim::world::UninitContext::new(&rules, None);
+    let context = crate::sim::world::UninitContext::new(&rules);
     sim.with_object_placement_scope(|sim| sim.detach_all(members[1], true, context));
     sim.detach_all(members[2], true, context);
     let team_of = |id| sim.team_script_vm.member_team.get(&id).copied();
@@ -900,9 +900,12 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1278,7 +1281,6 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
                 team,
                 Some(TeamTarget::Object(buildings[0])),
                 &rules,
-                None,
                 FrameEffects::default(),
             );
             // Changed waypoint now contains no building. A repeated visit
@@ -1357,9 +1359,12 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1503,7 +1508,11 @@ fn the_retail_scatter_script_runs_ported_actions() {
         return;
     };
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1820,7 +1829,11 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
         assert_eq!(rules.object(name).unwrap().base_plan_type_index, index);
     }
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

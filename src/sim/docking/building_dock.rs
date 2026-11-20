@@ -908,7 +908,6 @@ pub(crate) fn building_dock_cell(
     mover_id: u64,
     offered: (i16, i16),
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<(u16, u16)> {
     use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
     let producer = sim.substrate.entities.get(producer_id)?;
@@ -923,14 +922,7 @@ pub(crate) fn building_dock_cell(
     let admits = |cell, mode| {
         sim.map_cell_in_bounds(cell)
             && sim
-                .mover_can_enter(
-                    mover_id,
-                    cell,
-                    InfantryEntryArgs::REPAIR,
-                    mode,
-                    rules,
-                    registry,
-                )
+                .mover_can_enter(mover_id, cell, InfantryEntryArgs::REPAIR, mode, rules)
                 .is_ok_and(|code| code == 0)
     };
     let published = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
@@ -1184,8 +1176,7 @@ pub(crate) fn try_pending_entry(
         );
         // vt+0x480 of whichever Foot waits: an aircraft's pending entry is
         // its own (`AircraftClass::Assign_Destination` sets it).
-        let _ =
-            sim.assign_destination_represented(id, Some(destination), rules, None, frame_effects);
+        let _ = sim.assign_destination_represented(id, Some(destination), rules, frame_effects);
         if let Some(unit) = sim.substrate.entities.get_mut(id) {
             unit.pending_entry.clear();
         }
@@ -1197,7 +1188,7 @@ pub(crate) fn try_pending_entry(
             sim.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
-        sim.assign_null_destination(id, rules, None, frame_effects);
+        sim.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         if let Some(unit) = sim.substrate.entities.get_mut(id) {
             unit.pending_entry.clear();
         }
@@ -1263,7 +1254,7 @@ pub(crate) fn park_pending_entry(
         return false;
     };
     let cell = crate::sim::components::NavTargetRef::cell(x, y);
-    let _ = sim.assign_destination_represented(id, Some(cell), rules, None, frame_effects);
+    let _ = sim.assign_destination_represented(id, Some(cell), rules, frame_effects);
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Move),
@@ -1329,7 +1320,6 @@ fn release_contact(
     depot: u64,
     unit: u64,
     state1: bool,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     let Some(contact) = sim.substrate.entities.get(unit) else {
@@ -1339,7 +1329,7 @@ fn release_contact(
     let ai_archive = archive.filter(|_| {
         sim.houses
             .get(&contact.owner())
-            .is_some_and(|h| !h.is_controlled_by_human(sim.session.game_mode_nonzero()))
+            .is_some_and(|h| !h.is_controlled_by_human(sim.session.rule_policy()))
     });
     if state1
         && let Some(contact) = sim.substrate.entities.get_mut(unit)
@@ -1355,7 +1345,7 @@ fn release_contact(
         };
         // Original runs the exit search before a rally overrides its answer.
         // One GetDockCell44EFB0 port supplies depot and factory callers.
-        let exit = building_dock_cell(sim, depot, unit, (0, 0), rules, registry);
+        let exit = building_dock_cell(sim, depot, unit, (0, 0), rules);
         depot_rally_cell(sim, building)
             .or(exit)
             .map(|(x, y)| crate::sim::components::NavTargetRef::cell(x, y))
@@ -1370,8 +1360,7 @@ fn release_contact(
         sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
-    let _ =
-        sim.assign_destination_represented(unit, Some(destination), rules, registry, frame_effects);
+    let _ = sim.assign_destination_represented(unit, Some(destination), rules, frame_effects);
     if (state1 || ai_archive.is_some())
         && let Some(contact) = sim.substrate.entities.get_mut(unit)
     {
@@ -1490,7 +1479,6 @@ pub(crate) fn mission_repair(
                 sim,
                 rules,
                 depot,
-                registry,
                 frame_effects,
             ));
         }
@@ -1644,7 +1632,7 @@ pub(crate) fn mission_repair(
                 sim,
                 rules,
                 unit,
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             ) {
                 // `0x0044C4E1..C4EE`: reset the depot's handler cursor and
                 // mark its BuildingReady latch after On_Sold has removed the
@@ -1692,7 +1680,7 @@ pub(crate) fn mission_repair(
                 Ordering::Equal | Ordering::Unordered
             ) && contact.locomotor.as_ref().is_some_and(|l| !l.is_powered())
             {
-                release_contact(sim, rules, depot, unit, true, registry, frame_effects);
+                release_contact(sim, rules, depot, unit, true, frame_effects);
             }
         }
         return Some(rate);
@@ -1765,7 +1753,7 @@ pub(crate) fn mission_repair(
                     .get_mut(depot)?
                     .mission
                     .set_handler_state(1);
-                release_contact(sim, rules, depot, unit, false, registry, frame_effects);
+                release_contact(sim, rules, depot, unit, false, frame_effects);
             }
         }
         return Some(1);
@@ -1922,10 +1910,7 @@ mod tests {
                 sim.scenario_rng.logical_state(),
                 sim.mapgen_rng.logical_state(),
             );
-            assert_eq!(
-                building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, None),
-                expected
-            );
+            assert_eq!(building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules), expected);
             assert_eq!(
                 before,
                 (
@@ -1950,7 +1935,7 @@ mod tests {
         ] {
             let (sim, rules) = factory_exit_fixture(extra);
             assert_eq!(
-                building_dock_cell(&sim, DEPOT, 1, offered, &rules, None),
+                building_dock_cell(&sim, DEPOT, 1, offered, &rules),
                 expected
             );
         }
@@ -1971,12 +1956,9 @@ mod tests {
             .unwrap()
             .position
             .set_ry_for_test(0);
+        assert_eq!(building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules), None);
         assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, None),
-            None
-        );
-        assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (20, 20), &rules, None),
+            building_dock_cell(&sim, DEPOT, 1, (20, 20), &rules),
             Some((20, 20))
         );
     }
@@ -1989,7 +1971,7 @@ mod tests {
     fn linked_depot_exit_admits_native_inside_footprint_result() {
         use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _) =
             crate::sim::world::entry_test_fixture::fixture_with_rules_and_fixed_art(
                 "[VehicleTypes]\n0=MTNK\n\
                  [BuildingTypes]\n1=NADEPT\n\
@@ -2031,7 +2013,6 @@ mod tests {
                     InfantryEntryArgs::REPAIR,
                     EntryQueryMode::SkipLocomotor,
                     &rules,
-                    Some(&registry),
                 ),
                 Ok(2),
                 "native raw reservation at {cell:?}"
@@ -2044,12 +2025,11 @@ mod tests {
                 InfantryEntryArgs::REPAIR,
                 EntryQueryMode::SkipLocomotor,
                 &rules,
-                Some(&registry),
             ),
             Ok(0)
         );
         assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, Some(&registry)),
+            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules),
             Some((9, 11))
         );
         assert_eq!(
@@ -2069,7 +2049,6 @@ mod tests {
             DEPOT,
             1,
             false,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
 
@@ -2172,7 +2151,7 @@ mod tests {
             .get_mut(aircraft)
             .unwrap()
             .mark_live_contact_with(depot);
-        let exit = building_dock_cell(&sim, depot, aircraft, (0, 0), &rules, None)
+        let exit = building_dock_cell(&sim, depot, aircraft, (0, 0), &rules)
             .expect("an exit cell for the aircraft");
 
         release_contact(
@@ -2181,7 +2160,6 @@ mod tests {
             depot,
             aircraft,
             false,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
 

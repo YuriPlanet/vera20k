@@ -161,7 +161,6 @@ pub(crate) fn configured(
         && !sw.use_charge_drain
         && sw.unit_delivery.as_ref().is_some_and(|delivery| {
             !delivery.types.is_empty()
-                && delivery.deferment >= 0
                 && delivery_owner(sim, rules, owner, delivery.owner).is_some()
                 && delivery
                     .types
@@ -186,20 +185,27 @@ pub(crate) fn launch(
     let Some(delivery_owner) = delivery_owner(sim, rules, owner, config.owner) else {
         return false;
     };
+    // SW_UnitDelivery::Activate (Ares 3.0 10075920; Ares source
+    // Misc/SWTypes/UnitDelivery.cpp, `SW_Deferment.Get(-1)`): the common
+    // SW.Deferment Nullable (SWTypeExt +0x254), 20 frames when it is unset
+    // or negative.
+    let deferment = rules
+        .super_weapon_metadata(&sw.id)
+        .and_then(|metadata| metadata.launch().deferment())
+        .filter(|frames| *frames >= 0)
+        .unwrap_or(20);
     let frame = sim.session.binary_frame();
     let request = PendingDelivery {
         sw_type,
         owner: delivery_owner,
         cell,
         issued_frame: frame,
-        // The rules owner resolves the negative sentinel to the 20-frame
-        // fallback. Admission rejects an invalid unnormalized saved value.
-        due_frame: frame.wrapping_add(config.deferment as u32),
+        due_frame: frame.wrapping_add(deferment as u32),
         types: config.types.clone(),
         base_normal: config.base_normal,
         activation_sound: config.activation_sound.clone(),
     };
-    if config.deferment == 0 {
+    if deferment == 0 {
         apply(sim, rules, request, registry, effects);
     } else {
         sim.unit_deliveries.pending.push(request);
@@ -405,7 +411,7 @@ fn place(
     }
     if !building {
         let mission =
-            if sim.houses[&request.owner].is_controlled_by_human(sim.session.game_mode_nonzero()) {
+            if sim.houses[&request.owner].is_controlled_by_human(sim.session.rule_policy()) {
                 MissionType::AreaGuard
             } else {
                 MissionType::Hunt

@@ -243,7 +243,6 @@ fn failed_pad_nudge_still_assigns_the_zero_cell() {
         &mut sim,
         miner,
         &rules,
-        None,
         FrameEffects::default(),
     );
     let unit = sim.substrate.entities.get(miner).unwrap();

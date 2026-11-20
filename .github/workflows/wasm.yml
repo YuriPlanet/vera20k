@@ -57,6 +57,7 @@ on:
       - 'src/app/input/hardware_cursor.rs'
       - 'src/app/input/ime.rs'
       - 'src/app/input/keyboard.rs'
+      - 'src/app/input/tooltips.rs'
       - 'src/app/lan_service**'
       - 'src/app/loading/**'
       - 'src/app/map_library.rs'
@@ -68,6 +69,7 @@ on:
       - 'src/app/persistence/**'
       - 'src/app/shell_wol/**'
       - 'src/app/window_icon.rs'
+      - 'src/app/worker.rs'
 
 # A new push to the same pull request replaces its unfinished run.
 concurrency:

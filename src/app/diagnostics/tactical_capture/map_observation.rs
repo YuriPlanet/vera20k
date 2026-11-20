@@ -5129,7 +5129,7 @@ mod tests {
             .unwrap();
         sim.session_mut_for_test().set_binary_frame_for_test(17);
         sim.bomb_attach_for_test(planter, Some(carrier), &rules);
-        let entity = sim.entities_mut_for_test().get_mut(planter).unwrap();
+        let entity = sim.entity_mut_for_test(planter).unwrap();
         entity.last_fire_frame.set_for_test(16);
         entity.body_frame_counter.set_for_test(u32::MAX);
         entity.rearm_timer.set_for_test(CdTimer::from_raw(16, 50));
@@ -5254,8 +5254,7 @@ mod tests {
         // predicate here. World gameplay tests cover that independent input.
         let mut rng = sim.scenario_rng_mut_for_test().clone();
         let cloak = sim
-            .entities_mut_for_test()
-            .get_mut(sub)
+            .entity_mut_for_test(sub)
             .unwrap()
             .cloak
             .as_mut()
@@ -5306,16 +5305,14 @@ mod tests {
         // A diagnostic fixture exercises independent cargo order and the
         // existing target-head fixture, without modelling gunner callbacks.
         let cargo = sim
-            .entities_mut_for_test()
-            .get_mut(fv)
+            .entity_mut_for_test(fv)
             .unwrap()
             .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo.board_forced_chain(&[(cleg, 1.0)]);
         cargo.board_forced_chain(&[(other, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(victim)
+        sim.entity_mut_for_test(victim)
             .unwrap()
             .set_temporal_for_test(TemporalState::warped_by_for_test(cleg));
         let hash = sim.state_hash();

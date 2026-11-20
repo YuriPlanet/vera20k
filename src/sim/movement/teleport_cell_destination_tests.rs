@@ -1076,6 +1076,7 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
     );
     for target_rx in [12, 13] {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1137,7 +1138,7 @@ fn a_deferred_restore_keeps_a_cleg_object_navcom() {
     cleg.navigation.set_nav_com_for_test(Some(target));
     cleg.navigation
         .set_pending_destination_setter_for_test(true);
-    sim.complete_pending_order(id, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.complete_pending_order(id, &rules, crate::sim::world::FrameEffects::default());
     let cleg = sim.substrate.entities.get(id).unwrap();
     assert_eq!(cleg.navigation.nav_com(), Some(target));
     assert!(!cleg.navigation.pending_destination_setter());
@@ -1407,6 +1408,7 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                     let (rx, ry) = pair(&boundary["input"]["cell"]);
                     assert!(
                         sim.apply_command_with_overlays(
+                            None,
                             "Americans",
                             &Command::Move {
                                 entity_id: id,

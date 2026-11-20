@@ -436,7 +436,6 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
         tanya,
         Some(TargetKind::Entity(building)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();
@@ -857,7 +856,6 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
         tanya,
         Some(NavTargetRef::cell(10, 14)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();
@@ -865,7 +863,6 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
         tanya,
         Some(TargetKind::Entity(building)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();

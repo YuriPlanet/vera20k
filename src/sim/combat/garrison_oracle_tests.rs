@@ -66,7 +66,10 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             );
             occupant.veterancy.set_rank_for_test(rank);
             occupant.set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
-            building.garrison_mut_for_test().add_for_test(id);
+            building
+                .passenger_role_mut_for_test()
+                .occupants_mut()
+                .add_for_test(id);
             world.substrate.entities.insert(occupant);
         }
         assert_eq!(building.passenger_role().occupants().ids(), [2, 3]);
@@ -241,11 +244,15 @@ pub(super) fn for_each_native_case(
             entity
                 .veterancy
                 .set_rank_for_test((occupant["veterancy"].as_f64().unwrap() * 100.0) as u16);
-            building.garrison_mut_for_test().add_for_test(id);
+            building
+                .passenger_role_mut_for_test()
+                .occupants_mut()
+                .add_for_test(id);
             entities.insert(entity);
         }
         building
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_fire_index_for_test(input["fire_index"].as_i64().unwrap() as i32);
         check(case, &building, object, &entities, &rules, &test_interner());
     }

@@ -30,9 +30,7 @@ use crate::rules::native_processing::{
     CountryProjection, CountryVeterancyState, ProcessedRulesLayers, RulesLayerStack,
     SideProjection, house_type_index_of_name,
 };
-use crate::rules::object_type::{
-    BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
-};
+use crate::rules::object_type::{BuildCategory, HouseMasks, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId};
 use crate::rules::phobos_switch::phobos_read;
@@ -1869,11 +1867,13 @@ pub struct GeneralRules {
     /// 0x005276D0` at `0x00671DA7`; the constructor writes 5 (`0x006656EE` →
     /// `0x006657CD`).
     pub maximum_queued_objects: i32,
-    /// Phobos `[General] BuildingProductionQueue=` (default false): a
+    /// `[General] BuildingProductionQueue=` (default false), Phobos' key: a
     /// BuildingType PRODUCE queues behind a running or completed building
     /// instead of being dropped or abandoning the held product. The next
-    /// building starts only after the held one is placed.
-    #[cfg(feature = "phobos")]
+    /// building starts only after the held one is placed. Read in every
+    /// build, outside `phobos_read`: VERA's own Building Production Queue
+    /// option sets it through the scenario root (`PersonalRules`), and that
+    /// must not switch the rest of Phobos on.
     pub building_production_queue: bool,
     /// Phobos `[General] BuildingTypeSelectable=` (default false): type select
     /// admits every building, not only the `UndeploysInto=` ones the retail ID
@@ -3014,7 +3014,6 @@ impl Default for GeneralRules {
             slave_miner_scan_correction: 0x300,
             slave_miner_kick_frame_delay: 0x7FFF_FFFF,
             maximum_queued_objects: 5,
-            #[cfg(feature = "phobos")]
             building_production_queue: false,
             #[cfg(feature = "phobos")]
             building_type_selectable: false,
@@ -4295,9 +4294,10 @@ impl GeneralRules {
             game_forming_sound: None,
             game_closed_sound: None,
             message_delay_minutes,
-            shroud_grow: audio_visual.read_bool("ShroudGrow", defaults.shroud_grow),
-            shroud_rate: audio_visual.read_double_bits("ShroudRate", defaults.shroud_rate),
-            fog_rate: audio_visual.read_double_bits("FogRate", defaults.fog_rate),
+            // Projected from the retained AudioVisual pass after processing.
+            shroud_grow: defaults.shroud_grow,
+            shroud_rate: defaults.shroud_rate,
+            fog_rate: defaults.fog_rate,
             speak_delay_minutes: audio_visual.read_double("SpeakDelay", 0.0),
             gui_combo_open_sound: audio_visual
                 .read_name("GUIComboOpenSound", 0x80)
@@ -4372,7 +4372,6 @@ impl GeneralRules {
             slave_miner_scan_correction: general.read_range("SlaveMinerScanCorrection", 0x300),
             slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
             maximum_queued_objects: general.read_int("MaximumQueuedObjects", 5),
-            #[cfg(feature = "phobos")]
             building_production_queue: general.read_bool("BuildingProductionQueue", false),
             #[cfg(feature = "phobos")]
             building_type_selectable: crate::rules::ares_switch::ares_way()
@@ -4830,6 +4829,10 @@ pub struct RuleSet {
     /// handle records a native slot the older name-based object projection
     /// cannot represent uniquely, so exact lookup must not silently alias it.
     native_techno_type_order: Vec<(ObjectCategory, String, Option<TypeHandle>)>,
+    /// Uppercase ID → the first [`Self::native_techno_type_order`] slot of
+    /// that ID ignoring ASCII case: [`Self::ares_find_techno_type`]'s answer,
+    /// built with the order and never changed.
+    ares_techno_type_first: LookupMap<String, usize>,
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
     type_array_indices: CategoryIndex<i32>,
@@ -4998,11 +5001,6 @@ pub struct RuleSet {
     pub aircraft_ids: Vec<String>,
     /// Building IDs in registry order.
     pub building_ids: Vec<String>,
-    /// Maps structure ID (uppercase) → FactoryType for quick lookup.
-    /// Built once at load time from all ObjectType entries with Factory= set.
-    /// Used by production_tech to determine what a building produces without
-    /// hardcoding building names.
-    pub factory_map: HashMap<String, FactoryType>,
     /// The `[General] Prerequisite*` lists (Rules `+0x358..+0x3E4`), in
     /// [`PrerequisiteGroup::ALL`] order: an on-map building of any of them
     /// meets that group in CanBuild.
@@ -5512,6 +5510,12 @@ impl RuleSet {
             rules
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
+        }
+        for (slot, (_, id, _)) in rules.native_techno_type_order.iter().enumerate() {
+            rules
+                .ares_techno_type_first
+                .entry(id.to_ascii_uppercase())
+                .or_insert(slot);
         }
         for (category, id, coefficients) in processed.techno_threat_coefficients() {
             if let Some(handle) = rules.object_category_index.get(category, id)
@@ -7186,17 +7190,7 @@ impl RuleSet {
             }
         }
 
-        // Step 5: Build factory lookup map from Factory= keys on all objects.
-        let factory_map: HashMap<String, FactoryType> = object_list
-            .iter()
-            .filter_map(|obj| {
-                obj.factory_type()
-                    .map(|ft| (obj.id.to_ascii_uppercase(), ft))
-            })
-            .collect();
-        log::info!("Factory map: {} entries", factory_map.len());
-
-        // Step 6: Parse superweapon type registry.
+        // Step 5: Parse superweapon type registry.
         let ares_super_weapon_metadata: BTreeMap<_, _> = if crate::rules::ares_switch::ares_way() {
             processed
                 .super_weapon_availability_states()
@@ -7343,6 +7337,7 @@ impl RuleSet {
             serial: next_rule_set_serial(),
             object_category_index,
             native_techno_type_order: Vec::new(),
+            ares_techno_type_first: LookupMap::default(),
             type_array_indices,
             weapons,
             weapon_types,
@@ -7416,7 +7411,6 @@ impl RuleSet {
             vehicle_ids,
             aircraft_ids,
             building_ids,
-            factory_map,
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
@@ -7606,10 +7600,11 @@ impl RuleSet {
         if crate::rules::ini_parser::is_native_none_type_name(id) {
             return None;
         }
-        self.native_techno_type_order
-            .iter()
-            .find(|(_, stored_id, _)| stored_id.eq_ignore_ascii_case(id))
-            .and_then(|(_, _, handle)| *handle)
+        // The first slot of the ID, indexed once: trigger events ask this
+        // every frame (VERA-only; the same answer as the scan).
+        self.ares_techno_type_first
+            .get(&*upper_name_key(id))
+            .and_then(|&slot| self.native_techno_type_order[slot].2)
             .map(|handle| self.object_by_handle(handle))
     }
 
@@ -9856,8 +9851,10 @@ impl RuleSet {
         self.general.lightning_warhead.hash(&mut hasher);
         self.general.weather_con_bolt_explosion.hash(&mut hasher);
         self.general.weapon_nullify_anim.hash(&mut hasher);
-        #[cfg(feature = "phobos")]
-        self.general.building_production_queue.hash(&mut hasher);
+        // Only while on, so a game without the queue hashes as before it.
+        if self.general.building_production_queue {
+            b"building-production-queue".hash(&mut hasher);
+        }
         if self.phobos {
             b"phobos-ai-dehardcode-v1".hash(&mut hasher);
             self.general.ai_fire_sale.hash(&mut hasher);
@@ -11352,14 +11349,6 @@ impl RuleSet {
         self.particle_system_types.len()
     }
 
-    /// Look up the factory type for a structure by ID (case-insensitive).
-    /// Returns None if the structure has no Factory= key in rules.ini.
-    pub fn factory_type(&self, structure_id: &str) -> Option<FactoryType> {
-        crate::util::native_string::with_ascii_uppercase(structure_id, |key| {
-            self.factory_map.get(key).copied()
-        })
-    }
-
     /// `group`'s `[General] Prerequisite*` list.
     pub(crate) fn prerequisite_list(&self, group: PrerequisiteGroup) -> &[Prerequisite] {
         &self.prerequisite_lists[group.index()]
@@ -12245,6 +12234,45 @@ fn parse_particle_system_types(
 
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {
+    /// Ares TechnoTypeClass::Find (10007EA0): the first TechnoType whose ID
+    /// matches ignoring ASCII case, none for `none`/`<none>` or an unknown
+    /// name; indexed once, the answers of the scan. `Dup` and `DUP` sit in two
+    /// arrays: the vehicle comes first in the native order and wins.
+    #[test]
+    fn ares_find_techno_type_matches_ignoring_case() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]
+0=E1
+1=DUP
+[VehicleTypes]
+0=MTNK
+1=Dup
+[AircraftTypes]
+[BuildingTypes]
+0=GAPOWR
+[E1]
+Strength=125
+[MTNK]
+Strength=300
+[GAPOWR]
+Strength=750
+",
+        ))
+        .unwrap();
+        let find = |name| {
+            rules
+                .ares_find_techno_type(name)
+                .map(|object| object.id.as_str())
+        };
+        assert_eq!(find("mtnk"), Some("MTNK"));
+        assert_eq!(find("E1"), Some("E1"));
+        assert_eq!(find("gaPowr"), Some("GAPOWR"));
+        assert_eq!(find("none"), None);
+        assert_eq!(find("<none>"), None);
+        assert_eq!(find("HTNK"), None);
+        assert_eq!(find("dup"), Some("Dup"));
+    }
+
     #[test]
     fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
         use crate::rules::{
@@ -12689,29 +12717,6 @@ SpawnCount=3
             .cloak_sound,
             None,
             "empty CloakSound preserves the native invalid-index default"
-        );
-    }
-
-    #[test]
-    fn unit_delivery_negative_deferment_keeps_the_twenty_frame_fallback() {
-        let _ares = crate::rules::ares_switch::read_ares_way(true);
-        let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nSW.Deferment=-1",
-        ));
-        layers.push(
-            crate::rules::native_processing::RulesLayerKind::Scenario,
-            IniFile::from_str("[Delivery]\nRechargeTime=2"),
-        );
-        let rules = RuleSet::from_rules_layers(&layers).unwrap();
-        assert_eq!(
-            rules
-                .super_weapon("Delivery")
-                .unwrap()
-                .unit_delivery
-                .as_ref()
-                .unwrap()
-                .deferment,
-            20
         );
     }
 
@@ -14035,7 +14040,7 @@ MutateWarhead=MyMutate\n\
         assert_eq!(prior.fog_of_war, Some(true));
         let mut fresh = parse_special_flags_section(&IniFile::empty());
         fresh.resolve_campaign_defaults(Some(&prior));
-        assert_eq!(fresh.fog_of_war, Some(false));
+        assert_eq!(fresh.fog_of_war, None);
         let mut authored = prior.clone();
         authored.resolve_campaign_defaults(Some(&fresh));
         assert_eq!(authored.fog_of_war, Some(true));
@@ -16241,24 +16246,23 @@ Projectile=Invisible
         let mut interner = crate::sim::intern::StringInterner::new();
         // Mirror Simulation::intern_rule_type_ids (the production interning
         // pass) so the table sees every registry id.
-        for id in rules
+        let ids: Vec<_> = rules
             .infantry_ids
             .iter()
             .chain(&rules.vehicle_ids)
             .chain(&rules.aircraft_ids)
             .chain(&rules.building_ids)
-        {
-            interner.intern(id);
-        }
-        let table = crate::sim::type_handle_table::TypeHandleTable::build(&rules, &interner);
+            .map(|name| interner.intern(name))
+            .collect();
+        interner.bind_types(&rules);
 
-        // Completeness: every registry id in the fixture (E1, E2, MTNK, GAPOWR)
-        // has a [section], so none is an orphan type_ref.
-        assert_eq!(
-            table.orphan_count(),
-            0,
-            "no interned type id should fail to resolve to an object"
-        );
+        for id in ids {
+            assert!(
+                interner.type_handle(id, &rules).is_some(),
+                "{} has no object type",
+                interner.resolve(id),
+            );
+        }
 
         // Casing: a lowercased reference resolves to the same handle as the stored
         // uppercase id. The interner is case-insensitive, so the interning pass ("MTNK")
@@ -16266,7 +16270,10 @@ Projectile=Invisible
         let mtnk_lower = interner
             .get("mtnk")
             .expect("MTNK interned case-insensitively");
-        assert_eq!(table.handle_for(mtnk_lower), rules.type_handle("MTNK"));
+        assert_eq!(
+            interner.type_handle(mtnk_lower, &rules),
+            rules.type_handle("MTNK")
+        );
         assert!(
             rules.object("mtnk").is_some(),
             "lowercased object() resolves"

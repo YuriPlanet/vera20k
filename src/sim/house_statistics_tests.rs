@@ -96,7 +96,9 @@ fn native_null_record_kill_books_each_live_callback_immediately() {
         victim
             .health
             .set_for_test(i32::try_from(row["before"]["health"].as_i64().unwrap()).unwrap());
-        victim.tracking_facts.set_dont_score_for_test(dont_score);
+        victim
+            .tracking_facts_mut_for_test()
+            .set_dont_score_for_test(dont_score);
         sim.substrate.entities.insert(victim);
         let before_rng = sim.rng_state();
         assert_eq!(
@@ -114,7 +116,7 @@ fn native_null_record_kill_books_each_live_callback_immediately() {
                 1,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::OwnerChange,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             assert_eq!(
                 house_totals(&sim.houses[&owner]),
@@ -450,7 +452,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
                 id,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::Terminal,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             assert_eq!(
                 u64::from(restored.houses[&owner].stats.units_lost()),
@@ -554,7 +556,7 @@ fn a_lethal_kill_records_what_died_and_what_killed_it() {
         1,
         crate::sim::combat::KillSource::Techno(Some(2)),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
 
     let deaths = sim.houses[&owner].tracking().deaths();
@@ -602,7 +604,7 @@ fn a_live_handover_books_no_death() {
         1,
         crate::sim::combat::KillSource::Techno(None),
         crate::sim::combat::KillCallback::OwnerChange,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
 
     assert!(

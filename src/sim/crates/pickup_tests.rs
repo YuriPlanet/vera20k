@@ -75,7 +75,7 @@ fn place_actor(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
-        crate::sim::world::UninitContext::with_rules(rules),
+        crate::sim::world::UninitContext::new(rules),
     );
     id
 }
@@ -97,10 +97,11 @@ fn place_registered_crate(
     slot: u8,
 ) {
     place_crate(sim, registry, cell, slot);
-    let index = (0..crate::sim::crates::state::CRATE_SLOT_CAPACITY)
-        .find(|&index| sim.crate_authority.slots()[index].is_empty())
+    let index = sim
+        .crate_authority()
+        .first_empty_index()
         .expect("a free crate slot");
-    *sim.crate_authority.slot_mut_for_test(index) = CrateSlot {
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = CrateSlot {
         start_frame: 50,
         aux: 777,
         duration: 100,
@@ -258,7 +259,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             } else {
                 input["duplicate_slot"] == true
             };
-            *sim.crate_authority.slot_mut_for_test(index) = if occupied {
+            *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = if occupied {
                 CrateSlot {
                     start_frame: start,
                     aux,
@@ -316,7 +317,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             }),
             "{name}: overlay"
         );
-        let slot = sim.crate_authority.slots()[0];
+        let slot = sim.crate_authority().slots()[0];
         assert_eq!(
             serde_json::json!([
                 slot.start_frame,
@@ -484,7 +485,7 @@ fn money_crate_draws_once_pays_the_owner_and_sounds() {
 fn multiplayer_pickup_places_one_replacement_crate() {
     let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(0);
     sim.session.game_options_mut_for_test().crates = true;
-    *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
         start_frame: 0,
         aux: 0,
         duration: 100,
@@ -503,15 +504,49 @@ fn multiplayer_pickup_places_one_replacement_crate() {
 
     let cells = crate_cells(&sim, &registry);
     assert_eq!(cells.len(), 1, "one replacement crate: {cells:?}");
-    assert!(!sim.crate_authority.slots()[0].is_empty());
+    assert!(!sim.crate_authority().slots()[0].is_empty());
     let (x, y) = cells[0];
     assert_eq!(
         (
-            sim.crate_authority.slots()[0].cell_x,
-            sim.crate_authority.slots()[0].cell_y
+            sim.crate_authority().slots()[0].cell_x,
+            sim.crate_authority().slots()[0].cell_y
         ),
         (x as i16, y as i16)
     );
+}
+
+#[test]
+fn authored_crates_are_consumed_even_with_runtime_slots_enabled() {
+    use crate::rules::rule_policy::AuthoredCratePolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mode = ScenarioGameMode::from_game_mode(5);
+    for (authored_crates, remaining) in [
+        (AuthoredCratePolicy::Skip, true),
+        (AuthoredCratePolicy::Keep, false),
+    ] {
+        let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(POWERUP_SPEED as u8);
+        let policy = mode.stock_rule_policy(None).with_crates(authored_crates);
+        assert!(policy.uses_match_crates());
+        sim.install_session_admission(mode, None, policy);
+        // The map overlay has no slot because the scenario did not place it
+        // through the random crate owner.
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot::default();
+        let before = sim.scenario_rng.native_state_hex();
+
+        assert!(pickup_crate(
+            &mut sim,
+            &rules,
+            &registry,
+            CELL,
+            actor,
+            FrameEffects::default(),
+        ));
+
+        assert_eq!(overlay_at(&sim, CELL).is_some(), remaining);
+        assert!(sim.crate_authority().slots()[0].is_empty());
+        assert_eq!(sim.scenario_rng.native_state_hex(), before);
+    }
 }
 
 fn effect_rules(extra: &str) -> RuleSet {
@@ -751,13 +786,8 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         actor,
         crate::sim::world::FrameEffects::default()
     ));
-    let armor = |sim: &Simulation, id: u64| {
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .armor_multiplier()
-    };
+    let armor =
+        |sim: &Simulation, id: u64| sim.substrate.entities.get(id).unwrap().armor_multiplier();
     assert_eq!(armor(&sim, actor).bits(), 1.5_f64.to_bits());
     assert_eq!(armor(&sim, distant), NativeF64Bits::ONE);
     assert_eq!(eva_events(&sim), vec![(owner, "EVA_UnitArmorUpgraded")]);
@@ -908,8 +938,13 @@ const ARENA_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n[Sides]\nAllied
              [Powerups]\nMoney=20,MONEY,yes,2000\nUnit=20,<none>,no\nHealBase=10,HEALALL,yes\n";
 
 fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
+    // The match's OverlayType table comes with its rules and reads its land
+    // rows from them, so the crate cell keeps `[Clear]`'s speed profile.
+    let rules_ini = format!(
+        "{ARENA_RULES}[OverlayTypes]\n0=WOOD\n[WOOD]\nCrate=yes\nCrateTrigger=yes\nLand=Clear\n"
+    );
     let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
-        &IniFile::from_str(ARENA_RULES),
+        &IniFile::from_str(&rules_ini),
         &IniFile::from_str("[YARD]\nFoundation=4x3\n"),
         &["HealCrate"],
     )
@@ -930,14 +965,7 @@ fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
     let actor = sim
         .spawn_object("TNK", "Americans", 20, 22, 0, &rules)
         .expect("the tank spawns");
-    // The OverlayType table reads its land rows from the same rules, as the
-    // match's table does, so the crate cell keeps `[Clear]`'s speed profile.
-    let registry = OverlayTypeRegistry::from_ini(
-        &IniFile::from_str(&format!(
-            "{ARENA_RULES}[OverlayTypes]\n0=WOOD\n[WOOD]\nCrate=yes\nCrateTrigger=yes\nLand=Clear\n"
-        )),
-        None,
-    );
+    let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(&rules_ini), None);
     (sim, rules, registry, owner, actor)
 }
 
@@ -1824,11 +1852,11 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             EntityCategory::Structure,
             "GACNST",
         );
-        sim.houses
-            .get_mut(&owner)
-            .unwrap()
-            .tracking_mut()
-            .add_tracking(sim.substrate.entities.get_mut(yard).unwrap());
+        crate::sim::house_tracking::HouseTracking::register_object(
+            &mut sim.substrate,
+            &mut sim.houses,
+            yard,
+        );
         let actor = sim
             .spawn_object("MTNK", "Americans", 10, 11, 0, &rules)
             .unwrap();
@@ -1855,7 +1883,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let slot_values = |sim: &Simulation| {
             json!(
-                sim.crate_authority
+                sim.crate_authority()
                     .slots()
                     .iter()
                     .filter(|slot| !slot.is_empty())

@@ -465,7 +465,7 @@ mod sound_reference_history {
             .unwrap();
         sim.spawn_object("PROVIDER", "Russians", 27, 27, 0, rules)
             .unwrap();
-        sim.recheck_house_tech_tree(owner, rules);
+        sim.recheck_house_tech_tree(owner, rules, Default::default());
         let type_id = sim.interner.get(SHIELD).unwrap();
         assert!(sim.super_weapons[&owner][&type_id].is_active());
         assert!(!sim.super_weapons[&owner][&type_id].is_ready());
@@ -480,6 +480,7 @@ mod sound_reference_history {
         );
         sim.sound_events.clear_for_test();
         assert!(sim.apply_command_with_overlays(
+            None,
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id: type_id,

@@ -5,10 +5,87 @@ use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event
 use super::*;
 use crate::map::map_file::MapFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::util::save_codec;
 use serde_json::{Value, json};
+
+/// DamageArea 75F423 passes the same damage pointer to every occupant. A
+/// surviving tagged hit raises event 6 at 5F57D9; action 37 allies the Houses
+/// before the next receiver checks its live attacker at 701CB9.
+#[test]
+fn a_wave_hit_can_ally_the_next_receiver_before_it_writes_the_shared_damage() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::wave::{Wave, WaveRecordedCell};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, _, houses) = super::tests::event_ingress_fixture_with_rules(
+        "[SONIC]\nDamage=1\nIsSonic=yes\nAmbientDamage=20\nWarhead=SA\n\
+         [SA]\nAffectsAllies=no\n[InfantryTypes]\n2=E1\n3=E2\n\
+         [E1]\nStrength=100\nArmor=none\nSpeed=0\nSpeedType=Foot\nFearless=yes\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [E2]\nStrength=100\nArmor=none\nPrimary=SONIC\nSpeed=0\nSpeedType=Foot\nFearless=yes\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [ENGINEER]\nStrength=100\nArmor=none\nSpeed=0\nFearless=yes\n",
+    );
+    let map = install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nALLY=Country7,<none>,Ally on hit,0,1,1,1,0\n\
+         [Tags]\nHIT=0,Ally on hit,ALLY\n[Events]\nALLY=1,6,0,0\n\
+         [Actions]\nALLY=1,37,0,0,0,0,0,0,A\n[Infantry]\n\
+         0=House2,ENGINEER,256,17,15,1,Sleep,0,None,0,-1,0,1,1\n\
+         1=House1,E1,256,17,15,2,Sleep,0,None,0,-1,0,1,1\n\
+         2=House1,E2,256,17,15,3,Sleep,0,HIT,0,-1,0,1,1\n",
+    );
+    assert_eq!(sim.spawn_from_map(&map.entities, Some(&rules)), 3);
+    let firer = sim.spawn_object("E2", "House0", 15, 15, 0, &rules).unwrap();
+    assert_eq!(rules.object("E2").unwrap().primary(), Some("SONIC"));
+    assert!(
+        !sim.house_alliances()
+            .is_allied(sim.interner(), houses[0], houses[1])
+    );
+
+    let occupants: Vec<_> = sim
+        .occupancy()
+        .get(17, 15)
+        .unwrap()
+        .occupants
+        .iter()
+        .map(|slot| slot.entity_id)
+        .collect();
+    let types: Vec<_> = occupants
+        .iter()
+        .map(|&id| sim.resolve(sim.entities().get(id).unwrap().type_ref()))
+        .collect();
+    assert_eq!(types, ["E2", "E1", "ENGINEER"]);
+
+    let mut wave = Wave::new_owned(
+        0,
+        firer,
+        TargetKind::Cell(17, 15),
+        ProjectileCoord::new(15 * 256, 15 * 256, 0),
+        ProjectileCoord::new(17 * 256, 15 * 256, 0),
+    );
+    wave.set_active_geometry_for_test(false);
+    wave.set_decaying_for_test(true);
+    wave.replace_recorded_cells(vec![WaveRecordedCell::real(17, 15)]);
+    let id = sim.substrate.allocate_stable_id();
+    sim.admit_wave(id, wave);
+    assert!(sim.object_ai_visit_one(id, Some(&rules), Default::default()));
+
+    assert!(
+        sim.house_alliances()
+            .is_allied(sim.interner(), houses[0], houses[1])
+    );
+    let health: Vec<_> = occupants
+        .iter()
+        .map(|&id| sim.entities().get(id).unwrap().health.current())
+        .collect();
+    assert_eq!(health, [80, 100, 99]);
+}
 
 fn corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/trigger_damage_events.json");
@@ -181,7 +258,6 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
         aircraft,
         object.flight_level(rules.general.flight_level),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert_eq!(
@@ -212,7 +288,6 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
             &mut sim,
             aircraft,
             &rules,
-            None,
             FrameEffects::default(),
         );
     });
@@ -238,16 +313,10 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
 
 #[test]
 fn live_crash_with_attacker_keeps_both_41_visits() {
-    let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+    let (mut sim, rules, _overlays, houses) = event_ingress_fixture();
     let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let attacker = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
-    sim.set_object_height(
-        victim,
-        512,
-        &rules,
-        Some(&overlays),
-        FrameEffects::default(),
-    );
+    sim.set_object_height(victim, 512, &rules, FrameEffects::default());
     install_event_ingress_map(
         &mut sim,
         &rules,
@@ -259,13 +328,7 @@ fn live_crash_with_attacker_keeps_both_41_visits() {
     );
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     sim.trigger_runtime.dispatch_trace.clear();
-    assert!(sim.foot_crash(
-        victim,
-        Some(attacker),
-        &rules,
-        Some(&overlays),
-        FrameEffects::default(),
-    ));
+    assert!(sim.foot_crash(victim, Some(attacker), &rules, FrameEffects::default(),));
     // Crash4DEBEC/4DEC0F/4DEC36: the persistent Tag survives all three
     // visits, including the second41 carrying the retained attacker.
     assert_eq!(
@@ -286,18 +349,12 @@ fn live_crash_with_attacker_keeps_both_41_visits() {
 #[test]
 fn crash_stops_when_a_real_tag_action_uninits_before_or_during_record_kill() {
     for kind in [41, 29] {
-        let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+        let (mut sim, rules, _overlays, houses) = event_ingress_fixture();
         let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
         assert!(!rules.object("TAGUNIT").unwrap().crashable);
         // Supplied shared-Foot boundary: C4 on this non-Crashable Unit
         // reaches UnInit, rather than an Aircraft's nested dead-HP Crash.
-        sim.set_object_height(
-            victim,
-            512,
-            &rules,
-            Some(&overlays),
-            FrameEffects::default(),
-        );
+        sim.set_object_height(victim, 512, &rules, FrameEffects::default());
         install_event_ingress_map(
             &mut sim,
             &rules,
@@ -309,13 +366,7 @@ fn crash_stops_when_a_real_tag_action_uninits_before_or_during_record_kill() {
         );
         sim.attach_object_trigger_tag(victim, Some("TAG"));
         let (accepted, draws) = crate::sim::rng::trace_draws(|| {
-            sim.foot_crash(
-                victim,
-                None,
-                &rules,
-                Some(&overlays),
-                FrameEffects::default(),
-            )
+            sim.foot_crash(victim, None, &rules, FrameEffects::default())
         });
         assert!(
             accepted,
@@ -552,7 +603,7 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, RulePolicy::stock_campaign());
     if let Some(team_id) = route["team_id"].as_str() {
         let team = teams
             .team_types

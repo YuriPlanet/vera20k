@@ -18,14 +18,15 @@ use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
 use crate::app::input::commands::{
-    cancel_build_by_type, place_ready_building_at_cell, preferred_local_owner,
-    preferred_local_owner_name, queue_build_by_type, queue_house_cheer, schedule_command,
-    suspend_build,
+    cancel_build_by_type, place_ready_building_at_cell, preferred_command_owner,
+    preferred_local_owner, preferred_local_owner_name, queue_build_by_type, queue_house_cheer,
+    schedule_command, suspend_build,
 };
 use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
     SelectionMutation, compute_box_selection_snapshot_with_playfield,
     compute_click_selection_snapshot_with_playfield,
+    compute_double_click_type_select_with_playfield,
     compute_type_select_box_mutation_with_playfield,
     compute_type_select_click_mutation_with_playfield, compute_type_select_tap_with_playfield,
     map_entity_creation_order, pick_entity_at_point,
@@ -38,6 +39,7 @@ use crate::app::types::OrderMode;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
 use crate::sim::selection::SelectAction;
+use crate::sim::world::ControlProjection;
 use crate::ui::sidebar::{SidebarAction, SidebarTab};
 
 #[cfg(all(test, tests_app_input_d_z))]
@@ -205,6 +207,9 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     // button, press or release, and leaves the click to the game.
     if button == MouseButton::Right {
         crate::app::input::chat::right_button(state);
+    }
+    if super::chat::skirmish_spawn_mouse(state, button, pressed) {
+        return;
     }
     #[cfg(feature = "phobos")]
     if crate::app::input::sw_sidebar::mouse(state, button, pressed) {
@@ -672,6 +677,34 @@ fn tactical_left_up(state: &mut AppState) {
     ) {
         return;
     }
+    // VERA right-click orders: a second quick click on the same battlefield
+    // point selects every on-screen object of the clicked object's type, the
+    // modern-RTS shortcut for the T key's screen pass. It rides on the option
+    // and on an ordinary selection click only: a held T, a modifier chord or
+    // an armed attack-move keeps the click it already has and ends the chain,
+    // so it never pairs with the next plain click. The chain records every
+    // ordinary selection click, so the next one can pair with it.
+    if let SelectAction::Click(sx, sy) = action {
+        let ordinary = !type_select_held
+            && !shift
+            && !is_ctrl_held(state)
+            && !is_alt_held(state)
+            && state.match_state.input.queued_order_mode == OrderMode::Move;
+        let window_point = state
+            .tactical_zoom()
+            .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
+        let admitted = ordinary && state.persistence.options_profile.right_click_orders;
+        let double_click = state.match_state.input.note_tactical_selection_click(
+            admitted,
+            crate::util::time::Instant::now(),
+            (window_point.0.round() as i32, window_point.1.round() as i32),
+        );
+        if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {
+            apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
+            apply_selection_action_line_policy(state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
+            return;
+        }
+    }
     let mut queued_selection: Option<SelectionMutation> = None;
     let mut held_type_select_batch = false;
     if let Some(sim) = state
@@ -852,6 +885,44 @@ fn tactical_left_up(state: &mut AppState) {
             apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }
     }
+}
+
+/// The selection a right-click-orders double-click commits, or `None` when the
+/// click found no locally controlled object (ground, an enemy, a refused
+/// object), which leaves the ordinary click to decide. The screen list is the
+/// T key's screen pass; there is no map-wide fallback.
+fn double_click_type_select(state: &AppState, sx: f32, sy: f32) -> Option<SelectionMutation> {
+    let sim = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map(|rt| &rt.simulation)?;
+    // TypeSelect's defeat guard `0x00732961` (`A8B538`): a defeated local
+    // player's shortcut leaves the plain click in charge.
+    if !selection_navigation::selection_navigation_allowed(sim) {
+        return None;
+    }
+    let click_order =
+        crate::app::presentation::instances::tactical_entity_encounter_order(sim, state.rules());
+    let screen_order =
+        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+    let world_x = sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
+    let world_y = sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
+    let fog = (!state.match_state.sandbox_full_visibility)
+        .then_some((sim.fog(), sim.house_alliances().as_map()));
+    compute_double_click_type_select_with_playfield(
+        crate::app::input::entity_pick::presented(state, sim),
+        &click_order,
+        &screen_order,
+        fog,
+        preferred_local_owner_name(state).as_deref(),
+        world_x,
+        world_y,
+        state.rules(),
+        Some(sim.interner()),
+        sim.playfield_bounds().is_some(),
+        sim.resolved_terrain(),
+    )
 }
 
 /// Cancel exactly one armed cursor mode before right-click orders or deselection.
@@ -1239,7 +1310,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
 
 /// The local player's queue of record, in queue order (empty without a sim).
 pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return Vec::new();
     };
     match (
@@ -1306,7 +1377,7 @@ fn sidebar_cameo_press(
     };
     let queue = local_queue_view(state);
     let type_iid = local_interned(state, type_id);
-    let linked_factory = preferred_local_owner_name(state).and_then(|owner| {
+    let linked_factory = preferred_command_owner(state).and_then(|owner| {
         let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         state
             .match_state
@@ -1325,12 +1396,11 @@ fn sidebar_cameo_press(
     // The linked Factory's state also decides whether Shift may repeat: a held
     // or finished build takes the resume/placement arm, not a fresh PRODUCE.
     let own_for_repeat = linked_factory.map(|(status, _)| status);
-    #[cfg(feature = "phobos")]
+    // The scenario's rules, as the simulation reads them, not the Options
+    // box: a change there waits for the next scenario.
     let building_production_queue = state
         .rules()
         .is_some_and(|rules| rules.general.building_production_queue);
-    #[cfg(not(feature = "phobos"))]
-    let building_production_queue = false;
     let click = sidebar_eva::cameo_click_with_queue(
         &queue,
         category,
@@ -1407,7 +1477,7 @@ fn sidebar_cameo_press(
             );
         }
     }
-    let owner = preferred_local_owner_name(state).and_then(|name| {
+    let owner = preferred_command_owner(state).and_then(|name| {
         state
             .match_state
             .sim_runtime
@@ -1515,7 +1585,7 @@ fn sidebar_cameo_press(
             // Select6AB30D plays GUIBuildSound before ObjectFindFactory5F5C20
             // (0,0) at6AB31A, including repeated pending clicks. A null builder
             // instead queues ABANDON16 before EVA_UnableToComply6AB3A9.
-            let ready_target = preferred_local_owner_name(state).and_then(|owner| {
+            let ready_target = preferred_command_owner(state).and_then(|owner| {
                 let runtime = state.match_state.sim_runtime.runtime()?;
                 let sim = &runtime.simulation;
                 let rules = &runtime.resources.rules;
@@ -1628,21 +1698,17 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
             } else {
                 SelectionMode::Sell
             };
-            let owned_buildings = state
+            let has_building = state
                 .match_state
                 .sim_runtime
                 .runtime()
-                .and_then(|runtime| {
-                    let sim = &runtime.simulation;
-                    sim.houses().get(&sim.session().current_house()?)
-                })
-                .map_or(0, |house| house.tracking().buildings());
+                .is_some_and(|runtime| local_has_manageable_building(&runtime.simulation));
             let placement_armed = state.armed_building_type().is_some();
             if state
                 .match_state
                 .match_presentation
                 .sidebar_gadget_state
-                .toggle_selection_mode(mode, placement_armed, owned_buildings)
+                .toggle_selection_mode(mode, placement_armed, i32::from(has_building))
             {
                 queue_selection_snapshot_command(state, Vec::new(), false);
             }
@@ -1650,6 +1716,25 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
         SidebarAction::Deploy => {
             queue_deploy_undeploy_for_selected(state);
         }
+    }
+}
+
+/// The Repair and Sell modes need a building the issuing seat can manage.
+pub(super) fn local_has_manageable_building(sim: &crate::sim::world::Simulation) -> bool {
+    let control = sim.control_projection();
+    let tracked_buildings = |owner| {
+        sim.houses()
+            .get(&owner)
+            .is_some_and(|house| house.tracking().buildings() > 0)
+    };
+    if sim.session().has_custom_control_grants() {
+        sim.houses()
+            .order()
+            .iter()
+            .copied()
+            .any(|owner| control.can_manage(owner) && tracked_buildings(owner))
+    } else {
+        control.local_command_house().is_some_and(tracked_buildings)
     }
 }
 
@@ -2057,7 +2142,7 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
 /// tab (`BuildingClass::SetSidebarTabObject` 734250 by the type's BuildCat),
 /// which is this owner's ready building for that tab.
 fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_command_owner(state) else {
         return;
     };
     let ready_target = {
@@ -2417,10 +2502,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
             }
         }
-        #[cfg(feature = "verax")]
-        HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
-        #[cfg(not(feature = "verax"))]
-        HotkeyCommand::AutoLoad => {}
+        HotkeyCommand::AutoLoad => crate::app::input::smart_command::hotkey_pressed(state),
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
         HotkeyCommand::PerformanceStats
@@ -2450,6 +2532,19 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 "Super weapon building timers: {}",
                 if on { "shown" } else { "hidden" }
             );
+        }
+        // VERA: show or hide the convenience help rows (repair/reload and
+        // future lines) above friendly buildings and units. Presentation only,
+        // and saved under the same `[VERA]` key the Options box writes, so a
+        // match's choice seeds the next scenario.
+        HotkeyCommand::ConvenienceHelp => {
+            let help = &mut state.match_state.match_presentation.convenience_help;
+            *help = !*help;
+            let on = *help;
+            state.persistence.options_profile.convenience_help = on;
+            state.match_state.sim_runtime.show_status_rows(on);
+            crate::app::persistence::options::persist_options_profile(state);
+            log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }
         // A held key: `input::keyboard::in_game_key_edge` tracks it.
         HotkeyCommand::FormationLine => {}
@@ -2535,7 +2630,7 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
         let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
-        let owner = sim.interner().get(&preferred_local_owner_name(state)?)?;
+        let owner = sim.control_projection().local_command_house()?;
         let type_id = sim.interner().get(section)?;
         let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner)
             .into_iter()
@@ -2596,13 +2691,14 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
             }
         }
         super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
-            let owner = preferred_local_owner_name(state).unwrap_or_default();
-            crate::app::input::commands::queue_super_weapon_click(
-                state,
-                &owner,
-                sw_type_id,
-                (0, 0),
-            );
+            if let Some(owner) = preferred_command_owner(state) {
+                crate::app::input::commands::queue_super_weapon_click(
+                    state,
+                    &owner,
+                    sw_type_id,
+                    (0, 0),
+                );
+            }
         }
         _ => {}
     }
@@ -4069,12 +4165,12 @@ mod item83_selection_order_tests {
                 {
                     let entities = sim.entities_mut_for_test();
                     entities
-                        .get_mut(pill)
+                        .get_mut_for_test(pill)
                         .unwrap()
                         .bunker
                         .set_bunker_occupant_for_test(None);
                     entities
-                        .get_mut(tank)
+                        .get_mut_for_test(tank)
                         .unwrap()
                         .bunker
                         .set_bunker_link_for_test(
@@ -4266,9 +4362,12 @@ fn queue_stop_for_selected(state: &mut AppState) {
         state.match_state.input.selection_order_pending,
     );
     let qualifies = match (sim, state.rules()) {
-        (Some(sim), Some(rules)) => selected_ids
-            .iter()
-            .any(|&id| stop_qualifies(sim, rules, id)),
+        (Some(sim), Some(rules)) => {
+            let control = sim.control_projection();
+            selected_ids
+                .iter()
+                .any(|&id| stop_qualifies(sim, &control, rules, id))
+        }
         _ => false,
     };
     if qualifies && state.match_state.input.planning.active() {
@@ -4290,7 +4389,7 @@ fn queue_stop_for_selected(state: &mut AppState) {
     for sound in queue_stop_orders(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        &selected_ids,
+        selected_ids,
     ) {
         state.match_state.match_audio.sound_events.push(sound);
     }
@@ -4303,10 +4402,12 @@ fn queue_stop_for_selected(state: &mut AppState) {
 /// berserk one.
 fn stop_qualifies(
     sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
 ) -> bool {
-    (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+    (sim.local_techno_controllable_with(control, id, rules)
+        || sim.local_techno_is_active_with(control, id, rules))
         && !(rules.ares()
             && sim
                 .entities()
@@ -4322,21 +4423,22 @@ fn stop_qualifies(
 fn queue_stop_orders(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    selected: &[u64],
+    mut selected: Vec<u64>,
 ) -> Vec<crate::audio::events::GameSoundEvent> {
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.session().current_house() else {
+    let control = sim.control_projection();
+    let Some(owner) = control.local_command_house() else {
         return Vec::new();
     };
     let owner = sim.interner().resolve(owner).to_owned();
-    for &entity_id in selected {
-        if !stop_qualifies(sim, rules, entity_id) {
-            continue;
-        }
+    // A qualifying Stop actor already passed the same tactical check as
+    // the ordinary issue gate. Release the read before writing the OutList.
+    selected.retain(|&id| stop_qualifies(sim, &control, rules, id));
+    for entity_id in selected {
         let payload = Command::Stop { entity_id };
-        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+        if super::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
             // A refused Rust schedule fails closed, as Guard's does.
             return Vec::new();
         }
@@ -4449,7 +4551,7 @@ fn queue_scatter_orders(
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.session().current_house() else {
+    let Some(owner) = sim.control_projection().local_command_house() else {
         return Vec::new();
     };
     let owner = sim.interner().resolve(owner).to_owned();
@@ -4457,7 +4559,7 @@ fn queue_scatter_orders(
         let Some(payload) = sim.scatter_key_command(entity_id, rules) else {
             continue;
         };
-        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+        if super::commands::schedule_rules_command_in_sim(sim, rules, &owner, payload).is_none() {
             return Vec::new();
         }
     }
@@ -4494,7 +4596,7 @@ fn queue_area_guard_orders(
     if selected.is_empty() {
         return sounds;
     }
-    let Some(owner) = sim.session().current_house() else {
+    let Some(owner) = sim.control_projection().local_command_house() else {
         return sounds;
     };
     let owner = sim.interner().resolve(owner).to_owned();
@@ -4512,7 +4614,7 @@ fn queue_area_guard_orders(
         ) {
             sounds.push(event);
         }
-        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+        if super::commands::schedule_rules_command_in_sim(sim, rules, &owner, payload).is_none() {
             // A missing Rust registration or unrepresentable record fails
             // closed. This invariant boundary is not native issuer false;
             // Planning Mode is the separate native false-return route.
@@ -4555,7 +4657,7 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         return;
     }
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let local_owner = sim.interner().get(&owner);
@@ -4614,19 +4716,30 @@ fn deploy_key_commands(
     selection: &[u64],
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Vec<Command> {
-    let first = selection.first().and_then(|&id| sim.entities().get(id));
+    let control = sim.control_projection();
+    let selected = selection.iter().copied().filter(|id| {
+        !sim.session().has_custom_control_grants()
+            || sim
+                .entities()
+                .get(*id)
+                .is_some_and(|entity| control.can_order(entity.owner()))
+    });
+    let first = selected
+        .clone()
+        .next()
+        .and_then(|id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
             && entity.passenger_role().occupants().count() > 0
     }) {
-        return deploy_key_command(sim, rules, building.stable_id(), local_owner)
+        return deploy_key_command_with(sim, &control, rules, building.stable_id(), local_owner)
             .into_iter()
             .collect();
     }
     let deployed = |id: u64| deployer_is_deployed(sim, rules, id);
     let mut found_deployed = false;
     let mut found_undeployed = false;
-    for &id in selection {
+    for id in selected.clone() {
         match deployed(id) {
             Some(true) => found_deployed = true,
             Some(false) => found_undeployed = true,
@@ -4637,12 +4750,11 @@ fn deploy_key_commands(
         }
     }
     let mixed = found_deployed && found_undeployed;
-    selection
-        .iter()
-        .copied()
+    selected
         .filter(|&id| {
             rules.is_none_or(|rules| {
-                (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+                (sim.local_techno_controllable_with(&control, id, rules)
+                    || sim.local_techno_is_active_with(&control, id, rules))
                     && sim.can_deploy_slash_unload(id, rules)
             }) && sim
                 .entities()
@@ -4650,7 +4762,7 @@ fn deploy_key_commands(
                 .is_some_and(|entity| !entity.berserk.is_active())
                 && !(mixed && deployed(id) == Some(true))
         })
-        .filter_map(|id| deploy_key_command(sim, rules, id, local_owner))
+        .filter_map(|id| deploy_key_command_with(sim, &control, rules, id, local_owner))
         .collect()
 }
 
@@ -4684,20 +4796,45 @@ fn deployer_is_deployed(
 /// The walk admits a bunkered unit only through IsActive (vt+0x9C):
 /// vt+0xA0 refuses a bunker link, and a box
 /// never selects one, but a click does.
+#[cfg(test)]
 fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     entity_id: u64,
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Option<Command> {
+    deploy_key_command_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        entity_id,
+        local_owner,
+    )
+}
+
+fn deploy_key_command_with(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    entity_id: u64,
+    local_owner: Option<crate::sim::intern::InternedId>,
+) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
+    let local_owner = if sim.session().has_custom_control_grants() {
+        if !control.can_order(entity.owner()) {
+            return None;
+        }
+        control.local_command_house()
+    } else {
+        local_owner
+    };
     let obj = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     match entity.category() {
         // Selection730B28..730B5E sends Event9 for an occupied Building.
         // Its native receiver owns NULL setters and Unload; self-click keeps
         // the separate MEGAMISSION/absorber admission in transport_orders.
         EntityCategory::Structure => (!entity.passenger_role().occupants().is_empty()
-            && local_owner.is_none_or(|owner| entity.owner() == owner))
+            && local_owner.is_none_or(|owner| control.can_order_from(entity.owner(), owner)))
         .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
         // A unit in a tank bunker deploys out of it: its Unload's bunker arm
@@ -4713,15 +4850,16 @@ fn deploy_key_command(
         }
         _ => {
             // Aircraft and other deployers retain their existing routing.
-            super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
-                let object = obj?;
-                (super::context_order::is_simple_deploy_unit(entity, object)
-                    || object.deploys_into.is_some()
-                    || rules.is_some_and(|rules| {
-                        crate::sim::deploy::unit_fires_on_deploy(sim, entity, rules)
-                    }))
-                .then_some(Command::DeployMcv { entity_id })
-            })
+            super::transport_orders::unload_command_with(sim, control, entity, obj, local_owner)
+                .or_else(|| {
+                    let object = obj?;
+                    (super::context_order::is_simple_deploy_unit(entity, object)
+                        || object.deploys_into.is_some()
+                        || rules.is_some_and(|rules| {
+                            crate::sim::deploy::unit_fires_on_deploy(sim, entity, rules)
+                        }))
+                    .then_some(Command::DeployMcv { entity_id })
+                })
         }
     }
 }
@@ -4858,7 +4996,7 @@ fn schedule_control_group_assignment(
 }
 
 fn queue_control_group_assignment(state: &mut AppState, slot: usize, entity_ids: Vec<u64>) {
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
@@ -4946,13 +5084,14 @@ fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]
     let Some(sim) = sim else {
         return Vec::new();
     };
+    let control = sim.control_projection();
     group
         .iter()
         .copied()
         .filter(|id| {
             sim.entities()
                 .get(*id)
-                .is_some_and(|entity| sim.house_controls_selection(entity.owner()))
+                .is_some_and(|entity| control.can_select(entity.owner()))
         })
         .collect()
 }
@@ -5166,8 +5305,7 @@ mod deploy_key_tests {
         let infantry = spawn("GI");
         let mut cargo = PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(999, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(transport)
+        sim.entity_mut_for_test(transport)
             .unwrap()
             .set_passenger_role_for_test(PassengerRole::transport(cargo));
 
@@ -5201,10 +5339,7 @@ mod deploy_key_tests {
             deploy_key_command(&sim, Some(&rules), firer, sim.session().current_house()),
             Some(Command::DeployMcv { entity_id: firer })
         );
-        sim.entities_mut_for_test()
-            .get_mut(heli)
-            .unwrap()
-            .low_bridge_tube_state = Some(
+        sim.entity_mut_for_test(heli).unwrap().low_bridge_tube_state = Some(
             crate::sim::movement::tube_movement::LowBridgeTubeMovementState::for_test(
                 crate::map::tube_facts::TubeId(0),
                 0,
@@ -5243,8 +5378,7 @@ mod deploy_key_tests {
             let mut cargo = PassengerCargo::new(capacity, 0.0);
             let head: Vec<_> = (0..count).map(|index| (999 + index as u64, 1.0)).collect();
             cargo.board_forced_chain(&head);
-            sim.entities_mut_for_test()
-                .get_mut(transport)
+            sim.entity_mut_for_test(transport)
                 .unwrap()
                 .set_passenger_role_for_test(PassengerRole::transport(cargo));
             let owner = sim
@@ -5318,8 +5452,7 @@ mod deploy_key_tests {
         let transport = spawn("TRANSPORT");
         let mut cargo = PassengerCargo::new(2, 0.0);
         cargo.board_forced_chain(&[(999, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(transport)
+        sim.entity_mut_for_test(transport)
             .unwrap()
             .set_passenger_role_for_test(PassengerRole::transport(cargo));
         let owner = sim.session().current_house();
@@ -5331,8 +5464,7 @@ mod deploy_key_tests {
             })
         );
         for id in [tank, transport] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .bunker
                 .set_bunker_link_for_test(BunkerLink::Installed(99));
@@ -5383,8 +5515,7 @@ mod deploy_key_tests {
             .expect("Bio Reactor builds");
         let mut cargo = PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(99, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(reactor)
+        sim.entity_mut_for_test(reactor)
             .unwrap()
             .set_passenger_role_for_test(PassengerRole::transport(cargo));
 
@@ -5415,8 +5546,7 @@ mod deploy_key_tests {
             deploy_key_commands(&sim, Some(&rules), &[heli], sim.session().current_house()),
             [Command::DeployMcv { entity_id: heli }]
         );
-        sim.entities_mut_for_test()
-            .get_mut(heli)
+        sim.entity_mut_for_test(heli)
             .unwrap()
             .berserk
             .set_active_for_test(true);
@@ -5450,8 +5580,7 @@ mod deploy_key_tests {
             ),
             [Command::DeployMcv { entity_id: heli }]
         );
-        sim.entities_mut_for_test()
-            .get_mut(heli)
+        sim.entity_mut_for_test(heli)
             .unwrap()
             .deactivated
             .set_for_test(true);
@@ -5476,14 +5605,12 @@ mod deploy_key_tests {
                 .expect("the deploy key fixture builds")
         };
         let (standing, deployed, gassed) = (spawn(3), spawn(4), spawn(5));
-        sim.entities_mut_for_test()
-            .get_mut(deployed)
+        sim.entity_mut_for_test(deployed)
             .unwrap()
             .mission_leaf
             .set_infantry_doing_verified(28)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(gassed)
+        sim.entity_mut_for_test(gassed)
             .unwrap()
             .berserk
             .set_active_for_test(true);
@@ -5513,8 +5640,7 @@ mod deploy_key_tests {
             (true, false, false),
             (true, false, true),
         ] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             assert_eq!(
@@ -5824,7 +5950,7 @@ mod control_group_tests {
         // Member 12 stays in limbo (inside a transport).
         group_entity(&mut sim, 12, local);
         for id in [10, 11] {
-            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            let entity = sim.entity_mut_for_test(id).unwrap();
             entity.lifecycle.set_in_limbo_for_test(false);
         }
         let raw_selected = [10, 11];
@@ -5897,8 +6023,7 @@ mod control_group_tests {
             .set_current_house_for_test(Some(local));
         for id in 1..=4 {
             group_entity(&mut sim, id, local);
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .set_object_group_for_test(if id == 4 { 0 } else { 9 });
         }
@@ -5979,13 +6104,12 @@ mod control_group_tests {
             "the campaign IsHumanPlayer predicate admits this owner"
         );
         assert!(
-            !sim.house_controls_selection(human_only),
+            !sim.control_projection().can_select(human_only),
             "TeamAssign's mode-zero PlayerControl gate excludes a human-flag-only house"
         );
 
         for (id, group) in [(1, 0), (2, 0), (5, 2), (7, 1)] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .set_object_group_for_test(group);
         }
@@ -6008,8 +6132,7 @@ mod control_group_tests {
             "recall filters the latent member while its owner is an AI house"
         );
 
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .set_object_group_for_test(1);
         apply_group_assignment(&mut sim, 2, &[]);
@@ -6049,8 +6172,7 @@ mod control_group_tests {
             sim.session_mut_for_test()
                 .set_current_house_for_test(Some(local));
             for id in 1..=4 {
-                sim.entities_mut_for_test()
-                    .get_mut(id)
+                sim.entity_mut_for_test(id)
                     .unwrap()
                     .set_object_group_for_test(if id == 4 { 1 } else { 0 });
             }
@@ -6112,16 +6234,14 @@ mod control_group_tests {
                     .set_player_control_for_test(actor["player_control"].as_bool().unwrap());
                 group_entity(&mut sim, id, owner);
                 let is_selected = actor["selected"].as_bool().unwrap();
-                sim.entities_mut_for_test()
-                    .get_mut(id)
+                sim.entity_mut_for_test(id)
                     .unwrap()
                     .selection
                     .set_selected_for_test(is_selected);
                 if is_selected {
                     selected.push(id);
                 }
-                sim.entities_mut_for_test()
-                    .get_mut(id)
+                sim.entity_mut_for_test(id)
                     .unwrap()
                     .set_object_group_for_test(actor["group_slot"].as_i64().unwrap() as i32);
             }
@@ -6172,7 +6292,7 @@ mod control_group_tests {
         group_entity(&mut sim, 10, local);
         group_entity(&mut sim, 11, enemy);
         for id in [10, 11] {
-            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            let entity = sim.entity_mut_for_test(id).unwrap();
             entity.lifecycle.set_in_limbo_for_test(false);
         }
 
@@ -6219,7 +6339,7 @@ mod control_group_tests {
         typed_group_entity(&mut sim, 11, local, "MTNK");
         typed_group_entity(&mut sim, 9, local, "HIDE");
         for id in [9, 10, 11] {
-            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            let entity = sim.entity_mut_for_test(id).unwrap();
             entity.lifecycle.set_in_limbo_for_test(false);
         }
         let recall = |group: &[u64]| {
@@ -6285,7 +6405,7 @@ mod control_group_tests {
             ),
         );
         for id in [5, 10, 11, 77] {
-            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            let entity = sim.entity_mut_for_test(id).unwrap();
             entity.lifecycle.set_in_limbo_for_test(false);
         }
         let group = [10, 5, 11];
@@ -6473,10 +6593,7 @@ mod control_group_tests {
         let ground_text_position = selected_ground.text[0].position;
 
         {
-            let aircraft = sim
-                .entities_mut_for_test()
-                .get_mut(27)
-                .expect("retained ORCA");
+            let aircraft = sim.entity_mut_for_test(27).expect("retained ORCA");
             aircraft.selection.set_selected_for_test(false);
             aircraft.position.set_exact_z_leptons_for_test(Some(1500));
         }
@@ -6514,15 +6631,13 @@ mod control_group_tests {
         );
         assert_eq!(render(&sim, &groups, Some(27))[&27].text.len(), 1);
 
-        sim.entities_mut_for_test()
-            .get_mut(27)
+        sim.entity_mut_for_test(27)
             .expect("retained ORCA")
             .selection
             .set_selected_for_test(false);
         assert!(render(&sim, &groups, None).is_empty());
         groups[registered_slot("TeamCreate_10")].clear();
-        sim.entities_mut_for_test()
-            .get_mut(27)
+        sim.entity_mut_for_test(27)
             .expect("retained ORCA")
             .selection
             .set_selected_for_test(true);
@@ -6619,8 +6734,7 @@ mod control_group_tests {
             vec![(27, '1')]
         );
 
-        sim.entities_mut_for_test()
-            .get_mut(27)
+        sim.entity_mut_for_test(27)
             .expect("retained building")
             .selection
             .set_selected_for_test(false);
@@ -6644,8 +6758,7 @@ mod control_group_tests {
             vec![(27, '1')]
         );
 
-        sim.entities_mut_for_test()
-            .get_mut(27)
+        sim.entity_mut_for_test(27)
             .expect("retained building")
             .selection
             .set_selected_for_test(true);
@@ -7380,8 +7493,7 @@ mod control_group_tests {
             .set_current_house_for_test(Some(local));
         for id in [1, 2] {
             group_entity(&mut sim, id, local);
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .set_object_group_for_test(9);
         }
@@ -7433,7 +7545,7 @@ mod stop_command_tests {
             .unwrap();
         let cue = |sounds: &[GameSoundEvent]| matches!(sounds, [GameSoundEvent::UiSound { sound_id }] if Some(sound_id) == stop_sound.as_ref());
 
-        assert!(cue(&super::queue_stop_orders(&mut sim, rules, &[own])));
+        assert!(cue(&super::queue_stop_orders(&mut sim, rules, vec![own])));
         let stops: Vec<_> = sim
             .pending_command_snapshot()
             .into_iter()
@@ -7441,9 +7553,9 @@ mod stop_command_tests {
             .collect();
         assert!(matches!(stops.as_slice(), [Command::Stop { entity_id }] if *entity_id == own));
 
-        assert!(cue(&super::queue_stop_orders(&mut sim, rules, &[enemy])));
+        assert!(cue(&super::queue_stop_orders(&mut sim, rules, vec![enemy])));
         assert_eq!(sim.pending_command_snapshot().len(), 1);
-        assert!(super::queue_stop_orders(&mut sim, rules, &[]).is_empty());
+        assert!(super::queue_stop_orders(&mut sim, rules, Vec::new()).is_empty());
     }
 }
 

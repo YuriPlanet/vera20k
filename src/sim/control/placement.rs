@@ -375,7 +375,6 @@ impl<'a, 'b> Placement<'a, 'b> {
             self.obs.house(),
             ty,
             SiteKey::Ordinary,
-            None,
         );
         if x <= 0 || y <= 0 {
             return None;

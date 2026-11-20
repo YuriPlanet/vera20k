@@ -61,11 +61,11 @@ pub(super) fn load(
         .into_iter()
         .map(|name| {
             // A mod's own file first, then the side's archives.
-            let bytes = route
-                .asset_manager
-                .get_ref(&name)
-                .or_else(|| route.resolve(&name).map(|source| source.bytes));
-            let shp = bytes.and_then(|bytes| ShpFile::from_bytes(bytes).ok());
+            let decode =
+                |asset: ShellUiAssetRef<'_>| parse_sidebar_shape(route.asset_manager, asset.bytes);
+            let shp = ui_art_candidates(route.asset_manager, &name)
+                .find_map(decode)
+                .or_else(|| route.decode(&name, decode));
             if shp.is_none() {
                 log::warn!(
                     "{} Art={name}: no such picture; the button shows its label",

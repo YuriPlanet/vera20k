@@ -797,13 +797,18 @@ fn a_teleport_warp_ejects_the_drone_before_the_host_relocates() {
 }
 
 #[test]
-fn a_teleport_warp_drops_the_drone_onto_ore_through_the_frames_overlay_table() {
+fn a_teleport_warp_drops_the_drone_onto_ore() {
     // ExitUnit's Unlimbo (0x0062A5E8..0x0062A61F) asks the drone's own
-    // Can_Enter_Cell, whose overlay arm reads the OverlayTypeClass table the
-    // frame binds: a Chrono Miner warping off an ore field drops its drone on
-    // ore. Without the table the query fails and the drone is deleted.
-    use crate::sim::tiberium::test_support::{bales_at, overlay_registry, place_tiberium_on_map};
-    let rules = rules();
+    // Can_Enter_Cell, whose overlay arm reads the match's OverlayTypeClass
+    // table: a Chrono Miner warping off an ore field drops its drone on ore.
+    use crate::sim::tiberium::test_support::{
+        bales_at, overlay_registry, place_tiberium_on_map, tiberium_rules_text,
+    };
+    // The ore's overlay types are the match's: they come with the rules.
+    let rules = rules_with_ini(&IniFile::from_str(&format!(
+        "{RULES}{}",
+        tiberium_rules_text()
+    )));
     let mut arena = Arena::new(&rules);
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
@@ -958,7 +963,6 @@ fn an_attached_parasite_may_enter_its_victims_cell_and_no_other_held_cell() {
                 cell,
                 crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
                 &rules,
-                None,
             )
             .unwrap()
     };
@@ -1428,10 +1432,8 @@ fn ares_a_cloaking_host_keeps_its_drone() {
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
     arena.infect(&rules, drone, tank);
-    arena.sim.detach_all(
-        tank,
-        false,
-        crate::sim::world::UninitContext::with_rules(&rules),
-    );
+    arena
+        .sim
+        .detach_all(tank, false, crate::sim::world::UninitContext::new(&rules));
     assert_eq!(arena.eater_of(tank), Some(drone));
 }

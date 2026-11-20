@@ -1073,13 +1073,11 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
             .0;
         // This strip fixture supplies an already discovered barracks; it does
         // not run the map's Cell PUT/discovery transaction.
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .discovery
             .set_discovered_by_current_house_for_test(true);
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
                 factory,
@@ -1110,8 +1108,7 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
             !infantry.iter().any(|entry| entry.id == new_infantry),
             "retention admission must not insert an infantry option while its adding factory is warped"
         );
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .set_temporal_for_test(Default::default());
         // Thawing after that House pass cannot retroactively add an option.

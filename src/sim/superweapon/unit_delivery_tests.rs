@@ -95,6 +95,7 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> (InternedId, In
 fn fire(sim: &mut Simulation, rules: &RuleSet, owner: &str, cell: (u16, u16)) {
     let (_, sw) = charge(sim, rules, owner);
     sim.apply_command_with_overlays(
+        None,
         owner,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -274,7 +275,14 @@ fn unit_delivery_rules_layer_omissions_and_clear_survive_binary_record_roundtrip
         .unit_delivery
         .as_ref()
         .unwrap();
-    assert_eq!(config.deferment, 7);
+    assert_eq!(
+        rules
+            .super_weapon_metadata("Delivery")
+            .unwrap()
+            .launch()
+            .deferment(),
+        Some(7)
+    );
     assert_eq!(config.types.len(), 2);
     assert_eq!(config.owner, DeliveryOwner::Neutral);
     layers.push(
@@ -584,20 +592,25 @@ fn unit_delivery_civilian_uses_first_existing_house_not_first_country() {
     }
 }
 
+/// The delay is SWTypeExt's one `SW.Deferment` Nullable read (Ares'
+/// Parser<int>: `$30` scans decimal, `abc` leaves it unset), and Activate
+/// (10075920) waits 20 frames when it is unset or negative.
 #[test]
-fn unit_delivery_negative_deferment_waits_twenty_frames() {
+fn unit_delivery_waits_the_common_ares_deferment_read() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let rules = rules("[Delivery]\nSW.Deferment=-1\n");
-    let mut sim = world(&rules);
-    fire(&mut sim, &rules, "Americans", (12, 10));
-    assert!(payloads(&sim, "MTNK").is_empty());
-    sim.session.set_binary_frame_for_test(19);
-    tick(&mut sim, &rules, None, FrameEffects::default());
-    assert!(payloads(&sim, "MTNK").is_empty());
-    sim.session.set_binary_frame_for_test(20);
-    tick(&mut sim, &rules, None, FrameEffects::default());
-    assert_eq!(payloads(&sim, "MTNK").len(), 1);
-    assert!(sim.unit_deliveries.pending.is_empty());
+    for (value, frames) in [("-1", 20), ("abc", 20), ("$30", 30)] {
+        let rules = rules(&format!("[Delivery]\nSW.Deferment={value}\n"));
+        let mut sim = world(&rules);
+        fire(&mut sim, &rules, "Americans", (12, 10));
+        assert!(payloads(&sim, "MTNK").is_empty(), "{value}");
+        sim.session.set_binary_frame_for_test(frames - 1);
+        tick(&mut sim, &rules, None, FrameEffects::default());
+        assert!(payloads(&sim, "MTNK").is_empty(), "{value}");
+        sim.session.set_binary_frame_for_test(frames);
+        tick(&mut sim, &rules, None, FrameEffects::default());
+        assert_eq!(payloads(&sim, "MTNK").len(), 1, "{value}");
+        assert!(sim.unit_deliveries.pending.is_empty(), "{value}");
+    }
 }
 
 #[test]

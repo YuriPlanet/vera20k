@@ -158,6 +158,7 @@ fn emit_with_lighting(
             tactical: [0, 0, 160, 160],
             zoom: 1.,
             axis: DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail: &detail,
             detail_level: 2,

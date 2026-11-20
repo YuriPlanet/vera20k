@@ -46,6 +46,7 @@ pub(crate) use effects::{Multiplier, apply_multiplier_crate};
 pub(crate) use effects::CrateMultipliers;
 pub(crate) use pickup::pickup_crate;
 pub(crate) use runtime::tick_crate_regeneration;
+pub(crate) use state::CrateSlotUpdates;
 pub use state::{CrateAuthority, CrateSlot};
 
 use crate::map::overlay_mark::{
@@ -243,7 +244,7 @@ fn place_one_random_crate(
     forced_failure: ForcedPostPrecheckFailure,
     effects: FrameEffects<'_>,
 ) -> Result<OneCrateResult, RuntimeOverlayError> {
-    let Some(slot_index) = sim.crate_authority.first_empty_index() else {
+    let Some(slot_index) = sim.crate_authority().first_empty_index() else {
         // The native full-table return precedes every random draw.
         return Ok(OneCrateResult::HardRejected);
     };
@@ -321,17 +322,13 @@ fn place_overlay_and_init_timer(
         effects,
     )?;
 
-    // `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: accepted ghosts
-    // and visible overlays both write the packed coordinate before drawing
-    // and installing start/aux/duration timer words.
-    sim.crate_authority.claim(slot_index, cell);
-    let timer_draw = sim.scenario_rng.next_range_u32_inclusive(0, 0x7fff_fffe);
-    let words = state::crate_timer_words(
+    let current_frame = sim.session.binary_frame() as i32;
+    sim.crate_slot_updates().accept_placement(
+        slot_index,
+        cell,
         rules.crate_rules.regen,
-        timer_draw,
-        sim.session.binary_frame() as i32,
+        current_frame,
     );
-    sim.crate_authority.install_timer(slot_index, words);
     Ok(Some(accepted))
 }
 
@@ -357,7 +354,7 @@ pub(crate) fn place_crate(
     let Some(snapped) = snap_to_passable(sim, requested, surface) else {
         return Ok(false);
     };
-    let Some(slot_index) = sim.crate_authority.first_empty_index() else {
+    let Some(slot_index) = sim.crate_authority().first_empty_index() else {
         return Ok(false);
     };
     if place_overlay_and_init_timer(
@@ -1041,7 +1038,7 @@ pub(crate) mod tests {
 
         assert_eq!((result.accepted, result.visible), (0, 0));
         assert_eq!(sim.scenario_rng.state(), before);
-        assert!(sim.crate_authority.slots()[0].is_empty());
+        assert!(sim.crate_authority().slots()[0].is_empty());
     }
 
     /// A successful request spends X, Y, then the crate-slot timer draw.
@@ -1107,7 +1104,7 @@ pub(crate) mod tests {
             assert_eq!(sim.scenario_rng.state(), replay.state(), "{powerup:?}");
             let cell = *sim.overlay_grid.as_ref().unwrap().cell(12, 14);
             assert_eq!((cell.overlay_id, cell.overlay_data), (Some(wood), data));
-            let slot = sim.crate_authority.slots()[0];
+            let slot = sim.crate_authority().slots()[0];
             assert_eq!((slot.cell_x, slot.cell_y), (12, 14));
         }
     }
@@ -1213,7 +1210,7 @@ pub(crate) mod tests {
 
         assert_eq!((result.accepted, result.visible), (0, 0));
         assert!(crate_cells(&sim, registry).is_empty());
-        assert_eq!(sim.crate_authority.slots()[0], CrateSlot::default());
+        assert_eq!(sim.crate_authority().slots()[0], CrateSlot::default());
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
 
@@ -1285,7 +1282,7 @@ pub(crate) mod tests {
                 1,
                 "the snap skips the occupied drawn Cell; tested {bit:#04x}"
             );
-            let slot = sim.crate_authority.slots()[0];
+            let slot = sim.crate_authority().slots()[0];
             assert_eq!(
                 (slot.cell_x, slot.cell_y),
                 (placed.0 as i16, placed.1 as i16)
@@ -1324,7 +1321,7 @@ pub(crate) mod tests {
                 Some(AcceptedCellResult::Ghost),
                 "crate Mark passes neither ignore flag; tested {bit:#04x}"
             );
-            assert!(sim.crate_authority.slots()[0].cell_x != 0);
+            assert!(sim.crate_authority().slots()[0].cell_x != 0);
             assert_eq!(
                 crate_cells(&sim, registry).contains(&cell),
                 false,
@@ -1470,7 +1467,7 @@ pub(crate) mod tests {
                 .next()
                 .is_none()
         );
-        let null_slot = null_sim.crate_authority.slots()[0];
+        let null_slot = null_sim.crate_authority().slots()[0];
         assert_eq!(
             (null_slot.cell_x, null_slot.cell_y),
             (null_cell.0 as i16, null_cell.1 as i16)
@@ -1493,8 +1490,8 @@ pub(crate) mod tests {
         assert_eq!((terrain_result.accepted, terrain_result.visible), (1, 0));
         assert_eq!(
             (
-                terrain_sim.crate_authority.slots()[0].cell_x,
-                terrain_sim.crate_authority.slots()[0].cell_y
+                terrain_sim.crate_authority().slots()[0].cell_x,
+                terrain_sim.crate_authority().slots()[0].cell_y
             ),
             (cell.0 as i16, cell.1 as i16)
         );
@@ -1516,7 +1513,7 @@ pub(crate) mod tests {
             let result =
                 place_scenario_start_crates_with_failure(&mut sim, &rules, registry, 1, failure);
             assert_eq!((result.accepted, result.visible), (1, 0));
-            let slot = sim.crate_authority.slots()[0];
+            let slot = sim.crate_authority().slots()[0];
             assert!(!slot.is_empty());
             assert_eq!(slot.aux, 0x40b5_1800);
             assert!(
@@ -2145,7 +2142,7 @@ pub(crate) mod tests {
             .as_mut()
             .unwrap()
             .place_overlay(12, 13, 0, 1);
-        *incoming.crate_authority.slot_mut_for_test(0) = state::CrateSlot {
+        *incoming.crate_authority_mut_for_test().slot_mut_for_test(0) = state::CrateSlot {
             start_frame: 0,
             aux: 0,
             duration: 0,

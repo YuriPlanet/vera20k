@@ -560,14 +560,23 @@ fn mapgen_fresh_state_matches_native_seed_zero_full_object() {
 }
 
 #[test]
-fn scenario_main_reseed_does_not_change_mapgen() {
+fn direct_reseed_updates_scenario_and_main_even_with_non_stock_rules() {
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
     let mut sim = Simulation::with_seed(7);
+    let mode = ScenarioGameMode::Skirmish;
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+    sim.install_session_admission(mode, None, policy);
     for _ in 0..5 {
         sim.mapgen_rng.next_u32();
     }
     let before = sim.mapgen_rng.logical_state();
     sim.initialize_random_number_system(99);
     assert_eq!(sim.mapgen_rng.logical_state(), before);
+    assert_eq!(sim.session.seed(), 99);
     assert_eq!(
         sim.scenario_rng.logical_state(),
         SimRng::new(99).logical_state()

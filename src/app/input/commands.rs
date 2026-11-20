@@ -35,7 +35,7 @@ fn intern_in_sim(state: &mut AppState, s: &str) -> InternedId {
 /// hash exactly like repeated clicks. All of them carry the current tick, so
 /// they execute in one frame and in issue order.
 pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u32) {
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let type_interned = intern_in_sim(state, type_id);
@@ -57,7 +57,7 @@ pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u
 }
 
 pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let record = state.match_state.sim_runtime.runtime().and_then(|runtime| {
@@ -80,7 +80,7 @@ pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
 }
 
 pub(crate) fn cancel_build_by_type(state: &mut AppState, type_id: &str, all: bool) {
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let type_interned = intern_in_sim(state, type_id);
@@ -187,13 +187,11 @@ fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
         .sim_runtime
         .runtime()
         .map(|rt| &rt.simulation)?;
-    let owner = preferred_local_owner(state)?;
+    let control = sim.control_projection();
+    let owner = control.local_command_house()?;
     let entity = sim.entities().get(stable_id)?;
     (entity.category() == EntityCategory::Structure
-        && sim
-            .interner()
-            .resolve(entity.owner())
-            .eq_ignore_ascii_case(&owner))
+        && control.can_manage_from(entity.owner(), owner))
     .then_some(stable_id)
 }
 
@@ -250,11 +248,10 @@ pub(crate) fn own_sellable_unit_under_point(
 fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let rules = state.rules().filter(|rules| rules.ares())?;
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = preferred_local_owner(state)?;
+    let control = sim.control_projection();
+    let owner = control.local_command_house()?;
     let entity = sim.entities().get(stable_id)?;
-    (sim.interner()
-        .resolve(entity.owner())
-        .eq_ignore_ascii_case(&owner)
+    (control.can_manage_from(entity.owner(), owner)
         && crate::sim::production::foot_can_be_sold(sim, rules, stable_id))
     .then_some(stable_id)
 }
@@ -331,17 +328,15 @@ fn sell_wall_command_for_cell(
     if !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
         return None;
     }
-    let wall_owner = cell.wall_owner?;
-    let wall_owner_house = sim.houses().get(&wall_owner)?;
-    let owner_is_human_player = if sim.session().game_mode_nonzero() {
-        wall_owner == local_owner_id
-    } else {
-        wall_owner_house.is_human() || wall_owner_house.player_control()
-    };
-    owner_is_human_player.then_some(Command::SellWallAtCell {
-        x: rx as i16,
-        y: ry as i16,
-    })
+    // The wall's owner must pass `HouseClass::IsHumanPlayer @ 0x0050B6F0`,
+    // asked of the local player's client: its PlayerPtr is the current house
+    // (`scenario_local_owner`).
+    sim.control_projection()
+        .can_manage(cell.wall_owner?)
+        .then_some(Command::SellWallAtCell {
+            x: rx as i16,
+            y: ry as i16,
+        })
 }
 
 /// Handle a tactical left-click while the sidebar Repair or Sell cursor mode is
@@ -386,7 +381,7 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             .and_then(|id| own_sellable_unit_id(state, id))
     });
     if let Some(entity_id) = building {
-        let Some(owner) = preferred_local_owner(state) else {
+        let Some(owner) = preferred_command_owner(state) else {
             return true;
         };
         let payload = if repair {
@@ -424,7 +419,9 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             _ => None,
         };
         if let Some(payload) = payload {
-            schedule_command(state, &owner, payload);
+            if let Some(command_owner) = preferred_command_owner(state) {
+                schedule_command(state, &command_owner, payload);
+            }
         }
     }
     true
@@ -657,7 +654,7 @@ pub(crate) fn launch_super_weapon_at_cell(
         return;
     };
     let section = section.as_str();
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let sw_type_id = intern_in_sim(state, section);
@@ -736,7 +733,7 @@ fn super_weapon_click_command(
 /// never a direct Simulation write. Called after input and before the next
 /// ordinary frame so building placement and campaign mode clears participate.
 pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let Some(runtime) = state.match_state.sim_runtime.runtime() else {
@@ -812,6 +809,13 @@ pub(crate) fn preferred_local_owner_name(state: &AppState) -> Option<String> {
 /// counts and roster order never stand in for it.
 pub(crate) fn preferred_local_owner(state: &AppState) -> Option<String> {
     state.match_state.local_player_owner().map(str::to_owned)
+}
+
+/// The issuer's primary House can differ from the represented view House.
+pub(super) fn preferred_command_owner(state: &AppState) -> Option<String> {
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+    let owner = sim.control_projection().local_command_house()?;
+    Some(sim.interner().resolve(owner).to_owned())
 }
 
 pub(crate) fn schedule_command_in_sim(
@@ -914,13 +918,32 @@ pub(crate) fn schedule_command_in_sim(
 pub(crate) fn ordinary_cell_move_goal(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     viewer: InternedId,
     entity_id: u64,
     clicked: (u16, u16),
     shift: bool,
 ) -> Option<(u16, u16)> {
-    sim.cell_click_destination(viewer, entity_id, clicked, shift, rules, registry)
+    ordinary_cell_move_goal_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        viewer,
+        entity_id,
+        clicked,
+        shift,
+    )
+}
+
+pub(crate) fn ordinary_cell_move_goal_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    viewer: InternedId,
+    entity_id: u64,
+    clicked: (u16, u16),
+    shift: bool,
+) -> Option<(u16, u16)> {
+    sim.cell_click_destination_with(control, viewer, entity_id, clicked, shift, rules)
         .unwrap_or_else(|cause| {
             log::warn!("Cell click input: {cause}");
             None
@@ -940,11 +963,42 @@ pub(crate) fn object_move_destination(
     action: crate::sim::world::MoveAction,
     force_move_key: bool,
 ) -> Option<crate::sim::combat::TargetKind> {
-    sim.object_move_click(viewer, entity_id, target_id, action, force_move_key, rules)
-        .unwrap_or_else(|cause| {
-            log::warn!("Move click over an object: {cause}");
-            None
-        })
+    object_move_destination_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        viewer,
+        entity_id,
+        target_id,
+        action,
+        force_move_key,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn object_move_destination_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    viewer: InternedId,
+    entity_id: u64,
+    target_id: u64,
+    action: crate::sim::world::MoveAction,
+    force_move_key: bool,
+) -> Option<crate::sim::combat::TargetKind> {
+    sim.object_move_click_with(
+        control,
+        viewer,
+        entity_id,
+        target_id,
+        action,
+        force_move_key,
+        rules,
+    )
+    .unwrap_or_else(|cause| {
+        log::warn!("Move click over an object: {cause}");
+        None
+    })
 }
 
 /// Make ordinary local mission bytes authoritative at issue time.
@@ -1055,10 +1109,18 @@ pub(crate) fn try_schedule_command(
         return None;
     }
     let runtime = state.match_state.sim_runtime.write_sim(SimWrite::Command)?;
+    let sim = &runtime.simulation;
+    let command_owner = if sim.session().has_custom_control_grants() {
+        sim.control_projection()
+            .local_command_house()
+            .map(|house| sim.interner().resolve(house).to_owned())
+    } else {
+        None
+    };
     schedule_rules_command_in_sim(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        owner,
+        command_owner.as_deref().unwrap_or(owner),
         payload,
     )
 }
@@ -1096,12 +1158,15 @@ fn executed_by(now: u64, relay_head: Option<u32>, max_ahead: Option<i32>) -> u64
 
 // The ordinary AppState entry and component tests share this rules-dependent
 // issue boundary; the live OutList still owns the only pending command state.
-fn schedule_rules_command_in_sim(
+pub(super) fn schedule_rules_command_in_sim(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,
     payload: Command,
 ) -> Option<u64> {
+    if !sim.can_issue_local_command(&payload, rules) {
+        return None;
+    }
     //6AAD00's selected cameo determines RTTI/type-array index/Naval when
     //the event is issued. The raw queue retains those bytes until execution;
     //the existing production owner resolves the then-current held object.
@@ -1168,7 +1233,7 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
 /// AllToCheer536C00 ->730F30. The input owner retains only its admission
 /// frame; the ordinary scheduler and native Event2D codec own the command.
 pub(crate) fn queue_house_cheer(state: &mut AppState) {
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
@@ -2137,6 +2202,8 @@ mod tests {
         let missing_house = sim.intern("MissingHouse");
         let mut local_house = HouseState::new(local, 0, None, false, 0, 10);
         local_house.set_player_control_for_test(true);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         sim.houses_mut_for_test().register(local_house);
         sim.houses_mut_for_test()
             .register(HouseState::new(remote, 1, None, true, 0, 10));

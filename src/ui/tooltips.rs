@@ -226,6 +226,14 @@ impl TooltipService {
                 && rect.contains_inclusive(self.mouse_x, self.mouse_y))
     }
 
+    /// A live provider can prepare its answer before a pending delay elapses.
+    pub fn may_read_text(&self, id: u32, rect: TipRect) -> bool {
+        self.active.as_ref().is_some_and(|tip| tip.id == id)
+            || (self.enabled
+                && self.timer_deadline_ms.is_some()
+                && rect.contains_inclusive(self.mouse_x, self.mouse_y))
+    }
+
     /// Whether [`Self::on_mouse_move`] shows the tip of the region it moves
     /// into at once: a zero delay takes 724200's immediate path, which hit
     /// tests the cursor and resolves the text at that move.

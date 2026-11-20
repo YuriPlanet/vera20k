@@ -203,7 +203,7 @@ fn gas_system_motion_lifetime_replacement_and_rng_match_original_histories() {
                 &mut sim,
                 &rules,
                 system,
-                UninitContext::with_rules(&rules)
+                UninitContext::new(&rules)
             ));
             assert_system(&sim, system, &visit["state"], name);
         }

@@ -209,6 +209,10 @@ pub struct GraphicsConfig {
     /// VERA presentation option: show terrain through translucent fog while
     /// concealing unseen enemy objects. Off by default for the retail look.
     pub translucent_fog: bool,
+    /// VERA presentation option: draw buildings on terrain level 15 and up at
+    /// their tile row (`locomotor_visual::building_terrain_correction`). Off
+    /// by default: the original game draws them 1-2 px lower.
+    pub high_terrain_building_lift: bool,
 }
 
 impl Default for GraphicsConfig {
@@ -216,6 +220,7 @@ impl Default for GraphicsConfig {
         Self {
             extra_animations: true,
             translucent_fog: false,
+            high_terrain_building_lift: false,
         }
     }
 }
@@ -417,6 +422,9 @@ impl GameConfig {
                 ("graphics", "translucent_fog") => {
                     parse_bool(value).map(|on| graphics.translucent_fog = on)
                 }
+                ("graphics", "high_terrain_building_lift") => {
+                    parse_bool(value).map(|on| graphics.high_terrain_building_lift = on)
+                }
                 ("gameplay", "input_delay_ticks") => {
                     parse_u32(value).map(|ticks| gameplay.input_delay_ticks = ticks)
                 }
@@ -435,6 +443,14 @@ impl GameConfig {
                 ("ini", "eva") => parse_string(value).map(|name| ini.eva = Some(name)),
                 ("ini", "theater_suffix") => {
                     parse_string(value).map(|suffix| ini.theater_suffix = Some(suffix))
+                }
+                ("ini", "theme") => parse_string(value).map(|name| ini.theme = Some(name)),
+                ("ini", "battle") => parse_string(value).map(|name| ini.battle = Some(name)),
+                ("ini", "mission") => parse_string(value).map(|name| ini.mission = Some(name)),
+                ("ini", "mapsel") => parse_string(value).map(|name| ini.mapsel = Some(name)),
+                ("ini", "modes") => parse_string(value).map(|name| ini.modes = Some(name)),
+                ("ini", "map_catalog") => {
+                    parse_string(value).map(|name| ini.map_catalog = Some(name))
                 }
                 _ => Ok(()),
             };
@@ -690,13 +706,8 @@ mod tests {
             GameConfig::parse(base).unwrap().ini.profile,
             crate::util::ini_roots::IniProfile::Yr
         );
-        for (name, expected) in [
-            ("mo", crate::util::ini_roots::IniProfile::Mo),
-            ("auto", crate::util::ini_roots::IniProfile::Auto),
-        ] {
-            let config = GameConfig::parse(&format!("{base}[ini]\nprofile='{name}'\n")).unwrap();
-            assert_eq!(config.ini.profile, expected);
-        }
+        let auto = GameConfig::parse(&format!("{base}[ini]\nprofile='auto'\n")).unwrap();
+        assert_eq!(auto.ini.profile, crate::util::ini_roots::IniProfile::Auto);
         let custom = GameConfig::parse(&format!(
             "{base}[ini]\nprofile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n"
         ))
@@ -706,12 +717,6 @@ mod tests {
         assert_eq!(
             (custom_roots.sound(), custom_roots.eva()),
             ("soundmd.ini", "evamd.ini")
-        );
-        let mo = GameConfig::parse(&format!("{base}[ini]\nprofile='mo'\n")).unwrap();
-        let mo_roots = mo.ini.resolve(|_| true).unwrap();
-        assert_eq!(
-            (mo_roots.sound(), mo_roots.eva()),
-            ("soundmo.ini", "evamo.ini")
         );
         // Optional presentation roots for any profile; they keep the shared
         // names when omitted.
@@ -724,24 +729,46 @@ mod tests {
             (audio_roots.sound(), audio_roots.eva()),
             ("my-sound.ini", "my-eva.ini")
         );
-        let theater = GameConfig::parse(&format!("{base}[ini]\ntheater_suffix='mo'\n")).unwrap();
+        let theater = GameConfig::parse(&format!("{base}[ini]\ntheater_suffix='x2'\n")).unwrap();
         let theater_roots = theater.ini.resolve(|_| true).unwrap();
-        assert_eq!(theater_roots.theater_ini("snow"), "snowmo.ini");
+        assert_eq!(theater_roots.theater_ini("snow"), "snowx2.ini");
         for bad in [
             "profile='other'",
             "profile='custom'\nrules='r.ini'",
-            "profile='mo'\nai='aimd.ini'",
-            "profile=mo",
+            "profile='yr'\nai='aimd.ini'",
+            "profile=yr",
             "profile='custom'\nrules='../r.ini'\nart='a.ini'\nai='i.ini'",
             "sound='../my-sound.ini'",
             "eva='a.map'",
-            "theater_suffix='../mo'",
+            "theater_suffix='../custom'",
         ] {
             assert!(
                 GameConfig::parse(&format!("{base}[ini]\n{bad}\n")).is_err(),
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn ini_roots_config_passes_generic_catalogs_to_the_root_owner() {
+        let config = GameConfig::parse(
+            "[paths]\nra2_dir='retail'\n[ini]\n\
+             theme='music.ini'\nbattle='campaigns.ini'\nmission='missions.ini'\n\
+             mapsel='stages.ini'\nmodes='modes.ini'\nmap_catalog='maps.pkt'\n",
+        )
+        .unwrap();
+        let roots = config.ini.resolve(|_| panic!("YR must not probe")).unwrap();
+        assert_eq!(
+            [
+                roots.theme(),
+                roots.battle(),
+                roots.mission(),
+                roots.mapsel()
+            ],
+            ["music.ini", "campaigns.ini", "missions.ini", "stages.ini"]
+        );
+        assert_eq!(roots.modes(), "modes.ini");
+        assert_eq!(roots.map_catalog(), "maps.pkt");
     }
 
     struct ConfigFixture(PathBuf);
@@ -949,6 +976,7 @@ extra_animations = false
         let config = GameConfig::parse(toml_str).expect("old configs keep loading");
         assert!(!config.graphics.extra_animations);
         assert!(!config.graphics.translucent_fog);
+        assert!(!config.graphics.high_terrain_building_lift);
     }
 
     #[test]
@@ -957,6 +985,15 @@ extra_animations = false
             GameConfig::parse("[paths]\nra2_dir = 'retail'\n[graphics]\ntranslucent_fog = true\n")
                 .unwrap();
         assert!(config.graphics.translucent_fog);
+    }
+
+    #[test]
+    fn high_terrain_building_lift_is_an_explicit_graphics_option() {
+        let config = GameConfig::parse(
+            "[paths]\nra2_dir = 'retail'\n[graphics]\nhigh_terrain_building_lift = true\n",
+        )
+        .unwrap();
+        assert!(config.graphics.high_terrain_building_lift);
     }
 
     #[test]

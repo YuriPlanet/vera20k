@@ -96,7 +96,7 @@ fn kill(
 }
 
 fn crate_count(sim: &Simulation) -> usize {
-    sim.crate_authority
+    sim.crate_authority()
         .slots()
         .iter()
         .filter(|slot| !slot.is_empty())
@@ -232,7 +232,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     assert_eq!(rng(&sim)[0], death_rng[0]);
     assert_eq!(rng(&sim)[2], death_rng[2]);
     let slot = *sim
-        .crate_authority
+        .crate_authority()
         .slots()
         .iter()
         .find(|slot| !slot.is_empty())

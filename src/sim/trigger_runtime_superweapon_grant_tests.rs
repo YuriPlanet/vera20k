@@ -101,7 +101,7 @@ fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat(
             .or_default()
             .set_is_low_power_for_test(true);
         let before = serde_json::to_value(&sim.super_weapons[&owner][&id]).unwrap();
-        superweapon::update_owned_supers(&mut sim, &rules, owner);
+        superweapon::update_owned_supers(&mut sim, &rules, owner, Default::default());
         assert!(sim.super_weapons[&owner][&id].is_active());
         assert_eq!(
             serde_json::to_value(&sim.super_weapons[&owner][&id]).unwrap(),
@@ -111,7 +111,7 @@ fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat(
             .get_mut(&owner)
             .unwrap()
             .set_is_defeated_for_test(true);
-        superweapon::update_owned_supers(&mut sim, &rules, owner);
+        superweapon::update_owned_supers(&mut sim, &rules, owner, Default::default());
         assert!(!sim.super_weapons[&owner][&id].is_active());
         assert!(!sim.super_weapons[&owner][&id].is_ready());
         assert!(superweapon::super_timer_views(&sim, &rules).is_empty());
@@ -125,7 +125,12 @@ fn super_grant_one_time_click_consumes_and_repeating_click_recharges() {
         spring(&mut sim, &rules);
         if kind == 34 {
             sim.session.set_binary_frame_for_test(1900);
-            superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+            superweapon::tick_house_superweapon_instances(
+                &mut sim,
+                &rules,
+                owner,
+                Default::default(),
+            );
         }
         assert!(sim.super_weapons[&owner][&id].is_ready());
         assert!(sim.fire_super_weapon(
@@ -408,10 +413,9 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
         assert_eq!(warning.owner_house(), Some(owner));
         assert!(warning.draw_runtime().hidden);
         assert_eq!(warning.draw_flags(), 0x600);
-        assert!(sim.retire_non_entity_object(
-            bullet_id,
-            crate::sim::world::UninitContext::with_rules(&rules)
-        ));
+        assert!(
+            sim.retire_non_entity_object(bullet_id, crate::sim::world::UninitContext::new(&rules))
+        );
         assert!(sim.substrate.pending_delete.contains_object(&warning_id));
         sim.process_pending_delete();
         assert!(sim.substrate.anims.get(warning_id).is_none());

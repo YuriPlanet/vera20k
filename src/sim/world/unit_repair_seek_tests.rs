@@ -183,7 +183,6 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
             targeter,
             Some(TargetKind::Entity(harvester)),
             &rules,
-            None,
             FrameEffects::default(),
         )
         .is_ok()
@@ -474,7 +473,7 @@ fn damaged_tank(
 }
 
 fn seek(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    sim.unit_ai_seek_repair(id, rules, None, FrameEffects::default());
+    sim.unit_ai_seek_repair(id, rules, FrameEffects::default());
 }
 
 /// Unit743270 accepts Repair; Unit740EF0 establishes contact and queues Enter
@@ -762,7 +761,6 @@ fn a_damaged_computer_tank_on_guard_heads_for_its_depot() {
         tank,
         Some(TargetKind::Cell(30, 30)),
         &rules,
-        None,
         FrameEffects::default(),
     );
 

@@ -1349,13 +1349,7 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
     assert!(!retired.lifecycle.object_alive());
     assert!(retired.lifecycle.in_limbo());
     assert!(sim.substrate.pending_delete.contains_object(&id));
-    sim.process_pending_delete_with(
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-        1,
-        false,
-    );
+    sim.process_pending_delete_with(&rules, crate::sim::world::FrameEffects::default(), 1, false);
     assert!(sim.substrate.entities.get(id).is_none());
 }
 

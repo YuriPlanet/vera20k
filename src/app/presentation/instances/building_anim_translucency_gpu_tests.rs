@@ -328,7 +328,6 @@ impl SlotScene {
                 id,
                 crate::sim::combat::TargetKind::Entity(self.plant),
                 true,
-                Some(self.scene.runtime.resources.rules.overlay_registry()),
             );
             eprintln!(
                 "{boundary}: attack_target={:?} navigation={:?} locomotor={:?} rearm={:?} last_fire={} facing={} pose={:?} GetFireError={error:?}",
@@ -610,7 +609,7 @@ impl SlotScene {
         let building = sim.entities().get(self.plant).unwrap();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.scene.runtime,
-            &Default::default(),
+            &Default::default(), false,
         );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();

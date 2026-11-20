@@ -10,6 +10,7 @@ fn complete(
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &name,
         &Command::CompletePaidSuperWeapon {
             selection,
@@ -30,6 +31,7 @@ fn cancel(
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &name,
         &Command::CancelPaidSuperWeapon { selection },
         rules,
@@ -52,7 +54,7 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
         sim.session
             .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+        superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner, Default::default());
         assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
         assert_eq!(sim.houses[&owner].economy().credits(), 1000 + amount);
         assert_eq!(
@@ -192,7 +194,7 @@ fn superweapon_money_two_stage_reset_and_defeat_invalidate_pending_selection() {
                 .get_mut(&owner)
                 .unwrap()
                 .set_is_defeated_for_test(true);
-            superweapon::update_owned_supers(&mut sim, &rules, owner);
+            superweapon::update_owned_supers(&mut sim, &rules, owner, Default::default());
         } else {
             superweapon::reset_super(
                 &sim.interner,
@@ -299,7 +301,7 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
         }
         // Recheck at final activation as well as at the ordinary dirty tail.
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
-        superweapon::update_owned_supers(&mut sim, &rules, owner);
+        superweapon::update_owned_supers(&mut sim, &rules, owner, Default::default());
         assert!(sim.paid_super_weapon_selection(owner).is_none());
         sim.power_states
             .house_mut(owner)
@@ -380,6 +382,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     for (index, command) in commands.iter().enumerate() {
         assert_eq!(
             loaded.apply_command_with_overlays(
+                None,
                 "Americans",
                 &command.payload,
                 &rules,
@@ -394,6 +397,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     assert!(!complete(&mut loaded, &rules, owner, second, (15, 15)));
     let hash = loaded.state_hash();
     assert!(!loaded.apply_command_with_overlays(
+        None,
         "Americans",
         &commands[0].payload,
         &rules,
@@ -475,6 +479,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         target_ry: 10,
     };
     assert!(!sim.apply_command_with_overlays(
+        None,
         "Americans",
         &request,
         &rules,
@@ -496,6 +501,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         target_ry: 10,
     };
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &request,
         &rules,

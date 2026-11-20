@@ -378,7 +378,7 @@ fn record_the_kill(
     // Stock sets
     // it on `SLAV`, `V3ROCKET`, `DMISL` and `CMISL`: without it every missile
     // shot down would promote its interceptor.
-    if matches!(source, KillSource::Techno(_)) && victim.tracking_facts.dont_score() {
+    if matches!(source, KillSource::Techno(_)) && victim.tracking_facts().dont_score() {
         return None;
     }
     if rules.ares()
@@ -447,7 +447,7 @@ fn record_the_kill(
     };
     // 702FF0 awards experience before 703003..7031DC book the House fields.
     if let Some(victim) = entities.get_mut(victim_id) {
-        let count_killer = !victim.tracking_facts.dont_score();
+        let count_killer = !victim.tracking_facts().dont_score();
         record_kill_credit(
             victim,
             houses,
@@ -522,7 +522,6 @@ impl crate::sim::world::Simulation {
             return;
         };
         house
-            .tracking_mut()
             .record_death(crate::sim::house_tracking::DeathRecord {
                 tick,
                 victim_type,

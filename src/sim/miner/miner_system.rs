@@ -251,7 +251,6 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -265,7 +264,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
         || sim
             .houses
             .get(&entity.owner())
-            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()))
         || (frame as i32).wrapping_sub(entity.mission.mission_start_frame() as i32) <= 300
         || crate::sim::movement::motion_query::is_moving(entity) != Some(false)
     {
@@ -296,7 +295,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
     if in_contact {
         radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, frame_effects);
     }
-    drive_off_refinery(sim, rules, id, refinery, overlay_registry, frame_effects);
+    drive_off_refinery(sim, rules, id, refinery, frame_effects);
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         id,
@@ -338,7 +337,7 @@ pub(super) fn process_miner(
             .is_some_and(|object| {
                 object.dock.is_empty()
                     && !sim.houses.get(&snap.owner).is_some_and(|house| {
-                        house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                        house.is_controlled_by_human(sim.session.rule_policy())
                     })
             })
     } else {
@@ -364,7 +363,7 @@ pub(super) fn process_miner(
         }
         MinerState::Dock => handle_handoff(sim, snap, rules),
         MinerState::WaitNoOre => {
-            handle_going_to_idle(sim, rules, overlay_registry, snap, frame_effects);
+            handle_going_to_idle(sim, rules, snap, frame_effects);
             // Native state 4 has no `return 1` exit: every dispatch falls
             // into the default Rate epilogue (`0x0073EF97`).
             arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
@@ -432,7 +431,7 @@ fn harvest_looking(
         .get(id)
         .and_then(|entity| entity.archive_target());
     if let Some(archive) = archive {
-        assign_archive_destination(sim, rules, id, archive, overlay_registry, frame_effects);
+        assign_archive_destination(sim, rules, id, archive, frame_effects);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.set_archive_target(None);
         }
@@ -446,7 +445,7 @@ fn harvest_looking(
                 .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
     });
     if teleport_with_nav {
-        sim.set_unit_null_destination(id, rules, None, frame_effects);
+        sim.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
     }
     // Ares 3.0 1004D640 (hooks 0x73E772/0x73E851): Harvester.LongScan.
     let range = super::ore_scan::scan_cells(super::ore_scan::harvester_value(
@@ -507,7 +506,7 @@ fn harvest_looking(
             snap.dispatch_delay = NO_ORE_DELAY;
             return Ok(());
         };
-        assign_archive_destination(sim, rules, id, archive, overlay_registry, frame_effects);
+        assign_archive_destination(sim, rules, id, archive, frame_effects);
     }
     arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
     Ok(())
@@ -525,16 +524,11 @@ fn assign_archive_destination(
     rules: &RuleSet,
     id: u64,
     archive: crate::sim::combat::TargetKind,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if let Err(cause) = sim.assign_destination_represented(
-        id,
-        Some(archive.into()),
-        rules,
-        overlay_registry,
-        frame_effects,
-    ) {
+    if let Err(cause) =
+        sim.assign_destination_represented(id, Some(archive.into()), rules, frame_effects)
+    {
         log::warn!("Miner archive destination {id}: {cause}");
     }
 }
@@ -844,7 +838,7 @@ fn handle_return(
             );
         }
         None => {
-            sim.assign_null_destination(id, rules, None, frame_effects);
+            sim.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         }
     }
 }
@@ -948,7 +942,6 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot, rules: &RuleSet) {
 fn handle_going_to_idle(
     sim: &mut Simulation,
     rules: &RuleSet,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
 ) {
@@ -965,14 +958,7 @@ fn handle_going_to_idle(
             })
         })
     {
-        drive_off_refinery(
-            sim,
-            rules,
-            snap.entity_id,
-            refinery_sid,
-            overlay_registry,
-            frame_effects,
-        );
+        drive_off_refinery(sim, rules, snap.entity_id, refinery_sid, frame_effects);
     }
     queue_guard_from_harvest(sim, snap, rules);
 }
@@ -990,14 +976,13 @@ fn drive_off_refinery(
     rules: &RuleSet,
     id: u64,
     refinery: u64,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     let exit = sim
         .techno_nearby_location(id, Some(refinery), rules)
         .map(|(x, y)| (x as u16, y as u16))
         .unwrap_or((0, 0));
-    assign_miner_cell_destination(sim, rules, id, exit, overlay_registry, frame_effects);
+    assign_miner_cell_destination(sim, rules, id, exit, frame_effects);
 }
 
 /// `Queue_Mission(Guard, 0)` from inside the Harvest handler (preamble and
@@ -1300,7 +1285,6 @@ pub(crate) fn assign_miner_cell_destination(
     rules: &RuleSet,
     entity_id: u64,
     target: (u16, u16),
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(terrain) = sim.resolved_terrain.as_ref() {
@@ -1312,7 +1296,6 @@ pub(crate) fn assign_miner_cell_destination(
             target.0, target.1,
         )),
         rules,
-        overlay_registry,
         frame_effects,
     ) {
         log::warn!("Miner destination {entity_id}: {cause}");
@@ -1379,11 +1362,9 @@ pub(crate) fn counts_as_purifier(
 /// houses. Both terms are sourced from the refinery's owner — credit
 /// destination is a separate concern.
 ///
-/// Native (`0x0073E3D5..0x0073E408`) adds the virtual term only when the
-/// owner's `House+0x1EC` (is-human) is clear AND `[0x00A8B238]` (Session
-/// GameMode, the global `HouseClass::IsControlledByHuman @ 0x0050B730` also
-/// reads) is nonzero: never in the campaign
-/// (tools/spatial_oracle/refinery_dock.json `unload_gate_ai_*` rows).
+/// Native (`0x0073E3D5..0x0073E408`) reads the refinery owner's raw
+/// `House+0x1EC` human byte. The stock campaign disables the virtual bonus
+/// and skirmish enables it.
 pub(crate) fn effective_purifier_count(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1396,7 +1377,7 @@ pub(crate) fn effective_purifier_count(
     else {
         return real;
     };
-    if house.is_human() || !sim.session.game_mode_nonzero() {
+    if house.is_human() || !sim.session.rule_policy().uses_ai_economy() {
         return real;
     }
     let table = rules.general.ai_virtual_purifiers;

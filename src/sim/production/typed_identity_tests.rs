@@ -325,7 +325,7 @@ fn typed_duplicate_paid_start_place_and_promotion_preserve_constructor_type() {
         let credits = runtime.simulation.houses[&owner].economy().credits();
         runtime.simulation.uninit_with_context(
             1,
-            crate::sim::world::UninitContext::with_rules(&runtime.resources.rules),
+            crate::sim::world::UninitContext::new(&runtime.resources.rules),
         );
         if backup {
             assert_eq!(
@@ -338,7 +338,7 @@ fn typed_duplicate_paid_start_place_and_promotion_preserve_constructor_type() {
             );
             runtime.simulation.uninit_with_context(
                 4,
-                crate::sim::world::UninitContext::with_rules(&runtime.resources.rules),
+                crate::sim::world::UninitContext::new(&runtime.resources.rules),
             );
         }
         assert!(!runtime.simulation.entities().contains(infantry));

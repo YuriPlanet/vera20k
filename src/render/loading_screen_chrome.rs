@@ -15,6 +15,7 @@ use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::chrome_atlas::{ChromeAtlasEntry, ChromePiece, pack_chrome_atlas};
 use crate::render::gpu::GpuContext;
 use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
+use crate::render::shell_ui_style_assets::{decode_ui_pcx, decode_ui_shp, ui_art_candidates};
 
 /// Synthetic atlas label for the 1x1 white texel used to draw the solid backing
 /// fill (G3) as a tinted quad. Not an asset on disk.
@@ -457,37 +458,6 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
     })
 }
 
-///642C20 transfer callers load only PROGBARM; their shell backdrop is
-/// composed by the shell owner. Reuse this atlas/decoder/palette owner without
-/// requiring an unrelated country's loading background to exist.
-pub fn build_transfer_progress_atlas(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: &AssetManager,
-    progress_ramp: &[Color; 16],
-) -> Option<LoadingScreenAtlas> {
-    let base = load_named_ui_palette(assets, "TEMPERAT.PAL")?;
-    let palette = progress_palette_with_player_ramp(&base, progress_ramp);
-    let entries = [
-        mandatory_shp(assets, "PROGBARM.SHP", &palette, 0, "TEMPERAT.PAL")?,
-        solid_texel_entry(),
-    ];
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Loading", &entries)?;
-    Some(LoadingScreenAtlas {
-        texture,
-        background: None,
-        progress_frame0: packed[0],
-        participants: Vec::new(),
-        title_bar: None,
-        progress_background: None,
-        preview: None,
-        mmpb_markers: BTreeMap::new(),
-        side_icon: None,
-        insignia_measure_size: None,
-        solid_texel: packed[1],
-    })
-}
-
 /// Pack the native campaign art and frame-0 progress source in the existing
 /// loading atlas. Register the LOADMD/LOAD archives through AssetManager first.
 ///
@@ -590,12 +560,12 @@ fn append_optional_composition_entries(
     if composition.marker_remaps.is_empty() {
         return (Some(preview_label), Vec::new());
     }
-    if assets.load_file_from_mix(MMPB_ASSET_NAME).is_none() {
+    let Some(marker) = load_loading_shape(assets, MMPB_ASSET_NAME, 0) else {
         log::warn!(
             "Missing optional standard Skirmish loading marker asset {MMPB_ASSET_NAME}; preview remains available"
         );
         return (Some(preview_label), Vec::new());
-    }
+    };
 
     let mut distinct_remaps = BTreeMap::new();
     for remap in composition.marker_remaps {
@@ -607,7 +577,8 @@ fn append_optional_composition_entries(
     let mut marker_labels = Vec::with_capacity(distinct_remaps.len());
     for (color_key, ramp) in distinct_remaps {
         let palette = remap_base_palette.with_house_colors(ramp);
-        let Some(mut marker_entry) = render_shp_entry(assets, MMPB_ASSET_NAME, &palette, 0) else {
+        let Some(mut marker_entry) = render_loading_shape(&marker, MMPB_ASSET_NAME, &palette, 0)
+        else {
             log::warn!(
                 "Could not prepare optional standard Skirmish loading marker color {color_key}"
             );
@@ -681,13 +652,29 @@ fn solid_texel_entry() -> ChromePiece {
 /// Decode a country-insignia PCX into an atlas entry using the native
 /// RGB-magenta transparency key.
 fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
-    let bytes = assets.get_ref(file_name)?;
-    let pcx = PcxFile::from_bytes(bytes)
-        .map_err(|err| {
-            log::warn!("Could not parse standard Skirmish loading side icon {file_name}: {err:#}");
-            err
-        })
-        .ok()?;
+    let pcx = ui_art_candidates(assets, file_name).find_map(|asset| {
+        let decoded = if assets.mod_dir().is_some() {
+            decode_ui_pcx(asset.bytes)
+        } else {
+            PcxFile::from_bytes(asset.bytes)
+        };
+        match decoded {
+            Ok(pcx) => {
+                log::debug!(
+                    "Loading side icon {file_name} resolved from {}",
+                    asset.source
+                );
+                Some(pcx)
+            }
+            Err(err) => {
+                log::warn!(
+                    "Could not parse loading side icon {file_name} from {}: {err:#}",
+                    asset.source
+                );
+                None
+            }
+        }
+    })?;
     let mut rgba = pcx.to_rgba(None);
     ACTIVE_RETAIL_RGB565_PRESENTATION
         .apply_packed_color_key_rgba8(&mut rgba, SIDE_ICON_TRANSPARENT_RGB);
@@ -703,16 +690,24 @@ fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiec
 /// `0x0072ADE0` and the meter base from Init_Game's TEMPERAT.PAL loop
 /// (`0x0052BC6A..0x0052BCB9`); both convert like every other palette load.
 pub(crate) fn load_named_ui_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
-    let Some(bytes) = assets.get_ref(name) else {
-        log::warn!("Missing loading palette {name}");
-        return None;
-    };
-    Palette::from_bytes(bytes)
-        .map_err(|err| {
-            log::warn!("Could not parse loading palette {name}: {err:#}");
-            err
-        })
-        .ok()
+    let palette =
+        ui_art_candidates(assets, name).find_map(|asset| match Palette::from_bytes(asset.bytes) {
+            Ok(palette) => {
+                log::debug!("Loading palette {name} resolved from {}", asset.source);
+                Some(palette)
+            }
+            Err(err) => {
+                log::warn!(
+                    "Could not parse loading palette {name} from {}: {err:#}",
+                    asset.source
+                );
+                None
+            }
+        });
+    if palette.is_none() {
+        log::warn!("Missing usable loading palette {name}");
+    }
+    palette
 }
 
 fn mandatory_shp(
@@ -736,23 +731,47 @@ fn render_shp_entry(
     palette: &Palette,
     frame: usize,
 ) -> Option<ChromePiece> {
-    let Some(load) = assets.load_file_from_mix(file_name) else {
-        log::warn!("Missing loading SHP {file_name}");
-        return None;
+    let shp = load_loading_shape(assets, file_name, frame)?;
+    render_loading_shape(&shp, file_name, palette, frame)
+}
+
+fn load_loading_shape(assets: &AssetManager, file_name: &str, frame: usize) -> Option<ShpFile> {
+    let decode = |bytes: &[u8], source: &str| {
+        let decoded = if assets.mod_dir().is_some() {
+            decode_ui_shp(bytes)
+        } else {
+            ShpFile::from_bytes(bytes)
+        };
+        let shp = decoded
+            .map_err(|err| {
+                log::warn!("Could not parse loading SHP {file_name} from {source}: {err:#}")
+            })
+            .ok()?;
+        if frame >= shp.frames.len() {
+            log::warn!(
+                "Loading SHP {file_name} from {source} missing frame {frame}; frame count {}",
+                shp.frames.len()
+            );
+            return None;
+        }
+        log::debug!("Loading SHP {file_name} resolved from {source}");
+        Some(shp)
     };
-    let shp = ShpFile::from_bytes(&load.bytes)
-        .map_err(|err| {
-            log::warn!("Could not parse loading SHP {file_name}: {err:#}");
-            err
-        })
-        .ok()?;
-    if frame >= shp.frames.len() {
-        log::warn!(
-            "Loading SHP {file_name} missing frame {frame}; frame count {}",
-            shp.frames.len()
-        );
-        return None;
+    if assets.mod_dir().is_some() {
+        ui_art_candidates(assets, file_name).find_map(|asset| decode(asset.bytes, asset.source))
+    } else {
+        // Keep the native sticky CRC load in the stock screen.
+        let load = assets.load_file_from_mix(file_name)?;
+        decode(&load.bytes, &load.source_archive)
     }
+}
+
+fn render_loading_shape(
+    shp: &ShpFile,
+    file_name: &str,
+    palette: &Palette,
+    frame: usize,
+) -> Option<ChromePiece> {
     let frame_rgba = shp
         .frame_to_rgba(frame, palette)
         .map_err(|err| {
@@ -762,7 +781,7 @@ fn render_shp_entry(
         .ok()?;
     let canvas_w = shp.width as u32;
     let canvas_h = shp.height as u32;
-    let shp_frame = &shp.frames[frame];
+    let shp_frame = shp.frames.get(frame)?;
     let frame_w = shp_frame.frame_width as u32;
     let frame_h = shp_frame.frame_height as u32;
     let frame_x = shp_frame.frame_x as u32;
@@ -799,6 +818,31 @@ mod tests {
         render_shp_entry,
     };
     use crate::assets::pal_file::{Color, Palette};
+
+    #[test]
+    fn loading_insignia_decodes_mod_art_ahead_of_stock_language() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+        use crate::assets::pcx_file::encode_direct_rgb;
+
+        let install = audio_test_install("stock-loading-insignia");
+        let addon = TestDirectory::new("mod-loading-insignia");
+        let name = LoadingArtVariant::Americans.side_icon_pcx();
+        let stock = encode_direct_rgb(2, 1, &[32, 32, 32, 32, 32, 32]).unwrap();
+        let replacement = encode_direct_rgb(2, 1, &[255, 0, 0, 255, 0, 0]).unwrap();
+        install.write_mix("language.mix", name, &stock);
+        addon.write_mix("expandmd01.mix", name, &replacement);
+        std::fs::write(addon.path().join(name), b"broken PCX").unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(addon.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let insignia = render_pcx_entry(&assets, name).unwrap();
+        assert_eq!(insignia.rgba, [255, 0, 0, 255, 255, 0, 0, 255]);
+    }
 
     #[test]
     fn ares_country_loading_background_consumes_frozen_palette_and_late_shape() {

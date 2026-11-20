@@ -230,8 +230,7 @@ fn fractional_passenger_pips_match_original_cargo_and_draw_controls() {
             "{}",
             control
         );
-        sim.entities_mut_for_test()
-            .get_mut(carrier)
+        sim.entity_mut_for_test(carrier)
             .unwrap()
             .set_passenger_role_for_test(PassengerRole::transport(cargo));
         assert!(sim.apply_command(
@@ -304,7 +303,7 @@ fn a_slave_shows_the_load_it_carries() {
         let cargo = std::iter::repeat_n(bale(ResourceType::Ore), ore)
             .chain(std::iter::repeat_n(bale(ResourceType::Gem), gems))
             .collect();
-        sim.entities_mut_for_test().get_mut(slave).unwrap().slave =
+        sim.entity_mut_for_test(slave).unwrap().slave =
             crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
         assert_eq!(
             frames(&sim, rules, slave, None),
@@ -343,7 +342,7 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
             continue;
         }
         crate::sim::arena_fixture::install_status_miner_cargo(
-            sim.entities_mut_for_test().get_mut(miner).unwrap(),
+            sim.entity_mut_for_test(miner).unwrap(),
             rules.object("HARV").unwrap(),
             rules,
             actor["ore_bales"].as_u64().unwrap() as usize,
@@ -394,8 +393,7 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
         let tank = sim.spawn_object("TANK", OWNER, 16, 15, 64, &rules).unwrap();
         let mut cargo = PassengerCargo::new(3, 4.0);
         cargo.board_forced_chain(&[(tank, 4.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(carrier)
+        sim.entity_mut_for_test(carrier)
             .unwrap()
             .set_passenger_role_for_test(PassengerRole::transport(cargo));
         assert!(sim.apply_command(

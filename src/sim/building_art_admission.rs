@@ -28,7 +28,7 @@ impl Simulation {
         // Ares BuildingClass_DisableThings10016D00 (hook4524A3) updates a
         // sensor array at DisableStuff452480's head.
         if rules.ares_form() && !enabled {
-            self.update_ares_sensor_array(id, rules, None);
+            self.update_ares_sensor_array(id, rules, Some(rules.overlay_registry()));
         }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;

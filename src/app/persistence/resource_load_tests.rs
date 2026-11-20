@@ -434,6 +434,7 @@ fn snapshot_bytes_with_lighting(
         Some(&view),
         Some(&resources),
     )
+    .unwrap()
 }
 
 fn lookup(assets: &AssetManager, name: &str) -> Option<(String, i32, Vec<u8>)> {
@@ -1190,6 +1191,60 @@ fn retail_saved_resources_prepare_cold() {
         "uncommitted candidate cannot warm the process cache"
     );
     assert!(cold_owner.saved_scenario_rules().is_none());
+}
+
+#[test]
+fn cold_custom_player_load_keeps_the_saved_scenario_rng_at_menu_handoff() {
+    use crate::app::match_bootstrap::OrdinaryMatchSeedClock;
+    use crate::app::persistence::commands::resume_menu_saved_game_rng;
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+
+    let Some(mut save) = incoming_save("TEMPERATE", "") else {
+        return;
+    };
+    let sim = &mut save.incoming.simulation;
+    let mode = sim.session().game_mode();
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_allow_win_tags(AllowWinTagsPolicy::Ignore);
+    sim.install_session_admission(mode, None, policy);
+    sim.scenario_rng_mut_for_test().next_u32();
+    let saved_seed = sim.session().seed();
+    let saved_rng = sim.rng_state();
+    let bytes = snapshot_bytes(
+        &save.incoming,
+        &save.owner,
+        &save.map,
+        None,
+        save.rules_hash,
+    );
+
+    let frontend = frontend_main();
+    let owner = retail_rules_owner(&save.assets);
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &owner,
+        tile_cache: &TileVariantSelectorCache::default(),
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &|| LOAD_CLOCK_MS,
+    };
+    let loaded = save
+        .assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    let (mut sim, _) = loaded
+        .world
+        .into_committed(SharedCellDummy::fresh(), &frontend);
+    assert_eq!(sim.session().rule_policy(), policy);
+    assert_eq!(sim.rng_state().scenario, saved_rng.scenario);
+    let committed_rng = sim.rng_state();
+
+    resume_menu_saved_game_rng(&mut sim, &mut OrdinaryMatchSeedClock);
+
+    assert_eq!(sim.session().seed(), saved_seed);
+    assert_eq!(sim.rng_state(), committed_rng);
 }
 
 #[test]

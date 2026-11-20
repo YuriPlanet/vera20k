@@ -101,15 +101,15 @@ fn range_boundary_and_carrier_exclusion() {
     );
 }
 
-fn scene() -> (Simulation, RuleSet) {
+/// `None` without retail data (`RA2_DIR`); the fixture prints SKIPPED.
+fn scene() -> Option<(Simulation, RuleSet)> {
     // Authored Size allows the retail LCRF to board another selected hull.
     // Keep the real startup, mode and map reader passes for everything else.
     let patch = crate::rules::ini_parser::IniFile::from_str("[LCRF]\nSize=1\n");
     let rules = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "Hills.mmx",
         &patch,
-    )
-    .expect("retail rules")
+    )?
     .rules;
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(&rules);
@@ -119,7 +119,7 @@ fn scene() -> (Simulation, RuleSet) {
         .register(HouseState::new(owner, 0, None, true, 10_000, 10));
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(owner));
-    (sim, rules)
+    Some((sim, rules))
 }
 
 fn add(sim: &mut Simulation, rules: &RuleSet, id: u64, name: &str, x: u16) {
@@ -167,7 +167,9 @@ fn pairs(sim: &Simulation, rules: &RuleSet, selected: &[u64]) -> Vec<(u64, u64)>
 
 #[test]
 fn production_assignments_keep_each_passenger_within_range() {
-    let (mut sim, rules) = scene();
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
     add(&mut sim, &rules, 1, "E1", 10);
     add(&mut sim, &rules, 2, "E1", 10);
     add(&mut sim, &rules, 10, "LCRF", 11);
@@ -177,21 +179,21 @@ fn production_assignments_keep_each_passenger_within_range() {
 
 #[test]
 fn production_admission_runs_before_reserving_capacity() {
-    let (mut sim, rules) = scene();
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
     add(&mut sim, &rules, 1, "E1", 10);
     add(&mut sim, &rules, 2, "E1", 10);
     add(&mut sim, &rules, 10, "FV", 11);
     let enemy = sim.intern("Russians");
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_owner_for_test(enemy);
     assert_eq!(pairs(&sim, &rules, &[1, 2, 10]), [(2, 10)]);
 
     // A nearer enemy carrier must not hide an eligible friendly one.
     add(&mut sim, &rules, 11, "FV", 10);
-    sim.entities_mut_for_test()
-        .get_mut(11)
+    sim.entity_mut_for_test(11)
         .unwrap()
         .set_owner_for_test(enemy);
     assert_eq!(pairs(&sim, &rules, &[2, 11, 10]), [(2, 10)]);
@@ -199,7 +201,9 @@ fn production_admission_runs_before_reserving_capacity() {
 
 #[test]
 fn production_carrier_already_ordered_aboard_receives_no_passengers() {
-    let (mut sim, rules) = scene();
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
     add(&mut sim, &rules, 10, "LCRF", 10);
     add(&mut sim, &rules, 11, "LCRF", 12);
     add(&mut sim, &rules, 1, "E1", 10);

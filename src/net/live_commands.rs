@@ -1,12 +1,18 @@
-//! The live protocol-2 Queue_AI visit, from ProcessNetwork6475F0 through
-//! SendOutList649CA0 and Wait_For_Players648710. Simulation owns commands;
-//! this process-session owner retains only transport, packet exchange and the
-//! current post-Logic visit while the client continues servicing its UI.
+//! One match's live command session, in one of two modes chosen once at
+//! install ([`relay_clock`], handed to `LiveCommandSession::new`):
 //!
-//! Direct UDP LAN is an explicit transport adaptation; retail LAN selected
-//! IPX sockets while this shared protocol-2 command behavior is retained.
-//! Native wait-dialog/cancel, timeout recovery and diagnostic drawing remain
-//! client-session work; this owner never invents a wait timeout or peer exit.
+//! - LAN, and an online match with one human that the relay does not order,
+//!   run the protocol-2 Queue_AI visit from ProcessNetwork6475F0 through
+//!   SendOutList649CA0 and Wait_For_Players648710. Direct UDP replaces retail
+//!   LAN's IPX sockets. The wait dialog, cancel and timeout recovery belong to
+//!   `app::match_runtime::network_match`.
+//! - Every other online match runs `sequenced`: it assembles the relay's
+//!   sealed timeline, turns relay departures and unreadable batches into EXIT
+//!   or EVENT_REMOVEPLAYER records, and ends the match on relay absence,
+//!   watcher silence or a relay record this build cannot read.
+//!
+//! Simulation owns the commands; this session keeps the transport, packet
+//! exchange and the current post-Logic visit while the client services its UI.
 
 use std::io;
 use std::net::SocketAddrV4;
@@ -33,7 +39,7 @@ use super::command_exchange::{
 };
 use super::lockstep::NetworkSendPolicy;
 use super::reliable::{Delivery, LanConnections, RetryTiming};
-use super::udp::{LanUdpTransport, UdpServiceReport};
+use super::udp::{LanUdpTransport, OrderingCertificate, UdpServiceReport};
 
 // Ordinary648060 passes180 for either transport mode.
 // Both are6C8C40 wall-clock buckets (timeGetTime>>4), not simulation frames.
@@ -43,7 +49,8 @@ const WAIT_RECEIVE_BUDGET: usize = 64;
 
 /// ProcessNetwork647919..647954 indexes the current GameMode's row at
 /// 837340. The relay changes physical routing, not this timing selection.
-/// Source: original gamemd.exe instructions and the row bytes.
+/// Source: original gamemd.exe instructions and the row bytes. VERA: only a
+/// WOL match can run on the relay's clock ([`relay_clock`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveCommandMode {
     Lan,
@@ -91,6 +98,32 @@ impl LiveCommandMode {
             },
         }
     }
+}
+
+/// VERA: the lobby's certificate when the relay orders this match, which then
+/// runs on the relay's clock (send rate 1, `SequencedSession`). Install calls
+/// this once, before the start agreement hashes the timing, and hands the
+/// answer to [`LiveCommandSession::new`]. Only a WOL match runs there, and
+/// only when its certificate orders it (`OrderingCertificate::relay_orders`).
+/// `houses` counts the original admission; a certificate naming another number
+/// of sources never starts. `SequencedSession::new` checks which sources.
+pub fn relay_clock(
+    mode: LiveCommandMode,
+    transport: &LanUdpTransport,
+    houses: usize,
+) -> Result<Option<OrderingCertificate>, StartupError> {
+    let Some(bytes) = transport
+        .ordering_certificate()
+        .filter(|_| mode == LiveCommandMode::Wol)
+    else {
+        return Ok(None);
+    };
+    let certificate =
+        OrderingCertificate::parse(&bytes).map_err(|_| StartupError::InvalidAdmission)?;
+    if certificate.sources_mask.count_ones() as usize != houses {
+        return Err(StartupError::ClockRoster);
+    }
+    Ok(Some(certificate).filter(OrderingCertificate::relay_orders))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -147,8 +180,8 @@ pub enum LiveWaitKind {
     Ordinary,
 }
 
-/// Diagnostic projection of the existing retained visit. This does not
-/// distinguish backpressure causes; queue and mirror facts remain authoritative.
+/// Diagnostic projection of the retained visit. It does not distinguish
+/// backpressure causes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveCommandPhase {
     InitialBarrier,
@@ -177,9 +210,9 @@ struct CurrentFrame {
     phase: FramePhase,
 }
 
-/// One established match's live command channel. CRC history remains with
-/// the existing caller's checksum owner. A retained frame never re-runs
-/// Logic, recreates an encoded packet, or owns a second gameplay queue.
+/// One established match's live command channel; `FrameChecksumState`
+/// (`sim::command_queue`) keeps the checksum history. A retained frame never
+/// re-runs Logic or recreates an encoded packet.
 #[derive(Debug)]
 pub struct LiveCommandSession {
     transport: LanUdpTransport,
@@ -196,6 +229,8 @@ pub struct LiveCommandSession {
 }
 
 impl LiveCommandSession {
+    /// `clock` is [`relay_clock`]'s answer for this match, the one the
+    /// installed timing already follows.
     pub fn new(
         agreement: StartupAgreement,
         transport: LanUdpTransport,
@@ -203,6 +238,7 @@ impl LiveCommandSession {
         initial_seed: u32,
         frame_send_rate: NonZeroU32,
         mode: LiveCommandMode,
+        clock: Option<OrderingCertificate>,
     ) -> Result<Self, LiveCommandError> {
         if local_house < 0 {
             return Err(LiveCommandError::InvalidLocalHouse(local_house));
@@ -227,33 +263,21 @@ impl LiveCommandSession {
         }
         // Intentional modern online policy: solo AI needs no command lead
         // time, unless the lobby has the relay order the match, so that others
-        // can watch the one person in it watch AI play
-        // (`OrderingCertificate::relay_orders`). The original admission is
-        // immutable; losing remote players later must never switch an
-        // existing multiplayer game to local input.
-        let relay_orders = transport
-            .ordering_certificate()
-            .and_then(|bytes| super::udp::OrderingCertificate::parse(&bytes).ok())
-            .is_some_and(|certificate| certificate.relay_orders());
+        // can watch the one person in it watch AI play (`relay_clock`). The
+        // original admission is immutable; losing remote players later must
+        // never switch an existing multiplayer game to local input.
         let solo =
-            mode == LiveCommandMode::Wol && agreement.is_original_singleton() && !relay_orders;
+            mode == LiveCommandMode::Wol && agreement.original_houses() == 1 && clock.is_none();
         let policy = if solo {
             NetworkSendPolicy::Local
         } else {
             NetworkSendPolicy::FrameSendRate2 { frame_send_rate }
         };
-        let sequenced = if mode == LiveCommandMode::Wol
-            && !solo
-            && transport.ordering_certificate().is_some()
-        {
-            Some(sequenced::SequencedSession::new(
-                &agreement,
-                &transport,
-                local_house,
-            )?)
-        } else {
-            None
-        };
+        let sequenced = clock
+            .map(|clock| {
+                sequenced::SequencedSession::new(&agreement, &transport, local_house, &clock)
+            })
+            .transpose()?;
         let startup = startup::StartupHandshake::new(
             agreement,
             local_house,
@@ -426,7 +450,8 @@ impl LiveCommandSession {
     }
 
     /// Shared pause is a relay timeline control, independent of local menus.
-    /// Unsupported or mixed-version matches leave it unavailable.
+    /// A direct LAN match has none, and one spread over several relays
+    /// leaves it unavailable.
     pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
         self.sequenced
             .as_ref()
@@ -647,6 +672,9 @@ impl LiveCommandSession {
     }
 
     /// Keep the private connection and its progress row in the same lifetime.
+    /// `new` builds the progress rows from the transport's connections, and
+    /// this session owns that transport and removes a connection only here,
+    /// so a row this removed always had its connection.
     pub fn remove_peer(&mut self, house: i8) -> bool {
         if !self.exchange.remove_peer(house) {
             return false;
@@ -654,19 +682,15 @@ impl LiveCommandSession {
         if !self.uses_sequenced_lockstep() {
             self.startup.abort();
         }
+        let connected = self
+            .transport
+            .connections_mut()
+            .remove_peer(i32::from(house));
         assert!(
-            self.transport
-                .connections_mut()
-                .remove_peer(i32::from(house)),
+            connected,
             "the admitted connection and command progress share one roster"
         );
         true
-    }
-
-    /// Read-only reference to the immutable install-time certificate. Transport
-    /// controls remain private to the existing startup/reliability owners.
-    pub fn startup_agreement(&self) -> &StartupAgreement {
-        self.startup.agreement()
     }
 
     /// A kick/cancel before release cannot elect a smaller initial set. The
@@ -747,7 +771,7 @@ impl LiveCommandSession {
     }
 
     ///64B410 selects the first minimum signed frame from the same progress
-    ///rows that gate dispatch. No separate stalled-peer frame table is kept.
+    ///rows that gate dispatch.
     pub fn lowest_frame_peer(&self) -> Option<&CommandPeerProgress> {
         self.exchange.peers().iter().reduce(|first, next| {
             if next.frame() < first.frame() {
@@ -1053,7 +1077,7 @@ impl LiveCommandSession {
         // Local scheduling remains fixed by the original solo admission.
         if self.policy != NetworkSendPolicy::Local {
             self.policy = NetworkSendPolicy::FrameSendRate2 {
-                frame_send_rate: NonZeroU32::new(u32::from(rate.get())).unwrap(),
+                frame_send_rate: NonZeroU32::from(rate),
             };
         }
         if frame != 0 && frame & 127 == 0 {

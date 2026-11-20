@@ -669,7 +669,16 @@ fn admits(sim: &Simulation, owner: &str, command: &Command) -> bool {
     match actor_of(command) {
         None => true,
         Some(entity_id) => {
-            sim.entity_owned_by_id(owner, entity_id) && sim.order_actor_admits(entity_id)
+            // `entity_owned_by_id` is now a test fixture, so the ownership half
+            // compares the interned name this frame's owner resolved to against
+            // the object's owner. Same question, read from the entity store.
+            let Some(owner_id) = sim.interner().get(owner) else {
+                return false;
+            };
+            sim.entities()
+                .get(entity_id)
+                .is_some_and(|entity| entity.owner() == owner_id)
+                && sim.order_actor_admits(entity_id)
         }
     }
 }

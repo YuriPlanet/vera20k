@@ -198,9 +198,15 @@ impl App {
             state.frontend.scenario_catalog.shell_maps(),
             map_idx,
         );
-        state.frontend.random_map_retention.select_map(&file_name);
-        state.frontend.skirmish_preview_texture = None;
+        Self::note_selected_shell_map(state, &file_name);
         true
+    }
+
+    /// The page selected another map: the random-map retention follows it
+    /// and the preview is drawn again.
+    pub(super) fn note_selected_shell_map(state: &mut AppState, file_name: &str) {
+        state.frontend.random_map_retention.select_map(file_name);
+        state.frontend.skirmish_preview_texture = None;
     }
 
     /// Skirmish Back (`0x5C0`): the proc packs the session like Start does
@@ -421,6 +427,9 @@ impl App {
             crate::ui::skirmish_shell::SkirmishShellAction::GameOptions => {
                 Self::open_skirmish_game_options(state);
             }
+            crate::ui::skirmish_shell::SkirmishShellAction::Setups => {
+                Self::open_skirmish_setups(state);
+            }
             crate::ui::skirmish_shell::SkirmishShellAction::None
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectColor(_)
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectMap(_) => {}
@@ -434,6 +443,7 @@ impl App {
         let rules = MatchRules {
             superweapon_limit: profile.superweapon_limit,
             terrain_deformation: profile.terrain_deformation,
+            skirmish_cheats: profile.skirmish_cheats,
         };
         state.frontend.skirmish_shell_state.game_options = Some(GameOptionsBox::new(rules));
         state.platform.window.request_redraw();
@@ -447,9 +457,9 @@ impl App {
         };
         let rules = open.rules;
         let profile = &mut state.persistence.options_profile;
-        if (profile.superweapon_limit, profile.terrain_deformation)
-            != (rules.superweapon_limit, rules.terrain_deformation)
-        {
+        let shared_rules_changed = (profile.superweapon_limit, profile.terrain_deformation)
+            != (rules.superweapon_limit, rules.terrain_deformation);
+        if shared_rules_changed {
             profile.superweapon_limit = rules.superweapon_limit;
             profile.terrain_deformation = rules.terrain_deformation;
             // The next offline game reads them, and a room's host starts
@@ -460,6 +470,9 @@ impl App {
             state
                 .process_assets
                 .set_terrain_deformation(rules.terrain_deformation);
+        }
+        if shared_rules_changed || profile.skirmish_cheats != rules.skirmish_cheats {
+            profile.skirmish_cheats = rules.skirmish_cheats;
             crate::app::persistence::options::persist_options_profile(state);
         }
         state.platform.window.request_redraw();
@@ -675,12 +688,34 @@ impl App {
             .choose_map_modal
             .as_mut()
         {
+            if crate::app::worker::THREADS {
+                modal.add_random_maps_row(&state.frontend.skirmish_modes);
+            }
             modal.add_favorites_row(favorites);
             if online {
                 modal.add_online_maps_row();
             }
         }
         Self::list_cooperative_campaigns(state, false);
+    }
+
+    /// List files only when the folder is visible, including when Save or
+    /// Delete changes it in the generator above the chooser.
+    pub(super) fn refresh_saved_random_maps(state: &mut AppState) {
+        let dir = Self::random_map_dir(state);
+        let layout = Self::skirmish_choose_map_layout(state);
+        if let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.random_maps_selected())
+        {
+            let seeds = dir
+                .map(|dir| crate::map::rmg::saved_seeds::list_saved_seeds(&dir))
+                .unwrap_or_default();
+            modal.set_saved_seeds(seeds, &layout);
+        }
     }
 
     /// VeraX map hot reload: re-run the retail Choose Map scan over the game
@@ -950,6 +985,7 @@ impl App {
                 // (`0x0061AA5A`).
                 Self::play_skirmish_shell_generic_click_sound(state);
                 if rebuilt {
+                    Self::refresh_saved_random_maps(state);
                     Self::list_cooperative_campaigns(state, true);
                 }
                 state.platform.window.request_redraw();
@@ -1033,6 +1069,16 @@ impl App {
         // Every way out slides `0x6B` out first (`0x007757E0` ->
         // `ShellDialog__SlideOutAndWait`); its result runs afterwards.
         let then = match fired_button {
+            crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5
+                if modal.random_maps_selected() =>
+            {
+                let Some(seed) = modal.selected_saved_seed() else {
+                    return true;
+                };
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap(Some(
+                    seed.file_name.clone(),
+                ))
+            }
             crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5 => {
                 // No map selected: Use Map does nothing (`0x005E7160`).
                 let Some(selection) = modal.accept_selection() else {
@@ -1052,7 +1098,7 @@ impl App {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
             }
             crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap(None)
             }
             // VERA: stars or unstars the highlighted map.
             crate::ui::skirmish_shell::ChooseMapModalButton::Favorite => {
@@ -1296,6 +1342,7 @@ impl App {
     pub(super) fn skirmish_leaves_escape(state: &AppState) -> bool {
         let shell = &state.frontend.skirmish_shell_state;
         shell.saved_seed_browser.is_none()
+            && shell.setups_browser.is_none()
             && shell.validation_modal.is_none()
             && shell.game_options.is_none()
             && shell
@@ -1671,6 +1718,10 @@ impl App {
                 Self::handle_saved_seed_browser_mouse_down(state);
                 return;
             }
+            Some(SkirmishShellDialog::Setups) => {
+                Self::handle_skirmish_setups_mouse_down(state);
+                return;
+            }
             Some(SkirmishShellDialog::RandomMap) => {
                 Self::handle_random_map_setup_mouse_down(state);
                 return;
@@ -1750,6 +1801,10 @@ impl App {
                 Self::handle_saved_seed_browser_mouse_up(state);
                 return;
             }
+            Some(SkirmishShellDialog::Setups) => {
+                Self::handle_skirmish_setups_mouse_up(state);
+                return;
+            }
             Some(SkirmishShellDialog::RandomMap) => {
                 Self::handle_random_map_setup_mouse_up(state);
                 return;
@@ -1810,6 +1865,10 @@ impl App {
             Some(SkirmishShellDialog::Skirmish) => {}
             Some(SkirmishShellDialog::SeedBrowser) => {
                 Self::update_saved_seed_browser_scroll(state, true);
+                return;
+            }
+            Some(SkirmishShellDialog::Setups) => {
+                Self::update_skirmish_setups_scroll(state, true);
                 return;
             }
             Some(SkirmishShellDialog::RandomMap) => {
@@ -1879,6 +1938,7 @@ impl App {
             .skirmish_shell_state
             .saved_seed_browser
             .is_some()
+            || state.frontend.skirmish_shell_state.setups_browser.is_some()
         {
             return true;
         }

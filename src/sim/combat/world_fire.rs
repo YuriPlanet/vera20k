@@ -303,7 +303,6 @@ fn admit_attacker_fire<'r>(
             answer(&fire_error_world::FireSubject {
                 world,
                 rules,
-                overlay_registry,
                 fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
                 firer,
                 obj,
@@ -407,7 +406,6 @@ fn admit_attacker_fire<'r>(
                     world,
                     snap.stable_id,
                     rules,
-                    overlay_registry,
                     effects,
                 );
             }
@@ -556,7 +554,6 @@ fn admit_attacker_fire<'r>(
         let code = fire_error_world::FireSubject {
             world,
             rules,
-            overlay_registry,
             fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
             firer: actor,
             obj,
@@ -886,7 +883,6 @@ pub(super) fn retaliation_reaches(
     rules: &RuleSet,
     victim_id: u64,
     source_id: u64,
-    overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
     let entities = &world.substrate.entities;
     let (Some(victim), Some(source)) = (entities.get(victim_id), entities.get(source_id)) else {
@@ -903,7 +899,6 @@ pub(super) fn retaliation_reaches(
     let in_range = super::fire_error_world::FireSubject {
         world,
         rules,
-        overlay_registry,
         fog: Some(world.fog.fire_view(&world.house_alliances)),
         firer: victim,
         obj: victim_type,
@@ -1232,9 +1227,13 @@ fn reveal_on_fire(
         FireDisclosurePath::Shot if admitted.is_empty() => return,
         FireDisclosurePath::Shot => &admitted[..],
     };
-    let context = crate::sim::world::UninitContext::new(rules, None);
+    let context = crate::sim::world::UninitContext::new(rules);
     let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
+    // FireAt6FDE73..6FDF5A / 6FF66C..6FF73D may read PlayerPtr's
+    // discovery byte. It cannot supply shared input to lockstep.
+    let uses_local_discovery = !world.session.execution_topology().is_lockstep()
+        && world.session.rule_policy().uses_campaign_discovery();
     for &house in viewers {
         let Some(firer) = world.substrate.entities.get(firer_id) else {
             return;
@@ -1246,7 +1245,7 @@ fn reveal_on_fire(
             world.resolved_terrain.as_ref(),
         );
         let owned = firer.owner() == house;
-        let discovered = world.session.game_mode_nonzero()
+        let discovered = !uses_local_discovery
             || (world.session.current_house() == Some(house)
                 && firer.discovery.discovered_by_current_house());
         if owned || discovered {
@@ -2079,7 +2078,7 @@ pub(super) fn emit_admitted_fire(
     // store, so the firer may try again next frame. The tail from
     // `0x006FF749` still runs.
     if !launched {
-        fireat_tail(world, rules, snap, weapon, None, overlay_registry, effects);
+        fireat_tail(world, rules, snap, weapon, None, effects);
         return None;
     }
 
@@ -2132,7 +2131,10 @@ pub(super) fn emit_admitted_fire(
     // Inviso bullet detonates later in its own AI (possibly this frame's
     // Logic tail, once its impact/fuse admits it).
     if is_garrison && let Some(building) = world.substrate.entities.get_mut(snap.stable_id) {
-        building.advance_garrison_fire_index();
+        building
+            .passenger_role_mut()
+            .occupants_mut()
+            .advance_fire_index();
     }
     // Techno6FF0B7..6FF15B: only a successfully launched shot arms recoil.
     // FireAt6FF0BB dispatches HasTurret; Building4527D0 includes upgrades,
@@ -2317,7 +2319,7 @@ pub(super) fn emit_admitted_fire(
         crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
         // Sonic6FF470 precedes the independent later-effect ladder.
         if weapon.is_sonic && callbacks_enabled(world) {
-            world.commit_fired_wave(rules, &event, 0, selected.index, overlay_registry);
+            world.commit_fired_wave(rules, &event, 0, selected.index);
         }
     }
     // 6FF4CC..6FF54B: successful FireAt only, after burst advance and before
@@ -2348,7 +2350,7 @@ pub(super) fn emit_admitted_fire(
         && callbacks_enabled(world)
         && let Some(event) = out.fire_events.last().cloned()
     {
-        world.commit_fired_wave(rules, &event, 3, selected.index, overlay_registry);
+        world.commit_fired_wave(rules, &event, 3, selected.index);
     }
     // Ares 3.0 TechnoClass_Fire_OtherWaves (10056E60, hook 0x6FF5F5): a
     // weapon past the four earlier effects and without IsMagBeam creates a TS
@@ -2361,7 +2363,7 @@ pub(super) fn emit_admitted_fire(
         && callbacks_enabled(world)
         && let Some(event) = out.fire_events.last().cloned()
     {
-        world.commit_fired_wave(rules, &event, wave_type, selected.index, overlay_registry);
+        world.commit_fired_wave(rules, &event, wave_type, selected.index);
     }
     // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
     // Aircraft's override is RET41B900; release/dock retain their own writes.
@@ -2381,15 +2383,7 @@ pub(super) fn emit_admitted_fire(
         FireDisclosurePath::Shot,
     );
 
-    fireat_tail(
-        world,
-        rules,
-        snap,
-        weapon,
-        Some(bullet_id),
-        overlay_registry,
-        effects,
-    );
+    fireat_tail(world, rules, snap, weapon, Some(bullet_id), effects);
     // Concrete class FireAt suffixes follow the base tail, including
     // LimboLaunch. Ares reload / Infantry panic and Unit's firing counter /
     // Scalable work stay here for ordinary and direct mission FireAt callers.
@@ -2497,19 +2491,10 @@ fn fireat_tail(
     snap: &AttackerSnapshot,
     weapon: &WeaponType,
     bullet: Option<u64>,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
     if weapon.limbo_launch {
-        world.parasite_limbo_launch(
-            snap.stable_id,
-            snap.target,
-            weapon,
-            bullet,
-            rules,
-            overlay_registry,
-            effects,
-        );
+        world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, bullet, rules, effects);
     }
     // FireAt6FF872..6FF8EB uses its explicit argument, on both successful
     // and failed-launch tails. Unit mission Attack(1) bypasses this arm;
@@ -2536,16 +2521,16 @@ fn fireat_tail(
             .unwrap()
             .remember_distributed_fire_target(snap.target);
         world
-            .assign_target_represented(snap.stable_id, None, rules, overlay_registry, effects)
+            .assign_target_represented(snap.stable_id, None, rules, effects)
             .expect("DistributedFire firer retains its concrete target receiver");
     }
     if weapon.fire_once {
         // Native Abstract+0x14 bit 4 admits Foot receivers, not buildings.
         if snap.category != EntityCategory::Structure {
-            world.team_fire_once_complete(snap.stable_id, rules, overlay_registry, effects);
+            world.team_fire_once_complete(snap.stable_id, rules, effects);
         }
         world
-            .assign_target_represented(snap.stable_id, None, rules, overlay_registry, effects)
+            .assign_target_represented(snap.stable_id, None, rules, effects)
             .expect("FireOnce firer retains its concrete target receiver");
     }
 }
@@ -2888,7 +2873,7 @@ pub(crate) fn visit_fire(
     if let FireVisit::AircraftStrike(id) = visit {
         // Each FireAt of the strike commits its own transaction, so no outer
         // boundary wraps the visit.
-        aircraft_release::visit(world, run, rules, overlay_registry, id, emit, pings);
+        aircraft_release::visit(world, run, rules, id, emit, pings);
         return;
     }
     // A visit that holds no target emits nothing, so the boundary below
@@ -3043,13 +3028,7 @@ pub(crate) fn visit_fire(
     boundary.commit(world, run, rules, overlay_registry, emit, pings);
     for removed in emit.remove_attack.drain(remove_start..) {
         world
-            .assign_target_represented(
-                removed,
-                None,
-                rules,
-                overlay_registry,
-                FrameEffects::default(),
-            )
+            .assign_target_represented(removed, None, rules, FrameEffects::default())
             .expect("FireAt target receiver remains retained");
     }
     if let Some(id) = infantry_tail {
@@ -3191,13 +3170,7 @@ pub(crate) fn tick_combat(
     remove_attack.sort_unstable();
     remove_attack.dedup();
     for &attacker_id in &remove_attack {
-        let _ = world.assign_target_represented(
-            attacker_id,
-            None,
-            rules,
-            overlay_registry,
-            FrameEffects::default(),
-        );
+        let _ = world.assign_target_represented(attacker_id, None, rules, FrameEffects::default());
     }
 
     // Push the synchronously selected death sounds to the presentation sink.
@@ -3240,8 +3213,10 @@ mod house_firepower_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod reveal_on_fire_tests {
     use super::*;
+    use crate::rules::rule_policy::RulePolicy;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
+    use crate::sim::scenario_session::ScenarioGameMode;
 
     /// A computer Soviet tank at (10, 10) shooting a human American tank at
     /// (12, 10), in a multiplayer game.
@@ -3373,7 +3348,7 @@ mod reveal_on_fire_tests {
         let scout = sim
             .spawn_object("AMCV", "Americans", 18, 10, 0, &rules)
             .unwrap();
-        let context = crate::sim::world::UninitContext::with_rules(&rules);
+        let context = crate::sim::world::UninitContext::new(&rules);
         sim.update_object_sight_with_context(scout, 0, None, context);
         let coord = crate::sim::movement::ground_pose::object_get_coords(
             sim.entities().get(firer).unwrap(),
@@ -3423,7 +3398,7 @@ mod reveal_on_fire_tests {
     }
 
     #[test]
-    fn no_reveal_for_a_computer_victim_or_a_mapped_firer_cell() {
+    fn no_reveal_for_a_computer_victim_or_cell_target() {
         let (mut sim, rules) = world();
         reveal_on_fire(
             &mut sim,
@@ -3436,23 +3411,6 @@ mod reveal_on_fire_tests {
         assert!(!revealed(&sim, "Soviet", 12, 10), "a computer victim");
 
         let (mut sim, rules) = world();
-        let americans = sim.interner.get("Americans").unwrap();
-        crate::sim::vision::reveal_radius(&mut sim.fog, americans, 10, 10, 1);
-        assert!(!revealed(&sim, "Americans", 10, 12));
-        reveal_on_fire(
-            &mut sim,
-            &rules,
-            1,
-            TargetKind::Entity(2),
-            true,
-            FireDisclosurePath::Shot,
-        );
-        assert!(
-            !revealed(&sim, "Americans", 10, 12),
-            "the firer's own cell is already mapped: IsShrouded is false"
-        );
-
-        let (mut sim, rules) = world();
         reveal_on_fire(
             &mut sim,
             &rules,
@@ -3462,6 +3420,41 @@ mod reveal_on_fire_tests {
             FireDisclosurePath::Shot,
         );
         assert!(!revealed(&sim, "Americans", 10, 10), "a cell target");
+    }
+
+    #[test]
+    fn a_mapped_but_undiscovered_firer_reveals_its_surroundings_under_local_discovery_policy() {
+        let local_discovery = RulePolicy::stock_multiplayer().with_uses_campaign_discovery(true);
+        for (mode, policy, reveals) in [
+            (
+                ScenarioGameMode::Campaign,
+                RulePolicy::stock_campaign(),
+                true,
+            ),
+            (
+                ScenarioGameMode::Skirmish,
+                RulePolicy::stock_multiplayer(),
+                false,
+            ),
+            (ScenarioGameMode::Skirmish, local_discovery, true),
+            (ScenarioGameMode::Lan, local_discovery, false),
+        ] {
+            let (mut sim, rules) = world();
+            let viewer = sim.interner.get("Americans").unwrap();
+            sim.session.install_admission(mode, None, policy);
+            sim.session.set_current_house_for_test(Some(viewer));
+            crate::sim::vision::reveal_radius(&mut sim.fog, viewer, 10, 10, 1);
+            assert!(!revealed(&sim, "Americans", 10, 12));
+            reveal_on_fire(
+                &mut sim,
+                &rules,
+                1,
+                TargetKind::Entity(2),
+                true,
+                FireDisclosurePath::Shot,
+            );
+            assert_eq!(revealed(&sim, "Americans", 10, 12), reveals, "{mode:?}");
+        }
     }
 
     #[test]

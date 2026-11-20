@@ -411,7 +411,7 @@ impl Simulation {
                     self.tunnel_set_speed_fraction(id, true);
                     self.tunnel_set_state(id, TunnelState::DugIn);
                     self.tunnel_dig_effects(id, DigEffects::DIG_IN, rules);
-                    let context = UninitContext::new(rules, registry).with_effects(effects);
+                    let context = UninitContext::new(rules).with_effects(effects);
                     self.detach_all(id, false, context);
                 }
             }
@@ -597,7 +597,6 @@ impl Simulation {
                 },
                 crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .is_ok_and(|code| code != 0);
         let in_playfield = crate::sim::cell_rect::cell_is_in_playfield_leptons(
@@ -678,7 +677,7 @@ impl Simulation {
             return;
         }
         // 0x00729A3D..0x00729A8F.
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.reveal_uncached_object_sight(id, false, false, None, context);
         let frame = self.session.binary_frame();
         let frames = tunnel_movement::dig_out_frames(self.tunnel_rot(id, rules));

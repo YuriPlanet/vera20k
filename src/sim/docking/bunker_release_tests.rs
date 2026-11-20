@@ -215,7 +215,7 @@ fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
         &mut sim,
         2,
         &rules,
-        crate::sim::world::FrameEffects::default().with_overlay_registry(Some(registry)),
+        crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(trace[1].name, "force");

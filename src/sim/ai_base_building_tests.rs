@@ -105,6 +105,52 @@ fn computer_house(game_mode_nonzero: bool) -> (Simulation, InternedId) {
     (sim, owner)
 }
 
+#[test]
+fn managed_ai_base_controls_reservation_and_production_together() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let rules = rules("");
+    let building = rules.object("PLAIN").unwrap();
+    for (mode, policy, site_admitted, production_mode) in [
+        (campaign, campaign_rules, true, 0),
+        (skirmish, skirmish.stock_rule_policy(None), false, 2),
+        (
+            campaign,
+            campaign_rules.with_uses_managed_ai_base(true),
+            false,
+            2,
+        ),
+        (campaign, campaign_rules.with_uses_ai_economy(true), true, 0),
+    ] {
+        let (mut sim, owner) = computer_house(false);
+        sim.install_session_admission(mode, None, policy);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .economy_mut()
+            .set_credits_for_test(0);
+
+        assert_eq!(
+            reserved_near(&sim, &rules, owner, building, (20, 20)),
+            site_admitted,
+        );
+        economy_state_machine(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.houses,
+            &sim.power_states,
+            &rules,
+            owner,
+            true,
+        );
+        assert_eq!(sim.houses[&owner].ai_production().mode(), production_mode);
+    }
+}
+
 /// Checks the native draws (stream `Scenario+0x218`, the range) and returns
 /// the stream the port must leave: `sim`'s, advanced by those draws.
 fn expect_draws(sim: &mut Simulation, draws: &[&Value], low: i32, high: i32) -> SimRng {
@@ -146,7 +192,9 @@ fn the_production_mode_steps_as_native() {
         house
             .ai_production_mut()
             .set_for_test(int(&row["mode"]) as i32, -1, true);
-        house.tracking_mut().set_for_test(0, &[], (0, 0, 0), &owned);
+        house
+            .tracking_mut_for_test()
+            .set_for_test(0, &[], (0, 0, 0), &owned);
         let mut power_state = PowerState::default();
         power_state.set_total_output_for_test(int(&row["output"]) as i32);
         power_state.set_total_drain_for_test(int(&row["drain"]) as i32);
@@ -659,6 +707,27 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         assert_eq!(node_state(&sim, owner), [((16, 16), count)]);
     }
     assert!(sim.substrate.entities.get(tank).is_some());
+    let mut retained = sim.clone();
+    retained.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        sim.session
+            .rule_policy()
+            .with_ai_base(crate::rules::rule_policy::AiBasePolicy::RetainAuthoredNodes),
+    );
+    assert_eq!(
+        exit_building(
+            &mut retained,
+            &rules,
+            yard,
+            product,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        BuildingExit::TryLater
+    );
+    assert_eq!(node_state(&retained, owner), [((16, 16), 3)]);
+
     // The third failure passes MaximumBuildingPlacementFailures=2: the node
     // goes.
     let exit = exit_building(

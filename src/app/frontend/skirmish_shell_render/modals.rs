@@ -447,10 +447,28 @@ pub(super) fn offline_setup_background_entry(
     atlas: &SkirmishShellChromeAtlas,
     layout: &SkirmishShellLayout,
 ) -> Option<SkirmishShellChromeEntry> {
-    match generic_background_role(layout) {
-        GenericBackgroundRole::Mnscrns640 => atlas.setup_backgrounds[0],
-        GenericBackgroundRole::MnscrnlLarge => atlas.setup_backgrounds[1],
-    }
+    let (index, pane) = match generic_background_role(layout) {
+        GenericBackgroundRole::Mnscrns640 => (0, [472.0, 448.0]),
+        GenericBackgroundRole::MnscrnlLarge => (1, [632.0, 568.0]),
+    };
+    atlas
+        .client_skirmish_background
+        .map(|mut background| {
+            // Fill the dialog's existing picture area. Center-crop the wide
+            // client artwork so the backdrop keeps its proportions.
+            let [width, height] = background.pixel_size;
+            let ratio = (pane[0] / width).max(pane[1] / height);
+            for (axis, shown) in [pane[0] / (width * ratio), pane[1] / (height * ratio)]
+                .into_iter()
+                .enumerate()
+            {
+                background.uv_origin[axis] += background.uv_size[axis] * (1.0 - shown) / 2.0;
+                background.uv_size[axis] *= shown;
+            }
+            background.pixel_size = pane;
+            background
+        })
+        .or(atlas.setup_backgrounds[index])
 }
 
 pub(super) fn push_generic_shell_background_instances(
@@ -851,11 +869,23 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
         );
     }
     if column_buttons {
+        // VERA's Setups page adds Load and Delete, which act on a saved row.
         for (rect, control) in [
-            (layout.action, SavedSeedControl::Action),
-            (layout.back, SavedSeedControl::Back0x686),
+            (Some(layout.action), SavedSeedControl::Action),
+            (layout.load, SavedSeedControl::Load),
+            (layout.delete, SavedSeedControl::Delete),
+            (Some(layout.back), SavedSeedControl::Back0x686),
         ] {
-            let disabled = control == SavedSeedControl::Action && !browser.action_enabled();
+            let Some(rect) = rect else {
+                continue;
+            };
+            let disabled = match control {
+                SavedSeedControl::Action => !browser.action_enabled(),
+                SavedSeedControl::Load | SavedSeedControl::Delete => {
+                    browser.selected_saved().is_none()
+                }
+                _ => false,
+            };
             push_right_panel_button_shp(
                 out,
                 atlas,

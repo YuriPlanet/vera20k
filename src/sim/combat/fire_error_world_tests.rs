@@ -130,7 +130,6 @@ fn a_mapless_fire_gate_takes_the_shared_range_answer() {
         crate::sim::combat::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(firer).unwrap(),
             obj: rules.object(kind).unwrap(),
@@ -182,7 +181,6 @@ fn a_tethered_low_balloon_is_illegal_to_fire_at() {
         crate::sim::combat::fire_error_world::FireSubject {
             world: sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),
@@ -243,7 +241,6 @@ fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
         crate::sim::combat::fire_error_world::FireSubject {
             world: sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(2).unwrap(),
             obj: rules.object("RIDER").unwrap(),

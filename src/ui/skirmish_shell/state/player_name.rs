@@ -390,6 +390,8 @@ pub struct SkirmishShellState {
     /// Sits beside the setup modal rather than inside it because it replaces
     /// the setup dialog on screen while that dialog keeps its working options.
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
+    /// VERA's Setups page over the Skirmish page, its rows named by setup.
+    pub setups_browser: Option<super::SavedSeedBrowserState<String>>,
     pub validation_modal: Option<SkirmishValidationModalState>,
     /// VERA's Game Options box, open over the page: it takes every press
     /// and key until OK, Enter or Esc closes it.
@@ -409,6 +411,8 @@ pub enum SkirmishShellDialog {
     ChooseMap,
     RandomMap,
     SeedBrowser,
+    /// VERA's Setups page, which covers `0x102` while it is open.
+    Setups,
 }
 
 impl SkirmishShellState {
@@ -416,6 +420,22 @@ impl SkirmishShellState {
         self.country_catalog = CountryMenuCatalog::from_rules(rules);
         self.lobby_colors = rules.skirmish_colors();
         self.open_combo_dropdown = None;
+    }
+
+    /// VERA's shared profile can remember a country from another mod. Keep
+    /// each restored row on a choice the current rules actually offer.
+    pub(crate) fn repair_country_selections(&mut self) {
+        let available = |country| {
+            self.country_catalog
+                .items()
+                .contains(&super::SkirmishComboItem::Country(
+                    super::SkirmishCountryChoice::Country(country),
+                ))
+        };
+        self.player_country_random |= !available(self.player_country);
+        for opponent in &mut self.opponents {
+            opponent.country_random |= !available(opponent.country);
+        }
     }
 
     /// The colours this shell's lobbies list.
@@ -429,7 +449,11 @@ impl SkirmishShellState {
     /// eject box.
     pub fn top_dialog(&self) -> Option<SkirmishShellDialog> {
         let Some(chooser) = self.choose_map_modal.as_ref() else {
-            return Some(SkirmishShellDialog::Skirmish);
+            return Some(if self.setups_browser.is_some() {
+                SkirmishShellDialog::Setups
+            } else {
+                SkirmishShellDialog::Skirmish
+            });
         };
         if self.saved_seed_browser.is_some() {
             Some(SkirmishShellDialog::SeedBrowser)
@@ -483,6 +507,7 @@ impl Default for SkirmishShellState {
             choose_map_modal: None,
             random_map_setup_modal: None,
             saved_seed_browser: None,
+            setups_browser: None,
             validation_modal: None,
             game_options: None,
             pending_ui_sounds: Vec::new(),
@@ -644,9 +669,8 @@ fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) 
     }
 }
 
-/// Apply the accepted Choose Map selection as one row-lifecycle transaction.
-/// A shrink resets every now-hidden opponent row before the selected map becomes
-/// observable; growth only reveals rows, whose prior hide reset remains intact.
+/// Apply the accepted map's capacity to the opponent rows. SkirmishDialog
+/// (`0x006ADDF0`) refreshes the rows even when both maps are `RandMap.Sed`.
 pub fn accept_selected_map(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
@@ -655,13 +679,9 @@ pub fn accept_selected_map(
     let Some(new_map) = maps.get(map_idx) else {
         return false;
     };
-    let old_capacity = maps
-        .get(state.selected_map_idx)
-        .map(|map| map.player_capacity)
-        .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT as i32);
-    if new_map.player_capacity < old_capacity {
-        reset_rows_hidden_by_capacity(state, new_map.player_capacity);
-    }
+    // Generating another random map replaces the selected entry in place, so
+    // reading its old index here would already give the new capacity.
+    reset_rows_hidden_by_capacity(state, new_map.player_capacity);
     state.selected_map_idx = map_idx;
     true
 }

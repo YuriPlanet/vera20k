@@ -1,6 +1,7 @@
 //! Action84 consumes the existing authored Group and deferred Mission owners.
 //! Native Execute6DDCEC..6DDD74 (WakeupGroup6E03B0) queues Guard(5,false).
 
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::MissionType;
@@ -44,7 +45,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     let teams = TeamAiIniRegistry::from_sources(
         &crate::rules::ini_parser::IniFile::empty(),
         &map.ini,
-        true,
+        RulePolicy::stock_multiplayer(),
     );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(rules)), 4);

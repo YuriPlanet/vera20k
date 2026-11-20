@@ -1012,9 +1012,16 @@ fn the_retail_policy_leaves_a_teams_members_to_its_script() {
         });
     let team = sim
         .team_script_vm
-        .construct_team(team_type, owner, true, 0, true, None)
+        .construct_team(
+            team_type,
+            owner,
+            crate::rules::rule_policy::TeamLimitScope::PerHouse,
+            0,
+            true,
+            None,
+        )
         .expect("a forming team");
-    sim.team_add_member(team, tank, false, &rules, None, Default::default());
+    sim.team_add_member(team, tank, false, &rules, Default::default());
 
     let mut policy = AssistBrain::new(0x5EED);
     let decided = frame_commands(&mut policy, &rules, &sim, owner);

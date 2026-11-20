@@ -75,7 +75,7 @@ impl Fixture {
     }
 
     fn center(&mut self) -> Option<TeamTarget> {
-        self.sim.team_calc_center(self.team, &self.rules, None);
+        self.sim.team_calc_center(self.team, &self.rules);
         self.sim.team_script_vm.team(self.team).unwrap().zone
     }
 
@@ -99,7 +99,7 @@ impl Fixture {
 
     fn target(&mut self, id: u64, target: Option<TargetKind>) {
         self.sim
-            .assign_target_represented(id, target, &self.rules, None, FrameEffects::default())
+            .assign_target_represented(id, target, &self.rules, FrameEffects::default())
             .unwrap();
     }
 }
@@ -471,7 +471,7 @@ fn follow_friendlies_placement_scope_admits_limbo_without_leaking() {
     assert_eq!(f.center(), None);
     let team = f.team;
     f.sim
-        .with_object_placement_scope(|sim| sim.team_calc_center(team, &f.rules, None));
+        .with_object_placement_scope(|sim| sim.team_calc_center(team, &f.rules));
     assert_eq!(
         f.sim.team_script_vm.team(team).unwrap().zone,
         Some(TeamTarget::Object(friendly))

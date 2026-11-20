@@ -403,11 +403,10 @@ fn mind_control_area(
         }
     }
 
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let human = sim
         .houses
         .get(&owner)
-        .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     if !human {
         let frame = sim.session.binary_frame();
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
@@ -503,6 +502,11 @@ pub(super) fn ares_launch(
     state.owner = Some(owner);
     state.cell = (rx as i16, ry as i16);
     state.anim = None;
+    // PsyDom::Active holds from here, through SW.Deferment, before the
+    // machine's first step runs UpdateLighting: later relights read the
+    // Dominator's Ground/Level and LightConvert555DA0 its RGB, and no cell
+    // refreshes now.
+    sim.publish_relight_profile();
 }
 
 /// SW_PsychicDominator::AbortFire (Ares 3.0 `10070780`), from ClickFire
@@ -812,11 +816,10 @@ fn ares_fire(
             minions.push(id);
         }
     }
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let human = sim
         .houses
         .get(&owner)
-        .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     if !human {
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
         for id in minions {

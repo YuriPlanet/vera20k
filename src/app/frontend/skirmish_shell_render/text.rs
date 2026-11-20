@@ -414,7 +414,7 @@ fn rects_intersect(a: RectPx, b: RectPx) -> bool {
         && a.y + a.h > b.y
 }
 
-pub(super) fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
+pub(in crate::app::frontend) fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
     overlays
         .iter()
         .any(|overlay| rects_intersect(rect, *overlay))
@@ -835,6 +835,7 @@ fn push_right_panel_text_draws(
         crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
         "Game Options",
     );
+    let setups = tr("VERA:Setups");
     let back = localized_label(state, "GUI:Back", "Back");
 
     for (label, rect, button) in [
@@ -852,6 +853,11 @@ fn push_right_panel_text_draws(
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
+        ),
+        (
+            setups.as_str(),
+            layout.setups_button,
+            OwnerDrawButton::Setups,
         ),
         (
             back.as_str(),
@@ -1422,6 +1428,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if chosen.id == crate::ui::skirmish_shell::RANDOM_MAPS_ROW {
+            tr("VERA:RandomMaps")
         } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
             tr("VERA:Favorites")
         } else {
@@ -1448,21 +1456,20 @@ pub(super) fn push_choose_map_modal_text_draws(
         );
     }
     let geometry = modal.map_geometry(layout);
-    for (visible, (index, record_idx)) in modal
-        .filtered_record_indices
-        .iter()
-        .enumerate()
+    for (visible, index) in (0..modal.map_row_count())
         .skip(modal.map_top_index)
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let label = match &modal.row_labels {
-            Some(labels) => labels.get(index).cloned(),
-            None => state
-                .frontend
-                .scenario_catalog
-                .records()
-                .get(*record_idx)
+        let label = if let Some(seed) = modal.saved_seed_at(index) {
+            Some(seed.description.display_text())
+        } else if let Some(labels) = &modal.row_labels {
+            labels.get(index).cloned()
+        } else {
+            modal
+                .filtered_record_indices
+                .get(index)
+                .and_then(|&record| state.frontend.scenario_catalog.records().get(record))
                 .map(|record| {
                     // Starred maps carry a star, except under Favorites,
                     // where every map is one.
@@ -1471,7 +1478,7 @@ pub(super) fn push_choose_map_modal_text_draws(
                     } else {
                         record.display_name.clone()
                     }
-                }),
+                })
         };
         let Some(label) = label else {
             continue;
@@ -1495,8 +1502,10 @@ pub(super) fn push_choose_map_modal_text_draws(
     }
     // VERA: an empty Online Maps or Favorites list says why, wrapped down
     // the list.
-    let empty = if !modal.filtered_record_indices.is_empty() {
+    let empty = if modal.map_row_count() > 0 {
         None
+    } else if modal.random_maps_selected() && modal.search.is_empty() {
+        Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
         Some(crate::app::map_library::empty_online_maps_text(state))
     } else if modal.favorites_selected() && modal.search.is_empty() {
@@ -1735,6 +1744,61 @@ pub(super) fn push_saved_seed_modal_text_draws(
             out,
             state,
             &localized_label(state, key, fallback),
+            rect_to_text_rect(rect),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
+            scale.factor(),
+        );
+    }
+    push_saved_browser_prompt_text(out, state, layout, browser);
+}
+
+/// VERA's Setups page: its title, the setups, the name field, Save, Load,
+/// Delete and Back, and a message box when one is up.
+pub(super) fn push_setups_text_draws(
+    out: &mut Vec<ShellTextDraw>,
+    state: &AppState,
+    layout: &SavedSeedLayout,
+) {
+    let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_ref() else {
+        return;
+    };
+    let scale = layout.scale;
+    push_text_draw(
+        out,
+        state,
+        &tr("VERA:SetupsTitle"),
+        rect_to_text_rect(layout.title),
+        SHELL_LABEL_TEXT_RGB,
+        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+        scale.factor(),
+    );
+    push_saved_browser_contents_text(out, state, layout, browser);
+    let buttons = [
+        (
+            Some(layout.action),
+            localized_label(state, "GUI:Save", "Save"),
+        ),
+        (layout.load, localized_label(state, "GUI:Load", "Load")),
+        (
+            layout.delete,
+            localized_label(state, "GUI:Delete", "Delete"),
+        ),
+        (
+            Some(layout.back),
+            localized_label(state, "GUI:Back", "Back"),
+        ),
+    ];
+    for (rect, label) in buttons {
+        let Some(rect) = rect else {
+            continue;
+        };
+        push_text_draw(
+            out,
+            state,
+            &label,
             rect_to_text_rect(rect),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,

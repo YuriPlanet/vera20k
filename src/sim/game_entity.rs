@@ -41,6 +41,7 @@ mod pip_fill;
 mod type_conversion;
 pub(crate) use distributed_fire::DistributedFireCandidate;
 pub use pip_fill::rounded_pip_quantity;
+pub(in crate::sim) use type_conversion::LiveTypeStore;
 
 use crate::sim::object_fall::ObjectFallState;
 
@@ -717,7 +718,7 @@ pub struct Seldom {
     /// the rest), a [`TrackingFacts`](crate::sim::house_tracking::TrackingFacts)
     /// that construction stamps.
     #[serde(default)]
-    pub(crate) tracking_facts: crate::sim::house_tracking::TrackingFacts,
+    tracking_facts: crate::sim::house_tracking::TrackingFacts,
     /// Native infantry total-count latches (`Techno+0x438/+0x439`), owned by
     /// `sim::house_tracking`. The constructor starts both clear; Add_Tracking
     /// sets the once-counted latch when it adds House+0x2F4.
@@ -742,11 +743,11 @@ pub struct Seldom {
     /// Independent of the retained sight-admission latch and stored footprint.
     pub(crate) sight_refresh_timers: crate::sim::vision::SightRefreshTimers,
     // --- Bool markers (were zero-size ECS components) ---
-    /// IsSelected (`ObjectClass+0x83`), a [`Selection`] that `sim::selection`
-    /// owns.
+    /// IsSelected (`ObjectClass+0x83`), a [`Selection`] that the Select and
+    /// Deselect owners (`world::world_commands`) write.
     ///
-    /// [`Selection`]: crate::sim::selection::Selection
-    pub selection: crate::sim::selection::Selection,
+    /// [`Selection`]: crate::sim::world::Selection
+    pub selection: crate::sim::world::Selection,
     /// IsInLogic (`ObjectClass+0x98`), a [`LogicMembership`] that
     /// `world::logic_vector` owns. Not saved: a load rebuilds it from the saved
     /// vector order.
@@ -1321,6 +1322,35 @@ impl GameEntity {
         self.ion_blast_lift = 0;
     }
 
+    /// Retained scoring and house-count inputs for this actor's type.
+    pub(in crate::sim) fn tracking_facts(&self) -> &crate::sim::house_tracking::TrackingFacts {
+        &self.tracking_facts
+    }
+
+    /// The lifecycle and scoring paths read these inputs without a RuleSet.
+    /// Construction and live type stores bind them as part of the type projection.
+    pub(in crate::sim) fn stamp_scoring_flags(
+        &mut self,
+        _: crate::sim::world::TypeProjectionWrite,
+        object: Option<&crate::rules::object_type::ObjectType>,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        self.tracking_facts =
+            crate::sim::house_tracking::TrackingFacts::of(self.category(), object, rules);
+        if let Some(multiplier) =
+            crate::sim::house_tracking::retained_plant_multiplier(self.category(), object, rules)
+        {
+            self.ares.factory_plant_multiplier = Some(multiplier);
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(in crate::sim) fn tracking_facts_mut_for_test(
+        &mut self,
+    ) -> &mut crate::sim::house_tracking::TrackingFacts {
+        &mut self.tracking_facts
+    }
+
     /// The infantry house-total latches (`Techno+0x438/+0x439`). Only
     /// `sim::house_tracking` can change them; the mutable borrow exists so
     /// that owner can reach the latches stored on the object.
@@ -1330,8 +1360,9 @@ impl GameEntity {
         self.house_tracking_latches
     }
 
-    pub(crate) fn house_tracking_latches_mut(
+    pub(super) fn house_tracking_latches_mut(
         &mut self,
+        _: crate::sim::house_tracking::TrackingWrite,
     ) -> &mut crate::sim::house_tracking::InfantryTrackingLatches {
         &mut self.house_tracking_latches
     }
@@ -1985,10 +2016,9 @@ impl GameEntity {
         &mut self.passenger_role
     }
 
-    pub(crate) fn passenger_role_for_update(
-        &mut self,
-        _: crate::sim::passenger::PassengerWrite,
-    ) -> &mut PassengerRole {
+    /// The role's own operations (`sim::passenger`) keep its invariants; the
+    /// paired garrison and cargo admissions live on that owner.
+    pub(crate) fn passenger_role_mut(&mut self) -> &mut PassengerRole {
         &mut self.passenger_role
     }
 
@@ -2632,8 +2662,8 @@ impl GameEntity {
     }
 
     /// Paradrop5F5AF1 publishes the new canopy at Object+88, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
-    pub(crate) fn hold_parachute_animation(
+    /// [`EntityStore::hold_parachute_animation`](crate::sim::entity_store::EntityStore::hold_parachute_animation).
+    pub(in crate::sim) fn hold_parachute_animation(
         &mut self,
         animation: u64,
         _: crate::sim::entity_store::AnimHolderAuthority,
@@ -2656,8 +2686,7 @@ impl GameEntity {
     /// attached-effect Anims (10058770) and its ParasiteClass's grapple Anim
     /// (Anim4's holder announcement725A16..725A4C, PointerExpired
     /// 62A484..62A490). A field one of those callbacks compares must be
-    /// named here, and stored only through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    /// named here and registered by [`EntityStore`](crate::sim::entity_store::EntityStore).
     pub(crate) fn held_anims(&self) -> impl Iterator<Item = u64> + '_ {
         [
             self.parachute_animation(),
@@ -2853,9 +2882,16 @@ impl GameEntity {
         self.fire_particle_system.forget();
     }
 
-    /// Whether a cell object-list walk that damages what it finds (Wave
-    /// `DamageArea`, the railgun line) still reaches this object: alive, not
-    /// in its death sequence, not in limbo.
+    /// Wave (0x75F3F3) and area damage (0x4899F1) both require a live,
+    /// cell-marked object outside limbo with positive health.
+    pub(crate) fn is_live_on_map(&self) -> bool {
+        self.lifecycle.object_alive()
+            && self.lifecycle.cell_marked()
+            && !self.lifecycle.in_limbo()
+            && self.is_alive()
+    }
+
+    /// The railgun line's cell walk skips objects in their death sequence.
     pub(crate) fn reachable_in_cell_list(&self) -> bool {
         self.is_alive()
             && !self.death.is_dying()

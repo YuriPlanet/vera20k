@@ -15,6 +15,8 @@ pub(crate) mod phobos_settings;
 pub(crate) mod profile_file;
 mod resource_load;
 pub(crate) mod rules_profile;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) mod startup_backend;
 pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
@@ -545,8 +547,10 @@ impl SaveRepository {
     }
 
     /// The game's one retained initial save per mission. Native67CF13..67CF42
-    /// forwards the entire filename to StgCreateDocfile(CREATE). Relative paths
-    /// use VERA's save root; absolute paths retain their selected location.
+    /// forwards the entire filename to StgCreateDocfile(CREATE), wherever it
+    /// points. VERA: the name is the mission's map name, which a mod, a map or
+    /// a saved game supplies, so only a logical name is written, under the save
+    /// root; a name that would leave it (a drive, a root, `..`) is refused.
     /// Missing subdirectories fail, and an existing VERA automatic slot is replaced.
     /// The Rust-format boundary preserves foreign/native SAV files rather than
     /// replacing them with an incompatible snapshot. The attempt still consumes
@@ -558,23 +562,21 @@ impl SaveRepository {
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
         let file = Path::new(filename);
-        if file.file_name().is_none()
+        if !crate::map::source::is_logical_name(filename)
             || file.extension().and_then(|ext| ext.to_str()) != Some("sav")
         {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "initial campaign save must name a .sav file",
+                "initial campaign save must name a .sav file in the save folder",
             )));
         }
-        if file.is_relative() {
-            crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
-                SaveWriteError {
-                    #[cfg(any(feature = "dev-overlays", test))]
-                    stage: SaveWriteStage::CreateDirectory,
-                    source,
-                }
-            })?;
-        }
+        crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
+            SaveWriteError {
+                #[cfg(any(feature = "dev-overlays", test))]
+                stage: SaveWriteStage::CreateDirectory,
+                source,
+            }
+        })?;
         let path = self.directory.join(file);
         if crate::util::file_system::exists(&path) {
             self.validate_existing_save(&path)?;

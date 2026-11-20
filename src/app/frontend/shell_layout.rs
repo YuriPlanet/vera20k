@@ -68,13 +68,27 @@ pub(crate) fn main_menu_layout(state: &AppState) -> MainMenuShellLayout {
     }
 }
 
-/// Count-rule message boxes over the front-end shell use the same mapping for
-/// their art, labels and controller hit rectangles as the page beneath them.
+/// Front-end message boxes, including VERA's Esc menu, share their rendered
+/// button geometry with the pointer feed.
 pub(crate) fn shell_message_box_layout(
     state: &AppState,
     kind: crate::ui::shell::modal::ModalKind,
 ) -> crate::ui::shell::modal::MessageBoxLayout {
-    message_box_layout_for_screen(kind, shell_screen_size(state))
+    let size = shell_screen_size(state);
+    if kind == crate::ui::shell::modal::ModalKind::ThreeButton
+        && state
+            .frontend
+            .shell_message_box
+            .as_ref()
+            .is_some_and(|dialog| dialog.menu_settings().is_some())
+    {
+        return crate::ui::shell::modal::esc_menu_box_layout_on(
+            size.0 as i32,
+            size.1 as i32,
+            shell_scale_for_screen(size),
+        );
+    }
+    message_box_layout_for_screen(kind, size)
 }
 
 fn message_box_layout_for_screen(
@@ -87,13 +101,14 @@ fn message_box_layout_for_screen(
 
 /// The settings in VERA's Esc menu, on its message box's mapping.
 pub(crate) fn shell_menu_settings_layout(
-    state: &AppState,
+    size: (u32, u32),
+    font: &crate::render::bit_font::BitFont,
 ) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
-    let size = shell_screen_size(state);
     crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout::esc_menu(
         size.0 as i32,
         size.1 as i32,
         shell_scale_for_screen(size),
+        |caption| font.text_width(caption),
     )
 }
 
@@ -164,6 +179,16 @@ pub(crate) fn saved_seed_layout(state: &AppState, mode: SavedSeedMode) -> SavedS
         crate::ui::skirmish_shell::compute_responsive_saved_seed_layout(mode, width, height)
     } else {
         crate::ui::skirmish_shell::compute_saved_seed_layout(mode, width, height)
+    }
+}
+
+/// VERA's Skirmish Setups page, on the Save browser's rects.
+pub(crate) fn setups_layout(state: &AppState) -> SavedSeedLayout {
+    let (width, height) = (state.render_width(), state.render_height());
+    if fills_window(state) {
+        crate::ui::skirmish_shell::compute_responsive_setups_layout(width, height)
+    } else {
+        crate::ui::skirmish_shell::compute_setups_layout(width, height)
     }
 }
 

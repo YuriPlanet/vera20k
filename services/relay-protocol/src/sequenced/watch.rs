@@ -70,13 +70,12 @@ impl WatchTicket {
         if bytes.len() != TICKET_LEN || bytes[0] != WATCH_TICKET_VERSION || bytes[17] != 0 {
             return Err(RelayError::Malformed);
         }
-        let field = |range: std::ops::Range<usize>| &bytes[range];
-        let delay = u64::from_le_bytes(field(58..66).try_into().expect("checked ticket length"));
+        let delay = read_u64(bytes, 58)?;
         let ticket = Self {
-            room: field(1..17).try_into().expect("checked ticket length"),
-            expires: u64::from_le_bytes(field(18..26).try_into().expect("checked ticket length")),
-            nonce: field(26..42).try_into().expect("checked ticket length"),
-            watcher: field(42..58).try_into().expect("checked ticket length"),
+            room: field(bytes, 1)?,
+            expires: read_u64(bytes, 18)?,
+            nonce: field(bytes, 26)?,
+            watcher: field(bytes, 42)?,
             delay_seconds: u32::try_from(delay).map_err(|_| RelayError::Malformed)?,
         };
         ticket.validate()?;
@@ -128,7 +127,7 @@ impl WatchTicket {
 pub(crate) struct Watcher {
     pub(crate) ticket: Ticket,
     delay_ms: u64,
-    key: SecretKey,
+    pub(crate) key: SecretKey,
     pub(crate) session: u32,
     pub(crate) endpoint: SocketAddrV4,
     pub(crate) sent: u64,
@@ -438,7 +437,11 @@ impl RelayServer {
         } else {
             Some(self.allocate_session()?)
         };
-        let room = self.rooms.get_mut(&watch.room).expect("checked room");
+        // Checked above; allocating a session leaves the rooms alone.
+        let room = self
+            .rooms
+            .get_mut(&watch.room)
+            .ok_or(RelayError::Unregistered)?;
         let mut retired = None;
         let reply = match (existing, session) {
             (Some(index), None) => {
@@ -482,44 +485,23 @@ impl RelayServer {
         Ok(vec![reply])
     }
 
-    /// A datagram on a watcher's session: PING, or one of Ready, Pull and
-    /// Leave. Anything else, DATA and UPLINK included, is refused.
+    /// A datagram `session_incoming` authenticated on a watcher's session:
+    /// PING, or one of Ready, Pull and Leave. Anything else, DATA and UPLINK
+    /// included, is refused.
     pub(crate) fn watch_datagram(
         &mut self,
         source: SocketAddrV4,
-        header: envelope::Header,
-        bytes: &[u8],
-        room_id: [u8; 16],
+        message: &Incoming<'_>,
         now: u64,
         now_ms: u64,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
-        let key = self
-            .rooms
-            .get(&room_id)
-            .and_then(|room| {
-                room.watchers
-                    .iter()
-                    .find(|watcher| watcher.session == header.session)
-            })
-            .map(|watcher| watcher.key.clone())
-            .ok_or(RelayError::Unregistered)?;
-        let payload = match envelope::open(envelope::Direction::Up, &key, bytes) {
-            Ok((_, payload)) => payload,
-            Err(RelayError::Authentication) => {
-                self.count_session_failure(header.session, now);
-                return Err(RelayError::Authentication);
-            }
-            Err(error) => return Err(error),
-        };
-        let request = match (header.kind, payload.first()) {
-            (PING, None) => None,
-            (CONTROL, Some(&request)) => Some(request),
+        let (room_id, sequence, payload) = (message.ticket.room, message.sequence, message.payload);
+        // `session_payload` framed it: PING empty, CONTROL not.
+        let request = match message.kind {
+            PING => None,
+            CONTROL => payload.first().copied(),
             _ => return Err(RelayError::Malformed),
         };
-        if header.sequence == 0 {
-            return Err(RelayError::Replay);
-        }
-        let sequence = u64::from(header.sequence);
         if request.is_some() {
             self.advance_ordering_room(room_id, now_ms);
         }
@@ -531,7 +513,7 @@ impl RelayServer {
             .ok_or(RelayError::Unregistered)?;
         let index = watchers
             .iter()
-            .position(|watcher| watcher.session == header.session)
+            .position(|watcher| watcher.session == message.session)
             .ok_or(RelayError::Unregistered)?;
         let watcher = &mut watchers[index];
         watcher.heard(sequence, source, now_ms)?;
@@ -706,16 +688,11 @@ impl ClientSession {
             }
             Some(_) => {}
             None => {
-                self.ordering = Some(ClientOrdering {
-                    certificate: certificate.to_vec(),
+                self.ordering = Some(ClientOrdering::new(
+                    certificate.to_vec(),
                     agreement,
-                    sealed: VecDeque::new(),
-                    next_batch: 1,
-                    accepted_through: 0,
-                    restoring: false,
-                    leave: None,
-                    link: crate::link::ClientLink::new(parsed.tick_hz),
-                });
+                    parsed.tick_hz,
+                ));
             }
         }
         let mut payload = vec![READY_REQUEST];
@@ -938,5 +915,24 @@ mod tests {
                 .all(|entry| entry.source != WATCH_SOURCE)
         );
         assert_eq!(before, (ordering(&server), server.ordering_history(ROOM)));
+    }
+
+    #[test]
+    fn a_watchers_wrong_tag_counts_on_its_session_as_a_players_does() {
+        // Compaction spec §6.4 item 2: a wrong tag drops only its datagram
+        // and counts toward its session's alert.
+        let directory = TestDirectory::new();
+        let (mut server, _first, _second) = running_match(&directory, 3000);
+        let mut watching = watcher(&server, ROOM, 41, 0);
+        connect(&mut server, &mut watching, 3000);
+        let (from, session) = (endpoint(&watching), watching.session().unwrap());
+        let mut bytes = Vec::new();
+        watching.encode(PING, &[], &mut bytes).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        assert_eq!(
+            server.process_at(from, &bytes, unix(3000), 3000).err(),
+            Some(RelayError::Authentication)
+        );
+        assert_eq!(server.sessions[&session].failures, 1);
     }
 }

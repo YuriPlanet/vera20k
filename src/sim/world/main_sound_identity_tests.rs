@@ -90,7 +90,6 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
         gun,
         Some(TargetKind::Entity(target)),
         rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();

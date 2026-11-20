@@ -68,6 +68,10 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
     {
         return false;
     }
+    crate::app::cooperative_round::poll_start_deadline(state, now);
+    if state.match_state.session.cooperative_round().is_none() {
+        return false;
+    }
     loop {
         let Some(incoming) = state
             .match_state
@@ -77,7 +81,7 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
         else {
             break;
         };
-        if let Err(error) = receive(state, incoming) {
+        if let Err(error) = receive(state, incoming, now) {
             log::debug!("Ignored co-op round packet: {error:#}");
         }
         service_transport(state, now);
@@ -92,8 +96,11 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
 }
 
 /// The loop's dispatch (`0x0047009F`) for a packet from a round participant.
-fn receive(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {
-    anyhow::ensure!(incoming.product_id == 0xaa04, "different LAN product");
+fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        incoming.product_id == LAN_PRODUCT_ID,
+        "different LAN product"
+    );
     let source = state
         .match_state
         .session
@@ -106,24 +113,53 @@ fn receive(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> 
                 .contains(source)
         })
         .ok_or_else(|| anyhow::anyhow!("not a round participant"))?;
+    let from_host = !state.match_state.session.host()
+        && state
+            .match_state
+            .lan_service
+            .as_ref()
+            .and_then(|service| service.admitted_host.as_ref())
+            .is_some_and(|(_, endpoint)| *endpoint == incoming.source);
     let event = if let Some(signal) = CooperativeSignal::decode(&incoming.payload) {
         match signal {
             CooperativeSignal::Ack => CooperativeRoundEvent::Ack { source },
             CooperativeSignal::Left => CooperativeRoundEvent::PeerLeft { source },
             CooperativeSignal::Waiting => CooperativeRoundEvent::PeerWaiting { source },
             CooperativeSignal::Ready => CooperativeRoundEvent::PeerReady { source },
-            CooperativeSignal::Go => CooperativeRoundEvent::Go,
-            CooperativeSignal::Begin => CooperativeRoundEvent::Begin,
+            CooperativeSignal::Go if from_host => CooperativeRoundEvent::Go,
+            CooperativeSignal::Begin if from_host => CooperativeRoundEvent::Begin { now },
+            CooperativeSignal::Go | CooperativeSignal::Begin => anyhow::bail!("not the round host"),
         }
     } else {
         let message = LanMessage::decode(&incoming.payload)?;
-        if let Some(record) = CooperativeOptionsRecord::decode(&message) {
+        if message.kind() == LanMessageKind::Departure {
+            let source = state
+                .match_state
+                .lan_service
+                .as_ref()
+                .and_then(|service| {
+                    service
+                        .loading_departure_source(
+                            &state.match_state.session,
+                            incoming.source,
+                            &message,
+                        )
+                        .ok()
+                        .flatten()
+                })
+                .ok_or_else(|| anyhow::anyhow!("not an admitted departure"))?;
+            CooperativeRoundEvent::PeerLeft { source }
+        } else if let Some(record) = CooperativeOptionsRecord::decode(&message) {
+            anyhow::ensure!(from_host, "not the round host");
             let launch = state
                 .match_state
                 .session
                 .network_setup()
                 .ok_or_else(|| anyhow::anyhow!("no round roster"))?;
-            CooperativeRoundEvent::Options(round_options(launch, &record)?)
+            CooperativeRoundEvent::Options {
+                options: round_options(launch, &record)?,
+                now,
+            }
         } else if let Some(chat) = message.in_game_chat_fields() {
             let game = super::active_game_name(state).unwrap_or_default();
             let Some(event) = chat_event(source, &chat, &game) else {
@@ -158,6 +194,15 @@ fn chat_event(
 /// A queued round record to every other node.
 pub(super) fn send(state: &mut AppState, request: NetworkSendRequest) {
     if state.match_state.session_mode() != SessionMode::Lan {
+        return;
+    }
+    if request == NetworkSendRequest::CooperativeAbort {
+        let now = super::super::match_runtime::frame_pacer::wall_clock_bucket();
+        if let Some(service) = state.match_state.lan_service.as_mut()
+            && let Err(error) = service.queue_departure(&state.match_state.session, now)
+        {
+            log::warn!("Co-op handoff departure did not queue: {error:#}");
+        }
         return;
     }
     let name = local_name(state);

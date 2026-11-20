@@ -17,6 +17,8 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::retail_ini_fixture::retail_rules_and_art;
+use crate::rules::rule_policy::RulePolicy;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::rules::terrain_rules::TerrainRules;
@@ -35,7 +37,8 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
         "[TeamTypes]\n0=TT\n[TT]\nHouse=<Player @ AD>\nScript=S\nTaskForce=F\nMax=-1\n\
          [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
     );
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("LastPlayer");
     sim.session
@@ -53,6 +56,39 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
     assert_eq!(sim.team_script_vm.team(team).unwrap().owner(), owner);
     sim.session.start_slot_houses_mut_for_test().remove(&29);
     assert!(sim.create_team(team_type, None, &rules).is_none());
+}
+
+#[test]
+fn team_limit_scope_can_be_overridden_in_the_same_skirmish() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    let rules = RuleSet::from_ini(&IniFile::from_str("[Countries]\n0=Americans\n")).unwrap();
+    let map = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nMax=1\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, stock);
+    let mut sim = Simulation::new();
+    let first = sim.interner.intern("First");
+    let second = sim.interner.intern("Second");
+    for (index, house) in [first, second].into_iter().enumerate() {
+        sim.register_house(HouseState::new(house, index as u8, None, true, 0, 1));
+    }
+    sim.install_team_ai_registry(&registry, &rules);
+    let team_type = sim.interner.get("TT").unwrap();
+
+    sim.install_session_admission(
+        mode,
+        None,
+        stock.with_team_creation_limit_scope(TeamLimitScope::AllHouses),
+    );
+    assert!(sim.create_team(team_type, Some(first), &rules).is_some());
+    assert!(sim.create_team(team_type, Some(second), &rules).is_none());
+
+    sim.install_session_admission(mode, None, stock);
+    assert!(sim.create_team(team_type, Some(second), &rules).is_some());
 }
 
 fn rows(kind: &str, count: usize) -> Vec<Value> {
@@ -107,7 +143,11 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
         if let Some(value) = visit["value"].as_str() {
             map.push_str(&format!("{}={value}\n", visit["key"].as_str().unwrap()));
         }
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(&map), false);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(&map),
+            RulePolicy::stock_campaign(),
+        );
         let mut interner = crate::sim::intern::StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -133,7 +173,7 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
             };
             let mut live = vm.clone();
             let owner = interner.intern("OWNER");
-            live.construct_team(id, owner, false, 0, false, None)
+            live.construct_team(id, owner, TeamLimitScope::AllHouses, 0, false, None)
                 .unwrap();
             let saved: TeamScriptVm =
                 save_codec::deserialize(&save_codec::serialize(&live).unwrap()).unwrap();
@@ -163,7 +203,8 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
     let map = IniFile::from_bytes(&map_bytes).unwrap();
     // The selected retail Carrier Team is a map addition. An empty fixed pass
     // isolates its native B3 field without requiring unrelated AI definitions.
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, RulePolicy::stock_campaign());
     let Some((retail, art)) = retail_rules_and_art() else {
         return;
     };
@@ -598,7 +639,7 @@ pub(crate) fn reinforcement_world(
     let registry = TeamAiIniRegistry::from_sources(
         &IniFile::from_str(&definitions),
         &IniFile::from_str(""),
-        true,
+        RulePolicy::stock_multiplayer(),
     );
     sim.install_team_ai_registry(&registry, rules);
     let mut waypoints = HashMap::from([(
@@ -1436,7 +1477,7 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
         let registry = TeamAiIniRegistry::from_sources(
             &IniFile::from_str(&fixed),
             &IniFile::from_str(&map),
-            false,
+            RulePolicy::stock_campaign(),
         );
         let mut interner = crate::sim::intern::StringInterner::new();
         let (mut vm, diagnostics) =
@@ -1459,7 +1500,8 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
             "native input reads draw nothing"
         );
         let owner = interner.intern("OWNER");
-        vm.construct_team(id, owner, false, 0, false, None).unwrap();
+        vm.construct_team(id, owner, TeamLimitScope::AllHouses, 0, false, None)
+            .unwrap();
         let restored: TeamScriptVm =
             save_codec::deserialize(&save_codec::serialize(&vm).unwrap()).unwrap();
         assert_eq!(restored.team_type_ini[&id], vm.team_type_ini[&id]);
@@ -1507,7 +1549,8 @@ fn all01_full_transport_inputs_fit_the_selected_retail_cargo_chain() {
         .into_parts();
     let aimd = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .expect("retail fixed team definitions");
-    let registry = TeamAiIniRegistry::from_sources(&aimd.ini, &map.ini, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&aimd.ini, &map.ini, RulePolicy::stock_campaign());
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1626,12 +1669,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let placement_members = sim
-            .create_reinforcement_members(
-                team_type,
-                &rules,
-                Some(&overlay),
-                FrameEffects::default(),
-            )
+            .create_reinforcement_members(team_type, &rules, FrameEffects::default())
             .expect("original Full constructor result");
         let created: Vec<_> = sim
             .entities()
@@ -2135,6 +2173,55 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
 }
 
 #[test]
+fn ordinary_team_limit_and_empty_timeout_follow_stock_rules() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let terrain = TerrainRules::from_ini(&retail.processed_rules);
+    let rules = retail.rules;
+    let delay = u32::try_from(rules.general.dissolve_unfilled_team_delay).unwrap();
+    let input = serde_json::json!({"entries":[["MTNK",1]],"origin":[87,50],"max":1});
+
+    for (mode, per_house_limit, empty_team_expires) in [
+        (ScenarioGameMode::Campaign, false, false),
+        (ScenarioGameMode::Skirmish, true, true),
+    ] {
+        let mut sim = reinforcement_world(&rules, &terrain, &input);
+        sim.session.set_game_mode(mode);
+        let team_type = sim.interner.get("TT").unwrap();
+        let first_house = sim.interner.get("Americans").unwrap();
+        let second_house = sim.interner.get("ENEMY").unwrap();
+        let start = sim.session.binary_frame();
+        let team = sim
+            .create_team(team_type, Some(first_house), &rules)
+            .unwrap();
+        assert!(
+            sim.create_team(team_type, Some(first_house), &rules)
+                .is_none()
+        );
+        assert_eq!(
+            sim.create_team(team_type, Some(second_house), &rules)
+                .is_some(),
+            per_house_limit,
+        );
+
+        sim.session.set_binary_frame_for_test(start + delay);
+        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        assert!(sim.team_script_vm.team(team).is_some());
+        sim.session.set_binary_frame_for_test(start + delay + 1);
+        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        assert_eq!(sim.team_script_vm.team(team).is_none(), empty_team_expires);
+        assert_eq!(
+            sim.create_team(team_type, Some(first_house), &rules)
+                .is_some(),
+            empty_team_expires,
+        );
+    }
+}
+
+#[test]
 fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners() {
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
@@ -2270,7 +2357,8 @@ fn place_full_team(
         [Events]\nARRIVAL=1,13,0,0\n[Actions]\nARRIVAL=1,80,1,FULL_MINER,0,0,0,0,E\n\
         [Tags]\nARRIVAL_TAG=0,Full arrival,ARRIVAL\n").as_bytes()).unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
-    let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let teams =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.install_team_ai_registry(&teams, rules);
     sim.session.install_waypoints(&map.waypoints);

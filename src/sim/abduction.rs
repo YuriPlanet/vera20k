@@ -58,7 +58,7 @@ impl Simulation {
         if !settings.abductor || !self.ares_abduction_admits(owner, target, weapon, rules) {
             return false;
         }
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let now = self.session.binary_frame();
         // "The target forgets what it was doing": Stop_Moving (vt+0x500,
         // 0x004DF0D0), the null destination (vt+0x480) and target (vt+0x3C8),
@@ -68,7 +68,7 @@ impl Simulation {
             entity.navigation.stop_moving();
         }
         self.assign_null_destination(target, rules, registry, effects);
-        let _ = self.assign_target_represented(target, None, rules, registry, effects);
+        let _ = self.assign_target_represented(target, None, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut(target) {
             entity.set_archive_target(None);
         }

@@ -40,7 +40,7 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
+    FAVORITES_ROW, ONLINE_MAPS_ROW, RANDOM_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
     ai_rows_beyond_limit_occupied, favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
@@ -90,6 +90,8 @@ pub enum OwnerDrawButton {
     ChooseMap0x5aa,
     /// VERA's Game Options ([`super::game_options`]).
     GameOptions,
+    /// VERA's Setups: the page that saves and loads named setups.
+    Setups,
     Back0x5c0,
 }
 
@@ -101,6 +103,8 @@ pub enum SkirmishShellAction {
     ChooseMap,
     /// The app opens the box on the rules the profile keeps.
     GameOptions,
+    /// The app owns the saved setups.
+    Setups,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }

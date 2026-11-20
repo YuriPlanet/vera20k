@@ -113,7 +113,6 @@ impl Simulation {
         &self,
         wave: &crate::sim::wave::Wave,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> crate::sim::wave::WaveUpdateContext {
         use crate::sim::combat::TargetKind;
         use crate::sim::projectile::ProjectileCoord;
@@ -208,7 +207,6 @@ impl Simulation {
                             entity.stable_id(),
                             target,
                             i32::from(entity.ares_wave_weapon_slot()),
-                            overlay_registry,
                         )
                     } else {
                         // Owner GetCoords (vt+0x48) to the target's vt+0x58:
@@ -471,7 +469,6 @@ impl Simulation {
             interner,
             alliances: house_alliances,
             overlays: overlay_grid,
-            overlay_registry: ctx.overlay_registry,
             rules,
             map_size: self.map_size_diamond(),
             ares_firestorm: &self.ares_firestorm,
@@ -525,7 +522,7 @@ impl Simulation {
         if terminal {
             let retired = self.retire_non_entity_object(
                 id,
-                super::UninitContext::new(rules, ctx.overlay_registry).with_effects(ctx.effects),
+                super::UninitContext::new(rules).with_effects(ctx.effects),
             );
             debug_assert!(retired);
         }
@@ -556,11 +553,8 @@ impl Simulation {
                 ctx.effects,
             );
         }
-        let context = self.wave_update_context(
-            self.waves.get(id).expect("represented Wave"),
-            rules,
-            ctx.overlay_registry,
-        );
+        let context =
+            self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
         let terrain = self.resolved_terrain.as_ref();
         let (request, result) = self
             .waves
@@ -582,7 +576,7 @@ impl Simulation {
         if !result.alive {
             let retired = self.retire_non_entity_object(
                 id,
-                super::UninitContext::new(rules, ctx.overlay_registry).with_effects(ctx.effects),
+                super::UninitContext::new(rules).with_effects(ctx.effects),
             );
             debug_assert!(retired);
         }
@@ -634,8 +628,7 @@ impl Simulation {
                 self.visit_spotlight(
                     id,
                     rules,
-                    super::UninitContext::new(rules, ctx.overlay_registry)
-                        .with_effects(ctx.effects),
+                    super::UninitContext::new(rules).with_effects(ctx.effects),
                 );
                 return outcome;
             }
@@ -658,8 +651,7 @@ impl Simulation {
                     self,
                     rules,
                     id,
-                    super::UninitContext::new(rules, ctx.overlay_registry)
-                        .with_effects(ctx.effects),
+                    super::UninitContext::new(rules).with_effects(ctx.effects),
                 );
                 return outcome;
             }
@@ -769,8 +761,7 @@ impl Simulation {
             if finished {
                 self.uninit_with_context(
                     id,
-                    super::UninitContext::new(rules, ctx.overlay_registry)
-                        .with_effects(ctx.effects),
+                    super::UninitContext::new(rules).with_effects(ctx.effects),
                 );
             }
             return outcome;
@@ -1128,8 +1119,7 @@ fn techno_ai_shell(
                         })
                 });
                 if ready {
-                    let context = super::UninitContext::new(rules, ctx.overlay_registry)
-                        .with_effects(ctx.effects);
+                    let context = super::UninitContext::new(rules).with_effects(ctx.effects);
                     sim.techno_limbo_with_context(id, context);
                     // `0x004400CB..0x004400D4`: SpawnSurvivors(C4AppliedBy).
                     sim.spawn_building_survivors(
@@ -1602,7 +1592,7 @@ fn drop_airborne_target_step(
     }) {
         return false;
     }
-    let _ = sim.assign_target_represented(id, None, rules, None, effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
     true
 }
 
@@ -1662,7 +1652,7 @@ fn drop_unsensed_cloaked_target_step(
     {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, rules, None, effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
 }
 
 /// Tick the common `+0xC4` per-mission AI counter once per object visit
@@ -1789,7 +1779,7 @@ fn techno_common_steps(
         // deactivated jammer or updates an active one.
         sim.stop_ares_deactivated_unit_driving(id, rules, overlay_registry, effects);
         sim.update_ares_radar_jammer(id, rules);
-        sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
+        sim.update_ares_driver_killed_mission(id, rules, effects);
         // Ares1004B64B..1004B658 follows the extension updates and precedes
         // the original common head, consuming a ready displayed bounty sum.
         sim.flush_bounty_display(id, rules, effects, false);
@@ -1814,7 +1804,7 @@ fn techno_common_steps(
     // A queued voice probes its handle only when this actor really reaches
     // this slot; recording final Logic membership would lose early exits.
     sim.record_unit_voice_visit(id);
-    berserk_step(sim, id, rules, overlay_registry, effects);
+    berserk_step(sim, id, rules, effects);
     // A quiet unit holds its rank, drains nothing and is not drained, does
     // not rock, recoil or open a door (`world::quiet_units`).
     let quiet = sim.quiet(id);
@@ -1942,13 +1932,7 @@ fn techno_common_steps(
 /// its house is a human player's (`IsHuman`, House `+0x1EC`), else Hunt
 /// (`vt+0x1E8`). No draws. The Psychedelic arm (`combat::receiver_health`)
 /// sets the state.
-fn berserk_step(
-    sim: &mut Simulation,
-    id: u64,
-    rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
-) {
+fn berserk_step(sim: &mut Simulation, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
     let Some(entity) = sim
         .substrate
         .entities
@@ -1960,7 +1944,7 @@ fn berserk_step(
         return;
     }
     let owner = entity.owner();
-    let _ = sim.assign_target_represented(id, None, rules, overlay_registry, effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
     let mission = if sim.houses.get(&owner).is_some_and(|house| house.is_human()) {
         MissionType::Guard
     } else {
@@ -2084,11 +2068,11 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     {
         return;
     }
-    let code = target_scan::fire_error_at(sim, rules, id, Some(target), weapon, false, None);
+    let code = target_scan::fire_error_at(sim, rules, id, Some(target), weapon, false);
     if matches!(code, FireError::Illegal | FireError::Cant) {
         //6FA4CB dispatches class+3C8 before this object's mission handler:
         // Infantry51B1F0 clears68D/requests its action and invalidates5E0.
-        sim.assign_target_represented(id, None, rules, None, FrameEffects::default())
+        sim.assign_target_represented(id, None, rules, FrameEffects::default())
             .expect("the queried target-drop receiver remains present");
     }
 }
@@ -2187,10 +2171,10 @@ fn target_reach_step(
         return;
     };
     let weapon = target_scan::select_weapon(sim, rules, id, Some(target));
-    if target_scan::can_fire_at(sim, rules, id, target, weapon, overlay_registry) {
+    if target_scan::can_fire_at(sim, rules, id, target, weapon) {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, rules, overlay_registry, effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA30C..0x006FA46C`, every frame after the
@@ -2293,7 +2277,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
     //6FA46C precedes the subsequent live target re-read and illegal test.
     // Preserve class refusal and synchronous action/path effects.
-    sim.assign_target_represented(id, None, rules, None, FrameEffects::default())
+    sim.assign_target_represented(id, None, rules, FrameEffects::default())
         .expect("the queried allied-target receiver remains present");
 }
 
@@ -2377,13 +2361,7 @@ fn techno_after_acquisition(
         );
         // A target the Unit's later Fire_At_Target hands its manager waits
         // until the next visit (Unit73647B/7365E1).
-        crate::sim::spawn_manager::spawn_manager_ai(
-            sim,
-            rules,
-            id,
-            ctx.overlay_registry,
-            ctx.effects,
-        );
+        crate::sim::spawn_manager::spawn_manager_ai(sim, rules, id, ctx.effects);
         super::techno_ai_cloak::cloak_field_ai_step(sim, id, rules, ctx.overlay_registry);
     }
     healer_target_drop_step(sim, id, rules);
@@ -2564,7 +2542,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         })
     };
     let drop = |sim: &mut Simulation| {
-        sim.assign_target_represented(id, None, rules, None, FrameEffects::default())
+        sim.assign_target_represented(id, None, rules, FrameEffects::default())
             .expect("the queried healer receiver remains present");
     };
     let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
@@ -2785,7 +2763,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: &RuleS
     if !drop {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, rules, None, FrameEffects::default());
+    let _ = sim.assign_target_represented(id, None, rules, FrameEffects::default());
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.passive_scan.clear_acquired();
     }
@@ -3207,7 +3185,6 @@ mod tests {
             sim.wave_update_context(
                 sim.waves.get(3).unwrap(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None
             )
             .target_position,
             Some(retained)
@@ -3223,7 +3200,6 @@ mod tests {
             sim.wave_update_context(
                 sim.waves.get(3).unwrap(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None
             )
             .target_position,
             Some(retained)
@@ -3233,7 +3209,6 @@ mod tests {
             sim.wave_update_context(
                 sim.waves.get(3).unwrap(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None
             )
             .target_position,
             None
@@ -3406,7 +3381,7 @@ mod tests {
             let mut rates = None;
             sim.for_each_live_object(|sim, id| {
                 if id == caller {
-                    assert!(sim.foot_crash(victim, None, &rules, None, FrameEffects::default()));
+                    assert!(sim.foot_crash(victim, None, &rules, FrameEffects::default()));
                     let rocking = sim.substrate.entities.get(victim).unwrap().rocking.unwrap();
                     rates = Some((rocking.vel_sideways(), rocking.vel_forwards()));
                 }
@@ -3482,10 +3457,7 @@ mod tests {
                     ));
                 }
                 "limbo" => {
-                    sim.techno_limbo_with_context(
-                        victim,
-                        super::super::UninitContext::with_rules(&rules),
-                    );
+                    sim.techno_limbo_with_context(victim, super::super::UninitContext::new(&rules));
                     assert!(
                         sim.substrate
                             .entities
@@ -3581,7 +3553,6 @@ mod tests {
         sim.uninit_with_rules(3, &rules);
         sim.process_pending_delete_with(
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
             1,
             false,
@@ -3590,7 +3561,6 @@ mod tests {
         sim.uninit_with_rules(9, &rules);
         sim.process_pending_delete_with(
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
             1,
             false,
@@ -3603,7 +3573,6 @@ mod tests {
         // Repeating the drain cannot publish a second destructor marker.
         sim.process_pending_delete_with(
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
             1,
             false,
@@ -4449,13 +4418,7 @@ mod tests {
             actor.berserk.set_active_for_test(true);
             actor.berserk.set_timer_for_test(2);
             let step = |sim: &mut Simulation| {
-                berserk_step(
-                    sim,
-                    1,
-                    &rules,
-                    None,
-                    crate::sim::world::FrameEffects::default(),
-                );
+                berserk_step(sim, 1, &rules, crate::sim::world::FrameEffects::default());
                 let actor = sim.substrate.entities.get(1).unwrap();
                 (
                     actor.berserk.is_active(),
@@ -4515,7 +4478,7 @@ mod tests {
                 let target = crate::sim::combat::TargetKind::Entity(2);
                 let weapon = target_scan::select_weapon(&sim, &rules, 1, Some(target));
                 assert!(matches!(
-                    target_scan::fire_error_at(&sim, &rules, 1, Some(target), weapon, false, None),
+                    target_scan::fire_error_at(&sim, &rules, 1, Some(target), weapon, false),
                     crate::sim::combat::fire_error::FireError::Illegal
                         | crate::sim::combat::fire_error::FireError::Cant
                 ));
@@ -6234,7 +6197,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             .get_mut(first)
             .unwrap()
             .set_done_spawning_for_test(true);
-        sim.retire_particle_system(first, crate::sim::world::UninitContext::with_rules(&rules));
+        sim.retire_particle_system(first, crate::sim::world::UninitContext::new(&rules));
         assert_eq!(spark_system(&sim, 1), None);
         let mut expect = sim.scenario_rng.clone();
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX);
@@ -6272,7 +6235,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             &mut sim,
             &rules,
             system_id,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         assert_eq!(spark_system(&sim, 1), None);
         assert!(sim.particle_systems().get(system_id).unwrap().in_limbo());
@@ -6315,7 +6278,6 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             mcv,
             Some(TargetKind::Entity(tank)),
             &rules,
-            None,
             FrameEffects::default(),
         )
         .expect("the target assigns");

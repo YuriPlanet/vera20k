@@ -191,8 +191,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    if house.is_controlled_by_human(sim.session.game_mode_nonzero())
-        || can_make_money(sim, rules, owner)
+    if house.is_controlled_by_human(sim.session.rule_policy()) || can_make_money(sim, rules, owner)
     {
         return false;
     }
@@ -420,7 +419,7 @@ fn sell_node(
         let (x, y) = unpack_base_plan_cell(node.packed_cell);
         let house = sim.interner.resolve(owner).to_string();
         // Original 0x4FDFC7 passes 0, as the Event SELL caller does.
-        sim.sell_wall_at_cell(&house, x, y, false, rules, overlays, effects);
+        sim.sell_wall_at_cell(&house, None, x, y, false, rules, overlays, effects);
     }
     remove_node(&mut sim.houses, owner, index, sale);
 }

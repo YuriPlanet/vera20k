@@ -461,7 +461,6 @@ fn set_target_matches_the_original() {
             building,
             requested,
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -476,7 +475,7 @@ fn set_target_matches_the_original() {
             "{name}"
         );
         assert_eq!(
-            sim.building_admits_target(building, requested, &rules, None),
+            sim.building_admits_target(building, requested, &rules),
             row["target"].is_string() || requested.is_none(),
             "{name} admission"
         );
@@ -819,7 +818,6 @@ fn building_dispatch_cadence_matches_the_original() {
                         building,
                         Some(TargetKind::Entity(target)),
                         &rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
@@ -829,7 +827,6 @@ fn building_dispatch_cadence_matches_the_original() {
                         building,
                         None,
                         &rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();

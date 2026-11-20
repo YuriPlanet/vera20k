@@ -8,6 +8,7 @@
 //! qualify (`TeamScriptState::wants_members`) rests on instruction reading.
 
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::ai_team_creation::tests::{Draws, events, index};
 use crate::sim::ai_team_creation::tests::{dword, flag, native_draws, rows};
 use crate::sim::house_state::HouseState;
@@ -44,7 +45,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &crate::rules::ini_parser::IniFile::from_str(""),
-        sim.session.game_mode_nonzero(),
+        sim.session.rule_policy(),
     )
     .unwrap();
     assert!(sim.install_team_ai_registry(&registry, &rules).is_empty());
@@ -165,7 +166,11 @@ fn a_class_no_team_needs_still_draws_once() {
          [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
          [TaskForces]\n0=F\n[F]\n0=2,E1\n",
     );
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::with_seed(0x4FF210);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -323,7 +328,12 @@ fn the_harvester_branch_matches_the_original() {
             current_iq: dword(&row["iq"]),
             iq_harvester: dword(&row["iq_harvester"]),
             no_ore: flag(&row["no_ore"]),
-            human: house.is_controlled_by_human(dword(&row["game_mode"]) != 0),
+            human: house.is_controlled_by_human(
+                crate::sim::scenario_session::ScenarioGameMode::from_game_mode(dword(
+                    &row["game_mode"],
+                ))
+                .stock_rule_policy(None),
+            ),
             tech_level: house.tech_level(),
         };
         for ares in [false, true] {

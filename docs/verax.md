@@ -7,25 +7,26 @@ NPatch compatibility capabilities. Build it explicitly:
 cargo run --release --bin vera20k --features verax
 ```
 
-The `verax` feature currently compiles AutoLoad and Skirmish map hot reload.
-The translucent-fog option and foot-path overlay in "Origins and related
-first-party work" are adjacent VERA work, not VeraX features.
+The `verax` feature currently compiles Skirmish map hot reload only.
+The Ctrl+D smart command (formerly AutoLoad) is now a first-party convenience
+feature in every build. The translucent-fog and high-terrain building lift
+options and the foot-path overlay in "Origins and related first-party work"
+are adjacent VERA work, not VeraX features.
 
-## AutoLoad
+## AutoLoad (moved out of VeraX)
 
-Ctrl+D issues standard Enter orders for the current selection: selected infantry and vehicles are
-balanced by type into the selected carriers that are within 30 cells, have `Passengers=` room and
-accept the passenger's `Size=` under `SizeLimit=`. Each type takes turns, the closest hulls fill
-first, and a loaded carrier or a vehicle already assigned one role cannot also take the other.
-Distance and engine admission are checked for each pair before room is reserved. Orders are ordinary Enter
-missions, so a replay, a save or another client sees the same commands; the engine's own
-`Receive_Radio` 0x0F admission decides every boarding. Buildings that garage through their own
-Garrison/Occupy channels are not part of this chord.
-
-The command is registered as `AutoLoad` in the keyboard page's `vera20k` category, so it can be
-rebound or cleared like a retail hotkey. Ctrl+D is installed as the reload default when neither
-AutoLoad nor Ctrl+D already has a saved binding, and an explicit `AutoLoad=0` keeps it cleared.
-The assignment is written to the profile with the other bindings.
+Ctrl+D began as VeraX AutoLoad: it issued ordinary Enter orders that balanced
+selected infantry and vehicles into nearby transports. It has since been
+promoted to a default-build, single-player-only convenience hotkey: it picks
+one of nine context actions from the whole selection (transport load,
+garrison, engineer repair/capture, C4 sabotage, spy infiltration, Ivan bombs,
+Tesla-coil charge, tank bunker entry and bio-reactor feeding), each emitting
+ordinary commands and gated by the engine's own read-only admission. The mode
+is chosen from the most specific capability shared by every selected unit;
+mixed groups do nothing except transport loading. `HotkeyCommand::AutoLoad`
+and the `AutoLoad=` profile binding are retained for save/replay compatibility,
+but the behaviour is no longer gated by `verax`. The implementation is
+`src/app/input/smart_command.rs`.
 
 ## Map hot reload
 
@@ -54,6 +55,11 @@ related presentation work came from:
   the retail look) that keeps terrain visible through fog while concealing
   unseen enemy objects, enemy projectiles and walls. It is not gated by the
   `verax` feature.
+- **High-terrain building lift** is VERA's own client graphics option
+  (`[graphics] high_terrain_building_lift=true`, off by default to match the
+  original). From terrain level 15 up, the original game draws a building 1-2 px
+  below its tile row, and the tiles hide that sliver of its base. The option draws
+  the building at its tile row instead. It changes only the picture.
 - **Foot path steps** is a diagnostic overlay rather than an extension feature.
   In `dev-overlays` builds, `Ctrl+Shift+O` draws the remaining path cells and
   step labels for selected moving units (`src/app/diagnostics/debug_overlays.rs`).

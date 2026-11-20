@@ -310,17 +310,12 @@ fn mega_mission_bodies_match_the_original_rows() {
                         "{context}"
                     ),
                     "resume" => assert_eq!(
-                        sim.foot_continue_mega_mission(
-                            OWNER,
-                            &rules,
-                            None,
-                            FrameEffects::default()
-                        ),
+                        sim.foot_continue_mega_mission(OWNER, &rules, FrameEffects::default(),),
                         answer != 0,
                         "{context}"
                     ),
                     _ => assert_eq!(
-                        sim.foot_refresh_mega_mission(OWNER, &rules, None, FrameEffects::default()),
+                        sim.foot_refresh_mega_mission(OWNER, &rules, FrameEffects::default()),
                         answer != 0,
                         "{context}"
                     ),

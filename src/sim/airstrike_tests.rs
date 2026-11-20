@@ -118,6 +118,7 @@ fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
         .health
         .current();
     assert!(f.sim.apply_command_with_overlays(
+        None,
         "Americans",
         &crate::sim::command::Command::Attack {
             attacker_id: f.boris,
@@ -374,13 +375,12 @@ fn owner_target_change_cancels_but_leaves_planes_until_their_departure() {
             f.boris,
             Some(TargetKind::Entity(f.target)),
             &f.rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();
     f.hit(f.boris, f.target);
     f.sim
-        .assign_target_represented(f.boris, None, &f.rules, None, FrameEffects::default())
+        .assign_target_represented(f.boris, None, &f.rules, FrameEffects::default())
         .unwrap();
     let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
     assert!(m.busy);
@@ -550,13 +550,12 @@ fn live_detach_keeps_designator_and_aircraft_aimed_at_the_strike_target() {
             f.boris,
             Some(TargetKind::Entity(f.target)),
             &f.rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();
     f.hit(f.boris, f.target);
     f.sim
-        .stop_all_targeting_on_detach(f.target, &f.rules, None, FrameEffects::default());
+        .stop_all_targeting_on_detach(f.target, &f.rules, FrameEffects::default());
     assert_eq!(
         f.sim
             .substrate

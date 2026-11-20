@@ -26,6 +26,9 @@
 //! - the ramp rows that Unlimbo at the exact coordinate compare the floor
 //!   under the XY: native keeps the cell centre's Z, VERA's reveal grounds
 //!   the object;
+//! - the `crashable` row is skipped: VERA lets a grounded `Crashable=`
+//!   transport's passengers out where gamemd keeps them aboard to die
+//!   (#2958), which its own test below checks;
 //! The dropped-as-bomb row includes the retained +8F passenger kill gate.
 
 use super::refinery_dock_oracle_tests::{cell, world_with};
@@ -134,7 +137,12 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         }
     }
     if let Some(slope) = input["slope"].as_u64() {
+        // The ramp is a tile with the row's ramp type, which the Recalc(-1)
+        // an escapee's Place_Down runs reads back.
+        crate::map::resolved_terrain::install_clear_test_catalog(terrain, slope as u8);
         let c = terrain.cell_mut_for_test(x, y).unwrap();
+        c.final_tile_index = 1;
+        c.final_sub_tile = 0;
         c.slope_type = slope as u8;
         c.has_ramp = true;
     }
@@ -253,7 +261,7 @@ fn scene(input: &Value) -> Scene {
     }
     for &id in passengers.iter().rev() {
         assert_eq!(
-            sim.techno_limbo_with_rules(id, &rules, None),
+            sim.techno_limbo_with_rules(id, &rules),
             crate::sim::world::ConcealOutcome::Concealed
         );
         sim.substrate
@@ -331,7 +339,7 @@ fn scene(input: &Value) -> Scene {
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
-            UninitContext::with_rules(&rules),
+            UninitContext::new(&rules),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
     }
@@ -574,6 +582,10 @@ fn passenger_escape_matches_the_original_rows() {
     let mut failures = Vec::new();
     for row in rows {
         let name = row["input"]["name"].as_str().unwrap().to_string();
+        // gamemd's bug, which VERA fixes (#2958): see the test below.
+        if name == "crashable" {
+            continue;
+        }
         if let Err(cause) = std::panic::catch_unwind(|| compare(row)) {
             let message = cause
                 .downcast_ref::<String>()
@@ -584,4 +596,54 @@ fn passenger_escape_matches_the_original_rows() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// #2958: gamemd keeps a grounded `Crashable=` transport's passengers aboard
+/// (this row natively leaves cargo at 2) and its UnInit then kills them. VERA
+/// lets them out like any other transport's.
+#[test]
+fn a_grounded_crashable_transport_lets_its_passengers_out() {
+    let corpus = corpus();
+    let row = corpus["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "crashable")
+        .unwrap();
+    let Scene {
+        mut sim,
+        rules,
+        transport,
+        passengers,
+        attacker,
+    } = scene(&row["input"]);
+    crate::sim::movement::answered_process::install();
+    sim.release_dying_unit_passengers(
+        &rules,
+        None,
+        transport,
+        DyingTransport {
+            attacker: Some(attacker),
+            ignore_defenses: false,
+            selected_by_player: false,
+        },
+        crate::sim::world::FrameEffects::default(),
+    );
+    crate::sim::movement::answered_process::finish();
+    let cargo = sim
+        .substrate
+        .entities
+        .get(transport)
+        .unwrap()
+        .passenger_role()
+        .cargo()
+        .unwrap()
+        .count();
+    assert_eq!(cargo, 0, "both passengers left the cargo");
+    for id in passengers {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert!(!entity.lifecycle.in_limbo(), "passenger {id} is on the map");
+        assert_eq!(entity.passenger_role().transporter(), None);
+        assert!(!sim.substrate.pending_delete.contains_object(&id));
+    }
 }

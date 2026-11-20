@@ -60,6 +60,7 @@ pub mod cloak_disguise;
 pub mod command;
 pub mod command_queue;
 pub mod components;
+pub mod control_authority;
 pub(crate) mod conversion_health;
 pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
 pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
@@ -119,7 +120,7 @@ pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
 pub use touch_log::{Touched, live_read_check_enabled};
-pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
+pub mod type_handle_table; // Interned bridge warheads used by combat.
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
 
@@ -246,6 +247,7 @@ pub mod replay;
 mod replay_determinism_tests;
 pub mod runtime;
 pub mod selection;
+pub mod skirmish_cheats;
 
 // --- Snapshot serialization (mid-match save/load) ---
 pub mod snapshot;

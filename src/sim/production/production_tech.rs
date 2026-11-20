@@ -359,7 +359,7 @@ pub(crate) fn factory_category_for_building(object: &ObjectType) -> Option<Produ
 
 /// Check if a structure is a production factory for the given category.
 ///
-/// Uses the data-driven Factory= key from rules.ini via RuleSet.factory_map.
+/// Uses the BuildingType's `Factory=` (`ObjectType::factory_type`).
 /// A building with `Factory=InfantryType` produces infantry, `Factory=UnitType`
 /// produces vehicles, etc. Buildings without Factory= are never factories.
 pub(super) fn is_production_factory(

@@ -256,7 +256,6 @@ impl ResponseSelection {
                         responder.entity_id,
                         Some(TargetKind::Entity(attacker_id)),
                         rules,
-                        None,
                         FrameEffects::default(),
                     )
                     .expect(
@@ -447,6 +446,7 @@ pub(crate) fn respond_to_base_attack(
     let budget = live_threat_posed(attacker, Some(attacker_object), entities, rules, interner)
         .wrapping_mul(rules.general.computer_base_defense_response);
     let current_frame = world.session.binary_frame() as i32;
+    let campaign_base_defense = world.session.rule_policy().uses_campaign_base_defense();
 
     if world
         .house_alliances
@@ -459,7 +459,8 @@ pub(crate) fn respond_to_base_attack(
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself
         // instead of calling for help.
-        || (!world.session.game_mode_nonzero() && is_armed(victim, victim_object, entities, rules, interner))
+        || (campaign_base_defense
+            && is_armed(victim, victim_object, entities, rules, interner))
         || !matches!(
             attacker.category(),
             EntityCategory::Unit | EntityCategory::Infantry
@@ -527,7 +528,15 @@ pub(crate) fn respond_to_base_attack(
             else {
                 continue;
             };
-            if !candidate_admitted(sim, rules, candidate, candidate_object, victim, attacker_id) {
+            if !candidate_admitted(
+                sim,
+                rules,
+                candidate,
+                candidate_object,
+                victim,
+                attacker_id,
+                campaign_base_defense,
+            ) {
                 continue;
             }
 

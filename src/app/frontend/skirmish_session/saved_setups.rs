@@ -8,8 +8,15 @@
 //! for each computer row the map shows, -2 standing for Random and for no
 //! team. The options keep their `[Skirmish]` key names.
 //!
+//! The Setups page keeps each setup the player names in a `[Setup <name>]`
+//! section of the same format, with `Mode=` (the game mode's id) and
+//! `Saved=` (when, as a Windows file time). The name keeps ASCII letters,
+//! digits, `-`, `_`, `.` and inner spaces; every other UTF-16 unit is `%`
+//! and four hex digits, so no bracket, semicolon or non-ASCII byte reaches
+//! the header, and its longest name stays inside the reader's line.
+//!
 //! A file from an older VERA can also hold a section per map from its Save
-//! Setup; writing `[Last Setup]` leaves them as they are.
+//! Setup; writing a section leaves the others as they are.
 
 use std::fmt::Write as _;
 
@@ -28,6 +35,7 @@ use super::{
 
 pub(super) const FILE_NAME: &str = "SkirmishSetups.ini";
 const LAST_SETUP_SECTION: &str = "Last Setup";
+const NAMED_SETUP_PREFIX: &str = "Setup ";
 
 /// The page the player last left: its map's section name and its setup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +72,112 @@ pub(super) fn write_last_setup(file: &[u8], last: &LastSetup) -> Vec<u8> {
     let mut values = vec![("Map".to_owned(), last.map.clone())];
     values.extend(setup_values(&last.setup));
     replace_section(file, LAST_SETUP_SECTION, values)
+}
+
+/// A setup the player saved under a name, with its map and game mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NamedSetup {
+    pub(super) name: String,
+    /// The map's [`map_key`].
+    pub(super) map: String,
+    /// The game mode's id; `None` keeps the page's.
+    pub(super) mode: Option<i32>,
+    /// When it was saved, as a Windows file time.
+    pub(super) saved: u64,
+    pub(super) setup: SkirmishSavedSetup,
+}
+
+/// The section name a named setup's name gets.
+fn named_section(name: &str) -> String {
+    let mut section = String::from(NAMED_SETUP_PREFIX);
+    for unit in name.trim().encode_utf16() {
+        match u8::try_from(unit).ok().map(char::from) {
+            Some(c) if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ' ') => {
+                section.push(c);
+            }
+            _ => {
+                let _ = write!(section, "%{unit:04X}");
+            }
+        }
+    }
+    section
+}
+
+/// The name a section holds, or `None` for a section of another kind.
+fn name_of_section(section: &str) -> Option<String> {
+    let encoded = section.strip_prefix(NAMED_SETUP_PREFIX)?;
+    let mut units = Vec::with_capacity(encoded.len());
+    let mut rest = encoded;
+    while let Some(c) = rest.chars().next() {
+        let hex = rest.get(1..5).filter(|_| c == '%');
+        match hex.and_then(|hex| u16::from_str_radix(hex, 16).ok()) {
+            Some(unit) => {
+                units.push(unit);
+                rest = &rest[5..];
+            }
+            None => {
+                let mut buffer = [0; 2];
+                units.extend_from_slice(c.encode_utf16(&mut buffer));
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+    }
+    let name = String::from_utf16_lossy(&units);
+    (!name.trim().is_empty()).then_some(name)
+}
+
+/// Whether two names are the same setup: the reader finds a section by its
+/// name whatever the ASCII case.
+pub(super) fn same_name(left: &str, right: &str) -> bool {
+    named_section(left).eq_ignore_ascii_case(&named_section(right))
+}
+
+/// The file's named setups in file order; one without `Player` is none.
+pub(super) fn read_named_setups(bytes: &[u8]) -> Vec<NamedSetup> {
+    let Ok(ini) = IniFile::from_bytes(bytes) else {
+        return Vec::new();
+    };
+    let mut setups: Vec<NamedSetup> = Vec::new();
+    for section_name in ini.section_names() {
+        let Some(name) = name_of_section(section_name) else {
+            continue;
+        };
+        if setups.iter().any(|setup| same_name(&setup.name, &name)) {
+            continue;
+        }
+        let Some(section) = ini.section(section_name) else {
+            continue;
+        };
+        let Some(setup) = read_setup(section) else {
+            continue;
+        };
+        let mode = section.read_int("Mode", -1);
+        setups.push(NamedSetup {
+            name,
+            map: section.read_string("Map", "", 0x400),
+            mode: (mode >= 0).then_some(mode),
+            saved: section.read_string("Saved", "", 0x40).parse().unwrap_or(0),
+            setup,
+        });
+    }
+    setups
+}
+
+/// The file with `setup` in its section, replacing any of the same name.
+pub(super) fn write_named_setup(file: &[u8], setup: &NamedSetup) -> Vec<u8> {
+    let mut values = vec![("Map".to_owned(), setup.map.clone())];
+    if let Some(mode) = setup.mode {
+        values.push(("Mode".to_owned(), mode.to_string()));
+    }
+    values.push(("Saved".to_owned(), setup.saved.to_string()));
+    values.extend(setup_values(&setup.setup));
+    replace_section(file, &named_section(&setup.name), values)
+}
+
+/// The file without the named setup's section.
+pub(super) fn remove_named_setup(file: &[u8], name: &str) -> Vec<u8> {
+    let section = named_section(name);
+    crate::util::ini_writer::remove_ini_sections(file, |found| found.eq_ignore_ascii_case(&section))
 }
 
 fn setup_values(setup: &SkirmishSavedSetup) -> Vec<(String, String)> {
@@ -170,6 +284,47 @@ mod tests {
     use super::*;
     use crate::skirmish_launch::LaunchCountry;
     use crate::ui::skirmish_shell::SkirmishAiRowType;
+
+    /// A named setup's section keeps a name with brackets, a semicolon and
+    /// non-ASCII text; saving it again in another case replaces it, and
+    /// removing it keeps the last setup.
+    #[test]
+    fn named_setups_round_trip_replace_and_remove_by_name() {
+        let named = |name: &str, saved| NamedSetup {
+            name: name.to_owned(),
+            map: map_key("Arena.map"),
+            mode: Some(1),
+            saved,
+            setup: SkirmishSavedSetup {
+                player: SkirmishSetupSeat {
+                    country: SkirmishCountryChoice::Random,
+                    color: None,
+                    start: LaunchStartPosition::Auto,
+                    team: -2,
+                },
+                computers: Vec::new(),
+                game_speed: 1,
+                credits: 10000,
+                unit_count: 10,
+                short_game: true,
+                super_weapons: true,
+                build_off_ally: false,
+                crates: true,
+                mcv_redeploy: false,
+            },
+        };
+        let first = named("Rush [2v2]; 東", 5);
+        let file = write_named_setup(b"[Last Setup]\r\nPlayer=-2,-2,-2,-2\r\n", &first);
+        assert_eq!(read_named_setups(&file), [first.clone()]);
+
+        let again = named("RUSH [2V2]; 東", 9);
+        let file = write_named_setup(&file, &again);
+        assert_eq!(read_named_setups(&file), [again]);
+
+        let file = remove_named_setup(&file, "rush [2v2]; 東");
+        assert!(read_named_setups(&file).is_empty());
+        assert!(read_last_setup(&file).is_some());
+    }
 
     /// The last setup reads back with its map and every row. Writing it again
     /// replaces `[Last Setup]`, and an older file's map sections stay.

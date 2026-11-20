@@ -197,7 +197,12 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .board_forced_chain(&[(id, 1.0)]);
         }
     }
-    production::begin_selling(sim, rules, refinery, false);
+    production::begin_selling(
+        sim,
+        rules,
+        refinery,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);
@@ -400,7 +405,10 @@ fn sale_refund_matches_the_original() {
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
         house.set_is_human_for_test(input["human"].as_bool().unwrap());
         house.set_player_control_for_test(input["player_control"] == true);
-        let game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
+        let policy = crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+            input["game_mode"].as_i64().unwrap() as i32,
+        )
+        .stock_rule_policy(None);
         assert_eq!(
             i64::from(production::type_refund(
                 &rules,
@@ -410,7 +418,7 @@ fn sale_refund_matches_the_original() {
                     country: [crate::util::native_x87::NativeF32Bits::ONE; 5],
                     factory_plant: [crate::util::native_x87::NativeF32Bits::ONE; 5],
                 },
-                game_mode_nonzero,
+                policy,
                 false,
             )),
             row["refund"].as_i64().unwrap(),

@@ -1,4 +1,4 @@
-//! Per-client counters and the JSON report results.md is measured with.
+//! Per-client counters and the JSON report `relay_netsim` prints.
 
 use std::collections::BTreeMap;
 

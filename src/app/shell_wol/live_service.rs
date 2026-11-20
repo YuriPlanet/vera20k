@@ -31,7 +31,7 @@ use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
 use crate::ui::chat_translation::{ChatLanguage, ChatReply, only_repeats, without_note};
-use crate::ui::wol_account::AccountRequest;
+use crate::ui::wol_account::{AccountRequest, AccountSuccess};
 use crate::ui::wol_chat::WolChatLine;
 
 // The deployment sets this at build time; a runtime override supports staging.
@@ -64,13 +64,62 @@ pub(super) const CHAT_LIMIT_BYTES: usize = 2048;
 /// The configured lobby's HTTPS origin: the build's, or `VERA20K_LOBBY_URL`
 /// for staging.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn lobby_base_url() -> Result<String> {
+fn lobby_base_url() -> Result<String> {
     let base = std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
     ensure!(
         base.starts_with("https://") && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
         "the online lobby needs its configured HTTPS service"
     );
     Ok(base)
+}
+
+/// The configured lobby's answer to a public read ([`lobby_get`]).
+pub(crate) struct LobbyAnswer {
+    pub(crate) status: u16,
+    pub(crate) etag: Option<String>,
+    pub(crate) body: Box<dyn std::io::Read>,
+}
+
+/// `GET <path>` from the configured lobby, for the reads that need no
+/// session (`/v1/stats`, the map library), with `If-None-Match` when
+/// `if_none_match` is given. Blocking: worker threads only. Its timeouts are
+/// per read, not the session agent's 12 s in all, so a library map still
+/// arrives on a slow line.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn lobby_get(path: &str, if_none_match: Option<&str>) -> Result<LobbyAnswer> {
+    let url = format!("{}{path}", lobby_base_url()?.trim_end_matches('/'));
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .https_only(true)
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .timeout_connect(Some(std::time::Duration::from_secs(15)))
+        .timeout_recv_response(Some(std::time::Duration::from_secs(30)))
+        .timeout_per_read(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .into();
+    let mut request = agent.get(&url).header("User-Agent", http::USER_AGENT);
+    if let Some(tag) = if_none_match {
+        request = request.header("If-None-Match", tag);
+    }
+    let response = request
+        .call()
+        .with_context(|| format!("cannot reach {url}"))?;
+    Ok(LobbyAnswer {
+        status: response.status().as_u16(),
+        etag: response
+            .headers()
+            .get("ETag")
+            .and_then(|tag| tag.to_str().ok())
+            .map(str::to_owned),
+        body: Box::new(response.into_body().into_reader()),
+    })
+}
+
+/// The browser build starts no worker thread for these reads
+/// ([`crate::app::worker::THREADS`]).
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub(crate) fn lobby_get(_path: &str, _if_none_match: Option<&str>) -> Result<LobbyAnswer> {
+    anyhow::bail!("the browser build reads the lobby only through its session")
 }
 
 /// The departing visit's same HTTP/cleanup owner survives the menu teardown.
@@ -80,28 +129,12 @@ pub(crate) fn lobby_base_url() -> Result<String> {
 #[derive(Default)]
 pub(crate) struct OnlineCleanup {
     retired: Option<RetiredService>,
-    // Derived receipt only: reset per retirement, set by that owner's exact
-    // logout acknowledgement. It never controls retries or worker shutdown.
-    logout_receipt: Option<LogoutReceipt>,
-}
-
-#[derive(Clone, Copy)]
-struct LogoutReceipt {
-    request_id: u64,
-    failures: u8,
-    acknowledged_uptime_ms: u64,
-}
-
-/// Nonsecret read-only facts from the existing retry/retirement owner. No
-/// diagnostic may change its command identity, retry timing or stop boundary.
-#[derive(Debug, Clone, Copy, serde::Serialize)]
-pub(crate) struct LogoutObservation {
-    pub pending: bool,
-    pub request_id: Option<u64>,
-    pub failures: u8,
-    pub acknowledged: bool,
-    pub acknowledged_uptime_ms: Option<u64>,
-    pub worker_closed: bool,
+    /// Deletions completed while a visit was closing. The main thread still
+    /// clears local sign-ins, without forwarding an old reply to a new form.
+    deleted_accounts: Vec<(String, String)>,
+    // Reset per retirement and set by that owner's exact logout
+    // acknowledgement, unlike a deadline stop. It never controls retries.
+    logout_acknowledged: bool,
 }
 
 struct RetiredService {
@@ -115,29 +148,7 @@ impl OnlineCleanup {
     }
 
     pub(crate) fn logout_acknowledged(&self) -> bool {
-        self.logout_receipt.is_some()
-    }
-
-    pub(crate) fn logout_observation(&self) -> LogoutObservation {
-        let command = self
-            .retired
-            .as_ref()
-            .and_then(|retired| retired.service.logging_out.as_ref());
-        LogoutObservation {
-            pending: self.pending(),
-            request_id: command
-                .map(|command| command.request_id)
-                .or(self.logout_receipt.map(|receipt| receipt.request_id)),
-            failures: command.map_or_else(
-                || self.logout_receipt.map_or(0, |receipt| receipt.failures),
-                |command| command.failures,
-            ),
-            acknowledged: self.logout_acknowledged(),
-            acknowledged_uptime_ms: self
-                .logout_receipt
-                .map(|receipt| receipt.acknowledged_uptime_ms),
-            worker_closed: self.logout_acknowledged() && !self.pending(),
-        }
+        self.logout_acknowledged
     }
 
     fn leave(&mut self, visit: &mut super::WolVisit, now: Instant) {
@@ -149,10 +160,8 @@ impl OnlineCleanup {
     fn retire(&mut self, mut service: LiveService, now: Instant) {
         // New online workers are deferred while one retiring visit exists.
         assert!(self.retired.is_none(), "one online exit owner at a time");
-        self.logout_receipt = None;
+        self.logout_acknowledged = false;
         service.auth_attempt = service.auth_attempt.wrapping_add(1);
-        service.start_preparation = None;
-        service.pending_choices = None;
         if let Some(pending) = service.pending.take()
             && service.match_id.is_none()
         {
@@ -178,6 +187,15 @@ impl OnlineCleanup {
                     return None;
                 }
             };
+            if let http::Response::AccountAnswered {
+                answer: Ok(AccountSuccess::Deleted(name)),
+                ..
+            } = response
+            {
+                self.deleted_accounts
+                    .push((retired.service.lobby.clone(), name));
+                continue;
+            }
             if retired.service.stopping.load(Ordering::Acquire) {
                 continue;
             }
@@ -186,20 +204,14 @@ impl OnlineCleanup {
                     "finish" => retired.service.finish_completed(id),
                     "leave" => retired.service.leave_completed(id),
                     "logout" => {
-                        let receipt = retired
+                        let matched = retired
                             .service
                             .logging_out
                             .as_ref()
-                            .filter(|logout| logout.request_id == id)
-                            .map(|logout| LogoutReceipt {
-                                request_id: id,
-                                failures: logout.failures,
-                                acknowledged_uptime_ms:
-                                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-                            });
+                            .is_some_and(|logout| logout.request_id == id);
                         retired.service.logout_completed(id);
-                        if let Some(receipt) = receipt {
-                            self.logout_receipt = Some(receipt);
+                        if matched {
+                            self.logout_acknowledged = true;
                             retired.service.stopping.store(true, Ordering::Release);
                         }
                     }
@@ -269,17 +281,11 @@ pub(super) struct LiveService {
     next_request: u64,
     auth_attempt: u64,
     revision: u64,
-    // Canonical received options only; MatchSession remains the editable owner.
-    accepted_options: Option<Value>,
-    // The latest ordinary host publication. A legacy refusal may only change
-    // the editable room while this exact snapshot is still current.
-    published_options: Option<(u64, Value)>,
+    room: RoomAgreement,
     start_preparation: Option<StartPreparation>,
     /// The local reason was already shown. The ordered lobby stream will echo
     /// the cancellation before announcing another match.
     locally_refused_start: bool,
-    last_ready_request: Option<(u64, u64)>,
-    pending_choices: Option<PendingChoices>,
     player_id: String,
     member_ids: BTreeMap<String, String>,
     pending: Option<PendingStart>,
@@ -299,7 +305,7 @@ pub(super) struct LiveService {
     /// no lobby pages, and `finish` carries the local result.
     spawned: bool,
     /// VERA: the finish asks the lobby to give this player's game room back
-    /// (`back_to_room`), set from the visit when the match returns.
+    /// (`back_to_room`), projected from MatchSession when building finish.
     back_to_room: bool,
     /// The match's `finish` result (`ExternalMatchResult`): a spawned
     /// match's for its launcher, a lobby match's for the ranked ladder.
@@ -331,12 +337,6 @@ pub(super) struct LiveService {
     lobby: String,
     /// The current sign-in sends this computer's remembered sign-in.
     signing_in_remembered: bool,
-    /// The latest account request: an answer to an earlier one, whose popup
-    /// was cancelled, is dropped.
-    account_attempt: u64,
-    /// The pending Delete Account request's attempt and name. Its answer
-    /// forgets this computer's sign-in of the name, popup or not.
-    deleting: Option<(u64, String)>,
     /// VERA: the match this game watches, from its `watch_started` until it
     /// leaves with `unwatch`.
     watching: Option<Watching>,
@@ -444,8 +444,42 @@ impl RetryingCommand {
     }
 }
 
+/// What this game agreed with its room's host, and its requests the host has
+/// yet to answer. A new room, the room's `channel_left` and a host handover
+/// each start it afresh.
+#[derive(Default)]
+struct RoomAgreement {
+    /// Canonical received options only; MatchSession remains the editable owner.
+    accepted_options: Option<Value>,
+    /// The latest ordinary host publication. A legacy refusal may only change
+    /// the editable room while this exact snapshot is still current.
+    published_options: Option<(u64, Value)>,
+    /// The latest `ready` request and the options revision it answered.
+    last_ready_request: Option<(u64, u64)>,
+    pending_choices: Option<PendingChoices>,
+}
+
+impl RoomAgreement {
+    /// This game is done with the room before its `channel_left`: its
+    /// publication and choices wait for no answer. The accepted options
+    /// stay, so a late options echo still compares with them.
+    fn stop_waiting(&mut self) {
+        self.published_options = None;
+        self.pending_choices = None;
+    }
+
+    /// The choices request the host did not answer in time, which then waits
+    /// no longer.
+    fn choices_unanswered(&mut self, now: Instant) -> bool {
+        self.pending_choices
+            .take_if(|choices| now >= choices.deadline)
+            .is_some()
+    }
+}
+
 /// The expected echo of one outgoing local choice, retained across earlier
-/// full-options updates until the host accepts it or its request fails.
+/// full-options updates until the host accepts it, its request fails or this
+/// game is done with the room.
 struct PendingChoices {
     request_id: u64,
     expected_human: Value,
@@ -660,7 +694,30 @@ impl LiveService {
             .context("could not start online lobby worker")?;
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
         let browser_requests = http::start_browser(input, output, worker_stopping, service_url)?;
-        Ok(Self {
+        Ok(Self::with_worker(
+            lobby,
+            stopping,
+            requests,
+            responses,
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            browser_requests,
+        ))
+    }
+
+    /// The service over its lobby worker's channels, before any request.
+    #[cfg(any(
+        not(all(target_arch = "wasm32", target_os = "unknown")),
+        feature = "wasm-net"
+    ))]
+    fn with_worker(
+        lobby: String,
+        stopping: Arc<AtomicBool>,
+        requests: Sender<http::Request>,
+        responses: Receiver<http::Response>,
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        browser_requests: http::RequestOwner,
+    ) -> Self {
+        Self {
             #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
             _browser_requests: browser_requests,
             stopping,
@@ -669,12 +726,9 @@ impl LiveService {
             next_request: 1,
             auth_attempt: 0,
             revision: 0,
-            accepted_options: None,
-            published_options: None,
+            room: RoomAgreement::default(),
             start_preparation: None,
             locally_refused_start: false,
-            last_ready_request: None,
-            pending_choices: None,
             player_id: String::new(),
             member_ids: BTreeMap::new(),
             pending: None,
@@ -699,10 +753,8 @@ impl LiveService {
             ladder_lookup: None,
             lobby,
             signing_in_remembered: false,
-            account_attempt: 0,
-            deleting: None,
             watching: None,
-        })
+        }
     }
 
     /// The first lobby-upgrade refusal of this sign-in, as one notice; the
@@ -717,11 +769,12 @@ impl LiveService {
     fn publish_room_options(&mut self, options: wire::Options) {
         let options = json!(options);
         let id = self.command_with_id("options", json!({"options": &options}));
-        self.published_options = Some((id, options));
+        self.room.published_options = Some((id, options));
     }
 
     fn is_room_publication(&self, id: u64) -> bool {
-        self.published_options
+        self.room
+            .published_options
             .as_ref()
             .is_some_and(|(sent, _)| *sent == id)
     }
@@ -735,7 +788,8 @@ impl LiveService {
         if !self.is_room_publication(id) {
             return false;
         }
-        self.published_options
+        self.room
+            .published_options
             .take()
             .is_some_and(|(_, sent)| !watches && current().as_ref() == Some(&sent))
     }
@@ -974,7 +1028,6 @@ impl LiveService {
     }
 
     fn begin_leave(&mut self, now: Instant) {
-        self.published_options = None;
         if self.leaving.is_none() {
             self.leaving = Some(self.retrying_command("leave", json!({}), now));
         }
@@ -1023,7 +1076,7 @@ impl LiveService {
     }
 
     fn clear_cleanup(&mut self) {
-        self.published_options = None;
+        self.room.published_options = None;
         self.locally_refused_start = false;
         self.finishing = None;
         self.leaving = None;
@@ -1281,28 +1334,13 @@ pub(crate) fn online_cleanup_pending(state: &AppState) -> bool {
         || crate::app::lan_service::online_retirement_pending(state)
 }
 
-/// Admission facts only; used by the opt-in exit fault observer before it
-/// clicks the ordinary Back button. All cleanup state remains in LiveService.
-pub(crate) fn online_exit_ready(state: &AppState) -> bool {
-    state.frontend.wol.as_ref().is_some_and(|visit| {
-        visit.provider == WolProvider::Online
-            && visit.pending_service_request_count() == 0
-            && visit.live_service.as_ref().is_some_and(|service| {
-                !service.player_id.is_empty()
-                    && service.match_id.is_none()
-                    && service.finishing.is_none()
-                    && service.leaving.is_none()
-                    && service.logging_out.is_none()
-                    && service.pending.is_none()
-                    && service.start_preparation.is_none()
-            })
-    }) && !online_cleanup_pending(state)
-}
-
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     crate::app::lan_service::poll_online_retirement(state);
     let relay_pending = crate::app::lan_service::online_retirement_pending(state);
     let cleanup_deadline = state.frontend.online_cleanup.poll(Instant::now());
+    for (lobby, name) in std::mem::take(&mut state.frontend.online_cleanup.deleted_accounts) {
+        forget_deleted_account(state, &lobby, &name);
+    }
     if state
         .frontend
         .wol
@@ -1486,12 +1524,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 }
             }
         }
-        if service
-            .pending_choices
-            .as_ref()
-            .is_some_and(|choices| Instant::now() >= choices.deadline)
-        {
-            service.pending_choices = None;
+        if service.room.choices_unanswered(Instant::now()) {
             restore_accepted_options(state, &service);
             notice(state, &tr("VERA:ChoicesNotAcknowledged"));
         }
@@ -1647,6 +1680,15 @@ fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
     }
 }
 
+/// This game is done with its room (it left, signed out or lost the lobby,
+/// or the room closed) or with a watch's start: the map transfer and any
+/// start stop, and nothing waits for the host's answer.
+fn end_room(state: &mut AppState, service: &mut LiveService) {
+    maps::cancel(state, service);
+    cancel_pending(state, service);
+    service.room.stop_waiting();
+}
+
 /// The report of the online match whose transport just returned, for that
 /// match's `finish` (docs/lobby-protocol.md).
 pub(crate) fn keep_network_report(
@@ -1666,8 +1708,9 @@ pub(crate) fn keep_network_report(
 
 pub(super) fn match_returned(state: &mut AppState) {
     let report = match_report(state);
+    let back_to_room = state.match_state.session.awaiting_wol_room_return();
     if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.match_returned(report, Instant::now());
+        visit.match_returned(report, Instant::now(), back_to_room);
     }
 }
 
@@ -1688,12 +1731,12 @@ impl super::WolVisit {
         self.problem_line.take()
     }
 
-    fn match_returned(&mut self, report: MatchReport, now: Instant) {
+    fn match_returned(&mut self, report: MatchReport, now: Instant, back_to_room: bool) {
         if self.provider != WolProvider::Online {
             return;
         }
         if let Some(service) = self.live_service.as_mut() {
-            service.back_to_room = self.back_to_room;
+            service.back_to_room = back_to_room;
             service.match_returned(report, now);
         } else if !self.requests.contains(&WolServiceRequest::MatchReturned) {
             //poll holds the SAME service across HTTP callbacks. Loading abort
@@ -1708,8 +1751,7 @@ impl super::WolVisit {
     /// for the player who left, and asks for no room back.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn match_left_for_exit(&mut self, report: MatchReport, now: Instant) {
-        self.back_to_room = false;
-        self.match_returned(report, now);
+        self.match_returned(report, now, false);
     }
 }
 
@@ -1743,6 +1785,7 @@ pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
     else {
         return;
     };
+    state.match_state.session.take_network_room_return();
     if visit
         .live_service
         .as_ref()
@@ -1764,9 +1807,6 @@ fn answer_local_request(state: &mut AppState, request: &WolServiceRequest) -> bo
         WolServiceRequest::EnsureApi => {
             service_event(state, WolServiceEvent::Api(WolApiStatus::Available))
         }
-        WolServiceRequest::ListCredentials => {
-            service_event(state, WolServiceEvent::Credentials(Vec::new()))
-        }
         WolServiceRequest::FetchServers { .. } => {
             service_event(
                 state,
@@ -1782,7 +1822,10 @@ fn answer_local_request(state: &mut AppState, request: &WolServiceRequest) -> bo
                     selected: 1,
                 })),
             );
-            service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
+            service_event(
+                state,
+                WolServiceEvent::NetStatus(super::SERVER_STATUS_READY),
+            );
         }
         _ => return false,
     }
@@ -1854,7 +1897,7 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     let Some(dir) = settings else {
         return;
     };
-    match account::forget(dir, &service.lobby) {
+    match account::forget(dir, &service.lobby, None) {
         Ok(Some(remembered)) => {
             let _ = service.requests.send(http::Request::ForgetSignIn {
                 name: remembered.name,
@@ -1866,38 +1909,32 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     }
 }
 
-fn send_account_request(service: &mut LiveService, request: AccountRequest) {
-    service.account_attempt = service.account_attempt.wrapping_add(1);
-    if let AccountRequest::Delete { name, .. } = &request {
-        service.deleting = Some((service.account_attempt, name.clone()));
-    }
-    let _ = service.requests.send(http::Request::Account {
-        attempt: service.account_attempt,
-        request,
-    });
-}
-
-/// The lobby answered account request `attempt`. A deletion it accepted
-/// took the account's remembered sign-ins with it, so this computer's
-/// sign-in of that name goes too, even when its popup closed meanwhile;
-/// another account's stays.
-fn account_answered(
-    settings: Option<&std::path::Path>,
-    service: &mut LiveService,
-    attempt: u64,
-    answer: &Result<(), String>,
-) {
-    let Some((_, name)) = service.deleting.take_if(|(sent, _)| *sent == attempt) else {
-        return;
-    };
-    let Some(dir) = settings.filter(|_| answer.is_ok()) else {
-        return;
-    };
-    if account::load(dir, &service.lobby)
-        .is_some_and(|remembered| remembered.name.eq_ignore_ascii_case(&name))
-        && let Err(error) = account::forget(dir, &service.lobby)
+/// The lobby has deleted this account. Forget only credentials and profile
+/// entries that still name it, even if the original form has closed.
+fn forget_deleted_account(state: &mut AppState, lobby: &str, name: &str) {
+    if let Some(dir) = settings_dir(state)
+        && let Err(error) = account::forget(dir, lobby, Some(name))
     {
         log::warn!("Could not forget the deleted account's sign-in: {error}");
+    }
+    if state
+        .persistence
+        .options_profile
+        .online_name
+        .eq_ignore_ascii_case(name)
+    {
+        remember_online_name(state, "");
+    }
+    let globals = &mut state.frontend.wol_account;
+    if globals.nickname.eq_ignore_ascii_case(name) {
+        globals.nickname.clear();
+        globals.password.clear();
+        globals.remember = false;
+    }
+    if let Some(super::WolPage::Login(login)) =
+        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+    {
+        login.account_deleted(name);
     }
 }
 
@@ -1943,13 +1980,12 @@ fn remember_sign_in(
 }
 
 fn request_service(state: &mut AppState, service: &mut LiveService, request: WolServiceRequest) {
-    if answer_local_request(state, &request) {
-        return;
-    }
     match request {
-        WolServiceRequest::EnsureApi
-        | WolServiceRequest::ListCredentials
-        | WolServiceRequest::FetchServers { .. } => {}
+        request @ (WolServiceRequest::EnsureApi | WolServiceRequest::FetchServers { .. }) => {
+            answer_local_request(state, &request);
+        }
+        // The login reducer asks only native providers for stored credentials.
+        WolServiceRequest::ListCredentials => {}
         WolServiceRequest::Connect {
             nickname,
             password,
@@ -1962,7 +1998,11 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             service.sign_in(nickname, credential);
         }
-        WolServiceRequest::Account(request) => send_account_request(service, request),
+        WolServiceRequest::Account { attempt, request } => {
+            let _ = service
+                .requests
+                .send(http::Request::Account { attempt, request });
+        }
         WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
@@ -1988,7 +2028,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
         WolServiceRequest::EndVisit => service.command("end_visit", json!({})),
-        WolServiceRequest::VisitChat { line, to } => send_chat(service, line, to, true),
+        WolServiceRequest::VisitChat { line, to } => chat(state, service, line, to, true),
         WolServiceRequest::VisitEmote { text, to } => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":to,"action":true,"visit":true}),
@@ -2003,26 +2043,20 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
         WolServiceRequest::LeaveChannel => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.leave_room(Instant::now());
         }
         WolServiceRequest::MatchReturned => {
-            service.back_to_room = state
-                .frontend
-                .wol
-                .as_ref()
-                .is_some_and(|visit| visit.back_to_room);
+            service.back_to_room = state.match_state.session.awaiting_wol_room_return();
             service.match_returned(match_report(state), Instant::now());
         }
         WolServiceRequest::Logout => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             service.begin_logout(Instant::now());
             crate::app::lan_service::close(state);
         }
-        WolServiceRequest::Chat { line, to } => send_chat(service, line, to, false),
+        WolServiceRequest::Chat { line, to } => chat(state, service, line, to, false),
         WolServiceRequest::Emote { text, to } => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":to,"action":true}),
@@ -2053,8 +2087,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::LadderRecords(names) => service.look_up_ladder(names, false),
         WolServiceRequest::HighScores(names) => service.look_up_ladder(names, true),
         WolServiceRequest::CancelWait => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.authenticated = false;
@@ -2106,31 +2139,69 @@ fn request_match(
     let text = request.text(super::quick_match::MatchTransport::default());
     send_chat(
         service,
+        None,
         WolChatLine::Say(text.encode_utf16().collect()),
         vec![matchbot],
         false,
     );
 }
 
+/// [`send_chat`], answering a page's result to its sink `0x007A9800`.
+fn chat(
+    state: &mut AppState,
+    service: &mut LiveService,
+    line: WolChatLine,
+    to: Vec<String>,
+    visit: bool,
+) {
+    if let Some(result) = send_chat(service, state.frontend.wol.as_ref(), line, to, visit) {
+        service_event(state, WolServiceEvent::PageResult(result));
+    }
+}
+
 /// `visit` sends to the public lobby this player visits from their room.
-fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>, visit: bool) {
-    let text = match line {
-        WolChatLine::Say(text) | WolChatLine::Reply { text } => text,
-        WolChatLine::Page { name, text } => {
-            to = vec![String::from_utf16_lossy(&name)];
-            text
+/// A page (API+0xF8, or `/reply` to `[0xB77E30]`) returns its result: the
+/// lobby delivers private chat only within one room and outside a match
+/// (docs/lobby-protocol.md, `chat`), so a page goes, under the name the
+/// room lists, to this player's channel or the lobby they visit, and fails
+/// unsent for anyone neither lists.
+/// RESIDUAL: success is answered on sending; a later refusal shows the
+/// generic refused line after `TXT_PAGESENT`.
+fn send_chat(
+    service: &mut LiveService,
+    wol: Option<&super::WolVisit>,
+    line: WolChatLine,
+    mut to: Vec<String>,
+    mut visit: bool,
+) -> Option<Result<(), u32>> {
+    let (text, page) = match line {
+        WolChatLine::Say(text) => (text, None),
+        WolChatLine::Page { name, text } => (text, Some(String::from_utf16_lossy(&name))),
+        WolChatLine::Reply { text } => {
+            let pager = wol
+                .and_then(|wol| wol.last_pager.clone())
+                .unwrap_or_default();
+            (text, Some(pager))
         }
         WolChatLine::Locate { name } => {
             service.command("locate", json!({"name":String::from_utf16_lossy(&name)}));
-            return;
+            return None;
         }
-        WolChatLine::Notice(_) => return,
+        WolChatLine::Notice(_) => return None,
     };
+    if let Some(name) = &page {
+        let Some((name, visited)) = wol.and_then(|wol| super::lobby::page_target(wol, name)) else {
+            return Some(Err(0x8000_4005));
+        };
+        to = vec![name.to_owned()];
+        visit = visited;
+    }
     let mut chat = json!({"text":String::from_utf16_lossy(&text),"to":to,"action":false});
     if visit {
         chat["visit"] = Value::Bool(true);
     }
     service.command("chat", chat);
+    page.map(|_| Ok(()))
 }
 
 /// The map digests are the verified local source's. Without one the map
@@ -2320,7 +2391,7 @@ fn accepted_choices_match(accepted: &Value, human: &Value) -> bool {
 }
 
 fn restore_accepted_options(state: &mut AppState, service: &LiveService) {
-    let Some(accepted) = service.accepted_options.clone() else {
+    let Some(accepted) = service.room.accepted_options.clone() else {
         return;
     };
     let result = decode::<wire::Options>(accepted)
@@ -2348,8 +2419,9 @@ pub(crate) fn local_choices_agreed(state: &AppState) -> bool {
         return true;
     };
     visit.live_service.as_ref().is_some_and(|service| {
-        service.pending_choices.is_none()
+        service.room.pending_choices.is_none()
             && service
+                .room
                 .accepted_options
                 .as_ref()
                 .is_some_and(|accepted| local_choices_match(&state.match_state.session, accepted))
@@ -2392,10 +2464,9 @@ fn request_setup(
     request: NetworkSetupRequest,
 ) -> Result<()> {
     match request {
-        // The staging and Cooperative C0 also travel in the host's options.
+        // Cooperative's C0 also travels in the host's options.
         NetworkSetupRequest::PublishOptions
         | NetworkSetupRequest::PublishRoster
-        | NetworkSetupRequest::PublishStartStaging(_)
         | NetworkSetupRequest::PublishCooperativeCampaign(_) => {
             service.publish_room_options(options(state)?);
         }
@@ -2428,9 +2499,10 @@ fn request_setup(
             // A Quick Match host drops `R` (`0x007A8260`), so no options
             // answer it.
             let answered = !crate::app::shell_network_setup::quick_match(state);
-            service.pending_choices = (answered
+            service.room.pending_choices = (answered
                 && !switch
                 && !service
+                    .room
                     .accepted_options
                     .as_ref()
                     .is_some_and(|accepted| accepted_choices_match(accepted, &expected_human)))
@@ -2470,7 +2542,7 @@ fn request_setup(
             let mut payload = local_agreement(state, service.revision)?;
             payload["ready"] = json!(ready);
             let id = service.command_with_id("ready", payload);
-            service.last_ready_request = Some((id, service.revision));
+            service.room.last_ready_request = Some((id, service.revision));
         }
         NetworkSetupRequest::MapStatus(status) => {
             let mut payload = local_agreement(state, service.revision)?;
@@ -2481,9 +2553,9 @@ fn request_setup(
         }
         NetworkSetupRequest::StartGame { users } => {
             if service.start_preparation.is_none() {
-                service.published_options = None;
+                service.room.published_options = None;
                 let snapshot = canonical_options(&options(state)?)?;
-                let revision = (service.accepted_options.as_ref() == Some(&snapshot))
+                let revision = (service.room.accepted_options.as_ref() == Some(&snapshot))
                     .then_some(service.revision);
                 let publication_request = if revision.is_none() {
                     Some(service.command_with_id("options", json!({"options":snapshot})))
@@ -2509,8 +2581,7 @@ fn request_setup(
             }
         }
         NetworkSetupRequest::Leave => {
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             service.leave_room(Instant::now());
         }
         // Older lobbies take no keep_out, so only a host's own kick sends it.
@@ -2523,32 +2594,16 @@ fn request_setup(
                 service.command("advertise", json!({"channel":wire::Channel::from(channel)}));
             }
         }
-        NetworkSetupRequest::RequestPings => service.command("ping", json!({})),
         // VERA's room: the host's Balance is `/balance` as typed.
         NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
         }
-        NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new(), false),
+        NetworkSetupRequest::WolChat(line) => chat(state, service, line, Vec::new(), false),
         NetworkSetupRequest::WolEmote(text) => service.command(
             "chat",
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
-        NetworkSetupRequest::Chat(text) => {
-            send_chat(service, WolChatLine::Say(text), Vec::new(), false)
-        }
-        // RESIDUAL: mode+64's C1 (0x005C2710) is not carried, as on LAN:
-        // VERA reads no round assignment after the publish, so guests keep
-        // their own.
-        NetworkSetupRequest::PublishCooperativeAssignments(_) => {}
-        NetworkSetupRequest::RequestPreview
-        | NetworkSetupRequest::OfferPreview
-        | NetworkSetupRequest::AcknowledgePreview
-        | NetworkSetupRequest::RequestPreviewFile
-        | NetworkSetupRequest::SendPreviewFile
-        | NetworkSetupRequest::RequestRandomMapImage => {}
-        NetworkSetupRequest::RequestAcceptance
-        | NetworkSetupRequest::BroadcastPings
-        | NetworkSetupRequest::ObserverSlot { .. } => {}
+        NetworkSetupRequest::RequestAcceptance | NetworkSetupRequest::ObserverSlot { .. } => {}
         _ => notice(state, &tr("VERA:SetupOperationUnavailable")),
     }
     Ok(())
@@ -2724,7 +2779,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::CommandCompleted { id, operation } => match operation {
-            "options" if service.is_room_publication(id) => service.published_options = None,
+            "options" if service.is_room_publication(id) => service.room.published_options = None,
             "finish" => service.finish_completed(id),
             "leave" => service.leave_completed(id),
             "logout" => service.logout_completed(id),
@@ -2768,7 +2823,14 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                if service.is_room_publication(id) {
+                if service.is_room_publication(id)
+                    && let Some(key) =
+                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                {
+                    // The newest room rule first: a lobby from before it lists
+                    // matches, so the capability check below cannot tell.
+                    notice(state, &tr(key));
+                } else if service.is_room_publication(id) {
                     notice(state, &tr("VERA:OnlineRequestRefused"));
                     // Only a fresh 404 for this publication can confirm rollback.
                     let _ = service.requests.send(http::Request::Matches {
@@ -2778,15 +2840,16 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
             "choices"
                 if service
+                    .room
                     .pending_choices
                     .as_ref()
                     .is_some_and(|choices| choices.request_id == id) =>
             {
-                service.pending_choices = None;
+                service.room.pending_choices = None;
                 restore_accepted_options(state, service);
                 notice(state, &tr("VERA:ChoicesRefused"));
             }
-            "ready" if service.last_ready_request == Some((id, service.revision)) => {
+            "ready" if service.room.last_ready_request == Some((id, service.revision)) => {
                 if failure != http::CommandFailure::Retryable {
                     // The lobby refused these settings, usually because the
                     // room has already moved on: the guest's automatic
@@ -2826,8 +2889,6 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     notice(state, &tr("VERA:FinishingPreviousMatch"));
                 }
             }
-            // The host's 5 s ping; an outage is reported once by the poll.
-            "ping" => {}
             // A refused ladder lookup leaves the tables as they were; the
             // high-score sink only logs a failure (`0x007A3B30`).
             "ladder" => {}
@@ -2853,8 +2914,15 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
-            account_answered(settings_dir(state), service, attempt, &answer);
-            if attempt == service.account_attempt {
+            if let Ok(AccountSuccess::Deleted(name)) = &answer {
+                forget_deleted_account(state, &service.lobby, name);
+            }
+            if state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.account_attempt == attempt)
+            {
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
@@ -2878,8 +2946,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             {
                 return;
             }
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             // The native disconnect: a box over the lobby, or none where the
             // runner has no lobby (Quick Match), which then gets one at the
             // welcome.
@@ -2896,8 +2963,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 state,
                 &tr("VERA:OnlineSessionEndedWhileLoading"),
             );
-            maps::cancel(state, service);
-            cancel_pending(state, service);
+            end_room(state, service);
             // The bearer session is definitively gone; a new login has no
             // authority to retry cleanup for the old server session.
             service.clear_cleanup();
@@ -3248,10 +3314,7 @@ fn apply_event(
         "joined" | "created" | "room_reopened" => {
             let joined: wire::Joined = decode(payload)?;
             service.revision = 0;
-            service.accepted_options = None;
-            service.published_options = None;
-            service.last_ready_request = None;
-            service.pending_choices = None;
+            service.room = RoomAgreement::default();
             service.start_preparation = None;
             service.left_for_match = false;
             service.member_ids = joined
@@ -3277,35 +3340,21 @@ fn apply_event(
         }
         "channel_left" => {
             if service.room_closed() {
-                let active = crate::app::loading::pump::network_loading_active(state);
-                let taken = state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .is_some_and(|visit| visit.live_service.is_none());
-                state.match_state.match_diagnostics.observe_loading_cancel(
-                    "deployed_channel_left",
-                    service.match_id.clone(),
-                    None,
-                    taken,
-                    active,
-                );
                 crate::app::loading::pump::cancel_network_loading(
                     state,
                     &tr("VERA:OnlineRoomClosedWhileLoading"),
                 );
             }
-            service.accepted_options = None;
-            service.published_options = None;
-            service.last_ready_request = None;
-            service.pending_choices = None;
-            maps::cancel(state, service);
-            cancel_pending(state, service);
-            if let Some(visit) = state.frontend.wol.as_mut()
-                && visit.in_game
+            end_room(state, service);
+            service.room = RoomAgreement::default();
+            if state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.in_game)
             {
                 // The kept room closed during the match: nothing to return to.
-                visit.back_to_room = false;
+                state.match_state.session.take_network_room_return();
             }
             service_event(state, WolServiceEvent::ChannelLeft);
         }
@@ -3343,10 +3392,7 @@ fn apply_event(
                 channel: Option<wire::Channel>,
             }
             let p: Payload = decode(payload)?;
-            service.accepted_options = None;
-            service.published_options = None;
-            service.last_ready_request = None;
-            service.pending_choices = None;
+            service.room = RoomAgreement::default();
             service.start_preparation = None;
             maps::cancel(state, service);
             service_event(
@@ -3396,7 +3442,7 @@ fn apply_event(
             if p.revision < service.revision {
                 return Ok(());
             }
-            let changed = p.revision != service.revision || service.accepted_options.is_none();
+            let changed = p.revision != service.revision || service.room.accepted_options.is_none();
             let canonical = canonical_options(&p.options)?;
             if let Some(start) = service.start_preparation.as_mut()
                 && !start.accept_options(p.revision, &canonical)
@@ -3407,15 +3453,16 @@ fn apply_event(
             }
             service.revision = p.revision;
             if service
+                .room
                 .pending_choices
                 .as_ref()
                 .is_some_and(|choices| choices.answered_by(&canonical))
             {
-                service.pending_choices = None;
+                service.room.pending_choices = None;
             }
-            service.accepted_options = Some(canonical);
+            service.room.accepted_options = Some(canonical);
             if changed {
-                service.last_ready_request = None;
+                service.room.last_ready_request = None;
                 crate::app::shell_network_setup::invalidate_network_agreement(state)?;
             }
             let generated = p.options.random_map.clone();
@@ -4022,8 +4069,7 @@ fn fail_watch(state: &mut AppState, service: &mut LiveService, key: &str) {
 
 fn cancel_watch_start(state: &mut AppState, service: &mut LiveService) {
     service.stop_watching();
-    maps::cancel(state, service);
-    cancel_pending(state, service);
+    end_room(state, service);
     if state.match_state.session.network_setup().is_some()
         || state.frontend.network_setup_protocol.is_some()
     {
@@ -4059,7 +4105,7 @@ fn admit_relay_start(
     let grant = start.grant;
     let connections = LanConnections::new(
         LanConnectionConfig {
-            max_peers: 29,
+            max_peers: crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1,
             ..Default::default()
         },
         RetryTiming {
@@ -4530,47 +4576,14 @@ mod completion_tests {
     ) -> (LiveService, Receiver<http::Request>, Sender<http::Response>) {
         let (requests, input) = mpsc::channel();
         let (output, responses) = mpsc::channel();
-        let service = LiveService {
-            stopping: Arc::new(AtomicBool::new(false)),
+        let mut service = LiveService::with_worker(
+            "https://lobby.test".into(),
+            Arc::new(AtomicBool::new(false)),
             requests,
             responses,
-            next_request: 5,
-            auth_attempt: 0,
-            revision: 0,
-            accepted_options: None,
-            published_options: None,
-            start_preparation: None,
-            locally_refused_start: false,
-            last_ready_request: None,
-            pending_choices: None,
-            player_id: String::new(),
-            member_ids: BTreeMap::new(),
-            pending: None,
-            match_id: match_id.map(str::to_owned),
-            finishing: None,
-            leaving: None,
-            logging_out: None,
-            next_renewal_attempt: None,
-            relay_renewal_due: None,
-            maps: Default::default(),
-            translations: Translations::default(),
-            spawned: false,
-            back_to_room: false,
-            finish_result: None,
-            finish_winners: None,
-            finish_decided: None,
-            finish_opponents_left: false,
-            network_quality: None,
-            relay_timeout: RELAY_TIMEOUT,
-            outdated_notice: None,
-            left_for_match: false,
-            ladder_lookup: None,
-            lobby: "https://lobby.test".into(),
-            signing_in_remembered: false,
-            account_attempt: 0,
-            deleting: None,
-            watching: None,
-        };
+        );
+        service.next_request = 5;
+        service.match_id = match_id.map(str::to_owned);
         (service, input, output)
     }
 
@@ -4693,33 +4706,19 @@ mod completion_tests {
     }
 
     #[test]
-    fn a_deleted_account_forgets_its_sign_in_even_after_its_popup_closed() {
-        let directory = crate::map::source::test_support::TestDirectory::new("live-delete");
-        let settings = Some(directory.path());
-        let (mut service, _input, _output) = control_service(None);
-        remember_sign_in(settings, &service, "Tanya", "A".repeat(43));
-        let delete = |name: &str| AccountRequest::Delete {
-            name: name.into(),
-            password: "s3cret-pw".into(),
-        };
-        send_account_request(&mut service, delete("Boris"));
-        let boris = service.account_attempt;
-        account_answered(settings, &mut service, boris, &Ok(()));
-        assert!(
-            account::load(directory.path(), &service.lobby).is_some(),
-            "another account's sign-in stays"
-        );
-        send_account_request(&mut service, delete("tanya"));
-        let tanya = service.account_attempt;
-        // Cancelled, then Forgot Password sent: the deletion's answer still counts.
-        send_account_request(
-            &mut service,
-            AccountRequest::Forgot {
-                name: "Tanya".into(),
-            },
-        );
-        account_answered(settings, &mut service, tanya, &Ok(()));
-        assert_eq!(account::load(directory.path(), &service.lobby), None);
+    fn a_completed_deletion_survives_closing_its_online_visit() {
+        let (service, _input, output) = control_service(None);
+        let lobby = service.lobby.clone();
+        let mut cleanup = OnlineCleanup::default();
+        cleanup.retire(service, Instant::now());
+        output
+            .send(http::Response::AccountAnswered {
+                attempt: 1,
+                answer: Ok(AccountSuccess::Deleted("Tanya".into())),
+            })
+            .unwrap();
+        cleanup.poll(Instant::now());
+        assert_eq!(cleanup.deleted_accounts, [(lobby, "Tanya".to_owned())]);
     }
 
     /// A lobby from before the Ranked game choice refuses the field, so a
@@ -4765,6 +4764,29 @@ mod completion_tests {
                 })
             )
         );
+    }
+
+    /// The lobby drops private chat to anyone outside the sender's room: a
+    /// page with no listed target fails unsent, and a reply never goes to
+    /// the whole room.
+    #[test]
+    fn a_page_or_reply_without_a_listed_target_fails_unsent() {
+        let (mut service, input, _output) = control_service(None);
+        let visit = super::super::WolVisit::open(false);
+        let units = |text: &str| text.encode_utf16().collect::<Vec<u16>>();
+        let page = WolChatLine::Page {
+            name: units("Bob"),
+            text: units("hi"),
+        };
+        let reply = WolChatLine::Reply { text: units("hi") };
+        for line in [page, reply] {
+            let result = send_chat(&mut service, Some(&visit), line, Vec::new(), false);
+            let sent = input.try_recv().ok().map(|request| match request {
+                http::Request::Command { payload, .. } => payload,
+                _ => Value::Null,
+            });
+            assert_eq!((result, sent), (Some(Err(0x8000_4005)), None));
+        }
     }
 
     /// Only the matchbot's ANSI `Start` gives its host the pairing.
@@ -5646,6 +5668,42 @@ mod completion_tests {
         assert!(pending.answered_by(&json!({"launch":launch})));
     }
 
+    /// What `end_room` stops for a guest who left the room, signed out or
+    /// lost the lobby before the host answered: the answer's time running out
+    /// restores no settings and shows no notice. Its call sites need an
+    /// `AppState`, which unit tests cannot build.
+    #[test]
+    fn a_room_this_game_is_done_with_waits_for_no_answer() {
+        let (mut service, _input, _output) = control_service(None);
+        let deadline = Instant::now() + RELAY_TIMEOUT;
+        let waiting = |service: &mut LiveService| {
+            service.room.published_options = Some((7, json!({})));
+            service.room.pending_choices = Some(PendingChoices {
+                request_id: 8,
+                expected_human: json!({}),
+                expected_random: json!({}),
+                deadline,
+            });
+        };
+        service.room.accepted_options = Some(json!({}));
+        waiting(&mut service);
+        assert!(
+            service.room.choices_unanswered(deadline),
+            "still in the room"
+        );
+        waiting(&mut service);
+        service.room.stop_waiting();
+        assert!(!service.room.choices_unanswered(deadline));
+        assert!(
+            !service.is_room_publication(7),
+            "a late refusal changes nothing"
+        );
+        assert!(
+            service.room.accepted_options.is_some(),
+            "a late options echo still compares"
+        );
+    }
+
     #[test]
     fn loading_return_while_service_is_taken_keeps_finish_before_lobby_admission() {
         let (service, input, _output) = control_service(Some("loading-match"));
@@ -5658,8 +5716,8 @@ mod completion_tests {
             channel: crate::ui::wol_lobby::WolChannel::default(),
             key: String::new(),
         });
-        visit.match_returned((None, None, None), now);
-        visit.match_returned((None, None, None), now); //Repeated abort callbacks keep one intent.
+        visit.match_returned((None, None, None), now, false);
+        visit.match_returned((None, None, None), now, false); //Repeated abort callbacks keep one intent.
         assert!(matches!(
             visit.take_service_requests().as_slice(),
             [
@@ -5673,7 +5731,7 @@ mod completion_tests {
         );
         assert_eq!(borrowed.match_id.as_deref(), Some("loading-match"));
         visit.live_service = Some(borrowed);
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, false);
         let http::Request::Command {
             id,
             operation,
@@ -5695,7 +5753,7 @@ mod completion_tests {
             Ok(http::Request::HoldMatch(None))
         ));
         service.clear_cleanup(); //Definitive Offline has retired the authority.
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, false);
         assert!(
             input.try_recv().is_err(),
             "expired authority cannot issue finish"
@@ -5707,10 +5765,9 @@ mod completion_tests {
         let (service, input, _output) = control_service(Some("room-match"));
         let mut visit = super::super::WolVisit::open(false);
         visit.provider = WolProvider::Online;
-        visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, true);
         let sent = |input: &Receiver<http::Request>| {
             let http::Request::Command {
                 id,
@@ -5744,7 +5801,6 @@ mod completion_tests {
         let (service, input, _output) = control_service(Some("closed-match"));
         let mut visit = super::super::WolVisit::open(false);
         visit.provider = WolProvider::Online;
-        visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
         visit.match_left_for_exit((Some("quit"), None, Some(now)), now);
@@ -5920,10 +5976,7 @@ mod completion_tests {
         let _ = cleanup.poll(now);
         let _ = cleanup.poll(now + Duration::from_secs(1));
         assert!(input.try_recv().is_err());
-        let observation = cleanup.logout_observation();
-        assert_eq!(observation.request_id, Some(id));
-        assert_eq!(observation.failures, 1);
-        assert!(observation.pending && !observation.acknowledged && !observation.worker_closed);
+        assert!(cleanup.pending() && !cleanup.logout_acknowledged());
         let _ = cleanup.poll(now + Duration::from_secs(2));
         let http::Request::Command {
             id: retry,
@@ -5994,16 +6047,9 @@ mod completion_tests {
             "relogin waits for the old worker to stop"
         );
         assert!(cleanup.pending() && cleanup.logout_acknowledged());
-        let observation = cleanup.logout_observation();
-        assert_eq!(observation.request_id, Some(id));
-        assert_eq!(observation.failures, 1);
-        assert!(observation.acknowledged && !observation.worker_closed);
         drop(output);
         assert!(cleanup.poll(now + Duration::from_secs(3)).is_none());
         assert!(!cleanup.pending() && cleanup.logout_acknowledged());
-        let observation = cleanup.logout_observation();
-        assert_eq!(observation.request_id, Some(id));
-        assert!(observation.worker_closed && observation.acknowledged_uptime_ms.is_some());
     }
 
     #[test]

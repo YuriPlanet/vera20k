@@ -252,9 +252,9 @@ impl GameEntity {
     }
     /// 10058737..10058745 publishes the replacement Anim on the effect at
     /// `index`, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim),
+    /// [`EntityStore::hold_attached_effect_anim`](crate::sim::entity_store::EntityStore::hold_attached_effect_anim),
     /// returning the Anim it replaced.
-    fn hold_attached_effect_anim(
+    pub(in crate::sim) fn hold_attached_effect_anim(
         &mut self,
         index: usize,
         anim: u64,
@@ -554,7 +554,7 @@ mod tests {
                 .remaining,
             4
         );
-        restored.techno_limbo_with_rules(target, &rules, None);
+        restored.techno_limbo_with_rules(target, &rules);
         assert!(
             restored
                 .entities()
@@ -581,7 +581,7 @@ mod tests {
         );
         // Ordinary UnInit and its deferred drain reach the shared Techno DTOR.
         restored.uninit_with_rules(target, &rules);
-        restored.process_pending_delete_with(&rules, None, FrameEffects::empty(), 1, false);
+        restored.process_pending_delete_with(&rules, FrameEffects::empty(), 1, false);
         assert!(restored.entities().get(target).is_none());
     }
 }
@@ -795,10 +795,7 @@ mod receiver {
                 let old = self
                     .substrate
                     .entities
-                    .write_held_anim(target, |victim, authority| {
-                        victim.hold_attached_effect_anim(index, anim, authority)
-                    })
-                    .flatten();
+                    .hold_attached_effect_anim(target, index, anim);
                 if let Some(old) = old {
                     self.destroy_anim_with_context(old, rules);
                 }

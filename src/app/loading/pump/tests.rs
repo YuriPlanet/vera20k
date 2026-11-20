@@ -62,8 +62,12 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
 #[test]
 fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
     use crate::app::match_runtime::session::{MatchSession, SessionMode};
+    use crate::sim::scenario_bootstrap::MatchLaunchDescriptor;
     let startup = LoadingStartup::Replay {
-        session: test_launch_session(LaunchCountry::America),
+        launch: Box::new(
+            MatchLaunchDescriptor::from_resolved(test_launch_session(LaunchCountry::America))
+                .unwrap(),
+        ),
         seed: crate::app::match_bootstrap::MatchSeed {
             value: 73,
             source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -78,12 +82,12 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
     ));
     let replay_with_mode = |game_mode| match &startup {
         LoadingStartup::Replay {
-            session,
+            launch,
             seed,
             native_id_prefix,
             ..
         } => LoadingStartup::Replay {
-            session: session.clone(),
+            launch: launch.clone(),
             seed: *seed,
             game_mode,
             native_id_prefix: *native_id_prefix,
@@ -112,6 +116,65 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
     assert!(session.network_setup().is_none());
     session.hand_mode_to_world(SessionMode::Wol);
     assert_eq!(session.shell_mode(), None);
+}
+
+#[test]
+fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
+    use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
+    use crate::sim::scenario_bootstrap::MatchLaunchDescriptor;
+    use crate::sim::scenario_session::{ExecutionTopology, ScenarioDescriptor, ScenarioGameMode};
+    use crate::sim::world::Simulation;
+    use crate::skirmish_modes::MpModeClass;
+
+    let session = test_launch_session(LaunchCountry::America);
+    let skirmish_rules = RulePolicy::stock_multiplayer();
+    let install = |raw_mode, recorded_policy: Option<RulePolicy>, expected_construction| {
+        let game_mode = ScenarioGameMode::from_game_mode(raw_mode);
+        let mut launch = MatchLaunchDescriptor::from_resolved(session.clone()).unwrap();
+        if let Some(policy) = recorded_policy {
+            launch = launch.with_rule_policy(policy);
+        }
+        let startup = LoadingStartup::Replay {
+            launch: Box::new(launch),
+            seed: crate::app::match_bootstrap::MatchSeed {
+                value: 73,
+                source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
+                seed_authority_certifying: false,
+            },
+            game_mode,
+            native_id_prefix: 0,
+        };
+        let construction_rules = startup
+            .match_spec_for_construction(BootstrapRuleProfile::Multiplayer)
+            .rules();
+        assert_eq!(construction_rules, expected_construction);
+        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
+            rule_policy: construction_rules,
+            ..Default::default()
+        });
+        crate::app::loading::init::install_startup_session_mode(&mut sim, &startup);
+        assert_eq!(sim.session().game_mode(), game_mode);
+        assert_eq!(
+            sim.session().execution_topology(),
+            ExecutionTopology::LocalOffline
+        );
+        assert_eq!(
+            sim.session().multiplayer_mode_class(),
+            Some(MpModeClass::Battle)
+        );
+        sim.session().rule_policy()
+    };
+    assert_eq!(
+        install(0, None, skirmish_rules),
+        RulePolicy::stock_campaign()
+    );
+    assert_eq!(install(5, None, skirmish_rules), skirmish_rules);
+    let custom_construction = skirmish_rules.with_uses_room_options(false);
+    let custom_live = custom_construction.with_bootstrap(BootstrapRuleProfile::Campaign);
+    assert_eq!(
+        install(5, Some(custom_live), custom_construction),
+        custom_live
+    );
 }
 
 #[test]
@@ -488,31 +551,20 @@ fn prefix_test_map(starts: &[(u8, u16, u16)]) -> crate::map::map_file::MapFile {
     map
 }
 
-fn generated_preview_with_starts(
-    seed: u16,
-    starts: &[(u8, u16, u16)],
-) -> crate::map::rmg::GeneratedMap {
-    crate::map::rmg::GeneratedMap {
-        map_file: prefix_test_map(starts),
-        mapgen_continuation: Some(crate::map::rmg::RmgRng::new(seed).into_continuation()),
-        construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
-        start_waypoints: starts.to_vec(),
-        stages_run: Vec::new(),
-        unfilled_start_slots: 0,
-        fairness: None,
-    }
-}
-
 fn accepted_random_map_with_starts(
     selected_map_file: &str,
-    seed: u16,
     preview_waypoints: &[(u8, u16, u16)],
     staged_starts: &[(u8, u16, u16)],
 ) -> crate::app::shell_random_map::AcceptedRandomMapLaunch {
     let mut retention = crate::app::shell_random_map::RandomMapGenerationRetention::default();
-    let mut generated = generated_preview_with_starts(seed, staged_starts);
-    generated.map_file = prefix_test_map(preview_waypoints);
-    retention.finish_generation(generated);
+    retention.finish_generation(crate::map::rmg::GeneratedMap {
+        map_file: prefix_test_map(preview_waypoints),
+        construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
+        start_waypoints: staged_starts.to_vec(),
+        stages_run: Vec::new(),
+        unfilled_start_slots: 0,
+        fairness: None,
+    });
     retention.accept_setup(selected_map_file);
     retention
         .take_acceptance_for_loading(Some(selected_map_file))
@@ -1055,7 +1107,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
     let regenerated = [(0, 70, 90), (1, 90, 90)];
     let mut launch = test_launch_session(LaunchCountry::America);
     launch.selected_map_file = Some(selected.to_string());
-    let accepted = accepted_random_map_with_starts(selected, 0x1212, &preview_waypoints, &staged);
+    let accepted = accepted_random_map_with_starts(selected, &preview_waypoints, &staged);
     let mut regenerated_map =
         crate::map::rmg::emit::empty_map_file(&crate::map::rmg::RmgOptions::default(), 100, 100);
     regenerated_map
@@ -1303,7 +1355,7 @@ fn load_descriptor_source_family_format_matrix() {
                 must_ally: false,
             };
         }
-        let accepted = accepted_random_map_with_starts(&selected, 0x2345, &starts, &starts);
+        let accepted = accepted_random_map_with_starts(&selected, &starts, &starts);
         let mut map = prefix_test_map(&starts);
         map.basic.new_ini_format = Some(4);
         let source = crate::map::source::LoadedMapSource::Generated {
@@ -1418,14 +1470,14 @@ fn generic_manual_and_unresolved_legacy_reject_before_receipt_or_staging() {
         prefix_test_map(&starts),
         source,
     );
-    let accepted = accepted_random_map_with_starts(selected, 0x4567, &starts, &starts);
+    let accepted = accepted_random_map_with_starts(selected, &starts, &starts);
     let mut generic =
         LoadingRequest::generic_map_load(selected).with_accepted_random_map(Some(accepted));
     let generic_err = generic.admit_context(&initial).unwrap_err();
     assert!(format!("{generic_err:#}").contains("Generic startup"));
     assert!(generic.accepted_rmg_start_staging.is_some());
 
-    let accepted = accepted_random_map_with_starts(selected, 0x4567, &starts, &starts);
+    let accepted = accepted_random_map_with_starts(selected, &starts, &starts);
     let mut unresolved_session = test_launch_session(LaunchCountry::America);
     unresolved_session.selected_map_file = Some(selected.to_string());
     unresolved_session.local_slot_mut().country_random = true;
@@ -1548,7 +1600,7 @@ fn generated_prefix_rejects_cooperative_mode() {
         .find(|mode| mode.id == 3)
         .expect("retail Cooperative row");
     launch.mode = SkirmishLaunchMode::from_game_mode(&cooperative);
-    let accepted = accepted_random_map_with_starts(selected, 0x1515, &starts, &starts);
+    let accepted = accepted_random_map_with_starts(selected, &starts, &starts);
     let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
         prefix_test_map(&starts),
         crate::map::source::LoadedMapSource::Generated {
@@ -1592,7 +1644,7 @@ fn authored_prefix_rejects_random_map_staging_for_loose_and_mix_sources() {
     for source in sources {
         let mut launch = test_launch_session(LaunchCountry::America);
         launch.selected_map_file = Some(selected.to_string());
-        let accepted = accepted_random_map_with_starts(selected, 0x1616, &starts, &starts);
+        let accepted = accepted_random_map_with_starts(selected, &starts, &starts);
         let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
             prefix_test_map(&starts),
             source,
@@ -1714,7 +1766,6 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
     let active_scenario_waypoints = map.waypoints.clone();
     let generated = crate::map::rmg::GeneratedMap {
         map_file: map,
-        mapgen_continuation: Some(crate::map::rmg::RmgRng::new(0x4567).into_continuation()),
         construction_trace: crate::map::rmg::RmgConstructionTrace::default(),
         start_waypoints: vec![(0, 70, 70), (1, 90, 70), (2, 70, 90)],
         stages_run: Vec::new(),
@@ -2289,6 +2340,7 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     let (mut session, mut result, local, peer) = network_load_with_remote_peer(
         crate::app::match_runtime::session::NetworkReturnContext::LanLobby,
     );
+    assert!(!session.retire_cooperative_start_on_timeout(&[1]));
     let notices = apply_network_loading_disconnects(&mut session, &mut result, &[1]);
     assert_eq!(
         notices,
@@ -2368,7 +2420,7 @@ fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
         Some(accepted.max_ahead_frames())
     );
     assert_eq!(
-        sim.session().game_mode().command_queue_route(),
+        sim.session().execution_topology().command_queue_route(),
         crate::sim::world::CommandQueueRoute::Multiplayer
     );
 }
@@ -2547,13 +2599,19 @@ fn a_loaded_network_screen_holds_until_its_install_time() {
 #[test]
 fn map_additions_reach_matches_but_not_missions_or_random_maps() {
     use crate::app::match_runtime::session::SessionMode;
+    use crate::rules::rule_policy::RulePolicy;
+    use crate::sim::scenario_bootstrap::MatchLaunchDescriptor;
     use crate::skirmish_modes::MpModeClass::{Battle, Cooperative};
-    let reach = |class, map: &str, game_mode| {
+    let reach = |class, map: &str, game_mode, rule_override: Option<RulePolicy>| {
         let mut session = test_launch_session(LaunchCountry::America);
         session.mode.class = class;
         session.selected_map_file = Some(map.to_owned());
+        let mut launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        if let Some(policy) = rule_override {
+            launch = launch.with_rule_policy(policy);
+        }
         crate::app::mod_additions::reach(&LoadingStartup::Replay {
-            session,
+            launch: Box::new(launch),
             seed: crate::app::match_bootstrap::MatchSeed {
                 value: 73,
                 source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -2563,8 +2621,12 @@ fn map_additions_reach_matches_but_not_missions_or_random_maps() {
             native_id_prefix: 0,
         })
     };
-    assert!(reach(Battle, "mp01t4.map", SessionMode::Lan));
-    assert!(!reach(Cooperative, "mp01t4.map", SessionMode::Lan));
-    assert!(!reach(Battle, "RandMap.Sed", SessionMode::Lan));
-    assert!(!reach(Battle, "mp01t4.map", SessionMode::Campaign));
+    assert!(reach(Battle, "mp01t4.map", SessionMode::Lan, None));
+    assert!(!reach(Cooperative, "mp01t4.map", SessionMode::Lan, None));
+    assert!(!reach(Battle, "RandMap.Sed", SessionMode::Lan, None));
+    assert!(!reach(Battle, "mp01t4.map", SessionMode::Campaign, None));
+    let rules = SessionMode::Lan
+        .stock_rule_policy(Some(Battle))
+        .with_mod_map_additions(false);
+    assert!(!reach(Battle, "mp01t4.map", SessionMode::Lan, Some(rules)));
 }

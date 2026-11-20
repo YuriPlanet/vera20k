@@ -186,12 +186,12 @@ impl CombatDamageDefaults {
     }
 
     /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
-    /// references keep the constructor's nulls: only the ordered Process
-    /// owner reads them.
+    /// references and the two crate/resource explosion damages keep the
+    /// constructor's values: only the ordered Process owner reads them.
     pub fn from_ini_section(section: &IniSection) -> Self {
         Self {
-            ammo_crate_damage: section.read_int("AmmoCrateDamage", 100),
-            tiberium_explosion_damage: section.read_int("TiberiumExplosionDamage", 100),
+            ammo_crate_damage: 100,
+            tiberium_explosion_damage: 100,
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
             terrain_deformation: section.read_bool("TerrainDeformation", false),

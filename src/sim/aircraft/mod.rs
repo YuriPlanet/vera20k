@@ -219,17 +219,16 @@ pub(crate) fn dispatch_mission(
             // The Move slot `0x004166C0`: a `Carryall=` type (Type+0xDFC)
             // tail-jumps to Mission_Move_Carryall `0x00416D50`.
             let (next, delay) = if sim.is_carryall(id, rules) {
-                sim.aircraft_move_carryall(id, state, rules, registry, ctx.effects)
+                sim.aircraft_move_carryall(id, state, rules, ctx.effects)
             } else {
-                sim.aircraft_move(id, state, rules, registry, ctx.effects)
+                sim.aircraft_move(id, state, rules, ctx.effects)
             };
             write_state(&mut sim.substrate, id, state, next);
             delay
         }
         Some(MissionType::Attack) => {
             let state = handler_state(entity);
-            let Some((next, delay)) = attack_visit(sim, id, state, rules, registry, ctx.effects)
-            else {
+            let Some((next, delay)) = attack_visit(sim, id, state, rules, ctx.effects) else {
                 // The strike writes its own state and epilogue
                 // (`combat::aircraft_release`).
                 return Some(sim.commit_fire_visit(
@@ -246,7 +245,7 @@ pub(crate) fn dispatch_mission(
             sim.aircraft_mission_guard(id, rules, ctx)
         }
         Some(MissionType::AreaGuard) => sim.aircraft_mission_area_guard(id, rules, ctx),
-        Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, registry, ctx.effects),
+        Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, ctx.effects),
         Some(MissionType::Hunt) => sim.aircraft_mission_hunt(id, rules, ctx),
         Some(MissionType::Patrol) => sim.aircraft_mission_patrol(id, rules, ctx),
         Some(MissionType::Retreat) => retreat_mission::retreat(sim, id, rules, ctx.effects),
@@ -257,7 +256,7 @@ pub(crate) fn dispatch_mission(
             paradrop_mission::approach(sim, id, rules, ctx.effects)
         }
         Some(MissionType::ParadropOverfly) => {
-            paradrop_mission::overfly(sim, id, rules, registry, ctx.effects)
+            paradrop_mission::overfly(sim, id, rules, ctx.effects)
         }
         Some(MissionType::SpyplaneApproach) => {
             spyplane_mission::approach(sim, id, rules, ctx.effects)
@@ -340,7 +339,6 @@ fn attack_visit(
     id: u64,
     state: u8,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> Option<(u8, i32)> {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -353,7 +351,7 @@ fn attack_visit(
         // Each strike state opens with its own Target and Ammo test
         // (`attack_mission::strike_leaves`).
         4..=9 => return None,
-        10 => sim.aircraft_exit(id, rules, registry, frame_effects),
+        10 => sim.aircraft_exit(id, rules, frame_effects),
         // State 2 (`0x00418D1D`) is the epilogue alone. Mission_Attack runs
         // as the Attack mission's handler, so its epilogue reads Attack's
         // Rate.

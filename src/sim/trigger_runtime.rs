@@ -1617,7 +1617,7 @@ impl Simulation {
             }
         }
         let mut definitions = RuntimeDefinitions::read_map(map, teams, eva, sounds, themes);
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             for trigger in &mut definitions.trigger_types {
                 for action in &mut trigger.actions {
                     action.retain_network_playback();
@@ -2079,7 +2079,7 @@ impl Simulation {
                 // to PlayerPtr, which differs per client and now feeds the
                 // match checksum, so a network game compares the worn
                 // identity alone.
-                let viewer = (!self.session.game_mode().is_network())
+                let viewer = (!self.session.execution_topology().is_lockstep())
                     .then(|| self.session.current_house())
                     .flatten();
                 let displayed = actor.disguise_house(true, viewer, false);
@@ -3978,8 +3978,7 @@ impl Simulation {
             //6E42A5 repeats F8 even when458A80 has already rejected/UnInited.
             self.uninit_with_context(
                 created,
-                crate::sim::world::UninitContext::new(rules, overlay_registry)
-                    .with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             );
             return false;
         }
@@ -4191,22 +4190,8 @@ impl Simulation {
                 let Some(target) = self.live_action_house(live, value, rules) else {
                     return false;
                 };
-                self.make_enemy(
-                    source,
-                    target,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                    false,
-                );
-                self.make_enemy(
-                    target,
-                    source,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                    false,
-                );
+                self.make_enemy(source, target, rules, frame_effects, false);
+                self.make_enemy(target, source, rules, frame_effects, false);
             }
             23..=27 => {
                 use crate::sim::scenario_session::ScenarioTimerAction;
@@ -4227,7 +4212,8 @@ impl Simulation {
                 // Offline type8 reads retain From_Name's index. Network
                 // playback keeps the authored name independent of the local
                 // playlist. Numeric sentinels pass unchanged. No RNG/timer/detach.
-                let request = if (self.session.game_mode().is_network() || value.is_none())
+                let request = if (self.session.execution_topology().is_lockstep()
+                    || value.is_none())
                     && action.params.first().map_or(0, |v| crt_atoi(v)) == 8
                 {
                     ThemeRequest::Name(action.params.get(1).cloned().unwrap_or_default())
@@ -4268,8 +4254,7 @@ impl Simulation {
                 });
             }
             31 => self.grow_shroud(
-                crate::sim::world::UninitContext::new(rules, overlay_registry)
-                    .with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             ),
             51 => {
                 //6DEF9B calls the incoming House's577C90 map transition,
@@ -4594,7 +4579,6 @@ impl Simulation {
                         crate::sim::world::bridge_orchestrator::BridgeDamageDrivers::new(
                             self,
                             rules,
-                            overlay_registry,
                             frame_effects,
                         );
                     for _ in 0..4 {
@@ -4820,8 +4804,7 @@ impl Simulation {
             }
             16 => {
                 return self.trigger_reveal_entire_map(
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             5 => {
@@ -4918,8 +4901,7 @@ impl Simulation {
                 };
                 return self.trigger_reveal_at_waypoint(
                     waypoint,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             108 => {
@@ -4955,8 +4937,7 @@ impl Simulation {
                 };
                 return self.trigger_conceal_at_waypoint(
                     waypoint,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             18 => {
@@ -4965,8 +4946,7 @@ impl Simulation {
                 };
                 return self.trigger_reveal_zone_at_waypoint(
                     waypoint,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             ACTION_PLAY_SOUND => {
@@ -5073,8 +5053,7 @@ impl Simulation {
             127 => {
                 // Execute6DFABF -> ChronoScreen53B460. A nonpositive duration
                 // is a no-op there; the action still returns success.
-                self.session
-                    .start_chrono_screen_effect(value.unwrap_or(0), effects);
+                self.start_chrono_screen(value.unwrap_or(0), effects);
             }
             131 => {
                 // FlashBuildings6E4560..6E45DE: incoming House's live
@@ -5109,7 +5088,7 @@ impl Simulation {
                 let Some(index) = value else {
                     return false;
                 };
-                if self.session.game_mode().is_network()
+                if self.session.execution_topology().is_lockstep()
                     && action.params.first().map_or(0, |v| crt_atoi(v)) != 7
                     && action.params.first().map_or(0, |v| crt_atoi(v)) != 8
                 {
@@ -5471,8 +5450,7 @@ impl Simulation {
                 if let Some(raw_local_size) = parse_visible_map_area(&action.params) {
                     let _ = self.change_visible_map_area(
                         raw_local_size,
-                        crate::sim::world::UninitContext::new(rules, overlay_registry)
-                            .with_effects(frame_effects),
+                        crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                     );
                 }
             }
@@ -5481,7 +5459,7 @@ impl Simulation {
                 // of the incoming House/value. Resolve coordinates before
                 // the frame hash, including House50DF30's Dummy effects.
                 let coord = {
-                    let network = self.session.game_mode().is_network();
+                    let network = self.session.execution_topology().is_lockstep();
                     let cells = self.resolved_terrain.as_ref().map(|terrain| {
                         crate::map::resolved_terrain::NativeCellQuery::for_local_input(
                             terrain, network,
@@ -5540,8 +5518,7 @@ impl Simulation {
                 self.talk_bubble_set_object_and_frame(
                     actor,
                     value.unwrap_or(0),
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             106 => {

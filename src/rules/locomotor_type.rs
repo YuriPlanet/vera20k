@@ -347,8 +347,7 @@ impl SpeedType {
 /// `MovementClass8`, not directly by our terrain `LandType` buckets.
 ///
 /// Example: `MovementZone=Subterannean` enables dig-in/dig-out cell search
-/// logic that plain Drive does not have. The misspelling is the retail parser
-/// spelling.
+/// logic that plain Drive does not have.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -398,7 +397,9 @@ impl MovementZone {
             "amphibiousdestroyer" => Self::AmphibiousDestroyer,
             "amphibiouscrusher" => Self::AmphibiousCrusher,
             "amphibious" => Self::Amphibious,
-            "subterannean" => Self::Subterranean,
+            // CCINIClass::ReadMovementZone @ 0x00474E40 spells row 6 Subterannean.
+            // VERA also accepts the standard spelling as an alias.
+            "subterannean" | "subterranean" => Self::Subterranean,
             "infantry" => Self::Infantry,
             "infantrydestroyer" => Self::InfantryDestroyer,
             "fly" => Self::Fly,
@@ -599,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_04_movement_zone_parser_accepts_only_retail_labels() {
+    fn gsi_04_04_movement_zone_parser_accepts_retail_labels_and_subterranean_alias() {
         assert_eq!(MovementZone::from_ini("Normal"), MovementZone::Normal);
         assert_eq!(MovementZone::from_ini("crusher"), MovementZone::Crusher);
         assert_eq!(MovementZone::from_ini("DESTROYER"), MovementZone::Destroyer);
@@ -636,7 +637,7 @@ mod tests {
         );
         assert_eq!(
             MovementZone::from_ini("Subterranean"),
-            MovementZone::Invalid
+            MovementZone::Subterranean
         );
         assert_eq!(
             MovementZone::from_ini("Subterrannean"),

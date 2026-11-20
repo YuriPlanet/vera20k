@@ -12,6 +12,9 @@ pub(crate) fn commit_prepared_load(
     prepared: crate::app::persistence::PreparedSavedGame,
     from_menu: bool,
 ) {
+    // Complete the outgoing frame with its live transport and before the
+    // radar FIFO publishes a service input between frames.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
@@ -32,12 +35,12 @@ pub(crate) fn commit_prepared_load(
         sfx.stop_all();
     }
     state.match_state.match_audio.reset_for_new_match();
-    crate::app::reset_scenario_exit_runtime(state);
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
     );
     // The outgoing replay closes before the process dummy and runtime change.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
+    crate::app::reset_scenario_exit_runtime(state);
     let committed = prepared.commit_into(
         &mut state.process_assets,
         &state.frontend.frontend_main_rng,
@@ -50,6 +53,12 @@ pub(crate) fn commit_prepared_load(
     // A validated saved timeline replaces the outgoing fresh-L0 evidence and
     // remains available to the ordinary pump and exact diagnostic stepping.
     state.process_assets.refresh_campaigns_if_available();
+    // The outgoing campaign's external folder stays a map folder for the save.
+    let launch_dir = state
+        .match_state
+        .startup
+        .installed_campaign()
+        .and_then(|campaign| campaign.scenario_directory());
     let campaign = state.process_assets.campaigns().and_then(|campaigns| {
         crate::app::match_bootstrap::PreparedCampaignStartup::from_saved_scenario(
             campaigns,
@@ -60,6 +69,12 @@ pub(crate) fn commit_prepared_load(
                 .expect("prepared saved game installs a runtime")
                 .simulation,
             committed.map.source(),
+            state
+                .platform
+                .game_config
+                .as_ref()
+                .map(|config| config.paths.ra2_dir.as_path()),
+            launch_dir,
         )
     });
     state.match_state.startup.acknowledge_saved_load(campaign);

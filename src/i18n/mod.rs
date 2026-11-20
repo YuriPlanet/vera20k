@@ -33,7 +33,7 @@
 //! (`zero`, `one`, `two`, `few`, `many`, `other`); `{count}` is the count.
 //!
 //! A language whose texts mostly start with a right-to-left letter (Arabic,
-//! Hebrew) reads right to left ([`right_to_left`]): there a text holding
+//! Hebrew) reads right to left ([`interface_language`]): there a text holding
 //! such a letter reads from the right even when it starts with a name or a
 //! number. VERA keeps gamemd's layouts unmirrored, so text stays on its
 //! box's side.
@@ -67,7 +67,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock};
 
 use crate::util::time::{Duration, Instant};
@@ -312,6 +312,18 @@ impl Catalog {
 static CATALOG: LazyLock<RwLock<Catalog>> =
     LazyLock::new(|| RwLock::new(Catalog::new(languages(None))));
 
+/// Bumped at each change of the catalog ([`init`], [`select`], a reload of
+/// the language files), so the fonts read the language in use again
+/// ([`interface_language`]).
+static CATALOG_REVISION: AtomicU64 = AtomicU64::new(0);
+
+/// Put `next` in use ([`CATALOG_REVISION`]).
+fn install_catalog(next: Catalog) {
+    let mut catalog = CATALOG.write().unwrap_or_else(PoisonError::into_inner);
+    *catalog = next;
+    CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Whether every label displays its own string-table key instead of its text
 /// (Options' Developer page), VERA's own `VERA:` labels included.
 static SHOW_STRING_KEYS: AtomicBool = AtomicBool::new(false);
@@ -453,7 +465,7 @@ fn reload_languages(settings_dir: Option<&Path>, source_dir: Option<&Path>) {
         None => next.languages[0].clone(),
     };
     let tag = next.selected.tag.clone();
-    *CATALOG.write().unwrap_or_else(PoisonError::into_inner) = next;
+    install_catalog(next);
     log::info!("Interface language reloaded: {tag}");
 }
 
@@ -613,12 +625,12 @@ fn settings_files(dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// The tag in a language file's name, `vera20k.<tag>.ini`.
 fn file_tag(name: &str) -> Option<&str> {
-    let lower = name.to_ascii_lowercase();
-    if !lower.starts_with("vera20k.") || !lower.ends_with(".ini") {
-        return None;
-    }
-    let tag = &name["vera20k.".len()..name.len() - ".ini".len()];
-    (!tag.is_empty()).then_some(tag)
+    let (prefix, rest) = name.split_at_checked("vera20k.".len())?;
+    let (tag, suffix) = rest.split_at_checked(rest.len().checked_sub(".ini".len())?)?;
+    (prefix.eq_ignore_ascii_case("vera20k.")
+        && suffix.eq_ignore_ascii_case(".ini")
+        && !tag.is_empty())
+    .then_some(tag)
 }
 
 /// Load the shipped languages and those in `settings_dir`, and use `chosen`
@@ -647,7 +659,7 @@ pub fn init(settings_dir: Option<&Path>, chosen: Option<&str>) -> String {
     });
     let tag = catalog.selected.tag.clone();
     log::info!("Interface language: {tag} ({})", catalog.selected.name);
-    *CATALOG.write().unwrap_or_else(PoisonError::into_inner) = catalog;
+    install_catalog(catalog);
     tag
 }
 
@@ -660,6 +672,7 @@ pub fn select(tag: &str) -> bool {
             return false;
         };
         catalog.selected = language.clone();
+        CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
         language
     };
     // Logged after the lock is released: a panic while logging reports
@@ -689,14 +702,24 @@ pub fn cameo_label(file: &str) -> Option<Arc<CameoLabel>> {
         .cloned()
 }
 
-/// Whether the language `tag` reads right to left: most of its file's texts
-/// start with a right-to-left letter. A text holding one then reads from
-/// the right whatever it starts with, as a sentence that opens with a name
-/// does; text without one, such as the game's English, keeps its own order.
-pub fn right_to_left(tag: &str) -> bool {
-    catalog()
-        .find(tag)
-        .is_some_and(|language| language.right_to_left)
+/// The catalog's revision: it changes whenever [`interface_language`] may.
+pub fn catalog_revision() -> u64 {
+    CATALOG_REVISION.load(Ordering::Relaxed)
+}
+
+/// The language in use as the fonts draw it, with the [`catalog_revision`]
+/// it belongs to: its tag, for region-specific CJK letter forms, and whether
+/// it reads right to left: most of its file's texts start with a
+/// right-to-left letter. A text holding one then reads from the right
+/// whatever it starts with, as a sentence that opens with a name does; text
+/// without one, such as the game's English, keeps its own order.
+pub fn interface_language() -> (u64, String, bool) {
+    let catalog = catalog();
+    (
+        CATALOG_REVISION.load(Ordering::Relaxed),
+        catalog.selected.tag.clone(),
+        catalog.selected.right_to_left,
+    )
 }
 
 /// A language the player can choose.
@@ -1381,6 +1404,62 @@ mod tests {
         catalog
     }
 
+    /// The AutoLoad result line ships in English with a `{count}` slot so the
+    /// hotkey's issued-order count can be shown without a type lookup.
+    #[test]
+    fn autoload_result_line_ships_with_a_count_slot() {
+        let english = language("en", shipped::FILES[0].1);
+        let template = english
+            .strings
+            .get("VERA:EVAAUTOLOADED")
+            .map(String::as_str)
+            .expect("the AutoLoad result line is in the English file");
+        let filled = fill(template, &[("count", &3usize)]);
+        assert!(filled.contains('3'));
+        assert!(!filled.contains("{count}"));
+    }
+
+    /// The text-only detailed EVA alerts all ship in English. They carry no
+    /// `{name}` slot because their sim/app events have no subject type.
+    #[test]
+    fn text_only_eva_alert_lines_ship_without_a_name_slot() {
+        let english = language("en", shipped::FILES[0].1);
+        for key in [
+            "VERA:EVABASEUNDERATTACK",
+            "VERA:EVAHARVESTERUNDERATTACK",
+            "VERA:EVAALLYUNDERATTACK",
+            "VERA:EVACASHSTOLEN",
+            "VERA:EVANEWCONSTRUCTION",
+        ] {
+            let text = english
+                .strings
+                .get(key)
+                .map(String::as_str)
+                .unwrap_or_else(|| panic!("{key} is missing from the English file"));
+            assert!(!text.is_empty(), "{key} is empty");
+            assert!(!text.contains("{name}"), "{key} must not need a subject");
+        }
+    }
+
+    /// The detailed object status lines ship in English with the slots their
+    /// capture-time fillers provide.
+    #[test]
+    fn info_status_lines_ship_with_their_slots() {
+        let english = language("en", shipped::FILES[0].1);
+        for (key, slot) in [
+            ("VERA:INFORELOAD", "{time}"),
+            ("VERA:INFOBUILDINGREPAIR", "{time}"),
+            ("VERA:INFOBUILDINGREPAIR", "{cost}"),
+        ] {
+            let text = english
+                .strings
+                .get(key)
+                .map(String::as_str)
+                .unwrap_or_else(|| panic!("{key} is missing from the English file"));
+            assert!(text.contains(slot), "{key} must contain {slot}");
+        }
+    }
+
     /// A language's subtitles and cameo names load from the files beside its
     /// text in the settings folder, and a damaged cameo file only loses those.
     #[test]
@@ -1604,6 +1683,15 @@ mod tests {
         assert_eq!(pseudo("A"), "[Å]");
         assert_eq!(pseudo(""), "");
         assert_eq!(pseudo(" "), " ");
+    }
+
+    /// A file named only `vera20k.ini` has no tag between the two affixes,
+    /// which overlap; it is not a language file and must not stop startup.
+    #[test]
+    fn a_language_file_name_without_a_tag_has_none() {
+        assert_eq!(check("vera20k.ini", "").tag, None);
+        assert_eq!(check("VERA20K.INI", "").tag, None);
+        assert_eq!(check("VERA20K.de.INI", "").tag.as_deref(), Some("de"));
     }
 
     #[test]

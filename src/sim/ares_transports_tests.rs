@@ -127,7 +127,7 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
             Some(transport)
         );
     }
-    sim.create_ares_initial_payload(transport, &rules, None, FrameEffects::default());
+    sim.create_ares_initial_payload(transport, &rules, FrameEffects::default());
     assert_eq!(cargo(&sim).len(), 3);
 
     let bunker = spawn(&mut sim, &rules, "NABNKR", "Americans", 16, 10);

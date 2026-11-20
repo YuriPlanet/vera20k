@@ -821,6 +821,12 @@ impl App {
         mut hidden_run: Option<&mut crate::app::hidden_run::HiddenRun>,
         pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
+        // A lost device draws nothing more; the frame loop closes the game
+        // (`App::close_after_graphics_loss`).
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if state.renderer.gpu.device_lost().is_some() {
+            return Ok(FrameRenderOutcome::Unavailable);
+        }
         // Publish the player's colour-vision matrix before any early-return
         // present and before synchronous loading repaints: all of them encode
         // through the shared filter on GpuContext, not just the frame's tail.
@@ -1100,6 +1106,11 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Frame"),
                 });
+        // DirectX 12 can find the device gone while making the encoder.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if state.renderer.gpu.device_lost().is_some() {
+            return Ok(FrameRenderOutcome::Unavailable);
+        }
         state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
         if state.match_state.input.retail_screenshot_requested {
@@ -1756,6 +1767,45 @@ impl App {
                 .renderer
                 .performance_overlay
                 .record_render_phases(phases);
+            #[cfg(feature = "perf")]
+            {
+                use crate::app::diagnostics::perf_recorder::PerfRow;
+                // The SIM fields come from the snapshot captured at the last
+                // committed tick's tail, not from `home_runtime()` — while a
+                // tick is lent to the SIM thread the runtime is away, and
+                // reading it here left ~99% of rows blank under load. The
+                // snapshot persists across all draws of that tick instead.
+                // It is the most recent tick, not a sum of the ticks this
+                // picture spans: a "where the frame went" diagnostic, not a
+                // billing ledger.
+                let tick_snapshot = state.diag.perf_last_tick;
+                let (tick, binary_frame, objects, houses, sim, path) = match tick_snapshot {
+                    Some(snap) => (
+                        snap.tick,
+                        snap.binary_frame,
+                        snap.objects,
+                        snap.houses,
+                        snap.sim,
+                        snap.path,
+                    ),
+                    None => (0, 0, 0, 0, None, None),
+                };
+                let wall_ms = presented_at.duration_since(draw_started).as_secs_f64() * 1000.0;
+                // The GPU read is destructive and windowed (lags a few frames);
+                // in a perf build it steals the panel's sample if both show.
+                let gpu_ms = state.renderer.gpu.timer.take_frame_ms();
+                state.diag.perf_recorder.record(PerfRow {
+                    tick,
+                    binary_frame,
+                    wall_ms,
+                    objects,
+                    houses,
+                    sim,
+                    render: Some(phases),
+                    path,
+                    gpu_ms,
+                });
+            }
         }
         let battlefield = state.frontend.screen == GameScreen::InGame;
         state.platform.frame_pacer.record_presented(
@@ -1935,12 +1985,7 @@ impl App {
             }
         }
 
-        crate::app::loading::pump::after_loading_frame_presented(
-            state,
-            shell_capture
-                .as_deref()
-                .and_then(|capture| capture.loading_observer()),
-        )?;
+        crate::app::loading::pump::after_loading_frame_presented(state)?;
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::publish_if_due(state);
 

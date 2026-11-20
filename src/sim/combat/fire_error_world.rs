@@ -19,7 +19,6 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::game_entity::GameEntity;
@@ -88,7 +87,6 @@ fn answer(
         let code = FireSubject {
             world,
             rules,
-            overlay_registry: Some(rules.overlay_registry()),
             fog: Some(world.fog.fire_view(world.house_alliances())),
             firer: entity,
             obj,
@@ -117,7 +115,6 @@ fn answer(
 pub(crate) struct FireSubject<'a> {
     pub world: &'a Simulation,
     pub rules: &'a RuleSet,
-    pub overlay_registry: Option<&'a OverlayTypeRegistry>,
     pub fog: Option<FireFog<'a>>,
     pub firer: &'a GameEntity,
     pub obj: &'a ObjectType,
@@ -800,7 +797,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
-                        overlay_registry: subject.overlay_registry,
+                        overlay_registry: Some(subject.rules.overlay_registry()),
                         alliances: subject.fog.map(|fog| fog.alliances),
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
@@ -828,7 +825,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     terrain,
                     &line_of_fire::LineOfFireInputs {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
-                        overlay_registry: subject.overlay_registry,
+                        overlay_registry: Some(subject.rules.overlay_registry()),
                         alliances: subject.fog.map(|fog| fog.alliances),
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
@@ -1241,7 +1238,6 @@ mod terrain_target_tests {
         let subject = FireSubject {
             world: &world,
             rules,
-            overlay_registry: None,
             fog: None,
             firer,
             obj,

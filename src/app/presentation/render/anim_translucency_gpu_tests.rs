@@ -261,6 +261,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                         tactical: clip,
                         zoom: 1.,
                         axis: DepthAxis::NONE,
+                        z_seed: crate::render::native_z::DEFAULT_Z,
                         atlas: Some(&atlas),
                         detail: &detail,
                         detail_level: 2,

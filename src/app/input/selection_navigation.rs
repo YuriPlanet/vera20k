@@ -38,18 +38,22 @@ fn next_object(
         .chain(layers.members(DisplayLayer::AIR))
         .chain(layers.members(DisplayLayer::TOP))
         .copied();
+    let control = sim.control_projection();
     let eligible = |id| {
         let Some(entity) = sim.entities().get(id) else {
             return false;
         };
-        crate::app::input::entity_pick::is_local_player_selectable_object(sim, rules, entity)
-            && crate::app::input::entity_pick::selection_dynamic_prefix(
-                entity,
-                sim.entities(),
-                rules,
-                Some(sim.interner()),
-            )
-            && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
+        crate::app::input::entity_pick::is_local_player_selectable_object(
+            sim.interner(),
+            &control,
+            rules,
+            entity,
+        ) && crate::app::input::entity_pick::selection_dynamic_prefix(
+            entity,
+            sim.entities(),
+            rules,
+            Some(sim.interner()),
+        ) && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
     };
     match direction {
         ObjectDirection::Next => after_anchor(ids, anchor, eligible),
@@ -147,7 +151,8 @@ fn combatant_selection(
         clear: replace,
         ..Default::default()
     };
-    let player_owned = |owner| sim.house_controls_selection(owner);
+    let control = sim.control_projection();
+    let player_owned = |owner| control.can_select(owner);
     // Tactical6DA770 drops a lone non-player-controlled selection before
     // testing the shared mode. Deselect clears Follow but retains that mode.
     let dropped = selected.first().copied().filter(|id| {
@@ -427,6 +432,7 @@ fn category_selection(
         .into_iter()
         .filter(|id| sim.entities().contains(*id))
         .collect();
+    let control = sim.control_projection();
     let visible = if !continuing && selected.is_empty() {
         screen_order
             .iter()
@@ -435,7 +441,7 @@ fn category_selection(
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
-                        && sim.house_controls_selection(entity.owner())
+                        && control.can_select(entity.owner())
                 })
             })
             .collect()
@@ -772,8 +778,7 @@ mod tests {
             input.type_select.across_map = true;
             input.selection_order = vec![20];
             // Deselect and its normal app reconciliation have no expiry fact.
-            sim.entities_mut_for_test()
-                .get_mut(20)
+            sim.entity_mut_for_test(20)
                 .unwrap()
                 .selection
                 .set_selected_for_test(false);
@@ -783,7 +788,7 @@ mod tests {
             if conceal {
                 assert_eq!(sim.object_conceal(20), ConcealOutcome::Concealed);
             } else {
-                sim.detach_all_pointer_expired(20, &rules, None, FrameEffects::empty());
+                sim.detach_all_pointer_expired(20, &rules, FrameEffects::empty());
             }
             assert!(sim.entities().get(20).unwrap().is_object_alive());
             let frame = sim

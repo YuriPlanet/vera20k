@@ -753,6 +753,11 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules = rules;
     }
 
+    /// Effective simulation switches at the admitted scenario root.
+    pub fn personal_rules(&self) -> &PersonalRules {
+        &self.sources.personal_rules
+    }
+
     /// The skirmish Game Options' Terrain Deformation box, read by the next scenario.
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.sources.personal_rules.set_terrain_deformation(on);
@@ -761,6 +766,13 @@ impl NativeRulesProcessOwner {
     /// The skirmish Game Options' Superweapon Limit, read by the next scenario.
     pub fn set_superweapon_limit(&mut self, limit: i32) {
         self.sources.personal_rules.set_superweapon_limit(limit);
+    }
+
+    /// The Options page's Building Production Queue, read by the next scenario.
+    pub fn set_building_production_queue(&mut self, on: bool) {
+        self.sources
+            .personal_rules
+            .set_building_production_queue(on);
     }
 
     /// The root every scenario's Rules start from: the selected root with the
@@ -1411,6 +1423,7 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::retail_sources::RetailRulesSources;
+    use crate::rules::rule_policy::RulePolicy;
 
     #[test]
     fn retail_class_lights_convert_omitted_keys_only_in_reached_sections() {
@@ -2561,7 +2574,7 @@ mod tests {
                     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
                         &IniFile::empty(),
                         &ai_ini,
-                        true,
+                        RulePolicy::stock_multiplayer(),
                     );
                     let mut interner = crate::sim::intern::StringInterner::default();
                     crate::sim::team_script_vm::TeamScriptVm::from_ini_registry(

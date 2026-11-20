@@ -146,8 +146,7 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
                 1,
                 -3,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
-                crate::sim::world::FrameEffects::default()
+                crate::sim::world::FrameEffects::default(),
             ));
         }
         let t = sim.resolved_terrain.clone();
@@ -157,8 +156,7 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
             1,
             -3,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
         ));
         assert_eq!(current_fly_height(entity(&sim), t.as_ref()), 206);
         assert!(is_low_flying(entity(&sim), t.as_ref(), None));
@@ -168,7 +166,6 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
             1,
             -3,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             crate::sim::world::FrameEffects::default(),
         ) {
             frames += 1;
@@ -235,8 +232,7 @@ fn a_falling_paratrooper_is_marked_again_at_the_head_of_its_cell() {
         1,
         -3,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     ));
     assert_eq!(next(&sim, 1), Some(Entity(2)));
     let paratrooper = sim.substrate.entities.get(1).unwrap();

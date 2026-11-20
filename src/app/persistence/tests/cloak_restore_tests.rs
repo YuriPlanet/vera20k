@@ -31,8 +31,7 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
     let id = sim
         .spawn_object("E1", "Americans", 1, 1, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .cloak
         .as_mut()
@@ -52,7 +51,7 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
         let mut value = serde_json::to_value(cloak(&sim, id)).unwrap();
         value["state"] = serde_json::json!(3);
         value["step_delta"] = serde_json::json!(-1);
-        sim.entities_mut_for_test().get_mut(id).unwrap().cloak =
+        sim.entity_mut_for_test(id).unwrap().cloak =
             Some(Box::new(serde_json::from_value(value).unwrap()));
     }
     Some((sim, rules, terrain, id))

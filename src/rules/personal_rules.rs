@@ -1,6 +1,6 @@
 //! The player's own rule switches: Terrain Deformation and the Superweapon
-//! Limit of the skirmish page's Game Options, which a network room's host
-//! shares. VERA-only.
+//! Limit of the skirmish page's Game Options and the Options page's Building
+//! Production Queue, which a network room's host shares. VERA-only.
 //!
 //! VERARULES.INI, a file of the player's own rule keys, was read here until
 //! it was retired for New Mod (docs/modding.md); `persistence::rules_profile`
@@ -13,7 +13,8 @@ use std::borrow::Cow;
 
 use crate::rules::ini_parser::IniFile;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PersonalRules {
     /// The skirmish Game Options' Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
@@ -22,6 +23,12 @@ pub struct PersonalRules {
     /// VERA.INI), read as Terrain Deformation is: 0 while off, else
     /// [`admitted_superweapon_limit`]'s 2 to [`SUPERWEAPON_LIMIT_MAX`].
     superweapon_limit: u8,
+    /// The Options page's Building Production Queue box (`[VERA]
+    /// BuildingProductionQueue=` in VERA.INI). It sets Phobos' `[General]
+    /// BuildingProductionQueue=` in the scenario root, so the simulation
+    /// reads it from the rules every peer, save and replay reads. A network
+    /// room plays its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
+    building_production_queue: bool,
 }
 
 impl PersonalRules {
@@ -43,10 +50,18 @@ impl PersonalRules {
         self.superweapon_limit
     }
 
-    /// A switch changes the game: what [`Self::compatibility_crc`] adds to
-    /// the network rules digest.
+    pub fn set_building_production_queue(&mut self, on: bool) {
+        self.building_production_queue = on;
+    }
+
+    pub fn building_production_queue(&self) -> bool {
+        self.building_production_queue
+    }
+
+    /// A switch changes the game: [`Self::scenario_root`] composes it and
+    /// [`Self::compatibility_crc`] adds it to the network rules digest.
     pub fn in_effect(&self) -> bool {
-        self.terrain_deformation || self.superweapon_limit != 0
+        self.terrain_deformation || self.superweapon_limit != 0 || self.building_production_queue
     }
 
     /// The selected root as each scenario reads it: the switches' rules
@@ -61,8 +76,9 @@ impl PersonalRules {
     /// as wide as its retail `CellSpread=10` blast: gamemd names that warhead
     /// `NUKE` (0x0081AF98), and retail sets none of them. Superweapon
     /// Limit gives each building [`superweapon_limit`] picks its
-    /// `BuildLimit=` and `SuperWeaponPerBuilding=yes`. Map and mode rules still read after it
-    /// and can turn either off.
+    /// `BuildLimit=` and `SuperWeaponPerBuilding=yes`. Building Production
+    /// Queue sets `[General] BuildingProductionQueue=yes`. Map and mode rules
+    /// still read after it and can turn any of them off.
     pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
         if !self.in_effect() {
             return Cow::Borrowed(root);
@@ -74,12 +90,15 @@ impl PersonalRules {
         if self.terrain_deformation {
             options.push_str(&terrain_deformation(root));
         }
+        if self.building_production_queue {
+            options.push_str("[General]\nBuildingProductionQueue=yes\n");
+        }
         let mut root = root.clone();
         root.merge_source_sections(&IniFile::from_str(&options), true);
         Cow::Owned(root)
     }
 
-    /// What the switches add to the network rules digest; `None` while both
+    /// What the switches add to the network rules digest; `None` while all
     /// are off. The header keeps the words it had while VERARULES.INI was
     /// read, so a game with only the switches on digests as it did.
     pub fn compatibility_crc(&self) -> Option<u32> {
@@ -92,6 +111,9 @@ impl PersonalRules {
         }
         if self.superweapon_limit != 0 {
             header.push_str(&format!("SuperweaponLimit={}\n", self.superweapon_limit));
+        }
+        if self.building_production_queue {
+            header.push_str("BuildingProductionQueue=yes\n");
         }
         Some(IniFile::from_str(&header).native_crc())
     }
@@ -237,6 +259,35 @@ mod tests {
         // Keys the root already sets, from a mod, stay.
         let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
         assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
+    }
+
+    /// The Options box reaches the simulation through the scenario's rules,
+    /// which every peer, save and replay reads, not through a per-client flag.
+    #[test]
+    fn building_production_queue_box_sets_the_scenarios_general_key() {
+        let scenario = |on: bool| {
+            let mut owner = sources(b"[General]\nMaximumQueuedObjects=5\n")
+                .into_owner(Default::default(), Default::default())
+                .unwrap();
+            let mut rules = PersonalRules::default();
+            rules.set_building_production_queue(on);
+            owner.use_personal_rules(rules);
+            let (rules, _, _, _) = owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::empty(),
+                )
+                .unwrap()
+                .into_parts();
+            (
+                rules.general.building_production_queue,
+                rules.general.maximum_queued_objects,
+                owner.personal_rules_compatibility_crc().is_some(),
+            )
+        };
+        assert_eq!(scenario(false), (false, 5, false));
+        // A room shares it, so peers compare it.
+        assert_eq!(scenario(true), (true, 5, true));
     }
 
     #[test]

@@ -360,7 +360,7 @@ impl Simulation {
         self.discover_by_player(
             id,
             Some(cell),
-            crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
         );
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);

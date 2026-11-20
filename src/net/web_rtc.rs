@@ -85,9 +85,12 @@ impl LanSocket {
         packet
             .subarray(RECEIVE_PREFIX_LEN as u32, total as u32)
             .copy_to(&mut buffer[..length]);
-        let ip = Ipv4Addr::from(u32::from_be_bytes(prefix[..4].try_into().unwrap()));
-        let port = u16::from_be_bytes([prefix[4], prefix[5]]);
-        Ok((length, SocketAddrV4::new(ip, port).into()))
+        let [a, b, c, d, port_high, port_low] = prefix;
+        let port = u16::from_be_bytes([port_high, port_low]);
+        Ok((
+            length,
+            SocketAddrV4::new(Ipv4Addr::new(a, b, c, d), port).into(),
+        ))
     }
 }
 

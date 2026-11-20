@@ -20,7 +20,6 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub interner: &'a crate::sim::intern::StringInterner,
     pub alliances: &'a HouseAlliances,
     pub overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
-    pub overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     pub rules: &'a RuleSet,
     pub map_size: Option<(i32, i32)>,
     /// The Houses whose Ares firestorm is up (`sim::ares_firestorm`).
@@ -330,7 +329,7 @@ impl ProjectileCollisionWorld<'_> {
                         crate::sim::cell_kernel::wall_connection_step(
                             self.overlay(&cell).0.map_or(-1, i32::from),
                             -1,
-                            self.overlay_registry,
+                            Some(self.rules.overlay_registry()),
                             self.rules.ares_form(),
                         ),
                         crate::sim::cell_kernel::WallConnectionStep::Return(true)
@@ -616,7 +615,7 @@ impl ProjectileCollisionWorld<'_> {
         };
         let los = LineOfFireInputs {
             overlay_grid: self.overlays,
-            overlay_registry: self.overlay_registry,
+            overlay_registry: Some(self.rules.overlay_registry()),
             alliances: Some(self.alliances),
             // The walk itself answers on the switch; a game without Ares
             // never asks a cell for its buildings.
@@ -732,13 +731,8 @@ impl ProjectileCollisionWorld<'_> {
 /// `MapClass::CoordinatesLegal @ 0x00568350`: the lepton coordinate's cell
 /// (signed words) lies in the map's Size diamond.
 fn map_size_contains((width, height): (i32, i32), x: i32, y: i32) -> bool {
-    let x = i32::from((x / 256) as i16);
-    let y = i32::from((y / 256) as i16);
-    let sum = x.wrapping_add(y);
-    width < sum
-        && x.wrapping_sub(y) < width
-        && y.wrapping_sub(x) < width
-        && sum <= width.wrapping_add(height.wrapping_mul(2))
+    let cell = ((x / 256) as i16, (y / 256) as i16);
+    crate::map::playfield::size_diamond_contains(width, height, cell)
 }
 
 impl Simulation {
@@ -760,6 +754,13 @@ mod tests {
     use crate::util::fixed_math::SimFixed;
     use serde_json::Value;
 
+    #[test]
+    fn coordinates_legal_divides_negative_leptons_before_packing() {
+        // CoordinatesLegal @ 0x00568350 truncates toward zero, then packs signed cell words.
+        assert!(map_size_contains((4, 4), -16_776_449, 512));
+        assert!(!map_size_contains((4, 4), -16_775_425, 1536));
+    }
+
     fn world(sim: &Simulation) -> ProjectileCollisionWorld<'_> {
         ProjectileCollisionWorld {
             terrain: sim.resolved_terrain.as_ref(),
@@ -770,7 +771,6 @@ mod tests {
             interner: &sim.interner,
             alliances: &sim.house_alliances,
             overlays: sim.overlay_grid.as_ref(),
-            overlay_registry: None,
             rules: crate::rules::ruleset::RuleSet::empty_for_test(),
             map_size: Some((2, 3)),
             ares_firestorm: &sim.ares_firestorm,
@@ -876,7 +876,6 @@ mod tests {
             let subject = crate::sim::combat::fire_error_world::FireSubject {
                 world: &sim,
                 rules: &rules,
-                overlay_registry: None,
                 fog: None,
                 firer: sim.substrate.entities.get(firer).unwrap(),
                 obj: rules.object("E1").unwrap(),
@@ -1298,7 +1297,6 @@ mod tests {
                 &IniFile::from_str(&format!("[BUILD]\nFoundation={dimensions}\n")),
             )
             .unwrap();
-            let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
             let target = &row["target"];
             let mut spawn = gsi_05_02_projectile(1, None);
             if target.is_object() {
@@ -1380,7 +1378,6 @@ mod tests {
             );
             let mut world = world(&sim);
             world.rules = &rules;
-            world.overlay_registry = Some(&registry);
             assert_eq!(
                 world.shared(&projectile, candidate),
                 row["admitted"].as_bool().unwrap(),

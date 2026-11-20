@@ -299,7 +299,7 @@ pub(crate) fn should_retaliate(
     };
     let house = world.houses.get(&victim.owner());
     let human =
-        house.is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero()));
+        house.is_some_and(|house| house.is_controlled_by_human(world.session.rule_policy()));
     // `0x007087DD` CanRetaliate; `0x007087EB` a slave (SlaveOwner `+0x2DC`);
     // `0x007087F9` a slaver (SlaveManager `+0x2D8`). A slave freed by its
     // master's death (`0x006B0B73`) retaliates again.
@@ -353,7 +353,6 @@ pub(crate) fn should_retaliate(
     let mut subject = super::fire_error_world::FireSubject {
         world,
         rules,
-        overlay_registry: None,
         fog: Some(world.fog.fire_view(&world.house_alliances)),
         firer: victim,
         obj: victim_type,

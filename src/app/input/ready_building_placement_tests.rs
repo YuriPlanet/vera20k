@@ -128,7 +128,8 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new(label);
     let repository = crate::app::persistence::SaveRepository::at(directory.path());
     let path = repository.write_named("fixture.bin", &bytes).unwrap();
@@ -3120,12 +3121,9 @@ fn current_product_expiry_retains_type_and_preview_but_has_no_issuer() {
     let preview = arm_gapowr_with_preview(&mut fixture);
     let product = ready_product(&fixture, "GAPOWR");
     let defense_product = ready_product(&fixture, "GAPILL");
-    fixture.sim.detach_all_pointer_expired(
-        product,
-        &fixture.rules,
-        Some(fixture.rules.overlay_registry()),
-        FrameEffects::default(),
-    );
+    fixture
+        .sim
+        .detach_all_pointer_expired(product, &fixture.rules, FrameEffects::default());
     let frame = advance_commands(&mut fixture, &[]);
     assert!(
         frame
@@ -3198,12 +3196,9 @@ fn null_product_cameo_right_retains_orphan_until_house_abandon() {
     let product = ready_product(&fixture, "GAPOWR");
     let defense_product = ready_product(&fixture, "GAPILL");
     let credits = production::credits_for_owner(&fixture.sim, "Americans");
-    fixture.sim.detach_all_pointer_expired(
-        product,
-        &fixture.rules,
-        Some(fixture.rules.overlay_registry()),
-        FrameEffects::default(),
-    );
+    fixture
+        .sim
+        .detach_all_pointer_expired(product, &fixture.rules, FrameEffects::default());
     let frame = advance_commands(&mut fixture, &[]);
     let owner = fixture.owner;
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
@@ -3300,12 +3295,9 @@ fn null_product_house_abandon_accepts_nonzero_buildcat_without_a_held_type() {
         arm_gapowr_with_preview(&mut fixture);
         let product = ready_product(&fixture, "GAPOWR");
         let credits = production::credits_for_owner(&fixture.sim, "Americans");
-        fixture.sim.detach_all_pointer_expired(
-            product,
-            &fixture.rules,
-            Some(fixture.rules.overlay_registry()),
-            FrameEffects::default(),
-        );
+        fixture
+            .sim
+            .detach_all_pointer_expired(product, &fixture.rules, FrameEffects::default());
         let frame = advance_commands(&mut fixture, &[]);
         let owner = fixture.owner;
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
@@ -3371,12 +3363,9 @@ fn defense_null_product_house_abandon_clears_only_its_live_factory() {
     let product = ready_product(&fixture, "GAPILL");
     let power = ready_product(&fixture, "GAPOWR");
     let credits = production::credits_for_owner(&fixture.sim, "Americans");
-    fixture.sim.detach_all_pointer_expired(
-        product,
-        &fixture.rules,
-        Some(fixture.rules.overlay_registry()),
-        FrameEffects::default(),
-    );
+    fixture
+        .sim
+        .detach_all_pointer_expired(product, &fixture.rules, FrameEffects::default());
     let frame = advance_commands(&mut fixture, &[]);
     let owner = fixture.owner;
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
@@ -3423,12 +3412,9 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
     // A real admission is saved; its returned envelope is deliberately not
     // delivered before the supplied product-expiry notification.
     let _pending = submit_ready_building(&mut fixture, "GAPOWR", SidebarTab::Building, (8, 4));
-    fixture.sim.detach_all_pointer_expired(
-        product,
-        &fixture.rules,
-        Some(fixture.rules.overlay_registry()),
-        FrameEffects::default(),
-    );
+    fixture
+        .sim
+        .detach_all_pointer_expired(product, &fixture.rules, FrameEffects::default());
     let frame = advance_commands(&mut fixture, &[]);
     let owner = fixture.owner;
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
@@ -3614,12 +3600,9 @@ fn saved_product_expiry_clears_backup_without_clearing_another_current_product()
         SidebarTab::Defense
     ));
     let pending = fixture.input.targeting_mode.clone();
-    fixture.sim.detach_all_pointer_expired(
-        product,
-        &fixture.rules,
-        Some(fixture.rules.overlay_registry()),
-        FrameEffects::default(),
-    );
+    fixture
+        .sim
+        .detach_all_pointer_expired(product, &fixture.rules, FrameEffects::default());
     let frame = advance_commands(&mut fixture, &[submitted]);
     let owner = fixture.owner;
     assert_eq!(consume_frame_outputs(&mut fixture, &frame, Some(owner)), 0);

@@ -162,7 +162,7 @@ impl<'a> FrameInputs<'a> {
             rules,
             overlay_registry,
             tick_ms,
-            effects: effects.with_overlay_registry(overlay_registry),
+            effects,
         }
     }
 }
@@ -176,6 +176,10 @@ struct LogicRequest<'a> {
 }
 
 impl Simulation {
+    pub(crate) fn has_suspended_frame(&self) -> bool {
+        self.frame_continuation.is_some()
+    }
+
     /// Mark the step the frame enters: it advances the world's revision, and
     /// tests observe the step itself.
     #[inline]
@@ -328,17 +332,11 @@ impl Simulation {
                 }
             }
             FrameStep::Shroud => {
-                self.tick_shroud_growth(
-                    UninitContext::new(rules, overlay_registry).with_effects(effects),
-                );
+                self.tick_shroud_growth(UninitContext::new(rules).with_effects(effects));
                 // Logic55B29A/55B2AD: consume prior pending conceal at the signed
                 // pre-increment native frame boundary, before ore, Teams and live objects.
-                self.tick_pending_shroud_conceal(
-                    UninitContext::new(rules, overlay_registry).with_effects(effects),
-                );
-                self.tick_fog_regrowth(
-                    UninitContext::new(rules, overlay_registry).with_effects(effects),
-                );
+                self.tick_pending_shroud_conceal(UninitContext::new(rules).with_effects(effects));
+                self.tick_fog_regrowth(UninitContext::new(rules).with_effects(effects));
             }
             FrameStep::Lighting => self.tick_scenario_lighting_transition(rules),
             FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry, effects)?,
@@ -613,7 +611,8 @@ impl Simulation {
         // (`0x00647684`, history `0x00B04474[Frame & 0xFF]`) before any
         // command transfer or dispatch; the single-player body never does.
         // VERA appends money, health and trigger terms to the native fold.
-        if self.session.game_mode().command_queue_route() == CommandQueueRoute::Multiplayer {
+        if self.session.execution_topology().command_queue_route() == CommandQueueRoute::Multiplayer
+        {
             self.frame_sync_checksum = Some(FrameSyncChecksum {
                 frame: self.session.binary_frame(),
                 checksum: self.compute_multiplayer_frame_checksum(),
@@ -649,12 +648,7 @@ impl Simulation {
         frame: &mut FrameCompletion,
         context: Option<NetworkQueueContext>,
     ) -> Result<FrameTailResult, FrameAdvanceError> {
-        let FrameInputs {
-            rules,
-            overlay_registry,
-            effects,
-            ..
-        } = inputs;
+        let FrameInputs { rules, effects, .. } = inputs;
         let pass = if let Some(context) = context {
             match effects.exchange_commands(context, &mut self.network_command_queues()) {
                 Ok(pass) => pass,
@@ -699,7 +693,7 @@ impl Simulation {
             // All input is already admitted before Logic or by the network
             // queue view. `frame.commands` now carries only the replay journal,
             // including earlier wait polls; never admit that journal twice.
-            self.dispatch_owned_commands(&[], rules, frame.execute_tick, overlay_registry, effects)
+            self.dispatch_owned_commands(&[], rules, frame.execute_tick, effects)
         };
         let failure = match result {
             Ok((executed, spawned)) => {
@@ -745,7 +739,7 @@ impl Simulation {
     pub(super) fn commit_frame_tail(&mut self, inputs: FrameInputs<'_>, execute_tick: u64) -> bool {
         let FrameInputs {
             rules,
-            overlay_registry,
+            overlay_registry: _,
             tick_ms,
             effects,
         } = inputs;
@@ -773,13 +767,7 @@ impl Simulation {
         // commit. Alive queue entries keep their position; ready duplicate IDs
         // collapse and physically finalize exactly once.
         self.enter_frame_step(FrameStep::PendingDelete);
-        self.process_pending_delete_with(
-            rules,
-            overlay_registry,
-            effects,
-            1,
-            self.session.started(),
-        );
+        self.process_pending_delete_with(rules, effects, 1, self.session.started());
 
         // MainTick55DEA4 follows Frame++ and ProcessPendingDelete725C70.
         // Network waits and terminal transitions never enter this tail.
@@ -913,7 +901,7 @@ impl Simulation {
             let kind = self.houses.get(owner).and_then(|house| {
                 house.pending_outcome(
                     self.session.binary_frame() as i32,
-                    self.session.game_mode_nonzero(),
+                    self.session.rule_policy(),
                 )
             });
             if kind != Some(pending.cursor.kind) {
@@ -1347,7 +1335,7 @@ impl Simulation {
         // ScoreDialog__FillEntries `0x5C9700` and `ScoreDialog__Run `0x5C9720`.
         // Keep their survivor bonus and Scenario RNG draws out of campaigns;
         // Campaign's standalone result dialog reads its own House statistics.
-        let terminal_score_finalized = self.session.game_mode_nonzero()
+        let terminal_score_finalized = !self.session.uses_campaign_world()
             && self.natural_outcome_exit_ready()
             && Self::finalize_terminal_score_snapshot(
                 &self.session,

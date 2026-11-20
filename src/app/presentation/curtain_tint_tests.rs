@@ -690,8 +690,7 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
         )
     };
     assert_eq!(word(&sim), 0xF800);
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_type_ref_for_test(plain_type);
     assert_eq!(

@@ -49,16 +49,17 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     )
     .unwrap();
     let mut snapshots = Vec::new();
-    let generated = loop {
+    let run = loop {
         match receiver
             .recv_timeout(std::time::Duration::from_secs(60))
             .unwrap()
         {
             RandomMapUpdate::Started => {}
             RandomMapUpdate::Progress(snapshot) => snapshots.push(snapshot),
-            RandomMapUpdate::Finished(map) => break map,
+            RandomMapUpdate::Finished(run) => break run,
         }
     };
+    let generated = run.map();
     let last = snapshots.pop().expect("native95-percent preview");
     assert!(
         snapshots.iter().all(|snapshot| snapshot

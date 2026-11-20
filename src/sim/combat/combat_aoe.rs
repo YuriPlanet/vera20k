@@ -559,10 +559,8 @@ impl AoECollector {
         if !area_damage_enters(base_damage, warhead, scenario_no_damage, rules.ares()) {
             return None;
         }
-        let mut origin = origin;
-        if origin.source_house.is_none() && origin.source_id != super::RAD_NO_ATTACKER {
-            origin.source_house = entities.get(origin.source_id).map(|source| source.owner());
-        }
+        // DamageArea forwards its caller's SourceHouse unchanged to every
+        // receiver (`0x004899DE` loads it, `0x00489AA7` pushes it): no fill.
         // `MapClass::DamageArea @ 0x00489280`'s ground/deck list excludes the
         // source object unless its type opts into `DamageSelf`, the warhead is
         // Rules.CrushWarhead, or Phobos `AllowDamageOnSelf` admits the firer
@@ -3585,8 +3583,10 @@ mod tests {
             let ids = hit_ids(&aoe.hits);
             let captured_houses = aoe.hits.iter().map(|event| event.source_house).collect();
 
-            // Prove alliance resolution reads the detonation ABI snapshot, not
-            // a later live-source owner value.
+            // The event keeps the detonation's House, but stock AffectsAllies
+            // (TechnoClass::ReceiveDamage 0x701CAC) asks the live attacker's
+            // current House: after the source changes owner, EnemyHouse
+            // answers, so the ally is hit and EnemyHouse's own units are not.
             entities.change_owner(1, enemy_house);
             let mut commit = ReceiverCommit::new();
             commit
@@ -3619,15 +3619,17 @@ mod tests {
         let (ordinary_ids, ordinary_houses, ordinary_hp) = run(false, "OrdinaryWH");
         assert_eq!(ordinary_ids, vec![2, 3]);
         assert_eq!(ordinary_houses, vec![Some(source_house); 2]);
-        assert_eq!(ordinary_hp, [100, 100, 60]);
+        assert_eq!(ordinary_hp, [100, 60, 100]);
 
+        // The collected source is its own attacker, so its now-EnemyHouse
+        // owner counts it an ally too.
         let (damage_self_ids, _, damage_self_hp) = run(true, "OrdinaryWH");
         assert_eq!(damage_self_ids, vec![1, 2, 3]);
-        assert_eq!(damage_self_hp, [60, 100, 60]);
+        assert_eq!(damage_self_hp, [100, 60, 100]);
 
         let (crush_ids, _, crush_hp) = run(false, "CrushWH");
         assert_eq!(crush_ids, vec![1, 2, 3]);
-        assert_eq!(crush_hp, [60, 100, 60]);
+        assert_eq!(crush_hp, [100, 60, 100]);
 
         // Phobos `Explosion_Damage_DamageSelf @ 0x004896EC` skips the source
         // exclusion, so a DamageSelf=no source still collects its own hit.
@@ -3635,7 +3637,7 @@ mod tests {
         {
             let (allow_ids, _, allow_hp) = run(false, "SelfWH");
             assert_eq!(allow_ids, vec![1, 2, 3]);
-            assert_eq!(allow_hp, [60, 100, 60]);
+            assert_eq!(allow_hp, [100, 60, 100]);
         }
     }
 
@@ -4031,6 +4033,57 @@ mod tests {
         assert_eq!(target.berserk.timer(), 300);
         assert_eq!(target.attack_target.target(), Some(TargetKind::Entity(1)));
         assert_eq!(target.mission.queued(), MissionId::NONE);
+    }
+
+    /// A rocket's DamageArea (`0x006632BB`) passes a live source and a NULL
+    /// house; DamageArea forwards that NULL (`0x00489AA7`), so the Psychedelic
+    /// gate (`0x00701CE5`) finds no ally and the firer's own unit goes berserk.
+    #[test]
+    fn area_damage_without_source_house_berserks_the_firers_units() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n0=FIRER\n1=TARGET\n[AircraftTypes]\n\
+             [BuildingTypes]\n[Warheads]\n0=PsyWH\n\
+             [FIRER]\nStrength=100\nArmor=heavy\n\
+             [TARGET]\nStrength=1000\nArmor=heavy\nImmuneToPsionics=no\n\
+             [PsyWH]\nCellSpread=1\nPercentAtMax=1\nPsychedelic=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("psychedelic rocket fixture");
+        let warhead = rules.warhead("PsyWH").unwrap().clone();
+        let mut interner = test_interner();
+        let yuri = interner.intern("YuriHouse");
+        let warhead_ref = interner.intern("PsyWH");
+        let mut entities = EntityStore::new();
+        for (id, type_name, rx) in [(1, "FIRER", 1), (2, "TARGET", 5)] {
+            let mut unit = GameEntity::test_default(id, type_name, "YuriHouse", rx, 5);
+            unit.set_owner_for_test(yuri);
+            unit.set_type_ref_for_test(interner.intern(type_name));
+            entities.insert(unit);
+        }
+        let mut occupancy = OccupancyGrid::new();
+        prepend_ground(&mut occupancy, 5, 5, 2);
+        let mut terrain = crate::map::resolved_terrain::test_grid(12, 12, test_terrain_cell);
+        let aoe = apply_aoe_damage(
+            &mut entities,
+            5,
+            5,
+            200,
+            &warhead,
+            &rules,
+            &mut interner,
+            (1, None, warhead_ref),
+            native_lists(&occupancy, &mut terrain, None),
+        );
+        let mut commit = ReceiverCommit::new();
+        commit.run(
+            &aoe.hits,
+            &mut entities,
+            &mut occupancy,
+            &rules,
+            &mut interner,
+            &mut terrain,
+        );
+        assert!(entities.get(2).unwrap().berserk.is_active());
     }
 
     #[test]

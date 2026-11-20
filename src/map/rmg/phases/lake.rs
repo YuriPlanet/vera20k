@@ -262,15 +262,14 @@ fn size_draw(ctx: &mut BlobCtx<'_>, remaining: i32) -> i32 {
 
 /// Undo every cell this attempt claimed: `GrowLake`'s failure tail
 /// (`0x0059C920`).
-fn rollback(ctx: &mut BlobCtx<'_>, cells: &[(i32, i32)], region: i32) {
-    for &(x, y) in cells {
+fn rollback(ctx: &mut BlobCtx<'_>, region: i32) {
+    for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
         if ctx.scratch.get(x, y).region != region {
             continue;
         }
         let scratch = ctx.scratch.get_mut(x, y);
         scratch.region = 0;
         scratch.water_region = false;
-        let cell = ctx.grid.get_mut(x, y).expect("native cell");
         cell.tile = 0;
         cell.sub_tile = 0;
         // The base level, which defaults to 4 — not 0.
@@ -377,7 +376,7 @@ pub(crate) fn grow_lake(
             let scratch = *ctx.scratch.get(x, y);
             let clear = ctx.ids.is_clear(ctx.grid.cell_native(x, y).tile);
             if scratch.region == 0 && clear && scratch.lake_allow {
-                let cell = ctx.grid.get_mut(x, y).expect("native cell");
+                let cell = ctx.grid.cell_native_mut(x, y);
                 cell.tile = ctx.ids.water_base;
                 cell.sub_tile = 0;
                 ctx.scratch.get_mut(x, y).region = region;
@@ -412,22 +411,17 @@ pub(crate) fn grow_lake(
         && (!is_driver_call || dilate_region_rings(ctx, region, 1));
 
     if !committed {
-        rollback(ctx, &cells, region);
+        rollback(ctx, region);
         return false;
     }
 
     // Anything still bare inside the finished region becomes green — driver
     // lakes only, for the same reason as the passes above.
-    for &(x, y) in &cells {
-        if !is_driver_call {
-            break;
-        }
-        if ctx.scratch.get(x, y).region != region {
-            continue;
-        }
-        let cell = ctx.grid.get_mut(x, y).expect("native cell");
-        if ctx.ids.is_clear(cell.tile) {
-            cell.tile = ctx.ids.green;
+    if is_driver_call {
+        for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
+            if ctx.scratch.get(x, y).region == region && ctx.ids.is_clear(cell.tile) {
+                cell.tile = ctx.ids.green;
+            }
         }
     }
 

@@ -179,7 +179,7 @@ pub(crate) fn destroy_connection(
             // (0x005DA898..0x005DA8F0); it kills the House on every peer.
             // VERA shared control: the lost participant's sender, which is
             // that index unless players share Houses.
-            let local = sim.session().current_house();
+            let local = sim.control_projection().local_command_house();
             let sender = source_house(session, sim, source_index);
             if let (Some(local), Some(sender)) = (local, sender) {
                 let local = sim.interner().resolve(local).to_string();
@@ -596,13 +596,17 @@ pub(crate) enum WaitPass {
 }
 
 pub(crate) fn local_source(session: &MatchSession) -> Option<usize> {
+    if session.local_connection_watches() {
+        return None;
+    }
     session
         .network_setup()
         .map(|launch| launch.local_player_index)
 }
 
 /// The connection nodes `[0x00A8DA78]` (count `[0x00A8DA84]`): the local
-/// player first, then the connected peers in participant order.
+/// player first, then the connected peers in participant order. A relay
+/// viewer has no local lockstep node.
 pub(crate) fn nodes(session: &MatchSession) -> Vec<usize> {
     let Some(local) = local_source(session) else {
         return Vec::new();
@@ -1559,6 +1563,7 @@ mod tests {
             19,
             std::num::NonZeroU32::new(2).unwrap(),
             LiveCommandMode::Lan,
+            None,
         )
         .unwrap();
         let wrong_port = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30124);
@@ -1658,6 +1663,7 @@ mod tests {
                     19,
                     NonZeroU32::new(5).unwrap(),
                     LiveCommandMode::Wol,
+                    None,
                 )
                 .unwrap()
             });
@@ -1802,6 +1808,8 @@ mod tests {
         transport
             .set_ordering_certificate(certificate.to_vec())
             .unwrap();
+        let clock =
+            crate::net::live_commands::relay_clock(LiveCommandMode::Wol, &transport, 2).unwrap();
         let mut live = crate::net::live_commands::LiveCommandSession::new(
             crate::net::live_commands::StartupAgreement::new(
                 [(0, 1), (1, 0)],
@@ -1820,6 +1828,7 @@ mod tests {
             19,
             NonZeroU32::new(1).unwrap(),
             LiveCommandMode::Wol,
+            clock,
         )
         .unwrap();
         assert!(live.uses_sequenced_lockstep());
@@ -1974,11 +1983,19 @@ mod tests {
             "",
         )
         .unwrap();
-        let mut first =
-            LiveCommandSession::new(agreement.clone(), first, 0, 19, rate, LiveCommandMode::Wol)
-                .unwrap();
+        let mut first = LiveCommandSession::new(
+            agreement.clone(),
+            first,
+            0,
+            19,
+            rate,
+            LiveCommandMode::Wol,
+            None,
+        )
+        .unwrap();
         let mut second =
-            LiveCommandSession::new(agreement, second, 2, 19, rate, LiveCommandMode::Wol).unwrap();
+            LiveCommandSession::new(agreement, second, 2, 19, rate, LiveCommandMode::Wol, None)
+                .unwrap();
         let probe = crate::net::command_exchange::CommandExchange::new([0, 2])
             .unwrap()
             .frame_probe(

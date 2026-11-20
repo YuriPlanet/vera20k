@@ -24,25 +24,33 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
-/// Mirror the authoritative speed whenever a complete Simulation replaces the
-/// app's live match, including both fresh-map handoff and in-scenario load.
+/// Mirror the authoritative speed into BBB's copy: when a complete Simulation
+/// replaces the app's live match (fresh-map handoff and in-scenario load),
+/// after a local change, and before BBB's init or the LAN host's options read
+/// it, since another player's speed event changes only the world.
 pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
-    let Some(game_speed) = state
+    let world = state
         .match_state
         .sim_runtime
         .runtime()
-        .map(|rt| &rt.simulation)
-        .and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
-        .map(u32::from)
-    else {
-        return;
-    };
-    state
-        .match_state
-        .match_presentation
-        .in_game_options
-        .game_speed = game_speed;
-    state.match_state.sim_speed_tps = crate::app::types::tps_for_game_speed(game_speed);
+        .map(|rt| &rt.simulation);
+    mirror_world_speed(
+        &mut state.match_state.match_presentation.in_game_options,
+        world,
+    );
+}
+
+/// [`sync_in_game_options_speed_from_sim`] on `options`: `world`'s speed after
+/// its next frame's speed events, when it has a selectable one.
+pub(crate) fn mirror_world_speed(
+    options: &mut crate::ui::shell::in_game_options_state::InGameOptionsState,
+    world: Option<&crate::sim::world::Simulation>,
+) {
+    if let Some(game_speed) =
+        world.and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
+    {
+        options.game_speed = u32::from(game_speed);
+    }
 }
 
 pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
@@ -221,6 +229,13 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.palette_set = assets.palette_set;
     state.match_state.match_presentation.surface_palette = Default::default();
     state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
+    // The skip table decoded its frames from the atlas just replaced.
+    state
+        .match_state
+        .match_presentation
+        .zshape_skips
+        .get_mut()
+        .forget_frames();
     state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
@@ -286,14 +301,12 @@ pub(crate) fn install_world_presentation(
     if let Some(ref fnt) = assets.fnt_file
         && !state.renderer.bit_font.is_built_from(fnt)
     {
-        let mut font = crate::render::bit_font::BitFont::from_fnt(
+        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             fnt,
         );
-        font.inherit_settings(&state.renderer.bit_font);
-        state.renderer.bit_font = font;
     }
 
     // The final sidebar projection resolves incoming side/radar authority.
@@ -327,6 +340,11 @@ pub(crate) fn install_world_presentation(
         .match_state
         .match_presentation
         .superweapon_building_timers = saved_timers;
+    // VERA's Convenience Help starts each scenario from the saved switch too;
+    // Ctrl+Alt+H flips it from there and writes it back to the profile.
+    let help = state.persistence.options_profile.convenience_help;
+    state.match_state.match_presentation.convenience_help = help;
+    state.match_state.sim_runtime.show_status_rows(help);
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;
@@ -577,6 +595,9 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
 }
 
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
+    // Retiring Radar may record a service input after the outgoing frame.
+    // Publish that frame before the retire/reset sequence.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     crate::app::match_runtime::scenario_pause::reset_clock(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
@@ -591,7 +612,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Only fresh startup cancels its outgoing scenario-owned request. Saved
     // loading preserves the process Theme state until ThemeLoad721040.
     state.audio.cancel_scenario_theme_request();
-    crate::app::reset_scenario_exit_runtime(state);
     // Auto play starts off in every match. The host outlives a match because
     // the app keeps one `MatchState` for the process, so a host left running
     // from the last match would drive this one from its first frame — the
@@ -607,6 +627,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
+    crate::app::reset_scenario_exit_runtime(state);
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
@@ -812,6 +833,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         );
     }
 
+    let mut initial_replay_effects = Vec::new();
     let installation = match startup {
         crate::app::match_bootstrap::LoadingStartup::Campaign(prepared) => {
             let installed = state.match_state.startup.acknowledge_campaign(
@@ -880,10 +902,13 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     "replay loader did not install an authored world"
                 )),
             };
-            if let Err(error) = playback {
-                let message = format!("Replay startup failed: {error:#}");
-                log::error!("{message}");
-                state.frontend.external_launch_error = Some(message);
+            match playback {
+                Ok(effects) => initial_replay_effects = effects,
+                Err(error) => {
+                    let message = format!("Replay startup failed: {error:#}");
+                    log::error!("{message}");
+                    state.frontend.external_launch_error = Some(message);
+                }
             }
             // A rejected replay is a frozen inspection view, never a fresh
             // playable match. Its diagnostics owner blocks every tick/input.
@@ -905,6 +930,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // Main_Game 0x0048CE7E: State_Machine's admission latch.
             state.match_state.match_presentation.modal_latch = true;
             state.frontend.screen = GameScreen::InGame;
+            if !initial_replay_effects.is_empty() {
+                crate::app::match_runtime::sim_tick::apply_trigger_effects(
+                    state,
+                    &initial_replay_effects,
+                );
+            }
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::match_started();
             if returns_scenario_rng_to_multiplayer_shell {

@@ -23,6 +23,8 @@ pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
 /// roster, and its lobbies list a colour for each
 /// ([`crate::rules::skirmish_colors`]).
 pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
+// Each player of an online room is one of its relay's sources.
+const _: () = assert!(NETWORK_PLAYER_SLOT_COUNT <= vera20k_relay_protocol::MAX_PEERS as usize);
 /// VERA offline extension: the most player rows a Skirmish map may seat.
 ///
 /// The full House roster is split into three bands, all inside the native
@@ -513,7 +515,8 @@ pub struct SkirmishLaunchOptions {
 }
 
 /// VERA: the rules a network room plays besides its options, which only its
-/// host sets: the host's Terrain Deformation box and Superweapon Limit.
+/// host sets: the host's Terrain Deformation box, Superweapon Limit and
+/// Building Production Queue.
 /// Every player's match plays these instead of their own; offline games play
 /// the player's own (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -528,6 +531,11 @@ pub struct HostRules {
     /// [`admitted_superweapon_limit`]: crate::rules::personal_rules::admitted_superweapon_limit
     #[serde(default, skip_serializing_if = "is_zero")]
     pub superweapon_limit: u8,
+    /// The Building Production Queue. Left out while off, so a room without
+    /// it sends the rules it sent before the setting; a lobby or LAN guest
+    /// from before it cannot read options that carry it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub building_production_queue: bool,
     /// The host's VERARULES.INI in base64, which games sent until the file
     /// was retired for New Mod. Never sent now; read only so that a room or a
     /// replay from such a game is refused by [`Self::personal_rules`] with a
@@ -538,15 +546,16 @@ pub struct HostRules {
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && self.superweapon_limit == 0
+        !self.terrain_deformation && self.superweapon_limit == 0 && !self.building_production_queue
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
-    /// box and Superweapon Limit.
+    /// box, Superweapon Limit and Building Production Queue.
     pub fn from_own(own: &PersonalRules) -> Self {
         Self {
             terrain_deformation: own.terrain_deformation(),
             superweapon_limit: own.superweapon_limit(),
+            building_production_queue: own.building_production_queue(),
             retired_personal_rules: None,
         }
     }
@@ -560,6 +569,7 @@ impl HostRules {
         let mut rules = PersonalRules::default();
         rules.set_terrain_deformation(self.terrain_deformation);
         rules.set_superweapon_limit(i32::from(self.superweapon_limit));
+        rules.set_building_production_queue(self.building_production_queue);
         Ok(rules)
     }
 }
@@ -670,19 +680,13 @@ impl SkirmishLaunchOptions {
 }
 
 /// The options VERA's game room adds to gamemd's: Destroyable Bridges,
-/// In-game Allying, the bans and Teams. LAN carries them beside the native
-/// options text, which has no field for them, and the room keeps them for its
-/// next game.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+/// In-game Allying, the bans and Teams, which the room keeps for its next
+/// game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RoomOptions {
     pub bridges_destroyable: bool,
     pub ally_change_allowed: bool,
     pub bans: RoomBans,
-    /// LAN carries Teams in a field of its own: a game that does not know a
-    /// field here refuses the whole options before it can say the host's
-    /// build differs.
-    #[serde(skip)]
     pub teams: Option<u8>,
 }
 
@@ -1196,7 +1200,7 @@ impl SkirmishLaunchSession {
         }
     }
 
-    fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
+    pub(crate) fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
         let rows_at_decode = self.roster_from_rows();
         self.recorded_house_roster = (constructor != rows_at_decode).then(|| {
             Box::new(RecordedHouseRoster {
@@ -1573,6 +1577,25 @@ mod tests {
             played.superweapon_limit(),
             crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX
         );
+    }
+
+    /// A room carries its host's Building Production Queue and every player
+    /// plays it; a room from before the setting reads as off.
+    #[test]
+    fn a_room_carries_its_hosts_building_queue() {
+        let mut own = crate::rules::personal_rules::PersonalRules::default();
+        own.set_building_production_queue(true);
+        let shared = HostRules::from_own(&own);
+        assert_eq!(
+            serde_json::to_value(&shared).unwrap(),
+            serde_json::json!({"building_production_queue": true})
+        );
+        let played = shared.personal_rules().unwrap();
+        assert!(played.building_production_queue());
+        assert_eq!(played.compatibility_crc(), own.compatibility_crc());
+        let older: HostRules =
+            serde_json::from_value(serde_json::json!({"terrain_deformation": true})).unwrap();
+        assert!(!older.personal_rules().unwrap().building_production_queue());
     }
 
     #[test]

@@ -306,9 +306,12 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
             .set_binary_frame_for_test(world.session.binary_frame());
         let state = receiver_health::commit_receiver_health(
             &event,
+            &mut crate::sim::combat::receiver_call::ReceiverDamage::new(
+                event.damage,
+                event.damage_writeback,
+            ),
             &mut local_world,
             rules,
-            None,
             Some(resolved),
             crate::sim::world::FrameEffects::default(),
             false,

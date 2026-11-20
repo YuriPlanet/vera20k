@@ -35,6 +35,14 @@ impl App {
         if !crate::app::shell_wol::online_cleanup_pending(state) {
             return false;
         }
+        Self::leave_screen(state);
+        state.frontend.network_goodbye_deadline = Some(Instant::now() + GOODBYE_WAIT);
+        true
+    }
+
+    /// Take the closing game off the screen: silence it, free the pointer
+    /// and hide the window.
+    pub(super) fn leave_screen(state: &mut AppState) {
         state.audio.stop_theme();
         if let Some(sfx) = state.audio.sfx_player.as_mut() {
             sfx.stop_all();
@@ -43,8 +51,6 @@ impl App {
         // lock never arrives.
         crate::app::input::cursor::release_cursor_confinement(state);
         state.platform.window.set_visible(false);
-        state.frontend.network_goodbye_deadline = Some(Instant::now() + GOODBYE_WAIT);
-        true
     }
 
     /// While goodbyes are pending, service only them; exit when they finish
@@ -71,6 +77,11 @@ impl App {
 /// transport to the visit, which sends the relay departure; a LAN match
 /// sends its departure through the match transport and flushes it.
 fn say_goodbye(state: &mut AppState) {
+    // The worker hands Queue_AI back to the live transport. Give that frame
+    // its ordinary exchange pass before the goodbye takes the transport.
+    if state.match_state.live_network.is_some() && state.frontend.graphics_lost.is_none() {
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+    }
     let online =
         state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol;
     if online && state.match_state.live_network.is_some() {

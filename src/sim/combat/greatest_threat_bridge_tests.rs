@@ -372,7 +372,6 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         FireSubject {
             world: &world,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer,
             obj,

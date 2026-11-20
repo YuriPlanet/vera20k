@@ -276,7 +276,7 @@ impl Simulation {
         if super::approach_oracle_seam::take_approach_return().is_some() {
             return;
         }
-        if self.approach_unit_head(id, rules, registry, frame_effects) {
+        if self.approach_unit_head(id, rules, frame_effects) {
             return;
         }
         // 0x0052234C..0x0052236A: an infantryman with a Target in a deploy
@@ -315,19 +315,12 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let Some(destination) = self.unit_approach_head(id, rules) else {
             return false;
         };
-        let _ = self.assign_destination_represented(
-            id,
-            Some(destination),
-            rules,
-            registry,
-            frame_effects,
-        );
+        let _ = self.assign_destination_represented(id, Some(destination), rules, frame_effects);
         true
     }
 
@@ -376,9 +369,10 @@ impl Simulation {
         // CanFireAt answers true for a null Target (`0x006F77BB..0x006F77C6`),
         // which only the Phobos re-entry after a Foot body that cleared it
         // can bring here.
-        let in_reach = actor.attack_target.target().is_none_or(|target| {
-            crate::sim::world::can_fire_at(self, rules, id, target, slot, registry)
-        });
+        let in_reach = actor
+            .attack_target
+            .target()
+            .is_none_or(|target| crate::sim::world::can_fire_at(self, rules, id, target, slot));
         if crate::sim::world::weapon_at_index(self, rules, id, slot)
             .is_none_or(|weapon| weapon.area_fire)
         {
@@ -563,7 +557,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&actor.owner())
-            .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_none_or(|h| h.is_controlled_by_human(self.session.rule_policy()));
         // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
         // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
         // either.
@@ -582,7 +576,7 @@ impl Simulation {
                         || human && mission == Some(MissionType::AreaGuard)
                         || !human && mission == Some(MissionType::Hunt)))
         {
-            self.assign_target_represented(id, None, rules, registry, frame_effects)
+            self.assign_target_represented(id, None, rules, frame_effects)
                 .map_err(|e| format!("Approach target clear: {e}"))?;
             self.assign_null_destination(id, rules, registry, frame_effects);
             return Ok(None);
@@ -628,7 +622,7 @@ impl Simulation {
         // object) is taken (vt+0x480 with 0), leaves the queue and is the
         // answer.
         if let Some(entry) = actor.navigation.nav_queue().first().copied() {
-            self.assign_destination_keeping_queue(id, Some(entry), rules, registry, frame_effects)
+            self.assign_destination_keeping_queue(id, Some(entry), rules, frame_effects)
                 .map_err(|e| format!("Approach queued destination: {e}"))?;
             self.substrate
                 .entities
@@ -657,14 +651,8 @@ impl Simulation {
         let (target, identity, target_reference) = match cliff {
             Some((x, y)) => {
                 let redirected = TargetKind::Cell(x as u16, y as u16);
-                self.assign_target_represented(
-                    id,
-                    Some(redirected),
-                    rules,
-                    registry,
-                    frame_effects,
-                )
-                .map_err(|e| format!("Approach cliff target: {e}"))?;
+                self.assign_target_represented(id, Some(redirected), rules, frame_effects)
+                    .map_err(|e| format!("Approach cliff target: {e}"))?;
                 (
                     redirected,
                     redirected.cell_identity(self.resolved_terrain.as_ref().unwrap()),
@@ -897,7 +885,6 @@ impl Simulation {
                 id,
                 Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),
                 rules,
-                registry,
                 frame_effects,
             )
             .map_err(|e| format!("Approach destination: {e}"))?;
@@ -912,26 +899,19 @@ impl Simulation {
         // the Target itself as its destination (4D6A71, vt+0x480(TarCom, 1))
         // and returns it. Neither key is set in retail.
         if object.hunter_seeker || category == EntityCategory::Infantry && object.vehicle_thief {
-            self.assign_destination_represented(
-                id,
-                Some(target_reference),
-                rules,
-                registry,
-                frame_effects,
-            )
-            .map_err(|e| format!("Approach Target destination: {e}"))?;
+            self.assign_destination_represented(id, Some(target_reference), rules, frame_effects)
+                .map_err(|e| format!("Approach Target destination: {e}"))?;
             return Ok(Some(target_reference));
         }
         let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
         let fallback = self.approach_fallback(id, retained_candidate, rules, &cells)?;
-        self.assign_target_represented(id, None, rules, registry, frame_effects)
+        self.assign_target_represented(id, None, rules, frame_effects)
             .map_err(|e| format!("Approach exhausted target clear: {e}"))?;
         if let Some(cell) = fallback {
             self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(cell.0, cell.1)),
                 rules,
-                registry,
                 frame_effects,
             )
             .map_err(|e| format!("Approach fallback destination: {e}"))?;

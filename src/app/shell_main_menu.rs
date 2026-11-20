@@ -39,15 +39,16 @@ fn dispatch_shell_controller_confirmed_quit(operations: &mut impl ConfirmedQuitO
 impl AppState {
     /// Puts `tag`'s language in use as a pick in the Language list does:
     /// from the next frame every label reads in it, as the string table takes
-    /// its texts, the map titles read from the table follow, and the fonts
-    /// take its script's letter forms. False, changing nothing, when no
-    /// language file provides `tag`.
+    /// its texts and the map titles read from the table follow; the fonts
+    /// take its script's letter forms and reading direction by themselves
+    /// (`TextEngine::follow_interface_language`), as after a reload of the
+    /// language files. False, changing nothing, when no language file
+    /// provides `tag`.
     pub(crate) fn use_language(&mut self, tag: &str) -> bool {
         if !crate::i18n::select(tag) {
             return false;
         }
         self.refresh_string_key_labels();
-        self.renderer.bit_font.set_locale(tag);
         true
     }
 
@@ -200,9 +201,24 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
     }
+    fn store_convenience_help(&mut self, enabled: bool) {
+        // Presentation only: the next status-row draw reads it.
+        self.persistence.options_profile.convenience_help = enabled;
+    }
+    fn store_building_production_queue(&mut self, enabled: bool) {
+        // A rule switch, as Terrain Deformation is: the next offline
+        // scenario's rules read it, so a running match keeps what it started
+        // with and every peer, save and replay plays the same rules.
+        self.persistence.options_profile.building_production_queue = enabled;
+        self.process_assets.set_building_production_queue(enabled);
+    }
     fn store_compact_super_timers(&mut self, enabled: bool) {
         // Presentation only: the next timer draw reads it.
         self.persistence.options_profile.compact_super_timers = enabled;
+    }
+    fn store_grouped_super_timers(&mut self, enabled: bool) {
+        // Presentation only: the next timer draw reads it.
+        self.persistence.options_profile.grouped_super_timers = enabled;
     }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
@@ -314,7 +330,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
-            presentation.lighting.refresh(
+            presentation.lighting.set_detail_level(
                 terrain,
                 &runtime.simulation,
                 presentation.in_game_options.detail_level,
@@ -1072,6 +1088,7 @@ impl App {
     /// The teardown every finished scenario shares, the co-op continuation
     /// included, which never reaches Main_Game's shell return.
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
@@ -1150,6 +1167,16 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
+        if state.process_assets.uses_client_catalog()
+            && (state.frontend.skirmish_modes.is_empty()
+                || state.frontend.scenario_catalog.shell_maps().is_empty())
+        {
+            Self::open_shell_notice(
+                state,
+                "No playable skirmish maps were found in this mod's client catalog. Check that the full mod folder was extracted.".into(),
+            );
+            return;
+        }
         if !Self::prepare_multiplayer_settings(
             state,
             crate::app::match_runtime::session::SessionMode::Skirmish,
@@ -1264,8 +1291,9 @@ impl App {
 
     /// While the Developer page's String Keys box is ticked, reload a language
     /// file rewritten in the settings folder or the checkout's `src/i18n`, so
-    /// its texts (and their keys) follow without a restart. Returns the next
-    /// check, keeping the event loop awake for it even on a still screen.
+    /// its texts (and their keys) follow without a restart, as after a pick
+    /// in the Language list ([`Self::use_language`]). Returns the next check,
+    /// keeping the event loop awake for it even on a still screen.
     pub(super) fn poll_language_files(state: &mut AppState) -> Option<Instant> {
         if !crate::i18n::string_keys_enabled() {
             return None;
@@ -2010,7 +2038,12 @@ impl App {
             ShellExitThen::LanBack => Self::commit_lan_back(state),
             ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),
             ShellExitThen::LanJoinAccepted(accepted) => {
-                Self::open_lan_joined_setup(state, accepted)
+                Self::open_joined_setup(
+                    state,
+                    accepted.local,
+                    accepted.observer_row,
+                    crate::ui::multiplayer_setup::SetupFlavor::Lan,
+                );
             }
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)
@@ -2032,7 +2065,12 @@ impl App {
             }
             ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
-            ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
+            ShellExitThen::ChooseMapRandomMap(seed) => {
+                Self::commit_choose_map_random_map(state);
+                if let Some(seed) = seed {
+                    Self::load_random_map_seed(state, &seed, true);
+                }
+            }
             ShellExitThen::RandomMapUse => Self::accept_random_map_setup(state),
             ShellExitThen::RandomMapCancel => Self::cancel_random_map_setup(state),
             ShellExitThen::WolBack => Self::return_from_wol(state),
@@ -2280,6 +2318,14 @@ impl App {
             }
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
+            }
+            MainMenuShellAction::Network | MainMenuShellAction::WwOnline
+                if state.process_assets.uses_client_catalog() =>
+            {
+                Self::open_shell_notice(
+                    state,
+                    "This mod's client catalog is available in Skirmish. Choose No mod under Options, Mods to play online or on a network.".into(),
+                );
             }
             // Both lead to a pre-match check, which compares a mod's files.
             MainMenuShellAction::Network => {

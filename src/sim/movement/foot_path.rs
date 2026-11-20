@@ -587,20 +587,12 @@ impl Simulation {
             .navigation
             .path_replay_mut()
             .clear_live_head();
-        let Some(answer) =
-            self.find_path_target_answer(id, request.destination, rules, registry)?
-        else {
+        let Some(answer) = self.find_path_target_answer(id, request.destination, rules)? else {
             //4D3989..399C returns false before Mark, AStar or +500.
             return Ok(FindPathResult::Failed);
         };
-        let goal = self.find_path_goal_for_answer(
-            id,
-            request.destination,
-            answer,
-            rules,
-            registry,
-            frame_effects,
-        )?;
+        let goal =
+            self.find_path_goal_for_answer(id, request.destination, answer, rules, frame_effects)?;
         match self.search_foot_path(request, goal, rules, registry, frame_effects)? {
             Ok(()) => Ok(FindPathResult::Route),
             Err(refusal) => {
@@ -721,7 +713,6 @@ impl Simulation {
                         request,
                         goal,
                         rules,
-                        registry,
                         grid,
                         counts,
                         MoverLift::Marked,
@@ -911,13 +902,7 @@ impl Simulation {
                         .ok_or("retired Find_Path follower queue receiver")?,
                     MissionId::from_known(MissionType::Move),
                 );
-                self.redirect_find_path_destination(
-                    id,
-                    destination,
-                    rules,
-                    registry,
-                    frame_effects,
-                )?;
+                self.redirect_find_path_destination(id, destination, rules, frame_effects)?;
                 let peer_request = FootPathRequest::track(
                     &self.substrate.entities,
                     id,
@@ -950,7 +935,6 @@ impl Simulation {
         request: &FootPathRequest,
         goal: DriveCoord,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         grid: &crate::sim::pathfinding::PathGrid,
         counts: &crate::sim::pathfinding::BlockerNeighborCounts,
         lift: MoverLift,
@@ -1007,7 +991,7 @@ impl Simulation {
         let entry = FootSearchEntry {
             sim: self,
             markers: marker_search,
-            receiver: self.foot_entry_receiver(id, rules, registry, facts),
+            receiver: self.foot_entry_receiver(id, rules, facts),
             chains: facts.filter(|_| lift == MoverLift::Emulated),
             threat_coefficient: self.foot_path_threat_coefficient(id),
             unlisted,
@@ -1144,7 +1128,7 @@ impl Simulation {
         self.assign_null_destination(id, rules, registry, frame_effects);
         //4D4149 dispatches the concrete target setter, including an owned
         //Airstrike's cancellation before its TarCom changes.
-        self.assign_target_represented(id, None, rules, registry, frame_effects)
+        self.assign_target_represented(id, None, rules, frame_effects)
             .map_err(|_| "retired failed Find_Path actor")?;
         let human = self.owner_is_human(owner);
         let mission = if human {
@@ -1174,7 +1158,6 @@ impl Simulation {
                 id,
                 Some(crate::sim::components::NavTargetRef::cell(rx, ry)),
                 rules,
-                registry,
                 frame_effects,
             )
             .map_err(|cause| format!("Find_Path failure post: {cause}"))?;
@@ -1192,7 +1175,6 @@ impl Simulation {
         id: u64,
         destination: DriveCoord,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<u8>, String> {
         if !self.foot_path_zone_precheck(id, destination, rules)? {
             return Ok(None);
@@ -1203,7 +1185,7 @@ impl Simulation {
             .ok_or("Find_Path goal requires map cells")?;
         let target = ((destination.x / 256) as i16, (destination.y / 256) as i16);
         let cell = terrain.native_cell_identity(target);
-        self.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules, registry)
+        self.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules)
             .map(Some)
     }
 
@@ -1217,13 +1199,12 @@ impl Simulation {
         destination: DriveCoord,
         answer: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<DriveCoord, String> {
         let Some(near) = self.find_path_redirect(id, destination, answer, rules)? else {
             return Ok(destination);
         };
-        self.redirect_find_path_destination(id, near, rules, registry, frame_effects)?;
+        self.redirect_find_path_destination(id, near, rules, frame_effects)?;
         Ok(DriveCoord::from(cell_center(near.into(), 0)))
     }
 
@@ -1633,7 +1614,6 @@ impl Simulation {
         id: u64,
         cell: (i16, i16),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         //0x4D3CBF, 0x4D3DF1 and 0x4D3FBB pass Map[cell] (0x5657A0) to
@@ -1643,7 +1623,7 @@ impl Simulation {
             terrain.native_cell_identity(cell);
         }
         let requested = crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-        self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
+        self.assign_destination_represented(id, Some(requested), rules, frame_effects)
             .map_err(|cause| format!("Find_Path redirect: {cause}"))
     }
 

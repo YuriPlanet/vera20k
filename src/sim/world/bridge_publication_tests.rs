@@ -264,7 +264,6 @@ fn host<'a>(sim: &'a mut Simulation, rules: &'a RuleSet) -> LivePublication<'a> 
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim,
         rules,
-        registry: None,
         collapsed: false,
     }
 }
@@ -330,8 +329,7 @@ fn bridge_publication_production_nonanchor_collapse_keeps_other_overlay_and_runs
         &mut sim,
         &rules,
         &[hit],
-        None,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     ));
     assert!(
         sim.substrate
@@ -462,7 +460,6 @@ impl BridgePublicationHost for ReenteringHost<'_> {
                 self.live.sim,
                 self.live.rules,
                 &[event],
-                None,
                 crate::sim::world::FrameEffects::default(),
             );
             assert!(!changed);

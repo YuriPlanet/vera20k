@@ -58,6 +58,8 @@ pub(crate) struct ShpInputs<'a> {
     pub overlay_atlas: Option<&'a crate::render::overlay_atlas::OverlayAtlas>,
     pub unit_atlas: Option<&'a crate::render::unit_atlas::UnitAtlas>,
     pub voxel_images: &'a std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
+    /// The skip table the left-edge building bodies of this picture fill.
+    pub zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     /// Renders a building gun's depth-tested image; None draws the atlas's.
     pub depth_tested_images: Option<super::units::DepthTestedImages<'a>>,
     pub camera: [f32; 2],
@@ -70,7 +72,8 @@ pub(crate) struct ShpInputs<'a> {
     pub ignore_visibility: bool,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
-    pub building_zshape: bool,
+    /// The loaded BUILDNGZ frame's offset in its canvas.
+    pub building_zshape: Option<(i32, i32)>,
 }
 
 /// `extra_light` is the class's
@@ -109,12 +112,7 @@ pub(crate) fn shp_inputs<'a>(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let building_viewport = crate::app::presentation::render::tactical_world_viewport(
-        camera,
-        [x, y, width, height],
-        state.renderer.world_zoom_pass.as_ref(),
-    );
+    let building_viewport = crate::app::presentation::render::tactical_world_view(state);
     Some(ShpInputs {
         runtime,
         frame: state.match_state.sim_runtime.frame()?,
@@ -122,6 +120,7 @@ pub(crate) fn shp_inputs<'a>(
         overlay_atlas: presentation.overlay_atlas.as_ref(),
         unit_atlas: presentation.unit_atlas.as_ref(),
         voxel_images: &presentation.voxel_images,
+        zshape_skips: &presentation.zshape_skips,
         depth_tested_images: super::units::DepthTestedImages::of(state),
         camera,
         render_size: [state.render_width(), state.render_height()],
@@ -132,7 +131,10 @@ pub(crate) fn shp_inputs<'a>(
         ignore_visibility: state.match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        building_zshape: presentation.building_zshape.is_some(),
+        building_zshape: presentation
+            .building_zshape
+            .as_ref()
+            .map(|zshape| zshape.frame_offset),
     })
 }
 
@@ -682,7 +684,7 @@ pub(crate) fn shp_visitor<'a>(
                 // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
                 // (a12, pushed at `0x0043D633`); the ordinary body passes
                 // BUILDNGZ (`0x0043D806`).
-                let zshape = input.building_zshape
+                let zshape = input.building_zshape.is_some()
                     && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
                     && gate_open_frame.is_none();
                 let origin = native_z::zshape_origin(
@@ -690,6 +692,7 @@ pub(crate) fn shp_visitor<'a>(
                     (sx.round() as i32, sy.round() as i32),
                     foundation,
                     point_move,
+                    input.building_zshape.unwrap_or_default(),
                 );
                 (
                     lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
@@ -735,7 +738,7 @@ pub(crate) fn shp_visitor<'a>(
             parent.policy
         };
         let body = entry.map(|entry| {
-            let instance = SpriteInstance {
+            let mut instance = SpriteInstance {
                 position: [sx + entry.offset_x, sy + entry.offset_y],
                 size: entry.pixel_size,
                 uv_origin: entry.uv_origin,
@@ -753,9 +756,19 @@ pub(crate) fn shp_visitor<'a>(
                 alpha: 1.0,
                 draw_state,
                 z_adjust,
-                z_gradient,
+                z_gradient: z_gradient | native_z::shp_frame_flag(entry.extended),
                 zshape_origin,
             };
+            if z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
+                let skip = native_z::zshape_lead_skip(
+                    input.building_viewport.camera[0],
+                    instance.position[0],
+                );
+                instance.draw_state.fx_params[3] = input
+                    .zshape_skips
+                    .borrow_mut()
+                    .slot(atlas, &body_key, entry, skip);
+            }
             (ObjectTexture::ShpPage(entry.page as usize), instance)
         });
 
@@ -882,7 +895,8 @@ pub(crate) fn shp_visitor<'a>(
                             alpha: 1.0,
                             draw_state,
                             z_adjust,
-                            z_gradient,
+                            z_gradient: z_gradient
+                                | native_z::shp_frame_flag(turret_entry.extended),
                             zshape_origin,
                         },
                     });
@@ -2211,7 +2225,8 @@ fn emit_unit_terrain_body(
                 alpha: 1.0,
                 draw_state: material,
                 z_adjust,
-                z_gradient: pack_z_gradient(gradient, false),
+                z_gradient: pack_z_gradient(gradient, false)
+                    | native_z::shp_frame_flag(sprite.extended),
                 ..Default::default()
             },
         });

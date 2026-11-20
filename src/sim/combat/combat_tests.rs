@@ -888,7 +888,7 @@ fn gsi_04_05_null_attacker_building_hit_keeps_the_attacker_index() {
 /// `TechnoClass::ReceiveDamage @ 0x00701900`: an ordinary sourced area hit,
 /// even under an Iron Curtain, resolves no receiver outcome (no Techno
 /// gates, impact light, anger or threat tail), and a WaveClass caller's
-/// shared damage stays unchanged (`wave_post_object_damage` is `None`).
+/// shared damage stays unchanged.
 #[test]
 fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
     use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
@@ -930,34 +930,16 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             .is_none()
         };
         assert!(resolve(&sim), "IC {iron_curtain}: no receiver outcome");
-        #[cfg(feature = "phobos")]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
+        let (_, _, packet) = world_receiver::commit_receiver(
+            &mut sim,
+            &mut world_receiver::ReceiverRun::default(),
+            combat_aoe::AreaDamageReceiver::Entity(event),
             &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
-            None,
-            Some(&sim),
-        );
-        #[cfg(not(feature = "phobos"))]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
-            &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
             None,
         );
         assert_eq!(
-            wave, None,
-            "IC {iron_curtain}: the Wave packet is untouched"
+            packet, 100,
+            "IC {iron_curtain}: the hut kept the incoming packet"
         );
     }
     sim.commit_noncombat_aoe_hits(
@@ -2811,7 +2793,6 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         let subject = super::fire_error_world::FireSubject {
             world: &sim,
             rules,
-            overlay_registry: Some(&registry),
             fog: Some(sim.fog.fire_view(&sim.house_alliances)),
             firer: actor,
             obj: sniper,
@@ -3306,7 +3287,8 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
         .entities
         .get_mut(GATE_VICTIM)
         .unwrap()
-        .garrison_mut_for_test()
+        .passenger_role_mut_for_test()
+        .occupants_mut()
         .add_for_test(occupant_id);
     assert!(combat_targeting::should_retaliate(
         &sim,
@@ -3832,7 +3814,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         &mut sim,
         &rules,
         system_id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert_eq!(
         sim.particle_systems().get(system_id).unwrap().coords(),
@@ -3907,10 +3889,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         Some(system_id),
         "mark-only Destroy retains +0x310 until the system's own Limbo"
     );
-    sim.retire_particle_system(
-        system_id,
-        crate::sim::world::UninitContext::with_rules(&rules),
-    );
+    sim.retire_particle_system(system_id, crate::sim::world::UninitContext::new(&rules));
     assert!(sim.particle_systems().get(system_id).is_some());
     assert_eq!(
         sim.substrate
@@ -6228,7 +6207,10 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
     let mut store = EntityStore::new();
     let mut building = make_entity(10, "CAGAS", 5, 5, 800);
     building.set_category_for_test(EntityCategory::Structure);
-    building.garrison_mut_for_test().add_for_test(1);
+    building
+        .passenger_role_mut_for_test()
+        .occupants_mut()
+        .add_for_test(1);
     store.insert(building);
     let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
     occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
@@ -7137,7 +7119,6 @@ fn an_illegal_shot_is_still_in_range() {
     let code = crate::sim::combat::fire_error_world::FireSubject {
         world: &sim,
         rules: &rules,
-        overlay_registry: None,
         fog: None,
         firer: tank,
         obj: rules.object("MTNK").unwrap(),
@@ -10678,7 +10659,10 @@ fn gsi_08_05_a_garrison_shot_takes_the_f32_occupy_multiplier() {
     let mut store = EntityStore::new();
     let mut building = make_entity(10, "CAGAS", 5, 5, 800);
     building.set_category_for_test(EntityCategory::Structure);
-    building.garrison_mut_for_test().add_for_test(1);
+    building
+        .passenger_role_mut_for_test()
+        .occupants_mut()
+        .add_for_test(1);
     store.insert(building);
     let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
     occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
@@ -10717,7 +10701,9 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
 
     for victim_id in 2..=6u64 {
         let mut victim = make_entity_owned(victim_id, "HTNK", 8, 5, 1, "Americans");
-        victim.tracking_facts.set_dont_score_for_test(true);
+        victim
+            .tracking_facts_mut_for_test()
+            .set_dont_score_for_test(true);
         store.insert(victim);
         install_entity_attack_target_for_test(&mut store, 1, victim_id);
         // Each victim is a fresh shot: clear the reload the last kill armed.
@@ -10767,7 +10753,8 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     building.set_category_for_test(EntityCategory::Structure);
     // Preserve the former supplied Cargo prepend order as occupant input.
     building
-        .garrison_mut_for_test()
+        .passenger_role_mut_for_test()
+        .occupants_mut()
         .set_ids_for_test(vec![3, 1]);
     store.insert(building);
     for id in [1, 3] {
@@ -10824,7 +10811,8 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     let mut building = make_entity_owned(10, "CAGAS", 5, 5, 800, "Soviet");
     building.set_category_for_test(EntityCategory::Structure);
     building
-        .garrison_mut_for_test()
+        .passenger_role_mut_for_test()
+        .occupants_mut()
         .set_ids_for_test(vec![3, 1]);
     store.insert(building);
     // Whichever occupant sits at index 0 shoots with the quick gun; the one

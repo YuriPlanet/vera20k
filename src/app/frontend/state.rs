@@ -32,6 +32,10 @@ pub(crate) struct FrontendState {
     /// The game is closing and waits until this for its network goodbyes
     /// (`App::poll_network_goodbye`).
     pub(crate) network_goodbye_deadline: Option<crate::util::time::Instant>,
+    /// A lost graphics device closed the game; the player hears it as the
+    /// game exits (`App::close_after_graphics_loss`).
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) graphics_lost: Option<crate::app::system_dialog::GraphicsLost>,
     /// Browser launch is closing its network owners before engine exit.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     pub(crate) browser_exit_pending: bool,
@@ -63,7 +67,7 @@ pub(crate) struct FrontendState {
     pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
     pub(crate) main_menu_movie_identity:
         Option<crate::app::frontend::main_menu_shell_render::Ra2tsMovieSessionIdentity>,
-    pub(crate) main_menu_movie_last_step: Instant,
+    pub(crate) main_menu_movie_clock: super::main_menu_shell_render::MenuMovieClock,
     /// Terminal menu failure; retained for the error screen and input gate.
     pub(crate) main_menu_shell_error: Option<String>,
     /// The config and settings files the error screen names (`initialize`).
@@ -151,6 +155,9 @@ pub(crate) struct FrontendState {
     /// `0x10E` and full controls instead of opening at the online sign-in,
     /// and a LAN guest's BD keeps Accept (`SetupDialog::modern`).
     pub(crate) native_shell_ui: bool,
+    /// A shell capture's WOL provider, which its Internet visit opens with.
+    /// Outside captures it is `None` and every visit opens online.
+    pub(crate) wol_capture_provider: Option<crate::app::shell_wol::WolProvider>,
     /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
     pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
     pub(crate) network_setup_protocol:
@@ -169,7 +176,6 @@ pub(crate) struct FrontendState {
     /// which its next Create Game shows and its room publishes.
     pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
-    pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
     pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
@@ -223,8 +229,7 @@ pub(crate) struct FrontendState {
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,
-    /// Which shell surface owns the MainMenu screen (F11): structural
-    /// exclusivity replaces the old boolean triple.
+    /// Which shell surface owns the MainMenu screen.
     pub(crate) shell_route: crate::app::shell_route::ShellRoute,
     /// Which screen is currently active (MainMenu, Loading, InGame).
     pub(crate) screen: GameScreen,
@@ -258,9 +263,6 @@ pub(crate) struct FrontendState {
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
     /// VERA's enlarged map preview, while it shows.
     pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
-    /// Minimap renderer — created at map load time.
-    pub(crate) loading_screen_atlas:
-        Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
     pub(crate) loading_progress: crate::app::loading::pump::LoadingProgressState,
     /// Game data from rules.ini — needed by combat system for weapon/warhead lookups.
     /// Startup-shell rules loaded at boot for menu presentation; match paths

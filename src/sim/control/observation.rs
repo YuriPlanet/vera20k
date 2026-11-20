@@ -1700,7 +1700,10 @@ impl<'a> Observation<'a> {
     ///
     /// Read-only. Packing is `Command::UndeployBuilding`, which re-checks.
     pub fn can_repack_yard(&self, rules: &RuleSet, entity_id: u64) -> bool {
-        self.sim.can_undeploy_building_runtime(entity_id, rules)
+        // `delegated=false`: the house it reads is the player's own, and an
+        // autoplay query asks the same question a player's click would be
+        // checked against. Only a delegated order takes the redeploy gate.
+        self.sim.can_undeploy_building_runtime(entity_id, false, rules)
     }
 
     /// Whether the navigation projection the connectivity answers come from

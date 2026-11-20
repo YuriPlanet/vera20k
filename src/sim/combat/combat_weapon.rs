@@ -1486,7 +1486,7 @@ mod tests {
         .unwrap();
         assert_eq!((selected.index, selected.weapon_id), (1, "SECOND"));
         assert_eq!(
-            world.power_down_building_upgrade(1, &rules),
+            world.power_down_building_upgrade(1, &rules, Default::default()),
             world.interner.get("UP2")
         );
         let host = world.substrate.entities.get(1).unwrap();
@@ -1502,7 +1502,7 @@ mod tests {
             .is_none()
         );
         assert_eq!(
-            world.power_down_building_upgrade(1, &rules),
+            world.power_down_building_upgrade(1, &rules, Default::default()),
             world.interner.get("UP1")
         );
         let host = world.substrate.entities.get(1).unwrap();
@@ -1543,7 +1543,9 @@ mod tests {
             5,
             EntityCategory::Structure,
         );
-        host.garrison_mut_for_test().add_for_test(2);
+        host.passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(2);
         world.substrate.entities.insert(host);
         world
             .substrate
@@ -1660,7 +1662,10 @@ mod tests {
                 );
                 inside.veterancy.set_rank_for_test(veterancy);
                 entities.insert(inside);
-                building.garrison_mut_for_test().add_for_test(2);
+                building
+                    .passenger_role_mut_for_test()
+                    .occupants_mut()
+                    .add_for_test(2);
             }
             entities.insert(building);
             let interner = crate::sim::intern::test_interner();

@@ -487,7 +487,8 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         Some(&saved_view),
                         None,
                         None,
-                    );
+                    )
+                    .unwrap();
                     let snapshot = GameSnapshot::load(&bytes).unwrap();
                     let restored = snapshot.tactical_view().unwrap();
                     super::validate_saved_tactical_view(restored).unwrap();

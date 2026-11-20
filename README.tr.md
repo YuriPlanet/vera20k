@@ -30,22 +30,12 @@ oyuncular söylüyor.
 
 Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
-Aktif geliştirme aşamasında: çatışma modu Windows, macOS ve Linux'ta oynanabiliyor, senaryolar
-kısmen çalışıyor ve çevrimiçi çok oyunculu mod (deneysel) artık kullanılabiliyor. Önceki sürümleri
-ve her birinde nelerin değiştiğini [sürümler
-sayfasında](https://github.com/YuriPlanet/vera20k/releases) bulabilirsiniz.
-
-Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
-[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
-
 ## Projenin hedefleri
 
 1. Orijinal Red Alert 2: Yuri's Revenge'in oynanışını, görsellerini ve atmosferini korumak.
 2. 500×500 haritalarda **30 oyuncuya** ve **20.000 birime** kadar daha büyük savaşları desteklemek.
 3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
 4. Entegre çok oyunculu istemci
-
-Güncel öncelikler ve gelecek planları için [yol haritasına](https://github.com/orgs/YuriPlanet/projects/1) bakın.
 
 ## Katkıda bulunma
 
@@ -62,8 +52,7 @@ Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda
 Motorun üç ana bölümü vardır:
 
 - **Simülasyon:** Oyun durumunu ve mantığını yönetir.
-- **Görüntüleme:** Orijinal oyun kaynaklarını kullanan, orijinal görünümü korumak için
-  oluşturulmuş tamamen yeni bir GPU görüntüleme hattı.
+- **Görüntüleme:** Araziyi, birimleri ve binaları orijinal oyunun görsellerini kullanarak GPU'da çizer.
 - **Uygulama:** Girdi, menüler, ses ve platform entegrasyonunu yönetir, sistemleri birbirine bağlar.
 
 Bu ayrım deterministik oynanışı destekler.
@@ -98,17 +87,16 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
-her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
+VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
+ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
+tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
 
-- **Bir VERA oyuncu seçeneği**: **Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
-- **Bir derleme seçeneği**: örneğin desteklenen [Phobos eklentileri](docs/phobos.md) için `--features phobos`.
-- **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
+Lobi ayarları, modlar ve haritalar maç kurallarını değiştirebilir. Modlar ve haritalar, INI
+dosyaları aracılığıyla VERA20K'nin desteklediği [Ares](docs/ares.md) ve [Phobos](docs/phobos.md)
+özelliklerini etkinleştirebilir. Bir mod, `ares.mix` dosyasını içeriyorsa Ares'i de etkinleştirir.
+Bazı Phobos özellikleri için hâlâ `--features phobos` seçeneğiyle derlenmiş bir sürüm gerekir.
 
-Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
-ayarlarından, modlardan veya haritalardan gelir.
-
-Kendi modlarınızı nasıl yapacağınızı [mod yapım kılavuzu](docs/modding.md) anlatıyor.
+Kendi modunuzu yapmak için [mod yapım kılavuzuyla](docs/modding.md) başlayabilirsiniz.
 
 ## Destek
 
@@ -137,6 +125,7 @@ Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir v
 tarafından desteklenmemektedir.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **VERA20K'yı paylaşmadan, satmadan veya fork'lamadan önce [yasal bildirimi](LEGAL.md) okuyun.**

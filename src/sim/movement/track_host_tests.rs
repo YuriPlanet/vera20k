@@ -910,7 +910,6 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
                 reason: UninitReason::Crush,
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
@@ -981,7 +980,6 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
                 reason: UninitReason::Crush,
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(

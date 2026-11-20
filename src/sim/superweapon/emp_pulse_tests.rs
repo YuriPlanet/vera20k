@@ -109,6 +109,7 @@ fn building(sim: &mut Simulation, rules: &RuleSet, kind: &str, cell: (u16, u16))
 fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> bool {
     let sw_type_id = sim.interner.intern(sw);
     sim.apply_command_with_overlays(
+        None,
         "Russians",
         &Command::LaunchSuperWeapon {
             sw_type_id,
@@ -413,7 +414,7 @@ fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
             temporary,
             host,
             &rules,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         ));
     } else {
         super::grant_provided_supers(&mut sim, &rules, owner);

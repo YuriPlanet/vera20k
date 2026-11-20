@@ -40,8 +40,7 @@ fn map_authored_patrol_acquires_and_returns_during_ordinary_frames() {
             id,
             Some(NavTargetRef::cell(12, 14)),
             &rules,
-            None,
-            Default::default()
+            Default::default(),
         )
         .is_ok()
     );

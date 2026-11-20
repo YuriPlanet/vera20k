@@ -160,18 +160,70 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
             "/v1/accounts/reset",
             json!({"name": name, "code": code, "password": password}),
         ),
-        AccountRequest::Delete { name, password } => (
-            "/v1/accounts/delete",
-            json!({"name": name, "password": password}),
-        ),
+        AccountRequest::Delete {
+            identifier,
+            password,
+        } => {
+            let key = if identifier.contains('@') {
+                "email"
+            } else {
+                "name"
+            };
+            (
+                "/v1/accounts/delete",
+                json!({(key): identifier, "password": password}),
+            )
+        }
     }
 }
 
+fn account_result(
+    request: &super::AccountRequest,
+    response: Result<Value, RequestFailure>,
+) -> Result<super::AccountSuccess, String> {
+    use crate::ui::wol_account::valid_name;
+    let super::AccountRequest::Delete { identifier, .. } = request else {
+        return response
+            .map(|_| super::AccountSuccess::Accepted)
+            .map_err(sign_in_refusal);
+    };
+    let by_name = valid_name(identifier);
+    let reply = response.map_err(|failure| match failure {
+        RequestFailure::Account {
+            status: 400,
+            invalid_request: true,
+            ..
+        } if !by_name => crate::i18n::tr("VERA:DeleteUseUsername"),
+        other => sign_in_refusal(other),
+    })?;
+    // Older lobbies accept only usernames and return {}. Never infer a username
+    // from an email, or clear another sign-in on a malformed reply.
+    let canonical = reply["name"]
+        .as_str()
+        .filter(|name| valid_name(name) && (!by_name || name.eq_ignore_ascii_case(identifier)))
+        .or_else(|| {
+            (by_name && reply.as_object().is_some_and(|o| o.is_empty())).then_some(identifier)
+        });
+    canonical
+        .map(|name| super::AccountSuccess::Deleted(name.to_owned()))
+        .ok_or_else(|| crate::i18n::tr("VERA:DeleteNameUnavailable"))
+}
+
 impl Request {
-    /// The periodic requests a waiting copy already covers: the host's 5 s
-    /// `ping` and the 10 s relay renewal retry.
+    /// The periodic requests a waiting copy already covers: the 10 s retry
+    /// of a player's `renew_relay` and a watcher's `renew_watch`, and the
+    /// lobby's lists, asked for every few seconds.
     fn repeats(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Channels(kind), Self::Channels(other)) => kind == other,
+            (
+                Self::Matches {
+                    refused_options: None,
+                },
+                Self::Matches {
+                    refused_options: None,
+                },
+            ) => true,
             (
                 Self::Command {
                     operation, payload, ..
@@ -182,7 +234,7 @@ impl Request {
                     ..
                 },
             ) => {
-                matches!(*operation, "ping" | "renew_relay")
+                matches!(*operation, "renew_relay" | "renew_watch")
                     && operation == other_operation
                     && payload == other_payload
             }
@@ -328,7 +380,7 @@ pub(super) enum Response {
     /// The answer to a [`Request::Account`], or the message to show.
     AccountAnswered {
         attempt: u64,
-        answer: Result<(), String>,
+        answer: Result<super::AccountSuccess, String>,
     },
     StartRejected {
         id: u64,
@@ -350,7 +402,8 @@ pub(super) enum TranslateFailure {
 }
 
 const MAX_BODY_BYTES: u64 = 1024 * 1024;
-const USER_AGENT: &str = concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multiplayer-client");
+pub(super) const USER_AGENT: &str =
+    concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multiplayer-client");
 // The server retains1024 events and returns at most256 at a time. Permit
 // concurrent arrivals too, but never release cleanup on a partial history.
 const MAX_CLEANUP_DRAIN_BATCHES: usize = 8;
@@ -416,6 +469,7 @@ enum RequestFailure {
         /// `wrong_password` or `no_account`: the credential signs in to no
         /// account.
         bad_credential: bool,
+        invalid_request: bool,
         message: String,
     },
 }
@@ -615,6 +669,7 @@ impl RequestFailure {
         Self::Account {
             status,
             bad_credential: matches!(code, Some("wrong_password" | "no_account")),
+            invalid_request: code == Some("invalid_request"),
             message,
         }
     }
@@ -693,7 +748,51 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
     Ok(session)
 }
 
+/// A translation job: its id, the bearer it runs under, the text and the
+/// target language.
+type TranslateJob = (u64, String, String, &'static str);
+
 impl Client {
+    /// A client on its transport before any sign-in.
+    fn new(
+        stopping: Arc<AtomicBool>,
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        agent: ureq::Agent,
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        base: String,
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        browser: u32,
+    ) -> Self {
+        Self {
+            stopping,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            agent,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            base,
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            browser,
+            token: None,
+            cursor: 0,
+            active_match: None,
+            spawned: false,
+            abandoned: false,
+        }
+    }
+
+    /// A client on the same transport with no session of its own: a derived
+    /// `Clone` would copy the live bearer.
+    fn sibling(&self) -> Self {
+        Self::new(
+            Arc::clone(&self.stopping),
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            self.agent.clone(),
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            self.base.clone(),
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            self.browser,
+        )
+    }
+
     fn adopt_session(&mut self, token: String, resume: Option<(String, u64)>) {
         self.token = Some(token);
         let (active_match, cursor) = resume.map_or((None, 0), |(id, cursor)| (Some(id), cursor));
@@ -839,32 +938,17 @@ fn translation_result(
 }
 
 /// The model takes about a second, so translation has its own thread and
-/// polling and commands never wait for it. A job carries the current bearer.
+/// polling and commands never wait for it.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-fn spawn_translator(
-    client: &Client,
-    output: &Sender<Response>,
-) -> Option<Sender<(u64, String, String, &'static str)>> {
-    let (jobs, input) = std::sync::mpsc::channel::<(u64, String, String, &'static str)>();
-    let mut translator = Client {
-        stopping: Arc::clone(&client.stopping),
-        agent: client.agent.clone(),
-        base: client.base.clone(),
-        token: None,
-        cursor: 0,
-        active_match: None,
-        spawned: false,
-        abandoned: false,
-    };
+fn spawn_translator(client: &Client, output: &Sender<Response>) -> Option<Sender<TranslateJob>> {
+    let (jobs, input) = std::sync::mpsc::channel::<TranslateJob>();
+    let mut translator = client.sibling();
     let output = output.clone();
     std::thread::Builder::new()
         .name("vera-translate".into())
         .spawn(move || {
-            for (id, token, text, target) in input {
-                translator.token = Some(token);
-                let body = json!({"text":text,"target":target});
-                let outcome = translation_result(translator.request("/v1/translate", Some(&body)));
-                if output.send(Response::Translated { id, outcome }).is_err() {
+            for job in input {
+                if output.send(translator.translate(job)).is_err() {
                     break;
                 }
             }
@@ -887,16 +971,7 @@ pub(super) fn run(
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(12)))
         .build();
-    let client = Client {
-        stopping: Arc::clone(&stopping),
-        agent: config.into(),
-        base,
-        token: None,
-        cursor: 0,
-        active_match: None,
-        spawned: false,
-        abandoned: false,
-    };
+    let client = Client::new(stopping, config.into(), base);
     let translator = spawn_translator(&client, &output);
     run_loop(client, input, output, translator);
 }
@@ -920,6 +995,14 @@ macro_rules! platform_await {
 macro_rules! serial_driver {
     ($($asynchronous:tt)?) => {
         impl Client {
+    /// One translation job, under the bearer it carries.
+    $($asynchronous)? fn translate(&mut self, (id, token, text, target): TranslateJob) -> Response {
+        self.token = Some(token);
+        let body = json!({"text":text,"target":target});
+        let outcome = translation_result(platform_await!(self.request("/v1/translate", Some(&body))));
+        Response::Translated { id, outcome }
+    }
+
     /// Log out a bearer this worker still holds (given up in an outage, or
     /// whose logout the shell stopped retrying), which still holds its name.
     /// The lobby refuses to log out a session in a match, so the match the
@@ -946,8 +1029,8 @@ macro_rules! serial_driver {
 
     $($asynchronous)? fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
         if let RequestFailure::UpgradeRequired(message) = error {
-            // The lobby keeps serving an outdated session's events, finish,
-            // leave and logout (docs/lobby-protocol.md), so it stays.
+            // A 426 refuses this request alone: the session stays, and its
+            // player hears once per sign-in that an update is needed.
             let _ = output.send(Response::Outdated { message });
             return false;
         }
@@ -992,6 +1075,29 @@ macro_rules! serial_driver {
             true
         } else {
             false
+        }
+    }
+
+    /// A lobby list's answer. A failure that keeps the session says so once
+    /// until a list arrives again: the lobby asks every few seconds.
+    $($asynchronous)? fn list_finished(
+        &mut self,
+        result: Result<ChannelList, RequestFailure>,
+        refresh_failed: &mut bool,
+        output: &Sender<Response>,
+    ) {
+        match result {
+            Ok(channels) => {
+                *refresh_failed = false;
+                let _ = output.send(Response::Channels(channels));
+            }
+            Err(error) => {
+                if !platform_await!(self.session_failed(error, output))
+                    && !std::mem::replace(refresh_failed, true)
+                {
+                    let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
+                }
+            }
         }
     }
 
@@ -1050,12 +1156,13 @@ macro_rules! serial_driver {
             mut client: Client,
             input: Receiver<Request>,
             output: Sender<Response>,
-            translator: Option<Sender<(u64, String, String, &'static str)>>,
+            translator: Option<Sender<TranslateJob>>,
         ) {
     let stopping = Arc::clone(&client.stopping);
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     let mut streams = stream::Streams::new(&client.base);
     let mut failed_polls = 0_u8;
+    let mut refresh_failed = false;
     let mut next_poll = Instant::now();
     let mut queued = VecDeque::new();
     loop {
@@ -1263,9 +1370,7 @@ macro_rules! serial_driver {
             }
             Some(Request::Account { attempt, request }) => {
                 let (path, body) = account_call(&request);
-                let answer = platform_await!(client.request(path, Some(&body)))
-                    .map(|_| ())
-                    .map_err(sign_in_refusal);
+                let answer = account_result(&request, platform_await!(client.request(path, Some(&body))));
                 let _ = output.send(Response::AccountAnswered { attempt, answer });
             }
             Some(Request::ForgetSignIn {
@@ -1286,20 +1391,12 @@ macro_rules! serial_driver {
                 }
             }
             Some(Request::Channels(kind)) => {
-                match platform_await!(client
+                let list = platform_await!(client
                     .request(&format!("/v1/channels?kind={kind}"), None))
                     .and_then(|value| {
                         serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))
-                    }) {
-                    Ok(channels) => {
-                        let _ = output.send(Response::Channels(channels));
-                    }
-                    Err(error) => {
-                        if !platform_await!(client.session_failed(error, &output)) {
-                            let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
-                        }
-                    }
-                }
+                    });
+                platform_await!(client.list_finished(list, &mut refresh_failed, &output));
             }
             Some(Request::Matches { refused_options }) => {
                 match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
@@ -1439,7 +1536,7 @@ serial_driver!(async);
 // Stream frames arrive on their own channel, so the worker looks for them
 // every 50 ms, as the browser worker does for requests.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-fn next_request(input: &Receiver<Request>) -> Result<Option<Request>, ()> {
+fn next_request<T>(input: &Receiver<T>) -> Result<Option<T>, ()> {
     match input.recv_timeout(Duration::from_millis(50)) {
         Ok(request) => Ok(Some(request)),
         Err(RecvTimeoutError::Timeout) => Ok(None),
@@ -1447,7 +1544,7 @@ fn next_request(input: &Receiver<Request>) -> Result<Option<Request>, ()> {
     }
 }
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-async fn next_request(input: &Receiver<Request>) -> Result<Option<Request>, ()> {
+async fn next_request<T>(input: &Receiver<T>) -> Result<Option<T>, ()> {
     match input.try_recv() {
         Ok(request) => Ok(Some(request)),
         Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(()),
@@ -1468,6 +1565,22 @@ pub(super) use browser::{RequestOwner, start as start_browser};
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    fn test_client() -> Client {
+        Client::new(
+            Arc::new(AtomicBool::new(false)),
+            ureq::Agent::new_with_defaults(),
+            String::new(),
+        )
+    }
+
+    /// A client holding a bearer, its events read up to `cursor`.
+    fn signed_in_client(cursor: u64) -> Client {
+        let mut client = test_client();
+        client.token = Some("synthetic-test-session".to_owned());
+        client.cursor = cursor;
+        client
+    }
 
     fn session_response() -> Value {
         json!({
@@ -1659,16 +1772,8 @@ mod tests {
             |request| request.windows(6).any(|bytes| bytes == b"logout"),
             b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
         );
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: "http://127.0.0.1:1".to_owned(),
-            token: Some("synthetic-test-session".to_owned()),
-            cursor: 4,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = signed_in_client(4);
+        client.base = "http://127.0.0.1:1".to_owned();
         assert!(!client.release_held_session());
         assert!(client.token.is_some());
         client.base = format!("http://{address}");
@@ -1817,16 +1922,7 @@ mod tests {
     #[test]
     fn a_lobby_lost_for_a_minute_asks_the_shell_until_it_gives_up() {
         let (output, input) = std::sync::mpsc::channel();
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: Some("synthetic-test-session".to_owned()),
-            cursor: 19,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = signed_in_client(19);
         let outage = |client: &mut Client, failures: &mut u8, polls| {
             for _ in 0..polls {
                 client.poll_finished(Err(RequestFailure::Status(0)), failures, &output);
@@ -1848,16 +1944,7 @@ mod tests {
     #[test]
     fn transient_poll_failure_preserves_session_and_cursor_until_definitive_unauthorized() {
         let (output, input) = std::sync::mpsc::channel();
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: Some("synthetic-test-session".to_owned()),
-            cursor: 19,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = signed_in_client(19);
         let mut failures = 0;
         assert_eq!(
             client.poll_finished(Err(RequestFailure::Status(0)), &mut failures, &output),
@@ -1901,20 +1988,22 @@ mod tests {
             operation,
             payload,
         };
-        let renew = |id, match_id| command(id, "renew_relay", json!({"match_id":match_id}));
+        let relay = |id, match_id| command(id, "renew_relay", json!({"match_id":match_id}));
+        let watch = |id, match_id| command(id, "renew_watch", json!({"match_id":match_id}));
         for request in [
             command(2, "ready", json!({"ready":true})),
-            command(3, "ping", json!({})),
-            renew(4, "a"),
-            renew(5, "a"),
-            renew(6, "b"),
-            command(7, "chat", json!({"text":"gg"})),
+            relay(3, "a"),
+            relay(4, "b"),
+            relay(5, "b"),
+            watch(6, "a"),
+            watch(7, "a"),
             command(8, "chat", json!({"text":"gg"})),
+            command(9, "chat", json!({"text":"gg"})),
         ] {
             requests.send(request).unwrap();
         }
         let mut queued = VecDeque::new();
-        queue_arrivals(&input, Some(&command(1, "ping", json!({}))), &mut queued);
+        queue_arrivals(&input, Some(&relay(1, "a")), &mut queued);
         let ids: Vec<_> = queued
             .iter()
             .map(|request| match request {
@@ -1922,7 +2011,54 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(ids, [Some(2), Some(4), Some(6), Some(7), Some(8)]);
+        assert_eq!(ids, [Some(2), Some(4), Some(6), Some(8), Some(9)]);
+    }
+
+    #[test]
+    fn a_waiting_lobby_list_covers_the_next_one() {
+        let (requests, input) = std::sync::mpsc::channel();
+        let matches = |refused_options| Request::Matches { refused_options };
+        for request in [
+            Request::Channels(41),
+            Request::Channels(0),
+            matches(None),
+            matches(None),
+            matches(Some(1)),
+            matches(Some(1)),
+        ] {
+            requests.send(request).unwrap();
+        }
+        let mut queued = VecDeque::new();
+        queue_arrivals(&input, Some(&Request::Channels(41)), &mut queued);
+        let kept: Vec<_> = queued
+            .iter()
+            .map(|request| match request {
+                Request::Channels(kind) => u64::from(*kind),
+                Request::Matches { refused_options } => 100 + refused_options.unwrap_or(0),
+                _ => u64::MAX,
+            })
+            .collect();
+        assert_eq!(kept, [0, 100, 101, 101]);
+    }
+
+    #[test]
+    fn a_lobby_that_stops_listing_says_so_once_until_it_lists_again() {
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(1);
+        let mut failed = false;
+        let list = || ChannelList {
+            kind: 41,
+            channels: Vec::new(),
+        };
+        for _ in 0..2 {
+            client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
+        }
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
+        assert!(input.try_recv().is_err());
+        client.list_finished(Ok(list()), &mut failed, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
+        client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
     }
 
     #[test]
@@ -1960,16 +2096,7 @@ mod tests {
     #[test]
     fn expired_cursor_ends_the_session_once_but_a_room_conflict_does_not() {
         let (output, input) = std::sync::mpsc::channel();
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: Some("synthetic-test-session".to_owned()),
-            cursor: 19,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = signed_in_client(19);
         let conflict = RequestFailure::response(
             409,
             br#"{"error":{"code":"map_pending","message":"Wait for the map."}}"#,
@@ -2050,6 +2177,44 @@ mod tests {
     /// account request's `name_unavailable` is a message, not a room's join
     /// code.
     #[test]
+    fn delete_uses_one_identifier_and_only_forgets_a_confirmed_username() {
+        use crate::ui::wol_account::{AccountRequest, AccountSuccess};
+        let delete = |identifier: &str| AccountRequest::Delete {
+            identifier: identifier.into(),
+            password: "example-password".into(),
+        };
+        let username = delete("tanya");
+        let email = delete("alias+yr@example.com");
+        assert_eq!(
+            account_call(&username).1,
+            json!({"name":"tanya","password":"example-password"})
+        );
+        assert_eq!(
+            account_call(&email).1,
+            json!({"email":"alias+yr@example.com","password":"example-password"})
+        );
+        assert_eq!(
+            account_result(&username, Ok(json!({}))),
+            Ok(AccountSuccess::Deleted("tanya".into()))
+        );
+        assert_eq!(
+            account_result(&email, Ok(json!({"name":"Tanya"}))),
+            Ok(AccountSuccess::Deleted("Tanya".into()))
+        );
+        assert!(account_result(&email, Ok(json!({}))).is_err());
+        assert!(account_result(&username, Ok(json!({"name":"SomeoneElse"}))).is_err());
+        let legacy = RequestFailure::answer(
+            "/v1/accounts/delete",
+            400,
+            br#"{"error":{"code":"invalid_request"}}"#,
+        );
+        assert_eq!(
+            account_result(&email, Err(legacy)),
+            Err(crate::i18n::tr("VERA:DeleteUseUsername"))
+        );
+    }
+
+    #[test]
     fn account_refusals_carry_the_lobby_message() {
         let refusal = |code: &str, message: &str| {
             json!({"error":{"code":code,"message":message}}).to_string()
@@ -2063,6 +2228,7 @@ mod tests {
             RequestFailure::Account {
                 status: 403,
                 bad_credential: true,
+                invalid_request: false,
                 message: "Sign in again with your password.".into(),
             }
         );
@@ -2119,19 +2285,14 @@ mod tests {
             |request| request.ends_with(b"}"),
             b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
         );
-        let client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::config_builder()
+        let client = Client::new(
+            Arc::new(AtomicBool::new(false)),
+            ureq::Agent::config_builder()
                 .http_status_as_error(false)
                 .build()
                 .into(),
-            base: format!("http://{address}"),
-            token: None,
-            cursor: 0,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+            format!("http://{address}"),
+        );
         let body = session_body("Tanya", &Credential::Guest);
         assert_eq!(
             client.request("/v1/sessions", Some(&body)),
@@ -2235,16 +2396,7 @@ mod tests {
         );
 
         let (output, input) = std::sync::mpsc::channel();
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: Some("synthetic-test-session".to_owned()),
-            cursor: 19,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = signed_in_client(19);
         assert!(!client.session_failed(refused(reason), &output));
         assert!(client.token.is_some());
         assert!(matches!(
@@ -2256,16 +2408,7 @@ mod tests {
     #[test]
     fn replayed_http_response_does_not_redeliver_lobby_events() {
         let (output, input) = std::sync::mpsc::channel();
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: None,
-            cursor: 0,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = test_client();
         let response = json!({"cursor":2,"events":[
             {"sequence":1,"kind":"created","payload":{}},
             {"sequence":2,"kind":"member_joined","payload":{"name":"A"}}
@@ -2295,16 +2438,8 @@ mod tests {
     #[test]
     fn stream_frames_behind_a_command_reply_deliver_only_newer_events() {
         let (output, input) = std::sync::mpsc::channel();
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: None,
-            cursor: 5,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = test_client();
+        client.cursor = 5;
         let event = |sequence| json!({"sequence":sequence,"kind":"chat","payload":{}});
         client
             .streamed(json!({"cursor":4,"events":[event(4)]}), &output)
@@ -2331,21 +2466,11 @@ mod tests {
         let (output, _input) = std::sync::mpsc::channel();
         // The live service holds the match `timing_confirmed` started.
         let held = Some("11111111-1111-1111-1111-111111111111".to_owned());
-        let client = || Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: None,
-            cursor: 0,
-            active_match: None,
-            spawned: false,
-            abandoned: false,
-        };
         let mut failures = 0;
 
-        let mut spawned = client();
+        let mut spawned = test_client();
         // A returning engine's start is history: it polls at its match's pace at once.
-        let mut returning = client();
+        let mut returning = test_client();
         returning.adopt_session(
             "synthetic-test-session".to_owned(),
             Some(("11111111-1111-1111-1111-111111111111".to_owned(), 2)),
@@ -2370,7 +2495,7 @@ mod tests {
         );
 
         // A lobby session's match keeps its stream and its pace.
-        let mut lobby = client();
+        let mut lobby = test_client();
         lobby.token = Some("synthetic-test-session".to_owned());
         assert_eq!(lobby.stream_bearer(), Some("synthetic-test-session"));
         lobby.active_match = held;
@@ -2384,16 +2509,8 @@ mod tests {
     fn active_match_resume_preserves_identity_and_rejects_another_match_or_old_cursor() {
         let (output, input) = std::sync::mpsc::channel();
         let id = "11111111-1111-1111-1111-111111111111";
-        let mut client = Client {
-            stopping: Arc::new(AtomicBool::new(false)),
-            agent: ureq::Agent::new_with_defaults(),
-            base: String::new(),
-            token: Some("synthetic-test-session".to_owned()),
-            cursor: 20,
-            active_match: Some(id.to_owned()),
-            spawned: false,
-            abandoned: false,
-        };
+        let mut client = signed_in_client(20);
+        client.active_match = Some(id.to_owned());
         // Grant cryptographic binding is tested at the app's existing decoder;
         // this worker test bounds shell cursor recovery and identity lifetime.
         let response = json!({"match_id":id,"cursor":30,"relay":{

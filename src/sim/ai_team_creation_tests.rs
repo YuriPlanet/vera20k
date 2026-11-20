@@ -191,8 +191,15 @@ fn selector_fixture(row: &Value) -> SelectorFixture {
         teams.push(if team.get("formed").is_some_and(flag) {
             vm.create_team_from_type(team_owner, team_type, &[], created)
         } else {
-            vm.construct_team(team_type, team_owner, true, created, false, None)
-                .unwrap()
+            vm.construct_team(
+                team_type,
+                team_owner,
+                TeamLimitScope::PerHouse,
+                created,
+                false,
+                None,
+            )
+            .unwrap()
         });
     }
     let mut triggers = Vec::new();

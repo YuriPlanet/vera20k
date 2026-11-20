@@ -51,6 +51,7 @@ Thumbs.db
 !/docs/ares-country-presentation.md
 !/docs/ares-country-paradrop.md
 !/docs/ares-country-powerplants.md
+!/docs/skirmish-cheats.md
 !/docs/sidebar-columns.md
 !/docs/phobos.md
 !/docs/phobos-custom-radiation.md
@@ -68,6 +69,8 @@ Thumbs.db
 !/docs/phobos-missing-cameo.md
 !/docs/phobos-power-plant-enhancer.md
 !/docs/phobos-building-queue.md
+!/docs/convenience-help.md
+!/docs/smart-command.md
 !/docs/phobos-ai-dehardcode.md
 !/docs/phobos-parallel-ai-queues.md
 !/docs/phobos-power-surplus.md
@@ -100,6 +103,7 @@ Thumbs.db
 !/docs/dormant-stock-rules.md
 !/docs/_config.yml
 !/docs/index.md
+!/docs/menu-reference.md
 !/docs/Networking.md
 !/docs/autoplay.md
 !/docs/ares-unit-delivery.md
@@ -125,6 +129,7 @@ Thumbs.db
 !/docs/script-action-56.md
 !/docs/interface-layout.md
 !/docs/skirmish-colors.md
+!/docs/behavior-rule-engine-roadmap.md
 !/docs/examples/
 !/docs/ar/
 !/docs/de/

@@ -66,6 +66,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AiBasePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_base_site::{SiteKey, find_base_building_site, reserved_near};
 use crate::sim::ai_unit_choice::{self, UnitChoiceKind};
@@ -325,13 +326,13 @@ pub(crate) fn economy_state_machine(
     owner: InternedId,
     building_exit: bool,
 ) {
-    let game_mode_nonzero = session.game_mode_nonzero();
+    let policy = session.rule_policy();
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero)
+    if house.is_controlled_by_human(policy)
         || house.command_driven()
-        || !game_mode_nonzero
+        || !session.rule_policy().uses_managed_ai_base()
     {
         return;
     }
@@ -399,11 +400,11 @@ pub(crate) fn update_production_choices(
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
 ) {
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero) || house.multiplay_passive() {
+    if house.is_controlled_by_human(policy) || house.multiplay_passive() {
         return;
     }
     if (sim.session.binary_frame() as i32) % 8 != 0 {
@@ -426,7 +427,7 @@ pub(crate) fn update_production_choices(
         UnitChoiceKind::Aircraft,
     ];
     // A campaign runs mode 0's choices (`0x004F9099..0x004F90A1`).
-    let mode = if game_mode_nonzero {
+    let mode = if sim.session.rule_policy().uses_managed_ai_base() {
         house.ai_production().mode
     } else {
         0
@@ -556,8 +557,7 @@ pub(crate) fn choose_building(
             }
             return;
         }
-        if !crate::sim::ai_base_defense::choose_next_production(sim, rules, owner, index, registry)
-        {
+        if !crate::sim::ai_base_defense::choose_next_production(sim, rules, owner, index) {
             // `0x004FE640..0x004FE6D2`: a WallTower node goes first, then
             // the node at its index.
             if wall_tower.is_some() {
@@ -949,12 +949,12 @@ pub(crate) fn exit_building(
     let Some(owner) = sim.substrate.entities.get(factory).map(|yard| yard.owner()) else {
         return BuildingExit::Failed;
     };
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy();
     // `0x00444F19..0x00444F2A` (`0x0050B730`).
     if sim
         .houses
         .get(&owner)
-        .is_none_or(|house| house.is_controlled_by_human(game_mode_nonzero))
+        .is_none_or(|house| house.is_controlled_by_human(policy))
     {
         return BuildingExit::Failed;
     }
@@ -983,7 +983,7 @@ pub(crate) fn exit_building(
     let node = rules
         .building_type_index(&ty.id)
         .and_then(|index| find_node(sim, rules, owner, index, registry));
-    let site = building_site(sim, rules, owner, ty, node, registry);
+    let site = building_site(sim, rules, owner, ty, node);
     match flush_for_placement(sim, rules, registry, ty, site, owner, effects) {
         Flush::Scattered => {
             // `0x00445237..0x004452C3`.
@@ -992,7 +992,7 @@ pub(crate) fn exit_building(
             {
                 house.base_plan_mut().count_placement_failure(
                     index,
-                    game_mode_nonzero,
+                    sim.session.rule_policy().ai_base(),
                     rules.general.maximum_building_placement_failures,
                 );
             }
@@ -1033,7 +1033,6 @@ fn building_site(
     owner: InternedId,
     ty: &ObjectType,
     node: Option<usize>,
-    registry: Option<&OverlayTypeRegistry>,
 ) -> (i16, i16) {
     let node_cell = node
         .map(|index| plan_node(&sim.houses, owner, index).packed_cell)
@@ -1044,7 +1043,7 @@ fn building_site(
             return cell;
         }
     }
-    let site = find_base_building_site(sim, rules, owner, ty, SiteKey::Ordinary, registry);
+    let site = find_base_building_site(sim, rules, owner, ty, SiteKey::Ordinary);
     if let Some(index) = node
         && let Some(house) = sim.houses.get_mut(&owner)
     {
@@ -1289,9 +1288,9 @@ pub(crate) fn suggested_product<'r>(
 
 /// `BaseClass::Find_Node @ 0x0042EB50` for BuildingType index `wanted`, or
 /// the first open node when `wanted` is -1. A node is open when
-/// [`node_satisfied`] rejects it; for -1 in a skirmish a filled node is open
-/// only if [`node_may_replan`] admits it, and then its cell is cleared
-/// (`0x0042EBC3..0x0042EBD1`, the zeroed static `0x0089C310`).
+/// [`node_satisfied`] rejects it. The nonzero mode arm for -1 (`0x0042EB76`)
+/// also asks [`node_may_replan`] for filled nodes and clears the cell if it
+/// admits the node (`0x0042EBC3..0x0042EBD1`, zeroed static `0x0089C310`).
 pub(crate) fn find_node(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1299,14 +1298,14 @@ pub(crate) fn find_node(
     wanted: i32,
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<usize> {
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy().ai_base();
     let mut index = 0;
     // The count is re-read every step (`0x0042EBAE`).
     while index < sim.houses.get(&owner)?.base_plan().nodes().len() {
         let node = plan_node(&sim.houses, owner, index);
         if wanted == -1 {
             if !node_satisfied(sim, rules, owner, &node, registry) {
-                if !game_mode_nonzero || !node.filled {
+                if policy == AiBasePolicy::RetainAuthoredNodes || !node.filled {
                     return Some(index);
                 }
                 if node_may_replan(sim, rules, owner, &node) {
@@ -1387,9 +1386,10 @@ pub(crate) fn node_building(
 }
 
 /// `HouseClass @ 0x0050CAD0`: whether a filled node whose building is gone
-/// may be planned again. A control node may; a refinery that gathers (a
-/// deployed Slave Miner) only while the house has fewer gatherers on the map
-/// (`+0x158`) than `AISlaveMinerNumber=` allows. In a skirmish an armed type,
+/// may be planned again in the nonzero mode arm of Find_Node. A control node
+/// may; a refinery that gathers (a deployed Slave Miner) only while the
+/// house has fewer gatherers on the map
+/// (`+0x158`) than `AISlaveMinerNumber=` allows. An armed type,
 /// a wall next to one of the house's buildings or a power plant may; any other
 /// type only once `AIRestrictReplaceTime=` frames have passed since a
 /// building of the house was attacked (`+0x54D8`).
@@ -1415,9 +1415,8 @@ fn node_may_replan(
             .get(house.difficulty().table_index())
             .is_some_and(|&allowed| house.tracking().resource_gatherers() < allowed);
     }
-    if !sim.session.game_mode_nonzero() {
-        return true;
-    }
+    // The only caller already took Find_Node's nonzero mode arm. Native
+    // `0x0050CB39` repeats that test here after the refinery case.
     // `TechnoTypeClass::GetWeapon(0) @ 0x007177C0`: the Primary slot.
     if ty.primary().is_some() {
         return true;

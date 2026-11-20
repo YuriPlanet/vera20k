@@ -479,8 +479,7 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
 fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
     let row = &rally_native()["producer_cases"][0];
     let (mut sim, rules) = simulation_fixture(row);
-    sim.entities_mut_for_test()
-        .get_mut(10)
+    sim.entity_mut_for_test(10)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(u16::MAX, u16::MAX)));
     let terrain = sim.resolved_terrain().unwrap();

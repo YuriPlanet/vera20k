@@ -75,7 +75,7 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
     let original_cases = corpus["cases"].as_array().unwrap();
     assert_eq!(original_cases.len(), 36);
     for original in original_cases {
-        let (mut sim, rules, registry) = fixture();
+        let (mut sim, rules, _registry) = fixture();
         match original["kind"].as_str().unwrap() {
             "terrain" => {
                 sim.terrain_objects
@@ -107,7 +107,6 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         };
         let handle = host
@@ -183,12 +182,11 @@ fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
     // reader and is not a claim of full native Engineer traversal coverage.
     for original in &corpus["cases"].as_array().unwrap()[8..12] {
         assert_eq!(original["kind"], "success");
-        let (mut sim, rules, registry) = fixture();
+        let (mut sim, rules, _registry) = fixture();
         LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         }
         .construct_bridge_overlay((16, 16), original["overlay_id"].as_u64().unwrap() as u8, -1)
@@ -284,14 +282,13 @@ fn constructor_side_admission_matches_original_foot_receiver() {
     assert_eq!(rows.len(), 6);
     for row in rows {
         let input = &row["input"];
-        let (mut sim, rules, registry) = fixture_with_rules(
+        let (mut sim, rules, _registry) = fixture_with_rules(
             "[InfantryTypes]\n0=ENGINEER\n[ENGINEER]\nEngineer=yes\nSpeedType=Foot\n",
         );
         LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         }
         .construct_bridge_overlay((16, 16), 25, -1)
@@ -393,7 +390,6 @@ fn constructor_side_admission_matches_original_foot_receiver() {
                     previous_cell: None,
                 },
                 &rules,
-                Some(&registry),
             )
             .unwrap();
         assert_eq!(
@@ -407,7 +403,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
 
 #[test]
 fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects() {
-    let (mut sim, rules, registry) = fixture();
+    let (mut sim, rules, _registry) = fixture();
     // Isolate the constructor/deferred-drain chain from Logic55B29A's
     // independently tested120-frame578100 sweep, whose map queries may
     // legitimately restamp the shared Dummy's coordinate.
@@ -417,7 +413,6 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         };
         host.construct_bridge_overlay(requested, 24, -1).unwrap();
@@ -506,7 +501,7 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
 
 #[test]
 fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
-    let (mut sim, rules, registry) = fixture();
+    let (mut sim, rules, _registry) = fixture();
     let render = |sim: &Simulation| {
         crate::sim::bridge_state::cell_render_state(
             sim.overlay_grid.as_ref().unwrap().cell(16, 16),
@@ -524,7 +519,6 @@ fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         };
         host.construct_bridge_overlay((16, 16), 25, -1).unwrap();
@@ -534,7 +528,6 @@ fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: Some(&registry),
         collapsed: false,
     };
     host.construct_bridge_overlay((16, 16), 24, -1).unwrap();

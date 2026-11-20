@@ -30,6 +30,8 @@
 //! the occupant instead.
 
 use crate::rules::ruleset::RuleSet;
+use crate::sim::command::{AresTrenchRedirectRecord, MegaMissionTarget};
+use crate::sim::control_authority::CommandCapability;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -187,38 +189,28 @@ impl Simulation {
     /// `100136C0`, inlined). Nothing is announced or refreshed: native
     /// leaves the cell threat (`0x0070F6E0`) and the target's raid state as
     /// they were.
-    pub(crate) fn ares_do_traverse_to(
+    fn ares_do_traverse_to(
         &mut self,
         source_id: u64,
         target_id: u64,
+        moved: usize,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
-        let Some(target) = self.substrate.entities.get(target_id) else {
-            return;
-        };
-        let Some(max) = self
-            .object_type(target.type_ref(), rules)
-            .map(|object| i64::from(object.max_number_occupants))
-        else {
-            return;
-        };
-        let free = max - i64::from(target.passenger_role().occupants().count());
-        let held = self.substrate.entities.get(source_id).map_or(0, |source| {
-            i64::from(source.passenger_role().occupants().count())
-        });
-        if free >= 0 {
-            for _ in 0..free.min(held) {
-                if !self.substrate.transfer_garrison_head(source_id, target_id) {
-                    break;
-                }
+    ) -> bool {
+        for _ in 0..moved {
+            if !self.substrate.transfer_garrison_head(source_id, target_id) {
+                break;
             }
         }
         if let Some(source) = self.substrate.entities.get_mut(source_id) {
-            source.repair_garrison_fire_index();
+            source
+                .passenger_role_mut()
+                .occupants_mut()
+                .repair_fire_index();
         }
         self.ares_eval_raid_status(source_id, rules, registry, effects);
+        true
     }
 
     /// The TrenchRedirectClick (0x60) arm of Networking_RespondToEvent
@@ -227,36 +219,76 @@ impl Simulation {
     /// (`CellClass::GetBuilding`); canTraverseTo is asked again before
     /// doTraverseTo. The event's House is not consulted. Answers whether
     /// the occupants moved.
+    fn ares_trench_redirect_transfer(
+        &self,
+        sender: Option<i8>,
+        event: &AresTrenchRedirectRecord,
+        rules: &RuleSet,
+    ) -> Option<(u64, u64, usize)> {
+        let (MegaMissionTarget::Cell { x, y }, MegaMissionTarget::Object { id }) =
+            (event.target, event.source)
+        else {
+            return None;
+        };
+        let source_id = u64::try_from(id).ok()?;
+        let target_id = self.substrate.occupancy.first_building_on_layer(
+            u16::try_from(x).ok()?,
+            u16::try_from(y).ok()?,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+        )?;
+        if !self.ares_can_traverse_to(source_id, target_id, rules) {
+            return None;
+        }
+        let source = self.substrate.entities.get(source_id)?;
+        let target = self.substrate.entities.get(target_id)?;
+        let max = i64::from(
+            self.object_type(target.type_ref(), rules)?
+                .max_number_occupants,
+        );
+        let free = max - i64::from(target.passenger_role().occupants().count());
+        let occupants = source.passenger_role().occupants().ids();
+        let moved = usize::try_from(free).unwrap_or(0).min(occupants.len());
+        if self.session.has_custom_control_grants() {
+            let sender = sender?;
+            // The same head prefix is admitted and moved. A retained pointer
+            // awaiting expiry has no live actor to authorize.
+            if occupants.iter().take(moved).any(|&id| {
+                self.substrate.entities.get(id).is_some_and(|occupant| {
+                    !self
+                        .control_scope_for_source(sender, occupant.owner())
+                        .permits(CommandCapability::Tactical)
+                })
+            }) {
+                return None;
+            }
+        }
+        Some((source_id, target_id, moved))
+    }
+
+    pub(crate) fn ares_trench_redirect_admits(
+        &self,
+        sender: i8,
+        event: &AresTrenchRedirectRecord,
+        rules: &RuleSet,
+    ) -> bool {
+        self.ares_trench_redirect_transfer(Some(sender), event, rules)
+            .is_some()
+    }
+
     pub(crate) fn ares_respond_to_trench_redirect(
         &mut self,
-        event: &crate::sim::command::AresTrenchRedirectRecord,
+        sender: Option<i8>,
+        event: &AresTrenchRedirectRecord,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        use crate::sim::command::MegaMissionTarget;
-        let (MegaMissionTarget::Cell { x, y }, MegaMissionTarget::Object { id }) =
-            (event.target, event.source)
+        let Some((source, target, moved)) =
+            self.ares_trench_redirect_transfer(sender, event, rules)
         else {
             return false;
         };
-        let (Ok(rx), Ok(ry), Ok(source_id)) =
-            (u16::try_from(x), u16::try_from(y), u64::try_from(id))
-        else {
-            return false;
-        };
-        let Some(target_id) = self.substrate.occupancy.first_building_on_layer(
-            rx,
-            ry,
-            crate::sim::movement::locomotor::MovementLayer::Ground,
-        ) else {
-            return false;
-        };
-        if !self.ares_can_traverse_to(source_id, target_id, rules) {
-            return false;
-        }
-        self.ares_do_traverse_to(source_id, target_id, rules, registry, effects);
-        true
+        self.ares_do_traverse_to(source, target, moved, rules, registry, effects)
     }
 }
 

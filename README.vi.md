@@ -30,23 +30,12 @@ dự án.
 
 Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh).
 
-Dự án đang được phát triển tích cực: chế độ skirmish đã chơi được trên Windows, macOS và Linux,
-chiến dịch chạy được một phần, và chế độ chơi mạng trực tuyến (thử nghiệm) nay đã có. Các phiên bản
-trước và những thay đổi trong từng phiên bản có trên
-[trang phát hành](https://github.com/YuriPlanet/vera20k/releases).
-
-Để chạy các trận skirmish hoặc chiến dịch YR một người chơi từ client CnCNet, xem
-[hướng dẫn cài client ngoại tuyến](integrations/cncnet/README.md).
-
 ## Mục tiêu dự án
 
 1. Giữ nguyên lối chơi, hình ảnh và không khí của Red Alert 2: Yuri's Revenge gốc.
 2. Hỗ trợ những trận đánh lớn hơn: tối đa **30 người chơi** và **20.000 đơn vị** trên bản đồ 500×500.
 3. Đưa vào các tính năng RTS quen thuộc và cả một số tính năng chưa từng có.
 4. Client chơi mạng tích hợp sẵn
-
-Xem [lộ trình](https://github.com/orgs/YuriPlanet/projects/1) để biết các ưu tiên hiện tại và kế
-hoạch sắp tới.
 
 ## Đóng góp
 
@@ -63,8 +52,7 @@ Thảo luận diễn ra trên [Discord](https://discord.gg/kmjRUn5m5F) và trong
 Engine có ba phần chính:
 
 - **Mô phỏng (Simulation):** Nắm giữ trạng thái và logic của lối chơi.
-- **Kết xuất (Rendering):** Một pipeline kết xuất GPU hoàn toàn mới, dùng tài nguyên gốc của trò
-  chơi và được xây dựng để giữ nguyên vẻ ngoài ban đầu.
+- **Kết xuất (Rendering):** Dùng GPU để vẽ địa hình, đơn vị và công trình bằng đồ họa của trò chơi gốc.
 - **Ứng dụng (Application):** Xử lý đầu vào, menu, âm thanh và tích hợp nền tảng, kết nối các hệ
   thống với nhau.
 
@@ -100,17 +88,16 @@ thử. Các agent tuân theo [AGENTS.md](AGENTS.md).
 
 ## Tùy biến
 
-Theo mặc định, VERA20K chơi giống trò chơi gốc. Các tính năng mới, kể cả phần mở rộng từ các mod
-như Ares, sẽ tắt cho đến khi được bật bằng một trong các cách sau:
+Mặc định, VERA20K dùng luật chơi của bản Yuri's Revenge gốc. Trong **Options**, bạn có thể chỉnh
+âm thanh, đồ họa và cách điều khiển hoặc bật các tính năng của VERA. Trò chơi lưu các tùy chọn
+trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
 
-- **Tùy chọn người chơi của VERA**, trong **Options**, được lưu dưới `[VERA]` trong `VERA.INI`.
-- **Tùy chọn build**, chẳng hạn `--features phobos` cho các [phần mở rộng Phobos](docs/phobos.md) được hỗ trợ.
-- **Khóa INI**, do mod hoặc bản đồ đặt.
+Thiết lập phòng chờ, mod và bản đồ có thể thay đổi luật chơi của từng trận. Mod và bản đồ có thể
+dùng tệp INI để bật các tính năng của [Ares](docs/ares.md) và [Phobos](docs/phobos.md) mà VERA20K
+hỗ trợ. Mod cũng có thể bật Ares bằng cách kèm theo tệp `ares.mix`. Một số tính năng của Phobos
+vẫn cần phiên bản VERA20K được biên dịch với `--features phobos`.
 
-Âm thanh, đồ họa và điều khiển được lưu trong `VERA.INI`. Luật chơi đến từ thiết lập phòng chờ,
-mod hoặc bản đồ.
-
-[Hướng dẫn modding](docs/modding.md) giải thích cách tự làm mod.
+Để tự làm mod, hãy bắt đầu với [hướng dẫn làm mod](docs/modding.md).
 
 ## Ủng hộ
 
@@ -137,6 +124,7 @@ thể hiện hình ảnh trò chơi thuộc sở hữu của Electronic Arts. VE
 Arts và không được Electronic Arts chứng thực.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Hãy đọc [thông báo pháp lý](LEGAL.md) trước khi chia sẻ, bán hoặc fork VERA20K.**

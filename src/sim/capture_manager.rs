@@ -972,7 +972,7 @@ impl Simulation {
             target.mind_control.controller = Some(controller_id);
         }
         self.reset_captured_orders(target_id, rules, frame_effects);
-        self.decide_unit_fate(controller_id, target_id, rules, registry, frame_effects);
+        self.decide_unit_fate(controller_id, target_id, rules, frame_effects);
         let ring = ring_anim
             .filter(|name| {
                 let upper = name.to_ascii_uppercase();
@@ -1197,8 +1197,7 @@ impl Simulation {
         // 46927A reads Object+90, not HP. EDI retains this original actor;
         // neither a changed bullet target nor an Alive reread replaces it.
         if let Some((actor, true)) = actor {
-            let context =
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects);
+            let context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
             if self.dispatch_object_tag_event(
                 actor,
                 6,
@@ -1403,7 +1402,7 @@ impl Simulation {
         };
         let owner = entity.owner();
         let disguised = entity.disguise.as_ref().is_some_and(|d| d.is_disguised());
-        if disguised && self.session.game_mode().is_network() {
+        if disguised && self.session.execution_topology().is_lockstep() {
             self.substrate
                 .set_anim_viewer_hidden(ring, vec![(owner, false)], true);
             return;
@@ -1463,9 +1462,7 @@ impl Simulation {
             self.announce_controlled_building(victim_id, original_owner, rules);
             self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
             // DecideUnitFate runs while `+0x2C0` still names the controller.
-            // Back with its own house, the unit cannot join the controller's
-            // team, so its fate needs no map overlays.
-            self.decide_unit_fate(controller_id, victim_id, rules, None, frame_effects);
+            self.decide_unit_fate(controller_id, victim_id, rules, frame_effects);
             if let Some(victim) = self.substrate.entities.get_mut(victim_id) {
                 victim.mind_control.controller = None;
             }
@@ -1519,7 +1516,6 @@ impl Simulation {
         controller_id: u64,
         unit_id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
@@ -1546,7 +1542,7 @@ impl Simulation {
         let strength = object.strength;
         // 0x00472405: an OpenTopped unit's passengers drop their targets
         // (`0x00710550(unit, 0)`).
-        self.open_topped_passengers_take_target(unit_id, None, rules, registry, frame_effects);
+        self.open_topped_passengers_take_target(unit_id, None, rules, frame_effects);
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -1609,24 +1605,19 @@ impl Simulation {
             && !changed_house
             && unit_is_foot
             && let Some(team_id) = controller_team
-            && self.team_add_member(team_id, unit_id, true, rules, registry, frame_effects)
+            && self.team_add_member(team_id, unit_id, true, rules, frame_effects)
         {
             return;
         }
         // 47260E..47261D ->4725E5: preserve PutInGrinder's Eaten and
         // destination on success; only a failed seek falls through to Hunt.
-        if choice == 2
-            && unit_is_foot
-            && self.foot_enter_grinder(unit_id, rules, registry, frame_effects)
-        {
+        if choice == 2 && unit_is_foot && self.foot_enter_grinder(unit_id, rules, frame_effects) {
             return;
         }
         // `0x0047261F..0x0047262E` -> `0x004725E5`: 3 "Put in Bio Reactor"
         // keeps the seek's orders when it found one (a building's vt+0x340
         // is the `0x00459E00` stub, false); otherwise the unit hunts.
-        if choice == 3
-            && unit_is_foot
-            && self.foot_enter_bio_reactor(unit_id, rules, registry, frame_effects)
+        if choice == 3 && unit_is_foot && self.foot_enter_bio_reactor(unit_id, rules, frame_effects)
         {
             return;
         }

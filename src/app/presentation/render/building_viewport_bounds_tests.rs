@@ -106,8 +106,11 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         .load_file_from_mix(crate::render::building_zshape::BUILDNGZ_FILE)
         .expect("native Building z-shape source");
     let zshape = crate::assets::shp_file::ShpFile::from_bytes(&zfile.bytes).unwrap();
-    let (width, height, texels) =
-        crate::render::building_zshape::decode_zshape_canvas(&zshape).unwrap();
+    let crate::render::building_zshape::ZShapeFrame {
+        size: [width, height],
+        texels,
+        ..
+    } = crate::render::building_zshape::decode_zshape_frame(&zfile.bytes, &zshape).unwrap();
     let zview = crate::render::batch::create_unorm_texture_view_on_device(
         &gpu.device,
         &gpu.queue,
@@ -120,6 +123,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let zbind = batch.create_zshape_bind_group_on_device(&gpu.device, &zview);
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
+    let zshape_skips = std::cell::RefCell::default();
     let order = NativeDisplayOrder::from_world(&sim, None);
     let before = (sim.state_hash(), sim.rng_state());
     let mut parents = Vec::new();
@@ -128,12 +132,13 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             runtime: &scene.runtime,
             frame: &crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
-                &Default::default(),
+                &Default::default(), false,
             ),
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,
             voxel_images: &voxel_images,
+            zshape_skips: &zshape_skips,
             depth_tested_images: None,
             camera: [1160., 2502.],
             render_size: [1024, 768],
@@ -148,7 +153,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             ignore_visibility: true,
             lighting: &lighting,
             house_colors: &colors,
-            building_zshape: true,
+            building_zshape: Some((0, 0)),
         },
         &mut parents,
         &order,

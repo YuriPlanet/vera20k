@@ -178,7 +178,7 @@ pub(crate) fn infantry_raw_occupation_mask(sub_x: SimFixed, sub_y: SimFixed) -> 
 /// producers still use native destructive OR/clear semantics; owner identity is
 /// the separate `InfantryOwnerIndex`/`AltInfantryOwnerIndex` projection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct RawCellOccupation {
+pub(crate) struct RawCellOccupation {
     ground: u8,
     deck: u8,
     #[serde(default)]
@@ -306,6 +306,26 @@ impl RawCellOccupationGrid {
 
     pub(crate) fn retain_process_dummy_from(&mut self, live: &Self) {
         self.dummy = live.dummy;
+    }
+
+    pub(crate) fn saved_fallback_cell(&self) -> RawCellOccupation {
+        self.dummy
+    }
+
+    pub(crate) fn restore_saved_fallback_cell(
+        &mut self,
+        cell: RawCellOccupation,
+        houses: &crate::sim::houses::Houses,
+    ) -> Result<(), &'static str> {
+        if [cell.ground_infantry_owner, cell.deck_infantry_owner]
+            .into_iter()
+            .flatten()
+            .any(|house| !houses.contains_key(&house))
+        {
+            return Err("fallback occupation names an unknown House");
+        }
+        self.dummy = cell;
+        Ok(())
     }
 
     pub(crate) fn reconstruct_dummy_for_map_resize(&mut self) {

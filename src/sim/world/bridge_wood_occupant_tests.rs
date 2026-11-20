@@ -514,7 +514,6 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
                 frame_effects: crate::sim::world::FrameEffects::default(),
                 sim,
                 rules: &runtime.resources.rules,
-                registry: Some(runtime.resources.rules.overlay_registry()),
                 collapsed: false,
             };
             let mut host = Observed {
@@ -536,7 +535,6 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
                     115,
                     59,
                     &runtime.resources.rules,
-                    Some(runtime.resources.rules.overlay_registry()),
                     crate::sim::world::FrameEffects::default(),
                 );
             }
@@ -633,8 +631,11 @@ fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() 
         // Already-admitted Map574C20 boundary. Original Bomb/Building prefix
         // and later AnimAI are separate consumers, not supplied return values.
         assert!(crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
-            &mut runtime.simulation, &runtime.resources.rules, hut,
-            Some(runtime.resources.rules.overlay_registry()), crate::sim::world::FrameEffects::default()));
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            hut,
+            crate::sim::world::FrameEffects::default(),
+        ));
         let sim = &runtime.simulation;
         assert_state(
             sim,

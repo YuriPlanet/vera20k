@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use super::PathGrid;
 use super::zone_build;
-use super::zone_hierarchy::ZoneHierarchy;
+use super::zone_hierarchy::{ZONE_PRECHECK_LEVELS, ZoneHierarchy, ZoneLevelGraph};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::terrain_rules::LandType;
@@ -308,6 +308,23 @@ impl ZoneGrid {
 
     pub(crate) fn is_native_load_pending(&self) -> bool {
         self.pending_native_load
+    }
+
+    pub(crate) fn saved_hierarchy(&self) -> &[ZoneLevelGraph; ZONE_PRECHECK_LEVELS] {
+        self.hierarchy.saved_levels()
+    }
+
+    pub(crate) fn restore_saved_hierarchy(
+        &mut self,
+        levels: [ZoneLevelGraph; ZONE_PRECHECK_LEVELS],
+    ) -> Result<(), &'static str> {
+        let hierarchy = ZoneHierarchy::from_saved_levels(
+            levels,
+            (self.width, self.height),
+            self.native_bridge_source_size,
+        )?;
+        self.replace_hierarchy(hierarchy);
+        Ok(())
     }
 
     /// Original LoadContent67E8CD ->581F50 rebuilds levels2,1,0 from the
@@ -1211,13 +1228,11 @@ pub(crate) fn cell_is_in_native_map_diamond(
     map_size_width: i32,
     map_size_height: i32,
 ) -> bool {
-    let x = coord.0 as i16 as i32;
-    let y = coord.1 as i16 as i32;
-    let sum = x.wrapping_add(y);
-    map_size_width < sum
-        && x.wrapping_sub(y) < map_size_width
-        && y.wrapping_sub(x) < map_size_width
-        && sum <= map_size_width.wrapping_add(map_size_height.wrapping_mul(2))
+    crate::map::playfield::size_diamond_contains(
+        map_size_width,
+        map_size_height,
+        (coord.0 as i16, coord.1 as i16),
+    )
 }
 
 // Tests are declared in zone/mod.rs (zone_map_tests.rs).

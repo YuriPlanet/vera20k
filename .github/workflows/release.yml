@@ -270,6 +270,10 @@ jobs:
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
           bash .github/release/languages.sh "dist/$name"
+          # Windows also gets Microsoft's DirectX Shader Compiler beside the game.
+          if [ "$RUNNER_OS" = Windows ]; then
+            pwsh -File .github/release/windows/fetch-dxc.ps1 -Package "dist/$name"
+          fi
           # The README names the version, build and commit, which stay true when
           # a release republishes this installer.
           sed -e "s/@VERSION@/${VERSION}/" -e "s/@BUILD@/${STAMP}/" -e "s/@COMMIT@/${SHA7}/" \
@@ -405,7 +409,8 @@ jobs:
             throw 'setup did not warn about optional music'
           }
           foreach ($f in 'vera20k.exe', 'config.toml', 'config.toml.example', 'README.txt',
-                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html', 'languages\vera20k.vi.ini',
+                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html', 'dxcompiler.dll',
+                         'LICENSE-DXC.txt', 'languages\vera20k.vi.ini',
                          'languages\NotoSansThai-VF.ttf') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
           }
@@ -586,6 +591,7 @@ jobs:
         timeout-minutes: 10
         env:
           NAME: ${{ steps.package.outputs.name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
           image="$(realpath "dist/$NAME.AppImage")"
@@ -609,6 +615,11 @@ jobs:
           (cd / && APPIMAGE_EXTRACT_AND_RUN=1 "$image" -h > /dev/null) || status=$?
           test "$status" -eq 1 || { echo "-h exited with $status, not 1" >&2; exit 1; }
           grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
+          # downloads.yml reads the release's multiplayer build from this line
+          # for latest.json, with this same start (src/entry.rs).
+          line=$(grep -oE 'Multiplayer build: [0-9]+\.[0-9]+\.[0-9]+:[0-9a-f]{64}$' "$data/logs/ra2.log" | head -n 1 || true)
+          [[ $line == "Multiplayer build: $VERSION:"* ]] \
+            || { echo 'the log names no multiplayer build of this version' >&2; exit 1; }
           echo 'Linux AppImage: complete, and starting in its data folder.'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -191,6 +191,10 @@ Source: "config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE-GPL"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
+; Microsoft's DirectX Shader Compiler (fetch-dxc.ps1): wgpu compiles the
+; DirectX 12 shaders with it when it sits beside the game.
+Source: "dxcompiler.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE-DXC.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; Every language but English and the fonts behind them. Deleting a language's
 ; files removes it from the game until the next update.
 Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
@@ -865,7 +869,7 @@ var
   ConfigInfo: String;
 begin
   { Use the standard Ready memo and retain Inno Setup's normal sections.
-    Keep the filenames below aligned with the five packaged [Files] entries. }
+    Keep the filenames below aligned with the seven packaged [Files] entries. }
   Result := '';
   AppendReadySection(Result, MemoUserInfoInfo, NewLine);
   AppendReadySection(Result, MemoDirInfo, NewLine);
@@ -873,8 +877,8 @@ begin
   AppendReadySection(Result, MemoComponentsInfo, NewLine);
   AppendReadySection(Result, MemoGroupInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
-    Space + 'vera20k.exe, config.toml.example, README.txt' + NewLine +
-    Space + 'LICENSE-GPL, THIRD_PARTY_LICENSES.html, languages', NewLine);
+    Space + 'vera20k.exe, dxcompiler.dll, config.toml.example, README.txt' + NewLine +
+    Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else

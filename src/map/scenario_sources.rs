@@ -15,7 +15,7 @@ use crate::map::skirmish_scenarios::{
     PKT_DEFAULT_MAX_PLAYERS, PKT_DEFAULT_MIN_PLAYERS, PKT_GAME_MODE_CAPACITY, PktEntryFields,
     SkirmishScenarioRecord, SkirmishScenarioSource, read_game_modes,
 };
-use crate::map::source::{game_folder_file, game_folders, read_map_ini_for_metadata};
+use crate::map::source::{game_folder_file_in, game_folders_in, read_map_ini_for_metadata};
 use crate::map::waypoints::DEFAULT_SKIRMISH_PLAYER_CAPACITY;
 use crate::rules::ini_parser::IniFile;
 use crate::util::config::GameConfig;
@@ -73,8 +73,43 @@ pub fn list_skirmish_scenario_records_with_assets(
 ) -> Result<Vec<SkirmishScenarioRecord>> {
     let mut records = Vec::new();
 
+    if let (Some(client), Some(root)) = (assets.client_install(), assets.mod_dir()) {
+        // A client catalog owns this folder's scenarios. The retail PKT is
+        // unrelated and can list maps with the wrong rules for this game.
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(assets)?;
+        for map in &client.maps {
+            if !modes.iter().any(|mode| {
+                map.game_modes
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
+            }) {
+                continue;
+            }
+            let Some(ini) = read_map_ini_for_metadata(&root.join(&map.file_name)) else {
+                continue;
+            };
+            let mut record = SkirmishScenarioRecord::concrete_from_ini(
+                records.len(),
+                SkirmishScenarioSource::ClientCatalog,
+                &map.file_name,
+                &ini,
+            );
+            if let Some(name) = &map.display_name {
+                record.display_name.clone_from(name);
+            }
+            record.game_modes.clone_from(&map.game_modes);
+            record.min_players = map.min_players;
+            record.max_players = map.max_players;
+            if let Some(max_players) = map.max_players {
+                record.player_capacity = record.player_capacity.min(i32::from(max_players));
+            }
+            records.push(record);
+        }
+        return Ok(records);
+    }
+
     if let Some(pkt) = assets
-        .get_ref("MISSIONSMD.PKT")
+        .get_ref(assets.ini_roots().map_catalog())
         .and_then(|bytes| IniFile::from_bytes(bytes).ok())
     {
         append_pkt_records(
@@ -92,7 +127,7 @@ pub fn list_skirmish_scenario_records_with_assets(
 
     append_loose_pkt_records(&mut records, ra2_dir, assets, csf)?;
     append_loose_yro_records(&mut records, ra2_dir, assets, csf)?;
-    append_loose_yrm_records(&mut records, ra2_dir)?;
+    append_loose_yrm_records(&mut records, ra2_dir, assets)?;
 
     Ok(records)
 }
@@ -103,10 +138,14 @@ fn append_loose_pkt_records(
     assets: &AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
-    for (path, file_name) in loose_files_with_extension(&game_folders(ra2_dir), "pkt")? {
+    for (path, file_name) in
+        loose_files_with_extension(&game_folders_in(ra2_dir, assets.mod_dir()), "pkt")?
+    {
         // The wildcard scan would otherwise re-list every archived row a second
         // time from an extracted copy sitting beside the executable.
-        if file_name.eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME) {
+        if file_name.eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME)
+            || file_name.eq_ignore_ascii_case(assets.ini_roots().map_catalog())
+        {
             continue;
         }
         let Some(pkt) = read_ini_file(&path) else {
@@ -118,11 +157,12 @@ fn append_loose_pkt_records(
             SkirmishScenarioSource::LoosePkt(file_name),
             csf,
             |map_file| {
-                read_map_ini_for_metadata(&game_folder_file(ra2_dir, map_file)).or_else(|| {
-                    assets
-                        .get_ref(map_file)
-                        .and_then(|bytes| IniFile::from_bytes(bytes).ok())
-                })
+                read_map_ini_for_metadata(&game_folder_file_in(ra2_dir, assets.mod_dir(), map_file))
+                    .or_else(|| {
+                        assets
+                            .get_ref(map_file)
+                            .and_then(|bytes| IniFile::from_bytes(bytes).ok())
+                    })
             },
         );
     }
@@ -135,7 +175,9 @@ fn append_loose_yro_records(
     manager: &mut AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
-    for (path, file_name) in loose_files_with_extension(&game_folders(ra2_dir), "yro")? {
+    for (path, file_name) in
+        loose_files_with_extension(&game_folders_in(ra2_dir, manager.mod_dir()), "yro")?
+    {
         // The campaign archive is skipped by name so its missions never reach
         // the skirmish chooser.
         if file_name.eq_ignore_ascii_case(MISSIONS_YRO_FILE_NAME) {
@@ -180,8 +222,9 @@ fn append_loose_yro_records(
 fn append_loose_yrm_records(
     records: &mut Vec<SkirmishScenarioRecord>,
     ra2_dir: &Path,
+    assets: &AssetManager,
 ) -> Result<()> {
-    let mut files = loose_files_with_extension(&game_folders(ra2_dir), "yrm")?;
+    let mut files = loose_files_with_extension(&game_folders_in(ra2_dir, assets.mod_dir()), "yrm")?;
     // VERA's downloaded maps follow; a game-folder file of the same name is
     // the one a lookup finds (`source::local_map_path`).
     if let Some(downloaded) = crate::map::source::downloaded_maps_dir()
@@ -434,6 +477,93 @@ mod tests {
     use super::*;
     use crate::map::preview::{PreviewSourceBounds, PreviewStartPoint};
     use crate::map::source::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[test]
+    fn asset_aware_catalog_scans_use_the_selected_mod_without_global_setup() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+
+        let base = crate::assets::asset_manager::test_support::audio_test_install("catalog-base");
+        std::fs::write(
+            base.path().join("Arena.MAP"),
+            b"[Basic]\nAuthor=Base arena\n",
+        )
+        .unwrap();
+        std::fs::write(
+            base.path().join("Shared.yrm"),
+            b"[Basic]\nName=Base loose\n",
+        )
+        .unwrap();
+        let selected_mod = TestDirectory::new("catalog-selected-mod");
+        selected_mod.write("ARENA.MAP", b"[Basic]\nAuthor=Mod arena\n");
+        selected_mod.write("SHARED.YRM", b"[Basic]\nName=Mod loose\n");
+        selected_mod.write(
+            "MapList.PKT",
+            b"[MultiMaps]\n0=Arena\n[Arena]\nDescriptionText=Mod catalog\n",
+        );
+        selected_mod.write(
+            "Packs.YRO",
+            &make_new_format_mix_bytes(&[
+                (
+                    "Packs.PKT",
+                    b"[MultiMaps]\n0=Packed\n[Packed]\nDescriptionText=Packed catalog\n",
+                ),
+                ("Packed.MAP", b"[Basic]\nAuthor=Mod pack\n"),
+            ]),
+        );
+        let mut assets = AssetManager::with_mod(
+            base.path(),
+            Some(selected_mod.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let records =
+            list_skirmish_scenario_records_with_assets(base.path(), &mut assets, None).unwrap();
+        assert_eq!(records.len(), 3);
+        let record = |name: &str| {
+            records
+                .iter()
+                .find(|record| record.file_name.eq_ignore_ascii_case(name))
+                .unwrap()
+        };
+        assert_eq!(record("Arena.MAP").display_name, "Mod catalog");
+        assert_eq!(record("Arena.MAP").author.as_deref(), Some("Mod arena"));
+        assert_eq!(record("Packed.MAP").author.as_deref(), Some("Mod pack"));
+        assert_eq!(record("Shared.yrm").display_name, "Mod loose");
+        assert!(assets.archive("Packs.YRO").is_some());
+    }
+
+    #[test]
+    fn declared_catalogs_supply_the_maps_and_modes() {
+        let directory = TestDirectory::new("declared-catalogs");
+        let pack = make_new_format_mix_bytes(&[
+            ("custom-maps.pkt", &b"[MultiMaps]\n0=Arena\n[Arena]\nDescriptionText=Declared arena\nGameMode=custom\nMinPlayers=2\nMaxPlayers=2\n"[..]),
+            ("custom-modes.ini", &b"[Battle]\n12=GUI:Custom,STT:Custom,match.ini,custom,false\n"[..]),
+            ("match.ini", &b"[MultiplayerDialogSettings]\nAlliesAllowed=no\n"[..]),
+            ("Arena.MAP", &b"[Basic]\nName=Arena\n[Waypoints]\n0=100011\n1=120013\n"[..]),
+        ]);
+        directory.write("resources.yro", &pack);
+        let mut assets = AssetManager::from_loose_root_for_test(directory.path())
+            .with_ini_roots(&crate::util::ini_roots::IniRootConfig {
+                modes: Some("custom-modes.ini".into()),
+                map_catalog: Some("custom-maps.pkt".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        assets
+            .register_loose_yro_archive(&directory.path().join("resources.yro"))
+            .unwrap();
+
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap();
+        assert_eq!(modes.len(), 1);
+        assert_eq!(modes[0].id, 12);
+        assert!(!modes[0].allies_allowed);
+        let maps = list_skirmish_scenario_records_with_assets(directory.path(), &mut assets, None)
+            .unwrap();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps[0].display_name, "Declared arena");
+        assert_eq!(maps[0].game_modes, ["custom"]);
+    }
 
     #[test]
     fn menu_entry_exposes_sorted_multiplayer_start_waypoints() {

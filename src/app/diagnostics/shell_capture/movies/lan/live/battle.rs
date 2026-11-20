@@ -817,15 +817,8 @@ impl BattleOpening {
                         .iter()
                         .copied()
                         .find(|&cell| {
-                            commands::ordinary_cell_move_goal(
-                                sim,
-                                rules,
-                                state.overlay_registry(),
-                                owner,
-                                id,
-                                cell,
-                                false,
-                            ) == Some(cell)
+                            commands::ordinary_cell_move_goal(sim, rules, owner, id, cell, false)
+                                == Some(cell)
                         })
                         .context("no legal ordinary GI Move into the former GAPILE foundation")?;
                     ground_order_with_mouse(state, id, goal)?;
@@ -2883,15 +2876,9 @@ fn legal_move_cell(state: &AppState, actor: u64, desired: (u16, u16)) -> Result<
         ) else {
             continue;
         };
-        if let Some(cell) = commands::ordinary_cell_move_goal(
-            sim,
-            rules,
-            state.overlay_registry(),
-            owner,
-            actor,
-            (x, y),
-            false,
-        ) && cell == (x, y)
+        if let Some(cell) =
+            commands::ordinary_cell_move_goal(sim, rules, owner, actor, (x, y), false)
+            && cell == (x, y)
         {
             return Ok(cell);
         }

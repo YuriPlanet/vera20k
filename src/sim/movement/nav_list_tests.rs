@@ -403,14 +403,8 @@ fn an_order_during_a_war_factory_exit_waits_on_the_list() {
             A
         };
         crate::sim::radio::take_transmit_log();
-        sim.assign_destination_represented(
-            tank,
-            Some(order),
-            &rules,
-            None,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.assign_destination_represented(tank, Some(order), &rules, FrameEffects::default())
+            .unwrap();
         let over_out = crate::sim::radio::take_transmit_log()
             .iter()
             .any(|send| send.sender_sid == tank && send.target_sid == factory && send.msg == 3);
@@ -457,7 +451,7 @@ fn an_order_before_the_factory_door_opens_goes_at_once_or_is_dropped() {
                     z: 0,
                 });
         }
-        sim.assign_destination_represented(tank, Some(A), &rules, None, FrameEffects::default())
+        sim.assign_destination_represented(tank, Some(A), &rules, FrameEffects::default())
             .unwrap();
         assert_eq!(list(&sim, tank), (vec![A], false), "listed");
         assert_eq!(nav_com(&sim, tank), None, "listed");
@@ -489,6 +483,6 @@ fn pointer_expiry_prunes_the_list() {
     let Some((mut sim, rules, id, victim)) = listing_tank() else {
         return;
     };
-    sim.detach_all_pointer_expired(victim, &rules, None, FrameEffects::default());
+    sim.detach_all_pointer_expired(victim, &rules, FrameEffects::default());
     assert_eq!(list(&sim, id), (vec![A], true));
 }

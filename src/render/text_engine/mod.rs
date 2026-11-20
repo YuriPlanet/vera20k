@@ -175,9 +175,14 @@ pub(crate) struct TextEngine {
     layouts: HashMap<(u32, Fit), HashMap<String, Arc<ShapedText>>>,
     cached_layouts: usize,
     atlas: GlyphAtlas,
+    /// The interface language, so CJK text takes its region's glyph forms
+    /// (Noto Sans CJK carries Japanese, Korean and Traditional variants).
     locale: Option<String>,
-    /// The interface language reads right to left (`i18n::right_to_left`).
+    /// The interface language reads right to left.
     right_to_left: bool,
+    /// The `i18n::catalog_revision` `locale` and `right_to_left` were read
+    /// at ([`Self::follow_interface_language`]); none before the first.
+    language_revision: Option<u64>,
 }
 
 /// Cached layouts kept before the cache starts over.
@@ -238,6 +243,7 @@ impl TextEngine {
             atlas: GlyphAtlas::new(gpu),
             locale: None,
             right_to_left: false,
+            language_revision: None,
         };
         for (place, font) in bundled.into_iter().enumerate() {
             match font.data {
@@ -356,19 +362,21 @@ impl TextEngine {
         self.clear_layouts();
     }
 
-    /// The interface language, so CJK text takes its region's glyph forms
-    /// (Noto Sans CJK carries Japanese, Korean and Traditional variants).
-    pub(crate) fn locale(&self) -> Option<&str> {
-        self.locale.as_deref()
-    }
-
-    /// Whether the interface language reads right to left.
-    pub(crate) fn right_to_left(&self) -> bool {
-        self.right_to_left
+    /// Read the interface language (`i18n::interface_language`) again when
+    /// the catalog changed since this engine last did: at its first text,
+    /// after a pick in the Language list and after the language files
+    /// reloaded. Every font follows it, a scenario's GAME.FNT font included.
+    fn follow_interface_language(&mut self) {
+        if self.language_revision == Some(crate::i18n::catalog_revision()) {
+            return;
+        }
+        let (revision, tag, right_to_left) = crate::i18n::interface_language();
+        self.language_revision = Some(revision);
+        self.set_locale(Some(&tag), right_to_left);
     }
 
     /// The interface language and whether it reads right to left.
-    pub(crate) fn set_locale(&mut self, locale: Option<&str>, right_to_left: bool) {
+    fn set_locale(&mut self, locale: Option<&str>, right_to_left: bool) {
         let locale = locale.map(str::to_owned);
         if self.locale != locale || self.right_to_left != right_to_left {
             self.locale = locale;
@@ -393,6 +401,7 @@ impl TextEngine {
     /// Shape `text` at `fit`, wrapping at `max_width` native pixels (0: one
     /// line per paragraph). Cached.
     pub(crate) fn shape(&mut self, text: &str, max_width: u32, fit: Fit) -> Arc<ShapedText> {
+        self.follow_interface_language();
         if !self.unfetched.is_empty() {
             self.add_fetched_fonts();
         }
@@ -1099,6 +1108,52 @@ mod tests {
         engine.set_locale(Some("ar"), true);
         assert_eq!(name_on_the_right(&mut engine, sentence), (true, true));
         assert_eq!(name_on_the_right(&mut engine, "Abort?"), (false, false));
+    }
+
+    /// A language file rewritten while the game runs turns the fonts'
+    /// reading direction, as a pick in the Language list does. The probe
+    /// changes the process's interface language, so it runs in a process of
+    /// its own.
+    #[test]
+    fn a_reloaded_language_file_turns_the_reading_direction() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "render::text_engine::tests::reloaded_language_probe",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("VERA20K_LANGUAGE_RELOAD_PROBE", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("VERA20K_LANGUAGE_RELOAD_PROBE=done"),
+            "{output:?}"
+        );
+    }
+
+    /// [`a_reloaded_language_file_turns_the_reading_direction`]'s process.
+    #[test]
+    fn reloaded_language_probe() {
+        if std::env::var_os("VERA20K_LANGUAGE_RELOAD_PROBE").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("vera20k-language-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("vera20k.xx.ini");
+        std::fs::write(&file, "[Strings]\nVERA:Unlimited=Unlimited\n").unwrap();
+        assert_eq!(crate::i18n::init(Some(&dir), Some("xx")), "xx");
+        let mut engine = TextEngine::new(None);
+        let mut reads_from_the_right = || engine.shape("Tanya انضم", 0, Fit::NONE).lines[0].rtl;
+        assert!(!reads_from_the_right());
+        std::fs::write(&file, "[Strings]\nVERA:Unlimited=غير محدود\n").unwrap();
+        assert!(crate::i18n::poll_language_files(Some(&dir)));
+        let turned = reads_from_the_right();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(turned, "the rewritten file reads right to left");
+        println!("VERA20K_LANGUAGE_RELOAD_PROBE=done");
     }
 
     #[test]

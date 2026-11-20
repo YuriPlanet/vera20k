@@ -51,7 +51,7 @@ fn stock_scene() -> (HeadlessScenario, InternedId, InternedId) {
     let computer = computers[0];
     let country = sim.houses[&computer].country().unwrap();
     assert_eq!(sim.interner.resolve(country), "Russians");
-    assert!(!sim.houses[&computer].is_controlled_by_human(true));
+    assert!(!sim.houses[&computer].is_human());
     // This explicit AI prior prevents an unrelated base rollout or no-factory
     // fire sale. It changes none of the human/player/passive capture-sale gates.
     // Both actual starting MCVs remain alive, so neither House is eliminated.
@@ -161,6 +161,7 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
         // Execute_DoList skips an AI House without PlayerControl; drive the
         // existing class/mission receiver at this setup boundary instead.
         assert!(runtime.simulation.apply_command_with_overlays(
+            None,
             &name,
             &command,
             &runtime.resources.rules,

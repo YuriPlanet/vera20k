@@ -397,7 +397,6 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
                 &snap,
                 &weapon,
                 bullet,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
         });
