@@ -47,7 +47,7 @@ impl Simulation {
                                 &self.interner,
                                 rules,
                             )
-                            .contains(&coord)
+                            .any(|cell| cell == coord)
                         })
                 });
         let terrain = self.resolved_terrain.as_mut().unwrap();

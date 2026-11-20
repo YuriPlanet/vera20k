@@ -157,6 +157,26 @@ impl Foundation {
             .chain(listed.iter().copied())
     }
 
+    /// Whether [`Self::cell_offsets`] yields `offset`, without walking it: a
+    /// stock rectangle by its bounds, the refinery's eight-entry list, and a
+    /// custom list by binary search over its sorted, unique cells.
+    pub fn contains_cell_offset(&self, offset: (i16, i16)) -> bool {
+        match self {
+            Self::Stock(id) => {
+                let def = &FOUNDATION_TABLE[usize::from(*id)];
+                if def.id == REFINERY_FOUNDATION_ID {
+                    REFINERY_CELL_OFFSETS.contains(&offset)
+                } else {
+                    let (dx, dy) = offset;
+                    (0..i32::from(def.width)).contains(&i32::from(dx))
+                        && (0..i32::from(def.height)).contains(&i32::from(dy))
+                }
+            }
+            Self::Custom(custom) => custom.cells.binary_search(&offset).is_ok(),
+            Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
+        }
+    }
+
     pub(crate) fn custom_outline(&self) -> Option<&[(i16, i16)]> {
         match self {
             Self::Custom(custom) => Some(&custom.outline),
