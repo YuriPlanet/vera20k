@@ -18,9 +18,9 @@ use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
 use crate::app::input::commands::{
-    cancel_build_by_type, place_ready_building_at_cell, preferred_local_owner,
-    preferred_local_owner_name, queue_build_by_type, queue_house_cheer, schedule_command,
-    suspend_build,
+    cancel_build_by_type, place_ready_building_at_cell, preferred_command_owner,
+    preferred_local_owner, preferred_local_owner_name, queue_build_by_type, queue_house_cheer,
+    schedule_command, suspend_build,
 };
 use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
@@ -1239,7 +1239,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
 
 /// The local player's queue of record, in queue order (empty without a sim).
 pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return Vec::new();
     };
     match (
@@ -1306,7 +1306,7 @@ fn sidebar_cameo_press(
     };
     let queue = local_queue_view(state);
     let type_iid = local_interned(state, type_id);
-    let linked_factory = preferred_local_owner_name(state).and_then(|owner| {
+    let linked_factory = preferred_command_owner(state).and_then(|owner| {
         let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         state
             .match_state
@@ -1406,7 +1406,7 @@ fn sidebar_cameo_press(
             );
         }
     }
-    let owner = preferred_local_owner_name(state).and_then(|name| {
+    let owner = preferred_command_owner(state).and_then(|name| {
         state
             .match_state
             .sim_runtime
@@ -1514,7 +1514,7 @@ fn sidebar_cameo_press(
             // Select6AB30D plays GUIBuildSound before ObjectFindFactory5F5C20
             // (0,0) at6AB31A, including repeated pending clicks. A null builder
             // instead queues ABANDON16 before EVA_UnableToComply6AB3A9.
-            let ready_target = preferred_local_owner_name(state).and_then(|owner| {
+            let ready_target = preferred_command_owner(state).and_then(|owner| {
                 let runtime = state.match_state.sim_runtime.runtime()?;
                 let sim = &runtime.simulation;
                 let rules = &runtime.resources.rules;
@@ -1627,21 +1627,17 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
             } else {
                 SelectionMode::Sell
             };
-            let owned_buildings = state
+            let has_building = state
                 .match_state
                 .sim_runtime
                 .runtime()
-                .and_then(|runtime| {
-                    let sim = &runtime.simulation;
-                    sim.houses().get(&sim.session().current_house()?)
-                })
-                .map_or(0, |house| house.tracking().buildings());
+                .is_some_and(|runtime| local_has_manageable_building(&runtime.simulation));
             let placement_armed = state.armed_building_type().is_some();
             if state
                 .match_state
                 .match_presentation
                 .sidebar_gadget_state
-                .toggle_selection_mode(mode, placement_armed, owned_buildings)
+                .toggle_selection_mode(mode, placement_armed, i32::from(has_building))
             {
                 queue_selection_snapshot_command(state, Vec::new(), false);
             }
@@ -1649,6 +1645,25 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
         SidebarAction::Deploy => {
             queue_deploy_undeploy_for_selected(state);
         }
+    }
+}
+
+/// The Repair and Sell modes need a building the issuing seat can manage.
+pub(super) fn local_has_manageable_building(sim: &crate::sim::world::Simulation) -> bool {
+    let control = sim.control_projection();
+    let tracked_buildings = |owner| {
+        sim.houses()
+            .get(&owner)
+            .is_some_and(|house| house.tracking().buildings() > 0)
+    };
+    if sim.session().has_custom_control_grants() {
+        sim.houses()
+            .order()
+            .iter()
+            .copied()
+            .any(|owner| control.can_manage(owner) && tracked_buildings(owner))
+    } else {
+        control.local_command_house().is_some_and(tracked_buildings)
     }
 }
 
@@ -2056,7 +2071,7 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
 /// tab (`BuildingClass::SetSidebarTabObject` 734250 by the type's BuildCat),
 /// which is this owner's ready building for that tab.
 fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_command_owner(state) else {
         return;
     };
     let ready_target = {
@@ -2394,7 +2409,7 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
         let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
-        let owner = sim.interner().get(&preferred_local_owner_name(state)?)?;
+        let owner = sim.control_projection().local_command_house()?;
         let type_id = sim.interner().get(section)?;
         let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner)
             .into_iter()
@@ -2455,13 +2470,14 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
             }
         }
         super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
-            let owner = preferred_local_owner_name(state).unwrap_or_default();
-            crate::app::input::commands::queue_super_weapon_click(
-                state,
-                &owner,
-                sw_type_id,
-                (0, 0),
-            );
+            if let Some(owner) = preferred_command_owner(state) {
+                crate::app::input::commands::queue_super_weapon_click(
+                    state,
+                    &owner,
+                    sw_type_id,
+                    (0, 0),
+                );
+            }
         }
         _ => {}
     }
@@ -4165,7 +4181,7 @@ fn stop_qualifies(
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
 ) -> bool {
-    (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+    (sim.local_techno_controllable(id, rules) || sim.local_techno_is_active(id, rules))
         && !(rules.ares()
             && sim
                 .entities()
@@ -4186,7 +4202,7 @@ fn queue_stop_orders(
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.session().current_house() else {
+    let Some(owner) = sim.control_projection().local_command_house() else {
         return Vec::new();
     };
     let owner = sim.interner().resolve(owner).to_owned();
@@ -4195,7 +4211,7 @@ fn queue_stop_orders(
             continue;
         }
         let payload = Command::Stop { entity_id };
-        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+        if super::commands::schedule_rules_command_in_sim(sim, rules, &owner, payload).is_none() {
             // A refused Rust schedule fails closed, as Guard's does.
             return Vec::new();
         }
@@ -4308,7 +4324,7 @@ fn queue_scatter_orders(
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.session().current_house() else {
+    let Some(owner) = sim.control_projection().local_command_house() else {
         return Vec::new();
     };
     let owner = sim.interner().resolve(owner).to_owned();
@@ -4316,7 +4332,7 @@ fn queue_scatter_orders(
         let Some(payload) = sim.scatter_key_command(entity_id, rules) else {
             continue;
         };
-        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+        if super::commands::schedule_rules_command_in_sim(sim, rules, &owner, payload).is_none() {
             return Vec::new();
         }
     }
@@ -4353,7 +4369,7 @@ fn queue_area_guard_orders(
     if selected.is_empty() {
         return sounds;
     }
-    let Some(owner) = sim.session().current_house() else {
+    let Some(owner) = sim.control_projection().local_command_house() else {
         return sounds;
     };
     let owner = sim.interner().resolve(owner).to_owned();
@@ -4371,7 +4387,7 @@ fn queue_area_guard_orders(
         ) {
             sounds.push(event);
         }
-        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+        if super::commands::schedule_rules_command_in_sim(sim, rules, &owner, payload).is_none() {
             // A missing Rust registration or unrepresentable record fails
             // closed. This invariant boundary is not native issuer false;
             // Planning Mode is the separate native false-return route.
@@ -4414,7 +4430,7 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         return;
     }
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let local_owner = sim.interner().get(&owner);
@@ -4473,7 +4489,18 @@ fn deploy_key_commands(
     selection: &[u64],
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Vec<Command> {
-    let first = selection.first().and_then(|&id| sim.entities().get(id));
+    let control = sim.control_projection();
+    let selected = selection.iter().copied().filter(|id| {
+        !sim.session().has_custom_control_grants()
+            || sim
+                .entities()
+                .get(*id)
+                .is_some_and(|entity| control.can_order(entity.owner()))
+    });
+    let first = selected
+        .clone()
+        .next()
+        .and_then(|id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
             && entity.passenger_role().occupants().count() > 0
@@ -4485,7 +4512,7 @@ fn deploy_key_commands(
     let deployed = |id: u64| deployer_is_deployed(sim, rules, id);
     let mut found_deployed = false;
     let mut found_undeployed = false;
-    for &id in selection {
+    for id in selected.clone() {
         match deployed(id) {
             Some(true) => found_deployed = true,
             Some(false) => found_undeployed = true,
@@ -4496,12 +4523,10 @@ fn deploy_key_commands(
         }
     }
     let mixed = found_deployed && found_undeployed;
-    selection
-        .iter()
-        .copied()
+    selected
         .filter(|&id| {
             rules.is_none_or(|rules| {
-                (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+                (sim.local_techno_controllable(id, rules) || sim.local_techno_is_active(id, rules))
                     && sim.can_deploy_slash_unload(id, rules)
             }) && sim
                 .entities()
@@ -4550,13 +4575,22 @@ fn deploy_key_command(
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
+    let control = sim.control_projection();
+    let local_owner = if sim.session().has_custom_control_grants() {
+        if !control.can_order(entity.owner()) {
+            return None;
+        }
+        control.local_command_house()
+    } else {
+        local_owner
+    };
     let obj = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     match entity.category() {
         // Selection730B28..730B5E sends Event9 for an occupied Building.
         // Its native receiver owns NULL setters and Unload; self-click keeps
         // the separate MEGAMISSION/absorber admission in transport_orders.
         EntityCategory::Structure => (!entity.passenger_role().occupants().is_empty()
-            && local_owner.is_none_or(|owner| entity.owner() == owner))
+            && local_owner.is_none_or(|owner| control.can_order_from(entity.owner(), owner)))
         .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
         // A unit in a tank bunker deploys out of it: its Unload's bunker arm
@@ -4572,7 +4606,7 @@ fn deploy_key_command(
         }
         _ => {
             // Aircraft and other deployers retain their existing routing.
-            super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
+            super::transport_orders::unload_command(sim, entity, obj, local_owner).or_else(|| {
                 let object = obj?;
                 (super::context_order::is_simple_deploy_unit(entity, object)
                     || object.deploys_into.is_some()
@@ -4717,7 +4751,7 @@ fn schedule_control_group_assignment(
 }
 
 fn queue_control_group_assignment(state: &mut AppState, slot: usize, entity_ids: Vec<u64>) {
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
@@ -4805,13 +4839,14 @@ fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]
     let Some(sim) = sim else {
         return Vec::new();
     };
+    let control = sim.control_projection();
     group
         .iter()
         .copied()
         .filter(|id| {
             sim.entities()
                 .get(*id)
-                .is_some_and(|entity| sim.house_controls_selection(entity.owner()))
+                .is_some_and(|entity| control.can_select(entity.owner()))
         })
         .collect()
 }
@@ -5824,7 +5859,7 @@ mod control_group_tests {
             "the campaign IsHumanPlayer predicate admits this owner"
         );
         assert!(
-            !sim.house_controls_selection(human_only),
+            !sim.control_projection().can_select(human_only),
             "TeamAssign's mode-zero PlayerControl gate excludes a human-flag-only house"
         );
 

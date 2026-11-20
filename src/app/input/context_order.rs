@@ -20,7 +20,67 @@ use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
+
+/// Preserve the native owner test for stock self-clicks. A custom seat
+/// projects the same actor permission as its eventual command.
+fn context_owns_actor(
+    sim: &crate::sim::world::Simulation,
+    actor: &GameEntity,
+    local_owner: InternedId,
+) -> bool {
+    sim.control_projection()
+        .can_order_from(actor.owner(), local_owner)
+}
+
+fn context_order_receiver(sim: &crate::sim::world::Simulation, actor: u64) -> bool {
+    !sim.session().has_custom_control_grants() || sim.local_actor_can_order(actor)
+}
+
+/// Use one ordered receiver list for tactical and radar previews and release.
+/// A selected carrier may still detonate a bomb owned by a controllable House.
+pub(super) fn projected_order_selection<'a>(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    selected: &'a [u64],
+    target: Option<u64>,
+) -> std::borrow::Cow<'a, [u64]> {
+    use std::borrow::Cow;
+    if !sim.session().has_custom_control_grants()
+        || rules
+            .zip(target)
+            .is_some_and(|(rules, target)| self_detonates(sim, rules, selected, target))
+    {
+        return Cow::Borrowed(selected);
+    }
+
+    let Some(first_denied) = selected
+        .iter()
+        .position(|&actor| !sim.local_actor_can_order(actor))
+    else {
+        return Cow::Borrowed(selected);
+    };
+    let mut receivers = selected[..first_denied].to_vec();
+    receivers.extend(
+        selected[first_denied + 1..]
+            .iter()
+            .copied()
+            .filter(|&actor| sim.local_actor_can_order(actor)),
+    );
+    Cow::Owned(receivers)
+}
+
+fn context_actor_viewer(
+    sim: &crate::sim::world::Simulation,
+    actor_owner: InternedId,
+) -> Option<InternedId> {
+    if sim.session().has_custom_control_grants() {
+        sim.session().current_house()
+    } else {
+        Some(actor_owner)
+    }
+}
 
 /// The verb a Ctrl / Shift / Alt chord selects for a tactical click.
 ///
@@ -296,7 +356,7 @@ pub(crate) fn attack_action(
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return action;
     };
-    let human = sim.house_is_human_player(actor.owner());
+    let human = sim.control_projection().can_order(actor.owner());
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,
         kind,
@@ -353,7 +413,7 @@ pub(crate) fn attack_action(
     if action == AttackAction::Attack
         && actor.category() == EntityCategory::Unit
         && let TargetKind::Entity(target_id) = *target
-        && !sim.techno_is_active(actor_id, rules)
+        && !sim.local_techno_is_active(actor_id, rules)
     {
         action = if crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), kind)
             && sim.object_crushable_by_unit(actor_id, target_id, rules)
@@ -422,7 +482,7 @@ pub(crate) fn attack_action(
     }
     // Over an object, the Foot class tails turn 0 into another action: NoMove
     // for a player's Unit or Infantry it may control, and an Aircraft's own
-    // Cell action under the object. The player's own object: its owner views.
+    // Cell action under the object, using the tactical viewer for shared control.
     if action == AttackAction::None
         && let TargetKind::Entity(target_id) = *target
     {
@@ -430,9 +490,9 @@ pub(crate) fn attack_action(
             if aircraft_cell_attack_under_object(sim, rules, actor_id, target_id, overlay_registry)
             {
                 AttackAction::Attack
-            } else {
+            } else if let Some(viewer) = context_actor_viewer(sim, actor.owner()) {
                 match sim.foot_object_class_action(
-                    actor.owner(),
+                    viewer,
                     actor_id,
                     target_id,
                     crate::sim::world::MoveAction::None,
@@ -444,6 +504,8 @@ pub(crate) fn attack_action(
                     crate::sim::world::MoveAction::Move => AttackAction::Move,
                     crate::sim::world::MoveAction::NoMove => AttackAction::NoMove,
                 }
+            } else {
+                AttackAction::None
             };
     }
     // Attack over an Immune= type (vt+0x88 +0x233) is NoMove at the end of
@@ -502,7 +564,7 @@ pub(crate) fn attack_action(
         if action == AttackAction::None
             && matches!(target, TargetKind::Cell(..))
             && kind.has_rally_line()
-            && sim.house_is_human_player(actor.owner())
+            && human
         {
             // Cell44774B..447768; existing factory destination owner commits it.
             action = AttackAction::Rally;
@@ -537,7 +599,7 @@ pub(super) fn base_action(
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return AttackAction::None;
     };
-    let human = sim.house_is_human_player(actor.owner());
+    let human = sim.control_projection().can_order(actor.owner());
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,
         kind,
@@ -584,7 +646,7 @@ pub(super) fn base_action(
             _ => AttackAction::None,
         }
     } else if admitted
-        && (sim.techno_player_controllable(actor_id, rules)
+        && (sim.local_techno_controllable(actor_id, rules)
             || resolved_unit_in_range(
                 sim,
                 actor_id,
@@ -646,8 +708,8 @@ fn shrouded_object_action(
 ) -> Option<crate::sim::world::MoveAction> {
     let player = sim.session().current_house()?;
     let shrouded = sim.foot_object_shroud_action(player, actor_id, object, rules)?;
-    let owner = sim.entities().get(actor_id)?.owner();
-    Some(sim.foot_object_class_action(owner, actor_id, object, shrouded, rules))
+    let viewer = context_actor_viewer(sim, sim.entities().get(actor_id)?.owner())?;
+    Some(sim.foot_object_class_action(viewer, actor_id, object, shrouded, rules))
 }
 
 /// Whether Infantry's C4 and infiltration arms see Attack over `target_id`
@@ -725,7 +787,10 @@ fn aircraft_cell_attack_under_object(
     let Some(cell) = sim.object_coords_cell(target_id) else {
         return false;
     };
-    sim.clicked_cell_is_shrouded(actor.owner(), cell) == Ok(false)
+    let Some(viewer) = context_actor_viewer(sim, actor.owner()) else {
+        return false;
+    };
+    sim.clicked_cell_is_shrouded(viewer, cell) == Ok(false)
         && sim.cell_attack_rung_admits(actor_id, cell, rules, overlay_registry)
         && attack_action(
             sim,
@@ -1256,9 +1321,9 @@ fn move_near_object(
     target_id: u64,
     action: crate::sim::world::MoveAction,
 ) -> Option<Command> {
-    let owner = sim.entities().get(id)?.owner();
+    let viewer = context_actor_viewer(sim, sim.entities().get(id)?.owner())?;
     let destination = crate::app::input::commands::object_move_destination(
-        sim, rules, owner, id, target_id, action, false,
+        sim, rules, viewer, id, target_id, action, false,
     )?;
     Some(move_click_command(sim, rules, order_mode, id, destination))
 }
@@ -1498,40 +1563,46 @@ fn emit_entity_order_voice(
 /// Evidence: tools/procedural_drawing_oracle/action_lines.
 fn finish_order(
     state: &mut AppState,
-    queued: Vec<CommandEnvelope>,
+    mut queued: Vec<CommandEnvelope>,
     speaker_id: Option<u64>,
     rally_announce: bool,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let admitted = if state.match_state.input.planning.active() {
-        let mut queued = queued;
-        let selected = selected_stable_ids_in_order(
-            state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .map(|rt| &rt.simulation),
-            state.rules(),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
-        );
-        restore_selection_dispatch_order(&mut queued, &selected);
+    let planning = state.match_state.input.planning.active();
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+        let proposed = !queued.is_empty();
+        let sim = &runtime.simulation;
+        retain_context_orders(sim, &runtime.resources.rules, &mut queued);
+        if sim.session().has_custom_control_grants() {
+            let Some(primary) = sim.control_projection().local_command_house() else {
+                return false;
+            };
+            for order in &mut queued {
+                order.owner = primary;
+            }
+        }
+        if proposed && queued.is_empty() {
+            return true;
+        }
+    }
+    let sim = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map(|rt| &rt.simulation);
+    let mut selected = selected_stable_ids_in_order(
+        sim,
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    );
+    if let Some(sim) = sim {
+        selected.retain(|&actor| context_order_receiver(sim, actor));
+    }
+    restore_selection_dispatch_order(&mut queued, &selected);
+    let admitted = if planning {
         crate::app::input::planning_mode::queue_orders(state, &selected, queued, clicked_cell)
     } else {
-        let mut queued = queued;
-        restore_selection_dispatch_order(
-            &mut queued,
-            &selected_stable_ids_in_order(
-                state
-                    .match_state
-                    .sim_runtime
-                    .runtime()
-                    .map(|rt| &rt.simulation),
-                state.rules(),
-                &state.match_state.input.selection_order,
-                state.match_state.input.selection_order_pending,
-            ),
-        );
         // The local acknowledgement reads the resolved input order before
         // encoding. Only the native record enters the gameplay queue.
         let (encoded, feedback): (Vec<_>, Vec<_>) = if let Some(sim) = state
@@ -1602,6 +1673,14 @@ fn finish_order(
             .start_timer(frame);
     }
     true
+}
+
+fn retain_context_orders(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    queued: &mut Vec<CommandEnvelope>,
+) {
+    queued.retain(|order| sim.can_issue_local_command(&order.payload, rules));
 }
 
 /// Does this object accept an attack-move order? Its `Can_Attack_Move`
@@ -1680,7 +1759,7 @@ pub(super) fn object_key_action(
     if actor.berserk.is_active() || actor.is_warped_out() {
         return None;
     }
-    let human = sim.house_is_human_player(actor.owner());
+    let human = sim.control_projection().can_order(actor.owner());
     let alt = matches!(
         modifier,
         OrderModifier::ForceMove | OrderModifier::GuardArea
@@ -1693,7 +1772,7 @@ pub(super) fn object_key_action(
     {
         Some(ObjectKeyAction::GuardArea)
     } else {
-        (alt && human && sim.techno_player_controllable(actor_id, rules))
+        (alt && human && sim.local_techno_controllable(actor_id, rules))
             .then_some(ObjectKeyAction::Move)
     }?;
     Some(match shrouded_object_action(sim, rules, actor_id, object) {
@@ -1747,8 +1826,8 @@ pub(super) fn guard_area_admitted(
         return false;
     };
     if actor.berserk.is_active()
-        || !sim.house_is_human_player(actor.owner())
-        || !sim.techno_player_controllable(actor_id, rules)
+        || !sim.control_projection().can_order(actor.owner())
+        || !sim.local_techno_controllable(actor_id, rules)
     {
         return false;
     }
@@ -1765,7 +1844,7 @@ pub(super) fn guard_area_admitted(
                     )
                 })
         }
-        None => sim.techno_is_active(actor_id, rules),
+        None => sim.local_techno_is_active(actor_id, rules),
     }
 }
 
@@ -1871,7 +1950,9 @@ fn object_click_payload(
     // the resulting Attack5 asks IsActive7010D0 before ClickedMission.
     // Infantry capture/sabotage return before this owner; Cell Attack4D80B1
     // and Building44343C do not have this Foot gate. Never recheck on receipt.
-    if actor.category() != EntityCategory::Structure && !sim.techno_is_active(attacker_id, rules) {
+    if actor.category() != EntityCategory::Structure
+        && !sim.local_techno_is_active(attacker_id, rules)
+    {
         return None;
     }
     Some(match order_mode {
@@ -1964,7 +2045,7 @@ fn object_attack_click_command(
         // without it, so an unarmed member of the group stays put.
         Some(ObjectKeyAction::GuardArea) => {
             return sim
-                .techno_is_active(attacker_id, rules)
+                .local_techno_is_active(attacker_id, rules)
                 .then_some(Command::Guard {
                     entity_id: attacker_id,
                     target: Some(TargetKind::Entity(target_id)),
@@ -2251,26 +2332,6 @@ pub(crate) fn try_queue_context_order(
         let overlay_registry = resources.rules.overlay_registry();
         let sim = &mut rt.simulation;
         let execute_tick = sim.session().tick();
-        if selected_ids.is_empty() {
-            return false;
-        }
-        speaker_id = selected_ids.first().copied();
-        // `CurrentObjects`: DetermineAction and the gates that read the
-        // selection's size see every selected object. Orders go only to the
-        // objects whose ClickedAction can still send one.
-        let current_objects = selected_ids;
-        let selected_ids = sim.click_order_receivers(&current_objects, resources.rules.ares());
-
-        let mut selected_units: Vec<u64> = Vec::new();
-
-        for &sid in &selected_ids {
-            let Some(entity) = sim.entities().get(sid) else {
-                continue;
-            };
-            if entity.category() != EntityCategory::Structure {
-                selected_units.push(sid);
-            }
-        }
         let hover_object = match target {
             ContextOrderTarget::ScreenPoint(..) => {
                 let (world_x, world_y) = world_point.expect("tactical input has a world point");
@@ -2293,6 +2354,31 @@ pub(crate) fn try_queue_context_order(
                 .and_then(|id| crate::app::input::entity_pick::hover_object_by_id(sim, id, &owner)),
         };
         let hover = hover_object.and_then(HoverObject::techno);
+        let current_objects = projected_order_selection(
+            sim,
+            Some(&resources.rules),
+            &selected_ids,
+            hover.as_ref().map(|target| target.stable_id),
+        );
+        if current_objects.is_empty() {
+            return false;
+        }
+        speaker_id = current_objects.first().copied();
+        // `CurrentObjects`: DetermineAction and the gates that read the
+        // selection's size see every selected object. Orders go only to the
+        // objects whose ClickedAction can still send one.
+        let selected_ids = sim.click_order_receivers(&current_objects, resources.rules.ares());
+
+        let mut selected_units: Vec<u64> = Vec::new();
+
+        for &sid in &selected_ids {
+            let Some(entity) = sim.entities().get(sid) else {
+                continue;
+            };
+            if entity.category() != EntityCategory::Structure {
+                selected_units.push(sid);
+            }
+        }
         // Techno700082 -> Action8 precedes Infantry/Unit class actions.
         // Let the selection consumer handle Shift over a visible object;
         // bare ground still reaches its immediate Move. Berserk-only groups
@@ -2350,7 +2436,7 @@ pub(crate) fn try_queue_context_order(
         if modifier != OrderModifier::Shift
             && hover
                 .as_ref()
-                .is_some_and(|target| current_objects == [target.stable_id])
+                .is_some_and(|target| current_objects.as_ref() == [target.stable_id])
         {
             modifier = OrderModifier::Normal;
         }
@@ -2550,7 +2636,7 @@ pub(crate) fn try_queue_context_order(
                 }
                 consumed = true;
                 // Foot4D7716 asks vt+A0 before publishing the Capture event.
-                if sim.techno_player_controllable(id, &resources.rules) {
+                if sim.local_techno_controllable(id, &resources.rules) {
                     queued.push(CommandEnvelope::new(
                         owner_id,
                         execute_tick,
@@ -3360,6 +3446,7 @@ fn formation_units(
 ) -> Vec<(u64, (i32, i32))> {
     sim.click_order_receivers(current_objects, ares)
         .into_iter()
+        .filter(|&id| context_order_receiver(sim, id))
         .filter_map(|id| {
             let entity = sim.entities().get(id)?;
             (entity.category() != EntityCategory::Structure).then(|| (id, place(entity)))
@@ -3453,6 +3540,8 @@ pub(crate) fn queue_formation_line(
     let sim = &rt.simulation;
     let owner_id: InternedId = sim.interner().get(&owner).unwrap_or_default();
     let execute_tick = sim.session().tick();
+    let mut current_objects = current_objects;
+    current_objects.retain(|&actor| context_order_receiver(sim, actor));
     let units = formation_units(sim, &current_objects, standing_cell, resources.rules.ares());
     if units.len() < 2 {
         return false;
@@ -3907,7 +3996,7 @@ pub(super) fn self_answers_no_deploy(
             planning,
         ) || (selected_ids == [target.stable_id]
             && sim.entities().get(target.stable_id).is_some_and(|entity| {
-                entity.owner() == local_owner
+                context_owns_actor(sim, entity, local_owner)
                     && sim
                         .interner()
                         .object_type(entity.type_ref(), rules)
@@ -3955,14 +4044,15 @@ fn lone_self_foot_release(
 ) -> Option<(LeftRelease, Option<Command>)> {
     let entity = sim.entities().get(target).filter(|entity| {
         selected_ids == [target]
-            && entity.owner() == owner
+            && context_owns_actor(sim, entity, owner)
             && matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry
             )
     })?;
+    let viewer = context_actor_viewer(sim, entity.owner())?;
     let action = sim.foot_object_class_action(
-        entity.owner(),
+        viewer,
         target,
         target,
         crate::sim::world::MoveAction::None,
@@ -4015,7 +4105,7 @@ fn planning_refuses_self(
     planning
         && selected_ids == [target.stable_id]
         && sim.entities().get(target.stable_id).is_some_and(|entity| {
-            entity.owner() == local_owner
+            context_owns_actor(sim, entity, local_owner)
                 && matches!(
                     entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
@@ -4049,7 +4139,7 @@ fn self_action(
     let entity = sim
         .entities()
         .get(target.stable_id)
-        .filter(|entity| entity.owner() == local_owner)?;
+        .filter(|entity| context_owns_actor(sim, entity, local_owner))?;
     let obj = sim.interner().object_type(entity.type_ref(), rules);
     if obj.is_some_and(|object| self_deploy_is_blocked(entity, object)) {
         return None;
@@ -4093,7 +4183,9 @@ fn self_action(
             transport_id: target.stable_id,
         });
     }
-    if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
+    if let Some(command) =
+        super::transport_orders::unload_command(sim, entity, obj, Some(local_owner))
+    {
         return Some(command);
     }
     if entity.category() == EntityCategory::Structure {
@@ -4101,12 +4193,15 @@ fn self_action(
         // factory primary selection. The tank-bunker link is separate from
         // those containers and does not grant the Building a self action.
         // Repacking is a cell-targeted order.
-        return if crate::sim::production::can_select_factory_primary(sim, rules, target.stable_id) {
+        let command = Command::TogglePrimaryFactory {
+            entity_id: target.stable_id,
+        };
+        return if crate::sim::production::can_select_factory_primary(sim, rules, target.stable_id)
+            && sim.can_issue_local_command(&command, rules)
+        {
             // Building4472EC preserves Action4 only for a nonprimary
             // factory; Click443450..443494 queues this target's Event17.
-            Some(Command::TogglePrimaryFactory {
-                entity_id: target.stable_id,
-            })
+            Some(command)
         } else {
             None
         };
@@ -4261,7 +4356,7 @@ pub(super) fn entry_action(
     if moves
         && sim.entities().get(actor_id).is_some_and(|actor| {
             actor.category() == EntityCategory::Infantry
-                && sim.house_is_human_player(actor.owner())
+                && sim.control_projection().can_order(actor.owner())
                 && actor.infantry_deploy_doing()
                 && sim
                     .interner()
@@ -4356,7 +4451,7 @@ fn entry_orders(
             // Aircraft ClickedAction (`0x00417BD0`) case 0x11:
             // Player_Assign_Mission(Move, NULL, unit).
             crate::sim::world::EntryClickAction::Tote => {
-                if sim.techno_player_controllable(id, rules) {
+                if sim.local_techno_controllable(id, rules) {
                     orders.push(Command::MoveToObject {
                         entity_id: id,
                         target_id: hover.stable_id,
@@ -4365,7 +4460,7 @@ fn entry_orders(
                 return false;
             }
         };
-        if sim.techno_player_controllable(id, rules) {
+        if sim.local_techno_controllable(id, rules) {
             orders.push(Command::MegaMission {
                 entity_id: id,
                 mission,
@@ -4439,7 +4534,7 @@ fn engineer_capture_orders(
         use crate::sim::world::EngineerBuildingAction;
         consumed = true;
         // Foot4D7716 calls Infantry+A0/Techno700C40 before enqueue.
-        if sim.techno_player_controllable(id, rules) {
+        if sim.local_techno_controllable(id, rules) {
             match action {
                 EngineerBuildingAction::Capture
                 | EngineerBuildingAction::Damage
@@ -4587,7 +4682,7 @@ pub(super) fn infantry_attack_action(
     // Infantry51F160..51F179: the Attack left is NoMove over an Immune=
     // type. A player's Crazy Ivan has returned at his bomb arm
     // (51EB24..51EB7E) before it.
-    if !(object.ivan && sim.house_is_human_player(actor.owner()))
+    if !(object.ivan && sim.control_projection().can_order(actor.owner()))
         && target_is_immune(sim, rules, &TargetKind::Entity(target_id))
     {
         return Some(InfantryAttackAction::NoMove);
@@ -4622,7 +4717,7 @@ pub(super) fn infantry_c4_action(
     let target = sim.entities().get(hover.stable_id)?;
     if actor.category() != EntityCategory::Infantry
         || target.category() != EntityCategory::Structure
-        || !sim.house_is_human_player(actor.owner())
+        || !sim.control_projection().can_order(actor.owner())
         || !sim.interner().object_type(actor.type_ref(), rules)?.c4
     {
         return None;
@@ -4681,7 +4776,7 @@ fn infiltrator_capture_orders(
         }
         consumed = true;
         // Foot4D7716 calls Infantry+A0/Techno700C40 before enqueue.
-        if sim.techno_player_controllable(id, rules) {
+        if sim.local_techno_controllable(id, rules) {
             orders.push(Command::CaptureBuilding {
                 engineer_id: id,
                 target_building_id: hover.stable_id,
@@ -5029,7 +5124,10 @@ pub(super) fn building_cell_orders(
             Err(error) => log::warn!("building cell input: {error}"),
         }
         if object.undeploys_into.is_some() {
-            orders.push(Command::SellBuilding { entity_id: id });
+            let sale = Command::SellBuilding { entity_id: id };
+            if sim.can_issue_local_command(&sale, rules) {
+                orders.push(sale);
+            }
         }
     }
     (orders, announce)
@@ -5186,12 +5284,7 @@ fn building_moves_over_object(
     id: u64,
     force_move_key: bool,
 ) -> bool {
-    force_move_key
-        && sim
-            .entities()
-            .get(id)
-            .is_some_and(|building| sim.house_is_human_player(building.owner()))
-        && sim.techno_player_controllable(id, rules)
+    force_move_key && sim.local_actor_can_order(id) && sim.local_techno_controllable(id, rules)
 }
 
 /// The left release over an object for a selection of buildings only: the
@@ -5326,7 +5419,17 @@ pub(super) fn ares_trench_enter(
     id: u64,
     target: u64,
 ) -> bool {
-    rules.ares() && sim.ares_can_traverse_to(id, target, rules)
+    if !rules.ares() || !sim.ares_can_traverse_to(id, target, rules) {
+        return false;
+    }
+    if !sim.session().has_custom_control_grants() {
+        return true;
+    }
+    sim.object_coords_cell(target)
+        .and_then(|cell| sim.encode_ares_trench_redirect_record(id, cell))
+        .is_some_and(|record| {
+            sim.can_issue_local_command(&Command::SynchronizedRecord { record }, rules)
+        })
 }
 
 fn selected_rally_producer_ids(
@@ -5335,13 +5438,12 @@ fn selected_rally_producer_ids(
     selected_ids: &[u64],
     owner: InternedId,
 ) -> Vec<u64> {
-    let owner = sim.interner().resolve(owner);
     let mut seen = std::collections::HashSet::with_capacity(selected_ids.len());
     selected_ids
         .iter()
         .copied()
         .filter(|&stable_id| {
-            seen.insert(stable_id) && sim.takes_rally_point(stable_id, owner, rules)
+            seen.insert(stable_id) && sim.local_takes_rally_point(stable_id, owner, rules)
         })
         .collect()
 }

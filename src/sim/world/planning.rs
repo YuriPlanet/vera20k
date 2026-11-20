@@ -670,6 +670,37 @@ impl Simulation {
     /// <=128. Prune and node deletion do not release accounting; a connected
     /// path does not charge it. It cannot be recomputed from nonempty paths.
     pub fn planning_selection_has_capacity(&self, owner: InternedId, selected: &[u64]) -> bool {
+        if self.session.has_custom_control_grants() {
+            let Some(authority) = self.local_planning_authority(owner) else {
+                return false;
+            };
+            let mut charges = self.planning.house_charges;
+            for &actor in selected {
+                if !authority.permits(self, actor)
+                    || self
+                        .planning
+                        .paths
+                        .get(&actor)
+                        .is_some_and(|path| !path.nodes.is_empty())
+                {
+                    continue;
+                }
+                let Some(charge) = self
+                    .substrate
+                    .entities
+                    .get(actor)
+                    .and_then(|entity| self.houses.index_of(entity.owner()))
+                    .and_then(|index| charges.get_mut(index))
+                else {
+                    return false;
+                };
+                *charge = charge.wrapping_add(1);
+                if *charge > 0x80 {
+                    return false;
+                }
+            }
+            return true;
+        }
         let player = self.session.current_house().unwrap_or(owner);
         let retained = self
             .houses
@@ -751,7 +782,7 @@ impl Simulation {
         actor_id: u64,
         point: [i32; 2],
     ) -> Option<CommandRecord> {
-        let node = self.planning_node_id_at_screen(Some(owner), point)?;
+        let node = self.planning_input_node_at_screen(owner, Some(actor_id), point)?;
         self.planning_connect_record_to_node(owner, actor_id, node)
     }
 
@@ -794,7 +825,8 @@ impl Simulation {
         owner: InternedId,
         node: u64,
     ) -> Option<CommandRecord> {
-        if !self.planning_node_exists(node) {
+        let authority = self.local_planning_authority(owner)?;
+        if !self.planning_node_exists(node) || !self.planning_can_edit_node(node, authority) {
             return None;
         }
         self.planning_delete_record_for_node(owner, node)
@@ -870,10 +902,15 @@ impl Simulation {
                 positions.entry((actor, node)).or_insert(index);
             }
         }
-        let allied = |actor: u64| {
+        let custom = self.session.has_custom_control_grants();
+        let control = self.control_projection();
+        let visible = |actor: u64| {
             self.substrate.entities.get(actor).is_some_and(|entity| {
                 self.house_alliances
                     .is_allied(&self.interner, entity.owner(), viewer)
+                    || (custom
+                        && control.can_order(entity.owner())
+                        && self.techno_select_admits(actor))
             })
         };
         let record_coord = |record: &CommandRecord| {
@@ -881,11 +918,14 @@ impl Simulation {
         };
         let mut nodes = Vec::new();
         for node in self.planning.nodes.values() {
-            let members: Vec<_> = node.live_members.values().copied().collect();
+            let mut members: Vec<_> = node.live_members.values().copied().collect();
+            if custom {
+                members.retain(|&actor| visible(actor));
+            }
             let Some(&head) = members.first() else {
                 continue;
             };
-            if !allied(head) {
+            if !visible(head) {
                 continue;
             }
             let Some(coord) = self.planning_node_coords(node.id) else {
@@ -974,7 +1014,7 @@ impl Simulation {
         }
         let mut actors = Vec::new();
         for (&actor_id, path) in &self.planning.paths {
-            if !allied(actor_id) {
+            if !visible(actor_id) {
                 continue;
             }
             let Some(&node_id) = path.nodes.first() else {
@@ -1102,7 +1142,7 @@ impl Simulation {
         selected: &[u64],
         point: [i32; 2],
     ) -> Option<u64> {
-        self.planning_node_id_at_screen(Some(owner), point)
+        self.planning_input_node_at_screen(owner, selected.first().copied(), point)
             .filter(|&node| self.planning_invalid_node_reason(selected, node).is_none())
     }
 
@@ -1142,7 +1182,7 @@ impl Simulation {
     /// refuses consumes the release (0x0063AA65..0x0063AA7E), which then
     /// neither connects nor orders.
     pub fn planning_release_refused(&self, selected: &[u64], point: [i32; 2]) -> bool {
-        self.planning_node_id_at_screen(None, point)
+        self.planning_input_refusal_node(selected, point)
             .is_some_and(|node| self.planning_invalid_node_reason(selected, node).is_some())
     }
 
@@ -1160,7 +1200,7 @@ impl Simulation {
         selected: &[u64],
         point: [i32; 2],
     ) -> Option<PlanningPressRefusal> {
-        if let Some(node) = self.planning_node_id_at_screen(None, point) {
+        if let Some(node) = self.planning_input_refusal_node(selected, point) {
             return self
                 .planning_invalid_node_reason(selected, node)
                 .map(|_| PlanningPressRefusal::InvalidNode);
@@ -1186,6 +1226,51 @@ impl Simulation {
         })
     }
 
+    fn local_planning_authority(&self, owner: InternedId) -> Option<PlanningAuthority> {
+        if self.session.has_custom_control_grants() {
+            self.local_grant_source()
+                .filter(|&(_, primary)| primary == owner)
+                .map(PlanningAuthority::Source)
+        } else {
+            Some(PlanningAuthority::Stock)
+        }
+    }
+
+    fn planning_input_refusal_node(&self, selected: &[u64], point: [i32; 2]) -> Option<u64> {
+        if self.session.has_custom_control_grants() {
+            let owner = self.control_projection().local_command_house()?;
+            self.planning_input_node_at_screen(owner, selected.first().copied(), point)
+        } else {
+            self.planning_node_id_at_screen(None, point)
+        }
+    }
+
+    /// Find an editable node before collecting the current selection.
+    pub fn planning_input_node_at_screen(
+        &self,
+        owner: InternedId,
+        actor: Option<u64>,
+        point: [i32; 2],
+    ) -> Option<u64> {
+        let authority = self.local_planning_authority(owner)?;
+        match authority {
+            PlanningAuthority::Stock => self.planning_node_id_at_screen(Some(owner), point),
+            PlanningAuthority::Source(_) => {
+                if actor.is_some_and(|id| !authority.permits(self, id)) {
+                    return None;
+                }
+                let group = actor
+                    .and_then(|id| self.substrate.entities.get(id))
+                    .map_or(owner, |entity| entity.owner());
+                let hit = self.planning_node_id_at_screen_if(point, |node| {
+                    self.planning_can_edit_node(node, authority)
+                })?;
+                let coord = self.planning_node_coords(hit)?;
+                self.planning_node_at_coords(group, coord, authority)
+            }
+        }
+    }
+
     /// `None` hit-tests every house's nodes, as the press and release
     /// loops over AC4B34 do (0x0063A5A0, 0x0063A8E0). The box is
     /// `PlanningNodeClass::GetSurfacePoint @ 0x00634400`'s point, the 8x8
@@ -1197,10 +1282,20 @@ impl Simulation {
         owner: Option<InternedId>,
         point: [i32; 2],
     ) -> Option<u64> {
+        self.planning_node_id_at_screen_if(point, |node| {
+            owner.is_none() || self.planning_node_house(node) == owner
+        })
+    }
+
+    fn planning_node_id_at_screen_if(
+        &self,
+        point: [i32; 2],
+        allowed: impl Fn(u64) -> bool,
+    ) -> Option<u64> {
         self.planning
             .nodes
             .values()
-            .filter(|node| owner.is_none() || self.planning_node_house(node.id) == owner)
+            .filter(|node| allowed(node.id))
             .find_map(|node| {
                 let coord = self.planning_node_coords(node.id)?;
                 let (x, y) =

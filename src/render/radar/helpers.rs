@@ -679,3 +679,13 @@ mod radar_color_tests {
         );
     }
 }
+
+#[cfg(test)]
+pub(super) fn test_radar_session(
+    mode: crate::sim::scenario_session::ScenarioGameMode,
+) -> crate::sim::scenario_session::ScenarioSession {
+    use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioSession};
+    let mut session = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
+    session.set_game_mode(mode);
+    session
+}

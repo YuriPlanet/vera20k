@@ -148,7 +148,7 @@ impl Simulation {
         if entity.category() == EntityCategory::Structure {
             return self.building_cell_move_action(viewer, id, cell, query, rules);
         }
-        if !self.house_is_human_player(entity.owner()) {
+        if !self.local_actor_can_order(id) {
             return Ok(MoveAction::None);
         }
         let object = self
@@ -167,7 +167,7 @@ impl Simulation {
             Some(terrain),
             Some(&cells),
         );
-        let controllable = self.techno_player_controllable(id, rules);
+        let controllable = self.local_techno_controllable(id, rules);
         let mut action = if entity.berserk.is_active()
             || entity.is_warped_out()
             || entity.is_warping_in()
@@ -282,7 +282,7 @@ impl Simulation {
         query: CellActionQuery,
         rules: &RuleSet,
     ) -> Result<MoveAction, String> {
-        if !self.takes_rally_point(id, self.interner.resolve(viewer), rules) {
+        if !self.local_takes_rally_point(id, viewer, rules) {
             return Ok(MoveAction::None);
         }
         let entity = self
@@ -504,7 +504,7 @@ impl Simulation {
         if entity.berserk.is_active()
             || entity.is_warped_out()
             || entity.is_warping_in()
-            || !self.house_is_human_player(entity.owner())
+            || !self.local_actor_can_order(id)
         {
             return false;
         }
@@ -899,7 +899,7 @@ impl Simulation {
         if entity.category() == EntityCategory::Aircraft {
             return self.aircraft_object_class_action(viewer, id, target, action, rules);
         }
-        let human = self.house_is_human_player(entity.owner());
+        let human = self.local_actor_can_order(id);
         let action = match (entity.category(), action) {
             // Returns at once (`0x0051EBCB..0x0051EBD7`), before the rung below.
             (EntityCategory::Infantry, MoveAction::Move)
@@ -913,7 +913,7 @@ impl Simulation {
                 MoveAction::NoMove
             }
             (EntityCategory::Unit | EntityCategory::Infantry, MoveAction::None)
-                if human && self.techno_player_controllable(id, rules) =>
+                if human && self.local_techno_controllable(id, rules) =>
             {
                 MoveAction::NoMove
             }
@@ -1078,7 +1078,7 @@ impl Simulation {
         {
             return Ok(None);
         }
-        if !self.techno_player_controllable(id, rules) {
+        if !self.local_techno_controllable(id, rules) {
             return Ok(None);
         }
         let raised = DriveCoord {

@@ -68,16 +68,17 @@ pub(crate) trait PickSource: Copy {
     /// `PlayerControl=yes` (SOV04's Germans, Premier Romanov's owner)
     /// band-selects exactly like the player's own House.
     ///
-    /// `Simulation::house_is_human_player` is that leaf: with a nonzero game
+    /// `ControlProjection::can_order` preserves that stock leaf: with a nonzero game
     /// mode (`A8B238`, `0x0050B6F0`) the House is compared with the saved
     /// current House `A83D4C` (`0x0050B716`); in mode zero it is the House's
     /// `+0x1EC` IsHuman (`0x0050B6F9`) or `+0x1ED` PlayerControl
-    /// (`0x0050B703`). A bare EntityStore has no house table and answers
+    /// (`0x0050B703`). A granted House joins this cohort with Tactical scope.
+    /// A bare EntityStore has no house table and answers
     /// `None`; its fixtures keep exact local-owner identity.
-    fn owner_is_human_player(&self, _owner: InternedId) -> Option<bool> {
+    fn owner_can_band_select(&self, _owner: InternedId) -> Option<bool> {
         None
     }
-    /// [`crate::sim::world::Simulation::house_controls_selection`], the
+    /// [`crate::sim::world::ControlProjection::can_select`], the
     /// owner test of the T key's predicates (`0x00732580`, `0x00732770`,
     /// `0x006DA770`). A bare EntityStore answers `None`; its fixtures keep
     /// exact local-owner identity.
@@ -115,11 +116,11 @@ impl PickSource for &crate::sim::world::Simulation {
             crate::sim::movement::locomotor::MovementLayer::Ground,
         )
     }
-    fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
-        Some(self.house_is_human_player(owner))
+    fn owner_can_band_select(&self, owner: InternedId) -> Option<bool> {
+        Some(self.control_projection().can_order(owner))
     }
     fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
-        Some(self.house_controls_selection(owner))
+        Some(self.control_projection().can_select(owner))
     }
 }
 impl PickWorld for &crate::sim::world::Simulation {
@@ -171,11 +172,11 @@ impl PickSource for PresentedWorld<'_> {
             )
         })
     }
-    fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
-        Some(self.sim.house_is_human_player(owner))
+    fn owner_can_band_select(&self, owner: InternedId) -> Option<bool> {
+        Some(self.sim.control_projection().can_order(owner))
     }
     fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
-        Some(self.sim.house_controls_selection(owner))
+        Some(self.sim.control_projection().can_select(owner))
     }
 }
 impl PickWorld for PresentedWorld<'_> {
@@ -598,7 +599,7 @@ fn first_selected_is_players(
         .and_then(|id| source.entities().get(*id))
         .is_some_and(|entity| match (local_owner, interner) {
             (Some(owner), Some(names)) => source
-                .owner_is_human_player(entity.owner())
+                .owner_can_band_select(entity.owner())
                 .unwrap_or_else(|| names.resolve(entity.owner()).eq_ignore_ascii_case(owner)),
             _ => true,
         })
@@ -1370,7 +1371,7 @@ pub(crate) fn is_local_player_selectable_object(
         && entity.category() != EntityCategory::Structure
         && entity.discovery.discovered_by_current_house()
         && type_is_selectable(sim.interner().resolve(entity.type_ref()), rules)
-        && sim.house_is_human_player(entity.owner())
+        && sim.control_projection().can_order(entity.owner())
 }
 
 /// Does a building's footprint cover this cell? The native lookup asks the cell
@@ -1566,7 +1567,7 @@ pub(crate) fn no_selection_refuses_select(
 /// Final object admission shared by selection callers. Ownership and the
 /// band/TypeSelect dynamic virtual are caller gates: an ordinary discovered
 /// nonlocal click may reach this gate, the band collects the candidates whose
-/// House `IsHumanPlayer` admits ([`PickSource::owner_is_human_player`]), and
+/// House `IsHumanPlayer` admits ([`PickSource::owner_can_band_select`]), and
 /// TypeSelect collects only exact-local candidates. Newly selected objects
 /// still have to be alive, present, statically selectable, and outside
 /// active warp-out.
@@ -1594,7 +1595,7 @@ fn type_is_selectable(entity_type: &str, rules: Option<&RuleSet>) -> bool {
 }
 
 /// The band callback `0x004AC2B0` in VERA's order: the owning House's
-/// `IsHumanPlayer` (`0x004AC2BE`, see [`PickSource::owner_is_human_player`])
+/// `IsHumanPlayer` (`0x004AC2BE`, see [`PickSource::owner_can_band_select`])
 /// and then the static admission. A world without a local player keeps the
 /// band open to every owner, as the headless fixtures always have; a source
 /// without a house table falls back to exact local-owner identity.
@@ -1609,7 +1610,7 @@ fn is_local_band_candidate(
 ) -> bool {
     local_owner.is_none_or(|local| {
         source
-            .owner_is_human_player(entity.owner())
+            .owner_can_band_select(entity.owner())
             .unwrap_or_else(|| entity_owner.eq_ignore_ascii_case(local))
     }) && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }

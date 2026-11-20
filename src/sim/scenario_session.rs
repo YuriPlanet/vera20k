@@ -1068,7 +1068,7 @@ pub struct ScenarioSession {
 
 /// The native HouseClass::IsHumanPlayer (0x0050B6F0) identity source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativePlayerIdentity {
+pub(crate) enum NativePlayerIdentity {
     HouseFlags,
     PlayerPointer,
 }
@@ -1613,7 +1613,7 @@ impl ScenarioSession {
         }
     }
 
-    pub const fn native_player_identity(&self) -> NativePlayerIdentity {
+    pub(crate) const fn native_player_identity(&self) -> NativePlayerIdentity {
         if self.game_mode_nonzero() {
             NativePlayerIdentity::PlayerPointer
         } else {

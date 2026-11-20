@@ -234,7 +234,7 @@ impl Simulation {
             .get_mut(&owner)
             .is_some_and(|house| house.take_tech_recheck())
         {
-            if self.session.current_house() == Some(owner) {
+            if self.control_projection().local_command_house() == Some(owner) {
                 for type_id in
                     crate::sim::production::construction_options_for_owner(self, rules, owner)
                 {
