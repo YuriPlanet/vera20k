@@ -222,7 +222,7 @@ impl App {
         }
     }
 
-    fn skirmish_setups_pointer(state: &mut AppState, down: Option<bool>) {
+    pub(super) fn skirmish_setups_pointer(state: &mut AppState, down: Option<bool>) {
         let layout = crate::app::frontend::shell_layout::setups_layout(state);
         let extent = (state.render_width(), state.render_height());
         let pointer = state.match_state.input.cursor_px();
@@ -231,14 +231,5 @@ impl App {
         };
         let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
         Self::apply_skirmish_setups_input(state, results);
-    }
-
-    pub(super) fn handle_skirmish_setups_mouse_down(state: &mut AppState) {
-        Self::skirmish_setups_pointer(state, Some(true));
-        Self::update_skirmish_setups_scroll(state, false);
-    }
-
-    pub(super) fn handle_skirmish_setups_mouse_up(state: &mut AppState) {
-        Self::skirmish_setups_pointer(state, Some(false));
     }
 }

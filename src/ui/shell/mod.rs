@@ -1,7 +1,7 @@
 //! Front-end shell dialogs (Framework B: Win32-native dialog shells).
 //!
 //! The render-agnostic substrate (geometry, descriptors, layout pass, button
-//! capture, combo drop-down, trackbar, paging, static reveal, warning monitor) lives in the
+//! faces, combo drop-down, trackbar, paging, static reveal, warning monitor) lives in the
 //! `vera20k-gui` crate and is re-exported here; this module keeps the
 //! dialog-specific state.
 

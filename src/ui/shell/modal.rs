@@ -106,54 +106,6 @@ impl ModalResult {
         };
         Some(ModalResult::MessageBox(code))
     }
-
-    /// Quit-confirm (0x120) semantics: ONLY the OK click (message-box result 0)
-    /// quits; Cancel(1), third(2), and dismissed(-1) all stay. ESC resolves to
-    /// IDCANCEL -> result 1 -> stay.
-    #[cfg(test)]
-    pub fn quit_confirm_quits(self) -> bool {
-        matches!(self, ModalResult::MessageBox(0))
-    }
-}
-
-/// DLU rects for the message-box controls, taken from the parsed RT_DIALOG
-/// template. body+ok are always present; `cancel`/`third` are present only on the
-/// templates that include them (0x120 carries cancel; 0x121 adds third).
-#[derive(Debug, Clone, Copy)]
-pub struct MessageBoxRects {
-    pub body: RectPx,
-    pub ok: RectPx,
-    pub cancel: Option<RectPx>,
-    pub third: Option<RectPx>,
-}
-
-/// Build the render-agnostic [`DialogDescriptor`] for a count-rule message-box
-/// modal. Background is mode-2 SHP (PUDLGBGN + DIALOGN), centered (no fullscreen
-/// re-anchor), not slide-eligible. The control SET follows the count rule: body
-/// static + OK always; Cancel (control 2) for `Confirm`/`ThreeButton`; the third
-/// button (`0x5AF`) for `ThreeButton`.
-pub fn build_message_box_descriptor(kind: ModalKind, rects: &MessageBoxRects) -> DialogDescriptor {
-    let mut controls = vec![
-        modal_control(control::BODY_STATIC, ControlKind::Static, rects.body),
-        modal_control(control::OK, ControlKind::Button, rects.ok),
-    ];
-    if includes_cancel(kind)
-        && let Some(rect) = rects.cancel
-    {
-        controls.push(modal_control(control::CANCEL, ControlKind::Button, rect));
-    }
-    if includes_third(kind)
-        && let Some(rect) = rects.third
-    {
-        controls.push(modal_control(control::THIRD, ControlKind::Button, rect));
-    }
-    DialogDescriptor {
-        id: DialogId(kind.template_id()),
-        controls,
-        bg_kind: BgKind::ModalShp,
-        slide_eligible: false,
-        reposition_policy: RepositionPolicy::ModalCentered,
-    }
 }
 
 /// Saved-game loading's F0 progress dialog: original 559D60 -> 623230 supplies
@@ -982,19 +934,6 @@ fn modal_child(dialog: RectPx, local: RectPx) -> RectPx {
 mod tests {
     use super::*;
 
-    fn control_ids(d: &DialogDescriptor) -> Vec<u16> {
-        d.controls.iter().map(|c| c.id).collect()
-    }
-
-    fn sample_rects() -> MessageBoxRects {
-        MessageBoxRects {
-            body: RectPx::new(40, 40, 220, 50),
-            ok: RectPx::new(207, 175, 83, 15),
-            cancel: Some(RectPx::new(10, 175, 83, 15)),
-            third: Some(RectPx::new(110, 175, 83, 15)),
-        }
-    }
-
     #[test]
     fn template_id_table() {
         assert_eq!(ModalKind::BodyOk.template_id(), 0x00CE);
@@ -1045,57 +984,6 @@ mod tests {
             ModalResult::from_message_box_control(control::BODY_STATIC),
             None
         );
-    }
-
-    #[test]
-    fn quit_confirm_only_quits_on_ok() {
-        assert!(ModalResult::MessageBox(0).quit_confirm_quits());
-        assert!(!ModalResult::MessageBox(1).quit_confirm_quits()); // Cancel / ESC
-        assert!(!ModalResult::MessageBox(2).quit_confirm_quits());
-        assert!(!ModalResult::MessageBox(MESSAGE_BOX_DISMISSED).quit_confirm_quits());
-    }
-
-    #[test]
-    fn message_box_descriptor_control_sets_match_count_rule() {
-        let r = sample_rects();
-
-        let body_ok = build_message_box_descriptor(ModalKind::BodyOk, &r);
-        assert_eq!(
-            control_ids(&body_ok),
-            vec![control::BODY_STATIC, control::OK]
-        );
-        assert_eq!(body_ok.id, DialogId(0x00CE));
-        assert_eq!(body_ok.bg_kind, BgKind::ModalShp);
-        assert_eq!(body_ok.reposition_policy, RepositionPolicy::ModalCentered);
-        assert!(!body_ok.slide_eligible);
-
-        let confirm = build_message_box_descriptor(ModalKind::Confirm, &r);
-        assert_eq!(
-            control_ids(&confirm),
-            vec![control::BODY_STATIC, control::OK, control::CANCEL]
-        );
-        assert_eq!(confirm.id, DialogId(0x0120));
-
-        let three = build_message_box_descriptor(ModalKind::ThreeButton, &r);
-        assert_eq!(
-            control_ids(&three),
-            vec![
-                control::BODY_STATIC,
-                control::OK,
-                control::CANCEL,
-                control::THIRD
-            ]
-        );
-        assert_eq!(three.id, DialogId(0x0121));
-    }
-
-    #[test]
-    fn body_ok_descriptor_never_adds_cancel_or_third() {
-        // 0xCE must never carry control 2 / 0x5AF even when those rects are present.
-        let r = sample_rects();
-        let d = build_message_box_descriptor(ModalKind::BodyOk, &r);
-        assert!(!control_ids(&d).contains(&control::CANCEL));
-        assert!(!control_ids(&d).contains(&control::THIRD));
     }
 
     #[test]

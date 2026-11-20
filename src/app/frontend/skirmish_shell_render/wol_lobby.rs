@@ -12,6 +12,7 @@ use super::controls::{
     ControlPaint, dropdown_scroll_part, list_view_controls, paint_control, push_new_edit,
     push_popup_instances,
 };
+use super::gui_paint::GuiStyle;
 use super::text::rect_to_text_rect;
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
@@ -34,6 +35,26 @@ pub(super) const POPUP_DEPTHS: ModalDepths = ModalDepths {
     button: 0.00057,
     text: 0.00038,
 };
+
+/// VERA's online boxes' art at `dialog`, under their widgets: Red Alert
+/// 2's box, as VERA's updater boxes have, else gamemd's mode-2 box.
+pub(super) fn online_box(
+    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
+    dialog: RectPx,
+    scale: ShellScale,
+) -> Vec<SpriteInstance> {
+    let background = atlas
+        .ra2_dialog_background
+        .or_else(|| atlas.mode_two_dialog_background(None));
+    shell_paint::paint_modal_sprites(
+        background,
+        super::type3_button_frames(atlas),
+        dialog,
+        &[],
+        scale,
+        POPUP_DEPTHS,
+    )
+}
 
 /// `0x808080`: a full game's row (`0x00781480`).
 const GREYED_RGB: [f32; 3] = [128.0 / 255.0; 3];
@@ -81,34 +102,6 @@ pub(super) fn push_icon(
     let base = scale.base_rect(rect);
     let [px, py] = scale.scale_point([base.x + x, base.y + (base.h - h) / 2]);
     shell_paint::push_entry_grown(out, *entry, px, py, scale, SHELL_CONTROL_DEPTH - 0.00003);
-}
-
-/// A NewEdit as `0x10F` and the WOL popups paint theirs.
-pub(super) fn push_edit(
-    paint: &mut WolLobbyPaint,
-    state: &AppState,
-    edit: &SavedSeedDescriptionEdit,
-    rect: RectPx,
-    caret_visible: bool,
-    scale: ShellScale,
-    text_depth: f32,
-) {
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
-        return;
-    };
-    push_new_edit(
-        &mut paint.controls,
-        &mut paint.texts,
-        atlas,
-        &state.renderer.bit_font,
-        edit,
-        None,
-        rect,
-        caret_visible,
-        SHELL_LABEL_TEXT_RGB,
-        text_depth,
-        scale,
-    );
 }
 
 pub(crate) fn paint_wol_lobby_children(
@@ -483,41 +476,12 @@ pub(crate) fn paint_wol_lobby_children(
     paint
 }
 
-/// The Max players trackbar and its value in both Create Game dialogs.
-pub(super) fn paint_room_players(
-    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
-    controls: &mut Vec<SpriteInstance>,
-    labels: &mut Vec<PaintLabel<'_>>,
-    players: u8,
-    rect: RectPx,
-    scale: ShellScale,
-) {
-    let players = i32::from(players);
-    paint_control(
-        controls,
-        &atlas.control_chrome(),
-        ControlPaint::Trackbar {
-            rect,
-            thumb_left: crate::ui::room_limits::PLAYERS.thumb_left_in(players, rect, scale),
-            plaque: true,
-            disabled: false,
-        },
-        scale,
-    );
-    labels.push(PaintLabel {
-        text: players.to_string().into(),
-        rect: crate::ui::shell::trackbar::value_text_rect(rect, scale),
-        align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        rgb: SHELL_LABEL_TEXT_RGB,
-        path_a_reveal: None,
-    });
-}
-
 /// `0xC3` or `0xE1` over the covered dialog; `status` is `0xC3`'s own
 /// status line text. The `modern` lobby draws them on Red Alert 2's box art,
 /// as VERA's updater boxes do; the native lobby keeps gamemd's mode-2 art.
-/// `scale` is the lobby page's, so the box grows with the page.
-#[allow(clippy::too_many_arguments)]
+/// `scale` is the lobby page's, so the box grows with the page. The box
+/// first, then its widgets: OK and Cancel, the room's limits, the boxes and
+/// the edits, and their captions, titles and values in the order they read.
 pub(crate) fn paint_wol_lobby_popup(
     state: &AppState,
     ui: &WolLobbyState,
@@ -534,231 +498,88 @@ pub(crate) fn paint_wol_lobby_popup(
         return paint;
     };
     let modern = ui.is_modern();
-    let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-    let caption = |key: &str, rect: RectPx, align: ShellAlign, enabled: bool| PaintLabel {
-        text: super::text::localized_label(state, key, key).into(),
-        rect,
-        align,
-        rgb: if enabled {
-            SHELL_LABEL_TEXT_RGB
-        } else {
-            shell_paint::SHELL_TEXT_RGB_DISABLED
-        },
-        path_a_reveal: None,
-    };
-    let button = |id: u16, rect: RectPx| ModalButton {
-        rect,
-        pressed: ui.pressed(id),
-        enabled: ui.popup_enabled(id),
-    };
-    let ok_label = |rect: RectPx| {
-        crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, ui.pressed(POPUP_OK))
-    };
-    let cancel_label = |rect: RectPx| {
-        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-            rect,
-            ui.pressed(POPUP_CANCEL),
-        )
-    };
-    let checked = |id| ui.popup_checked(id);
-    let enabled = |id| ui.popup_enabled(id);
-    let mut room_name = None;
-    let (dialog, buttons, mut labels, password) = match popup.create {
-        Some(watching) => {
-            let layout =
-                crate::ui::shell::modal::wol_create_game_layout_on(width, height, modern, scale);
-            let field_align = if modern {
-                ShellAlign::NONE
-            } else {
-                ShellAlign::H_RIGHT
-            };
-            let mut labels = vec![caption(
-                "GUI:Password",
-                layout.password_label,
-                field_align,
-                true,
-            )];
-            let room = ui.room_limits().zip(layout.room.as_ref());
-            if let Some((limits, room)) = room {
-                labels.push(caption(
-                    "VERA:MaxPlayers",
-                    room.players_label,
-                    field_align,
-                    true,
-                ));
-                paint_room_players(
-                    atlas,
-                    &mut paint.controls,
-                    &mut labels,
-                    limits.players,
-                    room.players,
-                    scale,
-                );
-            }
-
-            // In the online form the title sits on the left and the lamp
-            // and its value sit on the right. The native box labels each lamp.
-            let mut checkbox =
-                |rect: RectPx, checked: bool, title: &str, enabled: bool, value: Option<&str>| {
-                    paint_control(
-                        &mut paint.controls,
-                        &atlas.control_chrome(),
-                        ControlPaint::Checkbox { rect, checked },
-                        scale,
-                    );
-                    let text = if modern {
-                        labels.push(caption(
-                            title,
-                            layout.setting_label(rect),
-                            field_align,
-                            enabled,
-                        ));
-                        value.unwrap_or(if checked { "GUI:Yes" } else { "GUI:No" })
-                    } else {
-                        title
-                    };
-                    labels.push(caption(
-                        text,
-                        crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
-                        ShellAlign::V_CENTER,
-                        enabled,
-                    ));
-                };
-            for (rect, checked, title, enabled) in [
-                (
-                    layout.clan,
-                    checked(CREATE_CLAN),
-                    "GUI:BattleClanTournament",
-                    enabled(CREATE_CLAN),
-                ),
-                (
-                    Some(layout.limit),
-                    checked(CREATE_LIMIT),
-                    "WOL:LimitScreenResolution",
-                    enabled(CREATE_LIMIT),
-                ),
-                (layout.observe, checked(CREATE_OBSERVE), "GUI:Observe", true),
-            ] {
-                if let Some(rect) = rect {
-                    checkbox(rect, checked, title, enabled, None);
-                }
-            }
-            if let Some((limits, room)) = room {
-                checkbox(
-                    room.spectators,
-                    limits.spectators,
-                    "VERA:AllowSpectators",
-                    true,
-                    None,
-                );
-            }
-            if let Some(rect) = layout.ranked.filter(|_| ui.node(CREATE_RANKED).is_some()) {
-                checkbox(rect, checked(CREATE_RANKED), "VERA:RankedGame", true, None);
-            }
-            if let Some((watching, rect)) = watching.zip(layout.watching) {
-                checkbox(
-                    rect,
-                    watching != RoomWatching::Off,
-                    "VERA:Watching",
-                    true,
-                    Some(watching.label_key()),
-                );
-            }
-            if let Some((label, rect)) = layout.name.filter(|_| ui.node(CREATE_NAME).is_some()) {
-                labels.push(caption("VERA:RoomName", label, field_align, true));
-                room_name = Some(rect);
-            }
-            labels.push(caption(
-                "GUI:OK",
-                ok_label(layout.ok),
-                button_align,
-                ui.ok_enabled(),
-            ));
-            labels.push(caption(
-                "GUI:Cancel",
-                cancel_label(layout.cancel),
-                button_align,
-                true,
-            ));
-            labels.push(PaintLabel {
-                text: status.to_owned().into(),
-                rect: layout.status,
-                align: ShellAlign::NONE,
-                rgb: SHELL_LABEL_TEXT_RGB,
-                path_a_reveal: None,
-            });
-            (
-                layout.dialog,
-                vec![
-                    button(POPUP_OK, layout.ok),
-                    button(POPUP_CANCEL, layout.cancel),
-                ],
-                labels,
-                layout.password,
-            )
+    let dialog = match popup.create {
+        Some(_) => {
+            crate::ui::shell::modal::wol_create_game_layout_on(width, height, modern, scale).dialog
         }
         None => {
-            let layout =
-                crate::ui::shell::modal::wol_channel_password_layout_on(width, height, scale);
-            (
-                layout.dialog,
-                vec![
-                    button(POPUP_OK, layout.ok),
-                    button(POPUP_CANCEL, layout.cancel),
-                ],
-                vec![
-                    // Style SS_CENTER.
-                    caption(
-                        "GUI:ChannelPassword",
-                        layout.label,
-                        ShellAlign::H_CENTER,
-                        true,
-                    ),
-                    caption("GUI:OK", ok_label(layout.ok), button_align, ui.ok_enabled()),
-                    caption(
-                        "GUI:Cancel",
-                        cancel_label(layout.cancel),
-                        button_align,
-                        true,
-                    ),
-                ],
-                layout.password,
-            )
+            crate::ui::shell::modal::wol_channel_password_layout_on(width, height, scale).dialog
         }
     };
     let background = atlas
         .ra2_dialog_background
         .filter(|_| modern)
         .or_else(|| atlas.mode_two_dialog_background(None));
-    let draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        background,
-        super::type3_button_frames(atlas),
-        dialog,
-        &buttons,
-        &labels,
-        scale,
-        POPUP_DEPTHS,
-    );
-    labels.clear();
-    // Paint order is draw order: the box first, then its checkboxes.
-    let checkboxes = std::mem::replace(&mut paint.controls, draw.sprites);
-    paint.controls.extend(checkboxes);
-    paint.texts.extend(draw.text);
-    for (id, rect) in
-        std::iter::once((POPUP_PASSWORD, password)).chain(room_name.map(|rect| (CREATE_NAME, rect)))
-    {
-        let caret = ui.popup_caret_visible(id);
-        push_edit(
-            &mut paint,
-            state,
-            &ui.edit(id),
-            rect,
-            caret,
-            scale,
-            POPUP_DEPTHS.text,
-        );
-    }
+    let frames = super::type3_button_frames(atlas);
+    paint.controls =
+        shell_paint::paint_modal_sprites(background, frames, dialog, &[], scale, POPUP_DEPTHS);
+    let titled = |id: i32| {
+        BOXES
+            .iter()
+            .zip(TITLE..)
+            .find(|((control, _), title)| i32::from(*control) == id || i32::from(*title) == id)
+    };
+    // Online, a box shows its value beside it: Yes or No, or Watching's.
+    let text_of = |id: i32| match u16::try_from(id).ok()? {
+        STATUS => Some(status.to_owned()),
+        CREATE_WATCHING if modern => {
+            let key = popup.watching()?.label_key();
+            Some(super::text::localized_label(state, key, key))
+        }
+        id if modern && titled(id.into()).is_some_and(|((control, _), _)| *control == id) => {
+            let key = if ui.popup_checked(id) {
+                "GUI:Yes"
+            } else {
+                "GUI:No"
+            };
+            Some(super::text::localized_label(state, key, key))
+        }
+        _ => None,
+    };
+    // A title greys with its box.
+    let enabled_of = |id: i32| {
+        let ((control, _), _) = titled(id).filter(|(_, title)| i32::from(*title) == id)?;
+        Some(ui.popup_enabled(*control))
+    };
+    let caret_of = |node| {
+        ui.gui()
+            .id_of(node)
+            .and_then(|id| u16::try_from(id).ok())
+            .is_some_and(|id| ui.popup_caret_visible(id))
+    };
+    let style = GuiStyle {
+        text_of: Some(&text_of),
+        enabled_of: Some(&enabled_of),
+        caret_of: Some(&caret_of),
+        ..GuiStyle::popup(atlas)
+    };
+    let boxes = BOXES.map(|(id, _)| id);
+    let sprites = [POPUP_OK, POPUP_CANCEL, CREATE_PLAYERS]
+        .into_iter()
+        .chain(boxes)
+        .chain([POPUP_PASSWORD, CREATE_NAME]);
+    let texts = [PASSWORD_CAPTION, PLAYERS_CAPTION, CREATE_PLAYERS]
+        .into_iter()
+        .chain(
+            boxes
+                .into_iter()
+                .zip(TITLE..)
+                .flat_map(|(id, title)| [title, id]),
+        )
+        .chain([
+            NAME_CAPTION,
+            POPUP_OK,
+            POPUP_CANCEL,
+            STATUS,
+            POPUP_PASSWORD,
+            CREATE_NAME,
+        ]);
+    let paint_ids =
+        |ids| super::gui_paint::paint_gui_ids(state, ui.gui(), popup.root, ids, scale, style);
+    paint
+        .controls
+        .extend(paint_ids(sprites.collect::<Vec<_>>()).controls);
+    paint.texts = paint_ids(texts.collect::<Vec<_>>()).texts;
     paint
 }
 

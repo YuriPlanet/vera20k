@@ -53,11 +53,6 @@ impl ScrollModel {
         }
     }
 
-    /// `item_count − visible_rows`, saturating.
-    pub fn max_top_index(&self, item_count: usize, visible_rows: usize) -> usize {
-        item_count.saturating_sub(visible_rows)
-    }
-
     /// ComboDropWin 0060E72F creates Scrollbar and 0060E745 subclasses it
     /// to the shared 0061C690 owner. SBM_SETSCROLLINFO at 0060E7BA sets
     /// nMax=count-visible and no page size; use the same native numeric port.

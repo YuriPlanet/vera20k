@@ -2,7 +2,7 @@
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
 use super::chrome::*;
-use super::controls::{ControlPaint, paint_control, push_new_edit};
+use super::controls::push_new_edit;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
@@ -12,7 +12,7 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::shell_paint::{self, ModalButton, PaintLabel};
+use crate::render::shell_paint;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
@@ -29,91 +29,44 @@ fn box_pressed(state: &AppState, id: i32) -> bool {
 }
 
 /// VERA's Create Game box (`LanShellRuntime::creating`): the online box's
-/// art and buttons, with its room's limits as its widgets hold them.
+/// art, then its buttons and its room's limits as its widgets hold them.
 fn paint_create_box(
     state: &AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     overlay: &mut ShellFrameOverlay,
 ) {
-    let limits = crate::app::shell_lan::room_limits(state);
-    let layout = crate::ui::shell::modal::lan_create_game_layout(
-        state.render_width() as i32,
-        state.render_height() as i32,
-    );
-    let mut buttons = Vec::new();
-    let mut labels = Vec::new();
-    for (id, rect, key) in [(1, layout.ok, "GUI:OK"), (2, layout.cancel, "GUI:Cancel")] {
-        let pressed = box_pressed(state, id);
-        buttons.push(ModalButton {
-            rect,
-            pressed,
-            enabled: true,
-        });
-        labels.push(PaintLabel {
-            text: localized_label(state, key, key).into(),
-            rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
-            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            rgb: SHELL_LABEL_TEXT_RGB,
-            path_a_reveal: None,
-        });
-    }
-    let mut controls = Vec::new();
-    super::wol_lobby::paint_room_players(
+    use crate::app::shell_lan::{
+        CANCEL, MODAL, OK, ROOM_PLAYERS, ROOM_PLAYERS_CAPTION, ROOM_SPECTATORS,
+    };
+    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
+    let dialog = crate::ui::shell::modal::lan_create_game_layout(width, height).dialog;
+    overlay.controls.extend(super::wol_lobby::online_box(
         atlas,
-        &mut controls,
-        &mut labels,
-        limits.players,
-        layout.room.players,
+        dialog,
         ShellScale::RETAIL,
-    );
-    paint_control(
-        &mut controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.room.spectators,
-            checked: limits.spectators,
-        },
+    ));
+    let controller = &state.frontend.shell_controller;
+    let Some(root) = controller.root_in(MODAL) else {
+        return;
+    };
+    let ids = [
+        OK,
+        CANCEL,
+        ROOM_PLAYERS,
+        ROOM_PLAYERS_CAPTION,
+        ROOM_SPECTATORS,
+    ];
+    let style = super::gui_paint::GuiStyle::popup(atlas);
+    let widgets = super::gui_paint::paint_gui_ids(
+        state,
+        controller.gui(),
+        root,
+        ids,
         ShellScale::RETAIL,
+        style,
     );
-    for (key, rect, align) in [
-        (
-            "VERA:MaxPlayers",
-            layout.room.players_label,
-            ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-        ),
-        (
-            "VERA:AllowSpectators",
-            crate::ui::skirmish_shell::checkbox_text_rect(
-                layout.room.spectators,
-                ShellScale::RETAIL,
-            ),
-            ShellAlign::V_CENTER,
-        ),
-    ] {
-        labels.push(PaintLabel {
-            text: crate::i18n::tr(key).into(),
-            rect,
-            align,
-            rgb: SHELL_LABEL_TEXT_RGB,
-            path_a_reveal: None,
-        });
-    }
-    let draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        atlas
-            .ra2_dialog_background
-            .or_else(|| atlas.mode_two_dialog_background(None)),
-        type3_button_frames(atlas),
-        layout.dialog,
-        &buttons,
-        &labels,
-        ShellScale::RETAIL,
-        super::wol_lobby::POPUP_DEPTHS,
-    );
-    // The box first, then its controls.
-    overlay.controls.extend(draw.sprites);
-    overlay.controls.extend(controls);
-    overlay.texts.extend(draw.text);
+    overlay.controls.extend(widgets.controls);
+    overlay.texts.extend(widgets.texts);
 }
 
 pub(crate) fn render_lan_lobby(
@@ -268,15 +221,25 @@ pub(crate) fn render_lan_lobby(
                 // Active BB has no custom columns: native registry record+F8
                 // is null (selected-game GUI probe).5DAFE0's4A8 color/side/status
                 // writes therefore return-1 in618D40; only the name is visible.
-                PLAYERS => lobby.players.iter().map(|player| yellow(player.name.clone())).collect(),
+                PLAYERS => lobby
+                    .players
+                    .iter()
+                    .map(|player| yellow(player.name.clone()))
+                    .collect(),
                 CHAT_LOG => {
-                    let line = |line: &crate::ui::lan_shell::LanChatLine| (String::from_utf16_lossy(&line.text), line.color);
+                    let line = |line: &crate::ui::lan_shell::LanChatLine| {
+                        (String::from_utf16_lossy(&line.text), line.color)
+                    };
                     lobby.chat.lines.iter().map(line).collect()
                 }
                 _ => return None,
             })
         };
-        let style = super::gui_paint::GuiStyle { rows_of: Some(&rows_of), control_lists: true, ..Default::default() };
+        let style = super::gui_paint::GuiStyle {
+            rows_of: Some(&rows_of),
+            control_lists: true,
+            ..Default::default()
+        };
         for id in [GAMES, PLAYERS, CHAT_LOG] {
             if let Some(list) = root.and_then(|root| gui.find_id(root, id.into())) {
                 let paint = super::gui_paint::paint_gui_styled(state, gui, list, scale, &[], style);
@@ -326,7 +289,7 @@ pub(crate) fn render_lan_lobby(
                         if lobby.enabled {
                             SHELL_LABEL_TEXT_RGB
                         } else {
-                            crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
+                            shell_paint::SHELL_TEXT_RGB_DISABLED
                         },
                         ShellAlign::BUTTON_CAPTION,
                         [0.0; 2],
@@ -336,7 +299,7 @@ pub(crate) fn render_lan_lobby(
                 }
             }
         }
-        texts.extend(crate::render::shell_paint::paint_labels_scaled(
+        texts.extend(shell_paint::paint_labels_scaled(
             font,
             &status.into_iter().collect::<Vec<_>>(),
             scale.factor(),

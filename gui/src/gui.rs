@@ -308,10 +308,6 @@ impl Gui {
         self.dialog(id).and_then(|d| d.pointer.hovered)
     }
 
-    pub fn hover_started_in(&self, id: DialogId) -> Option<UiMs> {
-        self.dialog(id).and_then(|d| d.pointer.hover_started)
-    }
-
     fn top_pointer(&self) -> Pointer {
         self.dialogs.last().map(|d| d.pointer).unwrap_or_default()
     }

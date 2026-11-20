@@ -60,7 +60,8 @@ pub(crate) fn widgets(limits: RoomLimits, players: u16, spectators: u16) -> [Nod
         NodeSpec::new(NodeKind::Checkbox)
             .id(spectators.into())
             .with(Prop::Checked, Value::Bool(limits.spectators))
-            .with(Prop::ActivateOnPress, Value::Bool(true)),
+            .with(Prop::ActivateOnPress, Value::Bool(true))
+            .label("VERA:AllowSpectators"),
     ]
 }
 

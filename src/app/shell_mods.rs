@@ -39,7 +39,7 @@ impl App {
             .frontend
             .shell_controller
             .reset_to(mods_shell::DIALOG, false);
-        Self::mods_feed(state);
+        Self::mods_sync(state);
     }
 
     /// The row the page's list has selected.
@@ -113,12 +113,10 @@ impl App {
         crate::app::frontend::shell_layout::mods_layout(state)
     }
 
-    /// The page's buttons. The list is the dialog's `List` node, which a new
-    /// instance builds with the row in use selected and in view: a hover
-    /// target for status help, never a button press. Use This Mod is
-    /// disabled while the selection is nothing a restart would change to,
-    /// Check Files while it is no mod.
-    fn mods_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
+    /// Binds the controller to the page and keeps its `List` node, which a
+    /// new instance builds with the row in use selected and in view (a hover
+    /// target for status help, never a button press); the layout.
+    fn mods_sync(state: &mut AppState) -> ModsLayout {
         let layout = Self::mods_layout(state);
         let mods = &state.frontend.mods;
         let in_use = mods.page.as_ref().map(|rows| {
@@ -132,22 +130,7 @@ impl App {
         if let Some(list) = in_use {
             family_list_node(controller, mods_shell::DIALOG, layout.list, list, false);
         }
-        let selected = Self::mods_selected(state);
-        let nothing_to_use = state.frontend.mods.switch_to(selected).is_none();
-        let nothing_to_check = !state.frontend.mods.picked_is_mod(selected);
-        let controller = &mut state.frontend.shell_controller;
-        controller.set_disabled(mods_shell::USE, nothing_to_use);
-        controller.set_disabled(mods_shell::CHECK, nothing_to_check);
-        Self::menu_page_button_feed(&layout.page)
-    }
-
-    pub(super) fn handle_mods_mouse_move(state: &mut AppState) {
-        let feed = Self::mods_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        state.frontend.shell_controller.drain_events();
-        // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.repaint();
+        layout
     }
 
     /// The wheel moves the list three rows a notch, as on the Keyboard page,
@@ -160,17 +143,24 @@ impl App {
         state.platform.window.request_redraw();
     }
 
-    /// As in the movie list; the page checks for no double-click.
-    pub(super) fn handle_mods_mouse_down(state: &mut AppState) {
-        let feed = Self::mods_feed(state);
-        Self::family_page_mouse_down(state, &feed);
-    }
-
-    pub(super) fn handle_mods_mouse_up(state: &mut AppState) {
-        let feed = Self::mods_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let released = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        state.frontend.shell_controller.drain_events();
+    /// One pointer message (`down`: `None` moves), as in the movie list; the
+    /// page checks for no double-click. Use This Mod is disabled while the
+    /// selection is nothing a restart would change to, Check Files while it
+    /// is no mod. Every hover message repaints the status line (0x00615EF7).
+    pub(super) fn handle_mods_mouse(state: &mut AppState, down: Option<bool>) {
+        let layout = Self::mods_sync(state);
+        let selected = Self::mods_selected(state);
+        let mods = &state.frontend.mods;
+        let enabled = [
+            (mods_shell::USE, mods.switch_to(selected).is_some()),
+            (mods_shell::CHECK, mods.picked_is_mod(selected)),
+        ];
+        let rect_of = |id| layout.page.button_rect(id);
+        let released =
+            Self::page_pointer(state, mods_shell::DIALOG, || mods_shell::PAGE.nodes(), rect_of, &enabled, down);
+        if down.is_none() {
+            state.frontend.shell_status_line.repaint();
+        }
         match released {
             Some(mods_shell::USE) => Self::use_picked_mod(state),
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(state),

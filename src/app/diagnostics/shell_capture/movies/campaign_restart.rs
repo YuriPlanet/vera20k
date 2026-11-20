@@ -853,13 +853,13 @@ impl RestartCapture {
                             state.render_height() as i32,
                         );
                         set_window_pointer_to_rect_center(state, layout.ok);
-                        App::handle_shell_message_box_mouse_down(state);
+                        App::handle_shell_message_box_mouse(state, true);
                         ensure!(
                             box_pressed(state)
                                 == Some(crate::ui::shell::modal::control::OK),
                             "MapSelect OK press missed"
                         );
-                        App::handle_shell_message_box_mouse_up(state);
+                        App::handle_shell_message_box_mouse(state, false);
                     }
                     ensure!(
                         state.frontend.shell_message_box.is_none(),
@@ -966,7 +966,7 @@ impl RestartCapture {
                             state,
                             if answer_no { layout.cancel } else { layout.ok },
                         );
-                        App::handle_shell_message_box_mouse_down(state);
+                        App::handle_shell_message_box_mouse(state, true);
                         ensure!(
                             box_pressed(state)
                                 == Some(if answer_no {
@@ -986,7 +986,7 @@ impl RestartCapture {
             }
             Step::ReplayPressed => {
                 self.check_retained_battle_theme(state)?;
-                App::handle_shell_message_box_mouse_up(state);
+                App::handle_shell_message_box_mouse(state, false);
                 ensure!(
                     state.frontend.shell_message_box.is_none(),
                     "physical replay answer release did not answer the box"

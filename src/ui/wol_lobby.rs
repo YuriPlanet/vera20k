@@ -679,6 +679,11 @@ impl WolLobbyState {
             .find_map(|(dialog, root)| Some((dialog, self.gui.find_id(root, id.into())?)))
     }
 
+    /// The lobby's widget tree: the page, the card and the popup.
+    pub(crate) fn gui(&self) -> &Gui {
+        &self.gui
+    }
+
     pub(crate) fn node(&self, id: u16) -> Option<NodeId> {
         self.find(id).map(|(_, node)| node)
     }

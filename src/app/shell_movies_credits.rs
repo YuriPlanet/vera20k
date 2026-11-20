@@ -17,7 +17,7 @@ use crate::ui::movies_credits_shell::{
     MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
     family_list_node, family_list_selected, retained_movie_row,
 };
-use crate::ui::shell::page::{self, PageCue, PageEvent};
+use crate::ui::shell::page::PageCue;
 
 /// The Sneak Peeks movie (`0x0052DE55`).
 const SNEAK_PEEK_MOVIE: &str = "RENEGADE.BIK";
@@ -76,7 +76,7 @@ impl App {
             .frontend
             .shell_controller
             .reset_to(MOVIE_LIST_DIALOG, false);
-        Self::movie_list_feed(state);
+        Self::movie_list_sync(state);
     }
 
     pub(super) fn movie_list_active(state: &AppState) -> bool {
@@ -85,10 +85,10 @@ impl App {
             && state.frontend.movie_list.is_some()
     }
 
-    /// The page's buttons. The list `0x744` is the dialog's `List` node: a
-    /// hover target for status help and its own press handler, never a
-    /// button press.
-    fn movie_list_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
+    /// Binds the controller to the page and keeps its list `0x744`, the
+    /// dialog's `List` node: a hover target for status help and its own
+    /// press handler, never a button press.
+    fn movie_list_sync(state: &mut AppState) -> crate::ui::movies_credits_shell::MovieListLayout {
         let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
         let retained = state.frontend.movie_list_selection;
         let controller = &mut state.frontend.shell_controller;
@@ -98,16 +98,7 @@ impl App {
             let list = (rows.len(), retained_movie_row(rows, retained), 0);
             family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list, true);
         }
-        Self::menu_page_button_feed(&layout.page)
-    }
-
-    pub(super) fn handle_movie_list_mouse_move(state: &mut AppState) {
-        let feed = Self::movie_list_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        state.frontend.shell_controller.drain_events();
-        // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.repaint();
+        layout
     }
 
     /// The movie or Mods list's scrollbar arrow repeat
@@ -124,45 +115,25 @@ impl App {
         next
     }
 
-    /// A family page's press: a fed button's GUIMainButtonSound, then the
-    /// list's (0x0061A948). A single press selects the row under it (presses
-    /// below the last row are ignored) and plays GenericClick; the scrollbar
-    /// child (0x0061C690) captures its own presses without a sound, and the
-    /// second press of a double-click selects nothing.
-    pub(super) fn family_page_mouse_down(
-        state: &mut AppState,
-        feed: &[crate::ui::shell::layout::LaidOutControl],
-    ) {
-        let (x, y) = state.match_state.input.cursor_px();
-        let controller = &mut state.frontend.shell_controller;
-        controller.on_pointer_down(x, y, feed);
-        if controller.pressed().is_some() {
-            Self::play_page_cue(state, PageCue::Button);
-        }
-        let controller = &mut state.frontend.shell_controller;
-        let events = controller.drain_events();
-        for event in page::page_events(controller.gui(), events) {
-            if let PageEvent::Cue(cue) = event {
-                Self::play_page_cue(state, cue);
-            }
-        }
-    }
-
-    pub(super) fn handle_movie_list_mouse_down(state: &mut AppState) {
-        let feed = Self::movie_list_feed(state);
-        Self::family_page_mouse_down(state, &feed);
-    }
-
-    pub(super) fn handle_movie_list_mouse_up(state: &mut AppState) {
-        let feed = Self::movie_list_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
+    /// One pointer message (`down`: `None` moves). A press on a button
+    /// plays GUIMainButtonSound, one in the list (0x0061A948) selects the
+    /// row under it (presses below the last row are ignored) and plays
+    /// GenericClick; the scrollbar child (0x0061C690) captures its own
+    /// presses without a sound, and the second press of a double-click
+    /// selects nothing. Every hover message repaints the status line
+    /// (0x00615EF7).
+    pub(super) fn handle_movie_list_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::app::frontend::shell_transition::ShellExitThen;
-        let controller = &mut state.frontend.shell_controller;
-        let released = controller.on_pointer_up(x, y, &feed);
-        controller.drain_events();
+        let layout = Self::movie_list_sync(state);
+        let rect_of = |id| layout.page.button_rect(id);
+        let nodes = || crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.nodes();
+        let released = Self::page_pointer(state, MOVIE_LIST_DIALOG, nodes, rect_of, &[], down);
+        if down.is_none() {
+            state.frontend.shell_status_line.repaint();
+        }
         match released {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
-                if family_list_selected(controller, MOVIE_LIST_DIALOG).is_some() {
+                if family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG).is_some() {
                     Self::leave_shell_dialog(state, ShellExitThen::PlayMovie);
                 } else {
                     // No selection: the proc stores it and keeps the dialog.

@@ -785,75 +785,31 @@ pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVer
     crate::ui::shell::modal::wol_verify_layout(width, height)
 }
 
-/// The mismatch box's OK under the pointer.
-fn mismatch_ok_at(state: &AppState, x: i32, y: i32) -> Option<u16> {
+/// The pointer while `0x130` is up (`down`: `None` moves): the mismatch
+/// box's OK takes it when the box is open; otherwise a box's 18x18 icon
+/// (`0x006163A0` toggles on the press) or the extended roster's scrollbar.
+pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
+    use crate::ui::shell::page::{PageCue, PageEvent};
+    let at = state.match_state.input.cursor_px();
     let (width, height) = screen(state);
-    crate::ui::shell::modal::body_ok_layout(width, height)
-        .ok
-        .contains(x, y)
-        .then_some(crate::ui::wol_shell::BOX_OK)
-}
-
-/// The pointer while `0x130` is up: the mismatch box's OK takes it when
-/// the box is open; otherwise a box's 18x18 icon (`0x006163A0` toggles on
-/// the press).
-pub(crate) fn verify_mouse(state: &mut AppState, pressed: bool) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some(verify) = verify(state) else {
+    let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+    let layout = verify_layout(state);
+    let Ok(verify) = verify_mut(state) else {
         return;
     };
-    if verify.mismatch.is_some() {
-        let over = mismatch_ok_at(state, x, y);
-        let Ok(verify) = verify_mut(state) else {
-            return;
-        };
-        if pressed {
-            verify.ok.press(over);
-            if over.is_some() {
-                App::play_main_menu_button_sound(state);
-            }
-        } else if verify.ok.release(over).is_some() {
-            mismatch_ok(state);
+    for event in verify.pointer(&layout, ok, at, down) {
+        match event {
+            PageEvent::Cue(cue) if cue != PageCue::ListClick => App::play_page_cue(state, cue),
+            PageEvent::Activated(crate::ui::wol_shell::BOX_OK) => mismatch_ok(state),
+            _ => {}
         }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let layout = verify_layout(state);
-    let node = verify_mut(state)
-        .ok()
-        .and_then(|verify| verify.pointer_button(&layout, x, y, pressed, Instant::now()));
-    if node.is_some() {
-        App::play_launcher_options_cue(
-            state,
-            crate::ui::main_menu_dialogs::options::LauncherCue::Checkbox,
-        );
     }
     state.platform.window.request_redraw();
 }
 
-pub(crate) fn verify_cursor_moved(state: &mut AppState) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = mismatch_ok_at(state, x, y);
-    let layout = verify_layout(state);
-    if let Ok(verify) = verify_mut(state) {
-        if verify.mismatch.is_some() {
-            verify.ok.hovered = over;
-        } else {
-            verify.pointer_moved(&layout, x, y);
-        }
-        state.platform.window.request_redraw();
-    }
-}
-
 pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
-    let layout = verify_layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let verify = verify_mut(state).ok()?;
-    if verify.mismatch.is_some() {
-        return None;
-    }
-    let (changed, deadline) = verify.poll_scroll(&layout, x, y, Instant::now());
-    if changed {
+    let (moved, deadline) = verify_mut(state).ok()?.poll_scroll();
+    if moved {
         state.platform.window.request_redraw();
     }
     deadline

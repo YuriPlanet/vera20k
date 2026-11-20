@@ -668,7 +668,7 @@ impl App {
     /// empty text: every move writes the status line, which repaints it
     /// (`0x00615EF7`). Continue (`0x6D1`, result 1 at `0x005CA06C`) tears
     /// `0x108` down with its slide; the match then ends and the shell resumes.
-    fn handle_score_shell_mouse(state: &mut AppState, down: Option<bool>) {
+    pub(super) fn handle_score_shell_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::ui::score_shell::{self as score, NEXT_PAGE, PREVIOUS_PAGE};
         let layout = Self::score_layout(state);
         let paged = state
@@ -698,18 +698,6 @@ impl App {
         }
     }
 
-    pub(super) fn handle_score_shell_mouse_move(state: &mut AppState) {
-        Self::handle_score_shell_mouse(state, None);
-    }
-
-    pub(super) fn handle_score_shell_mouse_down(state: &mut AppState) {
-        Self::handle_score_shell_mouse(state, Some(true));
-    }
-
-    pub(super) fn handle_score_shell_mouse_up(state: &mut AppState) {
-        Self::handle_score_shell_mouse(state, Some(false));
-    }
-
     fn campaign_score_layout(
         state: &AppState,
     ) -> crate::ui::campaign_score_shell::CampaignScoreLayout {
@@ -726,7 +714,7 @@ impl App {
     /// tears the dialog down with its slide before GameExit::Victory advances
     /// the campaign; `0xBC7`'s (`0x6D1`, result 1) before Main_Game returns
     /// to the shell.
-    fn handle_campaign_score_mouse(state: &mut AppState, down: Option<bool>) {
+    pub(super) fn handle_campaign_score_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::app::frontend::shell_transition::ShellExitThen;
         use crate::ui::campaign_score_shell::CampaignScoreDialog;
         let dialog = Self::campaign_score_dialog(state);
@@ -752,18 +740,6 @@ impl App {
                 Self::leave_shell_dialog(state, ShellExitThen::CampaignEndContinue)
             }
         }
-    }
-
-    pub(super) fn handle_campaign_score_mouse_move(state: &mut AppState) {
-        Self::handle_campaign_score_mouse(state, None);
-    }
-
-    pub(super) fn handle_campaign_score_mouse_down(state: &mut AppState) {
-        Self::handle_campaign_score_mouse(state, Some(true));
-    }
-
-    pub(super) fn handle_campaign_score_mouse_up(state: &mut AppState) {
-        Self::handle_campaign_score_mouse(state, Some(false));
     }
 
     fn campaign_score_dialog(
@@ -1261,20 +1237,6 @@ impl App {
         );
     }
 
-    /// Owner-draw button feed for a right-panel page still on fed buttons.
-    pub(super) fn menu_page_button_feed(
-        layout: &crate::ui::shell::menu_page::MenuPageLayout,
-    ) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        layout
-            .buttons
-            .iter()
-            .map(|b| crate::ui::shell::layout::LaidOutControl {
-                id: b.id,
-                rect: b.rect,
-            })
-            .collect()
-    }
-
     /// One pointer message (`down`: `None` moves) on a family page: binds the
     /// controller to the page (`ensure_active` resets only on a dialog change,
     /// so a gesture's press survives to its release), keeps the page's nodes
@@ -1406,42 +1368,14 @@ impl App {
         }
     }
 
-    pub(super) fn handle_main_menu_shell_mouse_down(state: &mut AppState) {
-        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, Some(true));
+    pub(super) fn handle_main_menu_shell_mouse(state: &mut AppState, down: Option<bool>) {
+        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, down);
     }
 
-    pub(super) fn handle_main_menu_shell_mouse_move(state: &mut AppState) {
-        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, None);
-    }
-
-    pub(super) fn handle_main_menu_shell_mouse_up(state: &mut AppState) {
-        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, Some(false));
-    }
-
-    fn handle_menu_page_mouse(state: &mut AppState, down: Option<bool>) {
+    pub(super) fn handle_menu_page_mouse(state: &mut AppState, down: Option<bool>) {
         if let Some(page) = FamilyPage::menu_page(state) {
             Self::handle_family_page_mouse(state, page, down);
         }
-    }
-
-    pub(super) fn handle_menu_page_mouse_down(state: &mut AppState) {
-        Self::handle_menu_page_mouse(state, Some(true));
-    }
-
-    pub(super) fn handle_menu_page_mouse_move(state: &mut AppState) {
-        Self::handle_menu_page_mouse(state, None);
-    }
-
-    pub(super) fn handle_menu_page_mouse_up(state: &mut AppState) {
-        Self::handle_menu_page_mouse(state, Some(false));
-    }
-
-    pub(super) fn handle_shell_message_box_mouse_down(state: &mut AppState) {
-        Self::shell_message_box_pointer(state, true);
-    }
-
-    pub(super) fn handle_shell_message_box_mouse_up(state: &mut AppState) {
-        Self::shell_message_box_pointer(state, false);
     }
 
     /// A press (`down`) or release on the open box, after the update offer's
@@ -1449,7 +1383,7 @@ impl App {
     /// theirs). The box (`0x005D3490`, proc `0x005D36A0`) subclasses its
     /// owner-draw OK/Cancel to `0x00612B70`, which plays GUIMainButtonSound
     /// on the press (`0x0061374B`).
-    fn shell_message_box_pointer(state: &mut AppState, down: bool) {
+    pub(super) fn handle_shell_message_box_mouse(state: &mut AppState, down: bool) {
         let Some(kind) = state
             .frontend
             .shell_message_box
@@ -1463,9 +1397,7 @@ impl App {
             return;
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-        if crate::app::updater::notes::pointer_button(state, down) && down {
-            return;
-        }
+        crate::app::updater::notes::sync(state);
         if Self::shell_menu_pointer(state, Some(down)) && down {
             return;
         }

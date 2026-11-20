@@ -305,7 +305,7 @@ impl App {
 
     /// One pointer message on the browser (`down`: `None` moves); false
     /// when none is open.
-    fn saved_seed_browser_pointer(state: &mut AppState, down: Option<bool>) -> bool {
+    pub(super) fn saved_seed_browser_pointer(state: &mut AppState, down: Option<bool>) -> bool {
         let Some(mode) = state
             .frontend
             .skirmish_shell_state
@@ -351,13 +351,4 @@ impl App {
         {
             saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
         }
-    }
-
-    pub(super) fn handle_saved_seed_browser_mouse_down(state: &mut AppState) -> bool {
-        Self::saved_seed_browser_pointer(state, Some(true))
-    }
-
-    pub(super) fn handle_saved_seed_browser_mouse_up(state: &mut AppState) -> bool {
-        Self::saved_seed_browser_pointer(state, Some(false))
-    }
-}
+    }}

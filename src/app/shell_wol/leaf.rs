@@ -149,10 +149,10 @@ pub(super) fn pointer_quiet(state: &mut AppState, at: Pointer) -> Vec<PageEvent>
     let (x, y) = state.match_state.input.cursor_px();
     let controller = &mut state.frontend.shell_controller;
     match at {
-        Pointer::Move => controller.on_pointer_move(x, y, &[]),
-        Pointer::Down => controller.on_pointer_down(x, y, &[]),
+        Pointer::Move => controller.on_pointer_move(x, y),
+        Pointer::Down => controller.on_pointer_down(x, y),
         Pointer::Up => {
-            controller.on_pointer_up(x, y, &[]);
+            controller.on_pointer_up(x, y);
         }
     }
     let events = events(state);

@@ -9,6 +9,7 @@
 use vera20k_gui::{InputEvent, NodeKind, NodeSpec, Prop, Value};
 
 use crate::i18n::tr_fill;
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
@@ -23,6 +24,10 @@ pub(crate) const FORM_REMEMBER: u16 = 3;
 /// The first field's control id; the others follow. Not gamemd controls:
 /// the ids only name their rects.
 pub(crate) const FIRST_FIELD: u16 = 0x7FE0;
+/// A popup's first field caption (the others follow) and its status line,
+/// statics whose text the page keeps. Not gamemd controls either.
+pub(crate) const FIRST_CAPTION: u16 = 0x7FD8;
+pub(crate) const FORM_STATUS: u16 = 0x7FDC;
 /// The popups' box over the login page. Not a gamemd dialog: the id only
 /// names it on the shell's dialog stack.
 pub(crate) const POPUP: DialogId = DialogId(0x7FE8);
@@ -332,10 +337,20 @@ impl WolAccountForm {
                 ui.pop();
             }
             ui.push_modal(POPUP, true);
+            // Painted in this order: the captions (right aligned), OK and
+            // Cancel, the status line, the edits.
+            let text = |id: u16, align: ShellAlign| {
+                NodeSpec::new(NodeKind::Text)
+                    .id(id.into())
+                    .with(Prop::Align, Value::Int(align.0.into()))
+            };
+            let captions = (0..fields.len() as u16).map(|index| FIRST_CAPTION + index);
             let spec = NodeSpec::new(NodeKind::Dialog)
+                .children(captions.map(|id| text(id, ShellAlign::H_RIGHT)))
                 .children(
                     [FORM_OK, FORM_CANCEL].map(|id| NodeSpec::new(NodeKind::Button).id(id.into())),
                 )
+                .child(text(FORM_STATUS, ShellAlign::NONE))
                 .children(
                     fields
                         .iter()
@@ -521,12 +536,17 @@ impl WolAccountForm {
         FIRST_FIELD + index as u16
     }
 
-    /// Where control `id` of a popup's `layout` stands: OK, Cancel or a
-    /// field's edit.
+    /// Where control `id` of a popup's `layout` stands: OK, Cancel, a
+    /// field's caption or edit, or the status line.
     pub(crate) fn rect_of(layout: &WolAccountFormLayout, id: u16) -> Option<RectPx> {
         match id {
             FORM_OK => Some(layout.ok),
             FORM_CANCEL => Some(layout.cancel),
+            FORM_STATUS => Some(layout.status),
+            FIRST_CAPTION..FORM_STATUS => layout
+                .fields
+                .get(usize::from(id - FIRST_CAPTION))
+                .map(|(caption, _)| *caption),
             _ => layout
                 .fields
                 .get(usize::from(id.checked_sub(FIRST_FIELD)?))

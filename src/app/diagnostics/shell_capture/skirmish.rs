@@ -667,8 +667,8 @@ impl SkirmishCapture {
             )
             .back;
             Self::set_pointer(state, centre(back));
-            App::handle_saved_seed_browser_mouse_down(state);
-            App::handle_saved_seed_browser_mouse_up(state);
+            App::saved_seed_browser_pointer(state, Some(true));
+            App::saved_seed_browser_pointer(state, Some(false));
             Self::set_pointer(state, self.rest_point());
             self.pointer_rested = true;
             self.route
@@ -1440,9 +1440,9 @@ impl SkirmishCapture {
                     // Continue through the page's production handlers.
                     state.match_state.input.cursor_x = 720.0;
                     state.match_state.input.cursor_y = 556.0;
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
                     state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
                     ensure!(

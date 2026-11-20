@@ -128,7 +128,7 @@ impl ListScrollInteraction {
     }
     /// [`Self::poll`] for a scrollbar whose held arrow steps on and off the
     /// pointer; a hold on the thumb or track ends the repeat.
-    pub fn poll_held(&mut self, max_top: usize, top: &mut usize, now: Instant) {
+    pub(crate) fn poll_held(&mut self, max_top: usize, top: &mut usize, now: Instant) {
         if !self.repeat_at.is_some_and(|deadline| now >= deadline) {
             return;
         }
@@ -151,7 +151,7 @@ impl ListScrollInteraction {
         self.repeat_at
     }
     /// The part a press holds until the release.
-    pub fn captured_part(&self) -> Option<ListScrollPart> {
+    pub(crate) fn captured_part(&self) -> Option<ListScrollPart> {
         self.captured
     }
     /// Whether a press holds the scrollbar's capture, until the release.
@@ -281,8 +281,9 @@ impl ShellListGeometry {
 /// One owner-draw list box of a family page (the movie list `0x129`, VERA's
 /// Mods list): its rows, the subclass selection and the scrollbar's state.
 #[derive(Debug, Clone)]
-pub struct ListBoxState<Row> {
-    pub rows: Vec<Row>,
+pub(crate) struct ListBoxState {
+    /// The row count.
+    pub rows: usize,
     /// Subclass current selection (`-1` = none). Its LB_SETCURSEL handler
     /// (`0x0061A534..0x0061A5F5`) always returns 0, so the proc's fallback
     /// `LB_SETCURSEL(0)` never runs: a fresh process opens with nothing
@@ -298,11 +299,11 @@ pub struct ListBoxState<Row> {
     pub visible_rows: Option<usize>,
 }
 
-impl<Row> ListBoxState<Row> {
-    pub fn new(rows: Vec<Row>, selected: Option<usize>) -> Self {
+impl ListBoxState {
+    pub(crate) fn new() -> Self {
         Self {
-            rows,
-            selected,
+            rows: 0,
+            selected: None,
             top: 0,
             last_press: None,
             scroll: ListScrollInteraction::default(),
@@ -311,19 +312,19 @@ impl<Row> ListBoxState<Row> {
     }
 
     /// List and scrollbar geometry ([`list_box_geometry`]).
-    pub fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
+    pub(crate) fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
         match self.visible_rows {
             Some(rows) => {
                 let outer = RectPx::new(list.x, list.y, list.w + 1, list.h + 1);
-                ShellListGeometry::with_visible_rows(outer, self.rows.len(), rows, self.top, metrics)
+                ShellListGeometry::with_visible_rows(outer, self.rows, rows, self.top, metrics)
             }
-            None => list_box_geometry(list, self.rows.len(), self.top, metrics),
+            None => list_box_geometry(list, self.rows, self.top, metrics),
         }
     }
 
     /// A press on the scrollbar child: capture it, step an arrow or jump the
     /// track. Returns `false` when the press is not on the scrollbar.
-    pub fn scroll_press(
+    pub(crate) fn scroll_press(
         &mut self,
         list: RectPx,
         metrics: ListMetrics,
@@ -340,13 +341,13 @@ impl<Row> ListBoxState<Row> {
     }
 
     /// Pointer motion while the scrollbar may hold capture (thumb drag).
-    pub fn scroll_pointer_moved(&mut self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) {
+    pub(crate) fn scroll_pointer_moved(&mut self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) {
         let geometry = self.geometry(list, metrics);
         self.scroll.pointer_moved(geometry, &mut self.top, x, y);
     }
 
     /// Arrow auto-repeat; returns whether the list changed.
-    pub fn scroll_poll(
+    pub(crate) fn scroll_poll(
         &mut self,
         list: RectPx,
         metrics: ListMetrics,
@@ -363,7 +364,7 @@ impl<Row> ListBoxState<Row> {
 
     /// Whether a press is the second click of a double-click
     /// ([`is_double_click`]).
-    pub fn is_double_click(
+    pub(crate) fn is_double_click(
         &mut self,
         now: Instant,
         x: i32,
@@ -377,7 +378,7 @@ impl<Row> ListBoxState<Row> {
     /// without a border correction, ignoring presses below the last row. The
     /// scrollbar is its own child window, so presses on it never reach the
     /// list.
-    pub fn row_at(&self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) -> Option<usize> {
+    pub(crate) fn row_at(&self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) -> Option<usize> {
         if !list.contains(x, y)
             || self
                 .geometry(list, metrics)
@@ -387,7 +388,7 @@ impl<Row> ListBoxState<Row> {
             return None;
         }
         let row = ((y - list.y) / metrics.row_h) as usize + self.top;
-        (row < self.rows.len()).then_some(row)
+        (row < self.rows).then_some(row)
     }
 }
 
@@ -413,7 +414,7 @@ pub fn list_box_geometry(
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
 /// ComboDropWin create the same 0061C690 child; its range is the maximum
 /// top index, not the item count. The paint origin includes the one-pixel inset.
-pub fn scrollbar_thumb_y(
+pub(crate) fn scrollbar_thumb_y(
     bar: RectPx,
     thumb_h: i32,
     top: usize,
@@ -433,7 +434,7 @@ pub fn scrollbar_thumb_y(
 /// Native reads the pointer in window coordinates (before the paint inset),
 /// recenters the thumb on every drag update, and truncates signed division.
 /// The down event inside the thumb only captures; callers invoke this on move.
-pub fn scrollbar_top_at_pointer(
+pub(crate) fn scrollbar_top_at_pointer(
     bar: RectPx,
     thumb_h: i32,
     max_top: usize,
@@ -546,7 +547,7 @@ pub fn grip_tiles(thumb: RectPx, tile_h: i32) -> Vec<(i32, i32)> {
 /// only forwards as `LBN_DBLCLK` (`0x0061A904..0x0061A945`): no selection,
 /// no sound. A double-click ends the sequence, so the next press starts a
 /// new one.
-pub fn is_double_click(
+pub(crate) fn is_double_click(
     last_press: &mut Option<(Instant, i32, i32)>,
     now: Instant,
     x: i32,
@@ -568,7 +569,7 @@ pub fn is_double_click(
 /// same proportion against its grown arrows. f64 arithmetic preserves ordinary
 /// control geometry; x87 rounding-edge cases remain outside the sampled native
 /// comparison coverage.
-pub fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
+pub(crate) fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
     let track = f64::from(height - 2 - metrics.arrow_h * 2);
     ftol_f64(track - ((range + 1) as f64).ln() * track * 0.2).max(metrics.min_thumb_h)
 }

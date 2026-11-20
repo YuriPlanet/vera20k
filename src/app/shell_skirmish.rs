@@ -161,17 +161,6 @@ impl App {
         crate::ui::shell::descriptor::DialogId(0x00CE)
     }
 
-    fn validation_modal_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        let layout = crate::ui::shell::modal::body_ok_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
-        );
-        vec![crate::ui::shell::layout::LaidOutControl {
-            id: crate::ui::shell::modal::control::OK,
-            rect: layout.ok,
-        }]
-    }
-
     pub(super) fn shell_key_for_code(code: KeyCode) -> Option<ShellKey> {
         match code {
             KeyCode::Tab => Some(ShellKey::Tab),
@@ -1547,48 +1536,24 @@ impl App {
         true
     }
 
-    fn route_validation_modal_mouse_down(state: &mut AppState) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_none()
-        {
+    /// A press or release while `0xCE` is up: its owner-draw OK plays
+    /// GUIMainButtonSound on the press (`0x00612B70` via the message box
+    /// `0x005D3490`) and closes the box on its release.
+    fn route_validation_modal_mouse(state: &mut AppState, down: bool) -> bool {
+        use crate::ui::shell::modal::control::OK;
+        if state.frontend.skirmish_shell_state.validation_modal.is_none() {
             return false;
         }
-        let feed = Self::validation_modal_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(Self::validation_modal_dialog_id(), true);
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // `0xCE`'s owner-draw OK plays GUIMainButtonSound on the press
-        // (`0x00612B70` via the message box `0x005D3490`).
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-        state.platform.window.request_redraw();
-        true
-    }
-
-    fn route_validation_modal_mouse_up(state: &mut AppState) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_none()
-        {
-            return false;
-        }
-        let feed = Self::validation_modal_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(Self::validation_modal_dialog_id(), true);
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        if activated == Some(crate::ui::shell::modal::control::OK) {
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let ok = crate::ui::shell::modal::body_ok_layout(w, h).ok;
+        let dialog = Self::validation_modal_dialog_id();
+        state.frontend.shell_controller.ensure_active(dialog, true);
+        let nodes = || {
+            use vera20k_gui::{NodeKind, NodeSpec};
+            NodeSpec::new(NodeKind::Dialog).child(NodeSpec::new(NodeKind::Button).id(i32::from(OK)))
+        };
+        let rect_of = |id| (id == OK).then_some(ok);
+        if Self::page_pointer(state, dialog, nodes, rect_of, &[], Some(down)) == Some(OK) {
             Self::close_validation_modal_from_controller(state);
         }
         state.platform.window.request_redraw();
@@ -1652,10 +1617,10 @@ impl App {
             Some(SkirmishShellDialog::SeedBrowser) => {
                 match event {
                     GameOptionsMouse::Down => {
-                        Self::handle_saved_seed_browser_mouse_down(state);
+                        Self::saved_seed_browser_pointer(state, Some(true));
                     }
                     GameOptionsMouse::Up => {
-                        Self::handle_saved_seed_browser_mouse_up(state);
+                        Self::saved_seed_browser_pointer(state, Some(false));
                     }
                     GameOptionsMouse::Move => {
                         Self::update_saved_seed_browser_scroll(state, true);
@@ -1666,11 +1631,10 @@ impl App {
             Some(SkirmishShellDialog::Setups) => {
                 match event {
                     GameOptionsMouse::Down => {
-                        Self::handle_skirmish_setups_mouse_down(state);
+                        Self::skirmish_setups_pointer(state, Some(true));
+                        Self::update_skirmish_setups_scroll(state, false);
                     }
-                    GameOptionsMouse::Up => {
-                        Self::handle_skirmish_setups_mouse_up(state);
-                    }
+                    GameOptionsMouse::Up => Self::skirmish_setups_pointer(state, Some(false)),
                     GameOptionsMouse::Move => {
                         Self::update_skirmish_setups_scroll(state, true);
                     }
@@ -1715,7 +1679,7 @@ impl App {
 
     pub(super) fn handle_skirmish_shell_mouse_down(state: &mut AppState) {
         // A message box runs over the dialogs; else the dialog on top.
-        if Self::route_validation_modal_mouse_down(state)
+        if Self::route_validation_modal_mouse(state, true)
             || Self::handle_choose_map_prompt_mouse_down(state)
             || Self::skirmish_page_covered(state, GameOptionsMouse::Down)
         {
@@ -1748,7 +1712,7 @@ impl App {
     }
 
     pub(super) fn handle_skirmish_shell_mouse_up(state: &mut AppState) {
-        if Self::route_validation_modal_mouse_up(state)
+        if Self::route_validation_modal_mouse(state, false)
             || Self::handle_choose_map_prompt_mouse_up(state)
             || Self::skirmish_page_covered(state, GameOptionsMouse::Up)
         {

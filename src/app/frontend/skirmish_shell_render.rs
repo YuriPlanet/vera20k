@@ -775,7 +775,10 @@ fn render_skirmish_shell_with_atlas(
     }
     let validation_ok_pressed = state.frontend.shell_controller.top_id()
         == Some(crate::ui::shell::descriptor::DialogId(0x00CE))
-        && state.frontend.shell_controller.pressed() == Some(crate::ui::shell::modal::control::OK);
+        && crate::ui::shell::menu_page::pressed_id(
+            &state.frontend.shell_controller,
+            crate::ui::shell::descriptor::DialogId(0x00CE),
+        ) == Some(crate::ui::shell::modal::control::OK);
     let mut instances = if message_box_up {
         let mut instances = Vec::new();
         push_message_box_backdrop_instances(&mut instances, atlas, &layout);

@@ -540,19 +540,6 @@ impl Tree {
             _ => self.screen_rect(id),
         }
     }
-
-    /// Pre-order walk in draw order (parents before children, roots in order).
-    pub(crate) fn draw_order(&self) -> Vec<NodeId> {
-        let mut out = Vec::with_capacity(self.live);
-        let mut stack: Vec<NodeId> = self.roots.iter().rev().copied().collect();
-        while let Some(id) = stack.pop() {
-            out.push(id);
-            if let Ok(n) = self.node(id) {
-                stack.extend(n.children.iter().rev().copied());
-            }
-        }
-        out
-    }
 }
 
 #[cfg(test)]

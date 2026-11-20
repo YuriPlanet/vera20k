@@ -455,9 +455,9 @@ impl CooperativeRun {
                     page.layout(width, height, fills)
                 };
                 set_window_pointer_to_rect_center(state, page_layout.continue_button);
-                App::handle_campaign_score_mouse_move(state);
-                App::handle_campaign_score_mouse_down(state);
-                App::handle_campaign_score_mouse_up(state);
+                App::handle_campaign_score_mouse(state, None);
+                App::handle_campaign_score_mouse(state, Some(true));
+                App::handle_campaign_score_mouse(state, Some(false));
                 MoviesCapture::restore_neutral_pointer(state);
                 ensure!(
                     crate::app::frontend::shell_transition::shell_exit_wave(

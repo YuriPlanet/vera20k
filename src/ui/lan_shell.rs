@@ -131,8 +131,6 @@ pub(crate) struct LanListState {
     pub(crate) top_index: usize,
     pub(crate) hot_row: Option<usize>,
     pub(crate) scroll: ListScrollInteraction,
-    /// Passed to the shared list::is_double_click owner by the app adapter.
-    pub(crate) last_press: Option<(Instant, i32, i32)>,
 }
 
 #[derive(Debug, Clone, Copy)]

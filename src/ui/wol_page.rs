@@ -797,7 +797,7 @@ mod tests {
         // Choosing another pager keeps the reply's focus: a press on the
         // transcript's first row.
         let row = layout.transcript;
-        c.on_pointer_down(row.x + 10, row.y + 6, &[]);
+        c.on_pointer_down(row.x + 10, row.y + 6);
         assert_eq!(
             c.prop(RECEIVED_DIALOG, RECEIVED_TRANSCRIPT, Prop::Selected),
             Some(&Value::Int(0))

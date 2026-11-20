@@ -671,7 +671,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let notes = match &message_box.purpose {
         ShellMessageBoxPurpose::UpdateOffer(notes) => {
-            notes.geometry(&layout).map(|geometry| (notes, geometry))
+            crate::app::updater::notes::view(state).map(|view| (notes, view))
         }
         _ => None,
     };
@@ -713,10 +713,10 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         });
     }
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    if let Some((notes, geometry)) = &notes {
+    if let Some((notes, (geometry, top, _))) = &notes {
         labels.extend(
             notes
-                .texts(geometry, layout.scale.factor())
+                .texts(geometry, *top, layout.scale.factor())
                 .into_iter()
                 .map(|(text, rect)| PaintLabel {
                     text: text.into(),
@@ -759,14 +759,14 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     }
     // The list lies on the dialog's picture, which has no list backing.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    if let Some((notes, geometry)) = notes {
+    if let Some((_, (geometry, top, pressed))) = notes {
         crate::app::frontend::skirmish_shell_render::paint_list(
             &mut draw.sprites,
             atlas,
             geometry,
-            notes.top(),
+            top,
             None,
-            notes.pressed_part(),
+            pressed,
             true,
             layout.scale,
         );

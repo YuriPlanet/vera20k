@@ -444,19 +444,19 @@ pub fn pointer(
             {
                 return None;
             }
-            controller.on_pointer_down(x, y, &[]);
+            controller.on_pointer_down(x, y);
         }
         Pointer::Move if state.opponent_scroll.captured() => {
             super::state::move_opponent_scrollbar(state, layout, maps, x, y);
         }
-        Pointer::Move => controller.on_pointer_move(x, y, &[]),
+        Pointer::Move => controller.on_pointer_move(x, y),
         Pointer::Up => {
             let held = slider_held(controller.gui()) || state.opponent_scroll.captured();
             state.opponent_scroll.cancel();
-            controller.on_pointer_up(x, y, &[]);
+            controller.on_pointer_up(x, y);
             // The freed hit test sees the pointer where it let go.
             if held {
-                controller.on_pointer_move(x, y, &[]);
+                controller.on_pointer_move(x, y);
             }
         }
     }

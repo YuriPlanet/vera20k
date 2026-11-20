@@ -642,8 +642,8 @@ pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
     let button = layout.continue_button;
     state.match_state.input.cursor_x = (button.x + button.w / 2) as f32;
     state.match_state.input.cursor_y = (button.y + button.h / 2) as f32;
-    App::handle_campaign_score_mouse_move(state);
-    App::handle_campaign_score_mouse_down(state);
+    App::handle_campaign_score_mouse(state, None);
+    App::handle_campaign_score_mouse(state, Some(true));
     ensure!(
         crate::ui::shell::menu_page::pressed_id(
             &state.frontend.shell_controller,
@@ -651,7 +651,7 @@ pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
         ) == Some(CONTINUE_BUTTON),
         "campaign Continue probe did not press control 0x423"
     );
-    App::handle_campaign_score_mouse_up(state);
+    App::handle_campaign_score_mouse(state, Some(false));
     ensure!(
         crate::app::frontend::shell_transition::shell_exit_wave(
             state,
@@ -817,16 +817,16 @@ impl ScoreCapture {
                 ScoreTarget::Steady => self.phase = Phase::Settling(SETTLE_FRAMES),
                 ScoreTarget::HoverContinue | ScoreTarget::LeaveContinue => {
                     Self::set_pointer(state, CONTINUE_POINT);
-                    App::handle_score_shell_mouse_move(state);
+                    App::handle_score_shell_mouse(state, None);
                     self.route.push(json!({"dialog": 0x108, "frame": frame,
                         "action": "hover Continue"}));
                     self.phase = Phase::Hover;
                 }
                 ScoreTarget::SlideOut(_) => {
                     Self::set_pointer(state, CONTINUE_POINT);
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     Self::set_pointer(state, (EXPECTED_CURSOR_X as i32, EXPECTED_CURSOR_Y as i32));
                     ensure!(
                         crate::app::frontend::shell_transition::shell_exit_wave(
@@ -844,7 +844,7 @@ impl ScoreCapture {
             Phase::Hover if state.frontend.shell_status_line.is_terminal() => {
                 if self.target == ScoreTarget::LeaveContinue {
                     Self::set_pointer(state, ART_POINT);
-                    App::handle_score_shell_mouse_move(state);
+                    App::handle_score_shell_mouse(state, None);
                     self.route.push(json!({"dialog": 0x108, "frame": frame,
                         "action": "move onto the art", "point": [ART_POINT.0, ART_POINT.1]}));
                     self.phase = Phase::Left;

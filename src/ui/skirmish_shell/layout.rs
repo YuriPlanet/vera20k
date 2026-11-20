@@ -1273,7 +1273,7 @@ mod tests {
         );
         let mut ui = crate::ui::shell::controller::DialogController::default();
         choose_map_page::sync_page(&mut ui, &modal, layout);
-        ui.on_pointer_move(x, y, &[]);
+        ui.on_pointer_move(x, y);
         match choose_map_page::hover_target(ui.gui(), &modal, layout, x, y) {
             Some(ChooseMapHoverTarget::Button(button)) => Some(button),
             _ => None,

@@ -4,6 +4,7 @@
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::ui::shell::menu_page;
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
     software_cursor,
@@ -352,8 +353,8 @@ fn movie_list_composition<'a>(
 
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(MOVIE_LIST_PAGE.dialog);
-    let pressed = active.then(|| controller.pressed()).flatten();
-    let hovered = active.then(|| controller.hovered()).flatten();
+    let pressed = active.then(|| menu_page::pressed_id(controller, MOVIE_LIST_PAGE.dialog)).flatten();
+    let hovered = active.then(|| menu_page::hovered_id(controller, MOVIE_LIST_PAGE.dialog)).flatten();
     let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
     // While a slide runs the engine draws the whole tile column in place of
     // the buttons (`0x006071E0`).
@@ -432,7 +433,7 @@ fn movie_list_status_key(state: &AppState) -> Option<&'static str> {
         return Some(MOVIE_LIST_TOOLTIP_KEY);
     }
     MOVIE_LIST_PAGE
-        .button(controller.hovered()?)
+        .button(menu_page::hovered_id(controller, MOVIE_LIST_PAGE.dialog)?)
         .map(|button| button.tooltip_key)
 }
 

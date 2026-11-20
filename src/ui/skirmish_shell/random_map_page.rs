@@ -298,14 +298,14 @@ pub fn pointer(
         return (sounds, None);
     }
     match at {
-        Pointer::Down => controller.on_pointer_down(x, y, &[]),
-        Pointer::Move => controller.on_pointer_move(x, y, &[]),
+        Pointer::Down => controller.on_pointer_down(x, y),
+        Pointer::Move => controller.on_pointer_move(x, y),
         Pointer::Up => {
             let held = slider_held(controller.gui());
-            controller.on_pointer_up(x, y, &[]);
+            controller.on_pointer_up(x, y);
             // The freed hit test sees the pointer where it let go.
             if held {
-                controller.on_pointer_move(x, y, &[]);
+                controller.on_pointer_move(x, y);
             }
         }
     }
@@ -384,7 +384,7 @@ pub(crate) fn control_at(
     (modal.ares, modal.advanced_page) = (ares, advanced_page);
     let mut controller = DialogController::default();
     sync_page(&mut controller, &modal, layout)?;
-    controller.on_pointer_move(x, y, &[]);
+    controller.on_pointer_move(x, y);
     let gui = controller.gui();
     control_of(&modal, u16::try_from(gui.id_of(gui.hovered()?)?).ok()?)
 }

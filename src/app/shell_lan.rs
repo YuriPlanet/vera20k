@@ -17,13 +17,15 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-const MODAL: DialogId = DialogId(0xCE);
-const OK: u16 = 1;
-const CANCEL: u16 = 2;
+pub(crate) const MODAL: DialogId = DialogId(0xCE);
+pub(crate) const OK: u16 = 1;
+pub(crate) const CANCEL: u16 = 2;
 /// VERA's Create Game box's Max players and Allow spectators (its own
 /// controls, no resource's).
-const ROOM_PLAYERS: u16 = 0x7F20;
-const ROOM_SPECTATORS: u16 = 0x7F21;
+pub(crate) const ROOM_PLAYERS: u16 = 0x7F20;
+pub(crate) const ROOM_SPECTATORS: u16 = 0x7F21;
+/// The Max players caption beside it.
+pub(crate) const ROOM_PLAYERS_CAPTION: u16 = 0x7F22;
 // Native CDTimerClass uses timeGetTime()/16, including the 600-bucket join
 // timer AC0230/AC0238 armed by005DF410. It is independent of simulation ticks.
 const JOIN_TIMEOUT: Duration = Duration::from_millis(600 * 16);
@@ -404,7 +406,12 @@ fn show_modal(state: &mut AppState, key: &'static str) {
 
 /// A box's root with its buttons.
 fn box_spec(buttons: &[u16]) -> NodeSpec {
-    let button = |id: &u16| NodeSpec::new(NodeKind::Button).id((*id).into());
+    let label = |id| if id == CANCEL { "GUI:Cancel" } else { "GUI:OK" };
+    let button = |id: &u16| {
+        NodeSpec::new(NodeKind::Button)
+            .id((*id).into())
+            .label(label(*id))
+    };
     NodeSpec::new(NodeKind::Dialog).children(buttons.iter().map(button))
 }
 
@@ -590,7 +597,17 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             let limits = state.frontend.room_limits;
             state.frontend.lan.as_mut().expect("active BB").creating = true;
             let choices = crate::ui::room_limits::widgets(limits, ROOM_PLAYERS, ROOM_SPECTATORS);
-            push_box(state, box_spec(&[OK, CANCEL]).children(choices));
+            let align = crate::render::shell_text::ShellAlign::H_RIGHT
+                | crate::render::shell_text::ShellAlign::V_CENTER;
+            let caption = crate::ui::wol_page::static_text(
+                ROOM_PLAYERS_CAPTION,
+                Some("VERA:MaxPlayers"),
+                align,
+            );
+            push_box(
+                state,
+                box_spec(&[OK, CANCEL]).children(choices).child(caption),
+            );
         }
         LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {
@@ -1054,6 +1071,7 @@ pub(crate) fn sync_gui(state: &mut AppState) {
             OK => Some(ok),
             CANCEL => Some(create.cancel),
             ROOM_PLAYERS => Some(create.room.players),
+            ROOM_PLAYERS_CAPTION => Some(create.room.players_label),
             ROOM_SPECTATORS => Some(create.room.spectators),
             _ => None,
         });
@@ -1087,7 +1105,7 @@ fn on_top(state: &AppState) -> bool {
 pub(crate) fn cursor_moved(state: &mut AppState) {
     sync_gui(state);
     let (x, y) = state.match_state.input.cursor_px();
-    state.frontend.shell_controller.on_pointer_move(x, y, &[]);
+    state.frontend.shell_controller.on_pointer_move(x, y);
     handle_events(state);
     state.platform.window.request_redraw();
 }
@@ -1102,10 +1120,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     let observer_image = layout(state).observer_image.contains(x, y);
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
-        controller.on_pointer_up(x, y, &[]);
+        controller.on_pointer_up(x, y);
         return handle_events(state);
     }
-    controller.on_pointer_down(x, y, &[]);
+    controller.on_pointer_down(x, y);
     let pressed = controller
         .gui()
         .hovered()

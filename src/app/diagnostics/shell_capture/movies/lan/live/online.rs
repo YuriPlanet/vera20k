@@ -1088,9 +1088,9 @@ impl LiveRoundFlow {
                         .paging_button(crate::ui::score_shell::NEXT_PAGE)
                         .context("score Next")?;
                     set_window_pointer_to_rect_center(state, rect);
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     MoviesCapture::restore_neutral_pointer(state);
                     self.record(frame, "Next results page displayed through normal button");
                     return Ok(());
@@ -1118,9 +1118,9 @@ impl LiveRoundFlow {
                     .button_rect(crate::ui::score_shell::CONTINUE_BUTTON)
                     .context("score Continue")?;
                 set_window_pointer_to_rect_center(state, rect);
-                App::handle_score_shell_mouse_move(state);
-                App::handle_score_shell_mouse_down(state);
-                App::handle_score_shell_mouse_up(state);
+                App::handle_score_shell_mouse(state, None);
+                App::handle_score_shell_mouse(state, Some(true));
+                App::handle_score_shell_mouse(state, Some(false));
                 MoviesCapture::restore_neutral_pointer(state);
                 self.record(frame, "Real multiplayer results acknowledged");
                 self.phase = RoundPhase::Returning;

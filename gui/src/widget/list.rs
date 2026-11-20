@@ -25,7 +25,7 @@ use crate::time::{Duration, Instant};
 pub struct ListState {
     /// The shell list box. Its row count, top and selection are reloaded
     /// from the props before every input and written back after it.
-    list: ListBoxState<()>,
+    list: ListBoxState,
     /// The pointer as the list last saw it: the arrow repeat steps the arrow
     /// under it (`0x0061D215..0x0061D2C8`).
     pointer: (i32, i32),
@@ -34,7 +34,7 @@ pub struct ListState {
 impl Default for ListState {
     fn default() -> Self {
         Self {
-            list: ListBoxState::new(Vec::new(), None),
+            list: ListBoxState::new(),
             pointer: (0, 0),
         }
     }
@@ -125,7 +125,7 @@ fn with_list<R>(
         WidgetState::List(state) => state,
         _ => ListState::default(),
     };
-    state.list.rows.resize(count, ());
+    state.list.rows = count;
     state.list.top = top;
     state.list.selected = selected;
     state.list.visible_rows = match n.props.get(&Prop::VisibleRows) {
@@ -200,7 +200,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
                 s.list.last_press = None;
                 return Capture::No;
             }
-            let row = geometry.row_at(s.list.rows.len(), s.list.top, x, y);
+            let row = geometry.row_at(s.list.rows, s.list.top, x, y);
             if double_click && s.list.is_double_click(now, x, y, limits) {
                 if let Some(row) = s.list.selected {
                     events.push(UiEvent::ListDoubleClicked { node, row: row as u32 });
@@ -216,7 +216,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
             // press on a row selects it and counts toward a double-click
             // (LBN_SELCHANGE, then LBN_DBLCLK).
             let geometry = s.list.geometry(rect, metrics);
-            let Some(row) = geometry.row_at(s.list.rows.len(), s.list.top, x, y) else {
+            let Some(row) = geometry.row_at(s.list.rows, s.list.top, x, y) else {
                 return Capture::No;
             };
             s.list.selected = Some(row);

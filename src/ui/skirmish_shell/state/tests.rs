@@ -134,7 +134,7 @@ fn hovered_shell_control(
     PAGE.with_borrow_mut(|(controller, seen, _)| {
         *seen = Some((layout.clone(), maps.to_vec()));
         let root = page::sync_page(controller, shell, layout, maps, &Default::default());
-        controller.on_pointer_move(x, y, &[]);
+        controller.on_pointer_move(x, y);
         controller.drain_events();
         page::hover_target(controller.gui(), root, shell, maps, x, y)
     })
@@ -174,7 +174,7 @@ fn combo_list(
         }
         let face = combo_rect(layout, shell, id)?;
         controller.gui_mut().close_popup();
-        controller.on_pointer_down(face.x + face.w - 2, face.y + 2, &[]);
+        controller.on_pointer_down(face.x + face.w - 2, face.y + 2);
         let gui = controller.gui();
         let list = gui.popup().and_then(|node| gui.combo_drop_down(node));
         controller.gui_mut().close_popup();
@@ -994,7 +994,7 @@ fn hovered_choose_map_modal_control(
     use crate::ui::skirmish_shell::choose_map_page;
     let mut ui = crate::ui::shell::controller::DialogController::default();
     choose_map_page::sync_page(&mut ui, modal, layout);
-    ui.on_pointer_move(x, y, &[]);
+    ui.on_pointer_move(x, y);
     choose_map_page::hover_target(ui.gui(), modal, layout, x, y)
 }
 

@@ -2782,6 +2782,7 @@ fn continue_join(state: &mut AppState, channel: WolChannel) {
             .frontend
             .shell_controller
             .reset_to(PASSWORD_DIALOG, false);
+        sync(state);
         return;
     }
     join_channel(state, channel, "", true, false);
@@ -3039,6 +3040,8 @@ pub(super) fn begin_create(state: &mut AppState) {
         .frontend
         .shell_controller
         .reset_to(CREATE_DIALOG, false);
+    // Its widgets on their layout before it paints.
+    sync(state);
     state.platform.window.request_redraw();
 }
 

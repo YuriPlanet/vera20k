@@ -338,7 +338,7 @@ fn handle_events(state: &mut AppState) {
 pub(super) fn cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
     sync_gui(state);
-    state.frontend.shell_controller.on_pointer_move(x, y, &[]);
+    state.frontend.shell_controller.on_pointer_move(x, y);
     handle_events(state);
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
@@ -349,9 +349,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     sync_gui(state);
     let controller = &mut state.frontend.shell_controller;
     if pressed {
-        controller.on_pointer_down(x, y, &[]);
+        controller.on_pointer_down(x, y);
     } else {
-        controller.on_pointer_up(x, y, &[]);
+        controller.on_pointer_up(x, y);
     }
     handle_events(state);
     state.platform.window.request_redraw();

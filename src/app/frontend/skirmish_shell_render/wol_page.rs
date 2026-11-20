@@ -151,10 +151,7 @@ pub(crate) fn paint_wol_verify(
     layout: &crate::ui::shell::modal::WolVerifyLayout,
 ) -> WolLobbyPaint {
     if let Some(message) = &verify.mismatch {
-        let pressed = verify
-            .ok
-            .is_pressed(crate::ui::wol_shell::BOX_OK)
-            .then_some(crate::ui::wol_shell::BOX_OK);
+        let pressed = verify.ok_pressed().then_some(crate::ui::wol_shell::BOX_OK);
         let (dialog, buttons, labels) = crate::app::frontend::wol_welcome_render::message_box_parts(
             message,
             pressed,

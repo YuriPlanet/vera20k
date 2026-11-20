@@ -198,10 +198,10 @@ pub fn pointer(
         return false;
     }
     match at {
-        super::page::Pointer::Down => controller.on_pointer_down(x, y, &[]),
-        super::page::Pointer::Move => controller.on_pointer_move(x, y, &[]),
+        super::page::Pointer::Down => controller.on_pointer_down(x, y),
+        super::page::Pointer::Move => controller.on_pointer_move(x, y),
         super::page::Pointer::Up => {
-            controller.on_pointer_up(x, y, &[]);
+            controller.on_pointer_up(x, y);
         }
     }
     let raw = controller.drain_events();

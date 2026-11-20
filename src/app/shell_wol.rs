@@ -126,7 +126,6 @@ use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::ShellExitThen;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::layout::LaidOutControl;
 use crate::ui::wol_login::{WolCredential, WolLoginState};
 use crate::ui::shell::page::PageEvent;
 use crate::ui::wol_shell::{
@@ -703,7 +702,7 @@ impl App {
     }
 
     /// The buttons of the box that owns input, if one does.
-    fn wol_box_feed(state: &AppState) -> Option<Vec<LaidOutControl>> {
+    fn wol_box_feed(state: &AppState) -> Option<Vec<(u16, crate::ui::shell::geom::RectPx)>> {
         let (width, height) = (
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
@@ -719,7 +718,7 @@ impl App {
             None => return None,
         };
         let buttons = parts.map(|parts| parts.buttons).unwrap_or_default();
-        Some(buttons.into_iter().map(|(id, rect, _)| LaidOutControl { id, rect }).collect())
+        Some(buttons.into_iter().map(|(id, rect, _)| (id, rect)).collect())
     }
 
     /// The control the top dialog's pointer holds (`SetCapture`), by id.
@@ -741,7 +740,7 @@ impl App {
             };
             let gui = controller.gui_mut();
             crate::ui::shell::page::ensure_built(gui, root, crate::ui::wol_shell::box_spec);
-            let rect_of = |id| feed.iter().find(|c| c.id == id).map(|c| c.rect);
+            let rect_of = |id| feed.iter().find(|(c, _)| *c == id).map(|(_, rect)| *rect);
             crate::ui::shell::page::sync_rects(gui, root, rect_of);
             // The boxes have no status line to write.
             for event in leaf::pointer_quiet(state, at) {
@@ -801,7 +800,7 @@ impl App {
 
     pub(super) fn handle_wol_mouse_move(state: &mut AppState) {
         if Self::wol_quick_match_verify(state) {
-            crate::app::shell_network_setup::verify_cursor_moved(state);
+            crate::app::shell_network_setup::verify_pointer(state, None);
             return;
         }
         if page::open(state) {
@@ -841,7 +840,7 @@ impl App {
 
     pub(super) fn handle_wol_mouse_down(state: &mut AppState) {
         if Self::wol_quick_match_verify(state) {
-            crate::app::shell_network_setup::verify_mouse(state, true);
+            crate::app::shell_network_setup::verify_pointer(state, Some(true));
             return;
         }
         if page::open(state) {
@@ -881,7 +880,7 @@ impl App {
 
     pub(super) fn handle_wol_mouse_up(state: &mut AppState) {
         if Self::wol_quick_match_verify(state) {
-            crate::app::shell_network_setup::verify_mouse(state, false);
+            crate::app::shell_network_setup::verify_pointer(state, Some(false));
             return;
         }
         if page::open(state) {

@@ -11,10 +11,10 @@
 
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, UiEvent, Value};
 
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{
-    RectPx, ShellScale, child_window, };
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
 use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageEvent};
@@ -44,6 +44,16 @@ pub(crate) const CREATE_ACCOUNT: u16 = 0x7FF0;
 pub(crate) const FORGOT_PASSWORD: u16 = 0x7FF1;
 pub(crate) const DELETE_ACCOUNT: u16 = 0x7FF2;
 pub(crate) const PLAY: u16 = 0x7FF3;
+/// The statics the page keeps the text of: `GUI:LoginName` and
+/// `GUI:Password`; VERA online's heading, status line, field captions and
+/// counts. Not gamemd controls: the ids only name their rects.
+pub(crate) const LABELS: [u16; 2] = [0x7FD0, 0x7FD1];
+pub(crate) const HEADING_TEXT: u16 = 0x7FD2;
+pub(crate) const STATUS_TEXT: u16 = 0x7FD3;
+pub(crate) const CAPTIONS_TEXT: [u16; 2] = [0x7FD4, 0x7FD5];
+pub(crate) const COUNTS_TEXT: [u16; 2] = [0x7FD6, 0x7FD7];
+/// VERA online's status line and counts, beside the shell's yellow captions.
+const ONLINE_TEXT_RGB: vera20k_gui::Rgba = vera20k_gui::Rgba(204, 204, 204, 255);
 /// EM_LIMITTEXT / CB_LIMITTEXT at `0x0079A925..0x0079A94E`.
 pub(crate) const NICKNAME_LIMIT: usize = 9;
 pub(crate) const PASSWORD_LIMIT: usize = 8;
@@ -336,14 +346,25 @@ pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
             .label(key)
             .with(Prop::ActivateOnPress, Value::Bool(true))
     };
+    let text = |id: u16, align: ShellAlign| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(align.0.into()))
+    };
     if policy == LoginPolicy::Online {
         let fields = [FieldKind::Name, FieldKind::Password]
             .into_iter()
             .enumerate();
+        let grey =
+            |id| text(id, ShellAlign::H_CENTER).with(Prop::Color, Value::Rgba(ONLINE_TEXT_RGB));
         return NodeSpec::new(NodeKind::Dialog)
             .children(buttons)
             .children(fields.map(|(index, kind)| kind.spec(index)))
-            .child(check(FORM_REMEMBER, "VERA:RememberPassword"));
+            .child(check(FORM_REMEMBER, "VERA:RememberPassword"))
+            .child(text(HEADING_TEXT, ShellAlign::H_CENTER))
+            .children(CAPTIONS_TEXT.map(|id| text(id, ShellAlign::NONE)))
+            .child(grey(STATUS_TEXT))
+            .children(COUNTS_TEXT.map(grey));
     }
     // ComboDrop's internals are untraced: its arrow opens the list even
     // without rows, and the next press closes the empty list.
@@ -352,8 +373,14 @@ pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
         .tooltip(tooltip_key(NICKNAME).unwrap_or_default())
         .with(Prop::OpenEmpty, Value::Bool(true));
     let password = edit(PASSWORD, PASSWORD_LIMIT).with(Prop::Password, Value::Bool(true));
-    let remember =
-        check(REMEMBER, "GUI:RememberAccount").tooltip(tooltip_key(REMEMBER).unwrap_or_default());
+    // A disabled Remember's caption takes the disabled owner-draw colour
+    // (`0x00612F5F`).
+    let remember = check(REMEMBER, "GUI:RememberAccount")
+        .tooltip(tooltip_key(REMEMBER).unwrap_or_default())
+        .with(
+            Prop::DisabledColor,
+            Value::Rgba(vera20k_gui::Rgba(0x48, 0, 0, 255)),
+        );
     NodeSpec::new(NodeKind::Dialog)
         .child(edit(NICKNAME, NICKNAME_LIMIT))
         .child(
@@ -361,7 +388,8 @@ pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
                 .children(buttons)
                 .child(combo)
                 .child(password)
-                .child(remember),
+                .child(remember)
+                .children(LABELS.map(|id| text(id, ShellAlign::H_RIGHT))),
         )
 }
 
@@ -942,20 +970,27 @@ impl WolLoginLayout {
     }
 
     /// Where control `id` stands: a button, the combo's NewEdit (in the
-    /// face's text area) and face, the password and Remember, or the online
-    /// sign-in form's fields ([`WolAccountForm::field_id`]) and Remember
-    /// password ([`FORM_REMEMBER`]).
+    /// face's text area) and face, the password, Remember and the labels, or
+    /// the online sign-in form's fields ([`WolAccountForm::field_id`]),
+    /// Remember password ([`FORM_REMEMBER`]) and statics.
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
         if let Some(rect) = self.page.button_rect(id) {
             return Some(rect);
         }
         if let Some(online) = &self.online {
+            let at = |ids: [u16; 2], rects: [RectPx; 2]| {
+                Some(rects[ids.iter().position(|other| *other == id)?])
+            };
             return match id {
                 FORM_REMEMBER => Some(online.remember),
-                _ => online
-                    .fields
-                    .get(usize::from(id.checked_sub(WolAccountForm::field_id(0))?))
-                    .map(|f| f.1),
+                HEADING_TEXT => Some(online.heading),
+                STATUS_TEXT => Some(online.status),
+                _ => at(CAPTIONS_TEXT, online.fields.map(|f| f.0))
+                    .or_else(|| at(COUNTS_TEXT, online.counts))
+                    .or_else(|| {
+                        let index = id.checked_sub(WolAccountForm::field_id(0))?;
+                        online.fields.get(usize::from(index)).map(|f| f.1)
+                    }),
             };
         }
         Some(match id {
@@ -963,7 +998,7 @@ impl WolLoginLayout {
             NICKNAME_DROP => self.nickname_face,
             PASSWORD => self.password,
             REMEMBER => self.remember,
-            _ => return None,
+            _ => self.labels[LABELS.iter().position(|label| *label == id)?].1,
         })
     }
 
@@ -1080,7 +1115,7 @@ mod tests {
         fn hit(&mut self, layout: &WolLoginLayout, x: i32, y: i32) -> Option<u16> {
             let root = self.ui.root_in(DIALOG).unwrap();
             page::sync_rects(self.ui.gui_mut(), root, |id| layout.rect_of(id));
-            self.ui.on_pointer_move(x, y, &[]);
+            self.ui.on_pointer_move(x, y);
             let gui = self.ui.gui();
             gui.hovered()
                 .and_then(|node| gui.id_of(node))
@@ -1095,8 +1130,8 @@ mod tests {
             (x, y): (i32, i32),
         ) -> Option<WolLoginAction> {
             self.hit(&WolLoginLayout::new(800, 600, login.policy), x, y);
-            self.ui.on_pointer_down(x, y, &[]);
-            self.ui.on_pointer_up(x, y, &[]);
+            self.ui.on_pointer_down(x, y);
+            self.ui.on_pointer_up(x, y);
             let raw = self.ui.drain_events();
             let events = page::page_events(self.ui.gui(), raw);
             let cx = &mut self.cx();
@@ -1317,11 +1352,11 @@ mod tests {
             WolAccountForm::rect_of(&rects, id)
         });
         let (x, y) = inside(rects.cancel);
-        page.ui.on_pointer_move(x, y, &[]);
-        page.ui.on_pointer_down(x, y, &[]);
+        page.ui.on_pointer_move(x, y);
+        page.ui.on_pointer_down(x, y);
         // Only the page under the popup lets go, as its buttons did.
         page.ui.drop_pointer_in(DIALOG);
-        page.ui.on_pointer_up(x, y, &[]);
+        page.ui.on_pointer_up(x, y);
         let raw = page.ui.drain_events();
         let events = page::page_events(page.ui.gui(), raw);
         assert_eq!(login.handle(&mut page.cx(), events), None);

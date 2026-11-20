@@ -232,10 +232,10 @@ pub fn pointer(
         return ChooserInput::default();
     }
     match at {
-        Pointer::Down => controller.on_pointer_down(x, y, &[]),
-        Pointer::Move => controller.on_pointer_move(x, y, &[]),
+        Pointer::Down => controller.on_pointer_down(x, y),
+        Pointer::Move => controller.on_pointer_move(x, y),
         Pointer::Up => {
-            controller.on_pointer_up(x, y, &[]);
+            controller.on_pointer_up(x, y);
         }
     }
     take_events(controller, modal, layout, lists, last_mode_row)

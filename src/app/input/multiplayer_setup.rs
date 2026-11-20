@@ -365,7 +365,7 @@ fn hovered_help(state: &AppState, view: &SetupView, layout: &MultiplayerSetupLay
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
     if crate::app::shell_network_setup::verify(state).is_some() {
-        crate::app::shell_network_setup::verify_cursor_moved(state);
+        crate::app::shell_network_setup::verify_pointer(state, None);
         return;
     }
     if crate::app::shell_wol::page::open(state) {
@@ -378,7 +378,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
     // A held trackbar keeps the pointer from the status help too.
     let held = slider_held(state) || notice_active(state);
-    state.frontend.shell_controller.on_pointer_move(x, y, &[]);
+    state.frontend.shell_controller.on_pointer_move(x, y);
     if !held {
         let help = hovered_help(state, &view, &layout);
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
@@ -408,7 +408,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     }
     if crate::app::shell_network_setup::verify(state).is_some() {
-        crate::app::shell_network_setup::verify_mouse(state, pressed);
+        crate::app::shell_network_setup::verify_pointer(state, Some(pressed));
         return;
     }
     if crate::app::shell_wol::page::open(state) {
@@ -461,7 +461,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         let dropped = ui
             .drop_row()
             .and_then(|(row, header)| Some((row, view.drop_group(row, header)?)));
-        state.frontend.shell_controller.on_pointer_up(x, y, &[]);
+        state.frontend.shell_controller.on_pointer_up(x, y);
         if let Some((row, group)) = dropped {
             App::play_page_cue(state, PageCue::Button);
             crate::app::shell_network_setup::apply_action(

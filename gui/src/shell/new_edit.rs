@@ -29,13 +29,6 @@ impl NewEdit {
         self.first_visible_unit = 0;
     }
 
-    /// Native 614B30 insertion, retaining the caller's configured EM_LIMITTEXT.
-    pub fn insert_text_limited(&mut self, text: &str, limit: usize) {
-        for unit in text.encode_utf16() {
-            self.insert_unit_filtered(unit, limit, false, &[]);
-        }
-    }
-
     /// NewEdit614B30 at615226..61527A: reject-character table, UTF-16
     /// limit, control-character gate and optional byte-only input (<0x100).
     /// One unit lets callers run their native EN_CHANGE handler after each
@@ -181,7 +174,9 @@ mod tests {
     #[test]
     fn open_composition_splices_at_the_caret_and_scrolls_to_its_cursor() {
         let mut edit = NewEdit::default();
-        edit.insert_text_limited("abcd", 0);
+        for unit in "abcd".encode_utf16() {
+            edit.insert_unit_filtered(unit, 0, false, &[]);
+        }
         edit.left();
         edit.left();
         let composition: Vec<u16> = "xyz".encode_utf16().collect();

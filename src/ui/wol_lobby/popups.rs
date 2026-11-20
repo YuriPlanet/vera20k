@@ -37,6 +37,25 @@ pub(crate) const CREATE_SPECTATORS: u16 = 0x7FE1;
 /// id with this bit.
 pub(crate) const LABEL: u16 = 0x8000;
 
+/// The popups' statics: the password's caption (`0xE1`'s centred title),
+/// VERA's Max players and Room name captions, and `0xC3`'s status line.
+pub(crate) const PASSWORD_CAPTION: u16 = 0x7FD0;
+pub(crate) const PLAYERS_CAPTION: u16 = 0x7FD1;
+pub(crate) const NAME_CAPTION: u16 = 0x7FD2;
+pub(crate) const STATUS: u16 = 0x695;
+/// `0xC3`'s boxes and their captions; VERA's online popup shows each
+/// caption as a title left of its box ([`TITLE`] + the box's index) and
+/// the box's value beside it.
+pub(crate) const BOXES: [(u16, &str); 6] = [
+    (CREATE_CLAN, "GUI:BattleClanTournament"),
+    (CREATE_LIMIT, "WOL:LimitScreenResolution"),
+    (CREATE_OBSERVE, "GUI:Observe"),
+    (CREATE_SPECTATORS, "VERA:AllowSpectators"),
+    (CREATE_RANKED, "VERA:RankedGame"),
+    (CREATE_WATCHING, "VERA:Watching"),
+];
+pub(crate) const TITLE: u16 = 0x7FD8;
+
 /// The Room name edit's limit: a nickname's 24, in units below `0x100`.
 const ROOM_NAME_LIMIT: i32 = 24;
 
@@ -143,20 +162,40 @@ impl WolLobbyPopup {
 
 /// The popup's widgets: OK and Cancel, the password NewEdit and for `0xC3`
 /// its boxes (toggled on the press); VERA's online popup adds its room's
-/// limits, name, Ranked game and Watching, and its settings' titles.
+/// limits, name, Ranked game and Watching, and its settings' titles. The
+/// statics come last: they take no pointer.
 fn popup_spec(create: bool, online: bool) -> NodeSpec {
+    use crate::render::shell_text::ShellAlign;
+    // A greyed caption takes 0x612F5F's colour, as the buttons' do.
+    let grey = Value::Rgba(vera20k_gui::Rgba(0x48, 0, 0, 0xFF));
+    let caption = |id: u16| {
+        BOXES
+            .iter()
+            .find(|(known, _)| *known == id)
+            .map_or("", |(_, key)| key)
+    };
     let checkbox = |id: u16| {
         NodeSpec::new(NodeKind::Checkbox)
             .id(id.into())
+            .label(caption(id))
+            .with(Prop::DisabledColor, grey.clone())
             .with(Prop::ActivateOnPress, Value::Bool(true))
     };
+    let button = |id: u16, key: &str| NodeSpec::new(NodeKind::Button).id(id.into()).label(key);
+    let field = if online {
+        ShellAlign::NONE
+    } else {
+        ShellAlign::H_RIGHT
+    };
+    let static_text = crate::ui::wol_page::static_text;
     let edit = |id: u16, limit: i32| {
         NodeSpec::new(NodeKind::Edit)
             .id(id.into())
             .with(Prop::MaxLen, Value::Int(limit))
     };
     let mut spec = NodeSpec::new(NodeKind::Dialog)
-        .children([POPUP_OK, POPUP_CANCEL].map(|id| NodeSpec::new(NodeKind::Button).id(id.into())))
+        .child(button(POPUP_OK, "GUI:OK"))
+        .child(button(POPUP_CANCEL, "GUI:Cancel"))
         .child(edit(POPUP_PASSWORD, PASSWORD_LIMIT as i32).with(Prop::Password, Value::Bool(true)));
     if create {
         spec = spec.children([CREATE_CLAN, CREATE_LIMIT, CREATE_OBSERVE].map(checkbox));
@@ -194,16 +233,41 @@ fn popup_spec(create: bool, online: bool) -> NodeSpec {
                         .id((id | LABEL).into())
                         .tooltip(" ")
                 }),
-            );
+            )
+            .child(static_text(PLAYERS_CAPTION, Some("VERA:MaxPlayers"), field))
+            .child(static_text(NAME_CAPTION, Some("VERA:RoomName"), field))
+            .children(BOXES.iter().zip(TITLE..).map(|((_, key), id)| {
+                static_text(id, Some(key), field).with(Prop::DisabledColor, grey.clone())
+            }));
     }
-    spec
+    match create {
+        true => spec
+            .child(static_text(PASSWORD_CAPTION, Some("GUI:Password"), field))
+            .child(static_text(STATUS, None, ShellAlign::NONE)),
+        // Style SS_CENTER.
+        false => spec.child(static_text(
+            PASSWORD_CAPTION,
+            Some("GUI:ChannelPassword"),
+            ShellAlign::H_CENTER,
+        )),
+    }
 }
 
 /// Where popup control `id` sits on `0xC3`. An online setting's title spans
 /// from its caption to the end of its control (the controls come first in
 /// the tree, so they keep their own presses).
 pub(crate) fn create_rect(layout: &WolCreateGameLayout, id: u16) -> Option<RectPx> {
+    if let Some((control, _)) = id
+        .checked_sub(TITLE)
+        .and_then(|index| BOXES.get(usize::from(index)))
+    {
+        return create_rect(layout, *control).map(|control| layout.setting_label(control));
+    }
     let control = match id & !LABEL {
+        PASSWORD_CAPTION => return Some(layout.password_label),
+        PLAYERS_CAPTION => return layout.room.map(|room| room.players_label),
+        NAME_CAPTION => return layout.name.map(|(caption, _)| caption),
+        STATUS => return Some(layout.status),
         POPUP_OK => Some(layout.ok),
         POPUP_CANCEL => Some(layout.cancel),
         POPUP_PASSWORD => Some(layout.password),
@@ -234,6 +298,7 @@ pub(crate) fn password_rect(layout: &WolChannelPasswordLayout, id: u16) -> Optio
         POPUP_OK => Some(layout.ok),
         POPUP_CANCEL => Some(layout.cancel),
         POPUP_PASSWORD => Some(layout.password),
+        PASSWORD_CAPTION => Some(layout.label),
         _ => None,
     }
 }

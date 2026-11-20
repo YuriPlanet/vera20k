@@ -368,8 +368,8 @@ impl MoviesCapture {
         for rect in row.into_iter().chain([button]) {
             state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
             state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
-            App::handle_mods_mouse_down(state);
-            App::handle_mods_mouse_up(state);
+            App::handle_mods_mouse(state, Some(true));
+            App::handle_mods_mouse(state, Some(false));
         }
         ensure!(
             state.frontend.shell_message_box.is_some(),
@@ -1124,7 +1124,7 @@ impl MoviesCapture {
                     } else {
                         // Hover over the list writes its status help.
                         Self::restore_neutral_pointer(state);
-                        App::handle_mods_mouse_move(state);
+                        App::handle_mods_mouse(state, None);
                     }
                     self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
@@ -1135,8 +1135,8 @@ impl MoviesCapture {
                         state.match_state.input.cursor_x = LIST_DOWN_ARROW_POINT.0;
                         state.match_state.input.cursor_y = LIST_DOWN_ARROW_POINT.1;
                         for _ in 0..down_presses {
-                            App::handle_movie_list_mouse_down(state);
-                            App::handle_movie_list_mouse_up(state);
+                            App::handle_movie_list_mouse(state, Some(true));
+                            App::handle_movie_list_mouse(state, Some(false));
                         }
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press down arrow", "count": down_presses,
@@ -1145,15 +1145,15 @@ impl MoviesCapture {
                     if self.target == MoviesTarget::List0x129Selected {
                         state.match_state.input.cursor_x = LIST_ROW0_POINT.0;
                         state.match_state.input.cursor_y = LIST_ROW0_POINT.1;
-                        App::handle_movie_list_mouse_down(state);
-                        App::handle_movie_list_mouse_up(state);
+                        App::handle_movie_list_mouse(state, Some(true));
+                        App::handle_movie_list_mouse(state, Some(false));
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press row", "point": [LIST_ROW0_POINT.0, LIST_ROW0_POINT.1]}));
                     }
                     // The native helper recenters the pointer after each click;
                     // hover over the list writes its status help.
                     Self::restore_neutral_pointer(state);
-                    App::handle_movie_list_mouse_move(state);
+                    App::handle_movie_list_mouse(state, None);
                     self.route.push(
                         json!({"dialog": 0x129, "frame": frame, "action": "pointer at neutral"}),
                     );

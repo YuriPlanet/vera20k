@@ -1815,9 +1815,9 @@ fn click_main_menu(
         .context("rendered multiplayer main-menu button")?
         .rect;
     set_window_pointer_to_rect_center(state, rect);
-    App::handle_main_menu_shell_mouse_move(state);
-    App::handle_main_menu_shell_mouse_down(state);
-    App::handle_main_menu_shell_mouse_up(state);
+    App::handle_main_menu_shell_mouse(state, None);
+    App::handle_main_menu_shell_mouse(state, Some(true));
+    App::handle_main_menu_shell_mouse(state, Some(false));
     MoviesCapture::restore_neutral_pointer(state);
     Ok(())
 }

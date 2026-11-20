@@ -2,7 +2,7 @@
 //! its widgets on the shell's GUI tree, the pointer and keys into
 //! [`WolLoginState`], and its close.
 
-use vera20k_gui::{Key, NodeKind, NodeSpec, Prop, Rgba, Value};
+use vera20k_gui::{Key, NodeKind, NodeSpec, Prop, Value};
 
 use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
@@ -156,16 +156,6 @@ fn sync(state: &mut AppState) {
         NICKNAME_DROP,
         Prop::VisibleRows,
         Value::Int(layout.drop_rows()),
-    );
-    // A disabled Remember's caption takes the disabled owner-draw colour.
-    let enabled = ui.flag(DIALOG, REMEMBER, Prop::Enabled, true);
-    let rgb = crate::app::frontend::skirmish_shell_render::wol_button_label_rgb(enabled);
-    let [r, g, b] = rgb.map(|channel| (channel * 255.0).round() as u8);
-    ui.set_prop(
-        DIALOG,
-        REMEMBER,
-        Prop::Color,
-        Value::Rgba(Rgba(r, g, b, 255)),
     );
 }
 

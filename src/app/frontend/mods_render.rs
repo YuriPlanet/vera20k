@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::ui::shell::menu_page;
 use crate::app::frontend::movies_credits_render::{
     family_backdrop, family_list_hovered, family_list_view, push_family_backdrop, push_family_list,
 };
@@ -172,8 +173,8 @@ fn mods_composition<'a>(
 
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(PAGE.dialog);
-    let pressed = active.then(|| controller.pressed()).flatten();
-    let hovered = active.then(|| controller.hovered()).flatten();
+    let pressed = active.then(|| menu_page::pressed_id(controller, PAGE.dialog)).flatten();
+    let hovered = active.then(|| menu_page::hovered_id(controller, PAGE.dialog)).flatten();
     // Use This Mod is dark while the selection is nothing to change to, Check
     // Files while it is the original game.
     let selected = crate::ui::movies_credits_shell::family_list_selected(controller, PAGE.dialog);
@@ -255,7 +256,7 @@ fn mods_status_key(state: &AppState) -> Option<&'static str> {
     if family_list_hovered(state, PAGE.dialog) {
         return Some(mods_shell::PROMPT_KEY);
     }
-    PAGE.button(controller.hovered()?)
+    PAGE.button(menu_page::hovered_id(controller, PAGE.dialog)?)
         .map(|button| button.tooltip_key)
 }
 

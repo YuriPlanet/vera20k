@@ -32,6 +32,8 @@ pub(crate) const GAME_OPTIONS_OK: u16 = 0x7F03;
 /// VERA-only: the missing-map offer's Download and Leave.
 pub(crate) const MAP_OFFER_DOWNLOAD: u16 = 0x7F04;
 pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
+/// The offer's text, a static.
+pub(crate) const MAP_OFFER_BODY: u16 = 0x7F34;
 /// VERA-only, in the team bar under the roster: the Teams count and the
 /// host's Team Starts and Team Colors.
 pub(crate) const TEAM_COUNT: u16 = 0x7F0D;
@@ -319,6 +321,17 @@ pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
+/// The statics captioning [`OPTION_TRACKBARS`] and [`SUPERWEAPON_LIMIT`].
+pub(crate) const OPTION_CAPTIONS: [u16; 3] = [0x7F30, 0x7F31, 0x7F32];
+pub(crate) const SUPERWEAPON_LIMIT_CAPTION: u16 = 0x7F33;
+/// [`CHECKBOXES`]' captions.
+const CHECKBOX_LABELS: [&str; 5] = [
+    "GUI:ShortGame",
+    "GUI:MCVRepacks",
+    "GUI:CratesAppear",
+    "GUI:SuperWeaponsAllowed",
+    "GUI:BuildOffAlly",
+];
 pub(crate) const COUNTRIES: [u16; 8] = [0x6A1, 0x510, 0x513, 0x51E, 0x514, 0x51F, 0x520, 0x521];
 pub(crate) const COLORS: [u16; 8] = [0x6A2, 0x522, 0x523, 0x524, 0x525, 0x526, 0x527, 0x528];
 pub(crate) const STARTS: [u16; 8] = [0x6A3, 0x6A4, 0x6A5, 0x6A6, 0x6A7, 0x6A8, 0x6AA, 0x6AB];
@@ -1544,6 +1557,12 @@ impl MultiplayerSetupLayout {
         if let Some(index) = CHECKBOXES.iter().position(|candidate| *candidate == id) {
             return Some(self.checkboxes[index]);
         }
+        if let Some(index) = OPTION_CAPTIONS
+            .iter()
+            .position(|candidate| *candidate == id)
+        {
+            return Some(self.option_labels[index].1);
+        }
         if let Some(index) = ROOM_CHECKBOXES
             .iter()
             .position(|candidate| *candidate == id)
@@ -1564,10 +1583,12 @@ impl MultiplayerSetupLayout {
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            SUPERWEAPON_LIMIT_CAPTION => self.game_options.map(|_| self.superweapon_limit_label),
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
+            MAP_OFFER_BODY => Some(self.map_offer.body),
             crate::ui::shell::modal::control::OK => Some(self.notice_ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
             _ => self.page.button_rect(id),
@@ -1682,6 +1703,14 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
         node(NodeKind::List, id)
             .with(Prop::ListWindow, Value::Bool(true))
             .with(Prop::RowCount, Value::Int(0))
+            .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
+    };
+    // A greyed Join's caption takes [0xAC1CB4], as a greyed combo's face.
+    let grey = Value::Rgba(vera20k_gui::Rgba(0x9F, 0, 0, 0xFF));
+    let button = |id| match id {
+        PREVIOUS_ROWS => node(NodeKind::Button, id).label("VERA:Previous"),
+        NEXT_ROWS => node(NodeKind::Button, id).label("VERA:Next"),
+        id => node(NodeKind::Button, id).with(Prop::DisabledColor, grey.clone()),
     };
     let help = tooltip_key(dialog, CHAT).unwrap_or_default();
     // VERA's room keeps its options in Game Options; Difficulty stays.
@@ -1693,10 +1722,21 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
             node(NodeKind::Combo, id).with(Prop::OpenAnywhere, Value::Bool(dialog.modern))
         }))
         .children(option_spec(native(&CHECKBOXES), trackbars))
-        .children(buttons.map(|id| node(NodeKind::Button, id)))
+        .children(buttons.map(button))
         .child(node(NodeKind::Text, CHAT).tooltip(&help))
         .child(list(CHAT_LOG))
         .child(list(ROSTER_SCROLL))
+        .children(option_captions(native(&OPTION_CAPTIONS)))
+}
+
+/// The option trackbars' captions, statics that take no pointer.
+fn option_captions(ids: impl Iterator<Item = u16>) -> impl Iterator<Item = NodeSpec> {
+    let keys = ["GUI:GameSpeed", "GUI:Credits", "GUI:UnitCount"];
+    ids.zip(keys).map(|(id, key)| {
+        node(NodeKind::Text, id)
+            .label(key)
+            .with(Prop::Align, Value::Int(0))
+    })
 }
 
 /// Checkboxes and trackbars, Difficulty's without its value plaque.
@@ -1704,9 +1744,19 @@ fn option_spec(
     checkboxes: impl IntoIterator<Item = u16>,
     trackbars: impl IntoIterator<Item = u16>,
 ) -> impl Iterator<Item = NodeSpec> {
-    let checkboxes = checkboxes
-        .into_iter()
-        .map(|id| node(NodeKind::Checkbox, id).with(Prop::ActivateOnPress, Value::Bool(true)));
+    let label = |id| {
+        let native = CHECKBOXES.iter().zip(CHECKBOX_LABELS);
+        let room = ROOM_CHECKBOXES.iter().zip(ROOM_CHECKBOX_LABELS);
+        native
+            .chain(room)
+            .find(|(known, _)| **known == id)
+            .map_or("", |(_, key)| key)
+    };
+    let checkboxes = checkboxes.into_iter().map(move |id| {
+        node(NodeKind::Checkbox, id)
+            .label(label(id))
+            .with(Prop::ActivateOnPress, Value::Bool(true))
+    });
     let trackbars = trackbars.into_iter().map(|id| {
         node(NodeKind::Trackbar, id).with(Prop::ShowValue, Value::Bool(id != DIFFICULTY))
     });
@@ -1717,9 +1767,26 @@ fn option_spec(
 fn game_options_spec() -> NodeSpec {
     let checkboxes = CHECKBOXES.into_iter().chain(ROOM_CHECKBOXES);
     let trackbars = OPTION_TRACKBARS.into_iter().chain([SUPERWEAPON_LIMIT]);
+    let superweapon_limit = crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_LABEL;
     NodeSpec::new(NodeKind::Dialog)
         .children(option_spec(checkboxes, trackbars))
-        .child(node(NodeKind::Button, GAME_OPTIONS_OK))
+        .child(node(NodeKind::Button, GAME_OPTIONS_OK).label("GUI:OK"))
+        .children(option_captions(OPTION_CAPTIONS.into_iter()))
+        .child(
+            node(NodeKind::Text, SUPERWEAPON_LIMIT_CAPTION)
+                .label(superweapon_limit)
+                .with(Prop::Align, Value::Int(0)),
+        )
+}
+
+/// VERA's missing-map offer: its text, Download (greyed in [0xAC1CB4]
+/// while the map comes) and Leave.
+fn map_offer_spec() -> NodeSpec {
+    let grey = Value::Rgba(vera20k_gui::Rgba(0x9F, 0, 0, 0xFF));
+    NodeSpec::new(NodeKind::Dialog)
+        .child(node(NodeKind::Button, MAP_OFFER_DOWNLOAD).with(Prop::DisabledColor, grey))
+        .child(node(NodeKind::Button, MAP_OFFER_LEAVE))
+        .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
 }
 
 fn buttons(ids: &'static [u16]) -> impl Fn() -> NodeSpec {
@@ -1782,10 +1849,7 @@ pub(crate) fn sync(
     let roots: [(DialogId, &dyn Fn() -> NodeSpec); 4] = [
         (page, &spec_page),
         (GAME_OPTIONS_BOX, &game_options_spec),
-        (
-            MAP_OFFER_BOX,
-            &buttons(&[MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE]),
-        ),
+        (MAP_OFFER_BOX, &map_offer_spec),
         (
             NOTICE_BOX,
             &buttons(&[crate::ui::shell::modal::control::OK]),
@@ -1933,7 +1997,7 @@ pub(crate) fn press(
     let chat = target.and_then(|node| gui.id_of(node)) == Some(CHAT.into());
     // A press on the combo of a hidden list opens it afresh.
     let reopens = target.is_some() && gui.popup() == target;
-    controller.on_pointer_down(x, y, &[]);
+    controller.on_pointer_down(x, y);
     if chat {
         ui.focus_chat();
     }

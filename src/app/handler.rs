@@ -1729,20 +1729,20 @@ impl ApplicationHandler for App {
                     }
                     ScreenPage::Skirmish => Self::handle_skirmish_shell_mouse_move(state),
                     ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits => {
-                        Self::handle_menu_page_mouse_move(state);
+                        Self::handle_menu_page_mouse(state, None);
                     }
-                    ScreenPage::MovieList => Self::handle_movie_list_mouse_move(state),
-                    ScreenPage::Mods => Self::handle_mods_mouse_move(state),
+                    ScreenPage::MovieList => Self::handle_movie_list_mouse(state, None),
+                    ScreenPage::Mods => Self::handle_mods_mouse(state, None),
                     ScreenPage::Campaign => Self::handle_campaign_mouse_move(state),
                     ScreenPage::LoadSavedGame => Self::handle_load_saved_game_mouse_move(state),
                     ScreenPage::Wol => Self::handle_wol_mouse_move(state),
                     ScreenPage::CoopScore => crate::app::input::coop_score::cursor_moved(state),
-                    ScreenPage::Score => Self::handle_score_shell_mouse_move(state),
-                    ScreenPage::CampaignScore => Self::handle_campaign_score_mouse_move(state),
+                    ScreenPage::Score => Self::handle_score_shell_mouse(state, None),
+                    ScreenPage::CampaignScore => Self::handle_campaign_score_mouse(state, None),
                     // While the SHP quit-confirm modal owns the controller, the menu
                     // move handler must not re-activate 0xE2 and reset the gesture.
                     ScreenPage::MainMenu if state.frontend.shell_message_box.is_none() => {
-                        Self::handle_main_menu_shell_mouse_move(state);
+                        Self::handle_main_menu_shell_mouse(state, None);
                     }
                     // The open message box takes the move; the update offer's
                     // change list follows it.
@@ -1803,11 +1803,7 @@ impl ApplicationHandler for App {
                     InputLayer::Page(ModalPage::ShellMessageBox) => {
                         if button == MouseButton::Left {
                             Self::raise_shell_message_box(state);
-                            if btn_state.is_pressed() {
-                                Self::handle_shell_message_box_mouse_down(state);
-                            } else {
-                                Self::handle_shell_message_box_mouse_up(state);
-                            }
+                            Self::handle_shell_message_box_mouse(state, btn_state.is_pressed());
                             state.platform.window.request_redraw();
                         }
                         return;
@@ -1835,18 +1831,10 @@ impl ApplicationHandler for App {
                         crate::app::frontend::credits_roll::CreditsInput::Other,
                     ),
                     ScreenPage::MovieList if left => {
-                        if pressed {
-                            Self::handle_movie_list_mouse_down(state);
-                        } else {
-                            Self::handle_movie_list_mouse_up(state);
-                        }
+                        Self::handle_movie_list_mouse(state, Some(pressed));
                     }
                     ScreenPage::Mods if left => {
-                        if pressed {
-                            Self::handle_mods_mouse_down(state);
-                        } else {
-                            Self::handle_mods_mouse_up(state);
-                        }
+                        Self::handle_mods_mouse(state, Some(pressed));
                     }
                     ScreenPage::Campaign if left => {
                         if pressed {
@@ -1892,29 +1880,17 @@ impl ApplicationHandler for App {
                             && state.frontend.shell_message_box.is_some()
                             && left
                         {
-                            if pressed {
-                                Self::handle_shell_message_box_mouse_down(state);
-                            } else {
-                                Self::handle_shell_message_box_mouse_up(state);
-                            }
+                            Self::handle_shell_message_box_mouse(state, pressed);
                         }
                     }
                     ScreenPage::CoopScore => {
                         crate::app::input::coop_score::mouse(state, button, pressed)
                     }
                     ScreenPage::CampaignScore if left => {
-                        if pressed {
-                            Self::handle_campaign_score_mouse_down(state);
-                        } else {
-                            Self::handle_campaign_score_mouse_up(state);
-                        }
+                        Self::handle_campaign_score_mouse(state, Some(pressed));
                     }
                     ScreenPage::Score if left => {
-                        if pressed {
-                            Self::handle_score_shell_mouse_down(state);
-                        } else {
-                            Self::handle_score_shell_mouse_up(state);
-                        }
+                        Self::handle_score_shell_mouse(state, Some(pressed));
                     }
                     ScreenPage::Skirmish if left => {
                         if pressed {
@@ -1924,18 +1900,10 @@ impl ApplicationHandler for App {
                         }
                     }
                     ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits if left => {
-                        if pressed {
-                            Self::handle_menu_page_mouse_down(state);
-                        } else {
-                            Self::handle_menu_page_mouse_up(state);
-                        }
+                        Self::handle_menu_page_mouse(state, Some(pressed));
                     }
                     ScreenPage::MainMenu if left => {
-                        if pressed {
-                            Self::handle_main_menu_shell_mouse_down(state);
-                        } else {
-                            Self::handle_main_menu_shell_mouse_up(state);
-                        }
+                        Self::handle_main_menu_shell_mouse(state, Some(pressed));
                     }
                     ScreenPage::InGameShell(_) | ScreenPage::Battlefield => {
                         dispatch::handle_mouse_input(state, button, btn_state);
