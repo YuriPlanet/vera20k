@@ -2018,6 +2018,10 @@ pub(super) fn emit_admitted_fire(
                     .wrapping_add(world.ares_prism_shot_damage_add(snap.stable_id, rules)),
                 _ => base_damage,
             };
+            // Interned per shot on purpose: interned ids are saved and hashed
+            // and take first-use order, so the first shot of a weapon is what
+            // assigns them. A later shot's call is one hash probe and
+            // allocates nothing.
             let warhead_id = world.interner.intern(&warhead.id);
             let projectile_id = projectile_type.map(|kind| world.interner.intern(&kind.id));
             let weapon_id = world.interner.intern(selected.weapon_id);

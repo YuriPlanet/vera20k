@@ -1028,7 +1028,9 @@ pub struct RuleSet {
     pub allied_wall_transparency: bool,
     /// `[ElevationModel]`, InRange's range bonus for a shot fired downhill.
     pub elevation_model: ElevationModel,
-    /// Per-cell radiation-field constants from [Radiation].
+    /// Per-cell radiation-field constants from [Radiation]. `site_warhead` is
+    /// resolved once when the set is built: a write to it afterwards is not
+    /// seen by [`Self::radiation_site_warhead`].
     pub radiation: RadiationRules,
     /// Derived: the warhead `radiation.site_warhead` names, as
     /// [`Self::resolve_handles`] resolved it ([`Self::radiation_site_warhead`]).
