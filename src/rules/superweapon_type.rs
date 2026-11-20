@@ -1383,6 +1383,12 @@ impl AresParaDropPlane {
     }
 }
 
+/// VERA's bound on a `ParaDrop*.Count=`. Ares resizes the plane list by the
+/// raw value (`SW_ParaDrop::LoadFromINI`'s GetParadropPlane, no upper bound),
+/// so a value near `i32::MAX` exhausts memory there. Outside data never stops
+/// the game: the count clamps here, far above any drop a mod flies.
+const PARADROP_PLANE_LIMIT: i32 = 1024;
+
 impl AresParaDropRules {
     /// The planes kept for `owner`, if LoadFromINI inserted its list.
     pub(crate) fn planes(&self, owner: &AresParaDropOwner) -> Option<&[AresParaDropPlane]> {
@@ -1435,7 +1441,8 @@ impl AresParaDropRules {
     /// many as its Side's). Each goes through GetParadropPlane (100739E0):
     /// `.Count` (ReadInteger, default the list's size, or the count above
     /// for a new list) resizes the list, a negative count to none, and each
-    /// plane is parsed in place ([`AresParaDropPlane::read`]). Keys are
+    /// plane is parsed in place ([`AresParaDropPlane::read`]); VERA clamps the
+    /// count at [`PARADROP_PLANE_LIMIT`]. Keys are
     /// composed in 0x40-byte buffers, which 25-byte type IDs cannot fill.
     pub(crate) fn read_pass(
         &mut self,
@@ -1449,8 +1456,11 @@ impl AresParaDropRules {
         let mut read = |owner, base: &str, new_count: usize| {
             let (planes, inserted) = self.try_emplace(owner);
             let current = if inserted { new_count } else { planes.len() };
-            let count = section.read_int(&format!("{base}.Count"), current as i32);
-            planes.resize(count.max(0) as usize, AresParaDropPlane::default());
+            let current = i32::try_from(current).unwrap_or(PARADROP_PLANE_LIMIT);
+            let count = section
+                .read_int(&format!("{base}.Count"), current)
+                .clamp(0, PARADROP_PLANE_LIMIT);
+            planes.resize(count as usize, AresParaDropPlane::default());
             for (index, plane) in planes.iter_mut().enumerate() {
                 plane.read(section, base, index, &aircraft, &types);
             }
@@ -2576,6 +2586,33 @@ impl PhobosSuperWeaponAvailability {
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
+
+    /// `ParaDrop.Count=` and its Side and Country variants clamp at VERA's
+    /// plane bound instead of sizing the list by the raw value.
+    #[test]
+    fn paradrop_counts_clamp_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Drop]\nParaDrop.Count=1000000\nParaDrop.Soviet.Count=-5\n\
+             ParaDrop.Russians.Count=1000000\n",
+        );
+        let mut paradrop = AresParaDropRules::default();
+        paradrop.read_pass(
+            ini.section_or_empty("Drop"),
+            &["Soviet".to_owned()],
+            &[("Russians".to_owned(), 0)],
+            |_| None,
+            |_| None,
+        );
+        let count = |owner| paradrop.planes(&owner).map(<[_]>::len);
+        let limit = Some(PARADROP_PLANE_LIMIT as usize);
+        assert_eq!(count(AresParaDropOwner::Default), limit);
+        assert_eq!(count(AresParaDropOwner::Side(0)), Some(0));
+        assert_eq!(
+            count(AresParaDropOwner::Country("Russians".to_owned())),
+            limit
+        );
+    }
 
     #[test]
     fn ares_superweapon_eva_uses_fixed_catalog_defaults_and_ordered_retention() {

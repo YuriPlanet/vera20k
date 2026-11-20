@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use super::*;
-use crate::link::Reader;
+use crate::link::{Reader, field, read_u32, read_u64};
 
 mod downlink;
 pub(crate) mod federation;
@@ -188,10 +188,10 @@ impl OrderingCertificate {
             _ => return Err(RelayError::Malformed),
         };
         let value = Self {
-            room: bytes[4..20].try_into().unwrap(),
-            sources_mask: u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            tick_hz: u16::from_le_bytes(bytes[24..26].try_into().unwrap()),
-            expires: u64::from_le_bytes(bytes[26..34].try_into().unwrap()),
+            room: field(bytes, 4)?,
+            sources_mask: read_u32(bytes, 20)?,
+            tick_hz: u16::from_le_bytes(field(bytes, 24)?),
+            expires: read_u64(bytes, 26)?,
             pacing,
             ordered_alone,
         };
@@ -663,7 +663,11 @@ impl ClientSession {
         varint::write(next_seq, &mut payload);
         self.encode(CONTROL, &payload, out)?;
         // Its reply packs are no new-turn arrivals (spec §4.8).
-        self.ordering.as_mut().expect("ordering").link.pull_pending = true;
+        self.ordering
+            .as_mut()
+            .ok_or(RelayError::Unregistered)?
+            .link
+            .pull_pending = true;
         Ok(())
     }
 
@@ -700,7 +704,10 @@ impl ClientSession {
         // Only this irreversible capability can be sent after readiness or
         // ticket expiry. Cache exact bytes for idempotent terminal retries.
         self.encode(CONTROL, &[LEAVE_REQUEST], out)?;
-        self.ordering.as_mut().unwrap().leave = Some((self.sent, out.clone()));
+        self.ordering
+            .as_mut()
+            .ok_or(RelayError::Unregistered)?
+            .leave = Some((self.sent, out.clone()));
         Ok(())
     }
 
@@ -829,9 +836,9 @@ impl ClientSession {
         Ok(match (payload[0], payload.len()) {
             (PAUSE_EVENT, PAUSE_ENTRY_BYTES) if payload[21] <= 1 && payload[22] < MAX_PEERS => {
                 OrderEvent::Entry(OrderEntry::Pause {
-                    sequence: read_u64(payload, 1),
-                    frame: read_u32(payload, 9),
-                    epoch: read_u64(payload, 13),
+                    sequence: read_u64(payload, 1)?,
+                    frame: read_u32(payload, 9)?,
+                    epoch: read_u64(payload, 13)?,
                     paused: payload[21] != 0,
                     source: payload[22],
                 })
@@ -841,8 +848,8 @@ impl ClientSession {
                     && (payload[15] < MAX_PEERS || payload[15] == u8::MAX) =>
             {
                 OrderEvent::Entry(OrderEntry::Rate {
-                    sequence: read_u64(payload, 1),
-                    frame: read_u32(payload, 9),
+                    sequence: read_u64(payload, 1)?,
+                    frame: read_u32(payload, 9)?,
                     frames_per_second: u16::from_le_bytes([payload[13], payload[14]]),
                     source: (payload[15] != u8::MAX).then_some(payload[15]),
                 })
@@ -853,29 +860,29 @@ impl ClientSession {
                     && payload[17] != payload[22] =>
             {
                 OrderEvent::Entry(OrderEntry::Desync {
-                    sequence: read_u64(payload, 1),
-                    frame: read_u32(payload, 9),
-                    sample_frame: read_u32(payload, 13),
+                    sequence: read_u64(payload, 1)?,
+                    frame: read_u32(payload, 9)?,
+                    sample_frame: read_u32(payload, 13)?,
                     outlier: payload[17],
-                    outlier_checksum: read_u32(payload, 18),
+                    outlier_checksum: read_u32(payload, 18)?,
                     other: payload[22],
-                    other_checksum: read_u32(payload, 23),
+                    other_checksum: read_u32(payload, 23)?,
                 })
             }
             (READY_EVENT, 9..) => OrderEvent::Ready {
-                ready_mask: read_u32(payload, 1),
-                sources_mask: read_u32(payload, 5),
+                ready_mask: read_u32(payload, 1)?,
+                sources_mask: read_u32(payload, 5)?,
             },
             (FRAME_END_EVENT, 13) => OrderEvent::Entry(OrderEntry::FrameEnd {
-                sequence: read_u64(payload, 1),
-                frame: read_u32(payload, 9),
+                sequence: read_u64(payload, 1)?,
+                frame: read_u32(payload, 9)?,
             }),
             (DEPARTURE_EVENT, length @ (14 | 15))
                 if payload[13] < MAX_PEERS && (length == 14 || payload[14] == 1) =>
             {
                 OrderEvent::Entry(OrderEntry::Departure {
-                    sequence: read_u64(payload, 1),
-                    frame: read_u32(payload, 9),
+                    sequence: read_u64(payload, 1)?,
+                    frame: read_u32(payload, 9)?,
                     source: payload[13],
                     lost: length == 15,
                 })
@@ -888,7 +895,7 @@ impl ClientSession {
                     && payload[13] < MAX_PEERS =>
             {
                 let source = payload[13];
-                let batch_id = read_u64(payload, 14);
+                let batch_id = read_u64(payload, 14)?;
                 let opaque = &payload[22..];
                 // The canonical batch is also its acceptance receipt. A lost
                 // ACK must not block the next local submission after replay.
@@ -906,8 +913,8 @@ impl ClientSession {
                     ordering.accept_through(batch_id)?;
                 }
                 OrderEvent::Entry(OrderEntry::Batch {
-                    sequence: read_u64(payload, 1),
-                    frame: read_u32(payload, 9),
+                    sequence: read_u64(payload, 1)?,
+                    frame: read_u32(payload, 9)?,
                     source,
                     batch_id,
                     bytes: opaque.to_vec(),
@@ -952,12 +959,6 @@ fn desync_outlier(reports: &[(u8, u32)], active: u32) -> Option<((u8, u32), (u8,
     (active & !reported == 0).then_some((differing, first))
 }
 
-fn read_u32(bytes: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
-}
-fn read_u64(bytes: &[u8], offset: usize) -> u64 {
-    u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap())
-}
 /// `[6][code u8][expected varint]` (compaction spec §7.4).
 fn error(code: OrderError, expected: u64) -> Vec<Vec<u8>> {
     let mut payload = vec![ERROR_EVENT, code as u8];
@@ -2537,41 +2538,29 @@ impl RelayServer {
         // membership ended. Source bindings outlive short hop admissions, so
         // this also closes a canceled load or a match whose final Leave was
         // lost; a started match records the departure like Leave.
-        let superseded: Vec<_> = self
-            .rooms
-            .iter()
-            .filter_map(|(id, room)| {
-                if *id == ticket.room {
-                    return None;
-                }
-                let ordering = room.ordering.as_ref()?;
-                if ordering.active == 0 || ordering.storage_failed {
-                    return None;
-                }
-                ordering
-                    .sources
-                    .iter()
-                    .position(|source| {
-                        source.principal.is_some_and(|(player, generation)| {
-                            player == ticket.player && generation < ticket.generation
-                        })
-                    })
-                    .map(|source| (*id, source as u8))
-            })
-            .collect();
-        if superseded.is_empty() {
-            return;
-        }
-        for (id, source) in superseded {
-            self.rooms
-                .get_mut(&id)
-                .unwrap()
+        // Each room's departure touches only that room.
+        let mut departed = false;
+        for (_, room) in self.rooms.iter_mut().filter(|(id, _)| **id != ticket.room) {
+            let Some(ordering) = room
                 .ordering
                 .as_mut()
-                .unwrap()
-                .depart(source, now_ms);
+                .filter(|ordering| ordering.active != 0 && !ordering.storage_failed)
+            else {
+                continue;
+            };
+            let superseded = ordering.sources.iter().position(|source| {
+                source.principal.is_some_and(|(player, generation)| {
+                    player == ticket.player && generation < ticket.generation
+                })
+            });
+            if let Some(source) = superseded {
+                ordering.depart(source as u8, now_ms);
+                departed = true;
+            }
         }
-        self.cleanup_ordering(now_ms, now);
+        if departed {
+            self.cleanup_ordering(now_ms, now);
+        }
     }
 
     /// Driven by the server clock even when no datagram arrives.
@@ -2632,9 +2621,14 @@ impl RelayServer {
                     .map(|_| *id)
             })
             .collect();
+        // The loop below removes rooms, so it looks each up again.
         for id in ended {
-            let room = self.rooms.get_mut(&id).unwrap();
-            let ordering = room.ordering.as_mut().unwrap();
+            let Some(room) = self.rooms.get_mut(&id) else {
+                continue;
+            };
+            let Some(ordering) = room.ordering.as_mut() else {
+                continue;
+            };
             let retire = ordering.cleanup_due(now_ms, now, !room.peers.is_empty());
             if let Some(directory) = self.journal_directory.as_mut()
                 && let Some(journal) = ordering.journal.take()
@@ -2713,17 +2707,16 @@ impl RelayServer {
         while total.saturating_add(additional) > GLOBAL_ORDERING_BYTES {
             let oldest = self
                 .rooms
-                .iter()
+                .iter_mut()
                 .filter_map(|(id, room)| {
-                    let ordering = room.ordering.as_ref()?;
-                    let entry = ordering.history.front()?;
-                    Some((*id, ordering.frame_due_ms(entry.frame)))
+                    let ordering = room.ordering.as_mut()?;
+                    let due = ordering.frame_due_ms(ordering.history.front()?.frame);
+                    Some(((due, *id), ordering))
                 })
-                .min_by_key(|(id, time)| (*time, *id));
-            let Some((id, _)) = oldest else {
+                .min_by_key(|(key, _)| *key);
+            let Some((_, ordering)) = oldest else {
                 break;
             };
-            let ordering = self.rooms.get_mut(&id).unwrap().ordering.as_mut().unwrap();
             let before = ordering.memory();
             ordering.pop_oldest();
             total -= before - ordering.memory();
@@ -2808,7 +2801,7 @@ impl RelayServer {
                     crate::link::SEND_OTHER,
                 );
             }
-            let agreement: [u8; 32] = payload[1 + certificate_len..].try_into().unwrap();
+            let agreement: [u8; 32] = field(payload, 1 + certificate_len)?;
             let allocation = self
                 .rooms
                 .get(&message.ticket.room)

@@ -230,13 +230,13 @@ fn carve_section(
             let owner = ctx.scratch.get(cx, cy).region;
             if owner == walk.region {
                 // Idempotent re-carve of our own cells.
-                let cell = ctx.grid.get_mut(cx, cy).expect("native cell");
+                let cell = ctx.grid.cell_native_mut(cx, cy);
                 cell.tile = ctx.ids.water_base;
                 cell.sub_tile = 0;
             } else if owner == 0 {
                 if ctx.ids.is_clear(ctx.grid.cell_native(cx, cy).tile) {
                     ctx.scratch.get_mut(cx, cy).region = walk.region;
-                    let cell = ctx.grid.get_mut(cx, cy).expect("native cell");
+                    let cell = ctx.grid.cell_native_mut(cx, cy);
                     cell.tile = ctx.ids.water_base;
                     cell.sub_tile = 0;
                 } else {
@@ -269,15 +269,14 @@ fn carve_section(
 }
 
 /// Undo every cell this river claimed.
-fn rollback(ctx: &mut BlobCtx<'_>, cells: &[(i32, i32)], region: i32) {
-    for &(x, y) in cells {
+fn rollback(ctx: &mut BlobCtx<'_>, region: i32) {
+    for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
         if ctx.scratch.get(x, y).region != region {
             continue;
         }
         let scratch = ctx.scratch.get_mut(x, y);
         scratch.region = 0;
         scratch.water_region = false;
-        let cell = ctx.grid.get_mut(x, y).expect("native cell");
         cell.tile = 0;
         cell.sub_tile = 0;
         cell.level = ctx.rollback_level;
@@ -299,7 +298,6 @@ pub fn carve(
     let Some(trig) = ctx.trig else {
         return false;
     };
-    let cells: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
     let mut region = quota.region_id;
     // The original mutates its own is-branch argument when a branch spawns, so
     // one flag serves both "I am a branch" and "I have spawned one" — and a
@@ -514,12 +512,8 @@ pub fn carve(
             // The green sweep runs whether or not the dilation succeeded; only
             // the shore pass gates it.
             walk.alive = lake::dilate_region_rings(ctx, region, 1);
-            for &(x, y) in &cells {
-                if ctx.scratch.get(x, y).region != region {
-                    continue;
-                }
-                let cell = ctx.grid.get_mut(x, y).expect("native cell");
-                if ctx.ids.is_clear(cell.tile) {
+            for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
+                if ctx.scratch.get(x, y).region == region && ctx.ids.is_clear(cell.tile) {
                     cell.tile = ctx.ids.green;
                 }
             }
@@ -570,12 +564,10 @@ pub fn carve(
                 // whatever terrain is generated afterwards sit at the new
                 // height. The exact-equality gate above is why only the first
                 // river can cut one.
-                for &(x, y) in &cells {
-                    if ctx.scratch.get(x, y).region == region {
-                        continue;
+                for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
+                    if ctx.scratch.get(x, y).region != region {
+                        cell.level = cell.level.wrapping_add(CANYON_LEVEL_STEP);
                     }
-                    let cell = ctx.grid.get_mut(x, y).expect("native cell");
-                    cell.level = cell.level.wrapping_add(CANYON_LEVEL_STEP);
                 }
                 ctx.rollback_level += CANYON_LEVEL_STEP;
             }
@@ -597,10 +589,10 @@ pub fn carve(
     }
 
     if !walk.alive {
-        rollback(ctx, &cells, region);
+        rollback(ctx, region);
         if waterfall_successes > 0 {
             // The near half of the river lives under the previous id.
-            rollback(ctx, &cells, region - 1);
+            rollback(ctx, region - 1);
         }
         return false;
     }

@@ -1963,6 +1963,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
+        ("map/rmg/grid.rs", "cells_in_native_order_mut", RMG),
         ("map/rmg/scratch.rs", "get_mut", RMG),
         ("map/rmg/scratch.rs", "cells_mut", RMG),
         (
