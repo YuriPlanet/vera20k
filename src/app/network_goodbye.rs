@@ -77,6 +77,11 @@ impl App {
 /// transport to the visit, which sends the relay departure; a LAN match
 /// sends its departure through the match transport and flushes it.
 fn say_goodbye(state: &mut AppState) {
+    // The worker hands Queue_AI back to the live transport. Give that frame
+    // its ordinary exchange pass before the goodbye takes the transport.
+    if state.match_state.live_network.is_some() && state.frontend.graphics_lost.is_none() {
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+    }
     let online =
         state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol;
     if online && state.match_state.live_network.is_some() {

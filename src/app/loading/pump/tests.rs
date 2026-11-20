@@ -2340,6 +2340,7 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     let (mut session, mut result, local, peer) = network_load_with_remote_peer(
         crate::app::match_runtime::session::NetworkReturnContext::LanLobby,
     );
+    assert!(!session.retire_cooperative_start_on_timeout(&[1]));
     let notices = apply_network_loading_disconnects(&mut session, &mut result, &[1]);
     assert_eq!(
         notices,
