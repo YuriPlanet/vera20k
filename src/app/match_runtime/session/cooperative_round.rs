@@ -201,6 +201,7 @@ impl MatchSession {
             startup,
             connections,
             room_return,
+            ..
         } = &network.phase
         else {
             anyhow::bail!("the co-op round follows a frozen match");
@@ -673,6 +674,7 @@ impl MatchSession {
             startup: Arc::clone(&startup),
             connections,
             room_return,
+            campaign_abort_pending: false,
         };
         self.latency_fudge = latency_fudge;
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(

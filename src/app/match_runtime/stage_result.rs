@@ -10,7 +10,7 @@ use crate::sim::house_state::HouseOutcomeKind;
 use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
 use crate::ui::shell::modal::ModalResult;
 
-use super::session::{CampaignResult, StageHandoff, StageProgress};
+use super::session::{CampaignResult, NetworkReturnContext, StageHandoff, StageProgress};
 
 pub(crate) fn open(state: &mut AppState, outcome: HouseOutcomeKind) {
     if state.match_state.session.local_connection_watches() {
@@ -133,22 +133,35 @@ pub(crate) fn receive(
     receipt: Option<GlobalMessage>,
 ) {
     let from_host = crate::app::lan_service::campaign_host_source(state) == Some(source);
-    state
+    let relay_retry_delta = state
         .match_state
-        .session
-        .receive_campaign_stage_signal(source, from_host, signal, receipt);
+        .live_network
+        .as_ref()
+        .filter(|live| {
+            live.uses_sequenced_lockstep()
+                && matches!(signal, Signal::StageBegin(_) | Signal::StageBegun(_))
+        })
+        .map(|live| live.global().retry_delta());
+    state.match_state.session.receive_campaign_stage_signal(
+        source,
+        from_host,
+        signal,
+        receipt,
+        super::frame_pacer::wall_clock_ms(),
+        relay_retry_delta,
+    );
 }
 
 pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if state.match_state.session.campaign_result().is_none() {
         return;
     }
-    if state.match_state.live_network.as_ref().is_some_and(|live| {
-        live.global().queued_send_count() == 0
-            && live
-                .service_report()
-                .is_none_or(|report| !report.delivery_failed())
-    }) {
+    if state
+        .match_state
+        .live_network
+        .as_ref()
+        .is_some_and(crate::net::live_commands::LiveCommandSession::global_sends_delivered)
+    {
         state.match_state.session.confirm_campaign_stage_delivery();
     }
     let session = &state.match_state.session;
@@ -157,7 +170,7 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     };
     match result.progress(session.network_connected_source_indices(), now_ms) {
         StageProgress::Commit => {
-            commit(state);
+            commit(state, now_ms);
             return;
         }
         StageProgress::Abort => {
@@ -231,18 +244,19 @@ fn abort(state: &mut AppState, notice: Option<&str>) {
     }
 }
 
-fn commit(state: &mut AppState) {
-    if state.match_state.session.network_return_context()
-        == Some(super::session::NetworkReturnContext::LanLobby)
-    {
-        let receipts = state.match_state.session.take_campaign_stage_receipts();
+fn commit(state: &mut AppState, now_ms: u64) {
+    if state.match_state.session.network_return_context() == Some(NetworkReturnContext::LanLobby) {
+        let receipts = state
+            .match_state
+            .session
+            .take_campaign_stage_receipts(now_ms);
         if let Err(error) = crate::app::lan_service::advance_campaign_transport(state, receipts) {
             log::warn!("Cannot advance LAN campaign transport: {error:#}");
             abort(state, Some("VERA:CampaignStageUnavailable"));
             return;
         }
     }
-    match state.match_state.session.commit_campaign_stage() {
+    match state.match_state.session.commit_campaign_stage(now_ms) {
         Ok(StageHandoff::Lan(startup)) => {
             App::close_shell_message_box_from_controller(state);
             App::retire_finished_scenario(state);

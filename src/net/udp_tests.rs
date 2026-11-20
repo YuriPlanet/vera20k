@@ -1823,6 +1823,78 @@ fn rematch_rejects_old_ack_data_and_frame_sync_before_reliable_state() {
 }
 
 #[test]
+fn a_worker_discard_cannot_settle_a_terminal_global_send() {
+    use crate::net::live_commands::{LiveCommandMode, LiveCommandSession, StartupAgreement};
+    use std::num::NonZeroU32;
+
+    let mut wire = transport();
+    let peer = raw_peer();
+    let SocketAddr::V4(endpoint) = peer.local_addr().unwrap() else {
+        panic!("IPv4 peer");
+    };
+    wire.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    assert!(wire.global_mut().send(
+        b"terminal receipt",
+        GlobalDestination::direct(endpoint),
+        Delivery::Reliable,
+        0,
+    ));
+    // The worker sends the receipt, then times it out before the app polls.
+    wire.lock().background_pass(1, false);
+    wire.lock().background_pass(3, false);
+
+    let rate = NonZeroU32::new(1).unwrap();
+    let agreement = StartupAgreement::new([(0, 0)], [0], 1, 10, 30, rate, 0, "", "").unwrap();
+    let live =
+        LiveCommandSession::new(agreement, wire, 0, 1, rate, LiveCommandMode::Lan, None).unwrap();
+    assert_eq!(live.global().queued_send_count(), 0);
+    assert!(live.service_report().is_none());
+    assert!(!live.global_sends_delivered(), "retry expiry is not an ACK");
+}
+
+#[test]
+fn terminal_campaign_aborts_leave_the_scoped_socket_before_reset() {
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal};
+
+    for signal in [
+        Signal::StageAbort,
+        Signal::NarrativeAbort {
+            boundary: 2,
+            tick: 11,
+        },
+    ] {
+        let mut sender = transport();
+        let mut peer = transport();
+        let scope = SessionScope {
+            epoch: [37; 16],
+            revision: 4,
+        };
+        sender.set_lan_scope(scope).unwrap();
+        peer.set_lan_scope(scope).unwrap();
+        let record = Record {
+            scope: Some(scope),
+            attempt: 3,
+            signal,
+        };
+        let source = sender.primary_addr().unwrap();
+        sender
+            .send_terminal_global(&record.encode(), &[peer.primary_addr().unwrap()])
+            .unwrap();
+        // The app leaves synchronously. No worker or service tick can see the
+        // sending scope after this call.
+        sender.clear_lan_scope();
+        assert_eq!(malformed_after_receipt(&mut peer, 1, 1), 0);
+        let incoming = peer.pop_global_received().unwrap();
+        assert_eq!(incoming.source, source);
+        assert_eq!(Record::decode(&incoming.payload), Some(record));
+    }
+}
+
+#[test]
 fn authored_stage_rollover_reacks_the_registered_receipt_until_new_gameplay() {
     use crate::net::lan_messages::extended_setup::campaign::{Record, Signal, StageChoice};
     use crate::net::lan_messages::ingame::LoadingProgressMessage;

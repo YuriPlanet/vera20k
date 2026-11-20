@@ -988,16 +988,25 @@ available for the same installed series and matching builds.
 
 #### Cutscenes and stage changes
 
-The reliable campaign controls share the existing global channel. Each record
+Campaign controls share the existing global channel. Each record
 carries a stage attempt and either the LAN room scope or the authenticated WOL
-match identity. Narrative readiness also carries the boundary ordinal and
+match identity. Stage and narrative aborts are sent directly over that route
+before teardown. These final UDP notifications are best effort. A stage
+abort that arrives during the outcome is retained for the result. Narrative
+readiness also carries the boundary ordinal and
 simulation tick. The host releases the hold when the playing sources have
 reported readiness for that boundary. The simulation records the resulting
-scenario service inputs at the same point for diagnostic replay. A connection
-watcher reconstructs the scenario service inputs locally, without waiting for
-live media or sending readiness. The ordered WOL relay seals frames on its
-own wall clock, so a live viewer can advance past a media hold before the
-playing quorum releases it.
+scenario service inputs at the same point for diagnostic replay. Playing
+clients exclude the hold from lag reporting. On an ordered WOL match that
+supports shared pause, the host requests a relay pause and resumes the clock
+after all playing peers acknowledge the release. The host leaves an existing
+player pause in place. The relay stops sealing at its acknowledged frontier
+and continues from there without counting the stopped wall time. A connection
+watcher reconstructs the scenario services locally, without playing the clips
+or sending readiness, and follows the relay's sealed frontier. Frames already
+sealed before the pause remain available to watchers. If the relay cannot
+pause (for example, in a federated match or during its pause cooldown), the
+frontier can advance while the players are held.
 
 `MatchSession::NetworkPhase` owns the result vote and stage handoff. **Retry**
 reuses the current stage’s entry record. A route uses the carry-over captured
@@ -1009,9 +1018,14 @@ Begin receipts before retiring the old transport. LAN keeps the socket,
 increments the admission revision and resets reliable delivery. During
 promotion it can re-ack an exact registered final receipt from the old
 admission. Old gameplay and loading messages stay outside the successor’s
-queues. On WOL the room establishes a new match and relay grant. If a required
-player leaves or the handoff expires, it aborts. Watcher departure leaves the
-quorum alone.
+queues. On WOL the host keeps the old relay active for the negotiated retry
+intervals so it can acknowledge retries of the last Begin receipts. A guest
+that receives Begin late still has time to send and retry its receipt. The
+reopened room publishes the chosen
+stage and carry-over. It auto-starts only if its playing roster still
+matches the voted roster. A LAN successor uses the connected playing sources
+and must meet the target stage’s player limits. Departure during the vote or
+an expired handoff aborts it. Watcher departure leaves the quorum alone.
 
 #### Releases and rollback
 

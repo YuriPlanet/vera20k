@@ -569,34 +569,60 @@ impl AuthoredCampaignStart {
         Ok(())
     }
 
-    fn resolve_roster(
+    /// Resolve the map's retained House name for every authored source.
+    pub fn primary_house_names(
         &self,
         roster: &HouseRoster,
         ini: &crate::rules::ini_parser::IniFile,
-    ) -> anyhow::Result<(Vec<u8>, Vec<ControlGrant>)> {
-        let find_house = |name: &str| {
-            roster
-                .houses
-                .iter()
-                .position(|house| house.name.eq_ignore_ascii_case(name))
-                .and_then(|index| u8::try_from(index).ok())
-                .ok_or_else(|| anyhow::anyhow!("unknown authored House '{name}'"))
-        };
-        let mut sources = self
-            .roles
+    ) -> anyhow::Result<Vec<String>> {
+        self.primary_houses(roster, ini)?
+            .into_iter()
+            .map(|index| {
+                roster
+                    .houses
+                    .get(usize::from(index))
+                    .map(|house| house.name.clone())
+                    .ok_or_else(|| anyhow::anyhow!("campaign source has no starting House"))
+            })
+            .collect()
+    }
+
+    fn authored_house_index(roster: &HouseRoster, name: &str) -> anyhow::Result<u8> {
+        roster
+            .houses
             .iter()
-            .map(|role| find_house(&role.house))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        if sources.is_empty() {
+            .position(|house| house.name.eq_ignore_ascii_case(name))
+            .and_then(|index| u8::try_from(index).ok())
+            .ok_or_else(|| anyhow::anyhow!("unknown authored House '{name}'"))
+    }
+
+    fn primary_houses(
+        &self,
+        roster: &HouseRoster,
+        ini: &crate::rules::ini_parser::IniFile,
+    ) -> anyhow::Result<Vec<u8>> {
+        if self.roles.is_empty() {
+            anyhow::ensure!(!roster.houses.is_empty(), "campaign has no starting House");
             let requested = campaign_player_name(ini);
             let fallback = crate::map::houses::find_house_index(
                 roster.houses.iter().map(|house| house.name.as_str()),
                 &requested,
             )
             .unwrap_or(0);
-            anyhow::ensure!(!roster.houses.is_empty(), "campaign has no starting House");
-            sources.push(u8::try_from(fallback)?);
+            return Ok(vec![u8::try_from(fallback)?]);
         }
+        self.roles
+            .iter()
+            .map(|role| Self::authored_house_index(roster, &role.house))
+            .collect()
+    }
+
+    fn resolve_roster(
+        &self,
+        roster: &HouseRoster,
+        ini: &crate::rules::ini_parser::IniFile,
+    ) -> anyhow::Result<(Vec<u8>, Vec<ControlGrant>)> {
+        let sources = self.primary_houses(roster, ini)?;
         let grants = self
             .grants
             .iter()
@@ -608,7 +634,7 @@ impl AuthoredCampaignStart {
                     .ok_or_else(|| anyhow::anyhow!("unknown campaign role '{}'", grant.role))?;
                 Ok(ControlGrant {
                     source: i8::try_from(source)?,
-                    house: find_house(&grant.house)?,
+                    house: Self::authored_house_index(roster, &grant.house)?,
                     level: match grant.scope {
                         ManifestControlScope::FullControl => ControlGrantLevel::FullControl,
                         ManifestControlScope::UnitsOnly => ControlGrantLevel::UnitsOnly,

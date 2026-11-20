@@ -596,6 +596,45 @@ impl LanUdpTransport {
         self.write(|io| &io.global, |io| &mut io.global)
     }
 
+    /// Send a last notification on the current LAN scope or relay route
+    /// before its owner resets the match. Unlike waking the I/O worker, this
+    /// returns after each socket write has been attempted.
+    pub fn send_terminal_global(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> io::Result<()> {
+        let io = &mut *self.lock();
+        let frame = io.global.terminal_frame(payload).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "terminal global payload is too long",
+            )
+        })?;
+        let mut report = UdpServiceReport::default();
+        for &endpoint in recipients {
+            // This scope is closing. Pending traffic and a failed write to
+            // one peer must not delay the last notification to another peer.
+            send_frame(
+                &io.primary,
+                &mut io.relay,
+                io.lan_scope.and_then(LanScopeState::outgoing),
+                UdpChannel::Primary,
+                &mut UdpSendQueue::default(),
+                endpoint,
+                &frame,
+                &mut report,
+            );
+        }
+        if report.sent_datagrams == recipients.len() {
+            Ok(())
+        } else {
+            Err(report
+                .first_io_error
+                .map_or_else(|| io::ErrorKind::WouldBlock.into(), |failure| failure.error))
+        }
+    }
+
     /// Keep a terminal queue change paired with its service result even when
     /// the physical worker runs between the App's poll and admission decision.
     /// Leave the report for its ordinary consumer; this snapshot consumes none.

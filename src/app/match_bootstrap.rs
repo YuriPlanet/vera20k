@@ -111,6 +111,8 @@ pub struct PreparedNetworkStartup {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedCampaignStart {
     pub(crate) authored: crate::sim::scenario_bootstrap::AuthoredCampaignStart,
+    /// The exact map House for each admitted command source, in source order.
+    pub(crate) primary_houses: Vec<String>,
     pub(crate) map_source: crate::map::source::LoadedMapSource,
     pub(crate) map_effective_digest: String,
     pub(crate) map_name: String,

@@ -3874,11 +3874,16 @@ pub(crate) fn send_campaign_control(
     recipients: &[usize],
     signal: crate::net::lan_messages::extended_setup::campaign::Signal,
 ) -> bool {
-    use crate::net::lan_messages::extended_setup::campaign::Record;
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal};
     let Some((scope, attempt)) = campaign_control_scope(state) else {
         return false;
     };
-    let bytes = Record { scope, attempt, signal }.encode();
+    let bytes = Record {
+        scope,
+        attempt,
+        signal,
+    }
+    .encode();
     let Some(endpoints) = recipients
         .iter()
         .map(|&source| state.match_state.session.network_endpoint(source))
@@ -3886,6 +3891,27 @@ pub(crate) fn send_campaign_control(
     else {
         return false;
     };
+    if matches!(signal, Signal::StageAbort | Signal::NarrativeAbort { .. }) {
+        // Both callers reset the match transport before the next I/O poll.
+        // Write these terminal records on the still-admitted route now.
+        let sent = if let Some(live) = state.match_state.live_network.as_mut() {
+            live.send_terminal_global(&bytes, &endpoints)
+        } else if let Some(transport) = state
+            .match_state
+            .lan_service
+            .as_mut()
+            .and_then(|service| service.transport.as_mut())
+        {
+            transport.send_terminal_global(&bytes, &endpoints)
+        } else {
+            return false;
+        };
+        if let Err(error) = sent {
+            log::warn!("Cannot send campaign abort before leaving the match: {error}");
+            return false;
+        }
+        return true;
+    }
     let mut channel = if let Some(live) = state.match_state.live_network.as_mut() {
         live.global_mut()
     } else if let Some(transport) = state

@@ -25,8 +25,8 @@
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
 use crate::skirmish_launch::{
-    LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchOptions,
-    SkirmishLaunchSession, SkirmishLocalSlot,
+    LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishHumanSlot,
+    SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
 };
 use std::net::SocketAddrV4;
 use std::sync::Arc;
@@ -308,6 +308,7 @@ enum NetworkPhase {
         startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
         connections: ConnectionRoster,
         room_return: NetworkRoomReturn,
+        campaign_abort_pending: bool,
     },
     CampaignResult {
         startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
@@ -3435,6 +3436,7 @@ impl MatchSession {
             },
             startup: Arc::clone(&startup),
             room_return: NetworkRoomReturn::Lobby,
+            campaign_abort_pending: false,
         };
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
             startup,
@@ -3565,11 +3567,11 @@ impl MatchSession {
     pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
         if self.campaign_room().is_some() {
             let source = usize::try_from(self.network_source_sender(source_index)?).ok()?;
-            let NetworkPhase::Frozen { startup, .. } = &self.network.as_ref()?.phase else {
-                return None;
-            };
-            let campaign = startup.authored_campaign()?;
-            return campaign.authored.roles().get(source).map(|role| role.house.clone());
+            return self
+                .network_authored_start()?
+                .primary_houses
+                .get(source)
+                .cloned();
         }
         let launch = self.network_setup()?;
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
@@ -3696,6 +3698,19 @@ impl MatchSession {
             ) => &connections.playing_sources,
             _ => &[],
         }
+    }
+
+    /// The setup roster before launch, and the surviving playing sources
+    /// when preparing a continuation from the frozen launch.
+    pub(crate) fn campaign_launch_humans(&self) -> impl Iterator<Item = &SkirmishHumanSlot> {
+        let playing = self
+            .campaign_result()
+            .map(|_| self.network_connected_source_indices());
+        self.network_setup()
+            .into_iter()
+            .flat_map(|launch| launch.humans.iter().enumerate())
+            .filter(move |(index, _)| playing.is_none_or(|sources| sources.contains(index)))
+            .map(|(_, human)| human)
     }
 
     /// The authenticated relay route's local connection is a viewer. The

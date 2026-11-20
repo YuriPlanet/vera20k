@@ -686,6 +686,10 @@ pub(crate) fn install_watch_setup(
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
     let text = crate::assets::csf_file::format_csf(&App::csf_label(state, key, key), args);
+    room_notice(state, &text);
+}
+
+fn room_notice(state: &mut AppState, text: &str) {
     crate::app::shell_lan::append_room_chat(
         state,
         crate::ui::lan_shell::LanChatLine {

@@ -3,6 +3,7 @@
 //! server's OnGameStart complete later, never the Start click.
 
 use super::*;
+use crate::app::match_runtime::session::MatchSession;
 use crate::assets::csf_file::CsfArg;
 use crate::skirmish_modes::ModeStartEffect;
 
@@ -283,7 +284,8 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
     state: &mut AppState,
 ) -> anyhow::Result<()> {
     use super::super::campaign_room;
-    if super::super::dialog(state).wol() && !crate::app::shell_wol::lobby_campaign_rooms(state) {
+    let wol = super::super::dialog(state).wol();
+    if wol && !crate::app::shell_wol::lobby_campaign_rooms(state) {
         message(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
         return Ok(());
     }
@@ -306,6 +308,10 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
         message(state, "VERA:CampaignRoomObservers", &[]);
         return Ok(());
     }
+    if !wol && let Some(notice) = campaign_file_notice(&state.match_state.session, &launch) {
+        super::super::room_notice(state, &notice);
+        return Ok(());
+    }
     if let Err(error) = campaign_room::prepare_current(state, &room) {
         log::warn!("Campaign start refused: {error:#}");
         message(state, "VERA:CampaignRoomRoster", &[]);
@@ -315,7 +321,7 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
         .match_state
         .session
         .accept_campaign_room(Some(room), launch.options.game_speed)?;
-    if super::super::dialog(state).wol() {
+    if wol {
         let users = launch
             .humans
             .iter()
@@ -325,10 +331,7 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
             protocol.submit_start(users);
         }
     } else {
-        if !all_ready(state)
-            || (0..launch.humans.len())
-                .any(|index| state.match_state.session.network_map_status(index) != Some(1))
-        {
+        if !all_ready(state) {
             return Ok(());
         }
         crate::app::lan_service::prepare_host_timing(state)?;
@@ -345,6 +348,22 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())
+}
+
+fn campaign_file_notice(session: &MatchSession, launch: &SkirmishLaunchSession) -> Option<String> {
+    let names = launch
+        .humans
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| session.network_map_status(*index) != Some(1))
+        .map(|(_, human)| human.name.as_str())
+        .collect::<Vec<_>>();
+    (!names.is_empty()).then(|| {
+        crate::i18n::tr_fill(
+            "VERA:CampaignRoomPeerFiles",
+            &[("players", &names.join(", "))],
+        )
+    })
 }
 
 fn queue_lan_go(
@@ -507,6 +526,29 @@ mod tests {
     fn fixture() -> SkirmishLaunchSession {
         let profile = crate::test_fixture::json("tools/map_observation.command-bar.example.json");
         serde_json::from_value(profile["launch"].clone()).unwrap()
+    }
+
+    #[test]
+    fn lan_campaign_start_reports_which_player_lacks_matching_files() {
+        let mut launch = fixture();
+        launch.humans[0].name = "Host".into();
+        let mut guest = launch.humans[0].clone();
+        guest.name = "GuestWithoutFiles".into();
+        guest.raw_slot_index = Some(2);
+        launch.humans.push(guest);
+        let mut session = MatchSession::default();
+        session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch.clone(), true, None, false)
+            .unwrap();
+        session.set_network_map_status(0, 1).unwrap();
+        session.set_network_map_status(1, 2).unwrap();
+        let notice =
+            campaign_file_notice(&session, &launch).expect("failed file proof is reported");
+        assert!(notice.contains("GuestWithoutFiles"));
+        assert!(!notice.contains("{players}"));
+        session.set_network_map_status(1, 1).unwrap();
+        assert_eq!(campaign_file_notice(&session, &launch), None);
     }
 
     #[test]

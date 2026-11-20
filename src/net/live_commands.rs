@@ -23,7 +23,7 @@ mod startup;
 mod timing;
 pub use sequenced::{
     CommandDeliveryTrace, DeliveryCounters, MatchConnectionChange, MatchPauseChange,
-    MatchSpeedChange, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    MatchSpeedChange, MultiplayerPauseStatus, NarrativeHold, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
 /// The relay's turn length, which online playout follows.
@@ -466,6 +466,14 @@ impl LiveCommandSession {
             .is_some_and(|session| session.request_pause(paused))
     }
 
+    /// Authored presentation is a deliberate local hold on every player.
+    /// Only the host controls the shared relay clock for this boundary.
+    pub fn set_narrative_hold(&mut self, hold: Option<NarrativeHold>) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_narrative_hold(hold);
+        }
+    }
+
     /// Called only after a confirmed UI exit has queued its native EXIT.
     /// Keep that command dispatchable even if a shared pause is in flight.
     pub fn keep_running_for_exit(&mut self) {
@@ -610,6 +618,14 @@ impl LiveCommandSession {
         )
     }
 
+    pub fn send_terminal_global(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> io::Result<()> {
+        self.transport.send_terminal_global(payload, recipients)
+    }
+
     pub fn peers(&self) -> &[CommandPeerProgress] {
         self.exchange.peers()
     }
@@ -716,6 +732,19 @@ impl LiveCommandSession {
     /// Readers must project numeric counters, never Debug-format its errors.
     pub fn service_report(&self) -> Option<&UdpServiceReport> {
         self.last_service.as_ref()
+    }
+
+    /// A terminal reliable receipt is complete only if the I/O worker
+    /// drained the queue successfully. It can discard failed sends between
+    /// two application polls, so observe the queue and pending result together.
+    pub fn global_sends_delivered(&self) -> bool {
+        let observed = self.transport.global_observation();
+        observed.queued_sends == 0
+            && !observed.pending_delivery_failure
+            && self
+                .last_service
+                .as_ref()
+                .is_none_or(|report| !report.delivery_failed())
     }
 
     pub fn awaiting_initial_barrier(&self) -> bool {

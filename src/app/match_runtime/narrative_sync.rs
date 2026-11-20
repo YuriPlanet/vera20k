@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn};
 use crate::app::{App, AppState, GameScreen};
 use crate::net::lan_messages::extended_setup::campaign::Signal;
+use crate::net::live_commands::NarrativeHold;
 use crate::sim::replay::ScenarioServiceInput;
 
 use super::network_match;
@@ -28,6 +29,13 @@ struct Barrier {
     movie_pause: bool,
     timed: bool,
     sent_ready: bool,
+    sent_release: bool,
+}
+
+enum HostRelease {
+    Wait,
+    Send,
+    Complete,
 }
 
 #[derive(Clone, Copy)]
@@ -65,6 +73,23 @@ impl NarrativeSync {
             .playing_sources
             .iter()
             .all(|source| self.ready.get(source) == Some(&barrier.point))
+    }
+
+    fn host_release(&self, delivered: bool) -> HostRelease {
+        let Some(barrier) = self.barrier.as_ref() else {
+            return HostRelease::Wait;
+        };
+        if barrier.sent_release {
+            if delivered {
+                HostRelease::Complete
+            } else {
+                HostRelease::Wait
+            }
+        } else if self.all_ready(barrier) {
+            HostRelease::Send
+        } else {
+            HostRelease::Wait
+        }
     }
 
     pub(super) fn pending(&self) -> bool {
@@ -180,21 +205,28 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
     let sync = &mut state.match_state.match_presentation.narrative_sync;
     if sync.barrier.is_none() && (timed || chrono || !sync.clips.is_empty()) {
         let movie_pause = !sync.clips.is_empty();
+        let session = &state.match_state.session;
         sync.barrier = Some(Barrier {
             point: Point {
                 boundary: sync.completed.saturating_add(1),
                 tick,
             },
-            playing_sources: state
-                .match_state
-                .session
-                .network_connected_source_indices()
-                .to_vec(),
+            playing_sources: session.network_connected_source_indices().to_vec(),
             deadline_ms: wall_ms.saturating_add(HOLD_TIMEOUT_MS),
             movie_pause,
             timed,
             sent_ready: false,
+            sent_release: false,
         });
+        if !session.local_connection_watches()
+            && let Some(live) = state.match_state.live_network.as_mut()
+        {
+            live.set_narrative_hold(Some(if session.host() {
+                NarrativeHold::Host
+            } else {
+                NarrativeHold::Player
+            }));
+        }
         state.match_state.scenario_elapsed_clock.pause(wall_ms);
         super::sim_tick::prepare_replay_recording(state);
         if movie_pause {
@@ -217,9 +249,8 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         }
     }
     if state.match_state.session.local_connection_watches() {
-        // A relay viewer consumes a journal which was sealed by the playing
-        // match. It projects the same services at this boundary without
-        // participating in the live media wait or needing side-channel data.
+        // A viewer projects the same services at this boundary, while the
+        // ordered stream supplies the live relay hold and resume markers.
         if !chrono {
             release(state, wall_ms);
         }
@@ -338,23 +369,43 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
         }
     }
     let sync = &state.match_state.match_presentation.narrative_sync;
-    if host
-        && sync
-            .barrier
-            .as_ref()
-            .is_some_and(|barrier| sync.all_ready(barrier))
-    {
-        if crate::app::lan_service::send_campaign_control(
-            state,
-            &peers,
-            Signal::NarrativeRelease {
-                boundary: point.boundary,
-                tick: point.tick,
-            },
-        ) {
-            release(state, wall_ms);
+    if host {
+        let live = state.match_state.live_network.as_ref();
+        let ordered = live.is_some_and(|live| live.uses_sequenced_lockstep());
+        let delivered = sync.barrier.as_ref().is_some_and(|barrier| {
+            barrier.sent_release && live.is_some_and(|live| live.global_sends_delivered())
+        });
+        match sync.host_release(delivered) {
+            HostRelease::Wait => {}
+            HostRelease::Complete => release(state, wall_ms),
+            HostRelease::Send => {
+                if crate::app::lan_service::send_campaign_control(
+                    state,
+                    &peers,
+                    Signal::NarrativeRelease {
+                        boundary: point.boundary,
+                        tick: point.tick,
+                    },
+                ) {
+                    // The reliable Release must reach every playing peer
+                    // before the ordered relay starts sealing again.
+                    if ordered && !peers.is_empty() {
+                        if let Some(barrier) = state
+                            .match_state
+                            .match_presentation
+                            .narrative_sync
+                            .barrier
+                            .as_mut()
+                        {
+                            barrier.sent_release = true;
+                        }
+                    } else {
+                        release(state, wall_ms);
+                    }
+                }
+            }
         }
-    } else if !host && ready && sync.release == Some(point) {
+    } else if ready && sync.release == Some(point) {
         release(state, wall_ms);
     }
 }
@@ -375,6 +426,9 @@ fn release(state: &mut AppState, wall_ms: u64) {
     }
     if barrier.timed {
         scenario_pause::apply_service(state, ScenarioServiceInput::ExpireTimedPause);
+    }
+    if let Some(live) = state.match_state.live_network.as_mut() {
+        live.set_narrative_hold(None);
     }
     scenario_pause::resume(state, wall_ms);
     state.platform.frame_pacer.reanchor(wall_ms);
@@ -404,6 +458,7 @@ mod tests {
             movie_pause: true,
             timed: false,
             sent_ready: false,
+            sent_release: false,
         });
         assert!(sync.owns_fullscreen(Some(&MovieReturn::RunningScenario)));
         assert!(!sync.owns_fullscreen(Some(&MovieReturn::StartupIntro)));
@@ -422,6 +477,7 @@ mod tests {
             movie_pause: true,
             timed: false,
             sent_ready: false,
+            sent_release: false,
         };
         let mut sync = NarrativeSync::default();
         sync.record_ready(0, point, &barrier.playing_sources);
@@ -431,5 +487,10 @@ mod tests {
         assert!(!sync.all_ready(&barrier));
         sync.record_ready(1, point, &barrier.playing_sources);
         assert!(sync.all_ready(&barrier));
+        sync.barrier = Some(barrier);
+        assert!(matches!(sync.host_release(true), HostRelease::Send));
+        sync.barrier.as_mut().unwrap().sent_release = true;
+        assert!(matches!(sync.host_release(false), HostRelease::Wait));
+        assert!(matches!(sync.host_release(true), HostRelease::Complete));
     }
 }

@@ -329,7 +329,13 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     } else {
         dialog.rows_per_page()
     };
-    let mut combos = super::campaign_room::setup_selectors(state);
+    let stock_mode_label = label(state, &mode.ui_name_key);
+    let mut combos = super::campaign_room::setup_selectors(
+        &protocol.campaign_catalog,
+        session.campaign_room(),
+        host,
+        &stock_mode_label,
+    );
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
@@ -964,14 +970,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .multiplayer_setup
             .as_ref()
             .is_some_and(|ui| ui.map_offer.is_some()),
-        mode_label: label(
-            state,
-            if launch.selected_map_file.is_none() {
-                "GUI:None"
-            } else {
-                &mode.ui_name_key
-            },
-        ),
+        mode_label: if launch.selected_map_file.is_none() {
+            label(state, "GUI:None")
+        } else {
+            stock_mode_label
+        },
         map_label: super::campaign_room::stage_label(state).unwrap_or_else(|| {
             super::map_display_name(state).map_or_else(|| label(state, "GUI:None"), str::to_owned)
         }),

@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 use crate::app::AppState;
 use crate::app::match_bootstrap::PreparedCampaignStart;
 use crate::map::campaign_manifest::{CampaignManifest, CampaignStage};
-use crate::map::source::{LoadedMapSource, is_logical_name, valid_source_sha256};
+use crate::map::houses::HouseRoster;
+use crate::map::source::{LoadedMapIni, LoadedMapSource, is_logical_name, valid_source_sha256};
 use crate::sim::campaign_carry_over::StageCarryOver;
 use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
-use crate::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession};
+use crate::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishHumanSlot};
 use crate::util::file_system;
 
 const CAMPAIGNS: &str = "campaigns";
@@ -100,10 +101,12 @@ impl CampaignRoom {
         Ok(())
     }
 
-    fn with_roster(mut self, launch: &SkirmishLaunchSession, stage: &CampaignStage) -> Self {
-        let mut names = launch
-            .humans
-            .iter()
+    fn with_roster<'a>(
+        mut self,
+        humans: impl Iterator<Item = &'a SkirmishHumanSlot>,
+        stage: &CampaignStage,
+    ) -> Self {
+        let mut names = humans
             .filter(|human| !human.is_observer())
             .map(|human| human.name.clone())
             .collect::<Vec<_>>();
@@ -140,23 +143,33 @@ impl CampaignRoom {
         self
     }
 
-    fn compile(
+    fn validate_stage_count(&self, stage: &CampaignStage) -> Result<()> {
+        ensure!(
+            (usize::from(stage.min_players.unwrap_or(1))..=usize::from(stage_player_limit(stage)))
+                .contains(&self.playing_sources.len()),
+            "campaign playing roster does not meet stage bounds"
+        );
+        Ok(())
+    }
+
+    fn compile<'a>(
         &self,
-        launch: &SkirmishLaunchSession,
+        mut humans: impl Iterator<Item = &'a SkirmishHumanSlot>,
         stage: &CampaignStage,
         stage_index: usize,
     ) -> Result<AuthoredCampaignStart> {
         self.validate()?;
+        self.validate_stage_count(stage)?;
         let count = self.playing_sources.len();
+        let mut admitted = BTreeSet::new();
         ensure!(
-            count >= usize::from(stage.min_players.unwrap_or(1))
-                && count <= usize::from(self.player_limit)
-                && launch.humans.len() == count
-                && launch
-                    .humans
-                    .iter()
-                    .all(|human| { !human.is_observer() && self.source(&human.name).is_some() }),
-            "campaign playing roster does not meet stage bounds"
+            humans.all(|human| {
+                !human.is_observer()
+                    && self
+                        .source(&human.name)
+                        .is_some_and(|source| admitted.insert(source))
+            }) && admitted.len() == count,
+            "campaign playing roster does not match admitted participants"
         );
         let mut stage = stage.clone();
         if stage.roles.is_empty() {
@@ -299,11 +312,14 @@ pub(crate) fn load_manifest(state: &AppState, room: &CampaignRoom) -> Result<Cam
     checked_manifest(state, room).map(|(_, manifest)| manifest)
 }
 
-fn stage_map(
-    state: &AppState,
-    manifest_path: &Path,
-    stage: &CampaignStage,
-) -> Result<(String, LoadedMapSource, String)> {
+struct CampaignMap {
+    name: String,
+    loaded: LoadedMapIni,
+    roster: HouseRoster,
+    effective_digest: String,
+}
+
+fn stage_map(state: &AppState, manifest_path: &Path, stage: &CampaignStage) -> Result<CampaignMap> {
     let series = manifest_path
         .parent()
         .context("campaign manifest has no series directory")?;
@@ -335,9 +351,10 @@ fn stage_map(
     crate::map::source::validate_network_map_content(&loaded.ini, false)?;
     let roster = crate::map::houses::parse_house_roster(&loaded.ini, &[], None);
     stage.validate_house_names(roster.houses.iter().map(|house| house.name.as_str()))?;
-    let source = loaded.source;
-    let effective = crate::map::source::effective_network_map_digest(&loaded.ini, false, false);
-    let (_, digest) = source
+    let effective_digest =
+        crate::map::source::effective_network_map_digest(&loaded.ini, false, false);
+    let (_, digest) = loaded
+        .source
         .physical_identity()
         .context("campaign map has no digest")?;
     ensure!(
@@ -347,7 +364,12 @@ fn stage_map(
             .is_none_or(|expected| expected == digest),
         "campaign map differs from the manifest"
     );
-    Ok((name.to_owned(), source, effective))
+    Ok(CampaignMap {
+        name: name.to_owned(),
+        loaded,
+        roster,
+        effective_digest,
+    })
 }
 
 fn stage_player_limit(stage: &CampaignStage) -> u8 {
@@ -360,7 +382,7 @@ fn stage_player_limit(stage: &CampaignStage) -> u8 {
 fn verified_map(
     state: &AppState,
     room: &CampaignRoom,
-) -> Result<(CampaignManifest, usize, String, LoadedMapSource)> {
+) -> Result<(CampaignManifest, usize, CampaignMap)> {
     let (path, manifest) = checked_manifest(state, room)?;
     let index = manifest
         .stage_index(&room.stage)
@@ -370,18 +392,19 @@ fn verified_map(
         room.player_limit == stage_player_limit(stage),
         "campaign room player limit differs from its stage"
     );
-    let (name, source, effective) = stage_map(state, &path, stage)?;
+    let map = stage_map(state, &path, stage)?;
     ensure!(
-        source
+        map.loaded
+            .source
             .physical_identity()
             .is_some_and(|(_, digest)| digest == room.map_sha256),
         "campaign map differs from the host"
     );
     ensure!(
-        effective == room.effective_map_digest,
+        map.effective_digest == room.effective_map_digest,
         "campaign map includes differ from the host"
     );
-    Ok((manifest, index, name, source))
+    Ok((manifest, index, map))
 }
 
 pub(crate) fn verify_current(state: &AppState, room: &CampaignRoom) -> Result<()> {
@@ -392,7 +415,7 @@ pub(crate) fn prepare_current(
     state: &AppState,
     room: &CampaignRoom,
 ) -> Result<PreparedCampaignStart> {
-    let (manifest, index, _, map_source) = verified_map(state, room)?;
+    let (manifest, index, map) = verified_map(state, room)?;
     let map_name = format!(
         "{CAMPAIGNS}/{}/{}",
         room.series,
@@ -402,7 +425,12 @@ pub(crate) fn prepare_current(
     let launch = session
         .network_setup()
         .context("campaign requires a network setup")?;
-    let authored = room.compile(launch, &manifest.stages[index], index)?;
+    let authored = room.compile(
+        session.campaign_launch_humans(),
+        &manifest.stages[index],
+        index,
+    )?;
+    let primary_houses = authored.primary_house_names(&map.roster, &map.loaded.ini)?;
     let local_source = if session.local_connection_watches() {
         None
     } else {
@@ -413,8 +441,9 @@ pub(crate) fn prepare_current(
     };
     Ok(PreparedCampaignStart {
         authored,
+        primary_houses,
         map_name,
-        map_source,
+        map_source: map.loaded.source,
         map_effective_digest: room.effective_map_digest.clone(),
         local_source,
         game_speed: launch.options.game_speed,
@@ -445,15 +474,13 @@ fn selected_room(
         );
     }
     let stage = manifest.stage(id).context("unknown campaign stage")?;
-    let (_, source, effective_map_digest) = stage_map(state, &path, stage)?;
-    let (_, map_sha256) = source
+    let map = stage_map(state, &path, stage)?;
+    let (_, map_sha256) = map
+        .loaded
+        .source
         .physical_identity()
         .context("campaign map has no digest")?;
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .context("campaign requires a network setup")?;
+    let session = &state.match_state.session;
     let (playing_sources, difficulty, attempt) = if let Some(previous) = previous {
         (
             previous.playing_sources.clone(),
@@ -471,15 +498,18 @@ fn selected_room(
         stage: stage.id.clone(),
         manifest_sha256: manifest.digest.clone(),
         map_sha256: map_sha256.to_owned(),
-        effective_map_digest,
+        effective_map_digest: map.effective_digest,
         attempt,
         player_limit: stage_player_limit(stage),
         difficulty,
         playing_sources,
         carry_over,
     }
-    .with_roster(launch, stage);
+    .with_roster(session.campaign_launch_humans(), stage);
     room.validate()?;
+    if session.campaign_result().is_some() {
+        room.validate_stage_count(stage)?;
+    }
     Ok(room)
 }
 
@@ -507,10 +537,9 @@ pub(crate) fn publication(state: &AppState) -> Result<Option<CampaignRoom>> {
     let stage = manifest
         .stage(&room.stage)
         .context("unknown campaign stage")?;
-    let launch = session
-        .network_setup()
-        .context("campaign has no playing roster")?;
-    let room = room.clone().with_roster(launch, stage);
+    let room = room
+        .clone()
+        .with_roster(session.campaign_launch_humans(), stage);
     room.validate()?;
     Ok(Some(room))
 }
@@ -558,14 +587,16 @@ pub(crate) fn online_map_metadata(
     String,
     crate::app::match_runtime::session::NetworkMapMetadata,
 )> {
-    let (manifest, index, name, source) = verified_map(state, room)?;
+    let (manifest, index, map) = verified_map(state, room)?;
     let stage = &manifest.stages[index];
-    let (bytes, _) = source
+    let (bytes, _) = map
+        .loaded
+        .source
         .physical_identity()
         .context("campaign has no physical map")?;
     let capacity = stage_player_limit(stage);
     Ok((
-        name,
+        map.name,
         crate::app::match_runtime::session::NetworkMapMetadata {
             display_name: stage.title(&crate::i18n::selected_language()).to_owned(),
             player_capacity: i32::from(capacity),
@@ -620,30 +651,58 @@ pub(super) fn set_difficulty(state: &mut AppState, difficulty: i32) -> Result<()
     Ok(())
 }
 
-pub(crate) fn resume_after_wol_result(state: &mut AppState, room: CampaignRoom) -> Result<()> {
+pub(crate) fn resume_after_wol_result<'a>(
+    state: &mut AppState,
+    room: CampaignRoom,
+    reopened_players: impl ExactSizeIterator<Item = &'a str> + Clone,
+) -> Result<()> {
     verify_current(state, &room)?;
+    let auto_start = same_players(&room, reopened_players)
+        && state
+            .match_state
+            .session
+            .network_setup()
+            .is_some_and(|launch| {
+                same_players(&room, launch.humans.iter().map(|human| human.name.as_str()))
+            });
+    // Keep the selected stage and carry-over in the reopened room even
+    // when a missing player means the host must start it again manually.
     committed_room(state, Some(room))?;
-    report_local_files(state, true)?;
-    super::actions::request_campaign_start(state)
+    if auto_start {
+        super::actions::request_campaign_start(state)?;
+    }
+    Ok(())
 }
 
-fn selected_series(state: &AppState) -> Option<&CampaignSeries> {
-    let room = state.match_state.session.campaign_room()?;
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()?
-        .campaign_catalog
-        .iter()
-        .find(|entry| {
-            entry.id.eq_ignore_ascii_case(&room.series)
-                && entry.manifest.digest == room.manifest_sha256
+fn same_players<'a>(
+    room: &CampaignRoom,
+    players: impl ExactSizeIterator<Item = &'a str> + Clone,
+) -> bool {
+    players.len() == room.playing_sources.len()
+        && room.player_names().all(|expected| {
+            players
+                .clone()
+                .any(|name| expected.eq_ignore_ascii_case(name))
         })
+}
+
+fn selected_series<'a>(
+    entries: &'a [CampaignSeries],
+    room: &CampaignRoom,
+) -> Option<&'a CampaignSeries> {
+    entries.iter().find(|entry| {
+        entry.id.eq_ignore_ascii_case(&room.series) && entry.manifest.digest == room.manifest_sha256
+    })
 }
 
 pub(super) fn visible_stage(state: &AppState) -> Option<&CampaignStage> {
     let room = state.match_state.session.campaign_room()?;
-    selected_series(state)?.manifest.stage(&room.stage)
+    let entries = &state
+        .frontend
+        .network_setup_protocol
+        .as_ref()?
+        .campaign_catalog;
+    selected_series(entries, room)?.manifest.stage(&room.stage)
 }
 
 pub(super) fn stage_label(state: &AppState) -> Option<String> {
@@ -670,20 +729,19 @@ fn choice(value: i32, text: String) -> crate::ui::multiplayer_setup::SetupChoice
     }
 }
 
-pub(super) fn setup_selectors(state: &AppState) -> Vec<crate::ui::multiplayer_setup::SetupCombo> {
+pub(super) fn setup_selectors(
+    entries: &[CampaignSeries],
+    room: Option<&CampaignRoom>,
+    host: bool,
+    stock_mode_label: &str,
+) -> Vec<crate::ui::multiplayer_setup::SetupCombo> {
     use crate::ui::multiplayer_setup::{CAMPAIGN_SERIES, CAMPAIGN_STAGE, SetupCombo};
 
-    let Some(protocol) = state.frontend.network_setup_protocol.as_ref() else {
-        return Vec::new();
-    };
-    let entries = &protocol.campaign_catalog;
-    let room = state.match_state.session.campaign_room();
-    if (entries.is_empty() || !state.match_state.session.host()) && room.is_none() {
+    if (entries.is_empty() || !host) && room.is_none() {
         return Vec::new();
     }
-    let host = state.match_state.session.host();
     let locale = crate::i18n::selected_language();
-    let mut choices = vec![choice(0, crate::i18n::tr("VERA:CampaignModeStock"))];
+    let mut choices = vec![choice(0, stock_mode_label.to_owned())];
     choices.extend(entries.iter().enumerate().filter_map(|(index, entry)| {
         Some(choice(
             i32::try_from(index + 1).ok()?,
@@ -717,7 +775,7 @@ pub(super) fn setup_selectors(state: &AppState) -> Vec<crate::ui::multiplayer_se
         list_w: 0,
     }];
     if let Some(room) = room {
-        let mut choices = selected_series(state).map_or_else(Vec::new, |entry| {
+        let mut choices = selected_series(entries, room).map_or_else(Vec::new, |entry| {
             entry
                 .manifest
                 .stages_by_title(&locale)
@@ -728,7 +786,7 @@ pub(super) fn setup_selectors(state: &AppState) -> Vec<crate::ui::multiplayer_se
                 })
                 .collect::<Vec<_>>()
         });
-        let selected = selected_series(state)
+        let selected = selected_series(entries, room)
             .and_then(|entry| entry.manifest.stage_index(&room.stage))
             .and_then(|stage| {
                 choices
@@ -765,7 +823,22 @@ pub(super) fn role_choices(
             .iter()
             .find(|seat| seat.player.eq_ignore_ascii_case(name))
     });
-    let stage = visible_stage(state);
+    stage_role_choices(visible_stage(state), assigned)
+}
+
+fn stage_role_choices(
+    stage: Option<&CampaignStage>,
+    assigned: Option<&PlayingSource>,
+) -> (
+    Vec<crate::ui::multiplayer_setup::SetupChoice>,
+    Option<usize>,
+) {
+    if stage.is_some_and(|stage| stage.roles.is_empty()) {
+        return (
+            vec![choice(-1, crate::i18n::tr("VERA:CampaignOwnHouse"))],
+            Some(0),
+        );
+    }
     let mut choices = stage.map_or_else(Vec::new, |stage| {
         stage
             .roles
@@ -810,13 +883,14 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
         return Ok(());
     }
     let next = (|| -> Result<Option<CampaignRoom>> {
+        let entries = &state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .context("no setup")?
+            .campaign_catalog;
         if control == CAMPAIGN_SERIES {
-            let entry = state
-                .frontend
-                .network_setup_protocol
-                .as_ref()
-                .context("no setup")?
-                .campaign_catalog
+            let entry = entries
                 .get(usize::try_from(value - 1)?)
                 .context("unknown campaign series")?;
             let first = entry
@@ -831,7 +905,7 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
             .session
             .campaign_room()
             .context("no selected campaign")?;
-        let entry = selected_series(state).context("campaign manifest unavailable")?;
+        let entry = selected_series(entries, room).context("campaign manifest unavailable")?;
         let index = usize::try_from(value)?;
         if control == CAMPAIGN_STAGE {
             let stage = entry.manifest.stages.get(index).context("unknown stage")?;
@@ -853,7 +927,7 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
             .iter()
             .find(|human| human.raw_slot_index == Some(row))
             .context("unknown campaign participant")?;
-        room = room.with_roster(roster, stage);
+        room = room.with_roster(roster.humans.iter(), stage);
         let prior = room
             .source(&player.name)
             .and_then(|source| usize::try_from(source).ok())
@@ -883,6 +957,42 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+    use crate::skirmish_launch::SkirmishLaunchSession;
+
+    #[test]
+    fn a_stage_without_roles_shows_its_implicit_house_as_read_only() {
+        let manifest =
+            CampaignManifest::read("campaign.ini", &b"[Stage First]\nMap=stable.map\n"[..])
+                .unwrap();
+        let assigned = PlayingSource {
+            player: "Host".into(),
+            role: String::new(),
+        };
+        let (choices, selected) = stage_role_choices(Some(&manifest.stages[0]), Some(&assigned));
+        assert_eq!(selected, Some(0));
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].value, -1);
+        assert_eq!(choices[0].text, crate::i18n::tr("VERA:CampaignOwnHouse"));
+    }
+
+    #[test]
+    fn installed_campaigns_keep_the_localized_stock_mode_as_choice_zero() {
+        let manifest = CampaignManifest::read(
+            "campaigns/match/campaign.ini",
+            &b"[Stage First]\nMap=stable.map\n"[..],
+        )
+        .unwrap();
+        let series = [CampaignSeries {
+            id: "match".into(),
+            manifest,
+        }];
+        let selectors = setup_selectors(&series, None, true, "Kooperativ");
+        let combo = &selectors[0];
+        assert_eq!(combo.id, crate::ui::multiplayer_setup::CAMPAIGN_SERIES);
+        assert_eq!(combo.selected, Some(0));
+        assert_eq!(combo.choices[0].value, 0);
+        assert_eq!(combo.choices[0].text, "Kooperativ");
+    }
 
     #[test]
     fn room_compiles_shared_houses_and_source_scoped_grants_in_canonical_order() {
@@ -920,16 +1030,91 @@ mod tests {
             ],
             carry_over: Default::default(),
         };
-        let start = room.compile(&launch, stage, 0).unwrap();
+        let start = room.compile(launch.humans.iter(), stage, 0).unwrap();
         assert_eq!(room.source("ZHOST"), Some(1));
         assert_eq!(start.roles()[0].name, "Alice");
         assert_eq!(start.roles()[1].name, "Bob");
         assert!(start.roles().iter().all(|role| role.house == "Shared"));
         assert_eq!(start.difficulty(), 2);
+        assert!(same_players(&room, ["zhost", "aguest"].into_iter()));
+        assert!(!same_players(&room, ["ZHost"].into_iter()));
+        assert!(!same_players(&room, ["ZHost", "NewGuest"].into_iter()));
         launch.humans.pop();
         assert!(
-            room.compile(&launch, stage, 0).is_err(),
+            room.compile(launch.humans.iter(), stage, 0).is_err(),
             "minimum playing count"
         );
+    }
+
+    #[test]
+    fn continuation_checks_minimum_against_the_surviving_roster() {
+        use crate::app::match_runtime::session::{
+            CampaignResult, MatchSession, NetworkReturnContext,
+        };
+        use crate::sim::house_state::HouseOutcomeKind;
+        use crate::sim::world::Simulation;
+
+        let manifest = CampaignManifest::read(
+            "campaign.ini",
+            &b"[Stage First]\nMap=first.map\nMinPlayers=2\n[Roles First]\nA=Alpha\nB=Bravo\n"[..],
+        )
+        .unwrap();
+        let stage = &manifest.stages[0];
+        let profile = crate::test_fixture::json("tools/map_observation.command-bar.example.json");
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(profile["launch"].clone()).unwrap();
+        launch.opponents.clear();
+        launch.ai_player_count = 0;
+        let mut guest = launch.humans[0].clone();
+        guest.name = "Guest".into();
+        guest.raw_slot_index = Some(1);
+        launch.humans.push(guest);
+        let room = CampaignRoom {
+            series: "match".into(),
+            stage: "First".into(),
+            manifest_sha256: manifest.digest.clone(),
+            map_sha256: "a".repeat(64),
+            effective_map_digest: "b".repeat(64),
+            attempt: 1,
+            player_limit: 2,
+            difficulty: 1,
+            playing_sources: Vec::new(),
+            carry_over: Default::default(),
+        }
+        .with_roster(launch.humans.iter(), stage);
+        let start = PreparedCampaignStart {
+            authored: room.compile(launch.humans.iter(), stage, 0).unwrap(),
+            primary_houses: vec!["Alpha".into(), "Bravo".into()],
+            map_name: "first.map".into(),
+            map_source: LoadedMapSource::LegacyFallback {
+                label: "first.map".into(),
+            },
+            map_effective_digest: room.effective_map_digest.clone(),
+            local_source: room.source(&launch.local_player().name),
+            game_speed: 3,
+        };
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, true, None, false)
+            .unwrap();
+        session.accept_campaign_room(Some(room.clone()), 3).unwrap();
+        session.prepare_network_timing(2, || 0).unwrap();
+        session.freeze_network_start(19, Some(start)).unwrap();
+        assert!(session.disconnect_network_participant(1));
+        let result = CampaignResult::capture(
+            &manifest,
+            &room,
+            &Simulation::new(),
+            HouseOutcomeKind::Defeat,
+            0,
+            session.network_connected_source_indices(),
+        )
+        .unwrap();
+        session.open_campaign_result(result).unwrap();
+
+        let retry = room.with_roster(session.campaign_launch_humans(), stage);
+        assert_eq!(retry.player_names().collect::<Vec<_>>(), ["Player"]);
+        assert!(retry.validate_stage_count(stage).is_err());
     }
 }

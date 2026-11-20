@@ -206,6 +206,10 @@ impl GlobalChannel {
         self.timing = timing;
     }
 
+    pub fn retry_delta(&self) -> u32 {
+        self.timing.retry_delta
+    }
+
     pub fn require_authenticated_acknowledgments(&mut self) {
         self.config.acknowledgments = GlobalAcknowledgments::AuthenticatedSource;
     }
@@ -297,6 +301,19 @@ impl GlobalChannel {
         };
         let frame = self.frame(kind, outgoing_sequence, payload);
         self.send.enqueue(frame, destination)
+    }
+
+    /// Frame a one-shot control whose sender is about to reset its channel.
+    /// An ACK could no longer be consumed, so this does not occupy the
+    /// reliable queue or advance its sequence.
+    pub(super) fn terminal_frame(&self, payload: &[u8]) -> Option<Vec<u8>> {
+        (payload.len() <= self.config.max_payload_bytes).then(|| {
+            self.frame(
+                Delivery::Unreliable.wire_kind(),
+                self.next_send_sequence(),
+                payload,
+            )
+        })
     }
 
     /// Global53FCB0 accepts new sources. It compares the discriminator, not

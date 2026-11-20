@@ -1204,7 +1204,11 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         .lan_create_observer();
     if open_game_room(state, &listed, observe, resume)
         && let Some(campaign) = campaign
-        && let Err(error) = setup::campaign_room::resume_after_wol_result(state, *campaign)
+        && let Err(error) = setup::campaign_room::resume_after_wol_result(
+            state,
+            *campaign,
+            listed.iter().map(|member| member.name.as_str()),
+        )
     {
         log::warn!("WOL campaign continuation refused: {error:#}");
         message_line(state, crate::i18n::tr("VERA:CampaignRoomUnavailable"));

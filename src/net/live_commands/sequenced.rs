@@ -34,6 +34,7 @@ const MAX_FRAME_RECORDS: usize =
     MAX_FRAME_BATCHES * MAX_FEDERATED_RELAYS * OUT_LIST_CAPACITY + MAX_PEERS as usize;
 const SAMPLE_HISTORY: usize = 4096;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
+const NARRATIVE_PAUSE_RETRY_MS: i32 = 1_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
 // A relay record this build cannot read ends the match once it has held the
 // cursor, or before the start every Status, this long while the relay keeps
@@ -150,6 +151,12 @@ pub struct MultiplayerPauseStatus {
     pub frame: u32,
     pub epoch: u64,
     pub pending: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NarrativeHold {
+    Player,
+    Host,
 }
 
 /// A relay rate change, released when its first frame dispatches. The relay
@@ -277,6 +284,7 @@ struct PauseRequest {
     id: u64,
     expected_epoch: u64,
     paused: bool,
+    narrative: bool,
     last_sent: Option<u32>,
     acknowledged_epoch: Option<u64>,
 }
@@ -492,6 +500,9 @@ pub(super) struct SequencedSession {
     last_pause_control: Option<u32>,
     pause_request: Option<PauseRequest>,
     next_pause_request: u64,
+    narrative_hold: Option<NarrativeHold>,
+    narrative_pause_epoch: Option<u64>,
+    last_narrative_pause_attempt: Option<u32>,
     keep_running_for_exit: bool,
     next_sequence: u64,
     entries: BTreeMap<u64, ReceivedEntry>,
@@ -615,6 +626,9 @@ impl SequencedSession {
             last_pause_control: None,
             pause_request: None,
             next_pause_request: 1,
+            narrative_hold: None,
+            narrative_pause_epoch: None,
+            last_narrative_pause_attempt: None,
             keep_running_for_exit: false,
             next_sequence: 1,
             entries: BTreeMap::new(),
@@ -830,6 +844,12 @@ impl SequencedSession {
     }
 
     pub(super) fn request_pause(&mut self, paused: bool) -> bool {
+        self.narrative_hold.is_none()
+            && self.narrative_pause_epoch.is_none()
+            && self.queue_pause_request(paused, false)
+    }
+
+    fn queue_pause_request(&mut self, paused: bool, narrative: bool) -> bool {
         if !self.pause_status().available
             || self.pause_request.is_some()
             || self.pause.paused == paused
@@ -843,11 +863,22 @@ impl SequencedSession {
             id: self.next_pause_request,
             expected_epoch: self.pause.epoch,
             paused,
+            narrative,
             last_sent: None,
             acknowledged_epoch: None,
         });
         self.next_pause_request = next;
         true
+    }
+
+    pub(super) fn set_narrative_hold(&mut self, hold: Option<NarrativeHold>) {
+        if self.narrative_hold != hold {
+            self.narrative_hold = hold;
+            self.last_narrative_pause_attempt = None;
+            self.pace_meter.backlog_since = None;
+            self.pace_meter.slow_windows = 0;
+            self.pause_found_behind = false;
+        }
     }
 
     pub(super) fn keep_running_for_exit(&mut self) {
@@ -951,8 +982,19 @@ impl SequencedSession {
         // A confirmed UI exit remains in the native command queue. Keep its
         // timeline running until teardown, including when a pending pause or
         // another participant's pause wins before that EXIT is dispatched.
-        if self.keep_running_for_exit && self.pause.paused && self.pause_request.is_none() {
-            self.request_pause(false);
+        if self.keep_running_for_exit {
+            self.queue_pause_request(false, false);
+        } else if self.narrative_hold == Some(NarrativeHold::Host) {
+            if service_due(
+                self.last_narrative_pause_attempt,
+                now,
+                NARRATIVE_PAUSE_RETRY_MS,
+            ) && self.queue_pause_request(true, true)
+            {
+                self.last_narrative_pause_attempt = Some(now);
+            }
+        } else if self.narrative_pause_epoch == Some(self.pause.epoch) {
+            self.queue_pause_request(false, true);
         }
         if let Some(request) = &mut self.pause_request {
             if service_due(request.last_sent, now, 100)
@@ -975,14 +1017,19 @@ impl SequencedSession {
         if !self.started {
             return;
         }
-        let measured = !self.restoring && !self.pause.paused && !self.keep_running_for_exit;
-        if let Some((pace, ran, tick_micros)) =
-            self.pace_meter
-                .report(now, self.frames.len(), self.pace_fps, measured)
-        {
+        if let Some((pace, ran, tick_micros)) = self.pace_report(now) {
             // It rides the next UPLINK once; a lost one only goes stale.
             transport.queue_ordering_pace(pace, ran, tick_micros);
         }
+    }
+
+    fn pace_report(&mut self, now: u32) -> Option<(OrderPace, u16, Option<u32>)> {
+        let measured = !self.restoring
+            && !self.pause.paused
+            && !self.keep_running_for_exit
+            && self.narrative_hold.is_none();
+        self.pace_meter
+            .report(now, self.frames.len(), self.pace_fps, measured)
     }
 
     fn finish_pause_request(&mut self) {
@@ -1269,6 +1316,9 @@ impl SequencedSession {
         {
             return Some(super::NetworkRecoveryStatus::Reconnecting);
         }
+        if self.narrative_hold.is_some() {
+            return None;
+        }
         self.catching_up_frames(current_frame)
             .map(|frames| super::NetworkRecoveryStatus::CatchingUp { frames })
     }
@@ -1293,7 +1343,7 @@ impl SequencedSession {
     /// rejoining game replays while still behind. gamemd's lockstep makes
     /// everyone wait for a slow player, so it has no such line.
     pub(super) fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
-        if !self.pause.paused {
+        if !self.pause.paused || self.narrative_hold.is_some() {
             self.pause_found_behind = false;
         } else if reached {
             return std::mem::take(&mut self.pause_found_behind)
@@ -1470,6 +1520,15 @@ impl SequencedSession {
                     self.pause.paused = paused;
                     self.pause.frame = frame;
                     self.pause.epoch = epoch;
+                    // A concurrent player pause is never ours to resume.
+                    self.narrative_pause_epoch = (paused
+                        && source == self.local_source
+                        && self.pause_request.as_ref().is_some_and(|request| {
+                            request.narrative
+                                && request.paused
+                                && request.expected_epoch.checked_add(1) == Some(epoch)
+                        }))
+                    .then_some(epoch);
                     // VERA: another player's marker names them once the world
                     // reaches it; gamemd's speed line likewise skips its own
                     // sender (0x004C794B). A watcher names every player.
@@ -2548,6 +2607,24 @@ mod pace_tests {
             Some((KeepingUp, 20, Some(9000)))
         );
         assert_eq!(window(&mut meter, 9000, 20), Some((KeepingUp, 20, None)));
+    }
+
+    #[test]
+    fn narrative_media_wait_does_not_report_slow_simulation_to_the_relay() {
+        let mut session = session_for(&[0, 1]);
+        session.frames.resize_with(20, CommittedFrame::default);
+        session.pace_meter.backlog_since = Some(1000);
+        session.pace_meter.slow_windows = 2;
+        session.set_narrative_hold(Some(NarrativeHold::Player));
+        assert!(!session.pause.paused);
+        assert!(session.pause_refused || !session.pause_status().available);
+        for now in [3000, 4000, 5000, 6000] {
+            assert_eq!(
+                session.pace_report(now).unwrap().0,
+                OrderPace::KeepingUp,
+                "a deliberate wait is not catch-up even if this relay cannot pause"
+            );
+        }
     }
 
     /// A rate marker paces the frames after it, keeps the simulation's

@@ -4247,6 +4247,80 @@ fn sequenced_push_advances_without_requests_and_repairs_a_lost_range() {
 }
 
 #[test]
+fn authored_narrative_hold_stops_the_ordered_relay_clock() {
+    use crate::net::live_commands::NarrativeHold;
+
+    let (mut worlds, rules, _, boundaries, mut relay) = sequenced_pair();
+    let mut now = 16_000;
+    for _ in 0..250 {
+        now += 16;
+        service_pair(&mut worlds, &boundaries, now);
+        relay.pass(now, |_| true);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            production_frame(world, &rules, boundary);
+        }
+        if worlds
+            .iter()
+            .all(|world| world.session().binary_frame() >= 12)
+        {
+            break;
+        }
+    }
+    assert!(
+        worlds
+            .iter()
+            .all(|world| world.session().binary_frame() >= 12)
+    );
+    for (boundary, hold) in boundaries
+        .iter()
+        .zip([NarrativeHold::Host, NarrativeHold::Player])
+    {
+        boundary.live.borrow_mut().set_narrative_hold(Some(hold));
+    }
+    let head_before_hold = boundaries[0].live.borrow().relay_head_frame().unwrap();
+    let pump_held =
+        |now: &mut u64, worlds: &mut [Simulation; 2], relay: &mut LoopbackRelay, passes: usize| {
+            for _ in 0..passes {
+                *now += 16;
+                service_pair(worlds, &boundaries, *now);
+                relay.pass(*now, |_| true);
+            }
+        };
+    pump_held(&mut now, &mut worlds, &mut relay, 36);
+    let pause = boundaries[0].live.borrow().multiplayer_pause().unwrap();
+    assert!(pause.paused);
+    assert!(pause.frame - head_before_hold < 15);
+    assert!(
+        !boundaries[1]
+            .live
+            .borrow_mut()
+            .request_multiplayer_pause(false)
+    );
+
+    // No player consumes frames during the clip. An active relay clock
+    // would seal another 120 frames during this interval.
+    pump_held(&mut now, &mut worlds, &mut relay, 250);
+    for boundary in &boundaries {
+        let live = boundary.live.borrow();
+        assert_eq!(live.relay_head_frame(), Some(pause.frame));
+        assert_eq!(live.committed_frontier(), pause.frame);
+    }
+
+    for boundary in &boundaries {
+        boundary.live.borrow_mut().set_narrative_hold(None);
+    }
+    pump_held(&mut now, &mut worlds, &mut relay, 24);
+    for boundary in &boundaries {
+        let live = boundary.live.borrow();
+        let resumed = live.multiplayer_pause().unwrap();
+        assert!(!resumed.paused);
+        assert_eq!(resumed.epoch, pause.epoch + 1);
+        let head = live.relay_head_frame().unwrap();
+        assert!((pause.frame + 1..pause.frame + 15).contains(&head));
+    }
+}
+
+#[test]
 fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
     use crate::net::live_commands::MatchPauseChange;
     use crate::sim::command::{Command, MEGAMISSION_OPCODE};
