@@ -2926,3 +2926,6 @@ fn test_gated_files(files: &[SourceFile]) -> BTreeSet<String> {
     }
     gated
 }
+
+// Shared-state, worker-pool and Deref guards.
+mod shared_state;
