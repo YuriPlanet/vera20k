@@ -544,17 +544,16 @@ fn checked_tileset_ordinal(ordinal: u32) -> Result<u16, MapError> {
 }
 
 fn read_tileset_row(ini: &IniFile, ordinal: u32) -> Result<Option<(&IniSection, i32)>, MapError> {
-    let section_name = format!("TileSet{ordinal:04}");
-    let section = ini.section(&section_name);
-    let tiles_in_set = section.map_or(-1, |section| section.read_int("TilesInSet", -1));
+    // An absent section reads the -1 default, which ends the registry too.
+    let Some(section) = ini.section(&format!("TileSet{ordinal:04}")) else {
+        return Ok(None);
+    };
+    let tiles_in_set = section.read_int("TilesInSet", -1);
     if tiles_in_set == -1 {
         return Ok(None);
     }
     checked_tileset_ordinal(ordinal)?;
-    Ok(Some((
-        section.expect("nonterminating TilesInSet requires a section"),
-        tiles_in_set,
-    )))
+    Ok(Some((section, tiles_in_set)))
 }
 
 /// Parse a theater INI file into a TilesetLookup.
@@ -1510,16 +1509,16 @@ pub fn inject_template_tiles(
         .ok_or_else(|| format!("TMP {filename} missing from MIX archives"))?;
     let tmp = TmpFile::from_bytes(tmp_data)
         .map_err(|error| format!("TMP {filename} failed to parse: {error:#}"))?;
-    let cell_count = (tmp.template_width * tmp.template_height) as usize;
-    for sub_tile in 0..cell_count {
-        if tmp.tiles[sub_tile].is_none() {
-            continue;
+    // A map cell names its subtile in one byte, so a template's cells past
+    // the 256th can never be drawn.
+    for (sub_tile, cell) in (0..=u8::MAX).zip(&tmp.tiles) {
+        if cell.is_some() {
+            needed.insert(TileKey {
+                tile_id,
+                sub_tile,
+                variant: 0,
+            });
         }
-        needed.insert(TileKey {
-            tile_id,
-            sub_tile: sub_tile as u8,
-            variant: 0,
-        });
     }
     Ok(())
 }
