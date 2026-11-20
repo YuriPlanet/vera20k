@@ -5,8 +5,8 @@
 use serde_json::Value;
 
 use super::{
-    AuthoredCampaignLaunch, AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError,
-    ScenarioBootstrapRng, initialize_campaign_current_house, initialize_map_roster_houses,
+    AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, ScenarioBootstrapRng,
+    initialize_campaign_current_house, initialize_map_roster_houses,
 };
 use crate::map::campaign_manifest::{CampaignGrant, CampaignManifest, ManifestControlScope};
 use crate::map::houses::{HouseRoster, is_allied_with, parse_house_roster};
@@ -17,6 +17,7 @@ use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPr
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::rng::SimRng;
+use crate::sim::scenario_bootstrap::prefix_plan::AuthoredCampaignLaunch;
 use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 
