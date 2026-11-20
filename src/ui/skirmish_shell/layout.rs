@@ -2215,7 +2215,7 @@ mod tests {
         // One pixel wider and taller than the resource conversion, like every
         // family child in the retail stills; the frames and the plaque sit
         // around this window.
-        use crate::ui::shell::layout::tests::executed_child_window as executed;
+        use vera20k_gui::fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
             assert_eq!(layout.trackbars.game_speed, executed(0x102, 0x529, w, h));
@@ -2250,7 +2250,7 @@ mod tests {
 
     #[test]
     fn right_panel_statics_and_status_line_match_the_executed_relayout() {
-        use crate::ui::shell::layout::tests::executed_child_window as executed;
+        use vera20k_gui::fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
             assert_eq!(layout.right_panel_text.title, executed(0x102, 0x694, w, h));

@@ -7,6 +7,15 @@ publish = false
 
 # No dependency on the engine crates: the host hands in images, text and input.
 [dependencies]
+web-time = "1"
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# The native fixtures the host's tests replay too.
+test-support = ["dep:serde_json"]
 
 [lints]
 workspace = true

@@ -666,7 +666,7 @@ mod tests {
     fn every_window_matches_the_executed_relayout() {
         // tools/storage_oracle/shell_relayout.py: the right-panel children
         // move with the screen, the table keeps its template windows.
-        use crate::ui::shell::layout::tests::executed_child_window as executed;
+        use vera20k_gui::fixtures::executed_child_window as executed;
         const BANDS: [u16; 10] = [
             0x790, 0x791, 0x78F, 0x792, 0x793, 0x794, 0x795, 0x796, 0x797, 0x798,
         ];
@@ -724,7 +724,7 @@ mod tests {
     fn every_table_static_reveals_with_its_native_parameters() {
         // tools/storage_oracle/shell_static_timers.py executes the getters for
         // each 0x108 control; the page's statics must carry what they return.
-        let cases = crate::ui::shell::static_reveal::tests::native_static_timer_cases();
+        let cases = vera20k_gui::fixtures::native_static_timer_cases();
         let native = |control: u16| {
             let case = cases
                 .iter()

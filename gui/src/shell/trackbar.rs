@@ -266,7 +266,7 @@ pub fn value_text_rect(window: RectPx, scale: ShellScale) -> RectPx {
     })
 }
 
-#[cfg(all(test, tests_ui))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -275,7 +275,7 @@ mod tests {
         // Reproduced by tools/storage_oracle/launcher_trackbar.py from the
         // hash-checked retail executable. This compares the separate native
         // range+1 pointer partition and range-only retained paint calculation.
-        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        let golden: serde_json::Value = serde_json::from_str(crate::fixtures::text(
             "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
@@ -298,7 +298,7 @@ mod tests {
         // sliders 129, Generate Map 226, the D5 plain sliders 181) with their
         // owners' ranges; Credits runs 5000..10000 in steps of 100 (retail
         // Rules).
-        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        let golden: serde_json::Value = serde_json::from_str(crate::fixtures::text(
             "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();
@@ -378,7 +378,7 @@ mod tests {
         // (tools/storage_oracle/launcher_trackbar.py): saved values outside
         // the range, the stepped read-back, a zero step and a minimum off
         // the step.
-        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        let golden: serde_json::Value = serde_json::from_str(crate::fixtures::text(
             "tools/storage_oracle/launcher_trackbar.json",
         ))
         .unwrap();

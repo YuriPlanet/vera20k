@@ -446,4 +446,16 @@ mod tests {
         // Base SP cell (644,199,156,42) scaled 0.8x/0.8x → (515, 159, 125, 34).
         assert_eq!(layout.buttons[0].rect, RectPx::new(515, 159, 125, 34));
     }
+    #[test]
+    fn production_main_menu_title_uses_exact_runtime_rect_at_required_resolutions() {
+        for (screen_w, screen_h, expected) in [
+            (640, 480, RectPx::new(475, 9, 163, 18)),
+            (800, 600, RectPx::new(635, 9, 163, 18)),
+            (1024, 768, RectPx::new(747, 93, 163, 18)),
+        ] {
+            let actual = compute_layout(screen_w, screen_h).title;
+            assert_eq!(actual, expected, "{screen_w}x{screen_h}");
+        }
+    }
+
 }

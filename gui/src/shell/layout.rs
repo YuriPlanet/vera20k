@@ -147,13 +147,13 @@ fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx, inset: Option<i32>) 
     )
 }
 
-#[cfg(all(test, tests_ui))]
-pub(crate) mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    use crate::ui::shell::descriptor::{
+    use crate::shell::descriptor::{
         BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
     };
-    use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
+    use crate::shell::geom::SDBTNANM_CELL_W_NARROW;
 
     /// `0x102`'s status line (410x12 DLU) is wider than the family's and
     /// already reaches the bar's end, so its text box stays on the screen.
@@ -165,58 +165,6 @@ pub(crate) mod tests {
             let text_box = status_text_rect(window);
             assert_eq!(text_box.x + text_box.w, 628, "{window:?}");
         }
-    }
-
-    /// Child `control` of `dialog` at `width`x`height` after the executed
-    /// WM_INITDIALOG relayout (`tools/storage_oracle/shell_relayout.py`).
-    pub(crate) fn executed_child_window(
-        dialog: u16,
-        control: u16,
-        width: i32,
-        height: i32,
-    ) -> RectPx {
-        executed_child_window_for_side(dialog, control, width, height, 0)
-    }
-
-    /// As [`executed_child_window`] for a case whose relayout depends on the
-    /// campaign side (`0x103`'s `0x72B` override).
-    pub(crate) fn executed_child_window_for_side(
-        dialog: u16,
-        control: u16,
-        width: i32,
-        height: i32,
-        side: i32,
-    ) -> RectPx {
-        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/shell_relayout.json",
-        ))
-        .unwrap();
-        let case = fixture["cases"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|case| {
-                case["dialog_id"] == dialog
-                    && case["width"] == width
-                    && case["height"] == height
-                    && case["side"] == side
-            })
-            .unwrap_or_else(|| {
-                panic!("no relayout of {dialog:#x} at {width}x{height} side {side}")
-            });
-        let child = case["children"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|child| child["id"] == control)
-            .unwrap_or_else(|| panic!("{dialog:#x} has no child {control:#x}"));
-        let rect: Vec<i32> = child["rect"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_i64().unwrap() as i32)
-            .collect();
-        RectPx::new(rect[0], rect[1], rect[2], rect[3])
     }
 
     fn ctrl(id: u16, kind: ControlKind, dlu: RectPx, anchor: AnchorRule) -> ControlDescriptor {
@@ -266,13 +214,13 @@ pub(crate) mod tests {
                     0x0694,
                     ControlKind::Static,
                     RectPx::new(425, 1, 108, 10),
-                    crate::ui::shell::descriptor::HEADING_ANCHOR,
+                    crate::shell::descriptor::HEADING_ANCHOR,
                 ),
                 ctrl(
                     0x071C,
                     ControlKind::Static,
                     RectPx::new(447, 29, 61, 33),
-                    crate::ui::shell::descriptor::MONITOR_ANCHOR,
+                    crate::shell::descriptor::MONITOR_ANCHOR,
                 ),
             ],
         };
@@ -294,31 +242,19 @@ pub(crate) mod tests {
         // the panel art, which only moves from height 768.
         for (screen_h, heading_y, monitor_y) in [(480, 9, 47), (700, 59, 97), (720, 69, 107)] {
             let heading = anchor_rect(
-                crate::ui::shell::descriptor::HEADING_ANCHOR,
+                crate::shell::descriptor::HEADING_ANCHOR,
                 RectPx::new(425, 1, 108, 10),
                 800,
                 screen_h,
             );
             let monitor = anchor_rect(
-                crate::ui::shell::descriptor::MONITOR_ANCHOR,
+                crate::shell::descriptor::MONITOR_ANCHOR,
                 RectPx::new(447, 29, 61, 33),
                 800,
                 screen_h,
             );
             assert_eq!(heading, RectPx::new(635, heading_y, 163, 18), "{screen_h}");
             assert_eq!(monitor, RectPx::new(670, monitor_y, 93, 55), "{screen_h}");
-        }
-    }
-
-    #[test]
-    fn production_main_menu_title_uses_exact_runtime_rect_at_required_resolutions() {
-        for (screen_w, screen_h, expected) in [
-            (640, 480, RectPx::new(475, 9, 163, 18)),
-            (800, 600, RectPx::new(635, 9, 163, 18)),
-            (1024, 768, RectPx::new(747, 93, 163, 18)),
-        ] {
-            let actual = crate::ui::main_menu_shell::compute_layout(screen_w, screen_h).title;
-            assert_eq!(actual, expected, "{screen_w}x{screen_h}");
         }
     }
 

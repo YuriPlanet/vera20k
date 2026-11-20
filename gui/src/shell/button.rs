@@ -72,13 +72,13 @@ pub fn owner_button_frame(pressed: bool, highlighted: bool) -> usize {
     }
 }
 
-#[cfg(all(test, tests_ui))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn type2_type3_frame_selection_matches_original_owner_instructions() {
-        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        let fixture: serde_json::Value = serde_json::from_str(crate::fixtures::text(
             "tools/storage_oracle/owner_button_frame.json",
         ))
         .unwrap();
@@ -124,7 +124,7 @@ mod tests {
 /// Visual input for the shared owner-draw button. Timer highlight is separate
 /// from hover and from enabled state (612B70 record+C4/C5).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct ButtonVisual {
+pub struct ButtonVisual {
     pub pressed: bool,
     pub highlighted: bool,
 }
@@ -138,6 +138,6 @@ impl From<bool> for ButtonVisual {
 }
 /// Original612B70 4DC starts a1000ms alternating highlight, initiallyoff.
 /// Both the ordinary menu policy and explicit guest Accept prompt use it.
-pub(crate) fn flash_phase(start: crate::util::time::Instant, now: crate::util::time::Instant) -> bool {
+pub fn flash_phase(start: crate::time::Instant, now: crate::time::Instant) -> bool {
     now.saturating_duration_since(start).as_millis() / 1000 % 2 == 1
 }

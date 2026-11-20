@@ -1182,7 +1182,7 @@ mod tests {
     /// (`tools/storage_oracle/shell_relayout.py`), for both campaign sides.
     #[test]
     fn control_windows_match_executed_0x103_relayout_at_each_retail_size() {
-        use crate::ui::shell::layout::tests::executed_child_window_for_side as executed;
+        use vera20k_gui::fixtures::executed_child_window_for_side as executed;
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             for side in [0, 1] {
                 let layout = compute_layout_for_side(width, height, side);

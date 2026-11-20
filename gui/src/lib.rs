@@ -4,9 +4,13 @@
 //! tree, input routing, the dialog stack and widget state. The host reads the
 //! laid-out tree and paints it with its own renderer.
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures;
 pub mod geom;
 pub mod gui;
 pub mod node;
+pub mod shell;
+pub mod time;
 
 pub use geom::Rect;
 pub use gui::{

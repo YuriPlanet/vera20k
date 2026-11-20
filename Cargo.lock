@@ -3309,6 +3309,10 @@ dependencies = [
 [[package]]
 name = "vera20k-gui"
 version = "0.3.8"
+dependencies = [
+ "serde_json",
+ "web-time",
+]
 
 [[package]]
 name = "vera20k-relay"
