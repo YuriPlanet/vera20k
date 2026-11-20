@@ -702,7 +702,7 @@ impl App {
                     &resources.archives,
                 )
                 .and_then(|assets| assets.with_resource_config(&resources))
-                    .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
+                .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
         });
@@ -816,14 +816,13 @@ impl App {
             // Ordinary interactive startup runs with the frame above on
             // screen: the presented swapchain frame stays composited while this
             // thread blocks.
-            let mut process_assets =
-                crate::app::process_assets::ProcessAssets::new(
-                    startup_options.media_archive_mode,
-                    startup_audio.load_audio_indices,
-                )
-                .with_resources(resources)
-                .with_personal_rules(personal_rules)
-                .with_ares_setting(ares_setting);
+            let mut process_assets = crate::app::process_assets::ProcessAssets::new(
+                startup_options.media_archive_mode,
+                startup_audio.load_audio_indices,
+            )
+            .with_resources(resources)
+            .with_personal_rules(personal_rules)
+            .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
             // Phobos parses `uimd.ini` once right after the archive mount
             // (`src/Phobos.INI.cpp:135-170`); the loading screen's
@@ -1254,6 +1253,7 @@ impl App {
                     tool_tip_blur: phobos_client.tool_tip_blur,
                     tooltip_blur_rects: Vec::new(),
                     tooltip_blur_size: 0.0,
+                    outcome_banner_presentation: Default::default(),
                     software_cursor: startup_software_cursor,
                 },
                 match_audio: Default::default(),

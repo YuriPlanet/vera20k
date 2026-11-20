@@ -342,12 +342,17 @@ impl TerrainDrawRenderer {
                 cache: None,
             })
         };
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Terrain signed Z and packed destination edit"),
-            source: wgpu::ShaderSource::Wgsl(
-                super::webgl::camera_source(device, edit_source(webgl)).into(),
-            ),
-        });
+        // `replay_earlier` walks at most one window of commands and as many
+        // shadow halves (`batching::WINDOW`).
+        let shader = super::gpu::bounded_loop_module(
+            device,
+            wgpu::ShaderModuleDescriptor {
+                label: Some("Terrain signed Z and packed destination edit"),
+                source: wgpu::ShaderSource::Wgsl(
+                    super::webgl::camera_source(device, edit_source(webgl)).into(),
+                ),
+            },
+        );
         let edit_records = super::uniform_windows::UniformWindows::new(
             device,
             queue,

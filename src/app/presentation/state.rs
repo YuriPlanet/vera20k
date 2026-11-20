@@ -84,6 +84,8 @@ pub(crate) struct MatchPresentationState {
     /// tooltip instances each frame; empty keeps native's no-op.
     pub(crate) tooltip_blur_rects: Vec<[f32; 4]>,
     pub(crate) tooltip_blur_size: f32,
+    pub(crate) outcome_banner_presentation:
+        crate::app::presentation::outcome_banner::OutcomeBannerPresentation,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
     /// Overlay entries from map for per-frame instance generation.

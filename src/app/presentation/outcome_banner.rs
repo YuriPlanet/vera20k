@@ -18,6 +18,27 @@ use crate::render::gpu::GpuContext;
 use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
 use crate::sim::house_state::HouseOutcomeKind;
 
+/// The verdict in the last battlefield picture handed off for presentation.
+#[derive(Default)]
+pub(crate) struct OutcomeBannerPresentation {
+    last_presented: Option<HouseOutcomeKind>,
+}
+
+impl OutcomeBannerPresentation {
+    pub(crate) fn record_presented(&mut self, verdict: Option<HouseOutcomeKind>) {
+        self.last_presented = verdict;
+    }
+
+    pub(crate) fn hold_on_exit(
+        &self,
+        verdict: HouseOutcomeKind,
+        custom_banner: bool,
+        visible_skirmish: bool,
+    ) -> bool {
+        custom_banner || (visible_skirmish && self.last_presented != Some(verdict))
+    }
+}
+
 struct Frame {
     size: [u32; 2],
     offset: [u16; 2],
@@ -378,12 +399,18 @@ fn result_view(kind: HouseOutcomeKind, campaign: bool) -> (usize, &'static str) 
     }
 }
 
+pub(crate) fn visible_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
+    local_outcome(state).filter(|_| {
+        crate::app::presentation::field_parts::shows(state, crate::ui::field_layout::FieldPart::Banner)
+    })
+}
+
 /// Tactical6D4E20 chooses shape first; centred white text is its missing-art
 /// branch. Its geometry follows the tactical viewport and is screen-fixed.
-pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    let Some(outcome_kind) = local_outcome(state) else {
-        return Default::default();
-    };
+pub(crate) fn instances(
+    state: &AppState,
+    outcome_kind: HouseOutcomeKind,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let campaign = !state
         .match_state
         .sim_runtime
@@ -392,10 +419,6 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     let (frame, label) = result_view(outcome_kind, campaign);
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
-    // A layout that leaves the banner out draws none.
-    if !field_parts::shows(state, FieldPart::Banner) {
-        return Default::default();
-    }
     // The banner is centred in its box, the battlefield in the original
     // interface, and laid out in the box's own pixels.
     let [_, _, width, height] = field_parts::rect(state, FieldPart::Banner);
