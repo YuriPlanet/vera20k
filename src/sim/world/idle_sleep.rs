@@ -293,9 +293,9 @@ impl Simulation {
     }
 
     /// Whether an extension's per-visit steps, which this module has not
-    /// sorted, can run in this game: Ares plays, or the build carries Phobos.
+    /// sorted, can run in this game: Ares plays, or Phobos plays.
     pub(super) fn extension_steps_unsorted(&self, rules: &RuleSet) -> bool {
-        rules.ares() || crate::rules::PHOBOS_ENABLED
+        rules.ares() || rules.phobos()
     }
 
     /// The frame plain idle building `id` may sleep until and its owner

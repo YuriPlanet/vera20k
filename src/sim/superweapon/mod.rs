@@ -2095,6 +2095,9 @@ pub(crate) fn tick_house_superweapon_instances(
                 .expect("selected retained Super");
             // The fade head precedes the granted/held/readiness gates.
             let fade = instance.step_fade();
+            // One frame of the per-building shots (Superweapon Limit), ready
+            // or not while the Super is granted and not held.
+            instance.step_building_charges();
             let sw = rules.super_weapon(sim.interner.resolve(type_id));
             // Phobos `SuperClass_AI_UseWeeds @ 0x6CBD2C` replaces the timer
             // body for a `UseWeeds=` Super.
