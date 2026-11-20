@@ -242,6 +242,9 @@ impl NetworkMapMetadata {
 struct ParticipantAdmission {
     ready: bool,
     map_status: u8,
+    /// VERA: the K this participant last sent for the current map. A
+    /// revision clears `map_status`, not this; a new map clears both.
+    reported_map_status: Option<u8>,
 }
 
 /// A viewer's transport identity. It cannot be translated into a command
@@ -670,6 +673,7 @@ impl MatchSession {
             .map(|index| ParticipantAdmission {
                 ready: false,
                 map_status: u8::from(index == launch.local_player_index),
+                reported_map_status: None,
             })
             .collect();
         let inactive_choices =
@@ -869,6 +873,7 @@ impl MatchSession {
         admission.push(ParticipantAdmission {
             ready: false,
             map_status: 0,
+            reported_map_status: None,
         });
         self.keep_spectator_row()?;
         // A newcomer who gets a seat in a VERA room with teams joins the
@@ -1673,6 +1678,11 @@ impl MatchSession {
             network.local_map_source = None;
             network.local_map_effective_digest = None;
             network.local_random_map_preview = None;
+            if let NetworkPhase::Setup { admission, .. } = &mut network.phase {
+                for entry in admission {
+                    entry.reported_map_status = None;
+                }
+            }
         }
         network.map_metadata = Some(metadata);
         Ok(())
@@ -2993,6 +3003,20 @@ impl MatchSession {
     ) -> anyhow::Result<()> {
         self.network_admission_mut(index)?.map_status = status;
         Ok(())
+    }
+
+    /// The host takes a participant's K (`0x5E39C0`) and learns whether it
+    /// is news: the first K about this map, or a changed one. A native
+    /// guest sends K once per map; VERA's online guests repeat theirs with
+    /// every options revision, which says nothing new.
+    pub(crate) fn report_network_map_status(
+        &mut self,
+        index: usize,
+        status: u8,
+    ) -> anyhow::Result<bool> {
+        let entry = self.network_admission_mut(index)?;
+        entry.map_status = status;
+        Ok(entry.reported_map_status.replace(status) != Some(status))
     }
 
     fn network_admission_mut(&mut self, index: usize) -> anyhow::Result<&mut ParticipantAdmission> {
@@ -5199,6 +5223,41 @@ mod tests {
             assert_eq!(session.network_map_status(1 - local), Some(0));
             assert_eq!(session.network_map_status(local), Some(1));
         }
+    }
+
+    /// Online guests repeat their K with every options revision. The host's
+    /// room prints it once per map, and again only when it changes.
+    #[test]
+    fn a_repeated_map_report_is_news_once_per_map() {
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        let launch = network_fixture();
+        let guest = 1 - launch.local_player_index;
+        session
+            .accept_network_setup(launch, true, None, false)
+            .unwrap();
+        let mut metadata = super::NetworkMapMetadata {
+            display_name: "Room map".into(),
+            player_capacity: 8,
+            official: false,
+            byte_length: 1234,
+            digest: "Room".into(),
+            source_sha256: "a".repeat(64),
+            effective_digest: "b".repeat(64),
+        };
+        session
+            .accept_network_map_metadata(metadata.clone(), None, true)
+            .unwrap();
+        assert!(session.report_network_map_status(guest, 0).unwrap());
+        session.invalidate_network_agreement().unwrap();
+        assert!(!session.report_network_map_status(guest, 0).unwrap());
+        assert_eq!(session.network_map_status(guest), Some(0));
+        assert!(session.report_network_map_status(guest, 1).unwrap());
+        metadata.source_sha256 = "c".repeat(64);
+        session
+            .accept_network_map_metadata(metadata, None, true)
+            .unwrap();
+        assert!(session.report_network_map_status(guest, 1).unwrap());
     }
 
     #[test]

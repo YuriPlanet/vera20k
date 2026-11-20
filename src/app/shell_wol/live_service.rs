@@ -1548,9 +1548,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 fail_start(state, &tr(line));
             }
         }
-        if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
-            maps::poll(state, &mut service);
-        }
+        poll_maps(state, &mut service);
         if let Err(error) = poll_watch(state, &mut service) {
             log::warn!("Could not watch the match: {error:#}");
             fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
@@ -1576,6 +1574,13 @@ fn notice(state: &mut AppState, text: &str) {
         },
     );
     state.platform.window.request_redraw();
+}
+
+/// The room's map transfer runs only between matches.
+fn poll_maps(state: &mut AppState, service: &mut LiveService) {
+    if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
+        maps::poll(state, service);
+    }
 }
 
 /// The chat a returning player lands in: the kept room once the lobby gives
@@ -3498,6 +3503,13 @@ fn apply_event(
                 }
             }
             maps::received_options(state, service, generated)?;
+            // VERA: a guest checks the map these options name before
+            // reporting on it, or one that has it reports 0 first and the
+            // host's room says it lacks the map. The host's own upload still
+            // waits for the poll, after the lobby's `map_available`.
+            if !state.match_state.session.host() {
+                poll_maps(state, service);
+            }
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
             let agreement = local_agreement(state, service.revision)?;
