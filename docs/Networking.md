@@ -27,6 +27,11 @@ press OK. Names use 1–24 ASCII letters, digits, underscores or hyphens;
 each active player needs a different name. No password or account creation is
 required. Players then create or join a game. A host can
 select Easy, Normal or Hard AI from an open player slot in Battle or Free For All.
+
+On the Internet login page, players can delete their own account with its username
+or registered email and current password. Older clients and a rolled-back lobby
+support the username form. [Account protocol](lobby-protocol.md#accounts)
+
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.

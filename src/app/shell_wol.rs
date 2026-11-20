@@ -216,6 +216,8 @@ pub(crate) struct WolVisit {
     legacy_ui: bool,
     live_service: Option<live_service::LiveService>,
     requests: Vec<WolServiceRequest>,
+    /// Latest account form submission, including one still queued for the next poll.
+    account_attempt: u64,
     /// The WOLAPI credential store as the service last reported it.
     credentials: Vec<WolCredential>,
     /// `[0xB77AD0]`: the text the login sinks leave for `0x00786EF0`.
@@ -298,6 +300,7 @@ impl WolVisit {
             legacy_ui: false,
             live_service: None,
             requests: Vec::new(),
+            account_attempt: 0,
             credentials: Vec::new(),
             last_error: None,
             last_login_result: None,
