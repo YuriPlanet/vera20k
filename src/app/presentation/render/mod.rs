@@ -175,6 +175,7 @@ impl RenderPhases {
 /// evidence derived from the same vectors uploaded and dispatched this frame.
 pub(crate) struct GameRenderOutput {
     pub sidebar_view: Option<SidebarView>,
+    pub rendered_verdict: Option<crate::sim::house_state::HouseOutcomeKind>,
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
@@ -565,7 +566,7 @@ pub(crate) fn render_game(
     let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
-    upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
+    let rendered_verdict = upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
     let after_upload = render_started.map(|_| Instant::now());
     state
         .match_state
@@ -976,6 +977,7 @@ pub(crate) fn render_game(
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
         sidebar_view: sidebar.view,
+        rendered_verdict,
         times,
         particle_draws: world.particle_draws,
         phases,
@@ -1062,7 +1064,7 @@ fn upload_to_gpu(
     debug: &DebugInstances,
     ui: &UiInstances,
     sidebar: &SidebarInstances,
-) {
+) -> Option<crate::sim::house_state::HouseOutcomeKind> {
     // A zoomed match draws the battlefield's screen-fixed text below, with
     // the boxes and frames behind it, at the window's pixels
     // (`window_ui`): its producers lay out in the frame and emit for the
@@ -1078,7 +1080,11 @@ fn upload_to_gpu(
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
     let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
-    let (outcome_shape, outcome_text) = crate::app::presentation::outcome_banner::instances(state);
+    let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
+    let (outcome_shape, outcome_text) = verdict
+        .map(|kind| crate::app::presentation::outcome_banner::instances(state, kind))
+        .unwrap_or_default();
+    let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
@@ -1296,6 +1302,7 @@ fn upload_to_gpu(
     pool.upload("tooltip_fill", &tooltip_fill);
     pool.upload("tooltip_border", &tooltip_border);
     pool.upload("tooltip_text", &tooltip_text);
+    rendered_verdict
 }
 
 #[cfg(all(test, tests_app_presentation_render))]
