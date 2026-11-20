@@ -650,14 +650,15 @@ pub(crate) fn emit_crush_kill_sounds_at(
     }
 }
 
-/// The occupants a crusher fully inside the cell kills, in cell-list order:
-/// the `entering == 0` crush loop of `UnitClass::PerCellProcess`. The
-/// entering cell's unforced scatter is `Scatter_Objects`' dispatch walk
-/// ([`super::scatter::scatter_objects_admitted`]).
+/// Whether a crusher fully inside the cell kills occupant `victim_id`: the
+/// `entering == 0` crush loop of `UnitClass::PerCellProcess`, asked of each
+/// occupant in cell-list order. The entering cell's unforced scatter is
+/// `Scatter_Objects`' dispatch walk
+/// ([`super::scatter::retain_scatter_admitted`]).
 ///
 /// `current_frame` feeds the Iron Curtain gate of the crush predicate.
-pub fn select_crush_victims(
-    occ: &[u64],
+pub fn crushes(
+    victim_id: u64,
     entities: &EntityStore,
     crusher_id: u64,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
@@ -665,42 +666,36 @@ pub fn select_crush_victims(
     crusher_coord: (i32, i32),
     capability: CrushCapability,
     current_frame: u32,
-) -> Vec<u64> {
-    if !capability.can_crush_units() {
-        return Vec::new();
+) -> bool {
+    if !capability.can_crush_units() || victim_id == crusher_id {
+        return false;
     }
     let Some(crusher) = entities.get(crusher_id) else {
-        return Vec::new();
+        return false;
     };
     let crusher_owner = crusher.owner();
-    occ.iter()
-        .copied()
-        .filter(|&id| id != crusher_id)
-        .filter(|&id| {
-            entities.get(id).is_some_and(|victim| {
-                // The victim's GetCoords XY (vt+0x48, `0x007417FB`) that
-                // `TechnoClass::DistanceSquaredTo` (`0x005F6560`) measures in
-                // `UnitClass::Crush_Or_Prescatter_Cell` (`0x007416A0`).
-                let [x, y] = super::ground_pose::position_world_xy(&victim.position);
-                within_crush_distance_sq(crusher_coord, (x, y))
-                    && can_crush(
-                        capability,
-                        CrushTarget::from_entity(victim, current_frame),
-                        |owner| {
-                            crate::sim::combat::combat_weapon::is_ally_by_object(
-                                Some(alliances),
-                                interner,
-                                crusher_owner,
-                                owner,
-                            )
-                        },
+    entities.get(victim_id).is_some_and(|victim| {
+        // The victim's GetCoords XY (vt+0x48, `0x007417FB`) that
+        // `TechnoClass::DistanceSquaredTo` (`0x005F6560`) measures in
+        // `UnitClass::Crush_Or_Prescatter_Cell` (`0x007416A0`).
+        let [x, y] = super::ground_pose::position_world_xy(&victim.position);
+        within_crush_distance_sq(crusher_coord, (x, y))
+            && can_crush(
+                capability,
+                CrushTarget::from_entity(victim, current_frame),
+                |owner| {
+                    crate::sim::combat::combat_weapon::is_ally_by_object(
+                        Some(alliances),
+                        interner,
+                        crusher_owner,
+                        owner,
                     )
-                    // UnitCrush741811..741819 skips Object+8D only here;
-                    // the falling occupant remains crushable for cell entry.
-                    && !victim.is_falling_down()
-            })
-        })
-        .collect()
+                },
+            )
+            // UnitCrush741811..741819 skips Object+8D only here;
+            // the falling occupant remains crushable for cell entry.
+            && !victim.is_falling_down()
+    })
 }
 
 // ---------------------------------------------------------------------------
