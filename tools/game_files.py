@@ -9,8 +9,14 @@ at the result.
 
     python -m tools.game_files verify --dir <folder>
     python -m tools.game_files slim --source <folder> --target <folder>
+    python -m tools.game_files prepare --source <folder> --target <folder>
     python -m tools.game_files steam --target <folder>
     python -m tools.game_files config --dir <folder>
+
+`prepare` is the command the setup script runs: it stages the copy, checks it,
+and only then replaces the working folder and writes `config.toml`. The
+executable the check uses can be named with `--binary` or with the
+`VERA20K_GAME_BINARY` environment variable.
 
 What the game needs is not decided here. `verify` runs the engine's own
 installer check (`vera20k --check-game-data`, the same read-only pass the
@@ -28,6 +34,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -71,6 +78,10 @@ def human_size(size: int) -> str:
 
 def game_binary(profile: str = 'fast', binary: Path | None = None) -> Path:
     """The game executable to check with: an explicit path, or this checkout's build."""
+    if binary is None:
+        named = os.environ.get('VERA20K_GAME_BINARY')
+        if named:
+            binary = Path(named)
     if binary is not None:
         if not binary.is_file():
             raise SystemExit(f'{binary} is not a file')
@@ -186,6 +197,42 @@ def slim(source: Path, target: Path) -> list[str]:
     ]
 
 
+def prepare(source: Path, target: Path, root: Path = REPO, profile: str = 'fast',
+            binary: Path | None = None) -> tuple[list[str], bool]:
+    """Fill TARGET from SOURCE, but only when the copy passes the data checks.
+
+    The copy is staged beside the target and checked there, so a source that
+    turns out to be incomplete leaves the working folder and the checkout's
+    configuration untouched.
+    """
+    lines: list[str] = []
+    if not source.is_dir():
+        return [f'problem  {source} is not a folder'], False
+    staging = target.with_name(target.name + '.staging')
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    lines += slim(source, staging)
+    required, optional, code = run_game_data_check(staging, profile, binary)
+    if code != 0:
+        shutil.rmtree(staging, ignore_errors=True)
+        lines.append('')
+        lines.append('the copy is missing required game data; nothing was changed')
+        lines.append('required:')
+        lines += [f'  missing  {issue}' for issue in required]
+        if optional:
+            lines.append('optional:')
+            lines += [f'  note     {issue}' for issue in optional]
+        return lines, False
+    if target.exists():
+        shutil.rmtree(target)
+    staging.rename(target)
+    lines.append('')
+    lines.append(write_config(target, root))
+    lines.append(f'required game-data checks passed')
+    return lines, True
+
+
 def sha256(path: Path) -> str:
     """The file's SHA-256, as hex."""
     digest = hashlib.sha256()
@@ -271,6 +318,13 @@ def main(argv=None) -> int:
     manifest_parser.add_argument('--dir', type=Path, required=True, help='the game folder')
     manifest_parser.add_argument('--out', type=Path, help='where to write the JSON; stdout otherwise')
 
+    prepare_parser = sub.add_parser('prepare', help='fill a folder and point the checkout at it')
+    prepare_parser.add_argument('--source', type=Path, required=True,
+                                 help='the licensed source folder')
+    prepare_parser.add_argument('--target', type=Path, required=True, help='the folder to fill')
+    prepare_parser.add_argument('--profile', default='fast', help='the built profile to check with')
+    prepare_parser.add_argument('--binary', type=Path, help='the vera20k executable to check with')
+
     config_parser = sub.add_parser('config', help='point the checkout at a game folder')
     config_parser.add_argument('--dir', type=Path, required=True, help='the game folder')
     config_parser.add_argument('--root', type=Path, default=REPO,
@@ -297,6 +351,10 @@ def main(argv=None) -> int:
         else:
             print(text, end='')
         return 0
+    if args.command == 'prepare':
+        lines, ready = prepare(args.source, args.target, REPO, args.profile, args.binary)
+        print('\n'.join(lines))
+        return 0 if ready else 1
     if args.command == 'config':
         print(write_config(args.dir, args.root))
         return 0

@@ -28,21 +28,27 @@ below is one the player already has:
 # 1. Check a folder the player already has.
 python -m tools.game_files verify --dir "<Yuri's Revenge folder>"
 
-# 2. Keep a slim copy in the checkout, so later runs need nothing else.
-python -m tools.game_files slim --source "<Yuri's Revenge folder>" --target game-files/yr
-
-# 3. Point the checkout at it.
-python -m tools.game_files config --dir game-files/yr
+# 2. Fill the checkout's folder from it, check the copy, and point the
+#    checkout at the result.
+python -m tools.game_files prepare --source "<Yuri's Revenge folder>" --target game-files/yr
 ```
 
 `game-files/` is ignored by Git, so a retail copy never lands in a commit.
-`slim` keeps the archives and the data files the engine reads (`.mix`, `.csf`,
-`.pal`, `.shp`, `.wav`, `.fnt`) and drops the executables, the movies and the
-installers. It also drops loose `.ini` files: a loose INI in the game folder
-overrides the one inside the archives, and the archives carry the retail ones.
+`prepare` stages the copy beside the target, checks it there, and only then
+replaces the target and writes `config.toml`; a source that turns out to be
+incomplete leaves the working folder and the configuration untouched.
+
+The copy keeps the archives and the data files the engine reads (`.mix`,
+`.csf`, `.pal`, `.shp`, `.wav`, `.fnt`) and drops the executables, the movies
+and the installers. It also drops loose `.ini` files: a loose INI in the game
+folder overrides the one inside the archives, and the archives carry the
+retail ones.
 
 A Steam installation puts the game in a subfolder of the install directory;
-`slim` and `verify` find the folder that holds `ra2md.mix` themselves.
+`prepare` and `verify` find the folder that holds `ra2md.mix` themselves.
+
+The executable the checks use is this checkout's build. Name another one with
+`--binary <vera20k>` or with `VERA20K_GAME_BINARY=<vera20k>`.
 
 ## Fetch it from Steam
 
@@ -52,11 +58,10 @@ python -m tools.game_files steam --target game-files/steam
 ```
 
 The command runs `steamcmd`, which asks for the Steam account and its
-password. Then slim the installation and point the checkout at the copy:
+password. Then fill the checkout's folder from the installation:
 
 ```sh
-python -m tools.game_files slim --source game-files/steam --target game-files/yr
-python -m tools.game_files config --dir game-files/yr
+python -m tools.game_files prepare --source game-files/steam --target game-files/yr
 ```
 
 `tools/game_files_setup.sh` does the whole chain in one go:
@@ -65,8 +70,17 @@ python -m tools.game_files config --dir game-files/yr
 sh tools/game_files_setup.sh
 ```
 
-It installs `steamcmd`, runs the Steam login, slims the installation, writes
-`config.toml` and prints the executable to launch.
+It installs `steamcmd`, runs the Steam login, prepares the folder, writes
+`config.toml`, runs a headless match on the copy and prints the executable to
+launch.
+
+## What the checks say
+
+`verify` runs the engine's installer check, which reports the retail files
+that are missing. It is an installer check, not a launch proof: the files
+alone do not say that the menu draws or that a match plays. The setup script
+therefore runs a headless match after preparing the folder, which loads the
+rules, the art and the AI and plays them.
 
 ## Inventory a copy
 

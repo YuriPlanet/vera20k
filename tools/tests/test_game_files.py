@@ -110,6 +110,46 @@ class VerifyTest(unittest.TestCase):
         self.assertNotIn('can start', '\n'.join(lines))
 
 
+class PrepareTest(unittest.TestCase):
+    """Staging a licensed copy so a bad source cannot replace a good folder."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.source = self.base / 'source'
+        self.target = self.base / 'target'
+        self.root = self.base / 'checkout'
+        self.source.mkdir()
+        self.root.mkdir()
+        (self.source / 'ra2md.mix').write_bytes(b'archive')
+        (self.root / 'config.toml.example').write_text(
+            '[paths]\nra2_dir = "C:/Westwood/RA2"\nsettings_dir = "."\n', encoding='utf-8')
+
+    def test_an_incomplete_source_leaves_the_working_folder_and_the_config_alone(self) -> None:
+        self.target.mkdir()
+        (self.target / 'ra2md.mix').write_bytes(b'the copy in use')
+        with mock.patch.object(game_files, 'run_game_data_check',
+                               return_value=(['ra2md.csf: Asset not found'], [], 1)):
+            lines, ready = game_files.prepare(self.source, self.target, self.root)
+        self.assertFalse(ready)
+        self.assertEqual((self.target / 'ra2md.mix').read_bytes(), b'the copy in use')
+        self.assertFalse((self.root / 'config.toml').exists())
+        self.assertFalse(self.target.with_name(self.target.name + '.staging').exists())
+        self.assertIn('nothing was changed', '\n'.join(lines))
+
+    def test_a_complete_source_replaces_the_folder_and_writes_the_config(self) -> None:
+        self.target.mkdir()
+        (self.target / 'stale.mix').write_bytes(b'from an older copy')
+        with mock.patch.object(game_files, 'run_game_data_check', return_value=([], [], 0)):
+            lines, ready = game_files.prepare(self.source, self.target, self.root)
+        self.assertTrue(ready)
+        self.assertEqual({path.name for path in self.target.iterdir()}, {'ra2md.mix'})
+        written = (self.root / 'config.toml').read_text(encoding='utf-8')
+        self.assertIn(str(self.target.resolve().as_posix()), written)
+        self.assertIn('required game-data checks passed', '\n'.join(lines))
+
+
 class HumanSizeTest(unittest.TestCase):
     """Byte counts read as short strings."""
 

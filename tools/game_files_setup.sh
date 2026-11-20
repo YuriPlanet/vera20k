@@ -14,8 +14,10 @@
 #
 # A retail folder you already have needs none of this:
 #
-#     python3 -m tools.game_files slim --source "<Yuri's Revenge folder>" --target game-files/yr
-#     python3 -m tools.game_files config --dir game-files/yr
+#     python3 -m tools.game_files prepare --source "<Yuri's Revenge folder>" --target game-files/yr
+#
+# The copy is staged and checked before it replaces the target, so a source
+# that turns out to be incomplete leaves the working folder alone.
 
 set -eu
 
@@ -27,47 +29,34 @@ appid=2229850
 # A folder the player already has needs no download: use it as the source.
 if [ -f "$install_dir/ra2md.mix" ]; then
     echo "using the retail folder $install_dir"
-    cd "$root"
-    case "$target" in
-        "$root/game-files"/*)
-            rm -rf "${target:?}"
-            ;;
-    esac
-    python3 -m tools.game_files slim --source "$install_dir" --target "$target"
-    python3 -m tools.game_files config --dir "$target"
-    echo
-    echo "done. the game folder is $target"
-    echo "run the game with the executable this checkout built:"
-    echo "  cd $root"
-    echo "  $(cd "$root" && python3 -m tools.cargo_run --resolve vera20k --profile fast)"
-    exit 0
-fi
-
-if ! command -v steamcmd >/dev/null 2>&1; then
-    if command -v brew >/dev/null 2>&1; then
-        echo "installing steamcmd"
-        brew install steamcmd
-    else
-        echo "steamcmd is not installed; see https://developer.valvesoftware.com/wiki/SteamCMD" >&2
-        exit 1
+else
+    if ! command -v steamcmd >/dev/null 2>&1; then
+        if command -v brew >/dev/null 2>&1; then
+            echo "installing steamcmd"
+            brew install steamcmd
+        else
+            echo "steamcmd is not installed; see https://developer.valvesoftware.com/wiki/SteamCMD" >&2
+            exit 1
+        fi
     fi
+
+    mkdir -p "$install_dir"
+    echo "logging in to Steam; the application is paid, so an anonymous session cannot install it"
+    steamcmd "+force_install_dir $install_dir" "+login" "+app_update $appid" "+quit"
 fi
 
-mkdir -p "$install_dir"
-echo "logging in to Steam; the application is paid, so an anonymous session cannot install it"
-steamcmd "+force_install_dir $install_dir" "+login" "+app_update $appid" "+quit"
-
-echo "keeping only the files the engine reads"
 cd "$root"
-# A stale file in the target shadows the copy that replaces it, so the
-# checkout's own folder starts empty.
-case "$target" in
-    "$root/game-files"/*)
-        rm -rf "${target:?}"
-        ;;
-esac
-python3 -m tools.game_files slim --source "$install_dir" --target "$target"
-python3 -m tools.game_files config --dir "$target"
+python3 -m tools.game_files prepare --source "$install_dir" --target "$target"
+
+echo
+echo "running a headless match on the prepared copy"
+# The install check above only proves the archives are there. A match loads the
+# rules, the art and the AI and plays them, so it is what says the content
+# works.
+if ! RA2_DIR="$target" python3 -m tools.run_test_map match --ticks 300 --debug; then
+    echo "the match did not run; the game folder is $target" >&2
+    exit 1
+fi
 
 echo
 echo "done. the game folder is $target"
