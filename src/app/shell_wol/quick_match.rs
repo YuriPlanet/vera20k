@@ -400,7 +400,7 @@ fn original_game_refusal(
 /// at all `WOL:NoMatchingAgentFound`, with none of the prefix
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
-pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
+pub(super) fn lobbies_listed(state: &mut AppState) {
     if let Some(key) = original_game_refusal(state.frontend.mods.title(), &state.process_assets) {
         lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
         if key == CHANGED_FILES {
@@ -414,10 +414,12 @@ pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
     } else {
         QUICK_MATCH_PREFIX
     };
+    let lobbies = lobby::lobbies(state);
     let found = lobbies
         .iter()
-        .find(|channel| starts_with(&channel.name, prefix));
-    let Some(found) = found.cloned() else {
+        .find(|channel| starts_with(&channel.name, prefix))
+        .cloned();
+    let Some(found) = found else {
         let (key, clear_away) = if lobbies.is_empty() {
             ("WOL:NoMatchingAgentFound", true)
         } else {
@@ -576,8 +578,9 @@ fn request(state: &mut AppState) -> bool {
         .iter()
         .rev()
         .find(|member| member.flags & MEMBER_OPERATOR != 0)
+        .filter(|_| members.len() >= 2)
         .map(|member| member.name.clone());
-    let Some(matchbot) = matchbot.filter(|_| members.len() >= 2) else {
+    let Some(matchbot) = matchbot else {
         if let Some(globals) = globals_mut(state) {
             globals.failure = FAILURE_NO_AGENT;
             globals.set(stage::FAILED, None);
