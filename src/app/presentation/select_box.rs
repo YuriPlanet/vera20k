@@ -98,7 +98,6 @@ pub(crate) fn select_box_visible(
 
 /// The two sprites one selected techno's `SelectBoxType` may add: the box
 /// above the body and the ground shape under it.
-#[cfg(feature = "phobos")]
 #[derive(Default)]
 pub(crate) struct SelectBoxSprites {
     pub above: Option<(u32, crate::render::batch::SpriteInstance)>,
@@ -109,11 +108,10 @@ pub(crate) struct SelectBoxSprites {
 /// for an unselected/hidden object, an unresolved type or a failed visibility
 /// test. The ground arm needs a `GroundShape=` and a non-building for which
 /// `Ground.AlwaysDraw` or an airborne body admits it.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn select_box_sprites(
     sim: &crate::sim::world::Simulation,
-    entity: &GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     rules: &RuleSet,
     overlay: &crate::render::selection_overlay::SelectionOverlay,
     local_owner: Option<&str>,
@@ -163,8 +161,7 @@ pub(crate) fn select_box_sprites(
         == MaskedX87Ordering::Greater;
     let is_infantry = object.category == ObjectCategory::Infantry;
     let is_building = object.category == ObjectCategory::Building;
-    let coord =
-        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
+    let coord = entity.hud.get_coords;
     let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let visible = |instance: &crate::render::batch::SpriteInstance| {
         crate::app::presentation::instances::in_view(
@@ -200,8 +197,7 @@ pub(crate) fn select_box_sprites(
             }
         }
     }
-    let airborne =
-        crate::sim::movement::air_movement::current_fly_height(entity, sim.resolved_terrain()) > 0;
+    let airborne = entity.place.flight_height > 0;
     if !is_building
         && (select_box.ground_always_draw || airborne)
         && let Some(shape) = overlay.select_box_ground_shape(index)

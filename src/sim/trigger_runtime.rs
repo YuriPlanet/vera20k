@@ -152,7 +152,6 @@ pub enum TriggerEffect {
     /// Phobos `TActionExt::PrintVariableValue` (`Ext/TAction/Body.cpp:212-223`,
     /// action 503): the extended variable's `Value` printed `L"%d"` through
     /// `MessageListClass::Instance.PrintMessage`.
-    #[cfg(feature = "phobos")]
     VariableValuePrinted {
         text: String,
     },
@@ -793,13 +792,11 @@ pub struct TriggerRuntime {
     /// (`Ext/Scenario/Hooks.Variables.cpp:82-88`, hook `0x6876C2`), carried
     /// across campaigns as `(index, Value)` pairs
     /// (`Hooks.Variables.cpp:90-98`) and mutated by the 501/502/504 actions.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     globals_values: BTreeMap<u32, i32>,
     /// Phobos `ScenarioExt::Variables[0]`: the map's `[VariableNames]`
     /// locals, one entry per authored slot with `Value = atoi(state token)`
     /// else 0 (`Ext/Scenario/Body.cpp:47-61`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     locals_values: BTreeMap<u32, i32>,
     definitions: RuntimeDefinitions,
@@ -1048,7 +1045,6 @@ impl Eq for TriggerRuntime {}
 impl TriggerRuntime {
     /// The scenario variable's presence (`ScenarioExt::Global()->Variables`
     /// find, `BannerClass.cpp:139-143`).
-    #[cfg(feature = "phobos")]
     pub fn variable_set(&self, global: bool, index: i32) -> bool {
         let set = if global {
             &self.globals_set
@@ -1066,7 +1062,6 @@ impl TriggerRuntime {
     /// unknown op returns false without a notify (`:188-190`). Native's
     /// division or modulo by zero raises IDIV; VERA leaves the value
     /// unchanged.
-    #[cfg(feature = "phobos")]
     pub fn phobos_edit_variable(
         &mut self,
         global: bool,
@@ -1112,7 +1107,6 @@ impl TriggerRuntime {
 
     /// Write an existing extended entry: `PhobosSetVariableValue`-shaped
     /// gate for the 502 random roll. `false` when no slot authored the index.
-    #[cfg(feature = "phobos")]
     pub fn phobos_set_variable_value(&mut self, global: bool, index: i32, value: i32) -> bool {
         let values = if global {
             &mut self.globals_values
@@ -1131,7 +1125,6 @@ impl TriggerRuntime {
     /// action 504): the target entry takes the source entry's `Value` through
     /// `Param3`'s op — 0 assignment (its case 8), 1 `+` .. 7 `>>`, 9 `^`,
     /// 10 `|`, 11 `&`; there is no unary arm. Both entries must exist.
-    #[cfg(feature = "phobos")]
     pub fn phobos_binary_operation(
         &mut self,
         target_global: bool,
@@ -1341,7 +1334,6 @@ impl TriggerRuntime {
         self.triggers.get(index)?.as_ref()
     }
     /// `pTechno->AttachedTag`: the live Tag an object carries, if any.
-    #[cfg(feature = "phobos")]
     pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
         self.attachments
             .get(&TagAttachment::Object(object))
@@ -1349,7 +1341,6 @@ impl TriggerRuntime {
     }
     /// The Tag's `FirstTrigger` chain, compared by `Type->ID` the way TAction
     /// 600 does (`_stricmp`, `Ext/TAction/Body.cpp:698-712`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn tag_carries_trigger_type(&self, tag: usize, type_id: &str) -> bool {
         self.tag(tag).is_some_and(|live| {
             live.triggers.iter().any(|&live| {
@@ -1806,7 +1797,6 @@ impl Simulation {
         // Phobos `ReadVariables(false, pINI)` (`Ext/Scenario/Body.cpp:37-69`,
         // hook `0x689B20`): the locals' extended map clears and re-reads, one
         // entry per authored slot with `Value = atoi(state token)` else 0.
-        #[cfg(feature = "phobos")]
         let locals_values = map
             .local_variables
             .values()
@@ -1816,7 +1806,6 @@ impl Simulation {
             definitions,
             definitions_prepared: true,
             locals_set,
-            #[cfg(feature = "phobos")]
             locals_values,
             ..TriggerRuntime::default()
         };
@@ -1827,7 +1816,6 @@ impl Simulation {
     /// globals' extended values, read once at scenario start — native refuses
     /// a re-read while the global map holds entries
     /// (`Ext/Scenario/Body.cpp:40-43`).
-    #[cfg(feature = "phobos")]
     pub fn initialize_phobos_global_values(&mut self, rules: &crate::rules::ruleset::RuleSet) {
         debug_assert!(
             self.trigger_runtime.globals_values.is_empty(),
@@ -3894,7 +3882,6 @@ impl Simulation {
         // Phobos `SetVariableToByID` (`Ext/Scenario/Body.cpp:11-26`, hooked
         // over 0x689910/0x689670): an existing extended entry stores the
         // state byte as its `Value`.
-        #[cfg(feature = "phobos")]
         {
             let extended = if global {
                 &mut trigger_runtime.globals_values
@@ -3946,7 +3933,6 @@ impl Simulation {
     /// Phobos `ScenarioExt::Variables[global]`'s extended `Value`
     /// (`BannerClass.cpp:139-146`): `None` when no map/rules slot authored
     /// the index.
-    #[cfg(feature = "phobos")]
     pub fn variable_value(&self, global: bool, index: i32) -> Option<i32> {
         let values = if global {
             &self.trigger_runtime.globals_values
@@ -4471,7 +4457,6 @@ impl Simulation {
                 });
             }
             103 => self.session.set_scenario_timer_caption(action.csf_label()),
-            #[cfg(feature = "phobos")]
             800 | 801 => {
                 // Phobos `TActionExt::CreateBannerLocal`/`CreateBannerGlobal`
                 // (`Ext/TAction/Body.cpp:845-852`) ->
@@ -4494,7 +4479,6 @@ impl Simulation {
                         });
                 }
             }
-            #[cfg(feature = "phobos")]
             802 => {
                 // Phobos `TActionExt::DeleteBanner` (`Ext/TAction/Body.cpp:858-875`):
                 // the first banner whose ID equals the action's +90 value goes.
@@ -4502,7 +4486,6 @@ impl Simulation {
                     self.session.banner_delete(id);
                 }
             }
-            #[cfg(feature = "phobos")]
             600 => {
                 // Phobos `TActionExt::SetDropCrate` (`Ext/TAction/Body.cpp:690-720`):
                 // Value is the override flag (`0` disables, `1` names Param3's
@@ -4529,7 +4512,6 @@ impl Simulation {
                 };
                 self.phobos_set_drop_crate(&firing_id, value.unwrap_or(0), param3);
             }
-            #[cfg(feature = "phobos")]
             501 => {
                 // Phobos `TActionExt::EditVariable` (`Ext/TAction/Body.cpp:135-194`):
                 // the +90 index, `Param3` the op, `Param4` the operand and
@@ -4555,7 +4537,6 @@ impl Simulation {
                     );
                 }
             }
-            #[cfg(feature = "phobos")]
             502 => {
                 // Phobos `TActionExt::GenerateRandomNumber`
                 // (`Ext/TAction/Body.cpp:196-210`): the +90 index takes
@@ -4587,7 +4568,6 @@ impl Simulation {
                     );
                 }
             }
-            #[cfg(feature = "phobos")]
             503 => {
                 // Phobos `TActionExt::PrintVariableValue`
                 // (`Ext/TAction/Body.cpp:212-223`): the +90 index's `Value`
@@ -4603,7 +4583,6 @@ impl Simulation {
                     });
                 }
             }
-            #[cfg(feature = "phobos")]
             504 => {
                 // Phobos `TActionExt::BinaryOperation`
                 // (`Ext/TAction/Body.cpp:225-256`): the +90 target entry takes
@@ -6970,7 +6949,6 @@ mod building_sale_native_tests;
 #[path = "trigger_runtime_skirmish_map_tests.rs"]
 mod skirmish_map_tests;
 
-#[cfg(feature = "phobos")]
 #[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_banner_tests.rs"]
 mod banner_tests;

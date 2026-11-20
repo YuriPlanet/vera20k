@@ -48,11 +48,35 @@ pub(crate) fn swap<'a>(
     rules: &'a RuleSet,
     water: bool,
 ) -> Option<&'a str> {
+    swap_health(
+        entity.category(),
+        entity.health.current(),
+        object,
+        rules,
+        water,
+    )
+}
+
+/// [`swap`] from the two facts the band reads, for a frame record that is not
+/// the live entity.
+pub(crate) fn swap_health<'a>(
+    category: EntityCategory,
+    health: i32,
+    object: &'a ObjectType,
+    rules: &'a RuleSet,
+    water: bool,
+) -> Option<&'a str> {
     let images = &object.phobos_damaged_image;
     if !images.need_damaged_image() {
         return None;
     }
-    match (entity.category(), band(entity, object, rules)) {
+    let band = crate::sim::combat::health_category(
+        health,
+        object.strength,
+        rules.general.condition_red,
+        rules.general.condition_yellow,
+    );
+    match (category, band) {
         // Green HP keeps the type's own art.
         (_, 2) => None,
         (EntityCategory::Unit, 1) if water => images.water_band_image(false),

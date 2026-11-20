@@ -93,7 +93,6 @@ pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<Spr
     // `Time:` label on a `FillRectTrans(&rectB, &color, BoardOpacity)` board
     // below the version description. VERA's wall-clock scenario timer is the
     // local equivalent; the native TimeLeft/SystemTimer blend is a residual.
-    #[cfg(feature = "phobos")]
     {
         let boards = state.match_state.match_presentation.hud_boards;
         if boards.show_game_time {
@@ -133,7 +132,6 @@ pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<Spr
 /// `src/Phobos.cpp:383-392`: `rectB`'s `FillRectTrans(&rectB, &color,
 /// ShowGameTime.BoardOpacity)` board. Separated from the writer so the opacity
 /// and the `coordY` offset below the version box are testable without a GPU.
-#[cfg(feature = "phobos")]
 fn game_time_board(
     fill_rect: [i32; 4],
     coord_y: i32,

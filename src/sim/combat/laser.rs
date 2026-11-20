@@ -251,7 +251,6 @@ pub(crate) fn fired(
     // `VisualScatter=` weapon's draw replaces the endpoint inside SpawnLaser,
     // so the returned birth carries it; assigning after `create` stores the
     // same value the constructor would have.
-    #[cfg(feature = "phobos")]
     let scattered = if weapon.phobos_visual_scatter() {
         super::fire_coord::visual_scatter_target(world, rules, target.projectile_target(world))
     } else {
@@ -271,7 +270,6 @@ pub(crate) fn fired(
         // shared SpawnLaser constructor. Direct shrapnel calls omit this.
         laser.width = width;
         laser.supported = supported;
-        #[cfg(feature = "phobos")]
         if let Some(to) = scattered {
             laser.to = to;
         }
@@ -297,10 +295,7 @@ pub(crate) fn create<'w>(
     ignore_firer: bool,
 ) -> Option<&'w mut LaserBirth> {
     let source = world.substrate.entities.get(source_id)?;
-    #[cfg(feature = "phobos")]
     let single_color = weapon.phobos_laser_is_single_color;
-    #[cfg(not(feature = "phobos"))]
-    let single_color = false;
     let color = if weapon.is_house_color {
         LaserColor::House(source.owner())
     } else if single_color {
@@ -348,21 +343,17 @@ pub(crate) fn create<'w>(
     // Phobos `Misc/Hooks.LaserDraw.cpp:49-57`: the draw adds
     // `LaserZAdjust.Get(RulesExt::Global()->LaserZAdjust)`. VERA stores that
     // value on the beam, which is the same depth the draw reads.
-    #[cfg(feature = "phobos")]
     let z_adjust = z_adjust.wrapping_add(crate::rules::phobos_beam_z_adjust::resolved(
         weapon.phobos_laser_z_adjust,
         rules.phobos_beam_z_adjust.laser,
     ));
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;
-    #[cfg(feature = "phobos")]
     let (follow, stop_on_firer_convert) = (
         weapon.laser_position_update,
         weapon
             .laser_position_update_stop_on_firer_convert
             .unwrap_or(rules.phobos_laser_tracking.stop_on_firer_convert),
     );
-    #[cfg(not(feature = "phobos"))]
-    let (follow, stop_on_firer_convert) = (PositionFollow::None, false);
     let track = build_track(
         world,
         rules,
@@ -440,7 +431,6 @@ pub(crate) fn build_track(
             )
             .map_or_else(Flh::default, |record| record.flh)
         };
-        #[cfg(feature = "phobos")]
         {
             let (deployed, crawling) = super::fire_coord::infantry_flh_states(source);
             // `SetLaserTrackingData` (Hooks.LaserDraw.cpp:147-160) recomputes
@@ -462,10 +452,6 @@ pub(crate) fn build_track(
                     burst_index,
                 )
                 .unwrap_or_else(record_flh);
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            base_flh = record_flh();
         }
         let world_flh = super::fire_coord::fire_coordinate(
             world,
@@ -512,7 +498,6 @@ pub(crate) fn build_track(
 /// explicit endpoints and the child's firing House, so a shot whose Techno
 /// already expired still draws. `IsSingleColor`/`LaserThickness` replace the
 /// stock color pair and width; `IsHouseColor` takes the House laser color.
-#[cfg(feature = "phobos")]
 pub(crate) fn create_effect<'w>(
     world: &'w mut Simulation,
     house: Option<InternedId>,

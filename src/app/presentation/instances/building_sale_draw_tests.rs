@@ -222,7 +222,7 @@ fn gate_piece(
         ignore_visibility: true,
         lighting: &lighting,
         house_colors: colors,
-        building_zshape: true,
+        building_zshape: Some((0, 0)),
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
     let mut planned = Vec::new();
@@ -378,8 +378,13 @@ fn phobos_keeps_the_zshape_move_during_a_sale_when_the_type_asks() {
     sim.advance_tick(&[order], Some(rules), None, None, 67);
     let building = sim.entities().get(factory).expect("still standing");
     assert!(building.building_down(), "the sale starts a build-down");
+    let building = crate::app::presentation::frame::ObjectRecord::of_test_sim(
+        &sim,
+        &rules,
+        factory,
+    );
     assert_eq!(
-        building_zshape_point_move(building, art.as_ref()),
+        building_zshape_point_move(&building, art.as_ref()),
         (30, 15),
         "the key keeps the move during the sale"
     );

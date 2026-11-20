@@ -121,7 +121,6 @@ impl PassiveScan {
     /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
     /// so its next passive scan may drop the target. Phobos stores it from
     /// the owner-change mission fix too.
-#[cfg(feature = "phobos")]
     /// so its next passive scan may drop the target.
     pub(crate) fn ares_lose_target_now(&mut self) {
         self.acquired = true;
@@ -176,7 +175,6 @@ pub(super) trait ScanHost {
     fn targeting_delay(&self, mission: TargetingMission) -> i32;
     /// `MegaMissionIsAttackMove` (vt+0x4C4), which the Phobos hook tests before
     /// the committed mission.
-    #[cfg(feature = "phobos")]
     fn mega_attack_move(&self) -> bool {
         false
     }
@@ -185,7 +183,6 @@ pub(super) trait ScanHost {
     /// Phobos `TechnoClass_TargetSomethingNearby_AutoFire` (`0x7098B9`,
     /// `Ext/Techno/Hooks.TargetEvaluation.cpp:8-22`): the type's auto-target
     /// position as `SetTarget(self or its cell)`, or `None` to keep scanning.
-    #[cfg(feature = "phobos")]
     fn phobos_auto_target(&self) -> Option<TargetKind> {
         None
     }
@@ -241,16 +238,9 @@ pub(super) fn retaliate_and_scan<H: ScanHost>(host: &mut H, mask: ScanMission) -
     // The stock scan picks the Area Guard delay for a `+0xAC == 0xB` mission
     // (`0x0070983A`, then `0x0070985B`); Phobos only adds the Attack-Move arm
     // in front of it (`Ext/Techno/Hooks.Targeting.cpp:12-45`, `0x70982C`).
-    #[cfg(feature = "phobos")]
     let mission = if host.mega_attack_move() {
         TargetingMission::AttackMove
     } else if area_guard {
-        TargetingMission::AreaGuard
-    } else {
-        TargetingMission::Normal
-    };
-    #[cfg(not(feature = "phobos"))]
-    let mission = if area_guard {
         TargetingMission::AreaGuard
     } else {
         TargetingMission::Normal
@@ -261,7 +251,6 @@ pub(super) fn retaliate_and_scan<H: ScanHost>(host: &mut H, mask: ScanMission) -
 
     // Phobos replaces the first instructions of the held-target step: a type
     // with `AutoTargetOwnPosition` sets itself or its cell and returns.
-    #[cfg(feature = "phobos")]
     if let Some(target) = host.phobos_auto_target() {
         host.assign_target(Some(target));
         return host.target().is_some();
@@ -774,7 +763,6 @@ pub(crate) enum TargetingMission {
 /// the human/AI type key, then its `[General]` twin; unset keeps the stock
 /// `RulesClass::NormalTargetingDelay`/`GuardAreaTargetingDelay` the caller
 /// already holds, so the resolver answers `None`.
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_targeting_delay(
     rules: &RuleSet,
     object: Option<&crate::rules::object_type::ObjectType>,
@@ -855,7 +843,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     fn targeting_delay(&self, mission: TargetingMission) -> i32 {
         let general = &self.rules.general;
         if mission == TargetingMission::AreaGuard {
-            #[cfg(feature = "phobos")]
             {
                 let object = self
                     .sim
@@ -872,7 +859,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             }
             general.guard_area_targeting_delay
         } else {
-            #[cfg(feature = "phobos")]
             {
                 let object = self
                     .sim
@@ -891,7 +877,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         }
     }
 
-    #[cfg(feature = "phobos")]
     fn mega_attack_move(&self) -> bool {
         self.entity().mega_mission.is_attack_move()
     }
@@ -902,7 +887,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         }
     }
 
-    #[cfg(feature = "phobos")]
     fn phobos_auto_target(&self) -> Option<TargetKind> {
         let object = self
             .sim
@@ -1786,7 +1770,6 @@ mod tests {
     /// type with `AutoTargetOwnPosition` sets itself or its cell after the
     /// timer arming and its one `RandomRanged(0, 2)` draw, and the deprecated
     /// `AutoFire` aliases follow the canonical keys.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_auto_target_own_position_sets_self_or_cell() {
         let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -1868,7 +1851,6 @@ mod tests {
     /// (`Ext/Techno/Hooks.Targeting.cpp:12-45`, `0x70982C`): each mission's
     /// human/AI type key wins over its `[General]` twin, and an unset pair
     /// leaves the stock delay to the caller.
-    #[cfg(feature = "phobos")]
     #[test]
     fn targeting_delays_fall_back_from_type_to_global_per_mission() {
         let rules =

@@ -801,7 +801,6 @@ impl App {
             // Phobos parses `uimd.ini` once right after the archive mount
             // (`src/Phobos.INI.cpp:135-170`); the loading screen's
             // `[LoadingScreen]` read and the in-game tooltip config share it.
-            #[cfg(feature = "phobos")]
             process_assets.load_phobos_tooltips_ui();
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
@@ -1033,7 +1032,6 @@ impl App {
                 // the user's switches. Sealed capture keeps the source defaults, like
                 // the retail options snapshot, so operator profile state cannot change
                 // captured output.
-                #[cfg(feature = "phobos")]
                 let phobos_client = match game_config.as_ref() {
                     Some(config) if capture_dimensions.is_none() => {
                         crate::app::persistence::phobos_settings::read(config.paths.settings_dir())
@@ -1142,44 +1140,25 @@ impl App {
                     has_radar: false,
                     loaded_radar_housing: None,
                     selection_overlay: None,
-                    #[cfg(feature = "phobos")]
                     digital_display_enabled: phobos_client.digital_display_enabled,
-                    #[cfg(feature = "phobos")]
                     enable_select_box: phobos_client.enable_select_box,
-                    #[cfg(feature = "phobos")]
                     show_placement_preview: phobos_client.show_placement_preview,
-                    #[cfg(feature = "phobos")]
                     tool_tip_descriptions: phobos_client.tool_tip_descriptions,
-                    #[cfg(feature = "phobos")]
                     show_flash_on_selecting: phobos_client.show_flash_on_selecting,
-                    #[cfg(feature = "phobos")]
                     hide_light_flash_effects: phobos_client.hide_light_flash_effects,
-                    #[cfg(feature = "phobos")]
                     hide_shake_effects: phobos_client.hide_shake_effects,
-                    #[cfg(feature = "phobos")]
                     center_pause_menu_background: false,
-                    #[cfg(feature = "phobos")]
                     sidebar_indicators:
                         crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::default(),
-                    #[cfg(feature = "phobos")]
                     sidebar_indicator_text: Vec::new(),
-                    #[cfg(feature = "phobos")]
                     show_power_delta: phobos_client.show_power_delta,
-                    #[cfg(feature = "phobos")]
                     show_harvester_counter: phobos_client.show_harvester_counter,
-                    #[cfg(feature = "phobos")]
                     show_weeds_counter: phobos_client.show_weeds_counter,
-                    #[cfg(feature = "phobos")]
                     priority_deploy_filtering: phobos_client.priority_deploy_filtering,
-                    #[cfg(feature = "phobos")]
                     priority_selection_filtering: phobos_client.priority_selection_filtering,
-                    #[cfg(feature = "phobos")]
                     real_time_timers: phobos_client.real_time_timers,
-                    #[cfg(feature = "phobos")]
                     real_time_timers_adaptive: phobos_client.real_time_timers_adaptive,
-                    #[cfg(feature = "phobos")]
                     message_apply_hover_state: phobos_client.message_apply_hover_state,
-                    #[cfg(feature = "phobos")]
                     hud_boards: crate::app::presentation::hud_boards::HudBoardsUi {
                         message_display_in_center: phobos_client.message_display_in_center,
                         message_board_opacity: phobos_client
@@ -1189,26 +1168,18 @@ impl App {
                         show_game_time: phobos_client.show_game_time,
                         game_time_board_opacity: phobos_client.show_game_time_board_opacity,
                     },
-                    #[cfg(feature = "phobos")]
                     show_power_plant_enhancer_range: phobos_client
                         .show_power_plant_enhancer_range,
-                    #[cfg(feature = "phobos")]
                     show_designator_range: phobos_client.show_designator_range,
-                    #[cfg(feature = "phobos")]
                     briefing_dialog: Default::default(),
-                    #[cfg(feature = "phobos")]
                     briefing_at_start: false,
-                    #[cfg(feature = "phobos")]
                     show_briefing: phobos_client.show_briefing,
-                    #[cfg(feature = "phobos")]
                     placement_preview_art: Default::default(),
-                    #[cfg(feature = "phobos")]
                     sw_sidebar: crate::app::presentation::sw_sidebar::SwSidebarState {
                         required_significance: phobos_client
                             .superweapon_sidebar_required_significance,
                         ..Default::default()
                     },
-                    #[cfg(feature = "phobos")]
                     sw_sidebar_art: None,
                     beacon_art: None,
                     shroud_buffer: None,
@@ -1244,15 +1215,10 @@ impl App {
                     outcome_banner_side_art: None,
                     ares_status_texts: None,
                     end_game_banner: None,
-                    #[cfg(feature = "phobos")]
                     banner_art: None,
-                    #[cfg(feature = "phobos")]
                     banners: Vec::new(),
-                    #[cfg(feature = "phobos")]
                     tool_tip_blur: phobos_client.tool_tip_blur,
-                    #[cfg(feature = "phobos")]
                     tooltip_blur_rects: Vec::new(),
-                    #[cfg(feature = "phobos")]
                     tooltip_blur_size: 0.0,
                     software_cursor: startup_software_cursor,
                 },
@@ -1421,7 +1387,6 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
-                #[cfg(feature = "phobos")]
                 tooltip_blur: None,
                 terrain_picture: Default::default(),
             },

@@ -676,7 +676,6 @@ pub struct SuperWeaponType {
     /// `Body.h:63,162`, empty default): the CSF label of the tooltip
     /// description line appended under the superweapon tip's cost/time when
     /// `ToolTipDescriptions` is on (`Misc/PhobosToolTip.cpp:22-32,205`).
-    #[cfg(feature = "phobos")]
     pub ui_description: Option<String>,
     /// Launch dispatch type (determines what happens on fire).
     pub kind: SuperWeaponKind,
@@ -707,23 +706,19 @@ pub struct SuperWeaponType {
     pub show_timer: bool,
     /// Phobos `UseWeeds=` (`Ext/SWType/Body.cpp:296`), default `no`: the Super
     /// charges from the owner's house weed store instead of its recharge clock.
-    #[cfg(feature = "phobos")]
     pub use_weeds: bool,
     /// Phobos `Convert{i}.From`/`.To`/`.AffectsHouse` pairs
     /// (`Ext/SWType/Body.cpp:281`, `New/Type/Affiliated/TypeConvertGroup.cpp`);
     /// the default source-house filter is `Owner`.
-    #[cfg(feature = "phobos")]
     pub phobos_convert_pairs: Vec<crate::rules::type_convert_group::TypeConvertGroup>,
     /// Phobos `TabIndex=` (`Ext/SWType/Body.cpp:285-286`): the sidebar tab
     /// this cameo occupies, `0..=3` with an out-of-range value resetting to
     /// `1` (`GeneralUtils::IntValidCheck`).
-    #[cfg(feature = "phobos")]
     pub phobos_tab_index: crate::rules::phobos_sw_tab_index::PhobosSwTabIndex,
     /// Phobos `ShowTimer.Priority=` (`Ext/SWType/Body.cpp:176`,
     /// `Valueable<int>` constructor `Ext/SWType/Body.h:78,183` default 0):
     /// the timer list sorts higher first
     /// (`SuperClass_Grant_ShowTimer @ 0x6CB5EB`, `Ext/SWType/Hooks.cpp:36-50`).
-    #[cfg(feature = "phobos")]
     pub phobos_show_timer_priority: i32,
     /// Phobos `SW.PostDependent=` read as `ValueableIdx` (`Ext/SWType/Body.cpp:146`,
     /// `Body.h:55,155`, constructor the unset index `-1`): the superweapon type
@@ -733,31 +728,25 @@ pub struct SuperWeaponType {
     /// string for the player's ChronoSphere click (`1006ED30`), so each feature
     /// keeps its own field of the one authored name; VERA resolves the name to
     /// the array index at the use site.
-    #[cfg(feature = "phobos")]
     pub phobos_post_dependent: String,
     /// Phobos `ShowTimer.Percentage=` (`Ext/SWType/Body.cpp:177`,
     /// `Nullable<bool>` constructor set false `Ext/SWType/Body.h:79,184`):
     /// the Super's tactical timer prints its elapsed share instead of the
     /// time left (`0x6D4A10`). A cleared value inherits
     /// `[AudioVisual] SuperWeaponTimer.Percentage=`.
-    #[cfg(feature = "phobos")]
     pub phobos_show_timer_percentage: Option<bool>,
     /// Phobos `ShowDesignatorRange=` (`Ext/SWType/Body.cpp:283`, constructor
     /// `Ext/SWType/Body.h:86,186`), default `yes`: this superweapon draws its
     /// designator/inhibitor range rings while armed
     /// (`Tactical_SuperLinesCircles_ShowDesignatorRange @ 0x6DBE74`).
-    #[cfg(feature = "phobos")]
     pub show_designator_range: bool,
     /// Phobos `UseWeeds.Amount=` (`:297`); `None` keeps the constructor
     /// default `[General] WeedCapacity`.
-    #[cfg(feature = "phobos")]
     pub use_weeds_amount: Option<i32>,
     /// Phobos `UseWeeds.StorageTimer=` (`:298`), default `no`: show the weed
     /// ratio as the cameo animation stage.
-    #[cfg(feature = "phobos")]
     pub use_weeds_storage_timer: bool,
     /// Phobos `UseWeeds.ReadinessAnimationPercentage=` (`:299`), default 0.9.
-    #[cfg(feature = "phobos")]
     pub use_weeds_readiness_animation_percentage: f64,
     /// Whether this SW can be disabled from the game lobby.
     pub disableable_from_shell: bool,
@@ -830,18 +819,14 @@ pub struct SuperWeaponType {
     pub sw_show_cameo: bool,
     /// Phobos `SuperWeaponSidebar.Allow=`. Unset falls back to
     /// `[AudioVisual] SuperWeaponSidebar.AllowByDefault`.
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_allow: Option<bool>,
     /// Phobos `SuperWeaponSidebar.PriorityHouses=` tokens. Owners in the list
     /// sort before owners outside it; the constructor's mask is 0.
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_priority_houses: Vec<String>,
     /// Phobos `SuperWeaponSidebar.RequiredHouses=` tokens; `None` keeps the
     /// constructor's all-bits mask, and a comma-only list is mask 0.
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_required_houses: Option<Vec<String>>,
     /// Phobos `SuperWeaponSidebar.Significance=`, default 0.
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_significance: i32,
     /// Present only for the explicitly selected Ares extension; stock types
     /// retain their existing readers and behavior.
@@ -875,7 +860,6 @@ impl SuperWeaponType {
     /// (`TacticalClass_Render_DrawSuperTimer_PercentageTimer @ 0x6D4A10`,
     /// `Misc/Hooks.UI.cpp:623` reads the global through
     /// `RulesExt::Global()->SuperWeaponTimer_Percentage`).
-    #[cfg(feature = "phobos")]
     pub fn phobos_show_timer_percentage(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
         self.phobos_show_timer_percentage
             .unwrap_or(rules.phobos_globals.super_weapon_timer_percentage)
@@ -965,7 +949,6 @@ impl SuperWeaponType {
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
             ui_name: section.read_name("UIName", 0x20).map(str::to_string),
-            #[cfg(feature = "phobos")]
             ui_description: section.read_name("UIDescription", 0x20).map(str::to_string),
             kind,
             range,
@@ -1065,33 +1048,23 @@ impl SuperWeaponType {
                 section.read_name("SidebarPalette", 2048).map(str::to_owned)
             }),
             show_timer: section.read_bool("ShowTimer", false),
-            #[cfg(feature = "phobos")]
             use_weeds: section.read_bool("UseWeeds", false),
-            #[cfg(feature = "phobos")]
             phobos_convert_pairs: crate::rules::type_convert_group::parse(
                 section,
                 crate::rules::phobos_shields::AffectedHouse::OWNER,
             ),
-            #[cfg(feature = "phobos")]
             phobos_tab_index: crate::rules::phobos_sw_tab_index::PhobosSwTabIndex::from_section(
                 section,
             ),
-            #[cfg(feature = "phobos")]
             show_designator_range: section.read_bool("ShowDesignatorRange", true),
-            #[cfg(feature = "phobos")]
             phobos_show_timer_priority: section.read_int("ShowTimer.Priority", 0),
             // `Ext/SWType/Body.cpp:146`: the same key Ares reads as a type
             // name, kept as the name for the AI Chronoshift warp lookup.
-            #[cfg(feature = "phobos")]
             phobos_post_dependent: section.read_phobos_type_name("SW.PostDependent", ""),
-            #[cfg(feature = "phobos")]
             phobos_show_timer_percentage: section
                 .read_phobos_nullable_bool("ShowTimer.Percentage", Some(false)),
-            #[cfg(feature = "phobos")]
             use_weeds_amount: section.read_phobos_nullable_int("UseWeeds.Amount", None),
-            #[cfg(feature = "phobos")]
             use_weeds_storage_timer: section.read_bool("UseWeeds.StorageTimer", false),
-            #[cfg(feature = "phobos")]
             use_weeds_readiness_animation_percentage: section
                 .read_phobos_double("UseWeeds.ReadinessAnimationPercentage", 0.9),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
@@ -1151,22 +1124,18 @@ impl SuperWeaponType {
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
             sw_show_cameo: section.read_bool("SW.ShowCameo", true),
-            #[cfg(feature = "phobos")]
             sw_sidebar_allow: section.read_bool_value("SuperWeaponSidebar.Allow"),
             // Both lists use Phobos's ReadHouseTypesList, YRpp's jump to
             // gamemd's ReadOwners4750D0 with its char[128] buffer.
-            #[cfg(feature = "phobos")]
             sw_sidebar_priority_houses: section
                 .read_list("SuperWeaponSidebar.PriorityHouses", 0x80)
                 .unwrap_or_default()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            #[cfg(feature = "phobos")]
             sw_sidebar_required_houses: section
                 .read_list("SuperWeaponSidebar.RequiredHouses", 0x80)
                 .map(|tokens| tokens.into_iter().map(str::to_string).collect()),
-            #[cfg(feature = "phobos")]
             sw_sidebar_significance: section.read_int("SuperWeaponSidebar.Significance", 0),
             generic_warhead: (ares_way && kind == SuperWeaponKind::GenericWarhead).then(|| {
                 GenericWarheadSettings {
@@ -1737,17 +1706,14 @@ pub(crate) struct AresEMPulseRules {
     /// Phobos `EMPulse.WeaponIndex` (`Ext/SWType/Body.cpp:179`,
     /// `Body.h:109`, constructor `:196` 0): `>= 0` fixes Mission_Missile's
     /// weapon slot, a negative value calls SelectWeapon on the EMPTarget.
-    #[cfg(feature = "phobos")]
     #[serde(default = "default_empulse_weapon_index")]
     pub(crate) empulse_weapon_index: i32,
     /// Phobos `EMPulse.SuspendOthers` (`Ext/SWType/Body.cpp:180`,
     /// `Body.h:110`, constructor `:197` false).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) empulse_suspend_others: bool,
 }
 
-#[cfg(feature = "phobos")]
 fn default_empulse_weapon_index() -> i32 {
     0
 }
@@ -1761,9 +1727,7 @@ impl Default for AresEMPulseRules {
             pulse_ball: None,
             cannons: Vec::new(),
             max_count: -1,
-            #[cfg(feature = "phobos")]
             empulse_weapon_index: 0,
-            #[cfg(feature = "phobos")]
             empulse_suspend_others: false,
         }
     }
@@ -1787,7 +1751,6 @@ impl AresEMPulseRules {
         // Phobos reads the same section after Ares (`Body.cpp:179-182`).
         // `Valueable<int>` is INI_EX::ReadInteger and `Valueable<bool>` a
         // plain ReadBool, both retaining the constructor value on a failure.
-        #[cfg(feature = "phobos")]
         {
             self.empulse_weapon_index =
                 section.read_int("EMPulse.WeaponIndex", self.empulse_weapon_index);
@@ -2683,7 +2646,6 @@ impl SuperWeaponBuildingRequirements {
 /// Process owner reads them and `RuleSet` projects one entry per registered
 /// definition, so a type whose effect body is unimplemented still answers
 /// availability. Constructor defaults: level 0, both lists empty.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosSuperWeaponAvailability {
     tech_level: i32,
@@ -2703,17 +2665,14 @@ pub(crate) struct PhobosSuperWeaponAvailability {
     range_maximum: crate::util::native_x87::NativeF64Bits,
 }
 
-#[cfg(feature = "phobos")]
 fn default_phobos_sw_range() -> crate::util::native_x87::NativeF64Bits {
     crate::util::native_x87::NativeF64Bits::from_bits((-1.0_f64).to_bits())
 }
 
-#[cfg(feature = "phobos")]
 fn default_phobos_sw_shots() -> i32 {
     -1
 }
 
-#[cfg(feature = "phobos")]
 impl Default for PhobosSuperWeaponAvailability {
     fn default() -> Self {
         Self {
@@ -2727,7 +2686,6 @@ impl Default for PhobosSuperWeaponAvailability {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl PhobosSuperWeaponAvailability {
     pub(crate) fn tech_level(&self) -> i32 {
         self.tech_level
@@ -2799,7 +2757,6 @@ mod tests {
 
     /// Phobos `SW.Shots=` (`Valueable<int>`, constructor `-1`): the projected
     /// type metadata keeps the default and reads a valid integer.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_sw_shots_defaults_to_minus_one_and_reads() {
         use crate::rules::ini_parser::IniFile;
@@ -2815,7 +2772,6 @@ mod tests {
     /// Phobos `SW.RangeMinimum=`/`SW.RangeMaximum=` (`Valueable<double>`,
     /// constructor `-1.0`): the projected metadata keeps the sentinel and
     /// reads authored cell values.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_sw_range_defaults_to_minus_one_and_reads() {
         use crate::rules::ini_parser::IniFile;
@@ -3209,7 +3165,6 @@ Type=BogusType
         assert!(!sw.kind.is_extension());
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_show_timer_keys_read_priority_and_percentage() {
         let read = |text: &str| {
@@ -3254,7 +3209,6 @@ Type=BogusType
     /// `HouseExt::GetAIChronoshiftSupers` (`Ext/House/Body.cpp:347`) takes when
     /// only `AIChronoSphereSW=` is authored. `none` is that unset state, and a
     /// name matching no type stays unfound at the use site.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_post_dependent_reads_the_superweapon_name() {
         let read = |text: &str| {

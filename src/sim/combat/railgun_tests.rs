@@ -321,7 +321,6 @@ fn a_detached_railgun_never_holds_its_particle_system() {
 }
 
 /// Synthetic railgun rules for the Phobos `AmbientDamage.*` keys.
-#[cfg(feature = "phobos")]
 fn phobos_railgun_rules(weapon_keys: &str, general_keys: &str) -> crate::rules::ruleset::RuleSet {
     crate::rules::ruleset::RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         &format!(
@@ -339,7 +338,6 @@ fn phobos_railgun_rules(weapon_keys: &str, general_keys: &str) -> crate::rules::
     .expect("railgun ambient rules")
 }
 
-#[cfg(feature = "phobos")]
 fn phobos_railgun_health(rules: &crate::rules::ruleset::RuleSet) -> (i32, i32) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x70CB_DA00);
     sim.intern_rule_type_ids(rules);
@@ -381,7 +379,6 @@ fn phobos_railgun_health(rules: &crate::rules::ruleset::RuleSet) -> (i32, i32) {
 /// warhead, and `AmbientDamage.IgnoreTarget` (`0x70C862`/`0x70CA8B`) leaves
 /// the primary target out; unset keys keep the weapon warhead and the
 /// `[General]` fallback.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_railgun_ambient_damage_reads_the_warhead_and_ignore_target() {
     let rules = phobos_railgun_rules("", "");

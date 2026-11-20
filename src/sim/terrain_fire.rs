@@ -93,10 +93,7 @@ impl Simulation {
         {
             self.terrain_objects.set_on_fire(terrain_id, false);
         }
-        #[cfg(feature = "phobos")]
         self.terrain_fire_out_crumble(terrain_id, rules);
-        #[cfg(not(feature = "phobos"))]
-        let _ = rules;
     }
 
     /// `0x71C6EE`'s body: `!IsCrumbling && Type->HasCrumblingFrames` joins
@@ -108,7 +105,6 @@ impl Simulation {
     /// `Finish_Fire_Death`'s zero-Health arm, so the zero Health is explicit
     /// here; `terrain_start_crumble` owns IsCrumbling, the Stage restart,
     /// Logic membership and the sound.
-    #[cfg(feature = "phobos")]
     fn terrain_fire_out_crumble(&mut self, terrain_id: u64, rules: &RuleSet) {
         let Some((type_ref, health, crumbling, live)) =
             self.terrain_objects.get(terrain_id).map(|terrain| {

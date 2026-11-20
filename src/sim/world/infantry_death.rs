@@ -70,7 +70,6 @@ impl InfantryDeathSequence {
     }
 
     /// Phobos hook `0x518505`'s `Die(x) = x + 10` numbering (1..=5).
-    #[cfg(feature = "phobos")]
     pub(crate) fn from_die_number(value: i32) -> Option<Self> {
         Some(match value {
             1 => Self::Die1,
@@ -579,7 +578,7 @@ impl Simulation {
         inf_death: i32,
         house: Option<crate::sim::intern::InternedId>,
         inf_death_anim: Option<&str>,
-        #[cfg(feature = "phobos")] not_human_death_sequence: i32,
+        not_human_death_sequence: i32,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
@@ -627,7 +626,6 @@ impl Simulation {
         let arm = self.infantry_death_arm(entity, inf_death, rules);
         let entity_owner = entity.owner();
         // Phobos hook `0x518505` facts, read before the entity borrow ends.
-        #[cfg(feature = "phobos")]
         let (not_human_paradrop_falling, not_human_random) = (
             entity.is_falling_down()
                 && entity
@@ -675,7 +673,6 @@ impl Simulation {
                 }
             }
             InfantryDeathArm::NotHuman => {
-                #[cfg(feature = "phobos")]
                 {
                     // `InfantryClass_ReceiveDamage_NotHuman` (`0x518505`,
                     // `Ext/Techno/Hooks.ReceiveDamage.cpp:308-345`): a
@@ -703,19 +700,6 @@ impl Simulation {
                                 .unwrap_or(InfantryDeathSequence::Die1);
                     }
                     self.begin_infantry_death_sequence(id, sequence, rules, effects);
-                    if inf_death == VIRUS_INF_DEATH {
-                        self.emit_inline_virus_particle(rules, location, house, entity_owner);
-                    }
-                    ReceiverDeathRecipe::Sequence
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    self.begin_infantry_death_sequence(
-                        id,
-                        InfantryDeathSequence::Die1,
-                        rules,
-                        effects,
-                    );
                     if inf_death == VIRUS_INF_DEATH {
                         self.emit_inline_virus_particle(rules, location, house, entity_owner);
                     }

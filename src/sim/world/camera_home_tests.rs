@@ -371,7 +371,6 @@ fn opening_view_averages_player_technos_else_takes_the_base() {
 /// coordinate, out of both the sum and the count, so the opening view stays
 /// the House's base coordinate. The same setup with the key absent keeps the
 /// scanned centre.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_ignored_starting_techno_leaves_the_start_position_scan() {
     for (ignore, expected) in [(true, (18, 19)), (false, (16, 17))] {

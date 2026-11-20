@@ -95,16 +95,10 @@ fn chrono_warp_out_frames(
     object: Option<&crate::rules::object_type::ObjectType>,
     rules: &RuleSet,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         object
             .and_then(|object| object.phobos_chrono_sphere_pre_delay)
             .unwrap_or(rules.phobos_globals.chrono_sphere_pre_delay)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (object, rules);
-        CHRONO_WARP_OUT_FRAMES
     }
 }
 
@@ -116,16 +110,10 @@ fn chrono_sphere_in_delay(
     object: Option<&crate::rules::object_type::ObjectType>,
     rules: &RuleSet,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         object
             .and_then(|object| object.phobos_chrono_sphere_delay)
             .unwrap_or(rules.phobos_globals.chrono_sphere_delay)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (object, rules);
-        0
     }
 }
 /// CellClass `+0x140`: a bridge over the cell, and the bit Update_Position

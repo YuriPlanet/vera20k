@@ -123,7 +123,6 @@ impl Simulation {
             // (0x6FFD4C, `Ext/Techno/Hooks.cpp:2507-2528`): an Eaten click on
             // a `Grinding=` building speaks this foot's `VoiceEnterGrinder`
             // and skips the selector, spending no Main draw.
-            #[cfg(feature = "phobos")]
             if let Some(sound) = self.voice_enter_grinder_request(rules, entity_id, target) {
                 return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
             }
@@ -140,7 +139,6 @@ impl Simulation {
         // (`RadioClass::HasAnyLink @ 0x0065AE30`) and whose Destination is a
         // Foot. QueueVoice708D90 then takes the registered scalar without a
         // Main draw, as Harvest/Enter/Capture scalars do.
-        #[cfg(feature = "phobos")]
         if voice_field == "VoiceMove"
             && let Some(sound) = self.carryall_pickup_voice(entity, object, target)
         {
@@ -168,7 +166,6 @@ impl Simulation {
     /// type must be `Grinding=`; the speaking foot's `VoiceEnterGrinder` then
     /// replaces the `VoiceSpecialAttack` selector. An unset or unknown
     /// catalog reference leaves the stock list path.
-    #[cfg(feature = "phobos")]
     fn voice_enter_grinder_request<'a>(
         &self,
         rules: &'a RuleSet,
@@ -202,7 +199,6 @@ impl Simulation {
     /// Building). `target` is that Destination: the Move click's object, which
     /// the native click handler installs before QueueMegaMission asks for the
     /// voice. Every other arm falls through to the stock VoiceMove list.
-    #[cfg(feature = "phobos")]
     fn carryall_pickup_voice<'a>(
         &self,
         entity: &crate::sim::game_entity::GameEntity,
@@ -284,7 +280,6 @@ impl Simulation {
         // repairing weapon (`VoiceIFVRepair`, then the literal `FV` global),
         // the multi-weapon slot voices, then the `IsSecondary`-chosen
         // primary/secondary slot overrides, then `VoiceAttack`.
-        #[cfg(feature = "phobos")]
         {
             let elite = veterancy::raw_is_elite(entity.veterancy.raw());
             let repair = weapon

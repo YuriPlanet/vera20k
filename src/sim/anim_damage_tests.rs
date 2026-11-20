@@ -73,7 +73,6 @@ fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
         // Ares reads the art Warhead= first, and Phobos's replaced damage
         // body keeps the native `pType->Warhead` read; both give the CUSTOM
         // anim its zero-effectiveness warhead.
-#[cfg(feature = "phobos")]
         assert_eq!(
             health, 1000,
             "CUSTOM has zero effectiveness, unlike FALLBACK"
@@ -348,7 +347,6 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
     // Phobos' replaced body rejects the inert anim before the accumulator.
     #[cfg(not(feature = "phobos"))]
     assert!(f64::from_bits(anim.damage_accumulator.bits()) > 1.0);
-    #[cfg(feature = "phobos")]
     assert_eq!(anim.damage_accumulator, NativeF64Bits::POSITIVE_ZERO);
     assert_eq!(
         scene
@@ -392,7 +390,6 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
     );
     #[cfg(not(feature = "phobos"))]
     assert!(carried > 0.0 && carried < 1.0);
-    #[cfg(feature = "phobos")]
     assert_eq!(carried, 0.0);
     scene.sim.substrate.set_anim_no_effects(scene.anim, false);
     advance(&mut scene, 2);
@@ -412,7 +409,6 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
 /// on the first damage round and scales every application; the type key
 /// falls back to `[CombatDamage] AnimDamage.ApplyFirepowerMult`, and without
 /// `DealtByInvoker` the whole block (and so the fold) does not run.
-#[cfg(feature = "phobos")]
 #[test]
 fn anim_damage_applies_the_invokers_firepower_multiplier() {
     let visits_for = |art_keys: &str, global: bool, dealt_by_invoker: bool| -> (Vec<i32>, f64) {

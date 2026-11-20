@@ -1821,7 +1821,6 @@ fn build_time_inputs_read_owner_power_and_matching_factories() {
 /// `GetFactoryCountWithoutNonMFB` at `Ext/House/Body.cpp:505-536`): the
 /// excluded barracks still joins the house counter, but not the count
 /// production speed reads, so `Time_To_Build` sees one factory, not two.
-#[cfg(feature = "phobos")]
 #[test]
 fn excluded_factory_stays_out_of_the_multiple_factory_bonus() {
     use crate::sim::house_tracking::FactorySlot;

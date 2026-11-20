@@ -331,7 +331,6 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         psycho: false,
         controller_house: None,
         fire_world: Some(&world),
-        #[cfg(feature = "phobos")]
         attack_move_aggressive: false,
         allies: Default::default(),
         allies_of_scanner: Default::default(),

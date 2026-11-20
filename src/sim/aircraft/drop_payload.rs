@@ -330,7 +330,6 @@ pub(crate) fn spawn_parachuted(
     paradrop(sim, rules, registry, passenger, landing, spot, effects)?;
     // `pExt->OnParachuted = true` (`Ext/Techno/Hooks.cpp:1907`), written right
     // after `SpawnParachuted` returns true and before the mission is picked.
-    #[cfg(feature = "phobos")]
     if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
         rider.mark_on_parachuted();
     }
@@ -345,23 +344,10 @@ pub(crate) fn spawn_parachuted(
     // `ParadropMission`/`AIParadropMission`, else the `[General]` value
     // (Guard/Hunt), and a Unit queues it too. Stock only Infantry reaches
     // the queue arm.
-    #[cfg(feature = "phobos")]
     let mission = phobos_paradrop_mission(sim, rules, rider, human);
-    #[cfg(not(feature = "phobos"))]
-    let mission = {
-        if !infantry {
-            return Ok(());
-        }
-        MissionId::from_known(if human {
-            MissionType::Guard
-        } else {
-            MissionType::Hunt
-        })
-    };
     // Phobos `ObjectClass_SpawnParachuted_Track` (`0x5F5965`,
     // `Ext/Techno/Hooks.cpp:1672-1686`): the paradropped Techno joins the
     // falling tracker so auto-targeting can see it before it lands.
-    #[cfg(feature = "phobos")]
     if rules.phobos_globals.falling_down_targeting_fix {
         sim.phobos_track_falling_down(passenger);
     }
@@ -370,7 +356,6 @@ pub(crate) fn spawn_parachuted(
     if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
         crate::sim::mission::authority::queue_entity_mission_deferred(rider, mission);
     }
-    #[cfg(feature = "phobos")]
     if !infantry {
         return Ok(());
     }
@@ -385,7 +370,6 @@ pub(crate) fn spawn_parachuted(
 /// Phobos `FootClass_Paradrop`'s mission selector: the TechnoType's
 /// `ParadropMission` (human owner) or `AIParadropMission` (AI owner), else the
 /// matching `[General]` global (`Ext/Techno/Hooks.cpp:1883-1885`).
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_paradrop_mission(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1658,7 +1642,6 @@ mod tests {
     /// ParadropMission` (Guard) / `AIParadropMission` (Hunt). The replaced
     /// Unit virtual queues it too, while the Paradrop action stays
     /// Infantry-only.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_paradrop_mission_reads_type_then_general() {
         use crate::sim::house_state::HouseState;

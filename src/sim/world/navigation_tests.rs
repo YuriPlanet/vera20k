@@ -213,7 +213,6 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
 /// marked building's foundation answers the Destroyable cell class (2), so
 /// the Normal movement row's zone map excludes it while Destroyer admits the
 /// class; limbo restores the terrain class and rejoins the zones.
-#[cfg(feature = "phobos")]
 #[test]
 fn destroyable_obstacle_mark_writes_the_destroyable_cell_class() {
     use crate::map::resolved_terrain::zone_class;

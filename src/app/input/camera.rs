@@ -2438,6 +2438,10 @@ fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
     (area.0 - 30.0, area.1, area.2, area.3)
 }
 
+pub(crate) fn tactical_view_height(state: &AppState) -> f32 {
+    tactical_viewport_px(state).3 as f32 / state.match_state.input.zoom_level
+}
+
 /// The world rectangle the tactical camera can show on the loaded map
 /// (`shown_world_rect` of its scroll rectangle), or None before a simulation
 /// has its LocalSize. Pictures of whole maps (`app::map_picture`) are framed

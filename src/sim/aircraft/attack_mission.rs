@@ -98,7 +98,6 @@ impl StrafeKeys {
 
     /// The weapon's five keys with their `[General]` fallbacks applied
     /// (`Ext/WeaponType/Body.cpp:108-112`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn from_weapon(
         weapon: &crate::rules::weapon_type::WeaponType,
         globals: &crate::rules::phobos_globals::PhobosGlobals,

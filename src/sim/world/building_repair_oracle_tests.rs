@@ -1032,7 +1032,6 @@ fn ares_broke_human_repair_stays_on_without_repair_stop() {
 /// Phobos `ExtendedPlayerRepair` (`Ext/House/Hooks.cpp:803-825`): a human
 /// house's flag alone starts every building's repair, and clearing it stops
 /// the buildings the next visit reaches.
-#[cfg(feature = "phobos")]
 #[test]
 fn extended_player_repair_toggles_the_human_house_buildings() {
     let corpus = corpus();
@@ -1088,7 +1087,6 @@ fn extended_player_repair_toggles_the_human_house_buildings() {
 /// The VERA wire record carries the requested switch state and decodes back
 /// to the semantic command for the issuing House, so the flag stays
 /// synchronized for replay and network peers.
-#[cfg(feature = "phobos")]
 #[test]
 fn player_auto_repair_record_round_trips_the_requested_state() {
     let corpus = corpus();

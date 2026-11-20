@@ -19,7 +19,6 @@ impl Simulation {
     /// the Temporal arm exists). Native reads `IsUnderEMP()` and
     /// `Deactivated` — the [`GameEntity::emp_remaining`] and
     /// [`GameEntity::deactivated`] owners — and returns when neither holds.
-    #[cfg(feature = "phobos")]
     pub(crate) fn update_rearm_in_emp_state(&mut self, id: u64, rules: &RuleSet) {
         let under_emp_or_deactivated =
             self.substrate.entities.get(id).is_some_and(|entity| {
@@ -53,7 +52,6 @@ impl Simulation {
     /// reached from `TechnoExt::UpdateTemporal` (`:853-863`) inside the
     /// `TemporalClass_AI @ 0x71A88D` hook while the warp runs. No predicate
     /// beyond the keys: the target's type decides.
-    #[cfg(feature = "phobos")]
     pub(crate) fn update_rearm_in_temporal(&mut self, target: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(target) else {
             return;

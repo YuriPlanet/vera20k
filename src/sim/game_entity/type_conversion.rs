@@ -124,7 +124,6 @@ impl Simulation {
         // Phobos `FootExt::UpdateTypeData`'s capture-manager arm
         // (`Ext/Foot/Body.cpp:470-540`) is gated by the OLD type's
         // `Convert.ResetMindControl` (`Nullable`, `[General]` fallback).
-        #[cfg(feature = "phobos")]
         let reset_mind_control = source
             .phobos_convert
             .reset_mind_control
@@ -162,7 +161,6 @@ impl Simulation {
         // called from `TechnoClass::ChangeType` at `Ext/Techno/Body.cpp:366`):
         // a running countdown is dropped when the new type has no timed
         // AutoDeath. The untimed type then never re-arms it.
-        #[cfg(feature = "phobos")]
         if actor.auto_death_timer.start_frame() != crate::sim::timer::PAUSED_START_FRAME
             && destination.phobos_auto_death.after_delay <= 0
         {
@@ -172,7 +170,6 @@ impl Simulation {
         // passenger-deletion countdown stops when the new type configures a
         // PassengerDeletion with `Rate <= 0`. A type with no config at all
         // leaves the clock running, as native does.
-        #[cfg(feature = "phobos")]
         if actor.passenger_deletion_timer.start_frame() != crate::sim::timer::PAUSED_START_FRAME
             && destination
                 .phobos_passenger_deletion
@@ -198,11 +195,9 @@ impl Simulation {
         // survives; a surviving one is rebound to the destination type, with
         // its HP rescaled by the strength ratio and its recovery timers
         // rescaled toward the new type's rates.
-        #[cfg(feature = "phobos")]
         self.phobos_shield_convert_check(id, destination, rules);
         // Phobos `FootExt::UpdateTypeData`'s capture-manager arm: rebuild the
         // manager's limits from the new type's weapons.
-        #[cfg(feature = "phobos")]
         if reset_mind_control {
             self.phobos_reset_mind_control_on_convert(id, destination, rules, effects);
         }
@@ -292,7 +287,6 @@ impl Simulation {
         // Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:722-793`), run
         // by `TechnoExt::ConvertToType` once the instance is rebound
         // (`Ext/Techno/Body.cpp:353` under Ares, `:455` otherwise).
-        #[cfg(feature = "phobos")]
         self.phobos_update_type_data_in_air(id, destination, rules, effects);
         true
     }
@@ -305,7 +299,6 @@ impl Simulation {
     /// Jumpjet instance from the new type and, when the body is in the air,
     /// parks it there or re-targets it, or — with no Jumpjet at all — lets an
     /// airborne body fall, as a crash death when the cell below refuses it.
-    #[cfg(feature = "phobos")]
     fn phobos_update_type_data_in_air(
         &mut self,
         id: u64,
@@ -433,7 +426,6 @@ impl Simulation {
     /// called from the `FootClass_AI` tail (`Ext/Techno/Hooks.cpp:42-47`):
     /// with `Convert.Health` set and the band enabled, convert when
     /// `IsHealthInThreshold` holds.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_health_auto_convert(
         &mut self,
         id: u64,
@@ -476,7 +468,6 @@ impl Simulation {
     /// `Ammo.AutoConvertType` set and a non-empty band, a Foot whose type has
     /// `Ammo=` above zero and whose instance ammo is inside the band converts.
     /// Both bounds default to -1 (unbounded); a reversed pair is an empty band.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_ammo_auto_convert(
         &mut self,
         id: u64,
@@ -525,7 +516,6 @@ impl Simulation {
     /// `Convert.ComputerToHuman`, then run the mission fix when the old
     /// owner was computer-controlled. The caller invokes this before the
     /// house swap, with the old owner still installed.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_convert_on_owner_change(
         &mut self,
         id: u64,
@@ -597,7 +587,6 @@ impl Simulation {
     ///
     /// RESIDUAL: native also clears `ShouldScanForTarget` and
     /// `ShouldGarrisonStructure`; VERA has no owner for either byte.
-    #[cfg(feature = "phobos")]
     fn phobos_change_owner_mission_fix(
         &mut self,
         id: u64,
@@ -667,7 +656,6 @@ impl Simulation {
     /// skipped; with a source house, `AffectsHouse` must admit the target's
     /// owner; an empty `From` list converts any Foot, otherwise the first
     /// matching source type does. The scan stops after a conversion.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_apply_type_convert_pairs(
         &mut self,
         id: u64,
@@ -742,7 +730,6 @@ impl Simulation {
     /// limit and any `InfiniteMindControl=`, then trim the tail of the node
     /// list, delete the manager when no mind-control weapon remains, or
     /// create one when the type gained such a weapon.
-    #[cfg(feature = "phobos")]
     fn phobos_reset_mind_control_on_convert(
         &mut self,
         id: u64,
@@ -806,7 +793,6 @@ impl Simulation {
 /// `(hp > 0 ? hp > min : hp >= min) && hp <= max`, with a zero/zero health
 /// always inside. The ratio and its comparisons keep the native masked-x87
 /// semantics through [`crate::sim::combat::Health::compare_ratio`].
-#[cfg(feature = "phobos")]
 fn health_in_threshold(
     health: crate::sim::combat::Health,
     strength: i32,

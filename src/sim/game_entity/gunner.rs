@@ -21,7 +21,6 @@ pub(crate) struct TurretSelection {
     /// Phobos `TechnoExt::ChargeTurretTimer` (`Ext/Techno/Body.h:42`): the
     /// `ChargeTurret.Delays` charge timer, started at the FireAt rearm and
     /// cleared once expired (`Ext/Techno/Hooks.cpp:241-244`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_charge_turret_timer: Option<crate::sim::combat::rof::RearmTimer>,
 }
@@ -33,7 +32,6 @@ impl TurretSelection {
             current_weapon_number: 0,
             current_turret_index: -1,
             charge_turret_delay: 0,
-            #[cfg(feature = "phobos")]
             phobos_charge_turret_timer: None,
         }
     }
@@ -95,7 +93,6 @@ impl GameEntity {
     /// rearm timer keeps the native duration. `Burst > 1` indexes the shot
     /// (`CurrentBurstIndex - 1`), clamped to the last item; an item `<= 0`
     /// keeps the native value and starts nothing.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_set_charge_turret_delay(
         &mut self,
         frame: i32,
@@ -122,7 +119,6 @@ impl GameEntity {
     /// ordinary full-rearm arm, an `ROFMultiplier` also scales the saved `+2F8`
     /// denominator, with the same C++ `static_cast<int>(value * multiplier)`
     /// truncation the rearm timer beside it takes.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_scale_charge_turret_delay(&mut self, multiplier: f64) {
         if self.turret_selection.phobos_charge_turret_timer.is_some()
             || !self.weapon_burst.last_rearm_was_full_delay()
@@ -152,7 +148,6 @@ impl GameEntity {
         // `Ext/Techno/Hooks.cpp:241-244`): the `ChargeTurret.Delays` timer
         // answers the turret progress while it runs, stops once expired and
         // hands back to the rearm timer; without it the rearm timer answers.
-        #[cfg(feature = "phobos")]
         let time_left = match self.turret_selection.phobos_charge_turret_timer {
             Some(timer) => {
                 let remaining = timer.remaining(frame);
@@ -165,8 +160,6 @@ impl GameEntity {
             }
             None => rearm_remaining,
         };
-        #[cfg(not(feature = "phobos"))]
-        let time_left = rearm_remaining;
         let selection = &self.turret_selection;
         let index = if selection.charge_turret_delay <= 0 {
             0

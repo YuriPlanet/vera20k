@@ -69,7 +69,6 @@ pub struct ParticleType {
     /// (`ParticleClass_Gas_AI_DriftSpeed`, hook `0x62BE30`,
     /// `Ext/ParticleType/Hooks.cpp:4-30`, replacing the stock ±2 clamp at
     /// `0x62BE30..0x62BE5F`).
-    #[cfg(feature = "phobos")]
     pub phobos_gas_max_drift_speed: i32,
 
     // ── Object-base (from ObjectTypeClass) ───────────────────────────
@@ -234,7 +233,6 @@ impl ParticleType {
             alpha_image: section.read_object_alpha_image(""),
             start_frame: section.read_int("StartFrame", 0),
 
-            #[cfg(feature = "phobos")]
             phobos_gas_max_drift_speed: section.read_ares_int("Gas.MaxDriftSpeed", 2),
             // ParticleType644BE0/644F50 retain full signed words; the
             // instance constructor62B890 alone narrows RemainingEC to16bits.
@@ -462,7 +460,6 @@ mod tests {
     /// Phobos `Gas.MaxDriftSpeed=` is a `Valueable<int>` read with
     /// `Parser<int>::TryParse` (`$` decimal / `h` hex accepted, rejected text
     /// keeps the constructor's 2), not gamemd's lenient ReadInt.
-    #[cfg(feature = "phobos")]
     #[test]
     fn gas_max_drift_speed_reads_with_the_phobos_int_parser() {
         let read = |text: &str| {

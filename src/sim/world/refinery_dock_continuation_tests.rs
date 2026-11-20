@@ -327,7 +327,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
         "dispatch_timer":[e.mission.dispatch_timer().start_frame(),e.mission.dispatch_timer().delay()],
         "nav_queue_count":e.navigation.nav_queue().len(), "miner_nav":nav_name(s,e.navigation.nav_com()),
         "archive":nav_name(s,archive), "pending_entry":pending,
-        "target":e.attack_target.target().map_or(Value::Null, |t| match t { TargetKind::Entity(id)=>s.name(id), TargetKind::Cell(rx,ry)=>json!([rx,ry]), #[cfg(feature = "phobos")] TargetKind::Bullet(..)=>Value::Null }),
+        "target":e.attack_target.target().map_or(Value::Null, |t| match t { TargetKind::Entity(id)=>s.name(id), TargetKind::Cell(rx,ry)=>json!([rx,ry]), TargetKind::Bullet(..)=>Value::Null }),
         "health":e.health.current(),"strength":s.sim.object_type(e.type_ref(),&s.rules).unwrap().strength,
         "locomotor_powered":u8::from(e.locomotor.as_ref().unwrap().is_powered()),
         "locomotor_kind":if e.locomotor.as_ref().unwrap().active_kind()==crate::rules::locomotor_type::LocomotorKind::Hover {"hover"} else {"drive"},

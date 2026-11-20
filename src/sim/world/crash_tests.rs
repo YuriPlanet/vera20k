@@ -2764,7 +2764,6 @@ fn campaign_player_controlled_house_hears_voice_crashing() {
 /// Phobos `CrashSpin.Multiplier` (hook `0x4DECBB`,
 /// `Ext/Techno/Hooks.Misc.cpp:978-999`): a value `<= 0` replaces the whole
 /// block, so the three draws do not happen.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_crash_spin_zero_multiplier_skips_the_spin_and_its_draws() {
     let row = oracle()["crash"]

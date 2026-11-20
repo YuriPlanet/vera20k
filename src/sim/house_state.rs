@@ -767,7 +767,6 @@ pub struct HouseState {
     /// `Ext/House/Body.h:51`, read `Ext/House/Body.cpp:626`): the campaign
     /// difficulty slots the Unlimbo AI-repairable grant consults
     /// (`Ext/Building/Hooks.cpp:329`, hook `0x440B4F`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     repair_base_nodes: [Option<bool>; 3],
     /// House TechLevel: launch options offline, or the campaign map reader with
@@ -927,7 +926,6 @@ pub struct HouseState {
     /// Phobos `HouseExt::AISuperWeaponDelayTimer` (`Ext/House/Body.h:47`): the
     /// `[General] AISuperWeaponDelay=` per-house gate around `AI_TryFireSW`
     /// (`Ext/House/Hooks.cpp:518-541`). Unstarted at construction.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     ai_superweapon_delay_timer: CdTimer,
     /// House+5640/+5648. Post_Map_Init00686A12..00686A2B starts it once;
@@ -1012,7 +1010,6 @@ pub struct HouseState {
     /// House (`Ext/Techno/Hooks.ReceiveDamage.cpp:95,121`). Native keeps it in
     /// the House extension, so saves and the state hash carry it. Expired
     /// until the first accepted alert starts it.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     combat_alert_timer: CdTimer,
     /// Phobos HouseExt `PlayerAutoRepair` (`Ext/House/Body.h`): with
@@ -1020,7 +1017,6 @@ pub struct HouseState {
     /// this instead of entering the cursor repair mode, and every building of
     /// the house auto-repairs while it is set (`Ext/Event/Body.cpp:116-128`,
     /// `Ext/House/Hooks.cpp:776-824`). Persisted and hashed.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     player_auto_repair: bool,
     /// House+57E4..+15FF3: native retained 130x130 padded spatial threat map.
@@ -1036,7 +1032,6 @@ pub struct HouseState {
     /// keyed by the firing EMPulse SW type, the other SW types this House
     /// suspended for it. Real save state, resumed and erased by
     /// `BuildingClass_Mission_Missile_EMPulseSelectWeapon` (`0x44CEEC`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     suspended_emp_pulse_sws: std::collections::BTreeMap<InternedId, Vec<InternedId>>,
 }
@@ -1279,7 +1274,6 @@ impl HouseState {
 
     /// Phobos `HouseExt::PlayerAutoRepair`, toggled by the sidebar repair
     /// button while `ExtendedPlayerRepair` is on.
-    #[cfg(feature = "phobos")]
     pub fn player_auto_repair(&self) -> bool {
         self.player_auto_repair
     }
@@ -1287,7 +1281,6 @@ impl HouseState {
     /// Switch the player's house-wide auto repair; the building visit stops
     /// each still-repairing building when it turns off
     /// (`Ext/House/Hooks.cpp:819-824`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_player_auto_repair(&mut self, on: bool) {
         self.player_auto_repair = on;
     }
@@ -1300,13 +1293,11 @@ impl HouseState {
 
     /// Phobos `HouseExt::AISuperWeaponDelayTimer.HasTimeLeft()`: the frames
     /// left before the next per-frame `AI_TryFireSW`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn ai_superweapon_delay_remaining(&self, frame: i32) -> i32 {
         self.ai_superweapon_delay_timer.remaining(frame)
     }
 
     /// Phobos `HouseExt::AISuperWeaponDelayTimer.Start(delay)`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn start_ai_superweapon_delay(&mut self, frame: i32, delay: i32) {
         self.ai_superweapon_delay_timer.start(frame, delay);
     }
@@ -1378,7 +1369,6 @@ impl HouseState {
         crate::rules::ruleset::HouseCostFactors {
             country: self.country_cost_mults.0,
             factory_plant: self.base_projection.factory_plant_factors(),
-            #[cfg(feature = "phobos")]
             restricted_plant: crate::util::native_x87::NativeF32Bits::ONE,
         }
     }
@@ -1391,14 +1381,11 @@ impl HouseState {
         object: &crate::rules::object_type::ObjectType,
     ) -> crate::rules::ruleset::HouseCostFactors {
         let mut factors = self.cost_factors();
-        #[cfg(feature = "phobos")]
         {
             factors.restricted_plant = self
                 .base_projection()
                 .restricted_factory_plant_multiplier(object);
         }
-        #[cfg(not(feature = "phobos"))]
-        let _ = object;
         factors
     }
 
@@ -1443,7 +1430,6 @@ impl HouseState {
     }
 
     /// Install the scenario's parsed difficulty slots (`Ext/House/Body.cpp:626`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn install_repair_base_nodes(&mut self, slots: [Option<bool>; 3]) {
         self.repair_base_nodes = slots;
     }
@@ -1451,7 +1437,6 @@ impl HouseState {
     /// `HouseExt::Fetch(owner)->RepairBaseNodes[Difficulty].Get(global)`
     /// (`Ext/Building/Hooks.cpp:329`): the house's slot for the game
     /// difficulty row, else the `[Basic]` global.
-    #[cfg(feature = "phobos")]
     pub(crate) fn repair_base_nodes_for_difficulty(
         &self,
         difficulty: HouseDifficulty,
@@ -1461,7 +1446,6 @@ impl HouseState {
     }
 
     /// Install a fixture's slots.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) fn set_repair_base_nodes_for_test(&mut self, slots: [Option<bool>; 3]) {
         self.repair_base_nodes = slots;
     }
@@ -1874,14 +1858,12 @@ impl HouseState {
     }
 
     /// Phobos HouseExt `CombatAlertTimer` (`Ext/House/Body.h:46`).
-    #[cfg(feature = "phobos")]
     pub const fn combat_alert_timer(&self) -> &CdTimer {
         &self.combat_alert_timer
     }
 
     /// `CombatAlertTimer.Start(CombatAlert.Interval)` after an accepted alert
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:121`).
-    #[cfg(feature = "phobos")]
     pub fn start_combat_alert(&mut self, frame: i32, interval: i32) {
         self.combat_alert_timer.start(frame, interval);
     }
@@ -2639,16 +2621,12 @@ impl HouseState {
     /// launch suspends other superweapons, so only a holder changes the
     /// state hash.
     pub(crate) fn hash_suspended_emp_pulse_sws(&self, hasher: &mut impl std::hash::Hasher) {
-        #[cfg(not(feature = "phobos"))]
-        let _ = hasher;
-        #[cfg(feature = "phobos")]
         if !self.suspended_emp_pulse_sws.is_empty() {
             std::hash::Hash::hash(b"house-suspended-emp-pulse-v1", hasher);
             std::hash::Hash::hash(&self.suspended_emp_pulse_sws, hasher);
         }
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn hold_emp_pulse_sws(&mut self, firing: InternedId, held: Vec<InternedId>) {
         // `FireSuperWeapon.cpp:400-403` pushes into an existing entry, so a
         // second launch keeps the earlier hold list.
@@ -2658,14 +2636,12 @@ impl HouseState {
             .extend(held);
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn release_emp_pulse_sws(&mut self, firing: InternedId) -> Vec<InternedId> {
         self.suspended_emp_pulse_sws
             .remove(&firing)
             .unwrap_or_default()
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn suspended_emp_pulse_sws(
         &self,
     ) -> &std::collections::BTreeMap<InternedId, Vec<InternedId>> {
@@ -3192,7 +3168,6 @@ impl HouseState {
             base_plan: crate::sim::base_plan::BasePlanState::default(),
             base_plan_center: (0, 0),
             base_reservation: BaseReservationState::default(),
-            #[cfg(feature = "phobos")]
             repair_base_nodes: [None; 3],
             tech_level,
             current_iq: 0,
@@ -3216,7 +3191,6 @@ impl HouseState {
             economy: Economy::new(credits),
             strategy_emergency: HouseStrategyEmergencyState::default(),
             strategy_timer: strategy_timer_at_construction(),
-            #[cfg(feature = "phobos")]
             ai_superweapon_delay_timer: CdTimer::default(),
             enemy_search_timer: enemy_search_timer_at_construction(),
             team_creation: Default::default(),
@@ -3228,11 +3202,8 @@ impl HouseState {
             eva_low_power_guard: false,
             repair_start_latch: false,
             repair_latch_timer: CdTimer::started(0, 0),
-            #[cfg(feature = "phobos")]
             combat_alert_timer: CdTimer::default(),
-            #[cfg(feature = "phobos")]
             player_auto_repair: false,
-            #[cfg(feature = "phobos")]
             suspended_emp_pulse_sws: Default::default(),
             spatial_threat: Default::default(),
             super_weapon_targets: HouseSuperWeaponTargets::default(),

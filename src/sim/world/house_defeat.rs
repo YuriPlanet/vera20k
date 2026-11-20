@@ -1230,7 +1230,6 @@ impl Simulation {
     /// `HouseExt::GetHouseKind` (`Ext/House/Body.cpp:386-389`). VERA answers
     /// absent for an empty array; native's draw and `GetItem` are out of
     /// domain there.
-#[cfg(feature = "phobos")]
     pub(crate) fn random_house(&mut self) -> Option<InternedId> {
         let order = self.houses.order();
         if order.is_empty() {
@@ -1286,7 +1285,6 @@ mod tests;
 impl Simulation {
         /// YRpp `HouseClass::FindNeutral`: the first House whose type is the
         /// `Neutral` country (`FindByCountryName`); none without one.
-        #[cfg(feature = "phobos")]
         pub(crate) fn neutral_house(&self) -> Option<InternedId> {
             let neutral = self.interner.get("Neutral")?;
             self.houses

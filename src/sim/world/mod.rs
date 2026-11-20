@@ -144,7 +144,6 @@ pub use world_orders::UnitRepairAction;
 pub(crate) use world_orders::VehicleCaptureOutcome;
 pub use world_orders::{EntryBaseAction, EntryClickAction};
 mod fog_objects;
-#[cfg(feature = "phobos")]
 pub(crate) mod phobos_trajectory;
 mod projectile_collision;
 mod shroud_refresh;
@@ -1401,7 +1400,6 @@ pub struct SimFireEvent {
     /// `0x6FF42B`: the state a `[WeaponType] Anim=` muzzle anim carries when
     /// `Anim.Update` keeps it following the firer. `None` for every other
     /// flash, including `OccupantAnim=`.
-    #[cfg(feature = "phobos")]
     pub firing_anim: Option<crate::sim::anim_class::FiringAnimState>,
     /// The muzzle `AnimClass` type this shot constructs, if any: the weapon's
     /// `Anim=` by aim facing, or `OccupantAnim=` for an occupied building.
@@ -1419,7 +1417,6 @@ impl SimFireEvent {
     /// report, no muzzle animation and a zero fire coordinate.
     pub fn for_test(attacker_id: u64) -> Self {
         Self {
-            #[cfg(feature = "phobos")]
             firing_anim: None,
             attacker_id,
             weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
@@ -1540,7 +1537,6 @@ pub struct Simulation {
     /// Phobos `WarheadTypeExt::Reflected`: the warhead whose own damage is
     /// being reflected right now, so a reflected hit never reflects again.
     /// Synchronous, never saved or hashed.
-    #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
     /// Phobos `ScenarioExt::Global()->FallingDownTracker`
@@ -1548,7 +1544,6 @@ pub struct Simulation {
     /// `0x5F3F86`): Technos that started a bomb fall or a paradrop, in
     /// `AddUnique` order. A derived targeting cache: not saved or hashed.
     /// Live membership is `is_falling_down`; the scan filters ended falls.
-    #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) phobos_falling_down: Vec<u64>,
     /// Phobos `ScenarioExt::AutoDeathObjects`
@@ -1559,7 +1554,6 @@ pub struct Simulation {
     /// the scenario (`:181`) and hashed; the per-frame sweep
     /// (`UpdateAutoDeathObjectsInLimbo`) is the only visit a limboed object
     /// gets. See `sim::auto_death`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) auto_death_objects: Vec<u64>,
     /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
@@ -1709,13 +1703,11 @@ pub struct Simulation {
     #[serde(default)]
     pub(crate) projectiles: crate::sim::projectile::ProjectileStore,
     /// Phobos per-warhead-type animation creation counters.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) warhead_anim_runtime: crate::sim::warhead_anim::WarheadAnimRuntime,
     /// Phobos `WarheadTypeExt::WasDetonatedOnAllMapObjects`: the reentrancy
     /// guard for the `0x4690C1` whole-map pass, held per warhead type. Set and
     /// cleared inside one synchronous detonation; never set between frames.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) phobos_all_map_detonation_active: Option<InternedId>,
     /// Persistent WaveClass registrations. They have their own logic lifetime;
@@ -1935,7 +1927,6 @@ pub struct Simulation {
     /// (`Ext/Anim/Body.cpp:25`, `Hooks.cpp:731`): how many anims still owe a
     /// per-frame `UpdateAsFiringAnim`. Saved with the scenario
     /// (`Ext/Scenario/Body.cpp:195`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) firing_anim_update_count: u32,
     /// Per-cell terrain speed modifier config (slope climb/descend).
@@ -2014,7 +2005,6 @@ pub struct Simulation {
     /// Phobos `SW.Next`/`SW.Link` tail recursion depth. Transient: it only
     /// stops a cyclic chain (native would recurse to stack exhaustion) and is
     /// zero outside a launch. Not saved or hashed.
-    #[cfg(feature = "phobos")]
     #[serde(skip)]
     pub(crate) super_weapon_chain_depth: crate::sim::superweapon::ChainDepth,
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
@@ -2023,7 +2013,6 @@ pub struct Simulation {
     /// Phobos `ScenarioExt::TransportReloaders` (`Ext/Scenario/Body.h:34`):
     /// passengers reloaded by the pre-Logic pass while inside a transport, in
     /// boarding order. Saved (`Ext/Scenario/Body.cpp:182`) and hashed.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) transport_reloaders: crate::sim::passenger::TransportReloaderQueue,
 }
@@ -2405,7 +2394,6 @@ impl Simulation {
 
     /// Phobos `FallingDownTracker::AddUnique`
     /// (`Ext/Techno/Hooks.cpp:1656-1686`, hooks `0x5F4160`, `0x5F5965`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_track_falling_down(&mut self, stable_id: u64) {
         if !self.phobos_falling_down.contains(&stable_id) {
             self.phobos_falling_down.push(stable_id);
@@ -2417,7 +2405,6 @@ impl Simulation {
     /// keeps [`GameEntity::finish_fall`] free of `Simulation` and filters the
     /// ended falls here instead. An empty list after a save load rebuilds the
     /// cache from the entity flags, in entity-store order.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_falling_down_candidates(&self) -> Vec<u64> {
         let tracked: Vec<u64> = if self.phobos_falling_down.is_empty() {
             self.substrate
@@ -2736,7 +2723,6 @@ impl Simulation {
     /// Commit a trajectory's direct warhead damage
     /// (`StraightTrajectory::ProximityDirect`, `TechnoClass::ReceiveDamage`)
     /// through the shared entity receiver transaction.
-    #[cfg(feature = "phobos")]
     pub(crate) fn commit_direct_damage_events(
         &mut self,
         rules: &RuleSet,
@@ -2819,7 +2805,6 @@ impl Simulation {
                 )?
             }
             crate::sim::combat::TargetKind::Cell(rx, ry) => self.wave_cell_target_position(rx, ry),
-            #[cfg(feature = "phobos")]
             crate::sim::combat::TargetKind::Bullet(id) => self
                 .projectiles
                 .get(id)
@@ -3016,20 +3001,16 @@ impl Simulation {
                 // Phobos `AmbientDamage.Warhead` (`0x75F39D`,
                 // `Ext/Techno/Hooks.WeaponEffects.cpp:175-186`): unset keeps
                 // the weapon's own warhead.
-                #[cfg(feature = "phobos")]
                 let ambient_warhead_name = weapon
                     .phobos_ambient_damage_warhead
                     .as_deref()
                     .or(weapon.warhead.as_deref());
-                #[cfg(not(feature = "phobos"))]
-                let ambient_warhead_name = weapon.warhead.as_deref();
                 let Some(warhead_name) = ambient_warhead_name else {
                     break;
                 };
                 let warhead_ref = self.interner.intern(warhead_name);
                 // Phobos `AmbientDamage.IgnoreTarget` (`0x75F415`, `:175-186`):
                 // the wave's Target object takes no ambient damage.
-                #[cfg(feature = "phobos")]
                 let ambient_ignored_target = if weapon
                     .phobos_ambient_damage_ignore_target
                     .unwrap_or(rules.phobos_globals.ambient_damage_ignore_target)
@@ -3038,8 +3019,6 @@ impl Simulation {
                 } else {
                     None
                 };
-                #[cfg(not(feature = "phobos"))]
-                let ambient_ignored_target: Option<crate::sim::combat::TargetKind> = None;
                 let source_house = Some(firer.owner());
                 let mut shared_damage = raw_ambient_damage;
 
@@ -3899,7 +3878,6 @@ impl Simulation {
 
     /// The trigger runtime for presentation readers (the banner draw's
     /// scenario-variable lookups); mutations stay in the trigger owner.
-    #[cfg(feature = "phobos")]
     pub fn trigger_runtime(&self) -> &TriggerRuntime {
         &self.trigger_runtime
     }
@@ -4056,7 +4034,6 @@ impl Simulation {
 
     /// Phobos cameo tooltip power readout (`Misc/PhobosToolTip.cpp:68-101`)
     /// for `object` as `owner` would build it.
-    #[cfg(feature = "phobos")]
     pub fn cameo_power_delta(
         &self,
         rules: &RuleSet,
@@ -4985,11 +4962,8 @@ impl Simulation {
             frame_profile: Default::default(),
             object_placement_scope_depth: 0,
             buildup_bypass: false,
-            #[cfg(feature = "phobos")]
             reflected_warhead: None,
-            #[cfg(feature = "phobos")]
             phobos_falling_down: Vec::new(),
-            #[cfg(feature = "phobos")]
             auto_death_objects: Vec::new(),
             ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
@@ -5026,9 +5000,7 @@ impl Simulation {
             combat_light_requests: FrameChannel::default(),
             screen_shake_updates: FrameChannel::default(),
             projectiles: crate::sim::projectile::ProjectileStore::new(),
-            #[cfg(feature = "phobos")]
             warhead_anim_runtime: Default::default(),
-            #[cfg(feature = "phobos")]
             phobos_all_map_detonation_active: None,
             waves: crate::sim::wave::WaveStore::new(),
             active_wave_links: BTreeMap::new(),
@@ -5077,7 +5049,6 @@ impl Simulation {
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
             particle_light_flash: false,
-            #[cfg(feature = "phobos")]
             firing_anim_update_count: 0,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
@@ -5095,10 +5066,8 @@ impl Simulation {
             frame_continuation: None,
             planning: planning::PlanningState::default(),
             replaying_recorded_commands: false,
-            #[cfg(feature = "phobos")]
             super_weapon_chain_depth: crate::sim::superweapon::ChainDepth::default(),
             trigger_runtime: TriggerRuntime::default(),
-            #[cfg(feature = "phobos")]
             transport_reloaders: crate::sim::passenger::TransportReloaderQueue::default(),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());
@@ -6035,7 +6004,6 @@ impl Simulation {
     /// (`Hooks.Obstacles.cpp:136-142`) and its `ParabombFallRate` starts at 0;
     /// the `BombParachute=` AnimType (else `[General] BombParachute`) is
     /// constructed there and remapped to the firing House.
-    #[cfg(feature = "phobos")]
     pub(crate) fn init_parabomb(&mut self, id: u64, rules: &RuleSet) {
         let Some((keys, origin, source_id)) = self.projectiles.get(id).and_then(|projectile| {
             let kind = projectile
@@ -6073,7 +6041,6 @@ impl Simulation {
     /// `GameCreate<AnimClass>(pAnimType, coords)` at the spawn coordinate, its
     /// owner the bullet Owner's House (or the retained `BulletExt::FirerHouse`)
     /// and the Anim remapped to that House's colour scheme.
-    #[cfg(feature = "phobos")]
     fn spawn_parabomb_canopy(
         &mut self,
         rules: &RuleSet,
@@ -6130,8 +6097,6 @@ impl Simulation {
         let Some(projectile) = projectiles.get(bullet) else {
             return;
         };
-        #[cfg(not(feature = "phobos"))]
-        let _ = houses;
         let source_id = projectile.source_id();
         let kind = projectile
             .payload()
@@ -6144,10 +6109,8 @@ impl Simulation {
             .map(|owner| owner.owner());
         // `BulletExt::InitializeState`: `CurrentStrength = pType->Strength`
         // (`Ext/Bullet/Hooks.cpp:30`).
-        #[cfg(feature = "phobos")]
         let strength = kind.map_or(0, |kind| kind.strength);
         projectiles.set_firer_house(bullet, house);
-        #[cfg(feature = "phobos")]
         {
             // `BulletExt::InitializeState` retains the Owner's House for
             // every bullet, not only a `FirersPalette=` one. A re-Construct
@@ -6766,7 +6729,6 @@ impl Simulation {
         let owner = entity.owner();
         // Phobos's cost hook also prices `HouseClass::Added_To_Game`
         // (`0x00502A80`). Resolve the type before the mutable House borrow.
-        #[cfg(feature = "phobos")]
         let restricted_plant = self
             .object_type(entity.type_ref(), rules)
             .and_then(|object| {
@@ -6777,14 +6739,11 @@ impl Simulation {
             .map(|(object, base)| base.restricted_factory_plant_multiplier(object))
             .unwrap_or(crate::util::native_x87::NativeF32Bits::ONE);
         if let Some(house) = self.houses.get_mut(&owner) {
-            #[cfg(feature = "phobos")]
             let factors = {
                 let mut folded = house.cost_factors();
                 folded.restricted_plant = restricted_plant;
                 folded
             };
-            #[cfg(not(feature = "phobos"))]
-            let factors = house.cost_factors();
             house.tracking_mut().added_to_game(entity, &factors);
             if entity.category() == EntityCategory::Structure {
                 let drain = power_system::building_power_drain(entity, rules, &self.interner);
@@ -6796,7 +6755,6 @@ impl Simulation {
         // Phobos `HouseClass_RegisterGain` (`0x502A80`,
         // `Ext/House/Hooks.cpp:15-23`): a techno gain rechecks power when the
         // unit drain is on.
-        #[cfg(feature = "phobos")]
         if rules.phobos_globals.unit_power_drain && entity.category() != EntityCategory::Structure {
             Self::invalidate_house_power(
                 &self.houses,
@@ -6837,7 +6795,6 @@ impl Simulation {
         self.powered_center_removed(stable_id, rules, effects);
         //50277B resumes after the callback prelude. Pin the original House
         // receiver, but reborrow the live object/type at this actual phase.
-        #[cfg(feature = "phobos")]
         let restricted_plant = self
             .substrate
             .entities
@@ -6853,14 +6810,11 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            #[cfg(feature = "phobos")]
             let factors = {
                 let mut folded = house.cost_factors();
                 folded.restricted_plant = restricted_plant;
                 folded
             };
-            #[cfg(not(feature = "phobos"))]
-            let factors = house.cost_factors();
             house.tracking_mut().removed_from_game(entity, &factors);
         }
         // With Ares: the building's store leaves the House's
@@ -6874,7 +6828,6 @@ impl Simulation {
         // Phobos `HouseClass_RegisterLoss` (`0x5025F0`,
         // `Ext/House/Hooks.cpp:15-23`): a techno loss rechecks power when the
         // unit drain is on.
-        #[cfg(feature = "phobos")]
         if rules.phobos_globals.unit_power_drain && !structure {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
         }
@@ -7449,14 +7402,11 @@ impl Simulation {
             house.economy_mut().add_score(cost);
         }
         // `0x7015C9` runs its AutoDeath block before the tracking work.
-        #[cfg(feature = "phobos")]
         self.check_auto_death_owner_change(stable_id, new_owner, rules);
-        #[cfg(feature = "phobos")]
         self.phobos_tracking_change_owner(stable_id, new_owner);
         // `0x7015C9`'s Foot arm runs before the caller's tracking work: a
         // human<->computer change converts the Foot through the old type's
         // keys and fixes its mission, with the old owner still installed.
-        #[cfg(feature = "phobos")]
         self.phobos_convert_on_owner_change(stable_id, new_owner, rules, registry, effects);
         Self::update_house_tracking(
             &mut self.substrate,
@@ -7529,7 +7479,6 @@ impl Simulation {
             UninitContext::new(rules, registry).with_effects(effects),
         );
         self.substrate.entities.change_owner(stable_id, new_owner);
-        #[cfg(feature = "phobos")]
         self.phobos_attach_effects_on_owner_change(stable_id, old_owner, new_owner, rules);
         self.ownership_changed_since_output = true;
         self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);
@@ -7669,7 +7618,6 @@ impl Simulation {
         // right after the `0x0070187B` UpdateReveal call and before the
         // Building/Foot tails: a `Passengers.SyncOwner` transport re-houses
         // its cargo here, on every owner change including a limbo one.
-        #[cfg(feature = "phobos")]
         self.phobos_sync_cargo_on_owner_change(stable_id, rules, registry, effects);
         if category == EntityCategory::Structure {
             // Ares ChangeOwnership_SensorArrayB10016CD0 (hook448C3E) adds the
@@ -7801,7 +7749,6 @@ impl Simulation {
                 // SkipGameCodes straight to the loop end (`0x4486C8`), so the
                 // docked Foot keeps its owner and stays docked. The dismiss
                 // arm sits before the hook address and is not affected.
-                #[cfg(feature = "phobos")]
                 let sync_owner = self
                     .substrate
                     .entities
@@ -7812,8 +7759,6 @@ impl Simulation {
                             .phobos_building_radio_link_sync_owner
                             .unwrap_or(rules.phobos_globals.building_radio_link_sync_owner)
                     });
-                #[cfg(not(feature = "phobos"))]
-                let sync_owner = true;
                 if sync_owner {
                     let tethered = self
                         .substrate
@@ -8863,10 +8808,7 @@ impl Simulation {
                 // (`Ext/Techno/Hooks.Misc.cpp:360-374`, `:376-384`,
                 // `:425-441`).
                 let kind = entity.locomotor.as_ref().map(|loco| loco.active_kind());
-                #[cfg(feature = "phobos")]
                 let typed = object.and_then(|object| object.phobos_makes_wake);
-                #[cfg(not(feature = "phobos"))]
-                let typed = None;
                 let makes_wake = resolves_makes_wake(typed, kind, rules);
                 wake_anchor_for(
                     entity,
@@ -9156,7 +9098,6 @@ const WAKE_DRAW_FLAGS: u32 = 0x600;
 /// `[AudioVisual] *MakesWake=` global (`Ext/Techno/Hooks.Misc.cpp:360-374`,
 /// `:376-384`, `:425-441`). Without the Phobos feature every locomotor wakes,
 /// as the stock hooks do.
-#[cfg(feature = "phobos")]
 fn resolves_makes_wake(
     typed: Option<bool>,
     kind: Option<crate::rules::locomotor_type::LocomotorKind>,
@@ -9179,14 +9120,6 @@ fn resolves_makes_wake(
     })
 }
 
-#[cfg(not(feature = "phobos"))]
-fn resolves_makes_wake(
-    _typed: Option<bool>,
-    _kind: Option<crate::rules::locomotor_type::LocomotorKind>,
-    _rules: &RuleSet,
-) -> bool {
-    true
-}
 
 pub(crate) fn wake_anchor_for(
     entity: &crate::sim::game_entity::GameEntity,

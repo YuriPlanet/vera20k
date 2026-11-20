@@ -48,19 +48,15 @@ pub(crate) fn render_restate_shell(
     // Phobos `BriefingDialog_ShowBriefing @ 0x65F764` replaces dialog item
     // 1059 (0x423)'s CSF key only while `BriefingTemp::ShowBriefing` is set.
     // The F2 restate path keeps the stock `GUI:Return` caption.
-    #[cfg(feature = "phobos")]
     let at_start = state.match_state.match_presentation.briefing_at_start;
     // Owned keys keep the text closure's `state` borrow short: the frame
     // renderer below takes the state again after the last text push.
-    #[cfg(feature = "phobos")]
     let button_key = state
         .match_state
         .match_presentation
         .briefing_dialog
         .button_label_key(at_start, RETURN_LABEL.0)
         .to_owned();
-    #[cfg(not(feature = "phobos"))]
-    let button_key = RETURN_LABEL.0.to_owned();
     let frame = button_frame(PauseMenuButtonState {
         pressed,
         ..Default::default()
@@ -86,7 +82,6 @@ pub(crate) fn render_restate_shell(
     if let Some(key) = interaction.hovered.and_then(|control| control.help_key()) {
         // `GetDialogUIStatusLabels_ShowBriefing @ 0x604985` returns the
         // authored status label for the resume button on the start path.
-        #[cfg(feature = "phobos")]
         let key = if interaction.hovered == Some(crate::ui::shell::restate::RestateControl::Return)
         {
             state
@@ -98,8 +93,6 @@ pub(crate) fn render_restate_shell(
         } else {
             key.to_owned()
         };
-        #[cfg(not(feature = "phobos"))]
-        let key = key.to_owned();
         text(
             &mut texts,
             &localized_label(state, &key, ""),

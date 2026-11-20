@@ -82,8 +82,6 @@ impl CloakRuntime {
     }
 }
 
-#[cfg(feature = "phobos")]
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// Spawns the pending Phobos cloak/decloak anim
     /// (`TechnoClass_Cloak_CloakAnim @ 0x7037F7`,

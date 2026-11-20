@@ -152,7 +152,6 @@ impl Simulation {
         // Phobos `VoxelAnimClass_AI_Additional` (`Ext/VoxelAnim/Hooks.cpp:5..27`),
         // inside the same 0x74A70E hook as the trailer spawn and before the
         // stock bounce update.
-        #[cfg(feature = "phobos")]
         self.update_voxel_anim_laser_trails(id, rules);
 
         // Phobos `VoxelAnimClass_AI_Trailer @ 0x74A70E`
@@ -161,7 +160,6 @@ impl Simulation {
         // `Trailer.SpawnDelay` timer expires, with the piece's owner house
         // installed after construction. The hook replaces the stock
         // every-other-tick block.
-        #[cfg(feature = "phobos")]
         {
             let kind = rules.voxel_anim_type(type_id);
             if let Some(trailer) = kind.trailer_anim.as_deref() {

@@ -88,7 +88,6 @@ fn weapon_block_reads_each_reached_pass_from_the_live_counts() {
     // whenever the `TurretCount > 0 || MultiWeapon` latch changes; the
     // TurretCount override turns it off here, so retained Weapon2 is dropped
     // before the stock Primary read.
-    #[cfg(feature = "phobos")]
     assert_eq!((swap.primary(), swap.secondary()), (Some("P"), None));
     // A smaller WeaponCount stops reading slot 3 without clearing it.
     let shrink = rules.object("SHRINK").unwrap();

@@ -154,7 +154,6 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
 /// `0x73E474`): a `Refinery.UseStorage` deposit converts to the storage
 /// type by the two types' values before the house store sees it; `-1`
 /// keeps the original type and amount.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_storage_tiberium_index_converts_the_deposit_type() {
     let rules_with = |index: Option<i32>| {
@@ -212,7 +211,6 @@ fn the_storage_tiberium_index_converts_the_deposit_type() {
 
 /// Phobos `Storage.TiberiumIndex` conversion math (`Ext/Building/Body.cpp:
 /// 77-94`): the deposit converts in binary32 by the two types' values.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_storage_conversion_uses_the_binary32_value_ratio() {
     use crate::util::native_x87::NativeF32Bits;

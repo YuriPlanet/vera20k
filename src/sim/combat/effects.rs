@@ -285,7 +285,6 @@ impl DeathEffects {
 /// `GeneralDefinitions.h:614..621`): bit 0, the black lane of the light's
 /// channel math in [`crate::render::combat_light`]. The fps admission reads
 /// `flags & 0xE` separately, which this bit does not bypass.
-#[cfg(feature = "phobos")]
 pub const NO_COLOR_SPOTLIGHT_FLAGS: u32 = 0x1;
 
 /// Phobos `CombatLightChance=`'s probability gate at the native `Flash`
@@ -303,16 +302,7 @@ pub const NO_COLOR_SPOTLIGHT_FLAGS: u32 = 0x1;
 /// that the original-execution fixtures compare against while changing no
 /// visible flash; a rule set that authors the key keeps native draw count and
 /// order.
-#[cfg(not(feature = "phobos"))]
-pub(crate) fn combat_light_chance_admits(
-    _world: &crate::sim::world::Simulation,
-    _rules: &crate::rules::ruleset::RuleSet,
-    _warhead: crate::sim::intern::InternedId,
-) -> bool {
-    true
-}
 
-#[cfg(feature = "phobos")]
 pub(crate) fn combat_light_chance_admits(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,

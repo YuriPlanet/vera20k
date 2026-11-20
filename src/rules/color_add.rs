@@ -103,7 +103,6 @@ impl ColorAddTable {
     /// `use_8bit` is `[AudioVisual] ColorAddUse8BitRGB=`
     /// (`Ext/Rules/Body.cpp:260`): the entries are then 8-bit channels and
     /// `Drawing::RGB_To_Int` narrows them to RGB565 before packing.
-    #[cfg(feature = "phobos")]
     pub fn phobos_word(&self, index: i32, use_8bit: bool) -> u16 {
         let Some(entry) = usize::try_from(index).ok().and_then(|i| self.slots.get(i)) else {
             return 0;
@@ -449,7 +448,6 @@ mod tests {
     /// `[AudioVisual] ColorAddUse8BitRGB=yes` feeds `Drawing::RGB_To_Int`
     /// (`Ext/Rules/Body.cpp:260`, `Utilities/GeneralUtils.cpp`), which narrows
     /// the 8-bit channels to RGB565 before the `R<<11 | G<<5 | B` pack.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_word_narrows_8bit_channels() {
         let table = ColorAddTable {

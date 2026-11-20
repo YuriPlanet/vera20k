@@ -1942,7 +1942,6 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             None => Value::Null,
             Some(TargetKind::Cell(rx, ry)) => json!([rx, ry]),
             Some(TargetKind::Entity(id)) => name(Some(id)),
-            #[cfg(feature = "phobos")]
             Some(TargetKind::Bullet(..)) => Value::Null,
         };
         let at = super::super::ground_pose::object_get_coords(unit, sim.resolved_terrain.as_ref());
@@ -3227,7 +3226,6 @@ fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
 /// (`Ext/Unit/Hooks.Crushing.cpp:27-38` and `:60-71`, hooks
 /// `0x741941`/`0x4B19F7`/`0x4B1A4B`). The reader is UnitType-only and unset
 /// keeps `0xBD4CCCCD`.
-#[cfg(feature = "phobos")]
 #[test]
 fn crush_forward_tilt_per_frame_replaces_the_drive_crush_rate() {
     use crate::rules::ini_parser::IniFile;

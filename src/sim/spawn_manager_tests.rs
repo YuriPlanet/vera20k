@@ -3037,7 +3037,6 @@ fn ares_own_detach_all_keeps_the_docked_missile() {
 /// `Ext/Techno/Hooks.Misc.cpp:162-178`): only the first N nodes start live;
 /// the tail waits `SpawnRegenRate` before regenerating; unset uses
 /// `SpawnsNumber`.
-#[cfg(feature = "phobos")]
 #[test]
 fn initial_spawns_number_leaves_the_tail_dead_until_regen() {
     let initial = |keys: &str| {
@@ -3066,7 +3065,6 @@ fn initial_spawns_number_leaves_the_tail_dead_until_regen() {
 }
 
 /// Rules with extra `Spawner.*` keys on `[CARRIER]`.
-#[cfg(feature = "phobos")]
 fn spawner_rules_with_carrier_keys(keys: &str) -> RuleSet {
     let text = spawner_rules_text().replace("[CARRIER]", &format!("[CARRIER]\n{keys}\n"));
     RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text))
@@ -3074,7 +3072,6 @@ fn spawner_rules_with_carrier_keys(keys: &str) -> RuleSet {
 }
 
 /// Run the manager once with its update gate forced open.
-#[cfg(feature = "phobos")]
 fn phobos_tick(sim: &mut Simulation, rules: &RuleSet, carrier: u64) {
     if let Some(manager) = sim
         .substrate
@@ -3096,7 +3093,6 @@ fn phobos_tick(sim: &mut Simulation, rules: &RuleSet, carrier: u64) {
 /// Phobos `Spawner.DelayFrames` replaces both native launch spacings and the
 /// launching AI gate with `min(delay, 10)` (`0x6B73A8/0x6B73B9`, `0x6B7265`).
 #[test]
-#[cfg(feature = "phobos")]
 fn spawner_delay_frames_spaces_launches_and_the_ai_gate() {
     for (delay, spacing, gate) in [(3, 3, 3), (25, 25, 10)] {
         let rules = spawner_rules_with_carrier_keys(&format!("Spawner.DelayFrames={delay}"));
@@ -3144,7 +3140,6 @@ fn spawner_delay_frames_spaces_launches_and_the_ai_gate() {
 /// the manager's target with an immediately commenced attack mission instead
 /// of the north-hold Move (`0x6B7600`).
 #[test]
-#[cfg(feature = "phobos")]
 fn spawner_attack_immediately_launches_the_child_at_the_target() {
     let launch = |keys: &str| {
         let rules = spawner_rules_with_carrier_keys(keys);
@@ -3205,7 +3200,6 @@ fn spawner_attack_immediately_launches_the_child_at_the_target() {
 /// Phobos `Spawner.RecycleRange` (`Leptons`, cells x 256) replaces the legacy
 /// same-cell dock test, and `Spawner.RecycleAnim` plays once at the dock point.
 #[test]
-#[cfg(feature = "phobos")]
 fn spawner_recycle_range_and_anim_control_the_dock() {
     let text = spawner_rules_text().replace(
         "[CARRIER]",
@@ -3310,7 +3304,6 @@ fn spawner_recycle_range_and_anim_control_the_dock() {
 /// Phobos `Spawner.LimitRange` drops a live target farther than the strongest
 /// `Spawner=yes` weapon range (`ApplySpawnLimitRange`, `0x6F9E50` early block).
 #[test]
-#[cfg(feature = "phobos")]
 fn spawner_limit_range_drops_a_target_beyond_the_weapon_range() {
     for (keys, target_cell, height, dropped) in [
         ("Spawner.LimitRange=yes", 34u16, 0, false),
@@ -3371,7 +3364,6 @@ fn spawner_limit_range_drops_a_target_beyond_the_weapon_range() {
 /// `[General]` global) lifts every slot child below the owner's Veterancy to
 /// the owner's value.
 #[test]
-#[cfg(feature = "phobos")]
 fn promote_include_spawns_lifts_children_to_the_owner_rank() {
     for (carrier_keys, general_keys, lifted) in [
         ("Promote.IncludeSpawns=yes\n", "", true),
@@ -3440,7 +3432,6 @@ fn promote_include_spawns_lifts_children_to_the_owner_rank() {
 /// `Spawns_Queue[i]` while the queue has that index; later slots keep the
 /// pool's `Spawns=` type.
 #[test]
-#[cfg(feature = "phobos")]
 fn spawns_queue_seeds_the_constructor_slots_in_order() {
     let rules = spawner_rules_with_carrier_keys("Spawns.Queue=V3ROCKET,DMISL");
     let mut sim = flat_sim();
@@ -3459,7 +3450,6 @@ fn spawns_queue_seeds_the_constructor_slots_in_order() {
 /// queued type that no live node currently carries; once every queued type is
 /// alive it falls back to the pool's `Spawns=` type.
 #[test]
-#[cfg(feature = "phobos")]
 fn spawns_queue_regeneration_skips_types_that_are_still_alive() {
     let rules = spawner_rules_with_carrier_keys("Spawns.Queue=V3ROCKET,V3ROCKET");
     let mut sim = flat_sim();
@@ -3505,7 +3495,6 @@ fn spawns_queue_regeneration_skips_types_that_are_still_alive() {
     );
 }
 
-#[cfg(feature = "phobos")]
 fn spawn_slot_type_names(sim: &Simulation, owner: u64) -> Vec<String> {
     let manager = sim
         .substrate
@@ -3530,7 +3519,6 @@ fn spawn_slot_type_names(sim: &Simulation, owner: u64) -> Vec<String> {
 /// @ 0x006B75AC` (`Misc/Hooks.BugFixes.cpp:840-870`) answers a missile's
 /// destination with the target's centre Cell, except for a Building target,
 /// whose object stays the destination to keep its footprint accurate.
-#[cfg(feature = "phobos")]
 #[test]
 fn missile_spawn_attack_cell_sends_the_missile_to_the_target_cell() {
     use crate::sim::components::NavTargetRef;

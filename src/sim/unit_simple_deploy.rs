@@ -36,7 +36,6 @@ fn deploy_anim_name(
     rules: &RuleSet,
     frame: u32,
 ) -> Option<String> {
-    #[cfg(feature = "phobos")]
     {
         let names: Vec<&String> = object
             .phobos_deploying_anims
@@ -48,15 +47,12 @@ fn deploy_anim_name(
             return names.get(index).map(|name| (*name).to_owned());
         }
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = (entity, frame, rules);
     object.deploying_anim.clone()
 }
 
 /// Phobos `GeneralUtils::GetItemForDirection` (`Utilities/GeneralUtils.h:66-93`):
 /// a 16-bit facing selects an entry of a 2^n list (n = 3..=16); any other
 /// length takes item 0.
-#[cfg(feature = "phobos")]
 pub(crate) fn item_for_direction(len: usize, raw: u16) -> usize {
     let Some(bits_to) = len.checked_ilog2() else {
         return 0;
@@ -188,10 +184,7 @@ impl Simulation {
         let deploy_to_land = object.deploy_to_land;
         let configured_anim = deploy_anim_name(object, entity, rules, self.session.binary_frame());
         let object_has_deploying_anim = configured_anim.is_some();
-        #[cfg(feature = "phobos")]
         let reverse_for_undeploy = object.phobos_deploying_anim_reverse_for_undeploy;
-        #[cfg(not(feature = "phobos"))]
-        let reverse_for_undeploy = true;
         let active = if deploying {
             leaf.deploy_begin_active()
         } else {
@@ -312,7 +305,6 @@ impl Simulation {
         // (`Ext/Unit/Hooks.SimpleDeployer.cpp:155-170, 218-228`): once the
         // deployed byte matches the direction, the type's `Ammo.AddOnDeploy=`
         // rewrites the count, before the deploy/undeploy sound.
-        #[cfg(feature = "phobos")]
         {
             let deployed = self
                 .substrate
@@ -350,7 +342,6 @@ impl Simulation {
     /// a completed undeploy, clamped to `[0, Ammo]`; a changed count starts
     /// the reload clock. `max_ammo_override` is the Ares `Convert.Deploy`
     /// target's Ammo when the deploy converts.
-    #[cfg(feature = "phobos")]
     fn apply_deploy_ammo_change(
         &mut self,
         id: u64,
@@ -399,12 +390,6 @@ impl Simulation {
     /// bunkered Unit skips it; every other class and an unset band answer
     /// true. Builds without Phobos always answer true.
     pub fn phobos_unit_has_ammo_to_deploy(&self, id: u64, rules: &RuleSet) -> bool {
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = (id, rules);
-            return true;
-        }
-        #[cfg(feature = "phobos")]
         {
             let Some(entity) = self.substrate.entities.get(id) else {
                 return false;
@@ -497,13 +482,10 @@ impl Simulation {
         // cell-light/tint path. The Anim draw also follows the owner Unit's
         // flash/curtain/shield drawer arm; RESIDUAL: the Unit's body-only
         // extra light (bridge/ExtraUnitLight) is not folded into the Anim.
-        #[cfg(feature = "phobos")]
         let use_unit_drawer = self
             .interner
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.phobos_deploying_anim_use_unit_drawer);
-        #[cfg(not(feature = "phobos"))]
-        let use_unit_drawer = false;
         let descriptor = AnimClassSpawnDescriptor {
             draw_flags: 0x600,
             reverse,
@@ -537,7 +519,6 @@ impl Simulation {
 /// (`Ext/Techno/Hooks.cpp:56-66`): a deploy-capable Unit queues Unload while
 /// its ammo sits in the `Ammo.AutoDeploy*` band and the deploy-unlock band
 /// admits it, and queues Guard (re-ascending a jumpjet) when it leaves.
-#[cfg(feature = "phobos")]
 pub(crate) fn depleted_ammo_actions(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;

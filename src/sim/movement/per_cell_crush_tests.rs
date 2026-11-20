@@ -350,7 +350,6 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
 
 /// The rocking words after a level crusher crushes a Unit through
 /// `per_cell_process`; `extra` is appended to the crusher's section.
-#[cfg(feature = "phobos")]
 fn unit_crush_rocking(extra: &str) -> [u32; 4] {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
@@ -405,7 +404,6 @@ fn unit_crush_rocking(extra: &str) -> [u32; 4] {
 /// `Nullable<double>` unset `Ext/UnitType/Body.h:56`): the crush tail
 /// (`0x00741954`, hook `0x741941` at `Ext/Unit/Hooks.Crushing.cpp:35`) stores
 /// the crusher type's value instead of the stock binary32 -0.05.
-#[cfg(feature = "phobos")]
 #[test]
 fn crush_forward_tilt_per_frame_replaces_the_stock_tilt() {
     assert_eq!(unit_crush_rocking("")[3], 0xbd4c_cccd);
@@ -418,7 +416,6 @@ fn crush_forward_tilt_per_frame_replaces_the_stock_tilt() {
 /// Phobos `TiltsWhenCrushes.Vehicles=` (`Ext/UnitType/Body.cpp:69`,
 /// `Nullable<bool>`, `Body.h:54`): the OverrunSquare tail (hook `0x741941`)
 /// gates the store on the type override, else the stock `TiltsWhenCrushes`.
-#[cfg(feature = "phobos")]
 #[test]
 fn tilts_when_crushes_vehicles_gates_the_unit_crush_tilt() {
     // An unset override keeps the stock key.
@@ -434,7 +431,6 @@ fn tilts_when_crushes_vehicles_gates_the_unit_crush_tilt() {
 /// Phobos `TiltsWhenCrushes.Overlays=` (`Ext/UnitType/Body.cpp:70`,
 /// `Nullable<bool>`, `Body.h:55`): the overlay-crush tail (hook `0x73B05B`)
 /// gates the recoil on the type override, else the stock `TiltsWhenCrushes`.
-#[cfg(feature = "phobos")]
 #[test]
 fn tilts_when_crushes_overlays_gates_the_overlay_recoil() {
     use crate::rules::ini_parser::IniFile;

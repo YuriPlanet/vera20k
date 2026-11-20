@@ -11,7 +11,6 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::drop_payload::{OBSERVED, Observed, drop_payload};
-#[cfg(feature = "phobos")]
 use crate::sim::aircraft::paradrop_mission::paradrop_end_delay;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
@@ -28,7 +27,6 @@ use crate::sim::superweapon::spy_plane_tests::{
 };
 use crate::sim::timer::CdTimer;
 use crate::sim::world::edge_cell::Edge;
-#[cfg(feature = "phobos")]
 use crate::sim::world::edge_cell::edge_for_mode;
 use crate::sim::world::{PlacementEvidence, RevealOutcome, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
@@ -1091,7 +1089,6 @@ fn spawn_parachuted_matches_native() {
 /// passenger `OnParachuted` right after `SpawnParachuted` returns true, so the
 /// passenger's landing skips the `FallingDownDamage` ratio
 /// (`:1067`, consumed in `sim/movement/parachute_descent.rs`).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_paradropped_passenger_is_marked_on_parachuted() {
     let (rules, mut sim, _) = paradrop_world(retail_list_rules(1024));
@@ -1123,7 +1120,6 @@ fn a_paradropped_passenger_is_marked_on_parachuted() {
 /// house not controlled by a human queues its type's mission, else the
 /// global, and the arm reaches units as well as infantry. A human passenger
 /// keeps stock: Guard for infantry, no mission for a unit.
-#[cfg(feature = "phobos")]
 #[test]
 fn ai_paradrop_mission_replaces_the_ai_passengers_mission() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -1199,7 +1195,6 @@ fn ai_paradrop_mission_replaces_the_ai_passengers_mission() {
 /// 5; consumer `Ext/Aircraft/Hooks.cpp:1266-1285`): the AircraftType section's
 /// key wins, an aircraft without it takes the global, and a negative value
 /// answers the native `INT32_MAX` (the straight-line off-map arm).
-#[cfg(feature = "phobos")]
 #[test]
 fn paradrop_end_delay_reads_the_aircraft_key_and_caps_negatives() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -1620,7 +1615,6 @@ fn ares_country_types_without_counts_send_nothing() {
 /// (`Ext/Aircraft/Body.cpp:88-118`): `Owner` keeps the caller's edge and
 /// spends no draw; `Random` spends exactly one `RandomRanged(0, 3)` draw and
 /// is deterministic for the same stream.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_spawn_from_edge_modes_keep_the_house_edge_or_spend_one_random_draw() {
     use crate::rules::phobos_aircraft_edge::PhobosEdgeType;

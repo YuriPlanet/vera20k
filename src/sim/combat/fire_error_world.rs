@@ -33,7 +33,6 @@ use crate::sim::world::Simulation;
 
 /// The passenger's `OpenTransport.FireWhileMoving` (else `[General]`), the
 /// second term of the 5b gate (`Ext/Techno/Hooks.Firing.cpp:466`).
-#[cfg(feature = "phobos")]
 pub(crate) fn passenger_fire_while_moving(
     firer: &GameEntity,
     rules: &RuleSet,
@@ -75,12 +74,9 @@ pub(crate) struct FirerPart {
     /// The warp target, when a temporal link is held.
     temporal_target: Option<Option<u64>>,
     /// Phobos `[CombatDamage] CanTarget[AI].IronCurtained=`.
-    #[cfg(feature = "phobos")]
     can_target_iron_curtained: bool,
-    #[cfg(feature = "phobos")]
     can_target_ai_iron_curtained: bool,
     /// Phobos `[CombatDamage] BerzerkTargeting=`.
-    #[cfg(feature = "phobos")]
     berzerk_targeting: crate::rules::phobos_shields::AffectedHouse,
 }
 
@@ -118,11 +114,8 @@ impl FirerPart {
             firer_type: self.firer_type,
             target: target_facts,
             target_type,
-            #[cfg(feature = "phobos")]
             can_target_iron_curtained: self.can_target_iron_curtained,
-            #[cfg(feature = "phobos")]
             can_target_ai_iron_curtained: self.can_target_ai_iron_curtained,
-            #[cfg(feature = "phobos")]
             berzerk_targeting: self.berzerk_targeting,
         }
     }
@@ -227,15 +220,12 @@ impl<'a> FireSubject<'a> {
         let warhead = self.rules.weapon_warhead(weapon);
         let projectile = self.rules.weapon_projectile(weapon);
         // The armour this weapon's Verses reads for the prospective target.
-        #[cfg(not(feature = "phobos"))]
-        let _ = target;
         let armor = target_obj.map(|obj| {
             // Phobos `TechnoClass_ReplaceArmorWithShields` (`0x6FCB64`,
             // `Ext/Techno/Hooks.cpp:482`) replaces this site's
             // `mov eax,[eax+0x9c]` armor load: an active shield that absorbs
             // this warhead answers its own armor. Native always has a warhead
             // here; a Rules weapon naming a missing section keeps the type's.
-            #[cfg(feature = "phobos")]
             if let (Some(target), Some(warhead)) = (target, warhead) {
                 return crate::sim::shield::warhead_versus_armor(target, self.rules, warhead, obj);
             }
@@ -266,11 +256,8 @@ impl<'a> FireSubject<'a> {
                 is_locomotor: warhead.is_locomotor,
                 psychedelic: warhead.psychedelic,
                 bomb_disarm: warhead.bomb_disarm,
-                #[cfg(feature = "phobos")]
                 airstrike: warhead.airstrike,
-                #[cfg(feature = "phobos")]
                 airstrike_targets: warhead.airstrike_targets,
-                #[cfg(feature = "phobos")]
                 transact_money: warhead.transact_money.amount,
                 armor_rejects_fire: armor.is_some_and(|armor| {
                     // Ares 3.0 hook100542A0 admits ForceFire OR nonzero
@@ -286,19 +273,16 @@ impl<'a> FireSubject<'a> {
                 ProjectileFacts {
                     aa: false,
                     ag: true,
-                    #[cfg(feature = "phobos")]
                     au: false,
                     rot: 0,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
-                    #[cfg(feature = "phobos")]
                     au: projectile.au,
                     rot: projectile.rot,
                 },
             ),
-            #[cfg(feature = "phobos")]
             can_target_iron_curtained: weapon.phobos_can_target_iron_curtained,
         }
     }
@@ -335,15 +319,12 @@ impl<'a> FireSubject<'a> {
         // (`Ext/Techno/Hooks.Cloak.cpp:179-199`): the transport entity and the
         // carrier type's resolved `OpenTopped.*` keys. A missing carrier type
         // falls back to the `[General]`/`[CombatDamage]` defaults.
-        #[cfg(feature = "phobos")]
         let open_topped = transport
             .and_then(|t| self.world.object_type(t.type_ref(), self.rules))
             .map(|kind| kind.phobos_open_topped())
             .copied()
             .unwrap_or_default();
-        #[cfg(feature = "phobos")]
         let transport_deactivated = transport.is_some_and(|t| t.deactivated.is_offline());
-        #[cfg(feature = "phobos")]
         let transport_weapons_disabled = transport.is_some_and(|t| {
             // `TechnoExt::HasWeaponsDisabled` (`Ext/Techno/Body.cpp:1109-1123`):
             // the Phobos AttachEffect stat fold, or the Ares timer.
@@ -353,15 +334,12 @@ impl<'a> FireSubject<'a> {
                 && t.ares_disable_weapons.remaining(frame as i32) > 0;
             phobos || ares
         });
-        #[cfg(feature = "phobos")]
         let transport_attacked_by_locomotor =
             transport.is_some_and(|t| t.is_attacked_by_locomotor());
-        #[cfg(feature = "phobos")]
         let transport_is_foot =
             transport.is_some_and(|t| t.category() != EntityCategory::Structure);
         // `BalloonHover` Is_Moving_Now / else `Destination != nullptr`; VERA's
         // NavCom stands in for the destination (see residuals).
-        #[cfg(feature = "phobos")]
         let transport_moving = transport.is_some_and(|t| t.navigation.nav_com().is_some());
         let firer_facts = FirerFacts {
             enslaved: firer.slave.owner().is_some(),
@@ -451,7 +429,6 @@ impl<'a> FireSubject<'a> {
                 firer.owner(),
             )
             .is_some_and(|house| house.is_human()),
-            #[cfg(feature = "phobos")]
             owner_controlled_by_human: crate::sim::house_state::house_state_for_owner_id(
                 &self.world.houses,
                 firer.owner(),
@@ -459,7 +436,6 @@ impl<'a> FireSubject<'a> {
             .is_some_and(|house| {
                 house.is_controlled_by_human(self.world.session.game_mode_nonzero())
             }),
-            #[cfg(feature = "phobos")]
             owner_money: crate::sim::credit_income::available_money(
                 &self.world.houses,
                 firer.owner(),
@@ -509,34 +485,23 @@ impl<'a> FireSubject<'a> {
             prism_breaks_support: self
                 .world
                 .ares_prism_breaks_support(firer.stable_id(), self.rules),
-            #[cfg(feature = "phobos")]
             transport_deactivated,
-            #[cfg(feature = "phobos")]
             transport_weapons_disabled,
-            #[cfg(feature = "phobos")]
             transport_attacked_by_locomotor,
-            #[cfg(feature = "phobos")]
             transport_is_foot,
-            #[cfg(feature = "phobos")]
             transport_moving,
-            #[cfg(feature = "phobos")]
             transport_allow_firing_if_deactivated: open_topped
                 .allow_firing_if_deactivated(self.rules),
-            #[cfg(feature = "phobos")]
             transport_allow_firing_if_attacked_by_locomotor: open_topped
                 .allow_firing_if_attacked_by_locomotor(self.rules),
-            #[cfg(feature = "phobos")]
             transport_check_disable_weapons: open_topped
                 .check_transport_disable_weapons(self.rules),
-            #[cfg(feature = "phobos")]
             transport_fire_while_moving: open_topped.fire_while_moving(self.rules),
-            #[cfg(feature = "phobos")]
             passenger_fire_while_moving: passenger_fire_while_moving(
                 firer,
                 self.rules,
                 &self.world.interner,
             ),
-            #[cfg(feature = "phobos")]
             transport_decloak_to_fire: open_topped.decloak_to_fire(self.rules),
             ..FirerFacts::default()
         };
@@ -557,7 +522,6 @@ impl<'a> FireSubject<'a> {
             can_occupy_fire: obj.can_occupy_fire,
             emp_pulse_cannon: obj.emp_pulse_cannon,
             turret_anim_is_voxel: obj.turret_anim_is_voxel,
-            #[cfg(feature = "phobos")]
             no_turret_track_target: obj
                 .phobos_no_turret_track_target
                 .unwrap_or(self.rules.phobos_globals.no_turret_track_target),
@@ -576,11 +540,8 @@ impl<'a> FireSubject<'a> {
                 .temporal
                 .has_link()
                 .then(|| firer.temporal.warp_target()),
-            #[cfg(feature = "phobos")]
             can_target_iron_curtained: self.rules.phobos_globals.can_target_iron_curtained,
-            #[cfg(feature = "phobos")]
             can_target_ai_iron_curtained: self.rules.phobos_globals.can_target_ai_iron_curtained,
-            #[cfg(feature = "phobos")]
             berzerk_targeting: self.rules.phobos_globals.berzerk_targeting,
         }
     }
@@ -596,7 +557,6 @@ impl<'a> FireSubject<'a> {
         let frame = self.frame();
         let (target, target_type) = match self.target {
             None => (TargetFacts::default(), TargetTypeFacts::default()),
-            #[cfg(feature = "phobos")]
             Some(TargetKind::Bullet(id)) => (
                 TargetFacts {
                     kind: FireTargetKind::Object,
@@ -686,9 +646,7 @@ impl<'a> FireSubject<'a> {
                         is_simple_deployer: target_obj.is_simple_deployer,
                         non_vehicle: target_obj.non_vehicle,
                         is_vehicle: target_obj.is_vehicle(),
-                        #[cfg(feature = "phobos")]
                         allow_airstrike: target_obj.allow_airstrike,
-                        #[cfg(feature = "phobos")]
                         can_c4: target_obj.can_c4,
                     },
                 ),
@@ -773,7 +731,6 @@ impl FireQuery for WorldQuery<'_, '_> {
                     return;
                 }
             }
-            #[cfg(feature = "phobos")]
             Some(TargetKind::Bullet(id)) => {
                 let Some(projectile) = self.subject.world.projectiles.get(id) else {
                     return;
@@ -812,7 +769,6 @@ impl FireQuery for WorldQuery<'_, '_> {
     /// with `AttachEffect.CheckOnFirer`, and the techno arm asks the target's
     /// (or, with the same key, the firer's) effects.
     fn attach_effect_gate(&mut self, weapon_index: i32) -> bool {
-        #[cfg(feature = "phobos")]
         {
             let subject = self.subject;
             let Some(weapon) = subject.weapon_at(weapon_index) else {
@@ -842,11 +798,6 @@ impl FireQuery for WorldQuery<'_, '_> {
             {
                 return false;
             }
-            true
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = weapon_index;
             true
         }
     }
@@ -1113,7 +1064,6 @@ impl FireQuery for WorldQuery<'_, '_> {
     /// Phobos `EnumFunctions::CanTargetHouse(BerzerkTargeting, firer, target)`
     /// (`Ext/Techno/Hooks.Firing.cpp:370`). A non-entity target never reaches
     /// this arm (the caller asks only for a techno target).
-    #[cfg(feature = "phobos")]
     fn can_target_berzerk_house(
         &mut self,
         flags: crate::rules::phobos_shields::AffectedHouse,

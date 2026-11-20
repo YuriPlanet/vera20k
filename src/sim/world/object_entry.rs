@@ -494,7 +494,6 @@ impl Simulation {
     /// `BalloonHover=` Foot skips the cell walk and answers move-OK. VERA has
     /// no separate `IsInAir`; its AircraftTracker membership is the airborne
     /// state, so the bucket is Some exactly while the Foot is tracked in the air.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_balloon_hover_ignores_cell_entry(&self, id: u64, rules: &RuleSet) -> bool {
         if !rules.phobos_globals.balloon_hover_pathing_fix {
             return false;
@@ -531,7 +530,6 @@ impl Simulation {
         }) {
             return Err("Foot entry requires a live Infantry or Unit receiver".into());
         }
-        #[cfg(feature = "phobos")]
         if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
             return Ok(0);
         }
@@ -864,7 +862,6 @@ impl FootEntryReceiver<'_> {
         ) {
             return Ok(code);
         }
-        #[cfg(feature = "phobos")]
         if self
             .live
             .sim
@@ -1176,7 +1173,6 @@ fn full_foot_entry<'a>(
             // `GetWeapon(0)` with `GetWeapon(GetWeaponIndexAgainstWall(..))`
             // (`Ext/Techno/WeaponHelpers.cpp:196-228`), so the secondary may
             // answer the wall test.
-            #[cfg(feature = "phobos")]
             let wall_weapon = combat_weapon::get_weapon(
                 e,
                 obj,
@@ -1185,8 +1181,6 @@ fn full_foot_entry<'a>(
                 live.rules,
                 &live.sim.interner,
             );
-            #[cfg(not(feature = "phobos"))]
-            let wall_weapon = weapon0;
             let warhead = wall_weapon.and_then(|w| live.rules.weapon_warhead(w));
             if infantry {
                 //51C1BB..51C223: a wall at damage stage DamageLevels (+0x2A0)

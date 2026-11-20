@@ -161,7 +161,6 @@ impl RetreatHost for WorldRetreat<'_> {
 
 /// `Ext/Aircraft/Body.cpp:89`: the plane's `RetreatToEdge=` else
 /// `[General] AircraftRetreatToEdge=` (constructor `Owner`).
-#[cfg(feature = "phobos")]
 fn retreat_edge_mode(
     rules: &RuleSet,
     plane: Option<&crate::rules::object_type::ObjectType>,

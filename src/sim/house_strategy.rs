@@ -116,7 +116,6 @@ pub(crate) fn update_ai_superweapon_delay(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    #[cfg(feature = "phobos")]
     {
         let Some(delay) = rules.phobos_globals.ai_superweapon_delay else {
             return;
@@ -147,8 +146,6 @@ pub(crate) fn update_ai_superweapon_delay(
             crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, registry, frame_effects);
         }
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = (sim, rules, owner, registry, frame_effects);
 }
 
 /// `HouseClass_AIHouseUpdate_CheckAIBaseCenter @ 0x004FD538`
@@ -157,7 +154,6 @@ pub(crate) fn update_ai_superweapon_delay(
 /// its retained waypoint center to the nearest live, healthy, out-of-limbo
 /// conyard by cell squared distance. VERA has one published `base_center`
 /// (the launch waypoint owner), so both native center writes collapse to it.
-#[cfg(feature = "phobos")]
 fn bias_base_center_to_nearest_conyard(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     use crate::sim::scenario_session::ScenarioGameMode;
 
@@ -217,7 +213,6 @@ fn building_strategy(
 ) -> i32 {
     // `0x004FD538`: Phobos biases the retained start center toward the nearest
     // live construction yard when `AIBiasSpawnCell` is on in a non-campaign.
-    #[cfg(feature = "phobos")]
     bias_base_center_to_nearest_conyard(sim, rules, owner);
     pick_enemy(
         &sim.interner,
@@ -242,10 +237,7 @@ fn building_strategy(
     // `Ext/House/Hooks.cpp:508-516`) skips this strategy-side call when
     // `[General] AISuperWeaponDelay=` is set; the per-frame owner below then
     // gates the same `AI_TryFireSW` behind its timer.
-    #[cfg(feature = "phobos")]
     let strategy_side_sw = rules.phobos_globals.ai_superweapon_delay.is_none();
-    #[cfg(not(feature = "phobos"))]
-    let strategy_side_sw = true;
     if strategy_side_sw
         && (sim.session.game_mode_nonzero()
             || sim

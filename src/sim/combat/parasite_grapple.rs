@@ -228,7 +228,6 @@ impl Simulation {
                 // fallback, else `SQDG`) selects the held grapple animation.
                 // Both keys are `NullableIdx` reads, so an unknown declared
                 // name leaves the value unset and the next fallback applies.
-                #[cfg(feature = "phobos")]
                 let grapple_name = {
                     let declared = |name: &str| {
                         rules
@@ -263,9 +262,6 @@ impl Simulation {
                             crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM.to_string()
                         })
                 };
-                #[cfg(not(feature = "phobos"))]
-                let grapple_name =
-                    crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM.to_string();
                 let name = grapple_name.as_str();
                 // Lookup-only427CB0, not a factory creating an unknown type.
                 let anim = if rules.anim_type_names.contains(name) {
@@ -402,16 +398,11 @@ impl Simulation {
             .get(owner)
             .and_then(|entity| self.entity_object_type(entity, rules))
             .and_then(|object| {
-                #[cfg(feature = "phobos")]
                 {
                     object
                         .phobos_wake_grapple
                         .clone()
                         .or_else(|| object.wake.clone())
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    object.wake.clone()
                 }
             })
             .filter(|name| {
@@ -562,13 +553,10 @@ impl Simulation {
         // always sink.
         let target_is_unit = target.category() == EntityCategory::Unit;
         let target_strength = target_type.strength;
-        #[cfg(feature = "phobos")]
         let sink = !target_is_unit
             || target_type
                 .phobos_sinkable_squid_grab
                 .unwrap_or(rules.phobos_globals.sinkable_squid_grab);
-        #[cfg(not(feature = "phobos"))]
-        let sink = true;
         let source_cost = self.cost_of(source.owner(), source_type, rules);
         let target_cost = self.cost_of(target.owner(), target_type, rules);
         // Ares 10053AC0 resumes past this experience block (0x629C5D) when

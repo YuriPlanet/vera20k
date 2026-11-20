@@ -238,12 +238,9 @@ pub(super) fn tick_system_with(
     // `0x62FA41 ParticleSystemClass_FireAI_TargetCoords`) skips the sweep block
     // when the system's type reads no — the coordinates and the aim-swing
     // spawn cadence freeze while the owner rotates.
-    #[cfg(feature = "phobos")]
     let adjust_target_coords = rules
         .particle_system_type(sys.type_id)
         .adjust_target_coords_on_rotation;
-    #[cfg(not(feature = "phobos"))]
-    let adjust_target_coords = true;
     // 0x0062F9AE..0x0062F9CF: each particle's AI (0x0062CE40) and move
     // (0x0062D5E0), last first.
     for (index, id) in super::gas::reverse_ids(sys) {

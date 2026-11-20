@@ -46,7 +46,11 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
         axis: super::depth_axis(state),
-        building_zshape: presentation.building_zshape.is_some(),
+        building_zshape: presentation
+            .building_zshape
+            .as_ref()
+            .map(|zshape| zshape.frame_offset),
+        view_left: crate::app::presentation::render::tactical_world_view(state).camera[0],
         detail_level: presentation.in_game_options.detail_level as i32,
     };
     // A saved picture far off the view puts no pixel on it: its cell passes
@@ -150,7 +154,10 @@ struct FrozenDrawInputs<'a> {
     lighting: &'a CellLightGrid,
     house_colors: &'a HouseColorMap,
     axis: DepthAxis,
-    building_zshape: bool,
+    /// The loaded BUILDNGZ frame's offset in its canvas.
+    building_zshape: Option<(i32, i32)>,
+    /// The world column of the tactical view's left edge.
+    view_left: i32,
     detail_level: i32,
 }
 
@@ -229,7 +236,7 @@ fn frozen_building_pieces(
     };
     if let Some(entry) = input.atlas.get(&body_key) {
         let mut instance = sprite(entry, [x, y], depth, palette);
-        let zshape = input.building_zshape && !body.no_zshape;
+        let zshape = input.building_zshape.is_some() && !body.no_zshape;
         let normal_z = if body.no_zshape {
             0
         } else {
@@ -240,18 +247,21 @@ fn frozen_building_pieces(
             pack_z_gradient(ZGradient::Flat, false)
         } else {
             native_z::pack_building_z_gradient(zshape, entry.extended)
+                | native_z::shp_frame_flag(entry.extended)
         };
         if zshape {
-            // `FoggedObjectClass::DrawAll` carries no Mission/buildup state,
-            // so the `0x43D6E5` skip in the live `BuildingClass::Draw` does
-            // not apply here; the frozen snapshot always adds the point move.
             let origin = native_z::zshape_origin(
                 native_z::FOGGED_ZSHAPE_ANCHOR,
                 (x as i32, y as i32),
                 object.foundation.dimensions(),
                 art.map_or((0, 0), |art| art.z_shape_point_move),
+                input.building_zshape.unwrap_or_default(),
             );
             instance.zshape_origin = [origin.0 as f32, origin.1 as f32];
+        }
+        if instance.z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
+            instance.draw_state.fx_params[3] =
+                native_z::zshape_lead_skip(input.view_left, instance.position[0]);
         }
         pieces.push(piece(entry, instance, RenderZPolicy::ReadWrite));
     }
@@ -346,7 +356,7 @@ fn frozen_building_pieces(
                 ZGradient::Vertical
             },
             false,
-        );
+        ) | native_z::shp_frame_flag(entry.extended);
         pieces.push(piece(entry, instance, RenderZPolicy::ReadOnly));
     }
     pieces
@@ -472,7 +482,8 @@ mod tests {
                 origin_y: 0.0,
                 world_height: 1000.0,
             },
-            building_zshape: true,
+            building_zshape: Some((0, 0)),
+            view_left: 0,
             detail_level: 2,
         };
         let record = FoggedObjectFootprintRecord {

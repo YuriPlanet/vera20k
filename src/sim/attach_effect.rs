@@ -14,9 +14,7 @@
 use crate::rules::attach_effect::{
     AttachEffectType, AttachedAnimFlag, DiscardOn, ExpireWeaponCondition,
 };
-#[cfg(feature = "phobos")]
 use crate::rules::phobos_shields::AffectedHouse;
-#[cfg(feature = "phobos")]
 use crate::sim::world::Simulation;
 
 /// `AttachEffectClass`'s constructor arguments, as the attach sites supply
@@ -54,37 +52,30 @@ pub struct AttachEffectInstance {
     is_online: bool,
     /// `Animation`: the live `AnimClass` showing this effect, owned by the
     /// same tree as the entity so a save restores the pair.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     anim: Option<u64>,
     /// `ShouldBeDiscarded`: set by the effect's event conditions (a fired
     /// count, received damage, entry, owner change, invoker death).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     should_be_discarded: bool,
     /// `FiringCount`: shots counted towards `DiscardOn.Firing.Count`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     firing_count: i32,
     /// `ReceivedDamageCount`: hits counted towards
     /// `DiscardOn.ReceivedDamage.Count`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     received_damage_count: i32,
     /// `LastSequenceCheck`: the infantry art sequence the previous frame
     /// played, for the deferred `DiscardOn.Sequences` form.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     last_sequence_check: Option<crate::rules::animation_sequence::SequenceKind>,
     /// `ArmorMultiplierTimer`: a real hit that applied a restricted
     /// `ArmorMultiplier` with `.Delay > 0` blocks further rolls until it runs
     /// out (`TechnoHooks.cpp:552`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     armor_multiplier_timer: crate::sim::timer::CdTimer,
     /// `ReflectDamageTimer`: a reflection under `.Delay > 0` blocks the next
     /// one until it runs out (`Hooks.ReceiveDamage.cpp:429`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     reflect_damage_timer: crate::sim::timer::CdTimer,
     /// `Animation.ResetOnReapply` (`New/Entity/AttachEffectClass.cpp:549-555`,
@@ -92,13 +83,11 @@ pub struct AttachEffectInstance {
     /// reapply arm kill and re-create the animation. The flag asks the
     /// animation owner (`maintain_phobos_attach_effect_anim`) to retire the
     /// live one before its next pass.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     reset_anim: bool,
     /// `LaserTrailClass::LastLocation`: the endpoint the next trail segment
     /// starts from. The trail is created and retired with this instance
     /// (`AttachEffectClass::AttachEffect` / destructor).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     trail_last_location: Option<[i32; 3]>,
 }
@@ -119,23 +108,14 @@ impl AttachEffectInstance {
             has_initialized: false,
             source: None,
             is_online: true,
-            #[cfg(feature = "phobos")]
             anim: None,
-            #[cfg(feature = "phobos")]
             should_be_discarded: false,
-            #[cfg(feature = "phobos")]
             firing_count: 0,
-            #[cfg(feature = "phobos")]
             received_damage_count: 0,
-            #[cfg(feature = "phobos")]
             last_sequence_check: None,
-            #[cfg(feature = "phobos")]
             armor_multiplier_timer: crate::sim::timer::CdTimer::default(),
-            #[cfg(feature = "phobos")]
             reflect_damage_timer: crate::sim::timer::CdTimer::default(),
-            #[cfg(feature = "phobos")]
             reset_anim: false,
-            #[cfg(feature = "phobos")]
             trail_last_location: None,
         };
         instance.refresh(effect);
@@ -172,7 +152,6 @@ impl AttachEffectInstance {
     /// starts unset too: `CreateAndAttach` builds a new `LaserTrailClass`
     /// (`AttachEffectClass.cpp:89`) whose `LastLocation` the first `Update`
     /// seeds, and the transfer's sync list (`:1297..1315`) never names it.
-    #[cfg(feature = "phobos")]
     fn transfer_copy(&self) -> Self {
         Self {
             type_index: self.type_index,
@@ -210,7 +189,6 @@ impl AttachEffectInstance {
     }
 
     /// The live animation this effect shows, if one is attached.
-    #[cfg(feature = "phobos")]
     pub fn anim(&self) -> Option<u64> {
         self.anim
     }
@@ -246,7 +224,6 @@ impl AttachEffectInstance {
         } else {
             effect.duration
         };
-        #[cfg(feature = "phobos")]
         if effect.animation_reset_on_reapply {
             self.request_anim_reset();
         }
@@ -262,7 +239,6 @@ impl AttachEffectInstance {
     /// The shorter-duration reapply arm (`AttachEffectClass.cpp:928-934` and
     /// `:991-997`): the duration is not refreshed, but the animation still
     /// restarts when the type asks for it.
-    #[cfg(feature = "phobos")]
     fn request_reapply_anim_reset(&mut self, effect: &AttachEffectType) {
         if effect.animation_reset_on_reapply {
             self.request_anim_reset();
@@ -271,7 +247,6 @@ impl AttachEffectInstance {
 
     /// `KillAnim()` when there is one: the animation owner re-creates it on the
     /// next pass if `CanShowAnim`.
-    #[cfg(feature = "phobos")]
     fn request_anim_reset(&mut self) {
         if self.anim.is_some() {
             self.reset_anim = true;
@@ -315,17 +290,14 @@ impl AttachEffectInstance {
     }
 
     /// `ShouldBeDiscarded`: an event condition asked for removal.
-    #[cfg(feature = "phobos")]
     pub fn is_flagged_discarded(&self) -> bool {
         self.should_be_discarded
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn mark_discarded(&mut self) {
         self.should_be_discarded = true;
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_discarded(&mut self) {
         self.should_be_discarded = false;
     }
@@ -413,7 +385,6 @@ impl AttachEffectInstance {
 /// One weapon an effect asks the world to fire (`AEWeaponParams`): the weapon
 /// name, the invoker that owns the shot, and the house to use when the
 /// invoker is gone.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AttachEffectWeaponShot {
     pub weapon: String,
@@ -423,7 +394,6 @@ pub(crate) struct AttachEffectWeaponShot {
     pub house: Option<crate::sim::intern::InternedId>,
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectInstance {
     /// `AttachEffectClass::AddExpireWeaponParams` (`AttachEffectClass.cpp:1345`):
     /// the weapon this instance fires for `condition`, if it does. `owner` and
@@ -540,7 +510,6 @@ impl AttachSource {
     /// `AttachEffectClass::IsFromSource(pInvoker, pSource)` compares the two
     /// pointers only; the retained house is not part of it. `warhead` is the
     /// querying weapon's warhead name, resolved against the stored handle.
-    #[cfg(feature = "phobos")]
     pub(crate) fn matches(
         self,
         invoker: Option<u64>,
@@ -732,7 +701,6 @@ impl AttachEffectList {
 
 /// One value of a paired list: the index's own entry, else the last, else the
 /// key's default. Phobos' `ValueableVector` reads extend the same way.
-#[cfg(feature = "phobos")]
 fn paired(list: &[i32], index: usize, default: i32) -> i32 {
     list.get(index)
         .or_else(|| list.last())
@@ -743,7 +711,6 @@ fn paired(list: &[i32], index: usize, default: i32) -> i32 {
 /// `EnumFunctions::IsTechnoEligible`'s type side: the category mask, then
 /// `AffectTypes` (when non-empty) and `IgnoreTypes` against the target's type
 /// id. Shared by every attach gate and by the transfer hook.
-#[cfg(feature = "phobos")]
 fn effect_target_eligible(
     category: crate::rules::object_type::ObjectCategory,
     object: &crate::rules::object_type::ObjectType,
@@ -766,7 +733,6 @@ fn effect_target_eligible(
 /// Curtain or Force Shield needs the type's matching penetration flag,
 /// `AffectsTarget` must admit the target's class, and `AffectTypes` (when
 /// non-empty) then `IgnoreTypes` filter the target's type id.
-#[cfg(feature = "phobos")]
 pub fn can_attach_effect(
     category: crate::rules::object_type::ObjectCategory,
     invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
@@ -796,7 +762,6 @@ pub fn can_attach_effect(
 /// attachment came from outside (a warhead or weapon); a type's own list has
 /// none. Each entry passes [`can_attach_effect`] first, as `CreateAndAttach`
 /// does for every attach site.
-#[cfg(feature = "phobos")]
 pub fn attach_initial_effects(
     list: &mut AttachEffectList,
     category: crate::rules::object_type::ObjectCategory,
@@ -827,7 +792,6 @@ pub fn attach_initial_effects(
 /// (`House/Hooks.cpp:342-343`): the owner country's
 /// `AttachEffect.AttachTypes`, paired with its own overrides and delays,
 /// attaches with the techno itself as the source object.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 pub fn attach_country_effects(
     list: &mut AttachEffectList,
@@ -858,7 +822,6 @@ pub fn attach_country_effects(
     )
 }
 
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn attach_effect_names(
     list: &mut AttachEffectList,
@@ -929,7 +892,6 @@ fn cpp_i32(value: f64) -> i32 {
 
 /// Phobos `GeneralUtils::SafeMultiply(int, double)`: the product clamped to
 /// the `int` range, then MSVC's cast.
-#[cfg(feature = "phobos")]
 fn safe_multiply(value: i32, multiplier: f64) -> i32 {
     let product = f64::from(value) * multiplier;
     if product > f64::from(i32::MAX) {
@@ -947,7 +909,6 @@ fn safe_multiply(value: i32, multiplier: f64) -> i32 {
 ///
 /// RESIDUAL: the native `CanOccupyFire` arm (`OccupyWeaponRange *
 /// LeptonsPerCell`) has no VERA equivalent on this owner.
-#[cfg(feature = "phobos")]
 pub(crate) fn weapon_range_with_modifiers(
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
@@ -968,7 +929,6 @@ pub(crate) fn weapon_range_with_modifiers(
 /// both over the transport an open-topped passenger resolves its range
 /// against ([`range_modifier_source`]). The explicit-range overload has no
 /// `-512` arm; [`weapon_range_with_modifiers`] owns that short-circuit.
-#[cfg(feature = "phobos")]
 pub(crate) fn get_range_with_modifiers(
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
@@ -1000,7 +960,6 @@ pub(crate) fn get_range_with_modifiers(
 /// ProjectileRange.ApplyModifiers` (default true) admits it. The native
 /// `maxRange > 0` guard runs before the key, so zero and negative ranges are
 /// left untouched.
-#[cfg(feature = "phobos")]
 pub(crate) fn initial_projectile_range(
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
@@ -1022,28 +981,7 @@ pub(crate) fn initial_projectile_range(
     }
 }
 
-#[cfg(not(feature = "phobos"))]
-pub(crate) fn weapon_range_with_modifiers(
-    _rules: &crate::rules::ruleset::RuleSet,
-    _interner: &crate::sim::intern::StringInterner,
-    _entities: Option<&crate::sim::entity_store::EntityStore>,
-    _firer: &crate::sim::game_entity::GameEntity,
-    weapon: &crate::rules::weapon_type::WeaponType,
-) -> i32 {
-    weapon.range_leptons
-}
 
-#[cfg(not(feature = "phobos"))]
-pub(crate) fn get_range_with_modifiers(
-    _rules: &crate::rules::ruleset::RuleSet,
-    _interner: &crate::sim::intern::StringInterner,
-    _entities: Option<&crate::sim::entity_store::EntityStore>,
-    _firer: &crate::sim::game_entity::GameEntity,
-    _weapon: &str,
-    range: i32,
-) -> i32 {
-    range
-}
 
 /// `WeaponTypeExt::GetRangeWithModifiers`'s entity choice
 /// (`Ext/WeaponType/Body.cpp:400-410`): the entity whose AttachEffect range
@@ -1051,7 +989,6 @@ pub(crate) fn get_range_with_modifiers(
 /// enables `OpenTopped.UseTransportRangeModifiers` (defaulting to `[General]`)
 /// folds the transport's active effects instead of its own. `None` entities
 /// (mapless probes) keep the firer.
-#[cfg(feature = "phobos")]
 pub(crate) fn range_modifier_source<'a>(
     entity: &'a crate::sim::game_entity::GameEntity,
     entities: Option<&'a crate::sim::entity_store::EntityStore>,
@@ -1082,15 +1019,6 @@ pub(crate) fn range_modifier_source<'a>(
     }
 }
 
-#[cfg(not(feature = "phobos"))]
-pub(crate) fn range_modifier_source<'a>(
-    entity: &'a crate::sim::game_entity::GameEntity,
-    _entities: Option<&'a crate::sim::entity_store::EntityStore>,
-    _rules: &crate::rules::ruleset::RuleSet,
-    _interner: &crate::sim::intern::StringInterner,
-) -> &'a crate::sim::game_entity::GameEntity {
-    entity
-}
 
 /// Resolve the open-topped carrier's `ObjectType` for a passenger. The Phobos
 /// `OpenTopped.*` hooks read the transport's type extension
@@ -1099,7 +1027,6 @@ pub(crate) fn range_modifier_source<'a>(
 /// (`Ext/Techno/Hooks.Transport.cpp:173-176`); VERA's carrier relation
 /// (`inside_transport_id`) is that entity. `None` for a mapless probe or a
 /// carrier whose type does not resolve.
-#[cfg(feature = "phobos")]
 pub(crate) fn open_topped_transport_type<'r>(
     entity: &crate::sim::game_entity::GameEntity,
     entities: &crate::sim::entity_store::EntityStore,
@@ -1124,7 +1051,6 @@ pub(crate) fn range_with_attach_effects(
     range: i32,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         if !entity.phobos_stat_multipliers().has_range_modifier {
             return range;
@@ -1157,11 +1083,6 @@ pub(crate) fn range_with_attach_effects(
         // `Math::max(range, 0)` (`WeaponType/Body.cpp:467`).
         range.wrapping_add(cpp_i32(extra_range * 256.0)).max(0)
     }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (entity, weapon, rules);
-        range
-    }
 }
 
 /// Phobos `AttachEffectTechnoProperties`'s cached stat fold
@@ -1182,7 +1103,6 @@ pub(crate) fn range_with_attach_effects(
 /// ([`crate::sim::game_entity::GameEntity::phobos_scale_charge_turret_delay`]);
 /// the batch attach path's copy (`AttachEffectClass.cpp:831-837`) is not,
 /// and that residual sits in `docs/phobos-burst-sequence.md`.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosStatMultipliers {
     pub firepower: f64,
@@ -1198,7 +1118,6 @@ pub(crate) struct PhobosStatMultipliers {
     pub has_crit_modifiers: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Default for PhobosStatMultipliers {
     fn default() -> Self {
         Self {
@@ -1217,7 +1136,6 @@ impl Default for PhobosStatMultipliers {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectList {
     /// The active effects with their catalog entries, in attach order.
     pub(crate) fn active_effects<'a>(
@@ -1456,7 +1374,6 @@ impl AttachEffectList {
 
 /// The per-frame target facts `AttachEffectClass::ShouldBeDiscardedNow`
 /// reads.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct DiscardFacts {
     pub is_foot: bool,
@@ -1482,7 +1399,6 @@ pub(crate) struct DiscardFacts {
     pub owner_human: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectInstance {
     /// `ShouldBeDiscardedNow`: the event flag or any continuous condition the
     /// type lists. RESIDUAL: `Drain` waits on a victim-side drain owner.
@@ -1633,7 +1549,6 @@ impl AttachEffectInstance {
 
 /// Where an effect's animation lives: attached to `owner` at its world point,
 /// drawn under `house`, and paused or running with the effect's state.
-#[cfg(feature = "phobos")]
 struct AttachEffectAnimTarget {
     owner: u64,
     house: crate::sim::intern::InternedId,
@@ -1641,7 +1556,6 @@ struct AttachEffectAnimTarget {
     paused: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// Phobos `TechnoExt::UpdateAttachEffects`
     /// (`src/Ext/Techno/Body.Update.cpp:895..975`, reached from the
@@ -1705,7 +1619,6 @@ impl Simulation {
         let target = if needs_range {
             entity.attack_target.target().and_then(|target| {
                 let target_coords = match target {
-                    #[cfg(feature = "phobos")]
                     crate::sim::combat::TargetKind::Bullet(id) => {
                         use crate::sim::projectile::ProjectileCoord;
                         let position = self
@@ -2051,7 +1964,6 @@ impl Simulation {
     /// unported); `CloakVisible.DetectedOnly`, `DropPodOnly` and the
     /// `HideLaserTrailEffects` config have no reader; this runs in the shared
     /// techno AI phase, not after the foot locomotor process.
-    #[cfg(feature = "phobos")]
     pub(crate) fn update_phobos_laser_trails(
         &mut self,
         id: u64,
@@ -2132,7 +2044,6 @@ impl Simulation {
     /// `AllowTransfer` refuses or the target fails the category/type gates.
     /// An existing instance keeps the longer duration; a cumulative type
     /// appends until its own cap, and only a same-source match is refreshed.
-    #[cfg(feature = "phobos")]
     pub(crate) fn transfer_phobos_attach_effects(
         &mut self,
         source: u64,
@@ -3051,7 +2962,6 @@ impl Simulation {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// `WeaponTypeExt::HasRequiredAttachedEffects` (`src/Ext/WeaponType/Body.cpp:11`):
     /// a weapon carrying no AE list always allows the shot. Otherwise the
@@ -3843,7 +3753,6 @@ impl Simulation {
 /// Phobos `EnumFunctions::CanTargetHouse` with a nullable source: the
 /// shared port handles a known source; a hit with none follows the enemy
 /// bucket, as the AttachEffect branch has always read it.
-#[cfg(feature = "phobos")]
 fn affects_house(
     flags: AffectedHouse,
     source: Option<crate::sim::intern::InternedId>,
@@ -7061,7 +6970,6 @@ AttachEffect.InitialDelays=3
     /// `VeteranRange` else the `[General]` value (max with 0); a rookie is
     /// untouched. The explicit-range overload scales even `-512`; only the
     /// two-argument wrapper owns the sentinel.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_veteran_range_ability_scales_get_range_with_modifiers() {
         use crate::rules::ini_parser::IniFile;
@@ -7180,7 +7088,6 @@ VeteranRange=2.0
     /// Phobos `ProjectileRange.ApplyModifiers` gates the fold for the
     /// projectile's initial range: the weapon's nullable key else the
     /// `[CombatDamage]` global (constructor true).
-    #[cfg(feature = "phobos")]
     #[test]
     fn initial_projectile_range_reads_the_global_and_weapon_keys() {
         use crate::rules::ini_parser::IniFile;
@@ -7270,7 +7177,6 @@ VeteranRange=2.0
     /// (`Body.Internal.cpp:157`): the owner country's
     /// `AttachEffect.AttachTypes` list attaches at creation, with the country's
     /// own paired duration override.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_country_attach_types_list_attaches_at_creation() {
         use crate::rules::ini_parser::IniFile;
@@ -7315,7 +7221,6 @@ Duration=100
 
     /// Phobos `House/Hooks.cpp:342-343`: an owner change attaches the new
     /// country's list when `AttachEffect.AttachOnOwnerChange` allows it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_new_country_attaches_its_list_on_owner_change() {
         use crate::rules::ini_parser::IniFile;

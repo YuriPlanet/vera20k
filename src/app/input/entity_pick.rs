@@ -1256,13 +1256,7 @@ fn filter_low_selection_priority(
     let low_priority = |id: u64| -> Option<bool> {
         let entity = entities.get(id)?;
         let object = interner?.object_type(entity.type_ref(), rules?)?;
-        #[cfg(feature = "phobos")]
         let low = object.phobos_techno_extras.low_selection_priority;
-        #[cfg(not(feature = "phobos"))]
-        let low = {
-            let _ = object;
-            false
-        };
         Some(low)
     };
     if !enabled || !candidates.iter().any(|&id| low_priority(id) == Some(false)) {

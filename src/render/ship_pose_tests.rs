@@ -24,7 +24,6 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
             .get("DEST")
             .map_or(0, |art| art.turret_offset[0]),
         tunnel_tilt: None,
-        turret_offset: rules.art().get("DEST").map_or(0, |art| art.turret_offset),
     };
     let key = UnitSpriteKey {
         type_id: "DEST".into(),

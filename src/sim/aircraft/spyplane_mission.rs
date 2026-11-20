@@ -120,7 +120,6 @@ pub(super) fn overfly(
 /// snapshot block is skipped, otherwise the counter increments. Reads
 /// GetWeapon(0), like the stock block.
 fn camera_count_allows(sim: &mut Simulation, id: u64, rules: &RuleSet) -> bool {
-    #[cfg(feature = "phobos")]
     {
         let shots = {
             let Some(plane) = sim.substrate.entities.get(id) else {
@@ -152,11 +151,6 @@ fn camera_count_allows(sim: &mut Simulation, id: u64, rules: &RuleSet) -> bool {
         plane
             .mission_leaf
             .set_aircraft_strafe_bombs_dropped_this_round(counter.wrapping_add(1));
-        true
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (sim, id, rules);
         true
     }
 }

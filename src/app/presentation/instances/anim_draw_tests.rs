@@ -160,7 +160,6 @@ fn flat_has_one_flat_body_with_its_separate_minus_three_term() {
 /// `AnimClass_DrawIt_Tiled_Center` (`0x423660`, `Hooks.cpp:448-462`) zeroes
 /// the `height / 2` term for `Tiled.AlignToCenter`, starting the column on
 /// the draw point and stepping rows and Z by the height alone.
-#[cfg(feature = "phobos")]
 #[test]
 fn tiled_interval_and_align_to_center_override_the_frame_geometry() {
     let column = |keys: &str| {
@@ -770,7 +769,6 @@ fn free_bouncing_anim_draws_its_ground_shadow_first_at_its_height() {
 /// Phobos `AnimClass_DrawIt_DrawOffset` (`0x423122`/`0x422CD8`) selection-
 /// bracket arms (`Ext/AnimType/Body.cpp:83-90`): the Apply gates, direction
 /// flags, the building `Nullable<int>` override and the shield delta.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_bracket_arms_follow_the_owner_bracket() {
     use crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset;
@@ -870,7 +868,6 @@ fn phobos_bracket_arms_follow_the_owner_bracket() {
 /// Phobos `AnimClass_DrawIt_DrawOffset` through the production free-anim
 /// Display caller: an attached animation with `XDrawOffset.ApplyBracketWidth`
 /// takes its owner's right-hand foot bracket.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
     use crate::app::presentation::instances::{
@@ -951,11 +948,12 @@ fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
     let lighting = Default::default();
     let house_colors = Default::default();
     let hidden = Default::default();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
     let mut planned = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim: &sim,
+            frame: &frame,
             rules: &rules,
             camera: [-1000.0; 2],
             render_size: [2000; 2],

@@ -54,13 +54,11 @@ use crate::sim::world::{PlacementEvidence, Simulation, UninitContext};
 /// Phobos `TechnoExt::IsSelected` (`Ext/Techno/Body.h:67`): the remembered
 /// selection bit a `LimboLaunch=` firer takes into limbo, paired with
 /// `ScenarioExt::Global()->LimboLaunchers`.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct UnlimboDetonateSelection {
     selected: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl UnlimboDetonateSelection {
     /// `0x6FE562`'s `InSelected` into the fire hook's write
     /// (`Ext/WarheadType/Hooks.cpp:643`).
@@ -91,7 +89,6 @@ impl UnlimboDetonateSelection {
 /// `TechnoClass_Fire_SetContext @ 0x6FE562`'s `InSelected` and `InLimbo`:
 /// the two facts the `TechnoClass_Fire_UnlimboDetonate` hook reads back after
 /// the LimboLaunch Limbo has already cleared the live ones.
-#[cfg(feature = "phobos")]
 #[derive(Clone, Copy)]
 pub(super) struct FireContext {
     pub(super) in_selected: bool,
@@ -99,7 +96,6 @@ pub(super) struct FireContext {
 }
 
 /// Capture the `0x6FE562` context for one `LimboLaunch=` shot.
-#[cfg(feature = "phobos")]
 pub(super) fn fire_context(world: &Simulation, firer: u64) -> FireContext {
     world.substrate.entities.get(firer).map_or(
         FireContext {

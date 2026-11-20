@@ -45,7 +45,6 @@ pub(crate) fn mission_eaten(
     // building whose type refuses this foot, clear it and take the
     // missing-destination arm (LoseDestination `0x4D4D43`) without the
     // TarCom restore below.
-    #[cfg(feature = "phobos")]
     let refused_destination = matches!(
         nav_com,
         Some(NavTargetRef::Object { id: building })
@@ -57,14 +56,10 @@ pub(crate) fn mission_eaten(
                     && !sim.can_grind_techno(building, id, rules)
             })
     );
-    #[cfg(feature = "phobos")]
     if refused_destination {
         sim.assign_null_destination(id, rules, registry, effects);
     }
-    #[cfg(feature = "phobos")]
     let restore_destination = !refused_destination;
-    #[cfg(not(feature = "phobos"))]
-    let restore_destination = true;
     //4D4CE7..4D4D33: only C4-capable or Engineer Infantry restore a
     //missing destination from TarCom. Ordinary civilians keep their NavCom.
     if restore_destination

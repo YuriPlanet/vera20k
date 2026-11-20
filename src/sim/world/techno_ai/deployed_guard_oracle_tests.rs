@@ -268,7 +268,6 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
         .set_nav_com_for_test(target(&before["nav"], row).map(|target| match target {
             TargetKind::Cell(x, y) => NavTargetRef::cell(x, y),
             TargetKind::Entity(_) => unreachable!(),
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(..) => unreachable!(),
         }));
     let mut loco = LocomotorState::from_object_type(
@@ -361,7 +360,6 @@ fn assert_actor(actor: &GameEntity, expected: &Value, row: &Value, rearm: bool) 
     let nav = target(&expected["nav"], row).map(|target| match target {
         TargetKind::Cell(x, y) => NavTargetRef::cell(x, y),
         TargetKind::Entity(_) => unreachable!(),
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => unreachable!(),
     });
     assert_eq!(actor.navigation.nav_com(), nav, "{name}: NavCom");

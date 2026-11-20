@@ -209,7 +209,6 @@ impl TeamScriptVm {
                     droppod: fields.read_bool("Droppod", false),
                     only_target_house_enemy: fields.read_bool("OnlyTargetHouseEnemy", false),
                     loadable: fields.read_bool("Loadable", false),
-                    #[cfg(feature = "phobos")]
                     para_drop_aircraft: fields.read_string_with(
                         "ParaDropAircraft",
                         0x80,

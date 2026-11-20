@@ -245,7 +245,6 @@ impl SkirmishColorMode {
     pub(crate) fn from_ini(ini: &IniFile, schemes: &mut Vec<ColorSchemeEntry>) -> Self {
         // Phobos reads the key with the native ReadBool semantics and its
         // constructor default of false. Its hook owns every colour index.
-        #[cfg(feature = "phobos")]
         {
             if ini
                 .section_or_empty("General")
@@ -339,7 +338,6 @@ mod tests {
         assert_eq!(mode.entry_for_priority(-2), 0);
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_ini_key_defaults_off_and_needs_a_phobos_build() {
         // Fifteen entries of the rules' own, as YR's eight priorities expect.

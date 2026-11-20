@@ -1440,7 +1440,6 @@ fn ares_a_cloaking_host_keeps_its_drone() {
 /// `Ext/Techno/Hooks.cpp:1415-1445`): a cloak's `Detach_All(false)` control
 /// falls back to the host type's key, else `[General]`; without either the
 /// Phobos hook keeps the parasite like Ares.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_cloak_kick_out_parasite_ejects_only_when_configured() {
     let eject = |extra: &str| {
@@ -1487,7 +1486,6 @@ fn phobos_cloak_kick_out_parasite_ejects_only_when_configured() {
 /// Phobos `FootClass_ReceiveDamage_RemoveParasite` (`0x4D73DE`,
 /// `Ext/WarheadType/Hooks.cpp:589-606`): the key replaces the heal-only gate
 /// and the typed Allow/Disallow lists filter the attached parasite type.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_remove_parasite_gates_and_filters_the_removal() {
     let run = |warhead_keys: &str, damage: i32| {
@@ -1542,7 +1540,6 @@ fn phobos_remove_parasite_gates_and_filters_the_removal() {
 /// `Ext/Unit/Hooks.Sinking.cpp:21-45`): a grabbed Unit sinks only when its
 /// `Sinkable.SquidGrab` (else `[General]`) admits it; otherwise it takes its
 /// Strength as C4 damage.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_sinkable_squid_grab_switches_between_sinking_and_strength_damage() {
     let run = |key: &str| {
@@ -1608,7 +1605,6 @@ fn phobos_sinkable_squid_grab_switches_between_sinking_and_strength_damage() {
 /// `ParasiteClass_AI_CullingTarget @ 0x62A0AA`): a victim outside the filter
 /// skips the culling arm, so an Infantry victim takes the ordinary bite
 /// damage instead of its whole Health.
-#[cfg(feature = "phobos")]
 #[test]
 fn parasite_culling_target_off_downgrades_the_infantry_bite() {
     let ini = IniFile::from_str(&RULES.replace(
@@ -1652,7 +1648,6 @@ fn parasite_culling_target_off_downgrades_the_infantry_bite() {
 /// `Parasite.CullingTarget=units` (`0x62A0AA`): the filter replaces the stock
 /// Infantry-only test, so a Vehicle victim is culled and takes its whole
 /// Health in the first bite.
-#[cfg(feature = "phobos")]
 #[test]
 fn parasite_culling_target_units_one_hit_kills_a_vehicle() {
     let ini = IniFile::from_str(
@@ -1700,7 +1695,6 @@ fn parasite_culling_target_units_one_hit_kills_a_vehicle() {
 /// `Ext/Techno/Hooks.cpp:955-968`): `yes` skips the water/land checks but
 /// still reaches the shared no-building tail (`0x62AC0F`); `no` refuses;
 /// `[General]` is the type key's fallback.
-#[cfg(feature = "phobos")]
 #[test]
 fn parasite_allow_water_exit_skips_land_but_not_the_building_gate() {
     use crate::rules::terrain_rules::LandType;
@@ -1758,7 +1752,6 @@ fn parasite_allow_water_exit_skips_land_but_not_the_building_gate() {
 /// `Ext/Techno/Hooks.cpp:921-940`): a non-culling bite spawns the warhead's
 /// system, an unknown name falls back to `[CombatDamage] DefaultSparkSystem`,
 /// and either disable key skips the construct.
-#[cfg(feature = "phobos")]
 #[test]
 fn parasite_bite_particle_system_falls_back_and_can_be_disabled() {
     const SYSTEMS: &str = "[ParticleSystems]\n0=CUSTOMSPARK\n1=DEFAULTSPARK\n\

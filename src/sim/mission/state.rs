@@ -282,7 +282,6 @@ impl MissionCom {
 
     /// `+0xB8 = 0`: Phobos `NoQueueUpToUnload`'s interrupted unload retry
     /// (`Ext/Techno/Hooks.Transport.cpp:446`, `MissionStatus = 0`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_movement_bypass_latch(&mut self) {
         self.movement_bypass_latch = 0;
     }

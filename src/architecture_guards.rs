@@ -1438,9 +1438,6 @@ fn composition_root_slots_are_owner_types() {
             "firing_anim_update_count",
             "the transient `FiringAnimUpdateCount` register: `sim/anim_class.rs` counts each \
              muzzle anim it marks, and the firing-anim pass consumes it",
-            "building",
-            "a Building's own fields stored apart from the record every turn reads; each \
-             keeps its visibility and owning module, so the slot opens nothing that was closed",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -1941,6 +1938,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_stored_location",
             "AnimClass::SetLocation's +0x9C write; Phobos UpdateAsFiringAnim stores the \
              owner-relative muzzle delta through it",
+        ),
+        (
             "map/resolved_terrain/deformation.rs",
             "set_terrain_deformation",
             "VERA's own switch with no native member: whether a grid may deform, set by the \

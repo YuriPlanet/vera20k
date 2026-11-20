@@ -150,13 +150,6 @@ pub(crate) fn build_target_line_strokes(
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
             )
             || entity.lifecycle.in_limbo()
-            || !sim.techno_intent_psychically_detected(
-                entity.stable_id(),
-                *viewer,
-                sites,
-                cells.as_ref(),
-                rules,
-            )
             || !entity.place.psychically_detected
         {
             return;

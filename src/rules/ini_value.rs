@@ -837,7 +837,6 @@ impl IniSection {
     /// `<default>` clears the value; `none` and `<none>` are value text handed
     /// to the parser, and absent, empty and rejected reads retain it.
     /// Source: Phobos b90ab4bc, Utilities/TemplateDef.h:1834-1849.
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_phobos_nullable_allow_none_with<T>(
         &self,
         key: &str,
@@ -954,7 +953,6 @@ impl IniSection {
     /// supers by
     /// [`PhobosGlobals::resolve_ai_chrono_super_names`](crate::rules::phobos_globals::PhobosGlobals::resolve_ai_chrono_super_names),
     /// which folds the per-pass history this reader sees only as one string.
-    #[cfg(feature = "phobos")]
     pub fn read_phobos_type_name(&self, key: &str, current: &str) -> String {
         let Some(name) = self.read_name(key, 2048) else {
             return current.to_owned();
@@ -971,7 +969,6 @@ impl IniSection {
     /// [`Self::read_phobos_nullable_with`], otherwise an authored type name.
     /// VERA keeps the name and resolves it at the consumer, as
     /// [`Self::read_phobos_type_name`] does.
-    #[cfg(feature = "phobos")]
     pub fn read_phobos_nullable_type_name(
         &self,
         key: &str,
@@ -1008,7 +1005,6 @@ impl IniSection {
     /// `Parser<BYTE,3>` at `src/Utilities/TemplateDef.h`): a comma-separated
     /// `R,G,B` needs all three channels inside `0..=255`. Absent, empty and
     /// rejected text keep the current color.
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_phobos_color(&self, key: &str, current: [u8; 3]) -> [u8; 3] {
         self.read_string_with(key, 2048, current, |current, raw| {
             parse_phobos_color(raw).unwrap_or(current)
@@ -1017,7 +1013,6 @@ impl IniSection {
 
     /// Phobos `Nullable<ColorStruct>`: the clearing tokens of
     /// [`Self::read_phobos_nullable_with`], then [`parse_phobos_color`].
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_phobos_nullable_color(
         &self,
         key: &str,
@@ -1032,7 +1027,6 @@ impl IniSection {
     /// [`Self::read_phobos_nullable_int_pair`] uses. Only a read that converts
     /// all three tokens sets the value; a partial read updates a value that is
     /// already set (the `Nullable` keeps its presence).
-    #[cfg(feature = "phobos")]
     pub fn read_phobos_nullable_vector3(
         &self,
         key: &str,
@@ -1051,7 +1045,6 @@ impl IniSection {
     /// Phobos `Damageable<ColorStruct>::Read` (`Utilities/TemplateDef.h:2227-2244`):
     /// the base key then `<base>.ConditionYellow` and `<base>.ConditionRed`,
     /// each retaining the current value when absent.
-    #[cfg(feature = "phobos")]
     pub fn read_phobos_damageable_color(
         &self,
         base_key: &str,
@@ -1428,7 +1421,6 @@ impl IniSection {
     /// and blank" (write the blank/`-1`). [`Self::read_string_with`] cannot
     /// express the second arm because it keeps `current` on empty text.
     /// Answers the trimmed, `capacity - 1`-bounded text, `Some("")` included.
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_string_presence(&self, key: &str, capacity: usize) -> Option<String> {
         let payload = capacity.checked_sub(1)?;
         self.fold_rules_values(key, None, |_, raw| {
@@ -2409,7 +2401,6 @@ pub(crate) fn parse_ares_int(value: &str) -> Option<i32> {
 /// Phobos `Parser<BYTE,3>::Parse`: three comma-separated channels, each
 /// converted with the `BYTE` scan that rejects values above 255. All three
 /// must convert; otherwise no color is produced.
-#[cfg(feature = "phobos")]
 fn parse_phobos_color(value: &str) -> Option<[u8; 3]> {
     let mut channels = [0i32; 3];
     (scan_int_fields(value, &mut channels) == 3
@@ -2626,7 +2617,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_nullable_vector3_reads_three_ints_and_clears_on_default() {
         let ini = IniFile::from_str("[S]\nF=1,2,3\nP=4,5\nD=<default>\n");
@@ -2653,7 +2643,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_damageable_color_reads_three_keys_and_picks_by_threshold() {
         let ini = IniFile::from_str(

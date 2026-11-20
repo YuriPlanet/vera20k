@@ -591,11 +591,9 @@ pub(crate) struct OperationalFacts {
     /// The summed `ElectricAssaultLevel` of the retained chargers
     /// (`Ext/Building/Hooks.cpp:970-981`); with the defaults (one level per
     /// charger) it equals the stock count.
-    #[cfg(feature = "phobos")]
     pub tesla_charge_levels: i32,
     /// Phobos `Overpower.KeepOnline`; a negative value fails the power arm
     /// and produces the building offline (`:964-974`).
-    #[cfg(feature = "phobos")]
     pub overpower_keep_online: i32,
     /// `+0x504` EMP time and `+0x6C` Health.
     pub emp_remaining: i32,
@@ -629,14 +627,9 @@ pub(crate) fn is_operational_for_output(
     let charge_passes = if facts.charger_bypass == 0 {
         true
     } else {
-        #[cfg(feature = "phobos")]
         {
             facts.overpower_keep_online >= 0
                 && facts.tesla_charge_levels >= facts.overpower_keep_online
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            facts.tesla_chargers >= facts.charger_bypass
         }
     };
     if !facts.online && !charge_passes {
@@ -672,7 +665,6 @@ fn health_scaled_output(power: i32, entity: &GameEntity, strength: i32) -> i32 {
 /// `Factor`; `PowerPlantEnhancer.MaxCount` limits how many enhancers of one
 /// type apply. A positive `Range` (leptons) rejects enhancers farther from the
 /// plant. The factored output is `std::round(output * factor)`.
-#[cfg(feature = "phobos")]
 fn enhanced_power(
     target: &crate::rules::object_type::ObjectType,
     output: i32,
@@ -724,7 +716,6 @@ fn enhanced_power(
 /// amounts minus the native drain. The tooltip has no plant, so a positive
 /// enhancer `Range` skips as `!pPowerPlant` does. The non-building arm reads
 /// the type `Power=` behind `[General] UnitPowerDrain=` (`:706-713`).
-#[cfg(feature = "phobos")]
 pub(crate) fn cameo_power_delta(
     entities: &EntityStore,
     building_order: &[u64],
@@ -767,7 +758,6 @@ pub(crate) fn cameo_power_delta(
 /// `pEnhancer->DistanceFrom(pPowerPlant)`: `ObjectClass::Distance_To @
 /// 0x005F6440` from the enhancer's GetCoords to the plant's, less the plant's
 /// foundation.
-#[cfg(feature = "phobos")]
 fn power_plant_enhancer_distance(enhancer: &GameEntity, plant: &GameEntity) -> i32 {
     use crate::sim::movement::ground_pose::object_center_xy;
     let (width, height) = plant.type_facts.foundation().dimensions();
@@ -784,7 +774,6 @@ fn power_plant_enhancer_distance(enhancer: &GameEntity, plant: &GameEntity) -> i
 /// clamps at zero. Phobos is built with `/arch:SSE2` (`Phobos.props`), so its
 /// 1.0 product rounds to nearest where the stock product kept here chops; see
 /// the residuals in `docs/phobos-power-plant-enhancer.md`.
-#[cfg(feature = "phobos")]
 fn scaled_power_plant_output(
     power: i32,
     damage_factor: f64,
@@ -843,7 +832,6 @@ fn recalculate_power_for_owner(
     // Phobos `HouseExt::PowerPlantEnhancers`: this owner's active registered
     // enhancer buildings. The list is derived from the same building order the
     // assessment scans, so destroyed, limboed and offline enhancers drop out.
-    #[cfg(feature = "phobos")]
     let enhancers: Vec<(&GameEntity, &crate::rules::object_type::ObjectType)> = building_order
         .iter()
         .filter_map(|&id| {
@@ -916,7 +904,6 @@ fn recalculate_power_for_owner(
         // that sum: a plant under EMP outputs nothing (its `HasPower` test is
         // the Building+660 one above), and each enhancer naming the host's or
         // an upgrade's type applies to that type's output.
-        #[cfg(feature = "phobos")]
         let (power, extra_power) = if entity.emp_remaining() > 0 {
             (0, 0)
         } else {
@@ -946,34 +933,14 @@ fn recalculate_power_for_owner(
             }
             (power, extra)
         };
-        #[cfg(not(feature = "phobos"))]
-        let (power, extra_power) = {
-            let upgrades = entity.building_upgrades();
-            if upgrades.count() != 0 {
-                for type_ref in upgrades.types().iter().flatten() {
-                    let Some(upgrade) = interner.object_type(*type_ref, rules) else {
-                        continue;
-                    };
-                    output_contribution = output_contribution.wrapping_add(upgrade.power.max(0));
-                }
-            }
-            (output_contribution, 0)
-        };
         // Ares 3.0 BuildingClass_PowerProduced_EMP 10014440 (hook
         // 0x0044E855): an EMP'd plant (`+0x504` > 0) skips the positive sum
         // to 0x0044E873 and outputs nothing; Ares EMP leaves its online latch
         // set. Phobos' replacement above already zeroes it.
-        #[cfg(not(feature = "phobos"))]
-        let (power, extra_power) = if ares && entity.emp_remaining() > 0 {
-            (0, 0)
-        } else {
-            (power, extra_power)
-        };
         if power.wrapping_add(extra_power) > 0 {
             // Original44E85F calls5F5C60, then FIMUL and _ftol; House508CFF
             // adds the signed returned dword with wrapping ADD. No max(1),
             // health clamp or integer product precedes the native division.
-            #[cfg(feature = "phobos")]
             let output = scaled_power_plant_output(
                 power,
                 obj.power_plant_damage_factor(),
@@ -981,8 +948,6 @@ fn recalculate_power_for_owner(
                 obj.strength,
             )
             .wrapping_add(extra_power);
-            #[cfg(not(feature = "phobos"))]
-            let output = health_scaled_output(power, entity, obj.strength);
             produced = produced.wrapping_add(output);
             //508D1E calls70FEC0 (DrainingMe != null), then repeats the
             // live GetPowerOutput getter and tests its signed result >0.
@@ -1030,7 +995,6 @@ fn recalculate_power_for_owner(
     // Phobos `HouseClass_UpdatePower_AfterBuildings` (`0x508D8D`,
     // `Ext/House/Hooks.cpp:34-58`): after the building roster, the active
     // Infantry/Unit/Aircraft counts fold their type `Power=`.
-    #[cfg(feature = "phobos")]
     if rules.phobos_globals.unit_power_drain
         && let Some(tracking) = tracking
     {
@@ -1513,7 +1477,6 @@ mod tests {
     /// Phobos `PhobosToolTip::GetPower` building arm: `GetEnhancedPower` without
     /// a plant keeps only enhancers whose `Range` is not positive, then the
     /// native drain subtracts.
-    #[cfg(feature = "phobos")]
     #[test]
     fn cameo_power_delta_uses_unlimited_enhancers_and_the_native_drain() {
         let rules = rules_from_ini(
@@ -1951,7 +1914,6 @@ BuildSpeed=0.02
     /// `Amount` and multiplies `Factor` (`round(output * factor)`), gated by
     /// `IsActive` and `HasPower`, its `Range` in leptons and `MaxCount` per
     /// enhancer type.
-    #[cfg(feature = "phobos")]
     #[test]
     fn power_plant_enhancers_apply_factor_amount_range_and_max_count() {
         let rules = |max_count: &str| {
@@ -2020,7 +1982,6 @@ BuildSpeed=0.02
 
     /// Phobos `PowerPlant.DamageFactor`: 1.0 keeps the native health curve,
     /// 0.0 ignores health, and other values scale the health-driven loss.
-    #[cfg(feature = "phobos")]
     #[test]
     fn power_plant_damage_factor_scales_the_health_loss() {
         let rules = |factor: &str| {

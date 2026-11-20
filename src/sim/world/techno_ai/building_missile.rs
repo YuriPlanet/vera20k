@@ -476,7 +476,6 @@ fn weapon_at<'r>(
 /// erases that residue (`Ext/House/Body.h:66`), then answers the weapon slot:
 /// a non-negative `EMPulse.WeaponIndex`, else SelectWeapon against the
 /// EMPTarget cell. No latch means the stock/Ares slot 0.
-#[cfg(feature = "phobos")]
 fn phobos_empulse_weapon_index(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -571,7 +570,6 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
     // `BuildingClass_Mission_Missile_EMPulseSelectWeapon @ 0x44CEEC`
     // (`Ext/Building/Hooks.cpp:132-189`): the Phobos latch owns the weapon
     // slot, the suspended-SW resume and the clear, all before the shot.
-#[cfg(feature = "phobos")]
     let weapon_index = phobos_empulse_weapon_index(sim, rules, id, cell);
 #[cfg(not(feature = "phobos"))]    let weapon_index = 0_i32;
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -625,7 +623,6 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
     // `Arcing.AllowElevationInaccuracy` refuses has its finished velocity
     // recomputed by `BulletExt::ApplyArcingFix` from the vt+0x300 source to
     // the target cell's ground coordinate before `MoveTo`.
-    #[cfg(feature = "phobos")]
     let velocity =
         {
             let kind = weapon

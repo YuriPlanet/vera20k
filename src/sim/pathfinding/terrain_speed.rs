@@ -579,7 +579,6 @@ mod tests {
     /// Phobos `DamagedSpeed` (`0x4B3DF0`/`0x6A343F`): the stage-4 factor is
     /// the caller's configured value, not the stock 0.75 constant; an
     /// undamaged mover ignores it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_damaged_speed_replaces_the_stock_stage_factor() {
         assert_eq!(

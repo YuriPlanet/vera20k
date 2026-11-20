@@ -251,7 +251,6 @@ pub fn toggle_repair(
 /// Phobos `EngineerRepairAmount` (`Ext/Techno/Hooks.cpp:1220-1240`): 0 fully
 /// repairs, a positive amount adds points clamped to `[0, Strength]`, and a
 /// negative amount adds that percentage of Strength (rounded).
-#[cfg(feature = "phobos")]
 fn engineer_repair_amount(strength: i32, health: i32, amount: i32) -> i32 {
     if amount > 0 {
         health.saturating_add(amount).clamp(0, strength)
@@ -288,31 +287,19 @@ pub(crate) fn engineer_repair(
     // Phobos `InfantryClass_UpdatePosition_EngineerRepair` (0x519FEC): the
     // repaired health is the lesser of the building type's and the engineer
     // type's `EngineerRepairAmount` result; both 0 keep the stock full repair.
-    #[cfg(feature = "phobos")]
     let building_amount = object.phobos_engineer_repair_amount;
-    #[cfg(not(feature = "phobos"))]
-    let building_amount = 0;
-    #[cfg(feature = "phobos")]
     let engineer_amount = sim
         .substrate
         .entities
         .get(engineer_id)
         .and_then(|entity| sim.object_type(entity.type_ref(), rules))
         .map_or(0, |object| object.phobos_engineer_repair_amount);
-    #[cfg(not(feature = "phobos"))]
-    let engineer_amount = {
-        let _ = engineer_id;
-        0
-    };
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return false;
     };
     let health = entity.health.current();
-    #[cfg(feature = "phobos")]
     let repaired = engineer_repair_amount(strength, health, building_amount)
         .min(engineer_repair_amount(strength, health, engineer_amount));
-    #[cfg(not(feature = "phobos"))]
-    let repaired = strength;
     entity.health.set(repaired);
     entity.estimated_health.reset(repaired);
     if entity.category() != EntityCategory::Structure {
@@ -422,7 +409,6 @@ pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     // clamps at 1.0 before dividing the cost, so a Strength below RepairStep
     // still charges one whole step's share instead of panicking on the
     // native IDIV.
-    #[cfg(feature = "phobos")]
     if rules.phobos_globals.fix_repair_step_cost {
         let steps = (f64::from(object.strength) / f64::from(step)).max(1.0);
         let share = f64::from(rules.type_cost(object)) / steps;
@@ -471,13 +457,11 @@ pub(crate) fn update_repair_and_power(
     // `[General] ExtendedPlayerRepair=` is on, the house's PlayerAutoRepair
     // flag alone admits the auto-repair start (0x450659); with it off every
     // still-repairing building stops (0x450813).
-    #[cfg(feature = "phobos")]
     let extended_repair_house = rules.phobos_globals.extended_player_repair
         && sim
             .houses
             .get(&owner)
             .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
-    #[cfg(feature = "phobos")]
     if extended_repair_house {
         let repairing = sim
             .houses

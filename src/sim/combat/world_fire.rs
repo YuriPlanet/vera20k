@@ -30,7 +30,6 @@ pub(crate) fn open_topped_damage_multiplier(
     entities: &crate::sim::entity_store::EntityStore,
     interner: &crate::sim::intern::StringInterner,
 ) -> f32 {
-    #[cfg(feature = "phobos")]
     {
         let Some(firer) = firer else {
             return rules.garrison_rules.open_topped_damage_multiplier;
@@ -48,11 +47,6 @@ pub(crate) fn open_topped_damage_multiplier(
                 rules.phobos_globals.open_transport_damage_multiplier.bits(),
             ));
         carrier_mult * rider_mult
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (firer, entities, interner);
-        rules.garrison_rules.open_topped_damage_multiplier
     }
 }
 
@@ -145,7 +139,6 @@ pub(super) fn resolve_attacker_fire<'r>(
     // `DelayedFire.OnlyOnInitialBurst=yes` keeps its one-shot-per-frame cadence
     // even with the key on, through
     // [`crate::rules::weapon_type::WeaponType::delayed_fire_allows_burst_repeat`].
-    #[cfg(feature = "phobos")]
     let burst_no_delay = shot.selected.weapon.phobos_burst_no_delay
         && shot.selected.weapon.delayed_fire_allows_burst_repeat()
         && shot.selected.weapon.burst > 1
@@ -153,8 +146,6 @@ pub(super) fn resolve_attacker_fire<'r>(
             snap.category,
             EntityCategory::Unit | EntityCategory::Infantry
         );
-    #[cfg(not(feature = "phobos"))]
-    let burst_no_delay = false;
     // Phobos's hooks test `pThis->Fire(...)`, whose false answer means the shot
     // never happened. The burst index is VERA's observable for that: a launched
     // shot steps it, a refused launch leaves it where it was. A wrapped index
@@ -180,7 +171,6 @@ pub(super) fn resolve_attacker_fire<'r>(
 /// (`Ext/Unit/Hooks.Jumpjet.cpp:51-95`): the desired hull heading, the weapon
 /// index the hook read, whether the REARM arm may apply, and whether the
 /// heading actually differs.
-#[cfg(feature = "phobos")]
 struct OmniTurn {
     direction: u16,
     /// `weaponIndex`, so a held frame can ask the same `GetFireError` query
@@ -201,7 +191,6 @@ struct OmniTurn {
 /// write stay at the call site. The hull's desired facing is the native
 /// `SetDesired`; a jumpjet unit sets its `LocomotionFacing` instead, which
 /// its Update copies to the body.
-#[cfg(feature = "phobos")]
 fn phobos_omni_fire_turn(
     world: &Simulation,
     rules: &RuleSet,
@@ -270,7 +259,6 @@ fn phobos_omni_fire_turn(
 /// frame still turns. The query is read-only: no launch, no
 /// `open_topped_decloak_carrier` (`0x6FCD1D` inside `Fire_At`, which the skip
 /// never reaches).
-#[cfg(feature = "phobos")]
 fn phobos_held_frame_fire_error(
     world: &Simulation,
     rules: &RuleSet,
@@ -453,7 +441,6 @@ pub(crate) fn per_shot_report(
 /// `Body.cpp:721`). VERA's Scenario RNG (`Simulation::scenario_rng`) is the
 /// sole saved/synchronized RNG and is folded into `world_hash`, so a ranged
 /// delay stays deterministic across peers.
-#[cfg(feature = "phobos")]
 fn phobos_delayed_fire_frames(
     duration: &crate::rules::ini_value::PartialIntPair,
     world: &mut Simulation,
@@ -475,7 +462,6 @@ fn phobos_delayed_fire_frames(
 /// (`Body.cpp:1256-1267`) clears that pointer without destroying on the anim's
 /// natural expiry; VERA's anim owns its lifetime, so a stale id is simply not
 /// destroyed here.
-#[cfg(feature = "phobos")]
 pub(crate) fn reset_phobos_delayed_fire_timer(world: &mut Simulation, rules: &RuleSet, id: u64) {
     let anim = world
         .substrate
@@ -494,7 +480,6 @@ pub(crate) fn reset_phobos_delayed_fire_timer(world: &mut Simulation, rules: &Ru
 /// `AnimIsAttached`, and registration of `CurrentDelayedFireAnim` with the
 /// `DelayedFireRemoveOnNoDelay` flag (so an unattached anim is never removed
 /// by the reset path).
-#[cfg(feature = "phobos")]
 fn create_phobos_delayed_fire_anim(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -584,7 +569,6 @@ fn create_phobos_delayed_fire_anim(
 /// native's `FireAt` copy never sets `DelayedFireSequencePaused`; the class
 /// firing updates' copy ([`phobos_delayed_fire_pause_sequence`]) does, at the
 /// `frame == firingFrame` equality it is handed.
-#[cfg(feature = "phobos")]
 fn phobos_delayed_fire_suppresses_this_frame(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -613,7 +597,6 @@ fn phobos_delayed_fire_suppresses_this_frame(
 /// `frame == firingFrame` test and hand it that same cumulative frame, so the
 /// timer starts on the first attempt frame and its completed arm resets in
 /// time for that frame's test.
-#[cfg(feature = "phobos")]
 fn phobos_delayed_fire_pause_sequence(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -637,7 +620,6 @@ fn phobos_delayed_fire_pause_sequence(
 /// `Some(paused_now)`: the class copy passes `frame == firingFrame`
 /// (`Body.cpp:715-716`), the `FireAt` copy its legacy boundary, and `None`
 /// would write no pause flag at all.
-#[cfg(feature = "phobos")]
 fn phobos_delayed_fire_step(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -762,8 +744,6 @@ fn admit_attacker_fire<'r>(
     // DelayedFire timer (see [`resolve_attacker_fire`]).
     pause_handled: bool,
 ) -> Option<AdmittedFire<'r>> {
-    #[cfg(not(feature = "phobos"))]
-    let _ = pause_handled;
     let sound_enabled = sound_enabled(world);
     let delayed_building_slot = match snap.building_shot {
         Some(super::BuildingShot::Delayed { slot, .. }) => Some(slot),
@@ -826,7 +806,6 @@ fn admit_attacker_fire<'r>(
             }),
         TargetKind::Cell(..) => resolve_target_coords(&snap.target, world)
             .map(|(trx, try_, tsx, tsy)| (trx, try_, tsx, tsy, 1i32, snap.type_id)),
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => resolve_target_coords(&snap.target, world)
             .map(|(trx, try_, tsx, tsy)| (trx, try_, tsx, tsy, 1i32, snap.type_id)),
     };
@@ -926,7 +905,6 @@ fn admit_attacker_fire<'r>(
     // The class firing updates' pause-class DelayedFire step
     // (`Body.cpp:699-750`) already ran before this `FireAt` in the same
     // frame.
-    #[cfg(feature = "phobos")]
     let mut pause_handled = false;
     if firing_at_entry {
         let entity = world.substrate.entities.get(snap.stable_id)?;
@@ -940,7 +918,6 @@ fn admit_attacker_fire<'r>(
         // moves the expected stage to `fireUp + cumulativeDelay`; the loop
         // draws one `RandomRanged(3, 5)` per index with no `Burst.Delays`
         // entry, before the equality test.
-        #[cfg(feature = "phobos")]
         let (firing_frame, overrun) = if let Some(weapon) =
             selected.as_ref().map(|selected| selected.weapon)
             && weapon.phobos_burst_fire_within_sequence
@@ -958,8 +935,6 @@ fn admit_attacker_fire<'r>(
         } else {
             (fire_up, false)
         };
-        #[cfg(not(feature = "phobos"))]
-        let firing_frame = fire_up;
         // Phobos `HandleDelayedFireWithPauseSequence` runs inside the same
         // `0x5209AF` hook before its equality test
         // (`Ext/Infantry/Hooks.Firing.cpp:118-119`), with the retained stage
@@ -967,7 +942,6 @@ fn admit_attacker_fire<'r>(
         // timer therefore starts and completes on the attempt frame, not on
         // the matching one.
         let stage = entity.native_stage().value();
-        #[cfg(feature = "phobos")]
         {
             pause_handled = match selected.as_ref() {
                 Some(selected) if selected.weapon.phobos_delayed_fire_pause_firing_sequence => {
@@ -994,7 +968,6 @@ fn admit_attacker_fire<'r>(
         }
         // Overrun: the next shot would fall past the sequence, so this shot
         // arms the full rearm and the burst step restarts the index.
-        #[cfg(feature = "phobos")]
         if overrun {
             world
                 .substrate
@@ -1042,7 +1015,6 @@ fn admit_attacker_fire<'r>(
     // Phobos `0x6FCD1D` sits at GetFireError's OK return with the
     // target-in-range check set: an open-topped passenger's carrier
     // uncloaks at the admitted shot.
-    #[cfg(feature = "phobos")]
     if code == fire_error::FireError::Ok {
         open_topped_decloak_carrier(world, rules, snap.stable_id);
     }
@@ -1261,7 +1233,6 @@ fn admit_attacker_fire<'r>(
         let fire_up = infantry_fire_frame(obj, sequences, weapon_index, prone);
         // The same Phobos `0x5209AF` comparison on the path that just started
         // the firing action; the loop draws in index order before the test.
-        #[cfg(feature = "phobos")]
         let (firing_frame, overrun) = if let Some(weapon) =
             selected.as_ref().map(|selected| selected.weapon)
             && weapon.phobos_burst_fire_within_sequence
@@ -1278,13 +1249,10 @@ fn admit_attacker_fire<'r>(
         } else {
             (fire_up, false)
         };
-        #[cfg(not(feature = "phobos"))]
-        let firing_frame = fire_up;
         // The same class-hook ordering on the path that just started the
         // action: the pause-class timer step runs before the stage test, with
         // this frame's stage and cumulative frame.
         let stage = actor.native_stage().value();
-        #[cfg(feature = "phobos")]
         if let Some(selected) = selected.as_ref()
             && selected.weapon.phobos_delayed_fire_pause_firing_sequence
         {
@@ -1304,7 +1272,6 @@ fn admit_attacker_fire<'r>(
         if stage != firing_frame {
             return None;
         }
-        #[cfg(feature = "phobos")]
         if overrun {
             world
                 .substrate
@@ -1385,7 +1352,6 @@ fn admit_attacker_fire<'r>(
                 (coords, type_ref)
             }
             TargetKind::Cell(..) => (resolve_target_coords(&snap.target, world)?, snap.type_id),
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(..) => (resolve_target_coords(&snap.target, world)?, snap.type_id),
         }
     } else {
@@ -1600,7 +1566,6 @@ pub(crate) fn start_uncloaking_to_fire(world: &mut Simulation, rules: &RuleSet, 
 /// its target-in-range check set, a passenger inside an open-topped transport
 /// whose type enables `OpenTopped.DecloakToFire` also uncloaks the CARRIER
 /// (`pThis->Transporter->Uncloak(true)`), not just the passenger.
-#[cfg(feature = "phobos")]
 pub(crate) fn open_topped_decloak_carrier(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1949,10 +1914,7 @@ fn firepower_stages(
         open_topped: firer
             .filter(|firer| firer.passenger_role().in_open_transport())
             .map(|_| f32_bits(multipliers.open_topped_damage_multiplier)),
-        #[cfg(feature = "phobos")]
         ae_firepower: firer.map_or(1.0, |firer| firer.phobos_stat_multipliers().firepower),
-        #[cfg(not(feature = "phobos"))]
-        ae_firepower: 1.0,
     }
 }
 
@@ -1972,7 +1934,6 @@ fn fireat_damage(
 /// Phobos `BulletExt`'s construction-time `TechnoExt::GetCurrentFirepowerMultiplier`:
 /// unit (Techno+160, including Ares attachment), House, veteran FIREPOWER,
 /// then the occupied/bunker/open-topped stages, in the hook's order.
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_firepower_multiplier(
     stages: &damage::attacker::FireDamageStages,
 ) -> crate::util::native_x87::NativeF64Bits {
@@ -2001,7 +1962,6 @@ pub(crate) fn phobos_firepower_multiplier(
 /// `TechnoExt::GetCurrentFirepowerMultiplier`: the multiplier a newly
 /// constructed Bullet captures from its Owner Techno. FireAt overwrites the
 /// payload at launch, so its already-set value wins.
-#[cfg(feature = "phobos")]
 pub(crate) fn bullet_init_firepower_multiplier(
     interner: &crate::sim::intern::StringInterner,
     substrate: &crate::sim::world::ObjectSubstrate,
@@ -2267,7 +2227,6 @@ pub(crate) fn snapshot_get_rof(
                     entity.attached_rof_multiplier()
                 })
             }),
-            #[cfg(feature = "phobos")]
             rof_random_delay: Some(
                 rof_weapon
                     .and_then(|weapon| weapon.rof_random_delay)
@@ -2276,7 +2235,6 @@ pub(crate) fn snapshot_get_rof(
             // Phobos `0x6FD054` reads `TechnoExt::ForceFullRearmDelay` before
             // the mid-burst branch; `Burst.FireWithinSequence`'s overrun arm
             // sets it on this firer.
-            #[cfg(feature = "phobos")]
             force_full_rearm: firer.is_some_and(|entity| entity.weapon_burst.force_full_rearm()),
             rof_ability: self::veterancy::has_weapon_ability(
                 self::veterancy::rank_from_u16(snap.veterancy),
@@ -2298,14 +2256,9 @@ pub(crate) fn snapshot_get_rof(
             // building type's nullable overrides
             // `[CombatDamage] BunkerROFMultiplier=`.
             bunker_rof_multiplier: {
-                #[cfg(feature = "phobos")]
                 {
                     phobos_bunker_rof_multiplier(substrate, firer, rules, interner)
                         .unwrap_or(rules.garrison_rules.bunker_rof_multiplier)
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    rules.garrison_rules.bunker_rof_multiplier
                 }
             },
         },
@@ -2318,7 +2271,6 @@ pub(crate) fn snapshot_get_rof(
 /// multiplier comes from the bunker building type's
 /// `BunkerROFMultMultiplier` when set; `None` keeps the `[CombatDamage]`
 /// global.
-#[cfg(feature = "phobos")]
 fn phobos_bunker_rof_multiplier(
     substrate: &ObjectSubstrate,
     firer: Option<&crate::sim::game_entity::GameEntity>,
@@ -2395,14 +2347,11 @@ pub(super) fn emit_admitted_fire(
     } = shot;
     let snap = &snap;
     let weapon = selected.weapon;
-    #[cfg(not(feature = "phobos"))]
-    let _ = pause_handled;
     // Phobos `TechnoClass_FireAt_UpdateWeaponType @ 0x6FDD7D`
     // (`Ext/Techno/Hooks.Firing.cpp:588-607`), ahead of FireAt's own InLimbo
     // refusal below: a `LimboLaunch=` weapon whose warhead is
     // `UnlimboDetonate` and not `Parasite` cannot fire while the firer's
     // locomotor is really moving.
-    #[cfg(feature = "phobos")]
     if super::phobos_unlimbo_detonate::refuses_moving_limbo_launch(
         world,
         rules,
@@ -2418,7 +2367,6 @@ pub(super) fn emit_admitted_fire(
     // recounts the retained burst index against the previous weapon; a
     // positive remaining ROF re-arms the shot and refuses this one, otherwise
     // the index resets. The weapon is stored on every call.
-    #[cfg(feature = "phobos")]
     {
         let weapon_ref = world.interner.intern(selected.weapon_id);
         let (last_ref, index, ae_mult, last_fire) = world
@@ -2493,7 +2441,6 @@ pub(super) fn emit_admitted_fire(
     // stepped the pause-class timer before their frame test, and this hook
     // yields exactly those classes (`Hooks.Firing.cpp:658-662`), so
     // `pause_handled` turns this copy off for the frame it covered.
-    #[cfg(feature = "phobos")]
     let pause_applies = weapon.phobos_delayed_fire_pause_firing_sequence
         && match snap.category {
             EntityCategory::Infantry => true,
@@ -2505,7 +2452,6 @@ pub(super) fn emit_admitted_fire(
             }
             _ => false,
         };
-    #[cfg(feature = "phobos")]
     if !pause_handled
         && phobos_delayed_fire_suppresses_this_frame(
             world,
@@ -2522,7 +2468,6 @@ pub(super) fn emit_admitted_fire(
     // Phobos TechnoClass_FireAt_BeforeTruelyFire (0x6FDDC0): an admitted shot
     // counts towards DiscardOn.Firing.Count, including the branches below
     // that launch no bullet.
-    #[cfg(feature = "phobos")]
     world.record_phobos_attach_firing(snap.stable_id, rules);
     if weapon.suicide {
         // Techno6FDDC0..6FDE0E: the local packet is type Strength, not
@@ -2647,7 +2592,6 @@ pub(super) fn emit_admitted_fire(
     let mut area_fire_cell = None;
     let mut area_fire_firer = false;
     if weapon.area_fire && combat_weapon::is_not_spray_attack(obj) {
-        #[cfg(feature = "phobos")]
         {
             // `pThis->OnBridge` and `pThis->GetCell()->Level` feed the
             // hook's `allowBridges` for every arm.
@@ -2711,11 +2655,6 @@ pub(super) fn emit_admitted_fire(
                     }
                 }
             }
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            area_fire_cell = object_get_coords(world, snap.stable_id)
-                .and_then(|coord| world.packed_map_cell(coord.x, coord.y));
         }
     }
     // The Object local FireAt took at entry (`0x006FDD88..0x006FDDA1`),
@@ -2789,7 +2728,6 @@ pub(super) fn emit_admitted_fire(
     // Phobos `TechnoClass_FireAt_LateLogic` (`0x6FF660`): an interceptor
     // firing at a Bullet with ApplyFirepowerMult=no stores the weapon's raw
     // Damage as the bullet's Health.
-    #[cfg(feature = "phobos")]
     let base_damage = if matches!(snap.target, TargetKind::Bullet(..))
         && obj.phobos_interceptor.as_ref().is_some_and(|interceptor| {
             !interceptor
@@ -2837,7 +2775,6 @@ pub(super) fn emit_admitted_fire(
             entity.rearm_after_fire(binary_frame as i32, rof);
             // Phobos `SetChargeTurretDelay`'s other FireAt rearm site
             // (`0x6FE4A4`, `0x6FE492` increments before GetROF).
-            #[cfg(feature = "phobos")]
             entity.phobos_set_charge_turret_delay(
                 binary_frame as i32,
                 if weapon.burst > 1 { burst.index() } else { 0 },
@@ -2975,7 +2912,6 @@ pub(super) fn emit_admitted_fire(
         let target_location = |target: TargetKind| -> Option<ProjectileCoord> {
             match target {
                 TargetKind::Entity(id) => object_get_coords(world, id),
-                #[cfg(feature = "phobos")]
                 TargetKind::Bullet(id) => world
                     .projectiles
                     .get(id)
@@ -3064,7 +3000,6 @@ pub(super) fn emit_admitted_fire(
             .and_then(|target| match target {
                 TargetKind::Entity(id) => world.substrate.entities.get(id),
                 TargetKind::Cell(_, _) => None,
-                #[cfg(feature = "phobos")]
                 TargetKind::Bullet(..) => None,
             })
             .filter(|target| target.category() == EntityCategory::Structure)
@@ -3079,17 +3014,9 @@ pub(super) fn emit_admitted_fire(
         // ObjectType+0x236 (Voxel); Phobos replaces it with the resolved
         // `VerticalInitialFacing` (`Misc/Hooks.BugFixes.cpp:2435`), so a
         // `Vertical=` shot gains the arm.
-        #[cfg(feature = "phobos")]
         let voxel_downward = (!ballistic
             && super::projectile_delivery::vertical_initial_facing(projectile_type))
         .then(|| {
-            target_location(snap.target)
-                .expect("live native FireAt target")
-                .z
-                < raw_source.z
-        });
-        #[cfg(not(feature = "phobos"))]
-        let voxel_downward = (!ballistic && voxel).then(|| {
             target_location(snap.target)
                 .expect("live native FireAt target")
                 .z
@@ -3111,13 +3038,10 @@ pub(super) fn emit_admitted_fire(
         // `Arcing.AllowElevationInaccuracy` refuses (the `[CombatDamage]`
         // global defaults `true`) has its finished velocity recomputed by
         // `BulletExt::ApplyArcingFix` before `BulletClass::Fire`.
-        #[cfg(feature = "phobos")]
         let arcing_fix = ballistic
             && !projectile_type
                 .and_then(|kind| kind.phobos_arcing_allow_elevation_inaccuracy)
                 .unwrap_or(rules.phobos_globals.arcing_allow_elevation_inaccuracy);
-        #[cfg(not(feature = "phobos"))]
-        let arcing_fix = false;
         let launch = fireat_launch(FireAtLaunch {
             radial_segments: obj.radial_fire_segments,
             radial_index,
@@ -3136,9 +3060,7 @@ pub(super) fn emit_admitted_fire(
             high_root: high_arc_root(weapon.lobber, raw_source, current_target_coord),
             voxel_downward,
             building_pitch_height,
-            #[cfg(feature = "phobos")]
             arcing_fix,
-            #[cfg(feature = "phobos")]
             lobber: weapon.lobber,
         });
         // A launch with no ballistic solution deletes its bullet
@@ -3189,7 +3111,6 @@ pub(super) fn emit_admitted_fire(
             } else {
                 payload
             };
-            #[cfg(feature = "phobos")]
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
             // `BulletClass::Fire` (`0x006FF014`) at the launch source.
@@ -3241,7 +3162,6 @@ pub(super) fn emit_admitted_fire(
     // Phobos `TechnoClass_FireAt_LateLogic` (`0x6FF660`): the fired bullet
     // remembers the interceptor TechnoType and is Targeted; an armorless
     // target bullet becomes Locked.
-    #[cfg(feature = "phobos")]
     if let Some(interceptor) = obj.phobos_interceptor.as_ref()
         && let TargetKind::Bullet(target_bullet) = snap.target
     {
@@ -3310,7 +3230,6 @@ pub(super) fn emit_admitted_fire(
         // `FiringAnim_LastFacing`/`LastCoords` start zero (`Ext/Anim/Body.h:57-61`);
         // only `UpdateAsFiringAnim` writes them, so the first pass always
         // re-picks the direction type and re-anchors the muzzle.
-        #[cfg(feature = "phobos")]
         firing_anim: (!weapon.anim.is_empty() && weapon.phobos_anim_update(rules)).then(|| {
             crate::sim::anim_class::FiringAnimState {
                 weapon: world.interner.intern(selected.weapon_id),
@@ -3353,10 +3272,7 @@ pub(super) fn emit_admitted_fire(
         // `Ext/Techno/Hooks.Firing.cpp:821-836`): a weapon with
         // `TurretRecoil.Suppress=yes` skips the whole vanilla recoil arm, so
         // the entity's recoil state stays clear.
-        #[cfg(feature = "phobos")]
         let recoil_suppressed = weapon.phobos_turret_recoil_suppress();
-        #[cfg(not(feature = "phobos"))]
-        let recoil_suppressed = false;
         if !recoil_suppressed {
             entity.fire_voxel_recoil(has_turret);
         }
@@ -3510,7 +3426,6 @@ pub(super) fn emit_admitted_fire(
         // Phobos `SetChargeTurretDelay` hooks this rearm site (`0x6FF29E`);
         // the just-fired shot's list item (`CurrentBurstIndex - 1`, `0x6FF27C`
         // increments before GetROF) overrides the charge denominator.
-        #[cfg(feature = "phobos")]
         {
             let burst_index = if weapon.burst > 1 {
                 entity.weapon_burst.index()
@@ -3555,7 +3470,6 @@ pub(super) fn emit_admitted_fire(
     // target, the feedback weapon's `Damage=`/`Warhead=`/`Bright=` and no
     // firing house (`DetonateAt`'s default). An open-topped passenger skips
     // it unless the feedback weapon's own `FireInTransport=`.
-    #[cfg(feature = "phobos")]
     if let Some(feedback_name) = weapon.phobos_feedback_weapon()
         && let Some(feedback) = rules.weapon(feedback_name)
     {
@@ -3662,7 +3576,6 @@ pub(super) fn emit_admitted_fire(
     // Scalable work stay here for ordinary and direct mission FireAt callers.
     // Phobos `InfantryClass_FireAt_ReloadInTransport` (0x51DF82): a
     // transported infantryman restarts its reload clock before Ares' arm.
-    #[cfg(feature = "phobos")]
     if snap.category == EntityCategory::Infantry {
         world.reload_in_transport_after_infantry_fire(rules, snap.stable_id, binary_frame as i32);
     }
@@ -3776,7 +3689,6 @@ pub(super) fn emit_admitted_fire(
 /// firer's cell; the first cell inside the map whose gate admits it wins.
 /// Running out answers no cell, which the caller treats as `0x6FE4E7`'s
 /// no-shot return.
-#[cfg(feature = "phobos")]
 fn phobos_area_fire_random_cell(
     world: &mut Simulation,
     firer: u64,
@@ -3841,7 +3753,6 @@ fn phobos_area_fire_random_cell(
 /// (`Ext/WeaponType/Body.cpp:210-223`): true exactly when no target gate is
 /// authored. VERA models every group except the CE/health/veterancy trio's
 /// AE lists, which it does carry (`has_attach_effect_gates`).
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_skip_weapon_picking(weapon: &WeaponType) -> bool {
     let targeting = weapon.weapon_targeting();
     targeting.can_target == crate::rules::phobos_crit::AffectedTarget::ALL
@@ -3856,7 +3767,6 @@ pub(crate) fn phobos_skip_weapon_picking(weapon: &WeaponType) -> bool {
 /// the cell gate, then every Techno in the cell must pass the house filter
 /// (when an owner is supplied) and `IsTechnoEligible`. `explicit_empty` is
 /// the random arm's `true`; the base/self arms pass `false` and no owner.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_area_fire_cell_gate(
     world: &Simulation,
@@ -4004,7 +3914,6 @@ fn fireat_tail(
         // `FireOnce.ResetSequence=no` marks the infantryman before the
         // `Assign_Target(NULL)` below, whose class target-change block then
         // skips the latch reset and idle `Do_Action`.
-        #[cfg(feature = "phobos")]
         if snap.category == EntityCategory::Infantry && !weapon.phobos_fire_once_reset_sequence() {
             world
                 .substrate
@@ -4512,7 +4421,6 @@ pub(crate) fn visit_fire(
                                 .map(|target| target.type_ref())
                         })?,
                     TargetKind::Cell(..) => actor.type_ref(),
-                    #[cfg(feature = "phobos")]
                     TargetKind::Bullet(..) => actor.type_ref(),
                 };
                 Some(AdmittedFire {
@@ -5167,7 +5075,6 @@ fn infantry_fire_frame(
 /// index's delay is clamped to one frame because the sequence advances once per
 /// frame. Returns the cumulative delay up to the current shot and the projected
 /// delay after it (the current index's delay counted twice).
-#[cfg(feature = "phobos")]
 fn phobos_burst_sequence_delays(
     weapon: &WeaponType,
     burst_index: i32,
@@ -5193,7 +5100,6 @@ fn phobos_burst_sequence_delays(
 
 /// `pThis->Type->Sequence->GetSequence(pThis->SequenceAnim).CountFrames`: the
 /// live firing action's frames per facing, 0 without a record.
-#[cfg(feature = "phobos")]
 fn phobos_infantry_sequence_frames(
     entity: &crate::sim::game_entity::GameEntity,
     sequences: Option<&SequenceSet>,
@@ -5226,7 +5132,6 @@ fn phobos_infantry_sequence_frames(
 ///
 /// The pause-class `DelayedFire` step runs here, before the
 /// `frame != firingFrame` test, at `:89-90`.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy)]
 struct FireUpGate {
     /// Native's `SkipFiring` answer for this frame.
@@ -5236,7 +5141,6 @@ struct FireUpGate {
     pause_handled: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl FireUpGate {
     /// Fail-open answers: let the launch run, leave `FireAt` its own step.
     const fn no_skip() -> Self {
@@ -5247,7 +5151,6 @@ impl FireUpGate {
     }
 }
 
-#[cfg(feature = "phobos")]
 fn phobos_unit_fire_up_skips(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -5452,10 +5355,7 @@ pub(crate) fn estimated_damage_on(
             occupied: None,
             bunkered: None,
             open_topped: None,
-            #[cfg(feature = "phobos")]
             ae_firepower: attacker.phobos_stat_multipliers().firepower,
-            #[cfg(not(feature = "phobos"))]
-            ae_firepower: 1.0,
         },
         divisors: damage::DefenceDivisors {
             house_type_armor: NativeF32Bits::from_bits(house_type_armor.to_bits()),

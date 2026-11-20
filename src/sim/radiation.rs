@@ -141,13 +141,11 @@ impl RadSite {
     }
 
     /// The kept firing house, for the site's damage call.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn firing_house(&self) -> Option<InternedId> {
         self.firing_house
     }
 
     /// The kept invoker object, for the site's damage call.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn invoker(&self) -> Option<u64> {
         self.invoker
     }
@@ -286,18 +284,12 @@ fn fade_rad_tint(base: [i32; 3], remaining: i32, duration: i32) -> [i32; 3] {
 /// constructor's `FindOrAllocate(GameStrings::Radiation)`. `None` means no
 /// catalog exists (every build without the Phobos capability).
 fn bound_radiation_type(rules: &RuleSet, requested: Option<&str>) -> Option<String> {
-    #[cfg(feature = "phobos")]
     {
         rules
             .radiation
             .radiation_types
             .bound_entry(requested)
             .map(|entry| entry.name().to_owned())
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, requested);
-        None
     }
 }
 
@@ -316,9 +308,6 @@ pub(crate) fn clamp_level(level: f64, level_max: i32) -> i32 {
 // CellClass::RadLevel_Increase/Decrease @ 0x00487CE0/0x00487D00 mutate
 // one retained F0 total, including each operation's binary64 store. Phobos
 // replaces these with CellExt::RadLevels contributions attributed by site.
-#[cfg(not(feature = "phobos"))]
-type CellRadiation = f64;
-#[cfg(feature = "phobos")]
 type CellRadiation = BTreeMap<(u16, u16), f64>;
 
 /// The per-cell radiation field + site registry. Persisted and state-hashed.
@@ -474,11 +463,6 @@ impl RadiationState {
         let Some(level) = self.cells.get(&cell) else {
             return 0.0;
         };
-        #[cfg(not(feature = "phobos"))]
-        {
-            *level
-        }
-        #[cfg(feature = "phobos")]
         {
             level.values().sum()
         }
@@ -487,7 +471,6 @@ impl RadiationState {
     /// Per-site levels of one cell, in site-center order: the input the
     /// damage path groups by radiation type, as native `CellExt::RadLevels`
     /// is.
-    #[cfg(feature = "phobos")]
     pub(crate) fn cell_site_levels(
         &self,
         cell: (u16, u16),
@@ -546,9 +529,6 @@ impl RadiationState {
     /// state hashing and the render glow layer.
     pub fn iter_cells(&self) -> impl Iterator<Item = ((u16, u16), f64)> {
         self.cells.iter().map(|(cell, level)| {
-            #[cfg(not(feature = "phobos"))]
-            let level = *level;
-            #[cfg(feature = "phobos")]
             let level = level.values().sum();
             (*cell, level)
         })
@@ -571,12 +551,6 @@ impl RadiationState {
     }
 
     fn stored_cell_level(&self, cell: (u16, u16), site: (u16, u16)) -> f64 {
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = site;
-            self.cell_level(cell)
-        }
-        #[cfg(feature = "phobos")]
         {
             self.cells
                 .get(&cell)
@@ -587,16 +561,6 @@ impl RadiationState {
     }
 
     fn store_cell_level(&mut self, cell: (u16, u16), site: (u16, u16), value: NativeF64Bits) {
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = site;
-            if value == NativeF64Bits::POSITIVE_ZERO {
-                self.cells.remove(&cell);
-            } else {
-                self.cells.insert(cell, f64::from_bits(value.bits()));
-            }
-        }
-        #[cfg(feature = "phobos")]
         {
             let entry = self.cells.entry(cell).or_default();
             if value == NativeF64Bits::POSITIVE_ZERO {
@@ -777,7 +741,6 @@ impl RadiationState {
                 // one of its parameters, so record the resolved values once
                 // per creation. Stock play binds the default type and the
                 // line then matches the `[Radiation]` globals.
-                #[cfg(feature = "phobos")]
                 log::info!(
                     "radiation site ({}, {}) type={:?} level={} duration={} color={:?} \
                      level_factor={} light_factor={} tint_factor={}",

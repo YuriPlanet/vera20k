@@ -49,7 +49,6 @@ pub struct BasicSection {
     /// `src/Misc/Hooks.UI.cpp:345-373`). An absent key keeps the constructor
     /// value; `Ext/Scenario/Hooks.cpp:21` also reads the same flag under the
     /// scenario's own MISSIONMD section.
-    #[cfg(feature = "phobos")]
     pub show_briefing: Option<bool>,
     /// Declared INI format version used by the map.
     pub new_ini_format: Option<i32>,
@@ -242,7 +241,6 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
             .is_present("AltHomeCell")
             .then(|| section.read_int("AltHomeCell", 699)),
         theme: section.read_name("Theme", 0x80).map(str::to_string),
-        #[cfg(feature = "phobos")]
         show_briefing: section.read_bool_value("ShowBriefing"),
         // ReadInt(0) at `0x0068A151`.
         new_ini_format: section
@@ -405,7 +403,6 @@ mod tests {
     /// Phobos `Ext/Scenario/Body.cpp:167`: the `[Basic] ShowBriefing` read
     /// keeps the false constructor when the key is absent, and accepts an
     /// explicit yes/no.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_basic_show_briefing_flag_defaults_to_absent_and_reads_both_spellings() {
         let absent = parse_basic_section(&IniFile::from_str("[Basic]\nName=Test\n"));

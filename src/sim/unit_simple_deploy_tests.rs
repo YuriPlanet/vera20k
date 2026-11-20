@@ -780,7 +780,6 @@ fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
 
 /// A simple deployer scene for the Phobos deploy-ammo keys
 /// (`Ext/UnitType/Body.cpp:45-49`).
-#[cfg(feature = "phobos")]
 fn phobos_deploy_scene(lines: &str) -> (Simulation, RuleSet, u64) {
     let ini = IniFile::from_str(&format!(
         "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
@@ -800,7 +799,6 @@ fn phobos_deploy_scene(lines: &str) -> (Simulation, RuleSet, u64) {
 /// Phobos `UnitExt::HandleOnDeployAmmoChange`
 /// (`Ext/Unit/Body.cpp:239-256`): the add applies when a deploy and again when
 /// an undeploy completes, clamped by the type's Ammo.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_add_on_deploy_rewrites_ammo_on_both_transitions() {
     let (mut sim, rules, id) = phobos_deploy_scene("Ammo.AddOnDeploy=-3\n");
@@ -826,7 +824,6 @@ fn phobos_add_on_deploy_rewrites_ammo_on_both_transitions() {
 
 /// Phobos `UnitExt::HasAmmoToDeploy` (`Ext/Unit/Body.cpp:218-237`): the
 /// `Ammo.DeployUnlock*` band admits only counts inside it.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_deploy_unlock_band_gates_the_player_check() {
     let (mut sim, rules, id) =
@@ -862,7 +859,6 @@ fn phobos_deploy_unlock_band_gates_the_player_check() {
 /// Phobos `UnitExt::DepletedAmmoActions` (`Ext/Unit/Body.cpp:149-195`): the
 /// unit queues Unload while its ammo is in the auto-deploy band and cancels
 /// with Guard when it leaves.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_auto_deploy_band_queues_and_cancels_unload() {
     let (mut sim, rules, id) =
@@ -912,7 +908,6 @@ fn phobos_auto_deploy_band_queues_and_cancels_unload() {
 /// a non-empty `DeployingAnims=` picks by primary facing,
 /// `ReverseForUndeploy=no` plays the undeploy animation forward and
 /// `UseUnitDrawer=no` leaves the animation off the cell drawer.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_deploying_anim_keys_select_facing_type_reverse_and_drawer() {
     let rules_with = |keys: &str| {

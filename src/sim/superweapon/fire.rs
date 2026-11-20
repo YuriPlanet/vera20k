@@ -1007,7 +1007,6 @@ fn launch(
     }
     // Phobos `SWTypeExt::FireSuperWeaponExt`'s tail (`Ext/SWType/FireSuperWeapon.cpp:32`):
     // `SW.Next` chained launches, the type's Convert pairs, then `SW.Link`.
-    #[cfg(feature = "phobos")]
     super::chaining::apply_phobos_launch_tail(
         sim,
         rules,
@@ -1020,7 +1019,6 @@ fn launch(
     // `sw_ext.ShotCount++` (`Ext/SWType/FireSuperWeapon.cpp:45`) runs at the
     // shared Launch tail for stock-handled types; the Ares handler kinds
     // already counted through `finish_ares_launch`.
-#[cfg(feature = "phobos")]
     if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type_id) {
         instance.record_launch(sim.session.binary_frame() as i32);
     }
@@ -1030,7 +1028,6 @@ fn launch(
 /// Phobos `SWTypeExt::ApplyTypeConversion` (`Ext/SWType/FireSuperWeapon.cpp:350-354`):
 /// every Foot in the global array converts through the SW's pairs with the
 /// launching house as the source.
-#[cfg(feature = "phobos")]
 pub(super) fn apply_sw_type_conversion(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1069,7 +1066,6 @@ pub(super) fn apply_sw_type_conversion(
 /// RESIDUAL: native Launch also receives `pHouse->IsCurrentPlayer()`; the
 /// shared launch owner here takes no such flag (no stock arm reads one), so
 /// the launch effects are the same for both audiences.
-#[cfg(feature = "phobos")]
 pub(crate) fn launch_super_preserving_charge(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1120,7 +1116,6 @@ pub(crate) fn launch_super_preserving_charge(
 /// With `RealLaunch=no` the arm runs through
 /// [`launch_super_preserving_charge`] instead, which writes the saved timer
 /// back after the Reset.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn launch_chained_super(
     sim: &mut Simulation,

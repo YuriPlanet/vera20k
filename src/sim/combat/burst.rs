@@ -3,9 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "phobos")]
 use crate::rules::ruleset::RuleSet;
-#[cfg(feature = "phobos")]
 use crate::sim::world::Simulation;
 
 /// Techno+3B8: ctor6F2F01 initializes zero; FireAt6FF274 increments before
@@ -32,7 +30,6 @@ pub struct WeaponBurst {
     /// overrun arm sets it (`Ext/Infantry/Hooks.Firing.cpp:129`) so the current
     /// shot arms the full rearm (`0x6FD054` skips the mid-burst branch) and the
     /// shot's burst step clears it and resets the index (`0x6FF660` logic).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     force_full_rearm: bool,
     /// Phobos `TechnoExt::LastRearmWasFullDelay` (`Ext/Techno/Body.h:48`,
@@ -42,7 +39,6 @@ pub struct WeaponBurst {
     /// full-rearm arm — and by `0x6FD0B5` on that arm. Above `0x6FD054` the
     /// early returns keep it. The charge-turret AttachEffect reader is
     /// [`crate::sim::game_entity::GameEntity::phobos_scale_charge_turret_delay`].
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     last_rearm_was_full_delay: bool,
 }
@@ -56,11 +52,9 @@ impl Hash for WeaponBurst {
             b"radial-fire-index".hash(state);
             self.radial_index.hash(state);
         }
-        #[cfg(feature = "phobos")]
         if self.force_full_rearm {
             b"force-full-rearm".hash(state);
         }
-        #[cfg(feature = "phobos")]
         if self.last_rearm_was_full_delay {
             b"last-rearm-was-full-delay".hash(state);
         }
@@ -122,7 +116,6 @@ impl WeaponBurst {
         // Phobos `TechnoClass_FireAt_LateLogic` (`0x6FF660`,
         // `Ext/Techno/Hooks.Firing.cpp:902-910`): a forced full rearm also
         // restarts the burst, so the next cycle begins at its first shot.
-        #[cfg(feature = "phobos")]
         if self.force_full_rearm {
             self.force_full_rearm = false;
             self.index = 0;
@@ -131,20 +124,17 @@ impl WeaponBurst {
 
     /// Phobos `TechnoExt::ForceFullRearmDelay`; read by GetROF's `0x6FD054`
     /// full-rearm bypass.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn force_full_rearm(self) -> bool {
         self.force_full_rearm
     }
 
     /// The `Burst.FireWithinSequence` overrun arm's set.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_force_full_rearm(&mut self) {
         self.force_full_rearm = true;
     }
 
     /// Phobos `TechnoExt::LastRearmWasFullDelay`: the arm the last GetROF
     /// answered. Its writer is [`Self::record_rearm_arm`].
-    #[cfg(feature = "phobos")]
     pub(crate) const fn last_rearm_was_full_delay(self) -> bool {
         self.last_rearm_was_full_delay
     }
@@ -155,12 +145,9 @@ impl WeaponBurst {
     /// The flag itself is Phobos state (`TechnoExt`), so a build without that
     /// feature records nothing.
     pub(crate) fn record_rearm_arm(&mut self, arm: crate::sim::combat::rof::RearmArm) {
-        #[cfg(feature = "phobos")]
         if let Some(full) = arm.last_rearm_was_full_delay() {
             self.last_rearm_was_full_delay = full;
         }
-        #[cfg(not(feature = "phobos"))]
-        let _ = arm;
     }
 }
 
@@ -170,7 +157,6 @@ impl WeaponBurst {
 /// `LastFireBulletFrame + max(ROF, 30)` elapsed, the index resets and a
 /// positive remaining ROF re-arms the shot. No RNG, attachment or detach is
 /// involved.
-#[cfg(feature = "phobos")]
 pub(crate) fn update_phobos_recount_burst(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let frame = sim.session.binary_frame() as i32;
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -237,9 +223,7 @@ mod tests {
             let mut state = WeaponBurst {
                 index: 7,
                 radial_index: index,
-                #[cfg(feature = "phobos")]
                 force_full_rearm: false,
-                #[cfg(feature = "phobos")]
                 last_rearm_was_full_delay: false,
             };
             assert_eq!(
@@ -502,7 +486,6 @@ mod tests {
     /// (`Ext/Techno/Body.Update.cpp:544-566`): with `RecountBurst` on, a
     /// stale retained index with no target resets and a positive remaining
     /// ROF re-arms the shot.
-    #[cfg(feature = "phobos")]
     #[test]
     fn recount_burst_resets_a_stale_index_and_rearms_the_shot() {
         use crate::rules::ini_parser::IniFile;

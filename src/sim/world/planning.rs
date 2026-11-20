@@ -2046,14 +2046,8 @@ impl Simulation {
 /// answers `TechnoClass::CanUseWaypoint @ 0x0070F070`'s `vt+0xA0` question
 /// with the key.
 fn building_waypoints(rules: &crate::rules::ruleset::RuleSet) -> bool {
-    #[cfg(feature = "phobos")]
     {
         rules.phobos_globals.building_waypoints
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rules;
-        false
     }
     }
 /// A plan's dispatch: the node's MEGAMISSION copy with planning flag 2 that

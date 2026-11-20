@@ -101,7 +101,6 @@ impl TechnoAmmo {
     /// maximum is the target type's live `Ammo=`, which is `-1` for a type
     /// that leaves it unset, so a clamped store can be negative there.
     /// Returns the new count.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_warhead_delta(&mut self, delta: i32, max_ammo: i32) -> i32 {
         let new = self.current.wrapping_add(delta);
         let new = new.max(0);
@@ -111,7 +110,6 @@ impl TechnoAmmo {
 
     /// Phobos `UnitExt::HandleOnDeployAmmoChange` (`Ext/Unit/Body.cpp:249`):
     /// the clamped deploy rewrite, followed by StartReloading at the caller.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_current(&mut self, current: i32) {
         self.current = current;
     }

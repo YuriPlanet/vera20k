@@ -33,14 +33,12 @@ struct RegisteredBuilding {
     /// (`Ext/Building/Hooks.cpp:437-454`). `Some` only when the stock
     /// `FactoryPlant=` gate at `0x4414F7..0x4414FF` admitted the building
     /// and either type list is non-empty.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     restricted: Option<RestrictedPlant>,
 }
 
 /// The immutable BuildingType projection `HouseExt::GetRestrictedFactoryPlantMult`
 /// reads (`Ext/House/Body.cpp:538-588`).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct RestrictedPlant {
     /// Native groups its per-type counts by `pType->ArrayIndex`
@@ -65,7 +63,6 @@ pub(crate) struct HouseBaseState {
     /// Phobos `HouseExt::RestrictedFactoryPlants` (`Ext/House/Body.h:54`):
     /// a restricted plant skips House+140's append (`0x441553`), so both
     /// lists have independent lives and both are stable-removed on detach.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     restricted_plants: Vec<u64>,
     /// House+110, appended441443/44908B, stable-removed448983/4FBB8E.
@@ -82,7 +79,6 @@ impl std::hash::Hash for RegisteredBuilding {
         if self.secret_lab {
             b"secret-lab-type-v382".hash(state);
         }
-        #[cfg(feature = "phobos")]
         if let Some(restricted) = &self.restricted {
             b"restricted-plant-v1".hash(state);
             restricted.hash(state);
@@ -95,7 +91,6 @@ impl std::hash::Hash for HouseBaseState {
         self.registrations.hash(state);
         self.buildings.hash(state);
         self.plants.hash(state);
-        #[cfg(feature = "phobos")]
         if !self.restricted_plants.is_empty() {
             b"house-restricted-plants-v1".hash(state);
             self.restricted_plants.hash(state);
@@ -200,7 +195,6 @@ fn project_geometry(
 
 impl RegisteredBuilding {
     fn new(id: u64, object: &ObjectType) -> Self {
-        #[cfg(feature = "phobos")]
         let restricted =
             (object.factory_plant && object.phobos_factory_plant.restricted()).then(|| {
                 RestrictedPlant {
@@ -214,7 +208,6 @@ impl RegisteredBuilding {
             id,
             plant: object.factory_plant.then_some(object.cost_bonuses),
             secret_lab: object.secret_lab().enabled(),
-            #[cfg(feature = "phobos")]
             restricted,
         }
     }
@@ -255,7 +248,6 @@ impl HouseBaseState {
 
     /// Phobos `HouseExt::RestrictedFactoryPlants` in vector order
     /// (`Ext/House/Body.h:54`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn restricted_plants(&self) -> &[u64] {
         &self.restricted_plants
     }
@@ -268,7 +260,6 @@ impl HouseBaseState {
     /// SSE single-precision round-to-nearest, not the x87 masked-chop path.
     /// `factor_slot()` is the native `WhatAmI()` switch including the
     /// `BuildCat == Combat` -> DefensesCostBonus arm (`ObjectType::factor_slot`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn restricted_factory_plant_multiplier(&self, target: &ObjectType) -> NativeF32Bits {
         let mut mult = 1.0f32;
         let slot = target.factor_slot();
@@ -361,7 +352,6 @@ impl HouseBaseState {
         // `HouseExt::OnDetach` (`Ext/House/Body.cpp:743-772`, :765-770)
         // erases a restricted plant separately: House+140 never held it,
         // so the ordinary removal cannot cover this list.
-        #[cfg(feature = "phobos")]
         {
             remove_first(&mut self.restricted_plants, id);
         }
@@ -379,11 +369,9 @@ impl HouseBaseState {
         }
         // The stock `FactoryPlant=` test at `0x4414F7..0x4414FF` gates the
         // whole House+140 append, so a restricted plant must be a plant too.
-        #[cfg(feature = "phobos")]
         let restricted = self
             .registration(id)
             .is_some_and(|entry| entry.plant.is_some() && entry.restricted.is_some());
-        #[cfg(feature = "phobos")]
         if restricted {
             self.restricted_plants.push(id);
         } else if self
@@ -471,12 +459,9 @@ impl Simulation {
                 // (`Ext/House/Hooks.cpp:94-105`, `0x4FD1CD`/`0x4FD463`):
                 // an `IgnoreForBaseCenter=yes` building does not count toward
                 // the House's base center, so it cannot anchor this one.
-                #[cfg(feature = "phobos")]
                 let ignored = self
                     .object_type(building.type_ref(), rules)
                     .is_some_and(|object| object.phobos_ignore_for_base_center);
-                #[cfg(not(feature = "phobos"))]
-                let ignored = false;
                 (!building.lifecycle.in_limbo()
                     && building.type_facts.build_const_eligible()
                     && !ignored)
@@ -895,7 +880,6 @@ impl Simulation {
                 // and the weighted denominator is the cost sum it accumulates,
                 // so the building leaves the numerator and its denominator
                 // together — the one list below feeds both passes.
-                #[cfg(feature = "phobos")]
                 if object.phobos_ignore_for_base_center {
                     continue;
                 }
@@ -1030,19 +1014,13 @@ impl Simulation {
         owner: InternedId,
         object: &ObjectType,
     ) -> Option<HouseCostFactors> {
-        #[cfg(feature = "phobos")]
         let mut factors = Self::house_cost_factors(houses, owner)?;
-        #[cfg(not(feature = "phobos"))]
-        let factors = Self::house_cost_factors(houses, owner)?;
-        #[cfg(feature = "phobos")]
         {
             factors.restricted_plant = houses
                 .get(&owner)?
                 .base_projection()
                 .restricted_factory_plant_multiplier(object);
         }
-        #[cfg(not(feature = "phobos"))]
-        let _ = object;
         Some(factors)
     }
 
@@ -1059,9 +1037,7 @@ impl Simulation {
         // Native `Cost_Of` re-enters the hooked base for the bundled
         // PadAircraft and the FreeUnit (`0x45EDDA`, `0x45EE0C..0x45EE3F`), so
         // the Phobos restricted factor is resolved for each priced type.
-        #[cfg(feature = "phobos")]
         let base = self.houses.get(&owner).map(|house| house.base_projection());
-        #[cfg(feature = "phobos")]
         if let Some(factors) = factors.as_mut() {
             factors.restricted_plant = base
                 .as_ref()
@@ -1070,17 +1046,11 @@ impl Simulation {
                 });
         }
         rules.cost_of_with_restricted(object, factors.as_ref(), |priced| {
-            #[cfg(feature = "phobos")]
             {
                 base.as_ref()
                     .map_or(crate::util::native_x87::NativeF32Bits::ONE, |base| {
                         base.restricted_factory_plant_multiplier(priced)
                     })
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                let _ = priced;
-                crate::util::native_x87::NativeF32Bits::ONE
             }
         })
     }
@@ -1762,7 +1732,6 @@ mod tests {
                     id: u64::MAX,
                     plant: Some(factors),
                     secret_lab: false,
-                    #[cfg(feature = "phobos")]
                     restricted: None,
                 });
                 house.base_projection_mut().plants.push(u64::MAX);
@@ -2085,7 +2054,6 @@ mod tests {
                     id,
                     plant: Some(bonus),
                     secret_lab: false,
-                    #[cfg(feature = "phobos")]
                     restricted: None,
                 });
                 state.append_membership(id);
@@ -2316,7 +2284,6 @@ Foundation=1x1
     /// 94-105`, `0x4FD1CD`/`0x4FD463`): a building with
     /// `IgnoreForBaseCenter=yes` does not count toward the House's base
     /// center, so the last BuildConst anchor skips it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn ignore_for_base_center_skips_the_build_const_anchor() {
         for (ignore, expected) in [(true, (5, 5)), (false, (9, 9))] {
@@ -2421,7 +2388,6 @@ Foundation=1x1
     /// per TechnoType, so the pair uses two equal 1x1 types and only one carries
     /// it: the plain building's cell remains, and without the key the average of
     /// both returns.
-    #[cfg(feature = "phobos")]
     #[test]
     fn an_ignored_building_leaves_the_centre_average() {
         for (ignore, expected) in [(true, (5, 5)), (false, (7, 5))] {

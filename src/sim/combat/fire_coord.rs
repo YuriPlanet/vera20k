@@ -98,7 +98,6 @@ pub(crate) fn effect_target_coordinate(
 /// [`crate::sim::combat::inviso_scatter::random_direction_coord`] owner, reached
 /// through [`crate::sim::projectile::launch::random_coords_near`], so this draw
 /// and every other Phobos caller share one angle formula.
-#[cfg(feature = "phobos")]
 pub(crate) fn visual_scatter_target(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -436,10 +435,7 @@ pub(crate) fn fire_coordinate(
     // `AlternateFLH.ApplyVehicle` (else `[General]`, default no) is on. An
     // Infantry rider keeps the stock unconditional port
     // (`InfantryClass::GetFLH @ 0x00523250`).
-    #[cfg(feature = "phobos")]
     let unit_port = snap.category == EntityCategory::Unit;
-    #[cfg(not(feature = "phobos"))]
-    let unit_port = false;
     if (snap.category == EntityCategory::Infantry || unit_port)
         && let Some(fire) = open_topped_port_coordinate(world, rules, snap)
     {
@@ -463,14 +459,12 @@ pub(crate) fn fire_coordinate(
     // and only the burst offset is absolute — the hook mirrors whatever it
     // selected when `GetBurstFLH` found nothing (`Hooks.Firing.cpp:1050-1059`),
     // which covers the state override as well as the GetWeapon record.
-    #[cfg(feature = "phobos")]
     let (deployed, crawling) = world
         .substrate
         .entities
         .get(snap.stable_id)
         .map(infantry_flh_states)
         .unwrap_or((false, false));
-    #[cfg(feature = "phobos")]
     let burst_flh = obj.burst_flh(
         weapon_index,
         snap.veterancy >= super::veterancy::RANK_ELITE_U16,
@@ -483,10 +477,7 @@ pub(crate) fn fire_coordinate(
         },
         burst_index,
     );
-    #[cfg(feature = "phobos")]
     let simple_flh = obj.infantry_state_flh(weapon_index, deployed, crawling);
-    #[cfg(not(feature = "phobos"))]
-    let (burst_flh, simple_flh) = (None, None);
     // GetFLH6F3B28 reads virtual GetWeapon's complete record, including an
     // installed upgrade's normal FLH (Building4526F0), at this query point.
     let selected_flh = if let Some(burst) = burst_flh {
@@ -522,7 +513,6 @@ pub(crate) fn fire_coordinate(
     // `:1062-1071`) takes no mirror at all. The unhooked body VERA ports
     // otherwise adds the base first and mirrors the combined triple
     // (`0x006F3B37..0x006F3B58`, `0x006F3C82`).
-    #[cfg(feature = "phobos")]
     let (mirrored_lateral, burst_parity) = (
         if snap.flh_override.is_some() || burst_flh.is_some() || weapon_index < 0 {
             flh.lateral
@@ -531,8 +521,6 @@ pub(crate) fn fire_coordinate(
         },
         0,
     );
-    #[cfg(not(feature = "phobos"))]
-    let (mirrored_lateral, burst_parity) = (flh.lateral, burst_index);
     let flh = Flh {
         forward: flh.forward.wrapping_add(base_coords.forward),
         lateral: mirrored_lateral.wrapping_add(base_coords.lateral),
@@ -546,18 +534,14 @@ pub(crate) fn fire_coordinate(
     // otherwise the FLH stays hull-relative: no `TurretOffset` and the body
     // facing instead of the turret aim. The regular arm keeps
     // `isOnTurret = true` and still needs the type's `Turret`.
-    #[cfg(feature = "phobos")]
     let allow_on_turret = if weapon_index < 0 {
         obj.alternate_flh_on_turret()
             .unwrap_or(rules.phobos_globals.alternate_flh_on_turret)
     } else {
         snap.on_turret
     };
-    #[cfg(feature = "phobos")]
     let hull_space =
         !(allow_on_turret && (snap.category == EntityCategory::Structure || obj.has_turret));
-    #[cfg(not(feature = "phobos"))]
-    let hull_space = false;
     let (turret_offset, flh_facings) = if hull_space {
         (
             [0, 0, 0],
@@ -573,10 +557,7 @@ pub(crate) fn fire_coordinate(
         // `UnitTypeExt::ApplyTurretOffsetUnit` (`Ext/UnitType/Body.cpp:5-14`)
         // translates the matrix by `ExtraTurretOffset<n>=` instead of the
         // stock art `TurretOffset=`.
-        #[cfg(feature = "phobos")]
         let offset = phobos_turret_pivot_offset(world, snap, obj, burst_index, art);
-        #[cfg(not(feature = "phobos"))]
-        let offset = [art.map_or(0, |art| art.turret_offset[0]), 0, 0];
         (offset, base.facings)
     };
     let flh_delta = flh_world_delta(
@@ -676,7 +657,6 @@ pub(crate) fn fire_coordinate(
 /// larger than `ExtraTurretCount=` reads adjacent heap memory once the
 /// quotient passes the vector. VERA keeps the stock pivot for that index
 /// rather than inventing an offset.
-#[cfg(feature = "phobos")]
 fn phobos_turret_pivot_offset(
     world: &Simulation,
     snap: &FireSource,
@@ -717,7 +697,6 @@ fn phobos_turret_pivot_offset(
 /// RESIDUAL: the building arm assumes the native turret pivot is the type's
 /// `TurretOffset` and its angle the object's PrimaryFacing; a building whose
 /// ART declares a voxel-barrel pivot chain is not re-projected here.
-#[cfg(feature = "phobos")]
 pub(crate) fn custom_flh_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -779,7 +758,6 @@ pub(crate) fn custom_flh_coordinate(
 
 /// Phobos `InfantryClass` states the firing offset reads: `IsDeployed` wins
 /// over `Crawling`, and neither applies to another TechnoType.
-#[cfg(feature = "phobos")]
 pub(crate) fn infantry_flh_states(source: &crate::sim::game_entity::GameEntity) -> (bool, bool) {
     if source.category() != EntityCategory::Infantry {
         return (false, false);
@@ -1197,7 +1175,6 @@ fn open_topped_port_coordinate(
     let transport_obj = world.interner.object_type(transport.type_ref(), rules)?;
     // `_GetFLH` tests the carrier's extension, not the passenger's
     // (`Ext/Techno/Hooks.Firing.cpp:1012`).
-    #[cfg(feature = "phobos")]
     if rider.category() == EntityCategory::Unit
         && !transport_obj
             .alternate_flh_apply_vehicle()
@@ -1211,21 +1188,15 @@ fn open_topped_port_coordinate(
     // Phobos's consolidated hook takes `AlternateFLHs[index]` and skips the
     // burst parity entirely (`Hooks.Firing.cpp:1062-1071`), so a port offset
     // keeps its lateral on every shot; the unhooked body mirrors it.
-    #[cfg(feature = "phobos")]
     let burst_parity = 0;
-    #[cfg(not(feature = "phobos"))]
-    let burst_parity = transport.weapon_burst.index() as u8;
     // `allowOnTurret` (`Hooks.Firing.cpp:1069-1070`) with false keeps the port
     // hull-relative: no `TurretOffset` and the body facing, not the turret aim.
     // The consolidated transform also needs the carrier type's `Turret`
     // (`Ext/Techno/Body.Internal.cpp:54`).
-    #[cfg(feature = "phobos")]
     let turret_space = transport_obj
         .alternate_flh_on_turret()
         .unwrap_or(rules.phobos_globals.alternate_flh_on_turret)
         && (source.category == EntityCategory::Structure || transport_obj.has_turret);
-    #[cfg(not(feature = "phobos"))]
-    let turret_space = true;
     let (turret_offset, facings) = if turret_space {
         (base.art.map_or(0, |art| art.turret_offset[0]), base.facings)
     } else {
@@ -1649,7 +1620,6 @@ mod tests {
             let obj = rules.object(row["owner"].as_str().unwrap()).unwrap();
             let burst_index = int(&row["burst_index"]) as u8;
             let base = Flh::from(triple(&row["base"]));
-            #[cfg(feature = "phobos")]
             if burst_index % 2 == 1 && base.lateral != 0 {
                 // Phobos's hook mirrors the FLH it selected and adds the base
                 // afterwards (`Hooks.Firing.cpp:1058` then `:1083`), so this
@@ -1697,7 +1667,6 @@ mod tests {
     /// argument after it (`:1083`), so an odd shot with a base of twice the
     /// lateral lands on exactly the same triple as an even shot with no base.
     /// The unhooked body mirrors `FLH + base`, where those two never meet.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_get_flh_adds_the_base_after_the_mirror() {
         let rules = rules();
@@ -1724,7 +1693,6 @@ mod tests {
     /// burst parity at all and a port offset keeps its lateral on every shot.
     /// The unhooked body mirrors it, which is what `open_topped_port_coordinate`
     /// keeps for a non-phobos build.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_alternate_flh_takes_no_burst_mirror() {
         let rules = rules();
@@ -1761,7 +1729,6 @@ mod tests {
     /// FLH and `TurretOffset` differ between hull and turret space; `CARRY_*`
     /// are open-topped transports; `RIDE` is a Unit passenger with its own ART
     /// `AlternateFLH.ApplyVehicle=yes`, which must be ignored.
-    #[cfg(feature = "phobos")]
     fn alternate_flh_rules(global_on_turret: Option<bool>) -> RuleSet {
         let general = global_on_turret
             .map(|on| {
@@ -1804,7 +1771,6 @@ mod tests {
     /// A carrier at (10,10) with one rider at the same cell, so the port
     /// coordinate (carrier base) and the rider's own FLH (same base, +7 Z)
     /// differ without moving either object.
-    #[cfg(feature = "phobos")]
     fn carried_world(
         carrier_type: &str,
         rider_type: &str,
@@ -1852,7 +1818,6 @@ mod tests {
         (world, RIDER_ID)
     }
 
-    #[cfg(feature = "phobos")]
     fn carried_shot(rules: &RuleSet, carrier_type: &str, rider_type: &str) -> ProjectileCoord {
         let rider_category = if rider_type == "GI" {
             EntityCategory::Infantry
@@ -1873,7 +1838,6 @@ mod tests {
     /// keeps `TurretOffset=50` in hull space and rotates `AlternateFLH0=100,0,0`
     /// by the barrel's half turn to -100 (native sine/cosine table, so the sum
     /// -49.99999 truncates to -49); hull space drops both, +100 X.
-    #[cfg(feature = "phobos")]
     #[test]
     fn alternate_flh_on_turret_gates_hull_and_turret_space() {
         let shot = |rules: &RuleSet, type_id: &str, index: i32| {
@@ -1921,7 +1885,6 @@ mod tests {
     /// passenger's own ART says yes in every case and must not matter. An
     /// Infantry rider keeps the stock unconditional port
     /// (`InfantryClass::GetFLH @ 0x00523250`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn alternate_flh_apply_vehicle_gates_the_open_topped_port() {
         let rules = alternate_flh_rules(None);
@@ -2258,7 +2221,6 @@ mod tests {
     }
     /// A Unit with the Phobos multi-turret block: `TurretOffset=50` in art,
     /// two `ExtraTurretOffset<n>=` pivots and `BurstPerTurret=`.
-    #[cfg(feature = "phobos")]
     fn turret_barrel_world(
         extra_turret_count: i32,
         burst_per_turret: i32,
@@ -2288,7 +2250,6 @@ mod tests {
     /// with `UnitTypeExt::ApplyTurretOffsetUnit` (`Ext/UnitType/Body.cpp:5-14`):
     /// `BurstPerTurret=` cycles the matrix's pivot through 0 (the stock
     /// `TurretOffset=`), then `ExtraTurretOffset0=`, `ExtraTurretOffset1=`, ….
-    #[cfg(feature = "phobos")]
     #[test]
     fn burst_per_turret_cycles_the_extra_turret_pivot() {
         let (world, rules, snap) = turret_barrel_world(2, 2);
@@ -2320,7 +2281,6 @@ mod tests {
     /// Native `ApplyTurretOffsetUnit` indexes `ExtraTurretOffsets[turIdx]`
     /// unchecked; a `BurstPerTurret=` beyond `ExtraTurretCount=` reads past
     /// the list. VERA keeps the stock pivot instead of an invented offset.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_burst_turret_index_past_the_authored_list_keeps_the_stock_pivot() {
         let (world, rules, snap) = turret_barrel_world(1, 3);
@@ -2463,7 +2423,6 @@ mod control_link_port_tests {
             // mirror, so an odd row whose port has a lateral is the unhooked
             // expectation. `phobos_alternate_flh_takes_no_burst_mirror` pins the
             // hooked behavior on the synthetic fixture.
-            #[cfg(feature = "phobos")]
             let unhooked_only = {
                 let port = (-1 - row["weapon_index"].as_i64().unwrap()).max(0) as usize;
                 row["burst_index"].as_u64().unwrap() % 2 == 1
@@ -2474,7 +2433,6 @@ mod control_link_port_tests {
                         .unwrap_or(0)
                         != 0
             };
-            #[cfg(feature = "phobos")]
             if unhooked_only {
                 continue;
             }

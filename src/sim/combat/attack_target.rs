@@ -18,7 +18,6 @@ pub enum TargetKind {
     /// (`Ext/Techno/Body.Update.cpp:104-137`): the projectile id in the
     /// authoritative projectile store. Appended so existing wire values keep
     /// their tags.
-    #[cfg(feature = "phobos")]
     Bullet(u64),
 }
 
@@ -41,7 +40,6 @@ impl From<TargetKind> for crate::sim::components::NavTargetRef {
             TargetKind::Cell(rx, ry) => Self::cell(rx, ry),
             // A bullet is never a nav destination; the id names no entity,
             // so a destination built from one ends at its lookup.
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(id) => Self::Object { id },
         }
     }
@@ -55,7 +53,6 @@ impl TargetKind {
             Self::Cell(..) => None,
             // A projectile id belongs to the projectile store, not the
             // Object/Techno stores these callers resolve against.
-            #[cfg(feature = "phobos")]
             Self::Bullet(..) => None,
         }
     }
@@ -89,7 +86,6 @@ impl TargetKind {
             // The interceptor bullet names its prey in
             // `Projectile::interceptor_target` (native's Bullet Target
             // pointer); the ordinary target coordinate stays None.
-            #[cfg(feature = "phobos")]
             Self::Bullet(..) => ProjectileTarget::None,
         }
     }
@@ -254,7 +250,6 @@ pub(crate) fn target_present(
         // The Bullet pointer stays valid until it leaves the bullet store;
         // an intercepted bullet still stored answers true until its AI
         // retires it.
-        #[cfg(feature = "phobos")]
         Some(TargetKind::Bullet(id)) => world.projectiles.get(id).is_some(),
     }
 }
@@ -287,7 +282,6 @@ pub(crate) fn resolve_target_coords(
         TargetKind::Cell(..) => target
             .tarcom_cell(world.resolved_terrain.as_ref())
             .map(|(rx, ry)| cell_center_coords(rx, ry)),
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(id) => {
             // `BulletClass::GetCoords` inherits Object5F65A0's Location.
             let position = world.projectiles.get(id)?.position();
@@ -339,7 +333,6 @@ pub fn object_distance_to(
                 (i32::from(width), i32::from(height))
             }),
         TargetKind::Cell(..) => None,
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => None,
     };
     Some(crate::util::native_x87::object_planar_distance(
@@ -443,7 +436,6 @@ pub(crate) fn attack_world_z_leptons(
                     .map(|target| target.world_coord().z)
             })
             .unwrap_or(0),
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(id) => world
             .projectiles
             .get(id)

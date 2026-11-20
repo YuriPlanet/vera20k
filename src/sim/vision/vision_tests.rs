@@ -2206,7 +2206,6 @@ fn a_computer_houses_sight_opens_no_map_of_its_own() {
 /// `Ext/Techno/Hooks.cpp:2562-2596`): a techno's sight only reaches the
 /// players its resolved `RevealHouses` admits; type overrides country
 /// overrides `[AudioVisual]`.
-#[cfg(feature = "phobos")]
 #[test]
 fn reveal_houses_filters_the_viewer_maps_a_sight_reaches() {
     use crate::rules::ini_parser::IniFile;

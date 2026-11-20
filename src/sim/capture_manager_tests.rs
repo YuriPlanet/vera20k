@@ -1346,7 +1346,6 @@ fn native_overload_update_corpus() {
             // Phobos `CaptureManagerClass_Overload_AI` (`Hooks.cpp:186`)
             // inverts the stock magnitude: rows above one play 0.015 and row
             // one plays 0.03. The sign draw is unchanged.
-            #[cfg(feature = "phobos")]
             let expected_rate = {
                 let sign = native_rate & 0x8000_0000;
                 match native_rate & 0x7fff_ffff {
@@ -1355,8 +1354,6 @@ fn native_overload_update_corpus() {
                     other => other,
                 }
             };
-            #[cfg(not(feature = "phobos"))]
-            let expected_rate = native_rate;
             assert_eq!(rate, expected_rate, "{name}: final native sideways rate");
             let manager = sim
                 .substrate
@@ -2698,7 +2695,6 @@ fn yuri_prime_building_capture_and_release_request_atlas_refresh() {
 // `MindControl.Anim=` override. The stock fixture is patched only where a test
 // needs the key.
 
-#[cfg(feature = "phobos")]
 fn enhanced_rules(replacements: &[(&str, &str)]) -> RuleSet {
     let mut text = RULES.to_owned();
     for (from, to) in replacements {
@@ -2708,7 +2704,6 @@ fn enhanced_rules(replacements: &[(&str, &str)]) -> RuleSet {
     rules_from(&text)
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_size_limits_finite_capacity_and_release_victim() {
     let rules = enhanced_rules(&[
@@ -2761,7 +2756,6 @@ fn mind_control_size_limits_finite_capacity_and_release_victim() {
     assert_eq!(sim.capture_effective_count(tower, &release), Some(2));
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_ignore_size_true_keeps_node_count() {
     let rules = enhanced_rules(&[(
@@ -2783,7 +2777,6 @@ fn mind_control_ignore_size_true_keeps_node_count() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn multi_mind_control_release_victim_frees_at_node_capacity() {
     let base = enhanced_rules(&[]);
@@ -2807,7 +2800,6 @@ fn multi_mind_control_release_victim_frees_at_node_capacity() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_ignore_size_false_drives_the_overload_count() {
     let rules = enhanced_rules(&[
@@ -2852,7 +2844,6 @@ fn mind_control_ignore_size_false_drives_the_overload_count() {
     assert_eq!(sim.capture_effective_count(mind, &nodes_only), Some(2));
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_range_limit_frees_only_distant_victims() {
     let rules = enhanced_rules(&[(
@@ -2910,7 +2901,6 @@ fn mind_control_range_limit_frees_only_distant_victims() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_link_visibility_uses_type_then_global() {
     let rules = enhanced_rules(&[(
@@ -2940,7 +2930,6 @@ fn mind_control_link_visibility_uses_type_then_global() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn warhead_mind_control_anim_overrides_the_global_ring() {
     let rules = enhanced_rules(&[
@@ -3030,7 +3019,6 @@ fn warhead_mind_control_anim_overrides_the_global_ring() {
 /// `CaptureManagerExt::CaptureUnit` arms `BeControlledThreatFrame` for a
 /// positive value and `FreeUnit` clears it
 /// (`Ext/CaptureManager/Body.cpp:142,200-201`).
-#[cfg(feature = "phobos")]
 #[test]
 fn mind_control_threat_delay_arms_the_shield_and_free_unit_clears_it() {
     let detonate = |sim: &mut Simulation, rules: &RuleSet| {
@@ -3152,7 +3140,6 @@ fn a_captured_selected_unit_of_the_local_player_is_deselected() {
 /// stock spark systems, and an unknown sound falls back to the stock voice.
 /// The rewritten row walk also selects row one for a single-row table whose
 /// bound the count exceeds, which the original walk keeps at row zero.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_overload_tables_sound_and_particle_count_override_the_rules() {
     let run = |type_lines: &str, captives: usize| {
@@ -3263,7 +3250,6 @@ fn phobos_overload_tables_sound_and_particle_count_override_the_rules() {
 /// 139-143`): a row is selected only while the link count strictly exceeds
 /// its `Overload.Count` bound, so `Overload.Count=2` stays on the quiet row
 /// with two captives and overloads on the third.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_overload_count_needs_more_links_than_the_bound() {
     let run = |captives: usize| {
@@ -3322,7 +3308,6 @@ fn phobos_overload_count_needs_more_links_than_the_bound() {
 /// `Overload.Damage=25` kills a 75-health controller on the third check. The
 /// type's death sound plays once for the whole episode, and the death frees
 /// the captives with the release voice.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_overload_episode_kills_on_the_type_rows_with_one_voice() {
     let text = RULES.replace(
@@ -3384,7 +3369,6 @@ fn phobos_overload_episode_kills_on_the_type_rows_with_one_voice() {
 /// victim an Ares `MindControl.Permanent=yes` capture replaces is freed
 /// through `FreeUnit(silent)`, so its `MindClearedSound` plays only when the
 /// flag is off.
-#[cfg(feature = "phobos")]
 #[test]
 fn ares_perma_mc_replace_respects_the_free_silent_flag() {
     use crate::sim::world::FrameEffects;
@@ -3419,7 +3403,6 @@ fn ares_perma_mc_replace_respects_the_free_silent_flag() {
 /// `[AudioVisual] MindControl.Permanent.ReplaceSilent=`
 /// (`Ext/Rules/Body.h:50,329` and `:503,999`), the fallback Phobos installs at
 /// the same call.
-#[cfg(feature = "phobos")]
 #[test]
 fn ares_perma_mc_replace_silent_follows_the_warhead_then_the_global() {
     use crate::sim::world::FrameEffects;

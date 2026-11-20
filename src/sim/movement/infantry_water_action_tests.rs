@@ -587,7 +587,6 @@ fn physical_wet_death_advances_in_logic_and_uninitializes_without_animation() {
 /// request keeps its land record instead of becoming Swim. The type's art key
 /// wins over `[General] OnlyUseLandSequences=` when both are set, and the
 /// unset art key keeps the global.
-#[cfg(feature = "phobos")]
 #[test]
 fn only_use_land_sequences_skips_the_water_remap() {
     let input = json!({"zone": 3, "land": 2, "request": 3});
@@ -650,7 +649,6 @@ fn only_use_land_sequences_skips_the_water_remap() {
 /// hook 0x51D7E0): stock remaps an in-water SecondaryFire (4) or
 /// SecondaryProne (8) request to WetAttack (0x16); the resolved key no keeps
 /// the land record. The default global is yes, so stock is unchanged.
-#[cfg(feature = "phobos")]
 #[test]
 fn secondary_fire_sequence_land_only_keeps_the_land_record() {
     let input = json!({"zone": 3, "land": 2, "request": 4});

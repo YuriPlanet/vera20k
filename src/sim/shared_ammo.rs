@@ -28,10 +28,7 @@ pub(crate) fn start_reloading(
     id: u64,
     now: i32,
 ) {
-    #[cfg(feature = "phobos")]
     update_shared_ammo(entities, interner, rules, id);
-    #[cfg(not(feature = "phobos"))]
-    let _ = (interner, rules);
     let Some(object) = entities
         .get(id)
         .and_then(|entity| interner.object_type(entity.type_ref(), rules))
@@ -45,7 +42,6 @@ pub(crate) fn start_reloading(
 
 /// `TechnoExt::UpdateSharedAmmo` (`Ext/Techno/Body.Update.cpp:825`): one round
 /// per eligible passenger, in CargoClass list-head-first order.
-#[cfg(feature = "phobos")]
 fn update_shared_ammo(
     entities: &mut EntityStore,
     interner: &StringInterner,

@@ -7,7 +7,6 @@ use crate::rules::ini_parser::IniFile;
 /// ladder's owner/neutral/alliance buckets, with the neutral test on the
 /// target house. Both the sim combat owner and the radar's
 /// `RadarInvisibleToHouse` test delegate here.
-#[cfg(feature = "phobos")]
 #[test]
 fn can_target_house_ladder_buckets() {
     assert!(can_target_house_ladder(
@@ -340,7 +339,6 @@ fn invalid_shield_nullable_values_preserve_unset_defaults() {
 /// `TemplateDef.h:2227..2245`) and the action keys as
 /// `Valueable<AttachedAnimFlag>` under the constructor `Hides`
 /// (`ShieldTypeClass.cpp:56..57,92..93`).
-#[cfg(feature = "phobos")]
 #[test]
 fn shield_idle_anim_keys_read_damageable_and_actions() {
     let mut catalog = ShieldTypeCatalog::default();

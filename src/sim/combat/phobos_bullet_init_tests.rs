@@ -180,7 +180,6 @@ fn an_inviso_detonation_takes_no_vanilla_scatter_draw() {
 /// (`:130-131`): a `Parachuted=yes` type starts its accumulated rate at 0
 /// (`Ext/Bullet/Body.h:61`) and takes `Parachuted.MaxFallRate=`, else
 /// `[General] ParachuteMaxFallRate`.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_parachuted_bullet_type_starts_its_descent_at_the_general_cap() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -223,7 +222,6 @@ fn a_parachuted_bullet_type_starts_its_descent_at_the_general_cap() {
 
 /// The same source/gun scene as the cap test, with the Phobos parabomb keys
 /// on `[SHOT]` (`Ext/BulletType/Body.cpp:79-82`).
-#[cfg(feature = "phobos")]
 fn parabomb_scene(bullet_keys: &str) -> (Simulation, RuleSet, u64, u64) {
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nParachuteMaxFallRate=-4\n\
@@ -245,7 +243,6 @@ fn parabomb_scene(bullet_keys: &str) -> (Simulation, RuleSet, u64, u64) {
     (world, rules, source, bullet)
 }
 
-#[cfg(feature = "phobos")]
 fn chute_art() -> crate::rules::art_data::ArtRegistry {
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
         "[CHUTE]\nRate=900\nLoopStart=0\nLoopEnd=1\nLoopCount=-1\n",
@@ -258,7 +255,6 @@ fn chute_art() -> crate::rules::art_data::ArtRegistry {
 /// 585-608`, hook `0x5F5A62`): a `Parachuted=yes` bullet constructs its
 /// `BombParachute=` AnimType at the spawn coordinate and remaps it to the
 /// firing House.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_parachuted_bullet_spawns_its_bomb_parachute_canopy() {
     let (mut world, mut rules, source, bullet) =
@@ -292,7 +288,6 @@ fn a_parachuted_bullet_spawns_its_bomb_parachute_canopy() {
 /// `Parachuted=` is the wrapper's admission gate (`Ext/Bullet/Hooks.cpp:
 /// 577-580`); without it `BulletClass::Unlimbo` runs unchanged, so the bullet
 /// keeps its ordinary trajectory and no `BombParachute=` anim is built.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_unset_parachuted_type_keeps_the_straight_trajectory() {
     let (mut world, mut rules, _source, bullet) =

@@ -247,7 +247,7 @@ pub(crate) fn digital_display_instances(
     out
 }
 
-fn screen_point(entity: &ObjectRecord) -> (f32, f32) {
+pub(crate) fn screen_point(entity: &ObjectRecord) -> (f32, f32) {
     let coord = entity.hud.get_coords;
     crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z)
 }

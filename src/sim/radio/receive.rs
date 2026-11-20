@@ -266,7 +266,6 @@ pub(crate) fn can_load(
     // match unless the sender's zone is amphibious, a building under
     // construction, selling, in BState 0, offline or facing a balloon-hover
     // sender refuses, and otherwise the type gates decide.
-    #[cfg(feature = "phobos")]
     if building_type.grinding {
         use crate::rules::locomotor_type::MovementZone;
         let amphibious = matches!(
@@ -1287,7 +1286,6 @@ pub(crate) fn unit_can_enter_radio(
     }
     // Phobos `CanEnterNow` (`Ext/Techno/Hooks.Transport.cpp:236`): a transport
     // on a bridge refuses boarding.
-    #[cfg(feature = "phobos")]
     if transport.on_bridge() {
         return RadioResponse::None;
     }
@@ -2233,8 +2231,6 @@ fn techno_repair_tick(
     rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
-    #[cfg(not(feature = "phobos"))]
-    let _ = separate;
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
     };
@@ -2246,7 +2242,6 @@ fn techno_repair_tick(
     // the step, cost share and cost switch for every category. A `UnitReload=`
     // building with `Units.RepairRate=` owns its repairs in the separate loop,
     // so the stock REPAIR_TICK effects are skipped outside that loop.
-    #[cfg(feature = "phobos")]
     let depot_units = sender
         .and_then(|sender| {
             sim.substrate
@@ -2256,7 +2251,6 @@ fn techno_repair_tick(
         })
         .and_then(|building| sim.object_type(building.type_ref(), rules))
         .map(|depot| (depot.unit_reload, depot.phobos_units_repair));
-    #[cfg(feature = "phobos")]
     if !separate
         && let Some((unit_reload, units)) = depot_units
         && unit_reload
@@ -2272,7 +2266,6 @@ fn techno_repair_tick(
     // InfantryType5247A0/524790 override the shared Techno6F4CD7 getters:
     // zero cost and signed Rules+16D8 IRepairStep. Techno6F4D1C clamps the
     // virtual heal result to at least1 for every category.
-    #[cfg(feature = "phobos")]
     let (cost, heal) = if let Some((_, units)) = depot_units {
         let passed = if entity.category() == EntityCategory::Infantry {
             rules.general.infantry_repair_step
@@ -2294,15 +2287,6 @@ fn techno_repair_tick(
         };
         (cost, step)
     } else if entity.category() == EntityCategory::Infantry {
-        (0, rules.general.infantry_repair_step)
-    } else {
-        (
-            crate::sim::production::repair_step_cost(rules, object),
-            rules.general.repair_step,
-        )
-    };
-    #[cfg(not(feature = "phobos"))]
-    let (cost, heal) = if entity.category() == EntityCategory::Infantry {
         (0, rules.general.infantry_repair_step)
     } else {
         (
@@ -2356,7 +2340,6 @@ fn techno_repair_tick(
 /// [`techno_repair_tick`] under Phobos's separate-repair latch
 /// (`UnitRepairTemp::SeparateRepair`): the `UnitReload=` loop's own requests
 /// keep their effects while the stock arm's ticks skip them.
-#[cfg(feature = "phobos")]
 pub(crate) fn techno_repair_tick_separate(
     sim: &mut Simulation,
     techno: u64,
@@ -3778,7 +3761,6 @@ mod tests {
     /// `0x73796B`): a transport on water answers the boarding query, and the
     /// click/cursor admission that asks it, only when the type key, else
     /// `[General]`, is set.
-    #[cfg(feature = "phobos")]
     #[test]
     fn an_amphibious_enter_transport_takes_a_passenger_on_water() {
         use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};

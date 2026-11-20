@@ -128,12 +128,6 @@ pub(crate) fn get_landing_dir(
     let Some((rules, interner)) = rules_context else {
         return (landing_direction(entity, entities, frame, pose_dir) as u16).wrapping_shl(13);
     };
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, interner);
-        return (landing_direction(entity, entities, frame, pose_dir) as u16).wrapping_shl(13);
-    }
-    #[cfg(feature = "phobos")]
     {
         let dir8 =
             |facing: u16| i32::from(crate::util::direction_tables::dir_from_facing16(facing));
@@ -238,7 +232,6 @@ mod tests {
     /// at `FlyLocomotionClass::FlightUpdate` (`0x4CF31C`): the spawner, the
     /// linked building's docking dir and facing fallback, the type
     /// `LandingDir`, and the pose/field fallbacks. Results are DirTypes.
-    #[cfg(feature = "phobos")]
     #[test]
     fn get_landing_dir_follows_the_native_branch_order() {
         use crate::map::entities::EntityCategory;

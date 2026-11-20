@@ -86,7 +86,6 @@ impl MissionOnly {
 
     /// Write the native `+0x3D4` byte. Phobos' `IsALoaner` UnLimbo override
     /// assigns both values (`Ext/Aircraft/Hooks.cpp:1320`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn set(&mut self, value: bool) {
         self.0 = value;
     }
@@ -358,7 +357,6 @@ fn write_state(substrate: &mut crate::sim::world::ObjectSubstrate, id: u64, read
 
 /// Weapon 0's `Strafing.Shots.Get(5)` for the entry hook; the key only exists
 /// under `phobos`.
-#[cfg(feature = "phobos")]
 fn strafe_shots(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 5;
@@ -372,10 +370,6 @@ fn strafe_shots(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
         .map_or(5, |weapon| weapon.phobos_strafing().shots())
 }
 
-#[cfg(not(feature = "phobos"))]
-fn strafe_shots(_sim: &Simulation, _id: u64, _rules: &RuleSet) -> i32 {
-    5
-}
 
 /// One Mission_Attack visit in the aircraft's dispatch: its state and delay,
 /// or `None` for a strike visit (states 4..9), which fires through the

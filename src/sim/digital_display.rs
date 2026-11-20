@@ -420,7 +420,6 @@ mod tests {
 
     /// Phobos `Body.Visuals.cpp:687-698`: `PassengerKill` shows the deletion
     /// clock when the type configures one, and nothing otherwise.
-    #[cfg(feature = "phobos")]
     #[test]
     fn passenger_kill_reports_the_deletion_clock() {
         let (mut sim, rules) = fixture(

@@ -10,7 +10,6 @@ use crate::sim::movement::FacingClass;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// `GeneralUtils::GetItemForDirection` (`Utilities/GeneralUtils.h:66..93`).
-#[cfg(feature = "phobos")]
 #[test]
 fn item_for_direction_matches_the_native_bit_formula() {
     use crate::sim::unit_simple_deploy::item_for_direction;
@@ -28,7 +27,6 @@ fn item_for_direction_matches_the_native_bit_formula() {
 }
 
 /// The owner-relative anchor `GetFLH(0) - GetRenderCoords` the pass writes.
-#[cfg(feature = "phobos")]
 fn expected_anchor(sim: &Simulation, rules: &RuleSet) -> AnimWorldCoord {
     let entity = sim.substrate.entities.get(1).unwrap();
     let source = crate::sim::combat::fire_coord::FireSource::of_entity(entity);
@@ -55,7 +53,6 @@ fn expected_anchor(sim: &Simulation, rules: &RuleSet) -> AnimWorldCoord {
 /// list, and a facing or owner-coordinate change re-anchors the stored
 /// location to `GetFLH(weaponIndex) - GetRenderCoords`. Destroying the anim
 /// releases the count; the gate stops the pass when it reaches zero.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_firing_anim_pass_retypes_and_reanchors() {
     let ini = IniFile::from_str(

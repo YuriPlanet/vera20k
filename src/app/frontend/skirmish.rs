@@ -719,7 +719,6 @@ mod tests {
                     ui_name: None,
                     allies: 0,
                     base_plan: Default::default(),
-                    #[cfg(feature = "phobos")]
                     repair_base_nodes: [None; 3],
                 },
                 HouseDefinition {
@@ -732,7 +731,6 @@ mod tests {
                     ui_name: None,
                     allies: 0,
                     base_plan: Default::default(),
-                    #[cfg(feature = "phobos")]
                     repair_base_nodes: [None; 3],
                 },
             ],

@@ -490,15 +490,12 @@ fn threat_score(
     // `fmul [ecx+eax*8+0xa0]` at `0x0070CF49`; the candidate's active shield
     // armor answers while it absorbs this warhead.
     if let Some(selected) = scorer_weapon {
-        #[cfg(feature = "phobos")]
         let armor = crate::sim::shield::warhead_versus_armor(
             candidate,
             rules,
             selected.warhead,
             candidate_type,
         );
-        #[cfg(not(feature = "phobos"))]
-        let armor = candidate_type.armor_id();
         let verses = ScoreX87::load_f64(selected.warhead.interaction(armor).multiplier());
         score = spill_threat_double(ScoreX87::add(ScoreX87::mul(coeff_a, verses), score));
     }
@@ -512,7 +509,6 @@ fn threat_score(
     // sits after the D term, at the E term's range load (`0x0070CF81`) and
     // before its distance subtraction (`0x0070D0A9`), so the stack
     // `totalThreat` it adds to already holds B, C, enemy, A and D.
-    #[cfg(feature = "phobos")]
     if let Some(bonus) = bonus {
         score = super::extra_threat::apply_extra_threat_bonus(
             score,
@@ -525,8 +521,6 @@ fn threat_score(
             rules,
         );
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = bonus;
 
     // E: distance beyond the scorer's selected weapon range. With no weapon
     // selected native falls back to the scorer type's `GuardRange`
@@ -619,17 +613,11 @@ fn finish_score(score: i32) -> Option<i32> {
 /// The two `[General]` targeting switches this module gates on, with their
 /// `false` fallbacks for a build without the `phobos` feature.
 fn targeting_fixes(rules: &crate::rules::ruleset::RuleSet) -> (bool, bool) {
-    #[cfg(feature = "phobos")]
     {
         (
             rules.phobos_globals.ai_air_targeting_fix,
             rules.phobos_globals.disable_overoptimization_in_targeting,
         )
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rules;
-        (false, false)
     }
 }
 
@@ -759,7 +747,6 @@ struct ScanContext<'a> {
     /// reject at `0x006F85AB..0x006F85B8` yields
     /// (`Ext/Techno/Hooks.TargetEvaluation.cpp:196-216`, which jumps to
     /// `0x006F8604`).
-    #[cfg(feature = "phobos")]
     attack_move_aggressive: bool,
     /// VERA-only: [`Self::is_ally`]'s answers so far, by candidate owner.
     /// A scan changes no alliance, and its cell walk asks about the same few
@@ -1474,7 +1461,6 @@ pub(crate) fn greatest_threat(
     // `MegaMissionIsAttackMove()` (vt+0x4C4) and the type's
     // `AttackMove.Aggressive` with its `[General]` fallback: asked once per
     // scan, not per candidate.
-    #[cfg(feature = "phobos")]
     let attack_move_aggressive = scanner.mega_mission.is_attack_move()
         && attacker_obj
             .phobos_attack_move
@@ -1490,7 +1476,6 @@ pub(crate) fn greatest_threat(
         fog,
         terrain,
         require_playfield_membership,
-        #[cfg(feature = "phobos")]
         attack_move_aggressive,
         range,
         coefficients: ThreatCoefficients::resolve(
@@ -1645,7 +1630,6 @@ pub(crate) fn greatest_threat(
     // gates this block on `ThreatType::Air | ThreatType::Range`; VERA's scan
     // only carries the derived mask, so an air-capable non-AA-only mask stands
     // in. The hook sits after native's AA-only `mask == 5` early return.
-    #[cfg(feature = "phobos")]
     if rules.phobos_globals.falling_down_targeting_fix && scan_air && mask != 5 {
         if let Some(world) = fire_world {
             // `canTargetWhatAmI |= Infantry|Unit|Aircraft` (`0x6F9398`).
@@ -2071,14 +2055,8 @@ const SIDE_BY_SIDE_CANDIDATES: usize = 256;
 /// Stock builds answer `false`, which is the native path.
 #[inline]
 fn aggressive_attack_move(ctx: &ScanContext<'_>) -> bool {
-    #[cfg(feature = "phobos")]
     {
         ctx.attack_move_aggressive
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = ctx;
-        false
     }
 }
 
@@ -2469,16 +2447,10 @@ fn insignificant_applies_to(
     if !candidate.mind_control.is_mind_controlled() {
         return true;
     }
-    #[cfg(feature = "phobos")]
     {
         rules
             .phobos_globals
             .auto_target_insignificant_when_mind_controlled
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rules;
-        false
     }
 }
 
@@ -2541,7 +2513,6 @@ fn evaluate_candidate(
     // `Ext/Techno/Hooks.Targeting.cpp:57-76`): a human's weapon override,
     // else the global, can refuse an iron-curtained candidate before the
     // fire-error probe.
-    #[cfg(feature = "phobos")]
     if ctx.standing.human
         && let Some(world) = ctx.fire_world
         && crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -2568,7 +2539,6 @@ fn evaluate_candidate(
         // `Ext/Techno/Hooks.Targeting.cpp:57-76`): a human's weapon
         // override, else the global, can refuse an iron-curtained candidate
         // before the fire-error probe; the same mask guard skips it.
-        #[cfg(feature = "phobos")]
         if ctx.standing.human
             && let Some(world) = ctx.fire_world
             && crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -2601,15 +2571,12 @@ fn evaluate_candidate(
         // Phobos `TechnoClass_ReplaceArmorWithShields` (`0x6F7D31`,
         // `Ext/Techno/Hooks.cpp:481`) replaces the candidate's armor load at
         // `0x006F7D31`; its shield answers while it absorbs this warhead.
-        #[cfg(feature = "phobos")]
         let armor = crate::sim::shield::warhead_versus_armor(
             candidate,
             ctx.rules,
             selected.warhead,
             candidate_obj,
         );
-        #[cfg(not(feature = "phobos"))]
-        let armor = candidate_obj.armor_id();
         if !selected.warhead.interaction(armor).can_passively_acquire() {
             return None;
         }
@@ -2697,7 +2664,6 @@ fn evaluate_candidate(
     // threats when the selected weapon's projectile has `AU=yes`; the
     // auto-target gate then admits the underground candidate
     // (`SelectAutoTarget_Start_AU`, 0x6F8DF0).
-    #[cfg(feature = "phobos")]
     let au = selected.as_ref().is_some_and(|selected| {
         selected
             .weapon
@@ -2706,8 +2672,6 @@ fn evaluate_candidate(
             .and_then(|name| ctx.rules.projectile(name))
             .is_some_and(|projectile| projectile.au)
     });
-    #[cfg(not(feature = "phobos"))]
-    let au = false;
     if !au && crate::sim::movement::air_movement::current_fly_height(candidate, ctx.terrain) < -20 {
         return None;
     }
@@ -3067,7 +3031,6 @@ fn evaluate_candidate(
     // past the whole reject below, straight to the accept tail at
     // `0x006F8604`. The hook sits before the weapon test, so it also admits a
     // building with no current weapon at all.
-    #[cfg(feature = "phobos")]
     let attack_no_threat_buildings = selected.as_ref().map_or_else(
         || {
             if ctx.standing.human {
@@ -3082,8 +3045,6 @@ fn evaluate_candidate(
                 .phobos_attack_no_threat_buildings(ctx.rules, ctx.standing.human)
         },
     );
-    #[cfg(not(feature = "phobos"))]
-    let attack_no_threat_buildings = false;
     if !aggressive_attack_move(ctx)
         && ctx.standing.team.is_none()
         && ctx.standing.human
@@ -3240,7 +3201,6 @@ fn evaluate_candidate(
     // shielded by its fresh capture. The hook sits after the score is
     // computed and before ThreatAvoidance_Modifier, returning 0
     // (`0x6F894F`) instead of a score.
-    #[cfg(feature = "phobos")]
     if let Some(world) = ctx.fire_world
         && !world.can_attack_mind_controlled(candidate.stable_id(), ctx.scanner.stable_id())
     {
@@ -3768,7 +3728,6 @@ mod tests {
     /// air-capable Guard scan, and only when the key is on. The target is also
     /// unmarked in its cell, so neither the ring walk nor the airborne pre-pass
     /// can find it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn falling_down_targeting_fix_offers_a_tracked_fall_to_an_air_capable_guard() {
         let scan = |enabled: bool| {

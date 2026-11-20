@@ -505,15 +505,12 @@ pub(crate) struct AoECollector {
     adjacent_wall_damage: i32,
     /// Phobos `MergeBuildingDamage.Get(RulesExt::Global()->MergeBuildingDamage)`
     /// (`Ext/WarheadType/Hooks.cpp:414`), resolved once at collection start.
-    #[cfg(feature = "phobos")]
     merge_building_damage: bool,
     /// `Game::F2I(CellSpread * Unsorted::LeptonsPerCell)`, the merge loop's
     /// own threshold (`Ext/WarheadType/Hooks.cpp:426`).
-    #[cfg(feature = "phobos")]
     merge_spread_leptons: i32,
     /// Phobos `CellSpread.Cylinder` (hook family `0x489430..`), resolved once
     /// at collection start: the distance tests ignore Z.
-    #[cfg(feature = "phobos")]
     cylinder: bool,
     pub result: AoEDamageResult,
 }
@@ -594,10 +591,7 @@ impl AoECollector {
         // Retail's airborne phase admits the source unconditionally. Phobos
         // `MapClass_DamageArea_AirDamageSelfFix @ 0x00489416` applies the same
         // DamageSelf/AllowDamageOnSelf rule there (CrushWarhead does not).
-        #[cfg(feature = "phobos")]
         let air_source_admitted = source_damage_self || rules.allow_damage_on_self_for(warhead);
-        #[cfg(not(feature = "phobos"))]
-        let air_source_admitted = true;
 
         let cell_spread = warhead.cell_spread_f64;
 
@@ -656,10 +650,7 @@ impl AoECollector {
                     i32::from(impact_rx as i16),
                     i32::from(impact_ry as i16),
                 );
-                #[cfg(feature = "phobos")]
                 let cylinder = warhead.phobos_cell_spread_cylinder;
-                #[cfg(not(feature = "phobos"))]
-                let cylinder = false;
                 for entity_id in entities.airborne_in_query_order(
                     &center,
                     cell_spread::whole_cells(cell_spread),
@@ -707,13 +698,10 @@ impl AoECollector {
             native_occupancy: native_occupancy.is_some(),
             ares: rules.ares(),
             truce_harvesters,
-            #[cfg(feature = "phobos")]
             merge_building_damage: warhead
                 .phobos_extras
                 .merges_building_damage(rules.phobos_globals.merge_building_damage),
-            #[cfg(feature = "phobos")]
             cylinder: warhead.phobos_cell_spread_cylinder,
-            #[cfg(feature = "phobos")]
             merge_spread_leptons: crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
                 cell_spread * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32),
             ),
@@ -821,13 +809,8 @@ impl AoECollector {
         // DamageArea distance test replaces the detonation Z with the
         // victim's, so only the planar separation remains.
         let cylinder = {
-            #[cfg(feature = "phobos")]
             {
                 self.cylinder
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                false
             }
         };
         let mut terrain_inserted = self.selected_layer() != MovementLayer::Ground;
@@ -902,7 +885,6 @@ impl AoECollector {
     ) -> AoEDamageResult {
         if self.native_occupancy {
             limit_records_per_object(&mut self.result, warhead, self.ares);
-            #[cfg(feature = "phobos")]
             if self.merge_building_damage {
                 merge_building_records(
                     &mut self.result,
@@ -934,13 +916,8 @@ impl AoECollector {
             }
 
             let cylinder = {
-                #[cfg(feature = "phobos")]
                 {
                     self.cylinder
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    false
                 }
             };
             push_entity_aoe_damage(
@@ -966,7 +943,6 @@ impl AoECollector {
         }
 
         limit_records_per_object(&mut self.result, warhead, self.ares);
-        #[cfg(feature = "phobos")]
         if self.merge_building_damage {
             merge_building_records(
                 &mut self.result,
@@ -1078,7 +1054,6 @@ pub(super) fn limit_records_per_object(
 /// (and every other record's position) is untouched. Only the relative order
 /// of a building's damage against another object's in the same transaction
 /// differs, which nothing in the receiver observes.
-#[cfg(feature = "phobos")]
 fn merge_building_records(
     result: &mut AoEDamageResult,
     entities: &EntityStore,
@@ -2480,13 +2455,7 @@ mod tests {
         }
 
         // Retail admits the airborne source unconditionally.
-        #[cfg(not(feature = "phobos"))]
-        {
-            assert_eq!(run(false, "BlastWH"), vec![1]);
-            assert_eq!(run(true, "BlastWH"), vec![1]);
-        }
 
-        #[cfg(feature = "phobos")]
         {
             assert!(
                 run(false, "BlastWH").is_empty(),
@@ -3850,7 +3819,6 @@ mod tests {
 
         // Phobos `Explosion_Damage_DamageSelf @ 0x004896EC` skips the source
         // exclusion, so a DamageSelf=no source still collects its own hit.
-        #[cfg(feature = "phobos")]
         {
             let (allow_ids, _, allow_hp) = run(false, "SelfWH");
             assert_eq!(allow_ids, vec![1, 2, 3]);
@@ -4258,7 +4226,6 @@ mod tests {
     /// `Psychedelic.StackingMode`, else `[CombatDamage]`'s. A non-positive
     /// result jumps to `StopBerzerk` (`0x701DBA`), which skips the flag write,
     /// team removal, target clear and Hunt.
-    #[cfg(feature = "phobos")]
     #[test]
     fn psychedelic_stacking_combines_the_time_and_stops_a_non_positive_one() {
         let ini = IniFile::from_str(

@@ -436,7 +436,6 @@ impl AresTiberiumStorage {
 /// deposited float converts to `amount * Value[orig] / Value[storage]`
 /// bales of the storage type in binary32. A zero/unknown storage value is
 /// left to the float division natively; VERA keeps the ratio as computed.
-#[cfg(feature = "phobos")]
 fn phobos_storage_conversion(
     amount: NativeF32Bits,
     original_value: i32,
@@ -523,7 +522,6 @@ impl Simulation {
                 // Storage.TiberiumIndex >= 0` converts the deposit into
                 // `amount * Value[orig] / Value[storage]` bales of the
                 // storage type before it reaches the house store.
-                #[cfg(feature = "phobos")]
                 let (amount, slot) = {
                     let storage = rules.phobos_globals.storage_tiberium_index;
                     if storage >= 0 {

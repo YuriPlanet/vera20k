@@ -3496,7 +3496,6 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
 /// This exercises production rules, image binding, residency and CPU rendering;
 /// it is not a GPU/native visual-parity claim.
 #[test]
-#[cfg(feature = "phobos")]
 fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
     use crate::rules::ini_parser::IniFile;
     let directory = StoredFrameTestDirectory::new();

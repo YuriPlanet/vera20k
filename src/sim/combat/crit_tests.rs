@@ -461,7 +461,6 @@ fn transact_money_display_uses_at_firer_houses_and_offset() {
 /// (`Ext/Techno/Hooks.Firing.cpp:325-328`): a negative `TransactMoney`
 /// warhead refuses the shot while the firing house's `Available_Money` is
 /// below `-amount`; an affordable or non-negative amount fires.
-#[cfg(feature = "phobos")]
 #[test]
 fn transact_money_gates_the_shot_on_the_firing_house_wallet() {
     use crate::sim::combat::fire_error::FireError;
@@ -504,7 +503,6 @@ fn transact_money_gates_the_shot_on_the_firing_house_wallet() {
 /// (`Ext/WarheadType/Detonate.cpp:215,669-678`): the per-target pass converts
 /// a Foot through the first applicable `Convert{i}` pair, with `All` as a
 /// warhead's default source-house filter.
-#[cfg(feature = "phobos")]
 #[test]
 fn warhead_convert_pairs_convert_the_target_foot() {
     let converted = |wh_ini: &str| {
@@ -595,7 +593,6 @@ fn warhead_convert_pairs_convert_the_target_foot() {
 /// (`Ext/WarheadType/Detonate.cpp:610-636`): the per-target pass sends the
 /// `ReturnWarhead=` warhead back at the techno that fired the bullet, gated
 /// by the shared chance buffer, the source house and the victim filters.
-#[cfg(feature = "phobos")]
 #[test]
 fn return_warhead_strikes_the_firer_back() {
     let outcome = |wh_ini: &str| {
@@ -634,7 +631,6 @@ fn return_warhead_strikes_the_firer_back() {
 /// Phobos `WarheadTypeExt::Detonate`'s Reveal block
 /// (`Ext/WarheadType/Detonate.cpp:82-100`): a negative value reveals the
 /// whole map for the firing house; the default 0 does nothing.
-#[cfg(feature = "phobos")]
 #[test]
 fn reveal_warhead_reveals_the_map_for_its_owner() {
     let revealed = |wh_ini: &str| {
@@ -665,7 +661,6 @@ fn reveal_warhead_reveals_the_map_for_its_owner() {
 /// its ally and is not defeated. The enemy's map keeps its shroud. Every unit
 /// in this scene carries `Sight=0`, so only the warhead can reveal the probe
 /// cells.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
     // `Koreans` owns the warhead and names `Americans`, the current player,
@@ -744,7 +739,6 @@ fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
 /// (`Ext/WarheadType/Detonate.cpp:94-99`, `MapClass::Reveal(pHouse)`): the
 /// firing house's whole map opens, including cells out of every unit's sight,
 /// and no other house's map is written.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_negative_reveal_clears_the_owner_whole_map() {
     let (mut sim, rules, firer, target) = scene("", "Reveal=-1\n", "", "", "Russians");
@@ -777,7 +771,6 @@ fn a_negative_reveal_clears_the_owner_whole_map() {
 /// (`Ext/WarheadType/Detonate.cpp:51-80`): a negative value reshrouds the
 /// whole map for every non-allied house while the firing house keeps its
 /// map; the default 0 does nothing.
-#[cfg(feature = "phobos")]
 #[test]
 fn create_gap_reshrouds_the_map_for_non_allies() {
     let maps = |wh_ini: &str| {
@@ -807,7 +800,6 @@ fn create_gap_reshrouds_the_map_for_non_allies() {
 /// Phobos `DetonateOnOneUnit`'s `ApplyReverseEngineer`
 /// (`Ext/WarheadType/Detonate.cpp:227-228,260-264`): with Ares present, the
 /// firing house records each hit victim's type; the default skips.
-#[cfg(feature = "phobos")]
 #[test]
 fn reverse_engineer_warhead_records_the_victim_type() {
     let recorded = |wh_ini: &str| {
@@ -831,7 +823,6 @@ fn reverse_engineer_warhead_records_the_victim_type() {
 /// Phobos `DetonateOnOneUnit`'s Taunt arm
 /// (`Ext/WarheadType/Detonate.cpp:236-237`): every hit target is forced onto
 /// `Mission::Attack` against the firing techno; the default is off.
-#[cfg(feature = "phobos")]
 #[test]
 fn taunt_forces_the_hit_targets_mission_onto_the_firer() {
     use crate::sim::mission::{MissionId, MissionType};
@@ -860,7 +851,6 @@ fn taunt_forces_the_hit_targets_mission_onto_the_firer() {
 /// Phobos `WarheadTypeExt::ApplyAmmoModifier`
 /// (`Ext/WarheadType/Detonate.cpp:221-222,923-932`): `Ammo` adds to the
 /// target and clamps into `0..type->Ammo`; the default 0 leaves it alone.
-#[cfg(feature = "phobos")]
 #[test]
 fn warhead_ammo_modifies_the_target_ammo_with_the_native_clamp() {
     let after = |wh_ini: &str| {
@@ -907,7 +897,6 @@ fn warhead_ammo_modifies_the_target_ammo_with_the_native_clamp() {
 /// (`Ext/WarheadType/Detonate.cpp:224-225,466-475`): the per-target pass
 /// strips a Unit's disguise even when the shot deals no damage; a Unit also
 /// clears its recorded identity, and the flag defaults to off.
-#[cfg(feature = "phobos")]
 #[test]
 fn remove_disguise_strips_a_target_on_impact() {
     let setup = |wh_ini: &str| {
@@ -1770,7 +1759,6 @@ fn penetrates_transport_hands_the_gunner_slot_to_the_cargo_head() {
 
 /// Phobos `ChangeOwner` (`Ext/WarheadType/Detonate.cpp:207-211,488-522`):
 /// the firing House takes the target.
-#[cfg(feature = "phobos")]
 #[test]
 fn change_owner_moves_the_target_to_the_firing_house() {
     let (mut sim, rules, firer, target) = scene("", "ChangeOwner=yes\n", "", "", "Russians");
@@ -1787,7 +1775,6 @@ fn change_owner_moves_the_target_to_the_firing_house() {
 
 /// `ChangeOwner.SetAsMindControl` refuses a psionically immune target and an
 /// already mind-controlled one; a plain `ChangeOwner` ignores both.
-#[cfg(feature = "phobos")]
 #[test]
 fn change_owner_mind_control_respects_immunity() {
     let (mut sim, rules, firer, target) = scene(
@@ -1823,7 +1810,6 @@ fn change_owner_mind_control_respects_immunity() {
 
 /// A `ChangeOwner.SetAsMindControl` capture writes `MindControlledByAUnit`
 /// (Techno+0x2C4, VERA's `MindControlLink::permanent`).
-#[cfg(feature = "phobos")]
 #[test]
 fn change_owner_mind_control_marks_the_capture() {
     let (mut sim, rules, firer, target) = scene(

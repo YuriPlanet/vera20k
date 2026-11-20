@@ -151,14 +151,9 @@ impl Simulation {
             .and_then(|entity| self.object_type(entity.type_ref(), rules))
             .is_some_and(|object| {
                 // `AttackMove.IgnoreWeaponCheck` (`0x00711E90`).
-                #[cfg(feature = "phobos")]
                 {
                     object
                         .can_attack_move_with(rules.phobos_globals.attack_move_ignore_weapon_check)
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    object.can_attack_move()
                 }
             })
     }
@@ -324,13 +319,11 @@ impl Simulation {
         // `FootClass_UpdateAttackMove_SelectNewTarget @ 0x4DF3A0`
         // (`Ext/Techno/Hooks.TargetEvaluation.cpp:179-194`) runs before the
         // handler's own body.
-        #[cfg(feature = "phobos")]
         self.phobos_attack_move_select_new_target(id, rules, ctx.overlay_registry);
         // Phobos `FootClass_UpdateAttackMove_Follow @ 0x4DF3A6`
         // (`Ext/Techno/Hooks.cpp:1266-1358`) hooks the very next six bytes,
         // `mov eax,[esi+0x5C8]`. Its follow arm returns through `0x4DF425`,
         // the handler's epilogue, so the native body below must not run.
-        #[cfg(feature = "phobos")]
         if self.phobos_attack_move_follow(id, rules, ctx) {
             return;
         }
@@ -351,7 +344,6 @@ impl Simulation {
                 .set(None);
             // Phobos `FootClass_UpdateAttackMove_SetTarget` (`0x4DF3D3`):
             // every target write restarts a `RateDown.Reset=yes` gattling.
-            #[cfg(feature = "phobos")]
             self.apply_rate_down_target_reset(id, rules);
         }
         let found = crate::sim::world::retaliate_and_scan(
@@ -372,7 +364,6 @@ impl Simulation {
                 set_fallback = true;
             }
             // `0x4DF46A`/`0x4DF4A5` reach the same reset after the write.
-            #[cfg(feature = "phobos")]
             if set_fallback {
                 self.apply_rate_down_target_reset(id, rules);
             }
@@ -402,7 +393,6 @@ impl Simulation {
     ///   mission anyway.
     ///
     /// Answers `true` when the hook takes its early return (`0x4DF425`).
-    #[cfg(feature = "phobos")]
     fn phobos_attack_move_follow(
         &mut self,
         id: u64,
@@ -602,7 +592,6 @@ impl Simulation {
     /// (`Ext/Techno/Hooks.cpp:1297`): a capture manager with no free control
     /// slot. `IsFull @ 0x004722A0` supplies the capacity verdict, with Phobos'
     /// `GetControlledCount` size sum as the count.
-    #[cfg(feature = "phobos")]
     fn phobos_capture_cannot_control_any_more(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -616,7 +605,6 @@ impl Simulation {
 
     /// `GetCoords` of a [`TargetKind`], or of this object when the target is
     /// absent. The mega mission's anchor uses it for `DistanceFrom`.
-    #[cfg(feature = "phobos")]
     fn phobos_attack_move_target_coords(
         &self,
         target: Option<TargetKind>,
@@ -637,7 +625,6 @@ impl Simulation {
                     z: coord.z,
                 })
             }
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(id) => {
                 let coord = self.projectiles.get(id)?.position();
                 Some(crate::sim::components::DriveCoord {
@@ -656,7 +643,6 @@ impl Simulation {
     /// permission to drop the held TarCom and clear `HaveAttackMoveTarget`
     /// before the arrival handler decides; `UpdateGattlingRateDownReset()`
     /// follows (`:191-192`). The handler then sees no target and rescans.
-    #[cfg(feature = "phobos")]
     fn phobos_attack_move_select_new_target(
         &mut self,
         id: u64,
@@ -730,7 +716,6 @@ impl Simulation {
     ///
     /// `InProgress()` is the passive scan's live timer
     /// (`TechnoClass+0x180/+0x188`); `!due` is this tree's "still running".
-    #[cfg(feature = "phobos")]
     fn phobos_attack_move_stale_target(&self, id: u64, rules: &RuleSet) -> Option<u64> {
         use crate::sim::combat::TargetKind;
         let entity = self.substrate.entities.get(id)?;

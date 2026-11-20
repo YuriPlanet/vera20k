@@ -64,7 +64,6 @@ fn live_shot_for<'r>(
         Some(target @ TargetKind::Cell(..)) => {
             resolve_target_coords(&target, world).map(|coords| (coords, entity.type_ref()))
         }
-        #[cfg(feature = "phobos")]
         Some(target @ TargetKind::Bullet(..)) => {
             resolve_target_coords(&target, world).map(|coords| (coords, entity.type_ref()))
         }
@@ -121,21 +120,15 @@ pub(super) fn visit(
     let binary_frame = world.session.binary_frame();
     let weapon0 = combat_weapon::primary_for_tier(obj, entity.veterancy.rank())
         .and_then(|name| rules.weapon(name));
-    #[cfg(feature = "phobos")]
     let strafing = weapon0.map_or(StrafeKeys::STOCK, |weapon| {
         StrafeKeys::from_weapon(weapon, &rules.phobos_globals)
     });
-    #[cfg(not(feature = "phobos"))]
-    let strafing = StrafeKeys::STOCK;
     // Phobos `FiringForceScatter` (`Ext/AircraftType/Body.cpp:36`, default from
     // `[General] AircraftFiringForceScatter=`, constructor true
     // `Ext/Rules/Body.h:888`).
-    #[cfg(feature = "phobos")]
     let firing_force_scatter = obj
         .phobos_firing_force_scatter
         .unwrap_or(rules.phobos_globals.aircraft_firing_force_scatter);
-    #[cfg(not(feature = "phobos"))]
-    let firing_force_scatter = true;
     let facts = StrikeFacts {
         state,
         target: crate::sim::combat::target_present(entity.attack_target.target(), world),
@@ -387,7 +380,6 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
     /// selected weapon's `KickOutPassengers`, else
     /// `[General] AircraftWeapon.KickOutPassengers=`; no selected weapon
     /// keeps the stock drop.
-    #[cfg(feature = "phobos")]
     fn kick_out_passengers(&mut self) -> bool {
         let strike = &mut *self.strike;
         let Some((_, Some(shot))) =
@@ -428,13 +420,10 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             // is on keeps FireAt's velocity; the ROT course block is skipped.
             let (rot, keeps_velocity) = {
                 let kind = bullet_type(shot.selected.weapon, strike.rules);
-                #[cfg(feature = "phobos")]
                 let keeps_velocity = kind.vertical
                     && kind
                         .vertical_aircraft_fix
                         .unwrap_or(strike.rules.phobos_globals.vertical_aircraft_fix);
-                #[cfg(not(feature = "phobos"))]
-                let keeps_velocity = false;
                 (kind.rot, keeps_velocity)
             };
             fired = emit_admitted_fire(

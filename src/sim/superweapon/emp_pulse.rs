@@ -66,7 +66,6 @@ pub(super) fn launch(
     // HandleEMPulseLaunch only for a non-TargetSelf EMPulse. VERA reaches
     // the same tail from the Ares launch owner rather than adding a second
     // launch path.
-    #[cfg(feature = "phobos")]
     if !emp.target_self {
         suspend_phobos_others(sim, rules, owner, sw_type_id, &emp);
     }
@@ -118,7 +117,6 @@ pub(super) fn launch(
             );
             // `HandleEMPulseLaunch`'s per-cannon latch
             // (`Ext/SWType/FireSuperWeapon.cpp:365`).
-            #[cfg(feature = "phobos")]
             if !emp.target_self {
                 building.set_phobos_current_empulse_sw(sw_type_id);
             }
@@ -137,7 +135,6 @@ pub(super) fn launch(
 /// when the two lists share a type. `HouseExt::SuspendedEMPulseSWs` keeps
 /// the held type IDs under the firing SW type until Mission_Missile resumes
 /// them (`Ext/Building/Hooks.cpp:170-180`).
-#[cfg(feature = "phobos")]
 fn suspend_phobos_others(
     sim: &mut Simulation,
     rules: &RuleSet,

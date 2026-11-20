@@ -52,14 +52,8 @@ fn award_kill_experience(
         Some(house) => {
             let factors = house.cost_factors_for(object);
             rules.cost_of_with_restricted(object, Some(&factors), |priced| {
-                #[cfg(feature = "phobos")]
                 {
                     house.cost_factors_for(priced).restricted_plant
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    let _ = priced;
-                    crate::util::native_x87::NativeF32Bits::ONE
                 }
             })
         }
@@ -276,14 +270,8 @@ fn award_ares_kill_experience(
             Some(house) => {
                 let factors = house.cost_factors_for(object);
                 rules.cost_of_with_restricted(object, Some(&factors), |priced| {
-                    #[cfg(feature = "phobos")]
                     {
                         house.cost_factors_for(priced).restricted_plant
-                    }
-                    #[cfg(not(feature = "phobos"))]
-                    {
-                        let _ = priced;
-                        crate::util::native_x87::NativeF32Bits::ONE
                     }
                 })
             }
@@ -554,7 +542,6 @@ impl crate::sim::world::Simulation {
         // `DropCrate=` places its fixed powerup at its location, before the
         // kill bookkeeping. Runs on every RegisterDestruction entry, as the
         // hook does.
-        #[cfg(feature = "phobos")]
         self.drop_crate_on_destruction(victim_id, rules, context.registry(), context.effects());
         let Some(victim) = self.substrate.entities.get(victim_id) else {
             return;
@@ -567,14 +554,8 @@ impl crate::sim::world::Simulation {
             (Some(house), Some(object)) => {
                 let factors = house.cost_factors_for(object);
                 rules.cost_of_with_restricted(object, Some(&factors), |priced| {
-                    #[cfg(feature = "phobos")]
                     {
                         house.cost_factors_for(priced).restricted_plant
-                    }
-                    #[cfg(not(feature = "phobos"))]
-                    {
-                        let _ = priced;
-                        crate::util::native_x87::NativeF32Bits::ONE
                     }
                 })
             }

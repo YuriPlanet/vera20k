@@ -86,7 +86,6 @@ impl CdTimer {
 
     /// `CDTimerClass::InProgress`: the countdown is running (`StartTime !=
     /// -1`); a paused timer reads false.
-    #[cfg(feature = "phobos")]
     #[inline]
     pub const fn in_progress(self) -> bool {
         self.start_frame != PAUSED_START_FRAME
@@ -97,7 +96,6 @@ impl CdTimer {
     /// countdown with `StartTime++`: the caller has tested
     /// [`Self::in_progress`], and the one-frame-later anchor leaves the
     /// remaining time where it was.
-    #[cfg(feature = "phobos")]
     #[inline]
     pub fn delay_one_frame(&mut self) {
         if self.start_frame != PAUSED_START_FRAME {

@@ -95,7 +95,6 @@ impl TerrainAssetCatalog {
             // Phobos `MinimapColor=` (`Ext/TerrainType/Body.cpp:75`) replaces
             // the `Image`/`RadarColor=` result when set
             // (`Ext/TerrainType/Hooks.cpp:334-337`).
-            #[cfg(feature = "phobos")]
             if let Some(color) = terrain.minimap_color {
                 current = color;
             }

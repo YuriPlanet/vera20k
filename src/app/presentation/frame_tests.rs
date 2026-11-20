@@ -154,7 +154,6 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
     let origin = crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 };
     designating.place.airstrike_designation = Some(AirstrikeDesignation {
         coords: [origin; 2],
-        #[cfg(feature = "phobos")]
         color: [0; 3],
     });
     assert!(designating.may_draw_a_line());

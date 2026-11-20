@@ -352,7 +352,6 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
 /// Phobos `AnimTypeExt::ProcessDestroyAnims` records the destroyed unit as
 /// its `DestroyAnim=` anim's invoker (`Ext/AnimType/Body.cpp:54`).
 #[test]
-#[cfg(feature = "phobos")]
 fn a_units_destroy_anim_records_the_unit_as_its_invoker() {
     let rules = rules();
     let mut sim = sim(1);
@@ -374,7 +373,6 @@ fn a_units_destroy_anim_records_the_unit_as_its_invoker() {
 /// `CreateUnit.Owner` install also writes the light conversion when
 /// `CreateUnit.RemapAnim=yes` and the owner is not defeated.
 #[test]
-#[cfg(feature = "phobos")]
 fn a_units_destroy_anim_takes_the_create_unit_owner_remap() {
     let art_text = ART.replace(
         "[DESTA]\nEnd=10",
@@ -412,7 +410,6 @@ fn a_units_destroy_anim_takes_the_create_unit_owner_remap() {
 /// `CreateUnit.Owner=Random` draw; a generic `Explosion=` anim with the same
 /// anim-type keys must not shift the Scenario stream.
 #[test]
-#[cfg(feature = "phobos")]
 fn a_generic_explosion_anim_does_not_spend_the_create_unit_owner_draw() {
     let art_text = ART.replace(
         "[DESTA]\nEnd=10",
@@ -2177,7 +2174,6 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
 /// `Ext/Rules/Body.cpp:470`, hook `Ext/Techno/Hooks.ReceiveDamage.cpp:253-254`
 /// at `0x702603`): a destroyed `Explodes=yes` vehicle kills its passengers by
 /// default; a type or `[General]` `no` skips only that kill.
-#[cfg(feature = "phobos")]
 #[test]
 fn explodes_kill_passengers_off_spares_the_rider() {
     let outcome = |type_key: &str, general_key: &str| {
@@ -2237,7 +2233,6 @@ fn explodes_kill_passengers_off_spares_the_rider() {
 /// a building destroyed while its CurrentMission is Construction or Selling
 /// behaves as `Explodes=false` when the key is off, so its death weapon does
 /// not fire.
-#[cfg(feature = "phobos")]
 #[test]
 fn explodes_during_buildup_off_suppresses_the_death_weapon_under_construction() {
     use crate::rules::mission_data::MissionType;
@@ -2333,7 +2328,6 @@ fn explodes_during_buildup_off_suppresses_the_death_weapon_under_construction() 
 /// takes `RandomRanged(0, count-1)` (no draw for one entry) or, with `no`,
 /// the facing entry — first below eight, last for odd counts, and
 /// `facing/256 * (count-1)` for even counts of at least eight.
-#[cfg(feature = "phobos")]
 fn destroy_anim_pick_rules(global: &str, type_keys: &str) -> RuleSet {
     let rules_text = RULES
         .replace("[General]\n", &format!("[General]\n{global}"))
@@ -2369,7 +2363,6 @@ fn destroy_anim_pick_rules(global: &str, type_keys: &str) -> RuleSet {
     rules
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_destroy_anim_random_and_facing_pick_follow_process_destroy_anims() {
     use crate::sim::movement::FacingClass;

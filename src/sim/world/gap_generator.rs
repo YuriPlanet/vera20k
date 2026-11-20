@@ -142,14 +142,12 @@ impl Simulation {
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
             tesla_chargers: entity.tesla_charge.chargers().len() as i32,
-            #[cfg(feature = "phobos")]
             tesla_charge_levels: Self::power_charger_level_sum(
                 &self.interner,
                 &self.substrate,
                 rules,
                 entity.tesla_charge.chargers(),
             ),
-            #[cfg(feature = "phobos")]
             overpower_keep_online: object.overpower_keep_online,
             charger_bypass: {
                 let keep = rules.ares()
@@ -245,7 +243,6 @@ impl Simulation {
         // Phobos `BuildingClass_AI_PoweredKillSpawns` (`0x43FBEF`,
         // `Ext/Building/Hooks.cpp:30-37`) runs on this changed edge, ahead of
         // the sample store, and acts only while the building is offline.
-        #[cfg(feature = "phobos")]
         if !operational {
             self.phobos_powered_kill_spawns(id, rules, registry, frame_effects);
         }

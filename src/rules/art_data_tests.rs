@@ -1540,7 +1540,6 @@ fn can_be_hidden_reads_the_type_id_section() {
 /// Phobos `SplashAnims=` (`Ext/AnimType/Body.cpp:102`) is a
 /// `NullableVector<AnimTypeClass*>`: absent or `<default>` keeps the stock
 /// list; `SplashAnims.PickRandom=` (`:103`) is a bool, default false.
-#[cfg(feature = "phobos")]
 #[test]
 fn splash_anims_reads_the_type_list_and_pick_random() {
     let ini = IniFile::from_str(
@@ -1565,7 +1564,6 @@ fn splash_anims_reads_the_type_list_and_pick_random() {
 /// Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`, `Body.h:54`,
 /// constructed false `Body.h:106`) is an ART `ReadBool`, so an absent key and a
 /// section with other keys both stay false.
-#[cfg(feature = "phobos")]
 #[test]
 fn explode_on_water_is_an_art_bool_defaulting_false() {
     let ini = IniFile::from_str("[A]\nExplodeOnWater=yes\n[B]\nExplodeOnWater=no\n[C]\nStart=1\n");
@@ -1578,7 +1576,6 @@ fn explode_on_water_is_an_art_bool_defaulting_false() {
 /// Phobos `ExtraShadow=` (`Ext/AnimType/Body.h:62`, constructed **true**
 /// `Body.h:114`, read `Body.cpp:107`) is an ART `ReadBool` that defaults true,
 /// so an omitted key keeps the stock ground shadow.
-#[cfg(feature = "phobos")]
 #[test]
 fn extra_shadow_is_an_art_bool_defaulting_true() {
     let ini = IniFile::from_str("[A]\nExtraShadow=yes\n[B]\nExtraShadow=no\n[C]\nStart=1\n");
@@ -1591,7 +1588,6 @@ fn extra_shadow_is_an_art_bool_defaulting_true() {
 /// Phobos `DetachedReport=` (`Ext/AnimType/Body.h:63`, constructed `{}`
 /// `Body.h:115`, read `Body.cpp:108`) is an ART sound name read with the same
 /// reader as `Report=`, unset by default.
-#[cfg(feature = "phobos")]
 #[test]
 fn detached_report_reads_its_art_sound_name() {
     let ini = IniFile::from_str("[A]\nDetachedReport=TestCue\n[B]\nStart=1\n");
@@ -1614,7 +1610,6 @@ fn detached_report_reads_its_art_sound_name() {
 /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/BuildingType/Body.cpp:309`,
 /// `Body.h:227`) is an ART ReadBool from the ImageFile's section, default
 /// false.
-#[cfg(feature = "phobos")]
 #[test]
 fn refinery_use_normal_active_anim_reads_its_art_section() {
     let ini = IniFile::from_str(

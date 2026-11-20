@@ -415,13 +415,10 @@ impl Simulation {
     /// frame FootClass::AI applies it (`0x004DA554..0x004DA629`).
     fn infantry_disturbed(&self, id: u64, rules: &RuleSet) -> bool {
         // With the Phobos capability nothing sleeps.
-        #[cfg(feature = "phobos")]
         let radiation = {
             let _ = rules;
             true
         };
-        #[cfg(not(feature = "phobos"))]
-        let radiation = crate::sim::combat::world_receiver::radiation_reaches_foot(self, rules, id);
         radiation
             || self
                 .substrate

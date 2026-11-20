@@ -31,9 +31,7 @@ pub(crate) use units::*;
 mod shp;
 pub(crate) use shp::*;
 
-#[cfg(feature = "phobos")]
 mod damaged_image;
-#[cfg(feature = "phobos")]
 pub(crate) use damaged_image::*;
 
 mod overlays;

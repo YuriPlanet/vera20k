@@ -110,7 +110,6 @@ pub(crate) fn mission_unload(
         // `Deploy.NoTiberium` unset or an empty hold skips the dump for the
         // deploy path (`0x73D694`); a harvester has no deploy-fire/DeploysInto/
         // IsSimpleDeployer arm, so that path ends at the FootUnload stub.
-        #[cfg(feature = "phobos")]
         if sim.phobos_harvester_skips_tiberium_dump(id, rules) {
             return crate::sim::mission::MISSION_STUB_FRAMES;
         }
@@ -198,7 +197,6 @@ fn unload_dumping(
         // `Ext/Unit/Hooks.Harvester.cpp:115-131`): the type's
         // `HarvesterDumpAmount` else `[General] HarvesterDumpAmount` caps one
         // tick's removal; a non-positive cap keeps the whole-slot dump.
-        #[cfg(feature = "phobos")]
         let dump_cap = Some(
             sim.substrate
                 .entities
@@ -209,8 +207,6 @@ fn unload_dumping(
                     rules.phobos_globals.harvester_dump_amount.bits(),
                 )),
         );
-        #[cfg(not(feature = "phobos"))]
-        let dump_cap = None;
         let drained = sim
             .substrate
             .entities
@@ -587,7 +583,6 @@ pub(crate) fn pay_refinery_owner(
     // Phobos `BuildingClass_InfiltratedBy`-style balance sampling for the
     // `DisplayIncome` label: the unload hook records the dock's House balance
     // before the mission's deposits (`Hooks.Refinery.cpp:20-38`).
-    #[cfg(feature = "phobos")]
     let money_before = crate::sim::credit_income::available_money(&sim.houses, owner);
     let purifiers = super::miner_system::effective_purifier_count(sim, rules, &owner_name);
     let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
@@ -623,7 +618,6 @@ pub(crate) fn pay_refinery_owner(
     }
     // The dock accumulates the cash the deposit actually credited; the
     // periodic `DisplayIncome` label reads it (`Ext/Building/Body.cpp:12-36`).
-    #[cfg(feature = "phobos")]
     {
         let credited = crate::sim::credit_income::available_money(&sim.houses, owner)
             .wrapping_sub(money_before);

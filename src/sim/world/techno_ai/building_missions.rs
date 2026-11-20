@@ -265,7 +265,6 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
     // Phobos BuildingClass_AnimationAI_TurretAnim (0x451242): AnimationAI
     // runs once per frame, so GetTurretFrame is called exactly once here.
-    #[cfg(feature = "phobos")]
     update_turret_anim_frame(sim, id, rules);
     #[cfg(not(feature = "phobos"))]
     update_native_turret_anim_frame(sim, id, rules);
@@ -425,15 +424,12 @@ fn mission_construction(
         // building's start facing. Phobos `BuildingClass_Mission_Construction_
         // StartFacing` (`Ext/Building/Hooks.cpp:1506-1513`) replaces the stock
         // zero with `GetBuildingStartFacing`.
-        #[cfg(feature = "phobos")]
         let facing = wants_facing.then(|| {
             sim.phobos_building_start_facing(id, rules).map_or(
                 crate::rules::object_type::ObjectType::BUILDING_FACING,
                 |facing| facing as u8,
             )
         });
-        #[cfg(not(feature = "phobos"))]
-        let facing = wants_facing.then_some(crate::rules::object_type::ObjectType::BUILDING_FACING);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 entity,
@@ -586,7 +582,6 @@ fn mission_factory_unload(
             // `0x44DDDE`, `Ext/Building/Hooks.cpp:1188-1205`): a roof-exit
             // docked unit plays the roof Production anim and skips the stock
             // PlayAnim; every other unit keeps the stock play.
-            #[cfg(feature = "phobos")]
             {
                 let roof_exit = contact
                     .and_then(|product| sim.substrate.entities.get(product))
@@ -603,8 +598,6 @@ fn mission_factory_unload(
                     let _ = sim.set_building_anim_slot(id, 8, damaged, false, 0, rules);
                 }
             }
-            #[cfg(not(feature = "phobos"))]
-            let _ = sim.set_building_anim_slot(id, 8, damaged, false, 0, rules);
             //Draw-dirty and activation sound remain presentation dependencies.
         }
         1 => {
@@ -844,7 +837,6 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         // `[General] BuildingGuardRetryDelay`) answers the retry frames
         // directly; a range draws its own jitter and a single value draws
         // nothing, replacing the stock `AARate` body below.
-        #[cfg(feature = "phobos")]
         if let Some(range) = obj
             .guard_retry_delay()
             .or(rules.phobos_globals.building_guard_retry_delay)
@@ -1070,7 +1062,6 @@ fn attack_arm(
             fire_arm(sim, id, rules, target, weapon, ctx, bridge_state_changed);
             // Phobos BuildingClass_Mission_Attack_TurretAnim (0x44B6C7):
             // arm the firing block at the firing instant.
-            #[cfg(feature = "phobos")]
             arm_turret_anim_firing(sim, id, rules);
             // The tail every OK arm reaches (`0x0044B6D6..0x0044B724`).
             if !gattling_step(sim, id, rules, StageCall::Increase, ctx.effects) {
@@ -1283,7 +1274,6 @@ fn update_native_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSe
 /// `BuildingAnimSlot::Turret` (slot 9) animation exists. VERA's SHP slot-9
 /// drawing is unported (retail dormant), so this pins only the CPU frame
 /// selection + state advance on the existing `UpdateAnimation` owner.
-#[cfg(feature = "phobos")]
 fn update_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -1340,7 +1330,6 @@ fn update_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// (`Ext/Building/Hooks.cpp:1333-1357`): on the firing instant, with
 /// `HasTurret()` (`0x004527D0`) and a Turret slot animation, arm the firing
 /// block when its frame count is positive and no firing animation plays.
-#[cfg(feature = "phobos")]
 fn arm_turret_anim_firing(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -1434,9 +1423,7 @@ pub(super) fn gattling_idle(
     let since = now.wrapping_sub(entity.last_fire_frame.frame() as i32);
     if since > rules.general.guard_area_targeting_delay.wrapping_add(5) {
         let elite = is_elite(entity);
-        #[cfg(feature = "phobos")]
         let ammo = entity.ammo().map_or(-1, |ammo| ammo.current());
-        #[cfg(feature = "phobos")]
         entity
             .gattling
             .idle_decay_phobos(&obj.gattling_stages, elite, &obj.phobos_rate_down, ammo);
@@ -1533,7 +1520,6 @@ fn fire_arm(
     // `IsAnimDelayedBurst=` (ART, constructor true) off, a burst already in
     // progress jumps to JustFire `0x44B6C4` instead of arming the SpecialAnim
     // delay again. The first shot (index 0) keeps the vanilla check either way.
-    #[cfg(feature = "phobos")]
     let art_metadata = art_metadata.filter(|art| art.is_anim_delayed_burst || burst_index == 0);
     match art_metadata {
         Some(art) => {

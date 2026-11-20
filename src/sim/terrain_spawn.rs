@@ -32,7 +32,6 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::terrain_object::TerrainObjectStore;
-#[cfg(feature = "phobos")]
 use crate::sim::tiberium::SpawnerSpread;
 use crate::sim::tiberium::spread_tiberium;
 use crate::sim::timer::CdTimer;
@@ -95,7 +94,6 @@ impl TerrainAnimationState {
 
     /// The seeded SHP frame count. The rules asset catalog supplies it in
     /// production; a fixture may seed the state directly.
-    #[cfg(feature = "phobos")]
     pub(crate) fn frame_count(&self) -> u16 {
         self.frame_count as u16
     }
@@ -103,7 +101,6 @@ impl TerrainAnimationState {
     /// `TerrainClass::Start_To_Crumble @ 0x0071C8E0`: Stage resets to 0 at
     /// rate 2. A non-animated tree has no seeded state; this one only feeds
     /// the crumble sequence.
-    #[cfg(feature = "phobos")]
     pub(crate) fn new_crumbling(type_ref: InternedId, frame_count: u16, binary_frame: u32) -> Self {
         let mut state = Self::new(
             type_ref,
@@ -118,7 +115,6 @@ impl TerrainAnimationState {
         state
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn start_crumble(&mut self, binary_frame: u32) {
         self.current_frame = 0;
         self.rate = 2;
@@ -126,7 +122,6 @@ impl TerrainAnimationState {
     }
 
     /// One retained Stage step for the crumble sequence.
-    #[cfg(feature = "phobos")]
     pub(crate) fn advance_crumble(&mut self, binary_frame: u32) -> bool {
         let now = binary_frame as i32;
         if self.rate == 0 || !self.timer.expired(now) {
@@ -208,7 +203,6 @@ pub(crate) fn tick_terrain_object_ai(
         .is_some_and(|terrain| terrain.is_live());
     // Phobos `TerrainClass_AI_Crumbling` (0x71C812) precedes the IsAnimated
     // block and returns from the AI on both of its reached arms.
-    #[cfg(feature = "phobos")]
     if tick_terrain_crumble(sim, stable_id, rules, overlay_registry, effects)? {
         return Ok(());
     }
@@ -236,7 +230,6 @@ pub(crate) fn tick_terrain_object_ai(
 /// lethal arm plays the destroy effects and removes the tree once
 /// `currentStage + 1 == Frames / 2`, otherwise advances the stage at rate 2.
 /// Both reached arms return from the AI, skipping the IsAnimated block.
-#[cfg(feature = "phobos")]
 fn tick_terrain_crumble(
     sim: &mut crate::sim::world::Simulation,
     stable_id: u64,
@@ -338,7 +331,6 @@ fn tick_terrain_animation(
     // Phobos `TerrainClass_AI_Animated` (0x71C84D): the cycle is
     // `AnimationLength`, else `Frames / (2 * (HasDamagedFrames + 1))`, and
     // every animated type resets (only a spawner spreads ore).
-    #[cfg(feature = "phobos")]
     let (cycle, reset_without_spawner) = terrain_type.map_or((-1, false), |ty| {
         let frames = rules
             .terrain_display_frame_count(sim.interner.resolve(type_ref))
@@ -356,8 +348,6 @@ fn tick_terrain_animation(
             true,
         )
     });
-    #[cfg(not(feature = "phobos"))]
-    let (cycle, reset_without_spawner) = (-1, false);
     let fired = {
         let Some((spawner, _, _)) = sim.terrain_objects.animation_with_indexes_mut(stable_id)
         else {
@@ -381,11 +371,9 @@ fn tick_terrain_animation(
     if sim.overlay_grid.is_none() || sim.resolved_terrain.is_none() {
         return Ok(());
     }
-    #[cfg(feature = "phobos")]
     let ext = terrain_type.map(|ty| &ty.spawns_tiberium_ext);
     // TerrainTypeExt::GetCellsPerAnim draws once after the native midpoint
     // reset. Single-valued/reversed ranges draw nothing, including zero attempts.
-    #[cfg(feature = "phobos")]
     let cells = ext.map_or(1, |ext| {
         let range = ext.cells_per_anim;
         if range.is_single() {
@@ -395,16 +383,11 @@ fn tick_terrain_animation(
                 .next_range_i32_inclusive(range.low, range.high)
         }
     });
-    #[cfg(not(feature = "phobos"))]
-    let cells = 1;
-    #[cfg(feature = "phobos")]
     let spread_context = ext.map(|ext| SpawnerSpread {
         tiberium_type: ext.tiberium_type,
         range: ext.range,
         growth_stage: ext.growth_stage,
     });
-    #[cfg(not(feature = "phobos"))]
-    let spread_context = None;
     let mut placed_cells = Vec::new();
     let mut result = Ok(());
     for _ in 0..cells.max(0) {
@@ -424,7 +407,6 @@ fn tick_terrain_animation(
         sim.publish_tiberium_cells(rules, registry, &placed_cells);
     }
     result?;
-    #[cfg(feature = "phobos")]
     spawn_spawner_particle(sim, rules, stable_id);
     Ok(())
 }
@@ -435,7 +417,6 @@ fn tick_terrain_animation(
 /// system is the global at `0xA8ED78`, which `ScenarioSetup @ 0x00685040` fills
 /// with the literal GasCloudSys instance, so the ore spawner shares
 /// [`Simulation::spawn_gas_particle`]'s owner rather than a second one.
-#[cfg(feature = "phobos")]
 fn spawn_spawner_particle(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -761,7 +742,6 @@ pub fn seed_terrain_animations(
 /// Phobos `TerrainTypeExt::PlayDestroyEffects`
 /// (`Ext/TerrainType/Body.cpp:17-21`): `DestroySound` at the terrain's
 /// coordinate, then a `DestroyAnim` there.
-#[cfg(feature = "phobos")]
 impl crate::sim::world::Simulation {
     pub(crate) fn terrain_play_destroy_effects(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some(terrain) = self.terrain_objects.get(stable_id) else {
@@ -2672,7 +2652,6 @@ mod tests {
     /// `TerrainClass_AI_Crumbling` (`0x71C812`): a `HasCrumblingFrames=`
     /// tree stays alive, plays `CrumblingSound` and its crumble Stage, then
     /// plays `PlayDestroyEffects` and is removed.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_crumbling_tree_keeps_alive_then_destroys_and_removes() {
         use crate::sim::world::SimSoundEvent;
@@ -2753,7 +2732,6 @@ mod tests {
     /// transaction's finalizing set, which `ReceiverRun::finish` expects
     /// empty), while a plain tree finalizes in the same call. Under Ares an
     /// on-fire tree skips Start_To_Crumble (`0x71BADC`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_lethal_area_hit_routes_crumbling_and_plain_trees_through_the_receiver() {
         let ini = IniFile::from_str(
@@ -2878,7 +2856,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
     /// `HasDamagedFrames=` above zero health clears the damaged-redraw latch
     /// (`0x71C812`) without removing the tree.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_has_damaged_frames_clears_the_redraw_latch_while_alive() {
         let ini = IniFile::from_str(
@@ -2937,7 +2914,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// next `TerrainClass_AI_Crumbling` (`0x71C812`) visit clears it while
     /// Health is above zero. An upward crossing, an already-damaged ratio, an
     /// animated type and a type without damaged frames all refuse.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_nonlethal_hit_across_condition_yellow_latches_crumbling_for_one_frame() {
         let ini = IniFile::from_str(
@@ -3060,7 +3036,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// (`Ext/TerrainType/Hooks.cpp:106`) and for the `0x71B98B` latch (`:274`).
     /// One `RuleSet` owner answers both, so a ratio that crosses the override
     /// but not the base line still latches.
-    #[cfg(feature = "phobos")]
     #[test]
     fn condition_yellow_terrain_overrides_the_base_threshold_in_sim_and_draw() {
         let ini = IniFile::from_str(

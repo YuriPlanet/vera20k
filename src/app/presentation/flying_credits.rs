@@ -63,7 +63,6 @@ impl FlyingCredits {
         // Phobos `FlyingStrings::AddMoneyString`: a non-All
         // `DisplaySoylentToHouses` compares the paying House with the local
         // player before the source's visual-character test.
-        #[cfg(feature = "phobos")]
         if let Some(flags) = event.display_to {
             let Some(owner) = event
                 .display_owner
@@ -225,9 +224,7 @@ mod tests {
                 z: 0,
             },
             z_offset: 256,
-            #[cfg(feature = "phobos")]
             display_to: None,
-            #[cfg(feature = "phobos")]
             display_owner: None,
             pixel_offset: [0, 0],
         };
@@ -285,7 +282,6 @@ mod tests {
     /// Phobos `FlyingStrings::AddMoneyString`'s `DisplaySoylentToHouses=`
     /// filter: the paying House must be targetable by the local player, and
     /// the label keeps the event's pixel offset.
-    #[cfg(feature = "phobos")]
     #[test]
     fn display_soylent_filters_by_the_paying_house() {
         use crate::rules::phobos_shields::AffectedHouse;
@@ -341,7 +337,6 @@ Sight=0
     /// `AddMoneyString`'s `pOwner` is not always the anchor object's owner:
     /// the drain target label anchors at the drained building while its House
     /// filter asks the drainer's House. `display_owner` carries that owner.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_money_label_house_filter_uses_its_explicit_owner() {
         use crate::rules::phobos_shields::AffectedHouse;
@@ -398,7 +393,6 @@ Sight=0
     /// passes `pSource = nullptr`: the label has no anchor object, so the
     /// source's visual-character test is skipped and the House filter reads
     /// the event's explicit owner.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_source_less_money_label_uses_its_explicit_owner() {
         use crate::rules::phobos_shields::AffectedHouse;

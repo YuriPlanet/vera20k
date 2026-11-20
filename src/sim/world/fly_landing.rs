@@ -24,7 +24,6 @@ use crate::util::fixed_math::SIM_ZERO;
 /// does not hold counts as unset, as the native `AnimTypeClass::Find` read
 /// would leave the pointer null. The forced dropship arm jumps to the tail
 /// (`0x4CEBA3 jmp 0x4CEC56`), so exactly one anim is spawned.
-#[cfg(feature = "phobos")]
 fn phobos_landing_anim<'a>(
     rules: &'a RuleSet,
     object: Option<&'a crate::rules::object_type::ObjectType>,
@@ -264,16 +263,7 @@ impl Simulation {
             // Phobos `GetLandingAnim` replaces the stock DROPLAND/CARYLAND
             // choice (`Ext/Techno/Hooks.cpp:2178-2225`); a stock build keeps
             // the two literal names.
-            #[cfg(feature = "phobos")]
             let animation = phobos_landing_anim(rules, object, dropship, carryall);
-            #[cfg(not(feature = "phobos"))]
-            let animation = if dropship {
-                Some("DROPLAND")
-            } else if carryall {
-                Some("CARYLAND")
-            } else {
-                None
-            };
             if let Some(animation) = animation {
                 let name = self.interner.intern(animation);
                 let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
@@ -1186,7 +1176,6 @@ mod tests {
     /// `DROPLAND`/`CARYLAND` fallback, else `[AudioVisual] DefaultLandingAnim`
     /// (whose presence also widens the landing effect to every aircraft,
     /// `0x4CEB59`). Each case lands row 1, whose effect latch is still clear.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_landing_anim_choice_reaches_the_landing_effect() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
@@ -1262,7 +1251,6 @@ mod tests {
     /// The dropship arm of `GetLandingAnim` (`Ext/Techno/Hooks.cpp:2183-2201`):
     /// an `IsDropship` type takes `.Dropship` else `DROPLAND` and never the
     /// plain global default; an authored type key wins over both.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_dropship_landing_anim_precedence() {
         let rules = RuleSet::from_ini(&IniFile::from_str(

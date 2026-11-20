@@ -2643,7 +2643,6 @@ fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
 }
 
 /// The same fixture with Phobos `[General] BuildingProductionQueue=yes`.
-#[cfg(feature = "phobos")]
 fn world_with_building_queue(seed: u64) -> (Simulation, RuleSet, InternedId) {
     let mut ini = manager_ini();
     ini.merge(&IniFile::from_str(
@@ -2655,7 +2654,6 @@ fn world_with_building_queue(seed: u64) -> (Simulation, RuleSet, InternedId) {
     )
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn building_queue_switch_queues_and_starts_the_next_after_placement() {
     use crate::sim::production::ProductionCancellation;
@@ -2740,7 +2738,6 @@ fn building_queue_switch_queues_and_starts_the_next_after_placement() {
 /// `FactoryClass_QueueProduction_ForceCheckBuilding 0x4C9C7B`: with the
 /// switch on, a building PRODUCE no longer abandons a held product, so the
 /// request waits in the queue while the held building stays suspended.
-#[cfg(feature = "phobos")]
 #[test]
 fn building_queue_switch_keeps_a_suspended_held_building() {
     use crate::sim::world::FrameEffects;
@@ -2799,7 +2796,6 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
 /// right-click on a queued structure remove that queued copy, so the building
 /// under construction stays and nothing refunds (a queued copy is unpaid until
 /// it starts). Without the rewrite this call abandons the held product instead.
-#[cfg(feature = "phobos")]
 #[test]
 fn cancel_one_queued_structure_keeps_the_building_under_construction() {
     use crate::sim::production::ProductionCancellation;

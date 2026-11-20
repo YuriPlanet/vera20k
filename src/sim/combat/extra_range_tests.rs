@@ -109,7 +109,6 @@ fn make_moving(sim: &mut Simulation, id: u64) {
 
 /// The globals read through the native `[General]` keys with their
 /// constructor defaults (`Ext/Rules/Body.cpp:511..515`, `Body.h:925..929`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_extra_range_globals_read_with_native_defaults() {
     let rules = RuleSet::from_ini(&IniFile::from_str("[General]\n")).expect("rules");
@@ -137,7 +136,6 @@ fn the_extra_range_globals_read_with_native_defaults() {
 
 /// `IsMovingFire` (`:164..168`): the bonus applies only while the firer's
 /// locomotor really moves.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_moving_firer_receives_the_firer_bonus() {
     let (mut sim, rules, firer, target) = scene("ExtraRange.FirerMoving=1\n", "", "");
@@ -157,7 +155,6 @@ fn a_moving_firer_receives_the_firer_bonus() {
 /// (`Ext/WeaponType/Body.cpp:200`), so an authored global makes `isset()`
 /// true and the `CloseRangeOnly` arm never runs: a plain firer still takes
 /// the bonus.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_moving_target_receives_the_target_bonus() {
     let (mut sim, rules, firer, target) = scene("ExtraRange.TargetMoving=1\n", "", "");
@@ -184,7 +181,6 @@ fn a_moving_target_receives_the_target_bonus() {
 
 /// `IsPrefiring` (`:79..80`, `:152..155`): a nonzero burst index counts as
 /// pre-firing while `ExtraRange.Prefiring.IncludeBurst` is on.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_prefiring_bonus_follows_the_burst_index() {
     let (mut sim, rules, firer, target) = scene("ExtraRange.Prefiring=1\n", "", "");
@@ -217,7 +213,6 @@ fn the_prefiring_bonus_follows_the_burst_index() {
 
 /// The additions sit before every other InRange term but after the -512
 /// sentinel and the live KeepRange replacement (`:145..148`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_sentinel_and_keep_range_bypass_the_bonuses() {
     let (mut sim, rules, firer, target) = scene_at(
@@ -254,7 +249,6 @@ fn the_sentinel_and_keep_range_bypass_the_bonuses() {
 }
 
 /// The predicate itself adds the three bonuses independently and sums them.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_predicate_sums_every_applicable_bonus() {
     let (mut sim, rules, firer, target) = scene(
@@ -286,7 +280,6 @@ fn the_predicate_sums_every_applicable_bonus() {
 
 /// `IsChasing` starts with a Foot-class check on the firer (`:53..54`), so a
 /// Building never takes the target-moving bonus even against a moving target.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_building_firer_takes_no_target_moving_bonus() {
     let (mut sim, rules, firer, target) = scene("ExtraRange.TargetMoving=1\n", "", "");
@@ -312,7 +305,6 @@ fn a_building_firer_takes_no_target_moving_bonus() {
 
 /// A `Burst=0` weapon never divides by zero, and an index that is a multiple
 /// of the burst does not count as pre-firing either (`:79..80`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_burst_arm_needs_a_positive_burst_and_a_remainder() {
     let (mut sim, rules, firer, target) = scene("ExtraRange.Prefiring=1\n", "Burst=0\n", "");
@@ -341,7 +333,6 @@ fn the_burst_arm_needs_a_positive_burst_and_a_remainder() {
 
 /// Phobos hooks `InRange` itself, so a Cell (attack-ground) target also takes
 /// the movement bonuses; the terrain gate must thread the world handle.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_cell_target_takes_the_moving_firer_bonus() {
     let (mut sim, rules, firer, _) = scene("ExtraRange.FirerMoving=1\n", "", "");

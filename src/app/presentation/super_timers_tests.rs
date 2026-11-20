@@ -194,7 +194,6 @@ fn each_line_prints_as_native() {
 /// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the named `[Colors]` entry
 /// prints the blinking time; the key absent, or `none` (scheme -1), prints the
 /// native third entry.
-#[cfg(feature = "phobos")]
 #[test]
 fn timer_blink_color_scheme_selects_the_named_colors_entry() {
     let colors = "[Colors]\nGold=43,239,255\nGrey=0,0,131\nLightGrey=0,0,240\n";

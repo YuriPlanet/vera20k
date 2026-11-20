@@ -234,7 +234,6 @@ fn ares_passenger_turret_follows_the_passenger_count() {
 /// and starts the ext `ChargeTurretTimer`, whose remainder drives the turret
 /// progress until it expires while the real rearm keeps the native duration;
 /// an item `<= 0` keeps the native value.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_charge_turret_delays_override_the_progress_and_expire() {
     let object = object(&corpus(), true, 4, true, false);

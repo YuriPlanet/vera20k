@@ -86,7 +86,6 @@ pub fn depart_cargo_head(
     // cargo arms (Absorber, Hospital) pop through CargoClass alone and see
     // no hook. The revert precedes placement, so a refused exit re-attaches
     // the passenger already reverted, as native's re-add does.
-    #[cfg(feature = "phobos")]
     if matches!(
         route,
         DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::DeathEscape

@@ -91,7 +91,6 @@ fn emit(
 /// Phobos's budget asks `RandomRanged(MinDebris, MaxDebris)` — the vanilla
 /// `MaxDebris - 1` top is not used — and a resolved `Debris.Conventional`
 /// skips the whole block over a Water cell only.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_bullet_budget_is_min_to_max_and_the_water_key_skips_it() {
     let dry = rules("", "MinDebris=2\nMaxDebris=2\n");
@@ -149,7 +148,6 @@ fn the_bullet_budget_is_min_to_max_and_the_water_key_skips_it() {
 
 /// Phobos's restored loop reads the warhead's own `DebrisMinimums`: a floor at
 /// or above the budget throws the whole budget through its slot.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_warhead_debris_minimums_drive_the_typed_loop() {
     let floored = rules(
@@ -177,7 +175,6 @@ fn the_warhead_debris_minimums_drive_the_typed_loop() {
 
 /// Phobos's bullet tail throws the warhead's own `DebrisAnims` list when the
 /// typed count is zero, falling back to `[General] MetallicDebris=`.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_warhead_debris_anims_list_precedes_the_metallic_fallback() {
     let own = rules("", "MinDebris=1\nMaxDebris=1\nDebrisAnims=DBRI3\n");

@@ -34,12 +34,8 @@
 /// an empty placeholder so the shared score signature stays stable.
 #[derive(Clone, Copy)]
 pub(crate) struct ThreatBonusContext<'a> {
-    #[cfg(feature = "phobos")]
     pub world: &'a crate::sim::world::Simulation,
-    #[cfg(feature = "phobos")]
     pub overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
-    #[cfg(not(feature = "phobos"))]
-    _unused: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> ThreatBonusContext<'a> {
@@ -49,22 +45,15 @@ impl<'a> ThreatBonusContext<'a> {
         world: &'a crate::sim::world::Simulation,
         overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<Self> {
-        #[cfg(feature = "phobos")]
         {
             Some(Self {
                 world,
                 overlay_registry,
             })
         }
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = (world, overlay_registry);
-            None
-        }
     }
 }
 
-#[cfg(feature = "phobos")]
 mod implementation {
     use super::ThreatBonusContext;
     use crate::map::entities::EntityCategory;
@@ -358,5 +347,4 @@ mod implementation {
     }
 }
 
-#[cfg(feature = "phobos")]
 pub(crate) use implementation::apply_extra_threat_bonus;

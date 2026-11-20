@@ -1842,7 +1842,6 @@ impl Simulation {
                 nav_com == NavTargetRef::object(target)
             }
             // A bullet target is never a nav destination.
-            #[cfg(feature = "phobos")]
             (_, crate::sim::combat::TargetKind::Bullet(..)) => false,
         };
         let keeps = leads_to_target

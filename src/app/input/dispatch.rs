@@ -206,7 +206,6 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if button == MouseButton::Right {
         crate::app::input::chat::right_button(state);
     }
-    #[cfg(feature = "phobos")]
     if crate::app::input::sw_sidebar::mouse(state, button, pressed) {
         return;
     }
@@ -814,13 +813,10 @@ fn tactical_left_up(state: &mut AppState) {
                     // Phobos `[Phobos] PrioritySelectionFiltering=`: the band
                     // walk skips `LowSelectionPriority=` objects once the
                     // rectangle holds a higher-priority one.
-                    #[cfg(feature = "phobos")]
                     let priority_selection_filtering = state
                         .match_state
                         .match_presentation
                         .priority_selection_filtering;
-                    #[cfg(not(feature = "phobos"))]
-                    let priority_selection_filtering = false;
                     queued_selection = compute_box_selection_snapshot_with_playfield(
                         crate::app::input::entity_pick::presented(state, sim),
                         preflight_order,
@@ -1336,12 +1332,9 @@ fn sidebar_cameo_press(
     // The linked Factory's state also decides whether Shift may repeat: a held
     // or finished build takes the resume/placement arm, not a fresh PRODUCE.
     let own_for_repeat = linked_factory.map(|(status, _)| status);
-    #[cfg(feature = "phobos")]
     let building_production_queue = state
         .rules()
         .is_some_and(|rules| rules.general.building_production_queue);
-    #[cfg(not(feature = "phobos"))]
-    let building_production_queue = false;
     let click = sidebar_eva::cameo_click_with_queue(
         &queue,
         category,
@@ -1636,9 +1629,8 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
             // Phobos `ExtendedPlayerRepair`: the repair button becomes the
             // house-wide auto-repair latch instead of the cursor repair mode
             // (`Ext/House/Hooks.cpp:776-801`)
-            #[cfg(feature = "phobos")]
             {
-                let extended = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                let extended = state.match_state.sim_runtime.runtime().and_then(|runtime| {
                     let sim = &runtime.simulation;
                     let current = sim.session().current_house()?;
                     let house = sim.houses().get(&current)?;
@@ -2293,7 +2285,6 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         ),
         HotkeyCommand::PageUser => crate::app::input::page_user::execute(state),
         HotkeyCommand::PlaceBeacon => crate::app::input::beacon::execute_command(state),
-        #[cfg(feature = "phobos")]
         HotkeyCommand::FireTacticalSw(index) => {
             if state
                 .rules()
@@ -2305,7 +2296,6 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 press_super_weapon(state, &type_id, false, false);
             }
         }
-        #[cfg(feature = "phobos")]
         HotkeyCommand::ToggleSwSidebar => {
             if state
                 .rules()
@@ -3009,7 +2999,6 @@ pub(crate) fn reconcile_selection_order_after_sim(
     );
     // Phobos "Flashing Technos on selecting" sits in ObjectClass::Select
     // (`0x005F46AE`/`0x005F4718`), so the frame's logic Selects flash too.
-    #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !selected.is_empty()
         && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
@@ -3146,7 +3135,6 @@ fn apply_selection_mutation(
     // selecting an own factory building switches the sidebar tab, unless the
     // building type's `SetTabBySelecting` names one. Only a newly selected
     // object triggers the hook, hence `successful_adds`.
-    #[cfg(feature = "phobos")]
     let phobos_tab = {
         use crate::ui::sidebar::SidebarTab;
         let rules = state
@@ -3195,7 +3183,6 @@ fn apply_selection_mutation(
     // ObjectClass_Select flashes each newly selected Techno the current player
     // controls (0x005F46AE/0x005F4718); an already-selected object makes no
     // Select call and therefore no flash.
-    #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !successful_adds.is_empty()
         && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
@@ -3233,7 +3220,6 @@ fn apply_selection_mutation(
     }
     state.match_state.input.selection_order = ordered.clone();
     state.match_state.input.selection_order_pending = true;
-    #[cfg(feature = "phobos")]
     if let Some(tab) = phobos_tab {
         state.match_state.match_presentation.active_sidebar_tab = tab;
     }
@@ -4513,13 +4499,10 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     let local_owner = sim.interner().get(&owner);
     // Phobos `[Phobos] PriorityDeployFiltering=`: the client switch for the
     // `LowDeployPriority` hook `0x730D0F`.
-    #[cfg(feature = "phobos")]
     let priority_deploy_filtering = state
         .match_state
         .match_presentation
         .priority_deploy_filtering;
-    #[cfg(not(feature = "phobos"))]
-    let priority_deploy_filtering = false;
     let commands = deploy_key_commands_filtered(
         sim,
         state.rules(),
@@ -4650,7 +4633,6 @@ fn deploy_key_commands_filtered(
 /// Phobos `LowDeployPriority=` (`Ext/TechnoType/Body.cpp:767`): whether the
 /// type asks the deploy key to skip it among higher-priority objects. Unknown
 /// types do not participate.
-#[cfg(feature = "phobos")]
 fn low_deploy_priority(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -4663,14 +4645,6 @@ fn low_deploy_priority(
 
 /// Without the `phobos` feature the type key is not read; no object is low
 /// priority.
-#[cfg(not(feature = "phobos"))]
-fn low_deploy_priority(
-    _sim: &crate::sim::world::Simulation,
-    _rules: Option<&crate::rules::ruleset::RuleSet>,
-    _id: u64,
-) -> Option<bool> {
-    None
-}
 
 /// The deploy walk's deployer state: a `Deployer=` infantryman
 /// (`0x005224E0`) is deployed in Doing 27..30 (`0x00522510`); an
@@ -5140,7 +5114,6 @@ fn jump_camera_to_base(state: &mut AppState) {
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod deploy_key_tests {
-    #[cfg(feature = "phobos")]
     use super::deploy_key_commands_filtered;
     use super::{deploy_key_command, deploy_key_commands};
     use crate::rules::ini_parser::IniFile;
@@ -5475,7 +5448,6 @@ mod deploy_key_tests {
     /// (hook `0x730D0F`): a low-priority techno is dropped from a
     /// multi-object deploy when the selection also holds one that is not low
     /// priority; turning the client switch off orders both.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_deploy_key_drops_a_low_priority_techno_beside_a_higher_one() {
         let rules = RuleSet::from_ini(&IniFile::from_str(

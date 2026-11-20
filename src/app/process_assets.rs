@@ -83,7 +83,6 @@ pub(crate) struct ProcessAssets {
     /// Phobos `uimd.ini [ToolTips]`/`[LoadingScreen]`, parsed once at startup
     /// (`src/Phobos.INI.cpp:135-170`) from the same resident manager and CSF.
     /// The loading screen and the in-game cameo tips both read it.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_tooltips_ui: crate::rules::phobos_tooltips_ui::ToolTipsUi,
     /// Process-persistent terrain-load cache. Scenario teardown, failed
     /// loads, reseeds, and save transitions must not clear it.
@@ -149,7 +148,6 @@ impl ProcessAssets {
             campaigns: None,
             shared_cell_dummy: Default::default(),
             csf: None,
-            #[cfg(feature = "phobos")]
             phobos_tooltips_ui: Default::default(),
             tile_variant_selector_cache: Default::default(),
             native_ini_hashes: None,
@@ -828,7 +826,6 @@ impl ProcessAssets {
     /// (`src/Phobos.INI.cpp:135-170`); VERA keeps the result process-wide
     /// because the loading screen reads `[LoadingScreen]` before any match
     /// presentation exists.
-    #[cfg(feature = "phobos")]
     pub(crate) fn load_phobos_tooltips_ui(&mut self) {
         let lookup = crate::app::loading::init_helpers::sidebar_label_lookup(self.csf.as_ref());
         self.phobos_tooltips_ui = self

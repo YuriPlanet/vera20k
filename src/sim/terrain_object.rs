@@ -86,7 +86,6 @@ pub struct TerrainObjectState {
     /// Phobos `IsCrumbling`: a lethal hit on a `HasCrumblingFrames=` tree
     /// keeps it alive to play its crumble sequence
     /// (`Ext/TerrainType/Hooks.cpp:80-131`, `:251-305`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     is_crumbling: bool,
 }
@@ -108,7 +107,6 @@ impl std::hash::Hash for TerrainObjectState {
         if self.on_fire {
             b"ares-terrain-on-fire-v1".hash(state);
         }
-        #[cfg(feature = "phobos")]
         self.is_crumbling.hash(state);
     }
 }
@@ -167,7 +165,6 @@ impl TerrainObjectState {
             spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle,
             on_fire: false,
-            #[cfg(feature = "phobos")]
             is_crumbling: false,
         }
     }
@@ -271,7 +268,6 @@ impl TerrainObjectState {
             spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
             on_fire: false,
-            #[cfg(feature = "phobos")]
             is_crumbling: false,
         }
     }
@@ -501,12 +497,10 @@ impl TerrainObjectState {
 
     /// Phobos `IsCrumbling`: the tree is playing its crumble sequence. Read
     /// by the Terrain draw frame selection.
-    #[cfg(feature = "phobos")]
     pub const fn is_crumbling(&self) -> bool {
         self.is_crumbling
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_crumbling(&mut self, value: bool) {
         self.is_crumbling = value;
     }
@@ -812,14 +806,12 @@ impl TerrainObjectStore {
     }
 
     /// Phobos `IsCrumbling` for the damage and AI owners.
-    #[cfg(feature = "phobos")]
     pub(crate) fn is_crumbling(&self, stable_id: u64) -> bool {
         self.objects
             .get(&stable_id)
             .is_some_and(|terrain| terrain.is_crumbling())
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_crumbling(&mut self, stable_id: u64, value: bool) {
         if let Some(terrain) = self.objects.get_mut(&stable_id) {
             terrain.set_crumbling(value);
@@ -829,7 +821,6 @@ impl TerrainObjectStore {
     /// `TerrainClass::Start_To_Crumble @ 0x0071C8E0`: Stage resets to 0 at
     /// rate 2. A type without an animation entry (a non-animated tree) gets
     /// one; an animated state is rewound in place.
-    #[cfg(feature = "phobos")]
     pub(crate) fn start_crumble_animation(
         &mut self,
         stable_id: u64,
@@ -854,7 +845,6 @@ impl TerrainObjectStore {
     }
 
     /// One Stage step of the crumble sequence (rate 2).
-    #[cfg(feature = "phobos")]
     pub(crate) fn advance_crumble(&mut self, stable_id: u64, binary_frame: u32) -> bool {
         self.animations
             .get_mut(&stable_id)
@@ -862,7 +852,6 @@ impl TerrainObjectStore {
     }
 
     /// Terrain DrawIt71C208's retained Stage value, when the type has one.
-    #[cfg(feature = "phobos")]
     pub(crate) fn animation_current_frame(&self, stable_id: u64) -> Option<i32> {
         self.animations
             .get(&stable_id)
@@ -1893,7 +1882,6 @@ mod tests {
     /// `Ext/TerrainType/Hooks.Passable.cpp:10-18`): the type key, else
     /// `Tibtree.IsPassable`/`Terrain.IsPassable` by `SpawnsTiberium=`, zeroes
     /// the occupation bits so the terrain never blocks movement.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_terrain_is_passable_zeroes_occupation_bits() {
         let build = |general: &str, tree: &str, rock: &str| {

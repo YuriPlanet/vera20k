@@ -311,7 +311,6 @@ fn mission_guard_matches_the_original() {
 /// drawing its own jitter and a single value drawing nothing;
 /// `[General] BuildingGuardRetryDelay` answers for a type that leaves the key
 /// unset. Both replace the stock `AARate` delay and its `Random(0, 2)` draw.
-#[cfg(feature = "phobos")]
 #[test]
 fn guard_retry_delay_replaces_the_aarate_delay() {
     let retry_rules = |type_key: &str, general_key: &str| {
@@ -2067,7 +2066,6 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
 /// block follows `StuffEnabled`/`IsPowerOnline`, and a `Turret=no` host never
 /// writes its slot-9 anim (`0x451238` asks vt+0x3FC first).
 #[test]
-#[cfg(feature = "phobos")]
 fn turret_anim_frame_uses_body_shape_low_power_and_requires_a_turret() {
     use crate::sim::anim_class::AnimWorldCoord;
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
@@ -2205,7 +2203,6 @@ Foundation=1x1
 /// once a burst is in progress (`CurrentBurstIndex != 0`) ART
 /// `IsAnimDelayedBurst=no` (constructor true, `Body.h:202`) jumps to the
 /// JustFire arm `0x44B6C4` and fires without waiting.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_anim_delayed_burst_only_holds_the_first_shot() {
     for (key, index, armed) in [

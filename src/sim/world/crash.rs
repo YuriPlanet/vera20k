@@ -262,7 +262,6 @@ impl Simulation {
         // `Ext/Techno/Hooks.Misc.cpp:978-999`): both rates scale by the
         // multiplier and `<= 0` replaces the whole block with SkipGameCode,
         // so the three draws do not happen either.
-        #[cfg(feature = "phobos")]
         let crash_spin_multiplier = self
             .substrate
             .entities
@@ -270,14 +269,9 @@ impl Simulation {
             .and_then(|entity| self.object_type(entity.type_ref(), rules))
             .map(|object| object.phobos_crash_spin_multiplier)
             .unwrap_or(1.0);
-        #[cfg(not(feature = "phobos"))]
-        let crash_spin_multiplier = 1.0_f32;
-        #[cfg(feature = "phobos")]
         let spin_multiplier = Some(NativeF64Bits::from_bits(
             f64::from(crash_spin_multiplier).to_bits(),
         ));
-        #[cfg(not(feature = "phobos"))]
-        let spin_multiplier = None;
         let crash_spin = if rules.ares() {
             self.substrate
                 .entities

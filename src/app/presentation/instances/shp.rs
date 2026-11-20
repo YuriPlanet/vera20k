@@ -70,7 +70,8 @@ pub(crate) struct ShpInputs<'a> {
     pub ignore_visibility: bool,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
-    pub building_zshape: bool,
+    /// The loaded BUILDNGZ frame's offset in its canvas.
+    pub building_zshape: Option<(i32, i32)>,
 }
 
 /// `extra_light` is the class's
@@ -109,12 +110,7 @@ pub(crate) fn shp_inputs<'a>(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let building_viewport = crate::app::presentation::render::tactical_world_viewport(
-        camera,
-        [x, y, width, height],
-        state.renderer.world_zoom_pass.as_ref(),
-    );
+    let building_viewport = crate::app::presentation::render::tactical_world_view(state);
     Some(ShpInputs {
         runtime,
         frame: state.match_state.sim_runtime.frame()?,
@@ -132,7 +128,10 @@ pub(crate) fn shp_inputs<'a>(
         ignore_visibility: state.match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        building_zshape: presentation.building_zshape.is_some(),
+        building_zshape: presentation
+            .building_zshape
+            .as_ref()
+            .map(|zshape| zshape.frame_offset),
     })
 }
 
@@ -268,14 +267,8 @@ pub(crate) fn shp_visitor<'a>(
             disguise.is_disguised()
                 && DrawState::draws_disguise(entity, sim.session().binary_frame(), observer)
         });
-        // `GetCell()->LandType == Water && !OnBridge` for the Phobos water
-        // damaged-image pair; an Aircraft never asks it.
-        #[cfg(feature = "phobos")]
-        let water = super::damaged_image::unit_on_water(entity, cells.as_ref());
-        #[cfg(not(feature = "phobos"))]
-        let water = false;
         let type_name = if entity.category() == EntityCategory::Unit {
-            if super::helpers::deploy_hides_unit_body(entity, sim.interner(), rules) {
+            if entity.unit_deploying() {
                 return;
             }
             super::units::drawn_model_id(
@@ -284,25 +277,15 @@ pub(crate) fn shp_visitor<'a>(
                 rules,
                 sim.session().binary_frame(),
                 observer,
-                water,
+                false,
             )
         } else {
-            let base = active_disguise
-                .and_then(|state| state.type_id())
-                .map(|id| sim.interner().resolve(id))
-                .unwrap_or_else(|| sim.interner().resolve(entity.type_ref()));
-            // Phobos `AircraftExt::GetAircraftTypeExtra`
-            // (`Ext/Aircraft/Body.cpp:195-220`): an Aircraft's damaged bands
-            // swap its SHP type; no class other than Unit and Aircraft reads
-            // the keys (`0x414987`).
-            #[cfg(feature = "phobos")]
-            let base = rules
-                .and_then(|rules| rules.object(base).map(|object| (rules, object)))
-                .and_then(|(rules, object)| {
-                    super::damaged_image::swap(entity, object, rules, false)
-                })
-                .unwrap_or(base);
-            std::borrow::Cow::Borrowed(base)
+            std::borrow::Cow::Borrowed(
+                active_disguise
+                    .and_then(|state| state.type_id())
+                    .map(|id| sim.interner().resolve(id))
+                    .unwrap_or_else(|| sim.interner().resolve(entity.type_ref())),
+            )
         };
         let type_str = type_name.as_ref();
         if super::helpers::drawn_type_uses_voxel(entity, type_str, sim.interner(), rules) {
@@ -650,15 +633,6 @@ pub(crate) fn shp_visitor<'a>(
         } else {
             selected_palette_light()
         };
-        // Phobos level lighting replaces the blit intensity for aircraft and
-        // jumpjet draws (`Ext/Techno/Hooks.Tint.cpp:320-379`).
-        let palette_light = crate::app::presentation::lighting::phobos_air_unit_light(
-            entity,
-            sim,
-            rules,
-            input.lighting,
-            palette_light,
-        );
         // The shared DrawSHP curtain intensity and the class caller's colour
         // word have separate owners. Infantry tests the Location cell;
         // Building's body/bib/buildup test the object's centre cell.
@@ -668,6 +642,7 @@ pub(crate) fn shp_visitor<'a>(
             palette_light,
             sim,
             rules,
+            entity.place.airstrike_tint_active,
             crate::app::presentation::lighting::TechnoDraw::Shape,
         );
         let colour_word = match rules {
@@ -708,7 +683,7 @@ pub(crate) fn shp_visitor<'a>(
                 // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
                 // (a12, pushed at `0x0043D633`); the ordinary body passes
                 // BUILDNGZ (`0x0043D806`).
-                let zshape = input.building_zshape
+                let zshape = input.building_zshape.is_some()
                     && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
                     && gate_open_frame.is_none();
                 let origin = native_z::zshape_origin(
@@ -716,6 +691,7 @@ pub(crate) fn shp_visitor<'a>(
                     (sx.round() as i32, sy.round() as i32),
                     foundation,
                     point_move,
+                    input.building_zshape.unwrap_or_default(),
                 );
                 (
                     lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
@@ -761,7 +737,7 @@ pub(crate) fn shp_visitor<'a>(
             parent.policy
         };
         let body = entry.map(|entry| {
-            let instance = SpriteInstance {
+            let mut instance = SpriteInstance {
                 position: [sx + entry.offset_x, sy + entry.offset_y],
                 size: entry.pixel_size,
                 uv_origin: entry.uv_origin,
@@ -779,9 +755,15 @@ pub(crate) fn shp_visitor<'a>(
                 alpha: 1.0,
                 draw_state,
                 z_adjust,
-                z_gradient,
+                z_gradient: z_gradient | native_z::shp_frame_flag(entry.extended),
                 zshape_origin,
             };
+            if z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
+                instance.draw_state.fx_params[3] = native_z::zshape_lead_skip(
+                    input.building_viewport.camera[0],
+                    instance.position[0],
+                );
+            }
             (ObjectTexture::ShpPage(entry.page as usize), instance)
         });
 
@@ -908,7 +890,8 @@ pub(crate) fn shp_visitor<'a>(
                             alpha: 1.0,
                             draw_state,
                             z_adjust,
-                            z_gradient,
+                            z_gradient: z_gradient
+                                | native_z::shp_frame_flag(turret_entry.extended),
                             zshape_origin,
                         },
                     });
@@ -984,7 +967,7 @@ pub(crate) fn shp_visitor<'a>(
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas
             {
-                let turret_offset = art_entry.map_or(0, |art| art.turret_offset);
+                let turret_offset = art_entry.map_or(0, |art| art.turret_offset[0]);
                 // TechnoClass::Draw's curtain arm (`0x0070678D..0x007067E2`)
                 // and BuildingClass::Draw's colour word (`0x0043DC1C..
                 // 0x0043DDF1`, DrawBody's) on the voxel cache blit.
@@ -995,6 +978,7 @@ pub(crate) fn shp_visitor<'a>(
                         selected_palette_light(),
                         sim,
                         rules,
+                        entity.place.airstrike_tint_active,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
                     );
                 emit_building_turret_vxl(
@@ -1430,15 +1414,16 @@ fn factory_unload_art<'a>(
         .and_then(|product| sim.interner().object_type(product.type_ref, rules))
         .is_some_and(|object| object.jumpjet || object.balloon_hover);
     let door = &art.factory_door;
-    let body = if body_roof {
-        door.roof_deploying.as_deref().map(|name| (name, -40))
+    let (body, under_door) = if roof {
+        (
+            door.roof_deploying.as_deref().map(|name| (name, -40)),
+            door.under_roof_door.as_deref(),
+        )
     } else {
-        door.deploying.as_deref().map(|name| (name, -20))
-    };
-    let under_door = if under_roof {
-        door.under_roof_door.as_deref()
-    } else {
-        door.under_door.as_deref()
+        (
+            door.deploying.as_deref().map(|name| (name, -20)),
+            door.under_door.as_deref(),
+        )
     };
     Some(FactoryUnloadArt {
         body,
@@ -1802,9 +1787,7 @@ fn building_zshape_point_move(
     art: Option<&crate::rules::art_data::ArtEntry>,
 ) -> (i32, i32) {
     if entity.building_up() || entity.building_down() {
-        // `0x43D6E5`: Mission Construction (`0x12`) and Selling (`0x13`)
-        // skip the move unless the type sets `ZShapePointMove.OnBuildup=`.
-        art.map_or((0, 0), |art| art.z_shape_point_move_while_buildup())
+        (0, 0)
     } else {
         art.map_or((0, 0), |art| art.z_shape_point_move)
     }
@@ -2173,6 +2156,7 @@ fn emit_unit_terrain_body(
         palette_light,
         sim,
         Some(&runtime.resources.rules),
+        entity.place.airstrike_tint_active,
         crate::app::presentation::lighting::TechnoDraw::Shape,
     );
     let depth = compute_sprite_depth_params(
@@ -2240,7 +2224,8 @@ fn emit_unit_terrain_body(
                 alpha: 1.0,
                 draw_state: material,
                 z_adjust,
-                z_gradient: pack_z_gradient(gradient, false),
+                z_gradient: pack_z_gradient(gradient, false)
+                    | native_z::shp_frame_flag(sprite.extended),
                 ..Default::default()
             },
         });
@@ -2386,6 +2371,7 @@ mod tests {
         let turret = ShpVehicleTurret {
             start_frame: 176,
             facings: SHP_TURRET_FACING_FRAMES,
+            frame_count: SHP_TURRET_FACING_FRAMES,
         };
         assert_eq!(super::shp_turret_frame(turret, 0), 180, "heading 0");
         assert_eq!(

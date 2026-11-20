@@ -331,7 +331,6 @@ fn ares_side_score_themes_follow_the_two_native_branch_sites() {
 /// Phobos `[Side] ToolTip.Background.Color/Opacity/BlurSize=`
 /// (`Ext/Side/Body.cpp:48-50`, `Nullable` defaults unset): each field reads
 /// from the side's section and stays `None` on a side that leaves it unset.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_side_tooltip_background_reads_explicit_overrides() {
     let rules = processed(&format!(

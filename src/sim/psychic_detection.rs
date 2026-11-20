@@ -78,7 +78,6 @@ impl Simulation {
         // Phobos `0x0043B150` (`Ext/Techno/Hooks.Misc.cpp:1107-1118`): a type
         // with `PsychicDetectable=false` answers 0 and returns early, before
         // any site, alliance or distance test.
-        #[cfg(feature = "phobos")]
         if self
             .interner
             .object_type(entity.type_ref(), rules)
@@ -86,8 +85,6 @@ impl Simulation {
         {
             return false;
         }
-        #[cfg(not(feature = "phobos"))]
-        let _ = rules;
         if sites.is_empty()
             || crate::sim::combat::combat_weapon::is_ally_by_object(
                 Some(&self.house_alliances),

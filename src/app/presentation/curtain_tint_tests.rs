@@ -245,10 +245,11 @@ fn the_building_colour_word_matches_native() {
         }
         sim.session_mut_for_test()
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
+        let rules = rules(int(&row["force_color"]));
         let word = shp_colour_word(
-            &ObjectRecord::of_test(&shielded(row)),
+            &ObjectRecord::of_test_in(&shielded(row), None, &rules),
             &sim,
-            &rules(int(&row["force_color"])),
+            &rules,
             || row["shrouded"].as_bool().unwrap(),
         );
         assert_eq!(u64::from(word), native, "{row}");
@@ -301,7 +302,15 @@ fn infantry_shp_material_matches_original_gi_draws() {
             .set_active_for_test(row["input"]["berserk"].as_bool().unwrap());
         let light = body_palette_light(&grid, (10, 20), body_extra_light(&gi, rules, &sim, None));
         let gi = ObjectRecord::of_test(&gi);
-        let (_, light) = techno_effect_light(&gi, [1.; 3], light, &sim, None, TechnoDraw::Shape);
+        let (_, light) = techno_effect_light(
+            &gi,
+            [1.; 3],
+            light,
+            &sim,
+            None,
+            false,
+            TechnoDraw::Shape,
+        );
         assert_eq!(
             light.brightness(),
             int(&row["body"]["intensity"]),
@@ -314,7 +323,6 @@ fn infantry_shp_material_matches_original_gi_draws() {
         // Phobos `TechnoExt::GetTintColor` replaces the stock three-arm word
         // with `GetColorFromColorAdd`'s single RGB565 arm, so a berserk GI's
         // retail HighRed (24,0,0) is 0xC000 where the oracle has 0xE000.
-        #[cfg(feature = "phobos")]
         let expected = if gi.berserk.is_active() {
             rules.color_add.phobos_word(
                 rules.general.berserk_color,
@@ -323,8 +331,6 @@ fn infantry_shp_material_matches_original_gi_draws() {
         } else {
             0
         };
-        #[cfg(not(feature = "phobos"))]
-        let expected = row["body"]["colour_word"].as_u64().unwrap() as u16;
         assert_eq!(word, expected, "{}", row["name"]);
     }
 }
@@ -351,13 +357,10 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
     rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
     let native =
         crate::test_fixture::json("tools/procedural_drawing_oracle/infantry_berserk_body.json");
-    #[cfg(feature = "phobos")]
     let active_word = rules.color_add.phobos_word(
         rules.general.berserk_color,
         rules.phobos_globals.color_add_use_8bit_rgb,
     );
-    #[cfg(not(feature = "phobos"))]
-    let active_word = native["rows"][1]["body"]["colour_word"].as_u64().unwrap() as u16;
     let mut histories = Vec::new();
     for move_step in [40, 120] {
         let mut sim = Simulation::with_seed(31);
@@ -495,10 +498,11 @@ fn the_anim_colour_word_matches_native() {
         } else {
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
+            let rules = rules(int(&row["force_color"]));
             let word = shp_colour_word(
-                &ObjectRecord::of_test(&shielded(row)),
+                &ObjectRecord::of_test_in(&shielded(row), None, &rules),
                 &sim,
-                &rules(int(&row["force_color"])),
+                &rules,
                 || row["shrouded"].as_bool().unwrap(),
             );
             assert_eq!(u64::from(word), native, "{row}");
@@ -669,7 +673,6 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
 /// `LaserTargetColor` (else `[AudioVisual]`) through `GetColorFromColorAdd`,
 /// whose switch keeps only the RGB565 arm: `31,0,0` is `0xF800`, where the
 /// stock fall-through gives `0xFC00`.
-#[cfg(feature = "phobos")]
 #[test]
 fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -719,7 +722,6 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
 /// `GeneralUtils::GetColorFromColorAdd:286`): the entry is 8-bit RGB and packs
 /// through `Drawing::RGB_To_Int`, so `255,64,8` is `0xFA01` instead of the raw
 /// `0xF808`.
-#[cfg(feature = "phobos")]
 #[test]
 fn airstrike_tint_reads_the_entry_as_8bit_rgb_with_the_switch() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -745,8 +747,9 @@ fn airstrike_tint_reads_the_entry_as_8bit_rgb_with_the_switch() {
     target.airstrike.set_test_link(Some(1));
     sim.entities_mut_for_test().insert(owner);
     sim.entities_mut_for_test().insert(target);
+    let owner = crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, 2);
     assert_eq!(
-        shp_colour_word(sim.entities().get(2).unwrap(), &sim, &rules, || false),
+        shp_colour_word(&owner, &sim, &rules, || false),
         0xF800 | 16 << 5 | 1
     );
 }

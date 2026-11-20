@@ -64,11 +64,10 @@ fn two_buildings(type_id: &str) -> (Simulation, Vec<u64>) {
 
 /// The same pair with entity 2 holding a tank-bunker occupant, which
 /// CanBeSelectedNow's TechnoClass checks (`0x006FC030`) refuse.
-#[cfg(feature = "phobos")]
 fn building_pair_with_garrison(type_id: &str) -> (Simulation, Vec<u64>) {
     let (mut sim, order) = two_buildings(type_id);
     sim.entities_mut_for_test()
-        .get_mut(2)
+        .get_mut_for_test(2)
         .expect("entity 2")
         .bunker
         .set_bunker_occupant_for_test(Some(99));
@@ -121,7 +120,6 @@ fn an_undeploysinto_building_stays_admissible() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_switch_admits_every_building() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -137,7 +135,6 @@ fn the_switch_admits_every_building() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_switch_still_applies_the_building_selection_checks() {
     let (sim, order) = building_pair_with_garrison("GAPOWR");
@@ -150,7 +147,6 @@ fn the_switch_still_applies_the_building_selection_checks() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_undeploysinto_arm_still_outranks_the_building_checks() {
     let (sim, order) = building_pair_with_garrison("GACNST");
@@ -162,7 +158,6 @@ fn the_undeploysinto_arm_still_outranks_the_building_checks() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_switch_lifts_only_the_id_match_context() {
     // Phobos sets ExtSelection::ProcessingIDMatches around the ID match only
@@ -190,7 +185,6 @@ fn the_switch_lifts_only_the_id_match_context() {
     ));
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_switch_is_read_from_the_general_section() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

@@ -341,7 +341,6 @@ impl SpawnManagerState {
             .filter_map(|target| match target {
                 Some(TargetKind::Entity(id)) => Some(id),
                 Some(TargetKind::Cell(..)) | None => None,
-                #[cfg(feature = "phobos")]
                 Some(TargetKind::Bullet(..)) => None,
             })
             .chain(self.slots.iter().filter_map(SpawnSlot::spawn))
@@ -514,7 +513,6 @@ pub fn init_spawn_manager(
     // Phobos `Spawns.Queue=` (`Ext/TechnoType/Body.cpp:1118`): the queue's
     // names resolve through AircraftType67BD30 like `Spawns=`; a name the
     // rules do not know is dropped by the `ValueableVector` reader.
-    #[cfg(feature = "phobos")]
     let spawn_queue: Vec<InternedId> = obj
         .phobos_techno_extras
         .spawns_queue
@@ -526,8 +524,6 @@ pub fn init_spawn_manager(
         })
         .map(|name| interner.intern(name))
         .collect();
-    #[cfg(not(feature = "phobos"))]
-    let spawn_queue: Vec<InternedId> = Vec::new();
     // The node flag and the post-launch wait: the three Rules families, and
     // in an Ares game a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
     let kamikaze_wait_frames = rules.spawn_missile_wait_frames(spawn_type_name);
@@ -537,13 +533,10 @@ pub fn init_spawn_manager(
     // `Ext/Techno/Hooks.Misc.cpp:162-178`): nodes at or past
     // `InitialSpawnsNumber` start Dead with `SpawnTimer.Start(RegenRate)`;
     // the rest are live. An unset key uses `SpawnsNumber`.
-    #[cfg(feature = "phobos")]
     let initial_spawns = obj
         .initial_spawns_number
         .unwrap_or(obj.spawns_number)
         .clamp(0, obj.spawns_number);
-    #[cfg(not(feature = "phobos"))]
-    let initial_spawns = obj.spawns_number;
     let slots = (0..obj.spawns_number.max(0) as usize)
         .map(|index| SpawnSlot {
             spawn: None,
@@ -589,7 +582,6 @@ pub fn init_spawn_manager(
 /// `Spawner=yes` weapons for the asked tier, plus `Spawner.ExtraLimitRange`
 /// cells. `MultiWeapon` (Ares) is not represented; the stock
 /// `TurretCount > 0 && WeaponCount > 0` form picks the numbered slots.
-#[cfg(feature = "phobos")]
 fn spawner_range(obj: &crate::rules::object_type::ObjectType, elite: bool, rules: &RuleSet) -> i32 {
     let multi_weapon = obj.turret_count > 0 && obj.weapon_count > 0;
     let weapon_count = if multi_weapon { obj.weapon_count } else { 2 };
@@ -626,7 +618,6 @@ impl Simulation {
     /// `AbstractClass::DistanceFrom @ 0x005F6440`, the planar
     /// target-foundation discount VERA owns as
     /// [`crate::sim::combat::object_distance_to`], not a 3D root.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_spawn_limit_range(
         &mut self,
         id: u64,
@@ -670,7 +661,6 @@ impl Simulation {
     /// `Returning` takes its own current Health as `C4Warhead` damage with
     /// defenses ignored (`ReceiveDamage(&child->Health, 0, C4Warhead,
     /// nullptr, true, false, nullptr)`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_powered_kill_spawns(
         &mut self,
         id: u64,
@@ -815,32 +805,26 @@ trait SpawnHost {
     /// Phobos `Spawner.RecycleAnim` / `Spawner.RecycleCoord`: the random
     /// recycle anim and the `SetLocation(carrier)` before the recycle jump
     /// (`Ext/Techno/Hooks.Misc.cpp:275-276`).
-    #[cfg(feature = "phobos")]
     fn recycle_effects(&mut self, _child: u64) {}
     /// Phobos `SpawnManagerClass_AI_PromoteSpawns @ 0x6B7282`
     /// (`Ext/Techno/Hooks.Misc.cpp:216-238`): every slot child below the
     /// owner's Veterancy is lifted to it when the owner type's
     /// `Promote.IncludeSpawns` admits the pass.
-    #[cfg(feature = "phobos")]
     fn promote_spawned_ranks(&mut self) {}
     /// The owner type's `Spawner.*` settings.
-    #[cfg(feature = "phobos")]
     fn owner_spawner(&self) -> Option<&crate::rules::phobos_spawner::PhobosSpawner> {
         None
     }
     /// Whether the `0x6B769F` / `0x6B7600` destination hooks apply. The native
     /// oracle replays vanilla behavior, so its fixture host opts out.
-    #[cfg(feature = "phobos")]
     fn phobos_hooks(&self) -> bool {
         true
     }
     /// `Spawner.AttackImmediately.Get([General])`.
-    #[cfg(feature = "phobos")]
     fn attack_immediately(&self) -> bool {
         false
     }
     /// `Spawner.UseTurretFacing.Get([General])`.
-    #[cfg(feature = "phobos")]
     fn use_turret_facing(&self) -> bool {
         false
     }
@@ -848,7 +832,6 @@ trait SpawnHost {
     /// constructed default true; `Ext/Rules/Body.h:359,864`).
     /// `SpawnManagerClass_AI_SetDestinationForMissiles @ 0x006B75AC`
     /// (`Misc/Hooks.BugFixes.cpp:840-870`) reads it.
-    #[cfg(feature = "phobos")]
     fn missile_spawn_attack_cell(&self) -> bool {
         true
     }
@@ -874,7 +857,6 @@ trait SpawnHost {
     fn refill(&mut self, child: u64);
     /// The child's type id, for Phobos' `Spawns.Queue=` alive subtraction
     /// (`Ext/Techno/Hooks.Misc.cpp:199-207`).
-    #[cfg(feature = "phobos")]
     fn child_type_id(&self, _child: u64) -> Option<InternedId> {
         None
     }
@@ -907,7 +889,6 @@ fn ai(host: &mut impl SpawnHost) {
     // with docked children, a set `Spawner.DelayFrames` replaces the 10-frame
     // gate with `min(delay, 10)`.
     let mut period = UPDATE_PERIOD_FRAMES;
-    #[cfg(feature = "phobos")]
     if host.manager_ref().mode == SpawnManagerMode::Launching
         && host.manager_ref().count_docked_spawns() != 0
         && let Some(delay) = host
@@ -919,7 +900,6 @@ fn ai(host: &mut impl SpawnHost) {
     host.manager().update_timer = CdTimer::started(frame, period);
     // Phobos `SpawnManagerClass_AI_PromoteSpawns @ 0x6B7282`: after the
     // update-timer gate and before the slot walk.
-    #[cfg(feature = "phobos")]
     host.promote_spawned_ranks();
     let mut index = 0;
     while index < host.manager_ref().slots.len() {
@@ -962,7 +942,6 @@ fn visit_slot(host: &mut impl SpawnHost, index: usize, frame: i32) {
                     // `Spawner.AttackImmediately` the child takes the
                     // manager's target and an attack mission; otherwise it
                     // holds north of the carrier.
-                    #[cfg(feature = "phobos")]
                     if host.phobos_hooks() {
                         if host.attack_immediately() {
                             let target = host.manager_ref().current_target;
@@ -1007,7 +986,6 @@ fn visit_slot(host: &mut impl SpawnHost, index: usize, frame: i32) {
                     host.queue_mission(child, MissionType::Attack, false);
                 }
                 None if host.dock_reached(child) => {
-                    #[cfg(feature = "phobos")]
                     host.recycle_effects(child);
                     host.limbo(child);
                     let manager = host.manager();
@@ -1057,7 +1035,6 @@ fn launch_slot(host: &mut impl SpawnHost, index: usize, child: u64, frame: i32) 
     }
     // Phobos `SpawnManagerClass_AI_SpawnTimer` hooks at `0x6B73A8` and
     // `0x6B73B9`: a set `Spawner.DelayFrames` replaces both native spacings.
-    #[cfg(feature = "phobos")]
     let delay = host
         .owner_spawner()
         .and_then(|spawner| spawner.delay_frames)
@@ -1068,12 +1045,6 @@ fn launch_slot(host: &mut impl SpawnHost, index: usize, child: u64, frame: i32) 
                 LAUNCH_DELAY_FRAMES
             }
         });
-    #[cfg(not(feature = "phobos"))]
-    let delay = if host.owner_missile_spawn() {
-        LAUNCH_DELAY_FRAMES_MISSILE_PARENT
-    } else {
-        LAUNCH_DELAY_FRAMES
-    };
     host.manager().spawn_timer = CdTimer::started(frame, delay);
     let parity = (missile && host.owner_weapon_burst().is_some_and(|burst| burst > 1))
         .then_some((index & 1) as i32);
@@ -1092,7 +1063,6 @@ fn launch_slot(host: &mut impl SpawnHost, index: usize, child: u64, frame: i32) 
     } else {
         // Phobos `0x6B7600`: a non-missile child either attacks the manager's
         // target at once or takes the carrier's north neighbour.
-        #[cfg(feature = "phobos")]
         if host.phobos_hooks() && host.attack_immediately() {
             let target = host.manager_ref().current_target;
             host.assign_target(child, target);
@@ -1117,7 +1087,6 @@ fn fill_slot(host: &mut impl SpawnHost, index: usize, initial: bool) {
     // leaves out a node whose CreateObject fails (`0x006B6D5A`); a VERA
     // construction that fails leaves the slot regenerating for the next pass.
     // Trigger: a `Spawns=` type VERA cannot construct (none in retail).
-    #[cfg(feature = "phobos")]
     let spawn_type = {
         let (default, queue, children) = {
             let manager = host.manager_ref();
@@ -1145,11 +1114,6 @@ fn fill_slot(host: &mut impl SpawnHost, index: usize, initial: bool) {
                 .find(|queued| !alive.contains(queued))
                 .unwrap_or(default)
         }
-    };
-    #[cfg(not(feature = "phobos"))]
-    let spawn_type = {
-        let _ = initial;
-        host.manager_ref().spawn_type
     };
     let Some(child) = host.create_child_of(spawn_type) else {
         return;
@@ -1552,7 +1516,6 @@ impl<'a, 'c> WorldSpawn<'a, 'c> {
     }
 
     /// Phobos `TechnoExt::GetFLHAbsoluteCoords(carrier, FLH, onTurret)`.
-    #[cfg(feature = "phobos")]
     fn recycle_flh(
         &self,
         owner: &crate::sim::game_entity::GameEntity,
@@ -1578,7 +1541,6 @@ impl<'a, 'c> WorldSpawn<'a, 'c> {
 
     /// The carrier's `Spawner.RecycleCoord` point reduced to its map cell, for
     /// a returning child's NavCom (`0x4D962B`).
-    #[cfg(feature = "phobos")]
     fn recycle_destination_cell(&self) -> Option<crate::sim::components::NavTargetRef> {
         let rules = self.context.rules();
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
@@ -1793,12 +1755,10 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .map_or(0, |(child, owner)| child.wrapping_sub(owner))
     }
 
-    #[cfg(feature = "phobos")]
     fn owner_spawner(&self) -> Option<&crate::rules::phobos_spawner::PhobosSpawner> {
         self.owner_type().map(|obj| &obj.phobos_spawner)
     }
 
-    #[cfg(feature = "phobos")]
     fn attack_immediately(&self) -> bool {
         let rules = self.context.rules();
         self.owner_spawner().is_some_and(|spawner| {
@@ -1806,7 +1766,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         })
     }
 
-    #[cfg(feature = "phobos")]
     fn use_turret_facing(&self) -> bool {
         let rules = self.context.rules();
         self.owner_spawner().is_some_and(|spawner| {
@@ -1814,7 +1773,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         })
     }
 
-    #[cfg(feature = "phobos")]
     fn missile_spawn_attack_cell(&self) -> bool {
         self.context
             .rules()
@@ -1828,7 +1786,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     /// `Spawner.RecycleRange`. A negative range keeps the legacy test: a
     /// building allows 182 leptons per axis (its 1x1-cell centre offset),
     /// anything else the same cell; both require a Z delta under 20.
-    #[cfg(feature = "phobos")]
     fn dock_reached(&self, child: u64) -> bool {
         let rules = self.context.rules();
         let Some(owner) = self.sim.substrate.entities.get(self.owner_id) else {
@@ -1884,7 +1841,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     /// (`Ext/Techno/Hooks.Misc.cpp:216-238`): with the owner type's
     /// `Promote.IncludeSpawns.Get([General])`, each slot child whose
     /// Veterancy is below the owner's takes `Veterancy.Add(owner - child)`.
-    #[cfg(feature = "phobos")]
     fn promote_spawned_ranks(&mut self) {
         let rules = self.context.rules();
         let include = self.owner_type().is_some_and(|object| {
@@ -1921,7 +1877,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     /// `AnimExt::CreateRandomAnim(Spawner_RecycleAnim, spawnerCrd, ...)` and
     /// `pSpawner->SetLocation(pCarrier->GetCoords())` at `0x6B77CE..0x6B77F4`.
-    #[cfg(feature = "phobos")]
     fn recycle_effects(&mut self, child: u64) {
         let rules = self.context.rules();
         let Some(obj) = self.owner_type() else {
@@ -1982,7 +1937,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         // `SpawnManagerClass_AI_UseTurretFacing @ 0x6B74F0` substitutes the
         // SecondaryFacing raw value when the owner has a turret and the
         // setting is on.
-        #[cfg(feature = "phobos")]
         let launch_dir = if self.use_turret_facing()
             && self.owner_type().is_some_and(|obj| {
                 owner
@@ -1996,8 +1950,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         } else {
             owner.body_facing_dir(frame)
         };
-        #[cfg(not(feature = "phobos"))]
-        let launch_dir = owner.body_facing_dir(frame);
         let Some(launch) = launch_coordinate(self.sim, rules, self.owner_id, burst_parity) else {
             return;
         };
@@ -2097,13 +2049,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                 // a Building target, which keeps the object so its own
                 // footprint stays the aim point.
                 let attack_cell = {
-                    #[cfg(feature = "phobos")]
                     {
                         self.phobos_hooks() && self.missile_spawn_attack_cell()
-                    }
-                    #[cfg(not(feature = "phobos"))]
-                    {
-                        false
                     }
                 };
                 let target_cell = match (attack_cell, target) {
@@ -2136,14 +2083,11 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             // NavCom targets a cell, so the exact lepton point is reduced to
             // its cell (the dock test still uses the exact point).
             SpawnDestination::Owner => {
-                #[cfg(feature = "phobos")]
                 if let Some(cell) = self.recycle_destination_cell() {
                     Some(cell)
                 } else {
                     Some(TargetKind::Entity(self.owner_id).into())
                 }
-                #[cfg(not(feature = "phobos"))]
-                Some(TargetKind::Entity(self.owner_id).into())
             }
         };
         self.sim
@@ -2200,7 +2144,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         }
     }
 
-    #[cfg(feature = "phobos")]
     fn child_type_id(&self, child: u64) -> Option<InternedId> {
         self.sim
             .substrate

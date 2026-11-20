@@ -303,12 +303,9 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
     ) {
         Ok(anim_id) => {
             // `0x6FF42B` marks and counts the anim it just built.
-            #[cfg(feature = "phobos")]
             if let Some(state) = event.firing_anim {
                 world.attach_firing_anim(anim_id, state);
             }
-            #[cfg(not(feature = "phobos"))]
-            let _ = anim_id;
         }
         Err(error) => {
             log::debug!(

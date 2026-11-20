@@ -227,7 +227,6 @@ pub(crate) fn materialize_combat_lights(
                 // `DoFlash_CombatLightOptions @ 0x48A62E`,
                 // `Misc/Hooks.LightEffects.cpp:66-96`): the `bitmask & 0xF`
                 // bypass of the detail check only applies while this is off.
-                #[cfg(feature = "phobos")]
                 let check_colored = warhead.map_or_else(
                     || {
                         rules.is_some_and(|rules| {
@@ -242,8 +241,6 @@ pub(crate) fn materialize_combat_lights(
                             }))
                     },
                 );
-                #[cfg(not(feature = "phobos"))]
-                let check_colored = false;
                 let flags_bypass = flags & 0xF != 0 && !check_colored;
                 if !fps_admitted && !flags_bypass {
                     return None;
@@ -256,7 +253,6 @@ pub(crate) fn materialize_combat_lights(
                 // `Misc/Hooks.LightEffects.cpp:79-80`): after the caller's mask
                 // has decided the admission above, `DoFlash` writes
                 // `SpotlightFlags::NoColor` into the light it creates.
-                #[cfg(feature = "phobos")]
                 let flags = match warhead {
                     Some(warhead) if warhead.phobos_extras.cl_is_black => {
                         crate::sim::combat::NO_COLOR_SPOTLIGHT_FLAGS
@@ -311,7 +307,6 @@ mod tests {
     /// default) a light whose colour channels are partly disabled still flashes
     /// when the detail check fails; with it on that bypass is refused. The
     /// warhead key overrides the `[AudioVisual]` global.
-    #[cfg(feature = "phobos")]
     /// `ParticleSystemClass::DrawIt @ 0x0062E280` with `ParticleCap=0`: the
     /// zero divide gives +inf, clamped to 1.0, so the light is full size.
     #[test]
@@ -684,7 +679,6 @@ mod tests {
     /// `Misc/Hooks.LightEffects.cpp:79-80`): the flash keeps the caller's mask
     /// for its own admission but the light it writes carries
     /// `SpotlightFlags::NoColor`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_black_combat_light_warhead_overrides_only_the_record_flags() {
         let rules = RuleSet::from_ini(&IniFile::from_str(

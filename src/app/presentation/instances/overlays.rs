@@ -546,7 +546,6 @@ pub(crate) fn build_display_effect_instances(
         // (`Ext/Anim/Hooks.cpp:520-570`) sits after these fog queries and
         // before any arm resolves its source, so the skip precedes the
         // building-slot hand-off below.
-        #[cfg(feature = "phobos")]
         if sim.anim_visibility_skipped(stable_id, input.rules, local_owner) {
             continue;
         }
@@ -610,7 +609,6 @@ pub(crate) fn build_display_effect_instances(
         };
         // Phobos `DeployingAnim.UseUnitDrawer`: the Anim's LightConvert is the
         // owner Unit's drawer, so its flash/curtain/shield tint follows.
-        #[cfg(feature = "phobos")]
         let (tint, palette_light) = super::anim_draw::deploy_unit_drawer_light(
             anim,
             stable_id,
@@ -627,10 +625,7 @@ pub(crate) fn build_display_effect_instances(
             i32::from(frame_count.unwrap_or(0)),
             input.detail_level as i32,
             anim.draw_runtime(),
-            #[cfg(feature = "phobos")]
             sim.anim_owner_is_cloaked(stable_id),
-            #[cfg(not(feature = "phobos"))]
-            false,
         ) else {
             continue;
         };
@@ -658,7 +653,6 @@ pub(crate) fn build_display_effect_instances(
         // DrawIt's location first takes the anim type's selection-bracket
         // overwrite, then the effect's accumulated `Animation.DrawOffsetN`, so
         // the sort row and the admission point keep the anim's own coordinate.
-        #[cfg(feature = "phobos")]
         let (center_x, center_y) = {
             let offset = attach_effect_draw_offset(input.frame, input.rules, anim);
             (center_x + offset[0], center_y + offset[1])
@@ -855,7 +849,6 @@ pub(super) fn presentation_anim_frame_count(
 /// animation: identify the effect instance that owns the anim, then sum every
 /// `Animation.DrawOffsetN` rule whose `RequiredTypes` set is satisfied. Zero
 /// for every other animation. Read only.
-#[cfg(feature = "phobos")]
 fn attach_effect_draw_offset(
     frame: &crate::app::presentation::frame::PresentationFrame,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1412,21 +1405,15 @@ pub(crate) fn build_overlay_instances(
         // Terrain DrawIt71C208 selects the Stage written by Terrain AI.
         // Wall-clock presentation cannot advance or restart a spawner; a
         // Phobos crumbling non-animated tree also carries a crumble Stage.
-        #[cfg(feature = "phobos")]
         let stage = (is_animated || obj.is_crumbling()).then(|| {
             sim.terrain_objects()
                 .animations()
                 .get(&obj.stable_id())
                 .map_or(0, |animation| animation.current_frame())
         });
-        #[cfg(not(feature = "phobos"))]
-        let stage = is_animated.then(|| {
-            sim.terrain_objects()
-                .animations()
-                .get(&obj.stable_id())
-                .map_or(0, |animation| animation.current_frame())
-        });
-        #[cfg(feature = "phobos")]
+        let terrain_type = state
+            .rules()
+            .and_then(|rules| rules.terrain_object_type_case_insensitive(name));
         let frame = terrain_draw_frame(
             stage,
             obj.health(),
@@ -1442,8 +1429,6 @@ pub(crate) fn build_overlay_instances(
                 .map_or(0, i32::from),
             is_animated,
         );
-        #[cfg(not(feature = "phobos"))]
-        let frame = terrain_draw_frame(stage, obj.health());
         let (body, shadow) = *type_pieces
             .entry((type_ref, frame))
             .or_insert_with(|| atlas.terrain_pieces(name, frame));
@@ -1530,7 +1515,6 @@ pub(crate) fn build_overlay_instances(
 /// `Ext/Rules/Body.cpp:147`). The `0x71B98B` redraw latch lives in the
 /// simulation (`commit_terrain`); this delegates to the one rules owner so
 /// sim and draw cannot diverge.
-#[cfg(feature = "phobos")]
 pub(crate) fn terrain_condition_yellow(rules: &crate::rules::ruleset::RuleSet) -> f64 {
     rules.terrain_condition_yellow()
 }
@@ -1543,7 +1527,6 @@ pub(crate) fn terrain_condition_yellow(rules: &crate::rules::ruleset::RuleSet) -
 /// draws the pending placement object only under the map-editor flag
 /// 0x00A8ED6B (test at 0x006D5297; set only by Parse_Command_Line), so it
 /// has no port.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn terrain_draw_frame(
     stage: Option<i32>,
@@ -1581,12 +1564,6 @@ fn terrain_draw_frame(
     }
 }
 
-#[cfg(not(feature = "phobos"))]
-fn terrain_draw_frame(stage: Option<i32>, health: i32) -> i32 {
-    // Original71C208 keeps the whole signed Stage; frame bounds belong to
-    // the image/atlas, not the cell overlay-data byte's0..255 domain.
-    stage.unwrap_or_else(|| i32::from(health < 2))
-}
 
 /// Ordinary Terrain DrawIt 0071C304/0071C34E: both stored frames share one
 /// projected draw point. The body takes gradient 2 and class Z -12, the
@@ -1704,7 +1681,6 @@ mod tests {
     /// Phobos `UpdateConditionalAnimDrawingLogic` accumulates every
     /// `Animation.DrawOffsetN` rule whose `RequiredTypes` is satisfied; the
     /// renderer adds that offset only to an attach-effect animation.
-    #[cfg(feature = "phobos")]
     #[test]
     fn attach_effect_draw_offset_accumulates_the_matching_rules() {
         use crate::rules::art_data::ArtRegistry;

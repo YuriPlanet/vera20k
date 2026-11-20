@@ -444,7 +444,6 @@ impl Simulation {
     /// `PowersUp.Buildings` host, without counting the temporary/producing
     /// upgrade object. A type with no host returns None so the caller can use
     /// the normal presence counters.
-    #[cfg(feature = "phobos")]
     pub(crate) fn count_owned_building_upgrades(
         &self,
         owner: InternedId,
@@ -511,7 +510,6 @@ impl Simulation {
         // `PowersUp.Owner` filter decides the owner relation and the host
         // must appear in its `PowersUp.Buildings` list (kept in sync with
         // `PowersUpBuilding`).
-        #[cfg(feature = "phobos")]
         {
             let upgrade_rules = upgrade.building_upgrade();
             if !crate::sim::combat::can_target_house(
@@ -528,19 +526,6 @@ impl Simulation {
                 .powers_up_buildings()
                 .iter()
                 .any(|name| name.eq_ignore_ascii_case(&host_type.id))
-            {
-                return false;
-            }
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            if host.owner() != owner {
-                return false;
-            }
-            if !upgrade
-                .building_upgrade()
-                .host()
-                .is_some_and(|name| name.eq_ignore_ascii_case(&host_type.id))
             {
                 return false;
             }

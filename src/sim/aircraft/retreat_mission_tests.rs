@@ -189,7 +189,6 @@ fn edge_index_checked(index: u8) -> Edge {
 /// AircraftType section only; the AircraftType's nullable value wins over
 /// `[General] AircraftRetreatToEdge` (`Ext/Rules/Body.cpp:194`), whose
 /// constructor default is `Owner`.
-#[cfg(feature = "phobos")]
 #[test]
 fn retreat_to_edge_reads_the_aircraft_section_then_the_general_fallback() {
     use crate::rules::ini_parser::IniFile;

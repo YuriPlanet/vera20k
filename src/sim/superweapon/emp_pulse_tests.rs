@@ -318,7 +318,6 @@ fn ares_drop_pod_reads_its_handler_keys() {
 /// `0x44CEEC` in `Ext/Building/Hooks.cpp:132-189`): slot 1 takes the
 /// cannon's Secondary, while a negative index asks SelectWeapon against the
 /// EMPTarget cell. PulseGun has `Report=PulseSound`; GunShot has none.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_empulse_weapon_index_selects_the_indexed_weapon() {
     let slot1 =
@@ -360,7 +359,6 @@ fn phobos_empulse_weapon_index_selects_the_indexed_weapon() {
 /// `EMPulse.Cannons` (`Ext/SWType/Body.cpp:181`, `SWHelpers.cpp:232-268`):
 /// the listed type is a launch site, an unlisted provider is not, and an
 /// empty list leaves the Ares `EMPulseCannon=` sites unrestricted.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_empulse_cannons_restrict_the_firing_source() {
     let listed = rules("");
@@ -390,7 +388,6 @@ fn phobos_empulse_cannons_restrict_the_firing_source() {
 /// `Ext/SWType/FireSuperWeapon.cpp:380-404`): the other EMPulse Super is
 /// held while the missile flies, the residue is real save state, and
 /// Mission_Missile's select-weapon hook (`0x44CEEC`) resumes and erases it.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_empulse_suspend_others_holds_then_resumes() {
     // The two SW types share a cannon type, which is Phobos's intersection
@@ -431,7 +428,6 @@ fn phobos_empulse_suspend_others_holds_then_resumes() {
 /// `EMPulse.TargetSelf` (`Ext/SWType/FireSuperWeapon.cpp:37`) skips
 /// `HandleEMPulseLaunch` entirely: no cannon latch, no suspension, no
 /// residue. `SWHelpers.cpp:272` also makes the cannon range unbounded.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_empulse_target_self_skips_the_launch_tail() {
     // Without the skip, the shared cannon list would suspend Volley.
@@ -449,7 +445,6 @@ fn phobos_empulse_target_self_skips_the_launch_tail() {
 
 /// With none of the four Phobos keys set, the constructor values keep the
 /// Ares EMPulse path: weapon slot 0, no suspension, no residue.
-#[cfg(feature = "phobos")]
 #[test]
 fn stock_empulse_keys_keep_the_ares_launch() {
     let rules = rules("");
@@ -473,7 +468,6 @@ fn stock_empulse_keys_keep_the_ares_launch() {
 /// state across ticks: two otherwise identical worlds that differ only in the
 /// latch take different weapon slots and resume sets, so the state hash must
 /// tell them apart.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_empulse_cannon_latch_changes_the_state_hash() {
     let rules = rules("");
@@ -504,7 +498,6 @@ fn the_empulse_cannon_latch_changes_the_state_hash() {
 
 /// `FireSuperWeapon.cpp:400-403` pushes a second hold into the existing entry;
 /// the map must keep both lists until the resume hook clears them.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_second_empulse_hold_appends_to_the_house_entry() {
     let (mut sim, owner) = scene(&rules(""));

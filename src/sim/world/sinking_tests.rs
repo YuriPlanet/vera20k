@@ -587,7 +587,6 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
 /// Phobos `UnitClass_Update_SinkSpeed` (`0x7364DC`): the UnitType nullable,
 /// else `[General] SinkSpeed=` (default 5), replaces the stock five-lepton
 /// step.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_sink_speed_replaces_the_stock_five_leptons() {
     for (general, ty, expected) in [
@@ -613,7 +612,6 @@ fn phobos_sink_speed_replaces_the_stock_five_leptons() {
 /// Phobos `UnitClass_ReceiveDamage_Sinkable` (`0x737DE2`): the type's
 /// `Sinkable`, else `[General] Sinkable`, overrides the stock type-property
 /// gate; unset keeps the stock behaviour.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_sinkable_overrides_the_type_property_gate() {
     fn force_water(sim: &mut Simulation) {

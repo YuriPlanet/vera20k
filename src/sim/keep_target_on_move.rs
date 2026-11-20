@@ -28,7 +28,6 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// an explicit slot) with `KeepTargetOnMove.ExtraDistance` folded into the
 /// selected weapon's range. The map path uses the shared InRange owner; a
 /// map-less fixture keeps the native refusal (no cells to measure).
-#[cfg(feature = "phobos")]
 fn in_range_with(
     sim: &Simulation,
     id: u64,
@@ -72,7 +71,6 @@ fn in_range_with(
 /// `TechnoClass::IsCloseEnough` (vt+0x3A8) at one explicit weapon slot with
 /// no temporary extension: `TechnoClass_SetTarget_After`'s range test before
 /// resetting a turretless Unit's firing sequence.
-#[cfg(feature = "phobos")]
 pub(crate) fn is_close_enough_with_weapon(
     sim: &Simulation,
     id: u64,
@@ -85,7 +83,6 @@ pub(crate) fn is_close_enough_with_weapon(
 }
 /// `IsCloseEnoughToAttack @ 0x6F7780` (`CanFireAtTarget`): the selected
 /// weapon with no key overrides. The Move-order hook uses this plain form.
-#[cfg(feature = "phobos")]
 fn close_enough_to_attack(
     sim: &Simulation,
     id: u64,
@@ -98,7 +95,6 @@ fn close_enough_to_attack(
 
 /// `IsCloseEnough` (vt+0x3A8) with `KeepTargetOnMove.Weapon` and the
 /// temporary `ExtraDistance`. The Unit-AI update uses this form.
-#[cfg(feature = "phobos")]
 fn close_enough_with_key(
     sim: &Simulation,
     id: u64,
@@ -127,7 +123,6 @@ fn close_enough_with_key(
 /// `EventClass_Execute_MegaMission_MoveCommand`'s keep arm: latches the unit
 /// and reports whether the caller must keep the target and skip the shared
 /// setters.
-#[cfg(feature = "phobos")]
 pub(crate) fn move_order_keeps_target(
     sim: &mut Simulation,
     id: u64,
@@ -160,7 +155,6 @@ pub(crate) fn move_order_keeps_target(
 
 /// `UnitExt::UpdateKeepTargetOnMove` at `0x736480`, before
 /// `DepletedAmmoActions`.
-#[cfg(feature = "phobos")]
 pub(crate) fn update_keep_target_on_move(
     sim: &mut Simulation,
     id: u64,
@@ -219,7 +213,6 @@ pub(crate) fn update_keep_target_on_move(
     }
 }
 
-#[cfg(feature = "phobos")]
 fn clear_latched_target(
     sim: &mut Simulation,
     id: u64,

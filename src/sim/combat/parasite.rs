@@ -576,7 +576,6 @@ impl Simulation {
         // Infantry-only check, so Units/Aircraft/Buildings cull when the
         // filter admits them; a refused victim falls into the ordinary bite
         // arm below (0x62A0D3).
-        #[cfg(feature = "phobos")]
         let culling = self
             .substrate
             .entities
@@ -589,12 +588,6 @@ impl Simulation {
                         .is_some_and(|object| object.is_vehicle()),
                 )
             });
-        #[cfg(not(feature = "phobos"))]
-        let culling = self
-            .substrate
-            .entities
-            .get(victim)
-            .is_some_and(|victim_entity| victim_entity.category() == EntityCategory::Infantry);
         let Some(victim_entity) = self.substrate.entities.get_mut(victim) else {
             return;
         };
@@ -611,7 +604,6 @@ impl Simulation {
             // `Ext/Techno/Hooks.cpp:921-940`): the warhead's
             // `Parasite.ParticleSystem` replaces the default spark system and
             // `Parasite.DisableParticleSystem` skips the construct entirely.
-            #[cfg(feature = "phobos")]
             let (particle_name, particle_disabled) = (
                 warhead.phobos_parasite.particle_system.as_deref(),
                 warhead
@@ -619,8 +611,6 @@ impl Simulation {
                     .disable_particle_system
                     .unwrap_or(rules.phobos_globals.parasite_disable_particle_system),
             );
-            #[cfg(not(feature = "phobos"))]
-            let (particle_name, particle_disabled) = (None::<&str>, false);
             if !particle_disabled
                 && let Some(system) = particle_name
                     .and_then(|name| rules.ps_type_id_by_name(name))
@@ -1104,12 +1094,9 @@ impl Simulation {
         // `[General]` key refuses the release (`no`); `yes` jumps to the
         // shared `SkipChecks` tail (`0x62AC0F`), which still requires no
         // building below; unset keeps the naval/land rule.
-        #[cfg(feature = "phobos")]
         let allow_water_exit = owner_object
             .and_then(|object| object.phobos_parasite_allow_water_exit)
             .or(rules.phobos_globals.parasite_allow_water_exit);
-        #[cfg(not(feature = "phobos"))]
-        let allow_water_exit = None::<bool>;
         if allow_water_exit == Some(false) {
             return false;
         }
@@ -1287,7 +1274,6 @@ impl Simulation {
         let target_id = match target {
             super::TargetKind::Entity(id) => Some(id),
             super::TargetKind::Cell(..) => None,
-            #[cfg(feature = "phobos")]
             super::TargetKind::Bullet(..) => None,
         };
         let target_entity = target_id.and_then(|id| self.substrate.entities.get(id));
@@ -1296,7 +1282,6 @@ impl Simulation {
         // Phobos `TechnoClass_Fire_SetContext @ 0x6FE562`: the pre-Limbo
         // `InSelected`/`InLimbo` the hook at `0x6FF7FF` reads back after the
         // Limbo below (`Ext/WarheadType/Hooks.cpp:613-620`).
-        #[cfg(feature = "phobos")]
         let fired = super::phobos_unlimbo_detonate::fire_context(self, firer);
         // 0x006FF763..0x006FF79C: ReselectIfLimboed memo for a selected firer
         // of a human player's house (IsHumanPlayer 0x0050B6F0, 0x006FF786)
@@ -1328,7 +1313,6 @@ impl Simulation {
         // (`Ext/WarheadType/Hooks.cpp:630-657`), after the Limbo: restore the
         // bullet Owner the Limbo detached and, with `KeepSelected`, remember
         // the pre-Limbo selection for the detonation hook.
-        #[cfg(feature = "phobos")]
         super::phobos_unlimbo_detonate::fire_hook(self, firer, weapon, bullet, fired, rules);
         let parasite = rules
             .weapon_warhead(weapon)
@@ -1393,7 +1377,6 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        #[cfg(feature = "phobos")]
         let removed = if removed {
             true
         } else {
@@ -1509,7 +1492,6 @@ impl Simulation {
         // `Ext/WarheadType/Hooks.cpp:589-606`): the stock heal-only arm is
         // gated by `RemoveParasite` (unset keeps `damage < 0`) and its typed
         // Allow/Disallow lists filter the attached parasite type.
-        #[cfg(feature = "phobos")]
         let remove = warhead_type.map_or(raw_damage < 0, |w| {
             if !w.phobos_remove_parasite.unwrap_or(raw_damage < 0) {
                 return false;
@@ -1531,8 +1513,6 @@ impl Simulation {
                         .iter()
                         .any(|name| name.eq_ignore_ascii_case(parasite_id)))
         });
-        #[cfg(not(feature = "phobos"))]
-        let remove = raw_damage < 0;
         if remove {
             self.parasite_force_release(eater, FORCED_RELEASE_SUPPRESSION_FRAMES, rules, effects);
         }

@@ -9,7 +9,6 @@
 //! A failed Unlimbo deletes that plane and returns the prior count minus one.
 
 use super::{FrameEffects, PlacementEvidence, Simulation};
-#[cfg(feature = "phobos")]
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
@@ -50,10 +49,7 @@ impl Simulation {
         //`AirstrikeClass_Fire_SetAirstrike` (`0x41D97B`) keeps that path for a
         //building only; every other target stays the object itself, so the
         //aircraft follow a moving unit instead of the cell it stood on.
-        #[cfg(feature = "phobos")]
         let keep_object = target_entity.category() != EntityCategory::Structure;
-        #[cfg(not(feature = "phobos"))]
-        let keep_object = false;
         let target = if keep_object {
             TargetKind::Entity(target)
         } else {
@@ -66,7 +62,6 @@ impl Simulation {
         };
         // Phobos `AircraftExt::PlaceReinforcementAircraft` (`Ext/Aircraft/Body.cpp:63`)
         // reads the target's `GetCoords`, not its cell.
-        #[cfg(feature = "phobos")]
         let target_leptons =
             ground_pose::object_get_coords(target_entity, self.resolved_terrain.as_ref());
         let (authored, waypoint) = self.houses.get(&house_id).map_or((-1, 0), |house| {
@@ -79,7 +74,6 @@ impl Simulation {
         // Phobos `SpawnDistanceFromTarget=` (`Ext/AircraftType/Body.cpp:26`):
         // the spawn cell moves `distance` leptons from the target on the
         // edge-to-target line instead of staying on the edge (`:65-68`).
-        #[cfg(feature = "phobos")]
         let seed = match rules
             .object(type_id)
             .and_then(|aircraft| aircraft.phobos_spawn_distance_from_target())
@@ -229,7 +223,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_non_building_target_keeps_the_object_instead_of_its_cell() {
         let Some((rules, mut sim, boris, _)) = world() else {
@@ -291,7 +284,6 @@ mod tests {
     /// `Ext/Aircraft/Body.cpp:61-69`): the airstrike plane spawns on the cell
     /// `CalculateCoordsFromDistance(edgeCell, target, 5 cells)` names instead
     /// of on the picked edge cell; the edge pick and its draws are unchanged.
-    #[cfg(feature = "phobos")]
     #[test]
     fn spawn_distance_from_target_moves_the_airstrike_seed_off_the_edge() {
         let Some((mut rules, mut sim, boris, target)) = world() else {
@@ -330,7 +322,6 @@ mod tests {
     /// The key reads as a cell count on an AircraftType section only
     /// (`read<Leptons>`: `5.5` cells store 1408 leptons) and `<default>`
     /// clears it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn spawn_distance_from_target_reads_cells_as_leptons_for_aircraft_only() {
         use crate::rules::ini_parser::IniFile;

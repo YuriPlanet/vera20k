@@ -12,19 +12,15 @@
 //! filters. Discard conditions, animations, multipliers and weapons add their
 //! own keys here as their slices land, so the reader stays one owner.
 
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::phobos_shields::AffectedHouse;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
-#[cfg(feature = "phobos")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// `CCINIClass::GetSection` compares the CRC of the uppercased name, so a
 /// catalog entry resolves its own section whatever case the file used.
-#[cfg(feature = "phobos")]
 fn section_named<'a>(
     pass: &'a IniFile,
     name: &str,
@@ -79,7 +75,6 @@ impl AttachEffectTargets {
 
     /// Phobos `TechnoTypeFlags` enumeration names, in declaration order.
     /// Unknown tokens keep the previous value, as the native list read does.
-    #[cfg(feature = "phobos")]
     fn from_tokens(current: Self, tokens: &[&str]) -> Self {
         let mut next = Self {
             infantry: false,
@@ -162,7 +157,6 @@ impl DiscardOn {
 
     /// `read<DiscardCondition>`: comma-separated tokens, unknown tokens
     /// ignored, `none` contributes no bit.
-    #[cfg(feature = "phobos")]
     fn parse(raw: &str) -> Self {
         let mut parsed = Self::NONE;
         for token in raw.split(|c: char| matches!(c, ',' | ' ' | '\t' | '\r')) {
@@ -213,7 +207,6 @@ impl ExpireWeaponCondition {
     /// `read<ExpireWeaponCondition>`: comma-separated tokens. A token outside
     /// the enumeration makes the whole read fail, so the caller keeps its
     /// current value (unlike `DiscardOn`, whose parser ignores it).
-    #[cfg(feature = "phobos")]
     fn parse(raw: &str) -> Option<Self> {
         let mut parsed = Self::NONE;
         for token in raw.split(|c: char| matches!(c, ',' | ' ' | '\t' | '\r')) {
@@ -589,7 +582,6 @@ impl AttachEffectTypeCatalog {
         &self.types
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(|entry| entry.name.as_str())
     }
@@ -608,7 +600,6 @@ impl AttachEffectTypeCatalog {
 
     /// Read one reached Rules pass: the pass's `[AttachEffectTypes]` list
     /// appends entries, then every retained entry re-reads its own section.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("AttachEffectTypes") {
             for key in list.physical_keys() {

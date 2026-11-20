@@ -287,11 +287,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().locomotor.as_ref().unwrap().balloon_hover()
     }
     /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`).
-    #[cfg(feature = "phobos")]
     fn straight_ascend(&self) -> bool {
         self.owner().jumpjet_straight_ascend()
     }
-    #[cfg(feature = "phobos")]
     fn set_straight_ascend(&mut self, on: bool) {
         if let Some(owner) = self.sim.substrate.entities.get_mut(self.stable_id) {
             if on {
@@ -315,11 +313,6 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     /// `Ext/Rules/Body.h:56,596`); hook `0x54CB0E`
     /// (`Ext/Unit/Hooks.Jumpjet.cpp:153-158`).
     fn jumpjet_rotate_on_crash(&self) -> bool {
-        #[cfg(not(feature = "phobos"))]
-        {
-            true
-        }
-        #[cfg(feature = "phobos")]
         {
             let object = self.sim.object_type(self.owner().type_ref(), self.rules);
             object
@@ -332,11 +325,6 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     /// (default false, `Ext/Rules/Body.cpp:338`); hooks `0x54D820`/
     /// `0x54D859`/`0x54D8EA` (`Ext/Unit/Hooks.Jumpjet.cpp:439-457`).
     fn jumpjet_climb_ignore_building(&self) -> bool {
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
-        }
-        #[cfg(feature = "phobos")]
         {
             let object = self.sim.object_type(self.owner().type_ref(), self.rules);
             object
@@ -346,24 +334,14 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
     /// Phobos `[General] JumpjetClimbPredictHeight=`.
     fn jumpjet_climb_predict_height(&self) -> bool {
-        #[cfg(feature = "phobos")]
         {
             self.rules.phobos_globals.jumpjet_climb_predict_height
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
         }
     }
     /// Phobos `[General] JumpjetClimbWithoutCutOut=`.
     fn jumpjet_climb_without_cut_out(&self) -> bool {
-        #[cfg(feature = "phobos")]
         {
             self.rules.phobos_globals.jumpjet_climb_without_cut_out
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
         }
     }
     /// `GetJumpjetHeightWithOccupyTechno`: the first building's
@@ -1272,7 +1250,6 @@ mod tests {
     /// `:841`; `[JumpjetControls] RotateOnCrash` true `Ext/Rules/Body.h:596`):
     /// hook `0x54CB0E` (`Ext/Unit/Hooks.Jumpjet.cpp:153-158`) sends state 5
     /// past the `ADD CX,0x2D00` facing re-aim when the key is false.
-    #[cfg(feature = "phobos")]
     #[test]
     fn jumpjet_rotate_on_crash_false_skips_the_crash_spin() {
         let run = |key: &str| {

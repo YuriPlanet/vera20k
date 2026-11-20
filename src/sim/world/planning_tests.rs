@@ -2175,7 +2175,6 @@ fn finalized_target_pruning_retains_the_empty_token_and_its_house_charge() {
 /// (`Ext/Building/Hooks.cpp:877-883`, vtable `0x7E4610`), so the
 /// `TechnoClass::CanUseWaypoint @ 0x0070F070` question that `0x00639DA0`
 /// asks answers true and a selected building stops refusing the plan.
-#[cfg(feature = "phobos")]
 #[test]
 fn building_waypoints_admit_a_building_into_planning() {
     use super::PlanningPressRefusal::{NoAircraft, NoBuildings};

@@ -90,7 +90,6 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         kind: WarpAnimKind,
     ) {
-        #[cfg(feature = "phobos")]
         if self.spawn_phobos_warp_anim(id, rules, kind) {
             return;
         }
@@ -104,7 +103,6 @@ impl crate::sim::world::Simulation {
     /// `RandomRanged(0, size - 1)`; a list with no resolvable name falls
     /// through to the `[General]` animation without a draw. Answers whether a
     /// list claimed the endpoint.
-    #[cfg(feature = "phobos")]
     fn spawn_phobos_warp_anim(
         &mut self,
         id: u64,
@@ -238,7 +236,6 @@ impl crate::sim::world::Simulation {
     ///   pLinked, damage)`), so the warhead's house logic sees its owner.
     /// - `WarpInWeapon.UseDistanceAsDamage` replaces the weapon's `Damage=`
     ///   with `distance / 256`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_warp_in_weapon(
         &mut self,
         id: u64,
@@ -299,7 +296,6 @@ impl crate::sim::world::Simulation {
     /// and owner (`WeaponTypeExt::DetonateAt(weapon, pLinked, pLinked)`), at
     /// the pre-relocation Location, before the departure WarpOut. The
     /// Chronosphere's chronoshift departure (`0x719827`) plays no weapon.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_warp_out_weapon(
         &mut self,
         id: u64,
@@ -381,7 +377,6 @@ pub struct TeleportState {
     /// 0x719742 reads (`Ext/TechnoType/Hooks.Teleport.cpp:30-32,88-94`).
     /// VERA measures it when the warp arms, from the same owner GetCoords and
     /// destination while the owner still stands at the departure point.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     distance_leptons: i32,
 }
@@ -413,18 +408,15 @@ impl TeleportState {
             phase,
             destination: Some(DriveCoord::cell(rx, ry, 0)),
             delay_timer: crate::sim::timer::CdTimer::started(0, ticks as i32),
-            #[cfg(feature = "phobos")]
             distance_leptons: 0,
         }
     }
 
     /// `FootExt::LastWarpDistance` the warp-in weapon step reads.
-    #[cfg(feature = "phobos")]
     pub(crate) fn warp_distance_leptons(&self) -> i32 {
         self.distance_leptons
     }
 
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) fn set_warp_distance_leptons_for_test(&mut self, distance: i32) {
         self.distance_leptons = distance;
     }
@@ -1546,7 +1538,6 @@ fn arm_teleport(
         ),
         // `FootExt::LastWarpDistance`: the same GetCoords-vs-destination
         // measure the warp-outs use for the delay.
-        #[cfg(feature = "phobos")]
         distance_leptons,
     };
     let Some(runtime) = entity
@@ -1832,7 +1823,6 @@ mod tests {
                     input["timer_start"].as_i64().unwrap() as i32,
                     input["timer_duration"].as_i64().unwrap() as i32,
                 ),
-                #[cfg(feature = "phobos")]
                 distance_leptons: 0,
             }));
             sim.session

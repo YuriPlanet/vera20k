@@ -145,7 +145,6 @@ fn timer_seconds(frames: i32, clock: &TimerClock) -> i32 {
 /// The clock for this frame's timer lines: the `[Phobos]` switches, the
 /// engine speed index, the session's mode and the published frame rate.
 fn timer_clock(state: &AppState, sim: &crate::sim::world::Simulation) -> TimerClock {
-    #[cfg(feature = "phobos")]
     let (real_time, adaptive) = {
         let presentation = &state.match_state.match_presentation;
         (
@@ -153,8 +152,6 @@ fn timer_clock(state: &AppState, sim: &crate::sim::world::Simulation) -> TimerCl
             presentation.real_time_timers_adaptive,
         )
     };
-    #[cfg(not(feature = "phobos"))]
-    let (real_time, adaptive) = (false, false);
     TimerClock {
         real_time,
         adaptive,
@@ -509,13 +506,10 @@ fn localized(csf: Option<&CsfFile>, key: &str) -> String {
 /// at `0x006D4CD9`). A `none` (-1) keeps the native scheme where Phobos would
 /// read `Array[-1]`.
 fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
-    #[cfg(feature = "phobos")]
     let scheme = usize::try_from(rules.general.timer_blink_color_scheme)
         .ok()
         .and_then(|scheme| u8::try_from(scheme / 2).ok())
         .map_or(BLINK_SCHEME, HouseColorIndex);
-    #[cfg(not(feature = "phobos"))]
-    let scheme = BLINK_SCHEME;
     house_text_rgb(&rules.color_schemes, scheme)
 }
 

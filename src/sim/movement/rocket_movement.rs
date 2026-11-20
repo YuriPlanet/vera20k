@@ -248,7 +248,6 @@ pub(crate) trait RocketHost {
     fn aux_sound(&mut self, coord: [i32; 3]);
     /// Phobos `AircraftTypeExt::Missile.*` of the linked owner's type; `None`
     /// keeps the rules block's takeoff settings.
-    #[cfg(feature = "phobos")]
     fn phobos_missile(&self) -> Option<crate::rules::phobos_missile::PhobosMissileRules> {
         None
     }
@@ -320,7 +319,6 @@ pub(crate) fn process(
             // entry): a `Missile.Cruise=yes` type runs the raise body instead
             // of the tilt. The stock CMisl bool only chooses pause's next
             // state; it never promotes from the tilt.
-            #[cfg(feature = "phobos")]
             if host
                 .phobos_missile()
                 .is_some_and(|settings| settings.cruise)
@@ -611,20 +609,13 @@ fn tail(
 /// nothing for a null one. `use_phobos_anim` is the raise state alone, whose
 /// puff Phobos replaces (hook 0x6624FB).
 fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost, use_phobos_anim: bool) {
-    #[cfg(feature = "phobos")]
     let settings = if use_phobos_anim {
         host.phobos_missile()
     } else {
         None
     };
-    #[cfg(feature = "phobos")]
     let (anim, _) =
         crate::rules::phobos_missile::takeoff_settings(settings.as_ref(), ext.takeoff_anim);
-    #[cfg(not(feature = "phobos"))]
-    let anim = {
-        let _ = use_phobos_anim;
-        ext.takeoff_anim
-    };
     if let Some(anim) = anim {
         host.anim(anim, host.location(), 2, -10);
     }
@@ -634,15 +625,9 @@ fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost, use_phobos_
 /// `Missile.TakeOffSeparation=` (hook `0x6623FC`, default 24), else the stock
 /// 24-frame timer.
 fn takeoff_separation(ext: &RocketTypeExt<'_>, host: &impl RocketHost) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         let settings = host.phobos_missile();
         crate::rules::phobos_missile::takeoff_settings(settings.as_ref(), ext.takeoff_anim).1
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (ext, host);
-        0x18
     }
 }
 
@@ -899,7 +884,6 @@ mod tests {
             self.events
                 .push(json!(["aux_sound", self.input["aux_sound"], coord]));
         }
-        #[cfg(feature = "phobos")]
         fn phobos_missile(&self) -> Option<crate::rules::phobos_missile::PhobosMissileRules> {
             let value = &self.input["phobos_missile"];
             if value.is_null() {
@@ -1099,7 +1083,6 @@ mod tests {
     /// `0x662720`): the state-2 entry runs the raise body instead of the
     /// tilt, and the raise puff uses the type's `Missile.TakeOffAnim` and
     /// `Missile.TakeOffSeparation` (hook `0x6624FB`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_cruise_promotes_the_tilt_state_into_the_raise_arm() {
         let trig = TrigTable::embedded();

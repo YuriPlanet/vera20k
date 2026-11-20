@@ -27,7 +27,6 @@ use crate::sim::world::ObjectSubstrate;
 /// What a landing cell answered: `CellClass::IsClearToMove`'s verdict for the
 /// mover's `SpeedType`/`MovementZone` and the cell's own `ContainsBridge()`
 /// (`+0x140 & 0x100`), which both Phobos arms copy into `OnBridge`.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LandingCellVerdict {
     /// The `IsClearToMove` answer.
@@ -95,10 +94,8 @@ impl crate::sim::world::Simulation {
         // `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
         // `OnParachuted` for every falling-down Techno, before the `IsABomb`
         // gate, so an unflagged later landing cannot keep it.
-        #[cfg(feature = "phobos")]
         let mut on_parachuted = false;
         if landed {
-            #[cfg(feature = "phobos")]
             {
                 on_parachuted = self.take_on_parachuted(id);
             }
@@ -157,7 +154,6 @@ impl crate::sim::world::Simulation {
             // `HoverDrownable` answer pick the damage. The drowning arm takes
             // the whole current health (`:1033-1036`); the surviving arm runs
             // the `FallingDownDamage` model below.
-            #[cfg(feature = "phobos")]
             let damage = {
                 let took_shutdown = self.take_hover_shutdown(id);
                 if took_shutdown && self.hover_drowns(id, rules) {
@@ -179,8 +175,6 @@ impl crate::sim::world::Simulation {
                     self.phobos_falling_damage(id, health, rules)
                 }
             };
-            #[cfg(not(feature = "phobos"))]
-            let damage = health;
             let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
             let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
                 id,
@@ -201,7 +195,6 @@ impl crate::sim::world::Simulation {
 
     /// Phobos `TechnoExt::HoverShutdown`: the landing arm owns the single read
     /// and the clear (`Ext/Techno/Hooks.cpp:1026-1027`).
-    #[cfg(feature = "phobos")]
     fn take_hover_shutdown(&mut self, id: u64) -> bool {
         self.substrate
             .entities
@@ -211,7 +204,6 @@ impl crate::sim::world::Simulation {
 
     /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
     /// `TechnoExt::OnParachuted` on every falling-down Techno.
-    #[cfg(feature = "phobos")]
     fn take_on_parachuted(&mut self, id: u64) -> bool {
         self.substrate
             .entities
@@ -222,7 +214,6 @@ impl crate::sim::world::Simulation {
     /// `HoverDrownable.Get(RulesExt::Global()->HoverDrownable)`
     /// (`Ext/Techno/Hooks.cpp:1031`): the type's own value, else
     /// `[General] HoverDrownable`.
-    #[cfg(feature = "phobos")]
     fn hover_drowns(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
         self.substrate
             .entities
@@ -247,7 +238,6 @@ impl crate::sim::world::Simulation {
     /// negative ratio takes that fraction of the current Health, one of at
     /// most 1.0 that fraction of `Strength`, and a larger one is absolute;
     /// each tier truncates into the `int` packet.
-    #[cfg(feature = "phobos")]
     fn phobos_falling_damage(
         &self,
         id: u64,
@@ -297,7 +287,6 @@ impl crate::sim::world::Simulation {
 
     /// The landing cell is water or beach and carries no bridge deck
     /// (`Ext/Techno/Hooks.cpp:1059-1061`: `!onBridge && (Water || Beach)`).
-    #[cfg(feature = "phobos")]
     fn landing_in_water(&self, id: u64) -> bool {
         use crate::map::resolved_terrain::NativeCellQuery;
         use crate::rules::terrain_rules::LandType;
@@ -339,7 +328,6 @@ impl crate::sim::world::Simulation {
     ///
     /// A cell outside the playfield is not clear. An unknown cell, type or
     /// `SpeedType` answers clear so the pre-existing ratio packet stands.
-    #[cfg(feature = "phobos")]
     fn landing_cell_clear(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
         self.landing_cell_verdict(id, rules)
             .is_some_and(|verdict| verdict.clear)
@@ -350,7 +338,6 @@ impl crate::sim::world::Simulation {
     /// `CellClass` at the object's coordinate (the arm then takes its else
     /// branch), otherwise the `IsClearToMove` answer and the cell's
     /// `ContainsBridge()` it copies into `OnBridge`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn landing_cell_verdict(
         &self,
         id: u64,
@@ -429,7 +416,6 @@ impl crate::sim::world::Simulation {
 
     /// The type's `Strength=`, the ratio model's base for a ratio up to 1.0
     /// (`Ext/Techno/Hooks.cpp:1082`).
-    #[cfg(feature = "phobos")]
     fn object_strength(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> Option<i32> {
         self.substrate
             .entities
@@ -662,7 +648,6 @@ fn parachute_anim_name<'r>(
 /// The bullet's accumulated rate starts at `0` (`BulletExt::ParabombFallRate`
 /// `Ext/Bullet/Body.h:61`), so the first frame computes `0 - step` and the
 /// cap brings it up to the terminal rate whenever the step is positive.
-#[cfg(feature = "phobos")]
 pub fn parachuted_bullet_rate(current: i32, step: i32, cap: i32) -> i32 {
     current.wrapping_sub(step).max(cap)
 }
@@ -1068,7 +1053,6 @@ mod canopy_tests {
     /// `Ext/Techno/Hooks.cpp:1014-1043`): only the `IsABomb` arm reads and
     /// clears `TechnoExt::HoverShutdown`, and `HoverDrownable` then picks the
     /// damage packet.
-    #[cfg(feature = "phobos")]
     #[test]
     fn only_the_bomb_landing_arm_takes_the_hover_shutdown() {
         fn land(bomb: bool) -> bool {

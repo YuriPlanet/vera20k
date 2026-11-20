@@ -124,7 +124,6 @@ fn the_cell_the_mcv_stood_on_ends_as_a_yard_cell() {
 /// converting MCV carries an active curtain when the type's key (else the
 /// `[CombatDamage]` global) allows it. Force Shield's global default is
 /// false and Iron Curtain's is true.
-#[cfg(feature = "phobos")]
 #[test]
 fn deploy_carries_the_curtain_only_when_kept_on_deploy_allows_it() {
     use crate::sim::superweapon::invulnerability::{
@@ -1183,7 +1182,6 @@ fn a_computer_mcv_on_guard_unloads_when_its_house_has_a_yard() {
 /// hook `0x00740A11`): with a live Construction Yard in the house's BuildConst
 /// vector the Guard arm skips `Queue_Mission(16)`; an empty vector still
 /// queues Unload.
-#[cfg(feature = "phobos")]
 #[test]
 fn ai_auto_deploy_mcv_off_keeps_the_second_yard_out_of_the_guard_arm() {
     let (mut sim, rules, id) = house_fixture_with_ai(false, BUILDABLE, "AIAutoDeployMCV=no\n");
@@ -1218,7 +1216,6 @@ fn ai_auto_deploy_mcv_off_keeps_the_second_yard_out_of_the_guard_arm() {
 /// Phobos `[AI] AISetBaseCenter=no` (`Ext/BuildingType/Hooks.Placing.cpp:15-23`,
 /// hook `0x00739889`): with more than one standing yard the deploy skips the
 /// base-centre/base-plan block; with one yard the default block still runs.
-#[cfg(feature = "phobos")]
 #[test]
 fn ai_set_base_center_off_skips_the_rewrite_only_above_one_yard() {
     let (mut sim, rules, id) = house_fixture_with_ai(false, BUILDABLE, "AISetBaseCenter=no\n");

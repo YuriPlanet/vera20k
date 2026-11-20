@@ -621,7 +621,6 @@ pub(super) fn cloak_field_ai_step(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) {
-    #[cfg(feature = "phobos")]
     sim.drain_cloak_anim(id, rules);
     // An object with no cloak runtime is in state 0 and cannot pass
     // CanAutoCloak (`stock_cloak_tick_facts`), so the callback would do

@@ -1684,7 +1684,6 @@ fn run_chrono_warp_in_delay(type_delay: Option<i32>, general_delay: i32) -> (boo
     (warped_out, visits)
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn chrono_sphere_delay_keeps_the_arrival_warped_out_for_its_ticks() {
     assert_eq!(

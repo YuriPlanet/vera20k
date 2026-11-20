@@ -463,7 +463,6 @@ impl Fixture {
                 factory_plant: context
                     .get("plant")
                     .map_or([NativeF32Bits::ONE; 5], factor_bits),
-                #[cfg(feature = "phobos")]
                 restricted_plant: NativeF32Bits::ONE,
             },
         }
@@ -1185,6 +1184,8 @@ fn priced_vehicle_cameo(id: crate::sim::intern::InternedId, cost: i32) -> Cameo 
             naval: false,
             tech_level: 1,
             cost,
+            internal_name: "Test Type".to_string(),
+            sort_by_internal_name: false,
             name: "Test Type".to_string(),
         },
     }

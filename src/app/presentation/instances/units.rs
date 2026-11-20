@@ -24,8 +24,7 @@ use crate::render::native_z::{
 use crate::render::sprite_atlas::{HARVEST_OVERLAY_IMAGE, ShpPaletteContext, ShpSpriteKey};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::unit_atlas::{
-    PoseTilt, UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing,
-    canonical_unit_facing,
+    UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing, canonical_unit_facing,
 };
 use crate::rules::house_colors::{self, HouseColorIndex};
 use crate::rules::voxel_frame_catalog::{
@@ -433,13 +432,10 @@ fn aircraft_body_anchor(
     // The next Draw_Point4CF8D8 reads that committed global frame directly.
     // Original4CF8B1 tests TechnoType+0xC95; a Phobos build resolves
     // FlyNoWobbles against [AudioVisual] instead.
-    #[cfg(feature = "phobos")]
     let no_wobbles = rules.map_or_else(
         || object.is_dropship(),
         |rules| rules.fly_no_wobbles_for(object),
     );
-    #[cfg(not(feature = "phobos"))]
-    let no_wobbles = object.is_dropship();
     let delta = crate::render::locomotor_visual::fly_draw_point_y(
         sim.session().binary_frame(),
         no_wobbles,
@@ -621,14 +617,19 @@ pub(crate) fn unit_visitor<'a>(
                     .rules()
                     .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
                 let tilt_crash = object_type.is_some_and(|object| object.tilt_crash_jumpjet);
+                let jumpjet_tilt = jumpjet_tilt_settings(state.rules(), object_type);
                 if let Some(tilt) = body_pose_with_angles(
                     entity,
                     band,
                     tilt_crash,
-                    render_pose.angles,
-                    render_pose.rocket_pitch,
-                    object_type,
-                    render_pose.fly_bank_direction,
+                    BodyPoseContext {
+                        angles: render_pose.angles,
+                        pitch: render_pose.rocket_pitch,
+                        object_type,
+                        bank_direction: render_pose.fly_bank_direction,
+                        jumpjet_tilt,
+                        binary_frame: sim.session().binary_frame(),
+                    },
                 ) {
                     body = BodyDraw::Pose(tilt);
                 } else if matches!(body, BodyDraw::Pose(_)) {
@@ -741,6 +742,7 @@ pub(crate) fn unit_visitor<'a>(
                         palette_light,
                         sim,
                         state.rules(),
+                        entity.place.airstrike_tint_active,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
                     );
                 let (body_tint, body_light) =
@@ -799,7 +801,7 @@ pub(crate) fn unit_visitor<'a>(
                         body_frames: body_frame_count(type_str, &atlas.frame_counts),
                         turret_offset: art_reg
                             .and_then(|art| art.get(type_str))
-                            .map_or(0, |entry| entry.turret_offset),
+                            .map_or(0, |entry| entry.turret_offset[0]),
                     });
                 let (anim_frame, turret_frame) = animation_frames_of(
                     entity,
@@ -1122,47 +1124,6 @@ pub(crate) fn unit_visitor<'a>(
                 }
             }
 
-            emit_lifted_unit_shadow(
-                state,
-                atlas,
-                drawer,
-                entity,
-                type_str,
-                [center_x, center_y],
-                shadow_tilt,
-                no_shadow,
-                draw_state,
-                band,
-                &mut pieces,
-            );
-
-            // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
-            // of its harvester's Ground slot so atlas identity cannot re-sort it.
-            if let Some(overlay) = harvest_overlay(state.rules(), sim, entity, display_binary_frame)
-                && let Some((page, instance)) = emit_harvest_overlay(
-                    state,
-                    entity,
-                    &overlay,
-                    {
-                        let arm = harvest_arm_screen_position(entity, sim.session().binary_frame());
-                        (
-                            arm.0 + render_pose.screen[0] - native_anchor.0,
-                            arm.1 + render_pose.screen[1] - native_anchor.1,
-                        )
-                    },
-                    pos.z(),
-                    tint,
-                    palette_light.brightness(),
-                    draw_state,
-                )
-            {
-                pieces.push(ObjectPieceInstance {
-                    target: ObjectTexture::ShpPage(page),
-                    render_z: RenderZPolicy::ReadOnly,
-                    instance,
-                });
-            }
-
             if !pieces.is_empty() {
                 let parent = display_order.object_draw(
                     entity.stable_id(),
@@ -1242,26 +1203,6 @@ enum BodyDraw {
     Composite,
 }
 
-/// The Phobos `JumpjetTilt` pose the shadow matrix inherits from this frame's
-/// body draw (`UnitClass_DrawAsVXL_Shadow` hook `0x73C47A`,
-/// `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`). Only the airborne
-/// `JumpjetTilt` arm rotates the shadow; the grounded crash-rocking
-/// `Jumpjet` pose and the `FlyNormal`/`Rocket` poses keep the stock shadow
-/// policy. Native leaves the shadow matrix and its cache key untouched until
-/// either angle reaches 0.005 (`:733`, `:768`), so a smaller pose keeps the
-/// stock stencil too. Reuses the body's already-resolved pose rather than
-/// recomputing speed, acceleration or facing in the shadow path.
-fn shadow_tilt_for_body(body: &BodyDraw) -> Option<PoseTilt> {
-    match body {
-        BodyDraw::Pose(PoseTilt::JumpjetTilt(angles))
-            if crate::render::vxl_raster::shadow::tilt_is_active(*angles) =>
-        {
-            Some(PoseTilt::JumpjetTilt(*angles))
-        }
-        _ => None,
-    }
-}
-
 /// Unit DrawVoxelBody73B4DA..73B50E and `AircraftClass::Draw_It`
 /// (`0x004145B0..0x004145DB`) divide the persistent Foot+538 counter by the
 /// selected model's main HVA frame count. The object's original model may
@@ -1339,11 +1280,6 @@ fn animation_frames_of(
 /// Otherwise disguise precedes `NoSpawnAlt`, selected from the current
 /// docked slot count at draw time. The serialized override remains solely
 /// the miner dock sub-FSM's UnloadingClass (HORV/CMON) hint.
-///
-/// Phobos `Image.Condition*=`/`WaterImage.Condition*=` precede every one of
-/// those arms: the draw hooks replace the type the image, the voxel and the
-/// turret split come from, after the disguise and the deploy pointer have
-/// already chosen one (`0x73B4DA`, `0x73C602`).
 pub(crate) fn drawn_model_id<'a>(
     entity: &'a crate::app::presentation::frame::ObjectRecord,
     interner: &'a crate::sim::intern::StringInterner,
@@ -1363,14 +1299,17 @@ pub(crate) fn drawn_model_id<'a>(
     // Phobos `Image.Condition*=`/`WaterImage.Condition*=` override the type the
     // draw hooks below select, disguise and `NoSpawnAlt` included; a fully
     // deployed Unit already left through `UnloadingClass=`.
-    #[cfg(feature = "phobos")]
     if let (Some(rules), Some(object)) = (rules, object)
-        && let Some(damaged) = super::damaged_image::swap(entity, object, rules, water)
+        && let Some(damaged) = super::damaged_image::swap_health(
+            entity.category(),
+            entity.health.current(),
+            object,
+            rules,
+            water,
+        )
     {
         return Cow::Borrowed(damaged);
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = water;
     let no_spawn_alt = object.is_some_and(|object| object.no_spawn_alt);
     if let Some(disguise_type) = entity
         .disguise
@@ -1411,10 +1350,10 @@ fn unit_body_draw<'a>(
     observer: crate::render::draw_state::ObserverDrawContext,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<(Cow<'a, str>, BodyDraw)> {
-    if super::helpers::deploy_hides_unit_body(entity, interner, rules) {
+    if entity.category() == EntityCategory::Unit && entity.unit_deploying() {
         return None;
     }
-    let model = drawn_model_id(entity, interner, rules, binary_frame, observer, water);
+    let model = drawn_model_id(entity, interner, rules, binary_frame, observer, false);
     if !super::helpers::drawn_type_uses_voxel(entity, &model, interner, rules) {
         return None;
     }
@@ -1429,7 +1368,7 @@ fn unit_body_draw<'a>(
     // custom combinations can draw the wrong gun or omit it. The ordinary
     // base pair serves the zero-count ROBO/MTNK water path.
     let turret_parts = object_draws_turret_parts(model_object, entity.current_turret_index());
-    let body = body_draw(entity, band, tilt_crash_jumpjet, turret_parts);
+    let body = body_draw(entity, band, binary_frame, tilt_crash_jumpjet, turret_parts);
     Some((model, body))
 }
 
@@ -1501,6 +1440,7 @@ pub(super) fn drawn_model_object<'r>(
 fn body_draw(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
+    binary_frame: u32,
     tilt_crash_jumpjet: bool,
     turret_parts: bool,
 ) -> BodyDraw {
@@ -1517,30 +1457,14 @@ fn body_draw(
     }
 }
 
-/// The inputs the locomotor pose decision reads beyond the entity. `angles`
-/// and `pitch` are the sampled pose values (interpolated on the live draw).
-#[derive(Clone, Copy)]
-struct BodyPoseContext<'a> {
-    angles: [f32; 2],
-    pitch: f32,
-    object_type: Option<&'a crate::rules::object_type::ObjectType>,
-    bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
-    /// Phobos `JumpjetTilt` after the per-type/global fallback; `None` keeps
-    /// the stock draw.
-    jumpjet_tilt: Option<crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt>,
-    binary_frame: u32,
-}
-
 /// The locomotor Draw_Matrix arm that poses this body, if any. Fly
 /// Draw_Matrix tilts a crashing body by its roll and pitch
 /// (`TechnoClass+0x328`/`+0x32C`) while it is airborne (`0x004CF6A3`): every
 /// airborne Fly body is in the Top band (`In_Which_Layer @ 0x004CFCF0`).
 /// Jumpjet Draw_Matrix tilts a `TiltCrashJumpjet=` type whenever either angle
-/// passes its gate (`0x0054DCDA..0x0054DD13`), crashing or not; Phobos's
-/// replacement default arm adds the `JumpjetTilt` pose while airborne
-/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:447-491`). Rocket Draw_Matrix
-/// (`0x00663470`) pitches the body whenever CurrentPitch is not zero; at zero
-/// it is the plain facing matrix.
+/// passes its gate (`0x0054DCDA..0x0054DD13`), crashing or not. Rocket
+/// Draw_Matrix (`0x00663470`) pitches the body whenever CurrentPitch is not
+/// zero; at zero it is the plain facing matrix.
 fn body_pose(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
@@ -1550,7 +1474,19 @@ fn body_pose(
     // The pose's rocking angles and rocket pitch.
     let angles = entity.pose.angles;
     let pitch = entity.pose.rocket_pitch;
-    body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch, None, None)
+    body_pose_with_angles(
+        entity,
+        band,
+        tilt_crash_jumpjet,
+        BodyPoseContext {
+            angles,
+            pitch,
+            object_type: None,
+            bank_direction: None,
+            jumpjet_tilt: None,
+            binary_frame,
+        },
+    )
 }
 
 /// Normal `FlyLocomotionClass::Draw_Matrix @ 0x004CF610`: its non-crash arm
@@ -1591,10 +1527,24 @@ fn normal_fly_pose(
     (pitch != 0.0 || roll != 0.0).then_some(PoseTilt::FlyNormal { pitch, roll })
 }
 
+/// The inputs the locomotor pose decision reads beyond the entity. `angles`
+/// and `pitch` are the sampled pose values (interpolated on the live draw).
+#[derive(Clone, Copy)]
+pub(crate) struct BodyPoseContext<'a> {
+    angles: [f32; 2],
+    pitch: f32,
+    object_type: Option<&'a crate::rules::object_type::ObjectType>,
+    bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
+    /// Phobos `JumpjetTilt` after the per-type/global fallback; `None` keeps
+    /// the stock draw.
+    jumpjet_tilt: Option<crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt>,
+    binary_frame: u32,
+}
+
 fn body_pose_with_angles(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
-    tilt_crash_jumpjet: bool,
+    _tilt_crash_jumpjet: bool,
     context: BodyPoseContext<'_>,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
     use crate::render::unit_atlas::PoseTilt;
@@ -1608,24 +1558,20 @@ fn body_pose_with_angles(
     }
     let locomotor = entity.locomotor.as_ref()?;
     if locomotor.rocket().is_some() {
-        return (pitch != 0.0).then_some(PoseTilt::Rocket(pitch));
+        return (context.pitch != 0.0).then_some(PoseTilt::Rocket(context.pitch));
     }
     match locomotor.active_kind() {
         LocomotorKind::Fly if entity.crash.is_crashing() && band != EntityDrawBand::Ground => {
             entity.rocking.as_ref()?;
             Some(PoseTilt::Fly(context.angles))
         }
-        LocomotorKind::Jumpjet
-            if (tilt_crash_jumpjet || cfg!(feature = "phobos"))
-                && crate::map::voxel_pose::voxel_tilt_applies(context.angles) =>
-        {
+        LocomotorKind::Jumpjet if crate::map::voxel_pose::voxel_tilt_applies(context.angles) => {
             entity.rocking.as_ref()?;
             // Phobos moves the `TiltCrashJumpjet=` check to the crash itself
             // (`Ext/Unit/Hooks.Jumpjet.cpp:159-165`) and its replacement
             // matrix (`Ext/TechnoType/Hooks.MatrixOp.cpp:407-429`) rotates by
             // the live angles for every jumpjet; airborne it drops the crash
             // translation.
-            #[cfg(feature = "phobos")]
             if entity
                 .locomotor
                 .as_ref()
@@ -1650,16 +1596,19 @@ fn body_pose_with_angles(
 /// and, while its LocomotionFacing turns, a roll from the signed turn
 /// difference. The resulting pose is the plain facing matrix times the two
 /// rotations, so the crashed `TiltCrashJumpjet=` arm above keeps precedence.
+///
+/// RESIDUAL: the frame record does not carry the Magnetron grasp bit, so a
+/// magnetron-held jumpjet is tilted as if it were free.
 fn jumpjet_tilt_pose(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &crate::app::presentation::frame::ObjectRecord,
     settings: crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt,
     binary_frame: u32,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
-    if entity.category() != EntityCategory::Unit {
+    if entity.category() != crate::map::entities::EntityCategory::Unit {
         return None;
     }
     let runtime = entity.locomotor.as_ref()?.jumpjet_runtime()?;
-    if runtime.is_grounded() || !entity.is_alive() || entity.is_attacked_by_locomotor() {
+    if runtime.is_grounded() || entity.health.current() <= 0 {
         return None;
     }
     let flight = runtime.flight();
@@ -1682,7 +1631,6 @@ fn jumpjet_tilt_pose(
 /// (`TechnoExt::Fetch(linked)->GetTypeExtData()`,
 /// `Ext/TechnoType/Hooks.MatrixOp.cpp:447`). The per-type nullable fields
 /// fall back to the `[AudioVisual]` globals.
-#[cfg(feature = "phobos")]
 fn jumpjet_tilt_settings(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     object_type: Option<&crate::rules::object_type::ObjectType>,
@@ -1693,12 +1641,20 @@ fn jumpjet_tilt_settings(
         .resolve(&rules.phobos_jumpjet_tilt)
 }
 
-#[cfg(not(feature = "phobos"))]
-fn jumpjet_tilt_settings(
-    _rules: Option<&crate::rules::ruleset::RuleSet>,
-    _object_type: Option<&crate::rules::object_type::ObjectType>,
-) -> Option<crate::rules::phobos_jumpjet_tilt::ResolvedJumpjetTilt> {
-    None
+/// A body's resolved JumpjetTilt pose carries into its shadow only while the
+/// tilt is above the native cutoff (either angle reaches 0.005, `:733`,
+/// `:768`), so a smaller pose keeps the stock stencil too. Reuses the body's
+/// already-resolved pose rather than recomputing speed, acceleration or
+/// facing in the shadow path.
+fn shadow_tilt_for_body(body: &BodyDraw) -> Option<crate::render::unit_atlas::PoseTilt> {
+    match body {
+        BodyDraw::Pose(crate::render::unit_atlas::PoseTilt::JumpjetTilt(angles))
+            if crate::render::vxl_raster::shadow::tilt_is_active(*angles) =>
+        {
+            Some(crate::render::unit_atlas::PoseTilt::JumpjetTilt(*angles))
+        }
+        _ => None,
+    }
 }
 
 /// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
@@ -2079,26 +2035,11 @@ fn prepare_unit_shadow(
     no_shadow: bool,
     slope: UnitRenderSlopeState,
     band: EntityDrawBand,
-    shadow_tilt: Option<PoseTilt>,
     parts: impl IntoIterator<Item = (UnitSpriteEntry, UnitTextureSource, [f32; 2])>,
 ) -> bool {
     if !native_shadow_caller_eligible(entity, no_shadow, slope, band) {
         return false;
     }
-    let parts: Vec<_> = parts
-        .into_iter()
-        .map(
-            |(entry, source, offset)| crate::render::unit_atlas::UnitShadowPart {
-                entry,
-                point: [
-                    128 + entry.offset_x as i32 + offset[0] as i32,
-                    128 + entry.offset_y as i32 + offset[1] as i32,
-                ],
-                posed: !matches!(source, UnitTextureSource::Stable(_)) || shadow_tilt.is_some(),
-                tilt: shadow_tilt,
-            },
-        )
-        .collect();
     let key = shadow_lookup_key(
         UnitSpriteKey {
             type_id: type_id.into(),
@@ -2130,6 +2071,7 @@ fn prepare_unit_shadow(
                         128 + entry.offset_y as i32 + offset[1] as i32,
                     ],
                     posed: !matches!(source, UnitTextureSource::Stable(_)),
+                    tilt: None,
                 },
             )
             .collect();
@@ -2296,7 +2238,6 @@ fn emit_unit_shadow_sprite(
         depth,
         voxel_adjust,
         draw_state,
-        1.0,
         pieces,
     );
 }
@@ -2331,12 +2272,6 @@ fn draw_voxel_shadow(
 
 /// Shared Techno706BD0 stencil emission. Aircraft4148A0 supplies no composed
 /// body mask, so its immutable atlas entry also serves pitched/rolled bodies.
-///
-/// `scale` is Phobos' `shadowMatrix.Scale(currentScale)`
-/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:687,700,708`), applied to the drawn
-/// quad about the anchor: the atlas keeps one stencil per (type, facing, slope)
-/// and native's per-frame re-raster through the scaled matrix becomes a
-/// resample of that stencil (see `rules::phobos_shadow`).
 fn emit_shadow_stencil(
     entry: UnitSpriteEntry,
     source: UnitTextureSource,
@@ -2344,17 +2279,13 @@ fn emit_shadow_stencil(
     depth: f32,
     voxel_adjust: f32,
     draw_state: DrawState,
-    scale: f32,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     let mut shadow_state: DrawState = draw_state;
     shadow_state.fx_flags |= FX_SHADOW;
     let sprite = SpriteInstance {
-        position: [
-            anchor[0] + entry.offset_x * scale,
-            anchor[1] + entry.offset_y * scale,
-        ],
-        size: [entry.pixel_size[0] * scale, entry.pixel_size[1] * scale],
+        position: [anchor[0] + entry.offset_x, anchor[1] + entry.offset_y],
+        size: entry.pixel_size,
         uv_origin: entry.uv_origin,
         uv_size: entry.uv_size,
         depth,
@@ -2378,10 +2309,9 @@ fn lifted_unit_shadow_pose(
     entity: &crate::app::presentation::frame::ObjectRecord,
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     binary_frame: u32,
-    shadow_tilt: Option<PoseTilt>,
 ) -> Option<crate::render::unit_shadow::UnitShadowPose> {
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    let mut pose = crate::render::unit_shadow::pose(
+    crate::render::unit_shadow::pose(
         crate::render::unit_shadow::UnitShadowContext {
             xyz: [xy[0], xy[1], entity.place.world_z_leptons],
             on_bridge: entity.on_bridge(),
@@ -2389,11 +2319,7 @@ fn lifted_unit_shadow_pose(
             primary_facing: entity.body_facing_current(binary_frame),
         },
         |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
-    )?;
-    // The anchor above is the shadow's own `Shadow_Point`; only the stencil
-    // matrix/key gains the body tilt.
-    pose.inherit_tilt(shadow_tilt);
-    Some(pose)
+    )
 }
 
 /// The original Unit suffix follows stable, split-gun and posed bodies alike.
@@ -2406,7 +2332,6 @@ fn emit_lifted_unit_shadow(
     entity: &crate::app::presentation::frame::ObjectRecord,
     type_id: &str,
     body_anchor: [f32; 2],
-    shadow_tilt: Option<PoseTilt>,
     no_shadow: bool,
     draw_state: DrawState,
     band: EntityDrawBand,
@@ -2426,8 +2351,7 @@ fn emit_lifted_unit_shadow(
     let Some(terrain) = view.resolved_terrain() else {
         return;
     };
-    let Some(mut pose) =
-        lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame(), shadow_tilt)
+    let Some(mut pose) = lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame())
     else {
         return;
     };
@@ -2448,19 +2372,14 @@ fn emit_lifted_unit_shadow(
                         | crate::rules::locomotor_type::SpeedType::Wheel
                 )
         });
-    // `Hooks.MatrixOp.cpp:736`, `:770`: an active tilt invalidates native's
-    // shadow cache key, so the draw records no cached image (`0x00707280`).
-    let image = shadow_tilt
-        .is_none()
-        .then(|| match (keyed_by_mask, pose.mask) {
-            (true, UnitShadowMask::Fresh) => None,
-            (true, _) => Some(key.clone()),
-            (false, _) => Some(UnitSpriteKey {
-                frame: 0,
-                ..key.clone()
-            }),
-        });
-    let image = image.flatten();
+    let image = match (keyed_by_mask, pose.mask) {
+        (true, UnitShadowMask::Fresh) => None,
+        (true, _) => Some(key.clone()),
+        (false, _) => Some(UnitSpriteKey {
+            frame: 0,
+            ..key.clone()
+        }),
+    };
     draw_voxel_shadow(
         state,
         atlas,
@@ -2476,12 +2395,10 @@ fn emit_lifted_unit_shadow(
     let Some(entry) = atlas.get(&key).filter(|e| e.native_draw_bounds.is_some()) else {
         return;
     };
-    // The body pieces the stencil masks: none on high flight, whose template
-    // native draws unmasked (`Hooks.MatrixOp.cpp:726-800`).
-    let parts: Vec<_> = if pose.mask == UnitShadowMask::None {
-        Vec::new()
+    let (entry, source) = if pose.mask == UnitShadowMask::None {
+        (entry, UnitTextureSource::Stable(entry.page))
     } else {
-        pieces
+        let parts: Vec<_> = pieces
             .iter()
             .filter_map(|piece| {
                 let (page, posed) = match piece.target {
@@ -2505,30 +2422,10 @@ fn emit_lifted_unit_shadow(
                         128 + (sprite.position[1] - body_anchor[1]) as i32,
                     ],
                     posed,
-                    tilt: shadow_tilt,
+                    tilt: None,
                 })
             })
-            .collect()
-    };
-    let (entry, source) = if let Some(tilt) = shadow_tilt {
-        // The shadow matrix carries the body's tilt (`Hooks.MatrixOp.cpp:768-773`),
-        // so this frame's stencil is a fresh raster of the same sections:
-        // masked by the visible body pieces on positive low flight, and drawn
-        // unmasked on high flight. `Shadow_Point` stays its own anchor.
-        let Some(assets) = state.process_assets.manager() else {
-            return;
-        };
-        let mask = (pose.mask != UnitShadowMask::None).then_some(pose.mask_offset);
-        let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
-        let Some(entry) =
-            cache.render_tilted_unit_shadow(assets, state.rules(), atlas, &key, tilt, mask, &parts)
-        else {
-            return;
-        };
-        (entry, UnitTextureSource::Pose(entry.page))
-    } else if pose.mask == UnitShadowMask::None {
-        (entry, UnitTextureSource::Stable(entry.page))
-    } else {
+            .collect();
         let flushes = state
             .match_state
             .match_presentation
@@ -2558,12 +2455,6 @@ fn emit_lifted_unit_shadow(
         entity.position.z(),
     );
     let z_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None);
-    let scale = state
-        .rules()
-        .and_then(|rules| view.interner().object_type(entity.type_ref(), rules))
-        .map_or(1.0, |object| {
-            unit_shadow_scale(state, entity, object, pose.height_leptons)
-        });
     emit_shadow_stencil(
         entry,
         source,
@@ -2571,7 +2462,6 @@ fn emit_lifted_unit_shadow(
         depth,
         z_adjust as f32,
         draw_state,
-        scale,
         pieces,
     );
 }
@@ -2661,7 +2551,6 @@ fn emit_aircraft_shadow_sprite(
         0,
     );
     let z_adjust = super::foot_depth::unit_z_adjust(state, entity, false, Some(pose.world_z));
-    let scale = aircraft_shadow_scale(state, entity, pose.height_leptons);
     emit_shadow_stencil(
         entry,
         UnitTextureSource::Stable(entry.page),
@@ -2669,76 +2558,8 @@ fn emit_aircraft_shadow_sprite(
         depth,
         z_adjust as f32,
         draw_state,
-        scale,
         pieces,
     );
-}
-
-/// Phobos' aircraft height scale (`Ext/TechnoType/Hooks.MatrixOp.cpp:958-973`):
-/// the live height over the type's `GetFlightLevel()`, or the base scale for a
-/// `ConsideredAircraft` type when the switch is off.
-fn aircraft_shadow_scale(
-    state: &AppState,
-    entity: &crate::sim::game_entity::GameEntity,
-    height_leptons: i32,
-) -> f32 {
-    #[cfg(feature = "phobos")]
-    {
-        let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
-            return 1.0;
-        };
-        let view = runtime.view();
-        let rules = &runtime.resources.rules;
-        let Some(object) = view.interner().object_type(entity.type_ref(), rules) else {
-            return 1.0;
-        };
-        crate::rules::phobos_shadow::aircraft_size_scale(
-            &rules.phobos_globals,
-            height_leptons,
-            object.flight_level(rules.general.flight_level),
-            object.phobos_shadow_size_characteristic_height,
-            object.considered_aircraft,
-        ) as f32
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (state, entity, height_leptons);
-        1.0
-    }
-}
-
-/// Phobos' unit height scale (`Ext/TechnoType/Hooks.MatrixOp.cpp:677-709`).
-fn unit_shadow_scale(
-    state: &AppState,
-    entity: &crate::sim::game_entity::GameEntity,
-    object: &crate::rules::object_type::ObjectType,
-    height_leptons: i32,
-) -> f32 {
-    #[cfg(feature = "phobos")]
-    {
-        let Some(rules) = state.rules() else {
-            return 1.0;
-        };
-        crate::rules::phobos_shadow::unit_size_scale(
-            &rules.phobos_globals,
-            height_leptons,
-            entity.locomotor.as_ref().and_then(|locomotor| {
-                matches!(
-                    locomotor.active_kind(),
-                    crate::rules::locomotor_type::LocomotorKind::Jumpjet
-                )
-                .then_some(object.jumpjet_params.height)
-            }),
-            object.phobos_shadow_size_characteristic_height,
-            rules.general.display_cruise_height,
-            object.considered_aircraft,
-        ) as f32
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (state, entity, object, height_leptons);
-        1.0
-    }
 }
 
 fn push_unit_sprite(
@@ -2878,8 +2699,7 @@ fn composite_draw_state(state: &AppState, mut draw_state: DrawState) -> DrawStat
     // Only voxel body draws use this otherwise unused parameter. Shadows keep
     // their own state and depth. The shader needs the actual tactical scissor
     // to seed each native Bit_Blit from its clipped rectangle, split or not.
-    let (_, _, _, height) = crate::app::input::camera::tactical_viewport_px(state);
-    draw_state.fx_params[3] = height as f32 / state.match_state.input.zoom_level;
+    draw_state.fx_params[3] = crate::app::input::camera::tactical_view_height(state);
     draw_state
 }
 
@@ -3047,7 +2867,6 @@ fn emit_turret_unit_sprites(
             no_shadow,
             slope_state,
             band,
-            None,
             body_entry_opt
                 .into_iter()
                 .map(|(entry, source)| (entry, source, [0.0, 0.0]))
@@ -3146,97 +2965,6 @@ fn emit_turret_unit_sprites(
             pieces,
         );
     }
-    // `Hooks.MatrixOp.cpp:803-870`: a second `DrawVoxelShadow` for the turret
-    // voxel's section zero, on the same surface, at the turret's own facing.
-    // A posed hull draws all its parts through the pose key (+0x3FF), which
-    // carries no turret stencil, so the turret shadow follows the unposed arm.
-    if ground_pose.is_none() {
-        emit_turret_shadow_sprite(
-            state,
-            atlas,
-            drawer,
-            entity,
-            type_id,
-            turret_key.clone(),
-            [center_x + tur_ox, center_y + tur_oy],
-            shadow_slope,
-            entity_depth,
-            voxel_adjust,
-            draw_state,
-            no_shadow,
-            band,
-            pieces,
-        );
-    }
-}
-
-/// Phobos' turret half of the shadow: one stencil of `{IMAGE}TUR.VXL`'s
-/// section zero at the turret's facing and slope
-/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:856-871`). The `mtx_turret` rotation
-/// is the turret's own facing, which VERA carries in the key; the
-/// `ApplyTurretOffsetUnit` translation is the art `TurretOffset=` that the
-/// caller already applied to the anchor.
-#[allow(clippy::too_many_arguments)]
-fn emit_turret_shadow_sprite(
-    state: &AppState,
-    atlas: &crate::render::unit_atlas::UnitAtlas,
-    drawer: VoxelDrawer,
-    entity: &crate::sim::game_entity::GameEntity,
-    type_id: &str,
-    mut key: UnitSpriteKey,
-    anchor: [f32; 2],
-    shadow_slope: u8,
-    depth: f32,
-    voxel_adjust: f32,
-    draw_state: DrawState,
-    no_shadow: bool,
-    band: EntityDrawBand,
-    pieces: &mut Vec<ObjectPieceInstance>,
-) {
-    let enabled = state
-        .rules()
-        .and_then(|rules| rules.object(type_id))
-        .is_some_and(|object| {
-            crate::render::unit_atlas::turret_shadow_enabled(state.rules(), object)
-        });
-    // The grounded sunk/sinking gate is the same one `73C1D2` applies to the
-    // body stencil, and `no_shadow` is the unit's own draw suppression.
-    if !enabled
-        || no_shadow
-        || has_lifted_unit_shadow(entity)
-        || !unit_shadow_admitted(entity, no_shadow, band)
-    {
-        return;
-    }
-    key.layer = VxlLayer::ShadowTurret;
-    key.frame = 0;
-    key.slope_type = shadow_slope;
-    key.barrel_pitch = 0;
-    let Some(entry) = atlas.get(&key).copied() else {
-        return;
-    };
-    // `Hooks.MatrixOp.cpp:848` splits the turret stencil's cache record from
-    // the body's; the atlas key already names (type, gun, turret facing, slope).
-    draw_voxel_shadow(
-        state,
-        atlas,
-        drawer,
-        Some(crate::render::voxel_image_cache::VoxelImageKey::new(
-            crate::render::voxel_image_cache::VoxelCache::Shadow,
-            key.clone(),
-        )),
-        &key,
-    );
-    emit_shadow_stencil(
-        entry,
-        UnitTextureSource::Stable(entry.page),
-        anchor,
-        depth,
-        voxel_adjust,
-        draw_state,
-        1.0,
-        pieces,
-    );
 }
 
 /// Frames per facing in `OREGATH.SHP`, the literal `15` of
@@ -3288,7 +3016,6 @@ fn harvest_overlay<'a>(
     let frame = sim.session().binary_frame();
     let facing = entity.body_facing_current(frame);
     let counter = entity.body_frame_counter.get();
-    #[cfg(feature = "phobos")]
     match gather_animation(rules, object, sim, entity) {
         Ok(Some((anim, frames_per_dir))) => {
             let (type_id, palette_context) = anim
@@ -3320,7 +3047,6 @@ fn harvest_overlay<'a>(
 /// empty `Tiberiums=` list means slot 0 for every resource; an empty `Anims=`
 /// list keeps OREGATH.SHP and only takes the custom frame count. `None` means
 /// the cell holds no resource, which leaves the stock draw.
-#[cfg(feature = "phobos")]
 fn gather_animation<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     object: &'a crate::rules::object_type::ObjectType,
@@ -3486,59 +3212,6 @@ mod tests {
     use crate::sim::timer::CdTimer;
     use crate::sim::world::Simulation;
 
-    /// Phobos' `ShadowSizeCharacteristicHeight=` scale shrinks the shadow about
-    /// its own anchor: the quad's size and its offset from the anchor both
-    /// take the factor, while the anchor itself stays where the pose put it
-    /// (`Ext/TechnoType/Hooks.MatrixOp.cpp:687` scaling a translation-free
-    /// shadow matrix).
-    #[cfg(feature = "phobos")]
-    #[test]
-    fn a_scaled_shadow_quad_shrinks_about_its_anchor() {
-        let entry = UnitSpriteEntry {
-            uv_origin: [0.25, 0.5],
-            uv_size: [0.1, 0.1],
-            pixel_size: [40.0, 60.0],
-            offset_x: -20.0,
-            offset_y: -30.0,
-            native_draw_bounds: None,
-            page: 3,
-        };
-        let mut pieces = Vec::new();
-        emit_shadow_stencil(
-            entry,
-            UnitTextureSource::Stable(3),
-            [100.0, 200.0],
-            7.0,
-            0.0,
-            DrawState::default(),
-            0.5,
-            &mut pieces,
-        );
-        let sprite = &pieces[0].instance;
-        assert_eq!(sprite.position, [100.0 - 10.0, 200.0 - 15.0]);
-        assert_eq!(sprite.size, [20.0, 30.0]);
-        assert_eq!(
-            sprite.uv_origin, entry.uv_origin,
-            "the stencil itself is resampled"
-        );
-        assert_eq!(sprite.uv_size, entry.uv_size);
-
-        pieces.clear();
-        emit_shadow_stencil(
-            entry,
-            UnitTextureSource::Stable(3),
-            [100.0, 200.0],
-            7.0,
-            0.0,
-            DrawState::default(),
-            1.0,
-            &mut pieces,
-        );
-        let sprite = &pieces[0].instance;
-        assert_eq!(sprite.position, [80.0, 170.0]);
-        assert_eq!(sprite.size, [40.0, 60.0]);
-    }
-
     /// OREGATH walks the ground gradient (`0x0073D233`): each row one unit
     /// nearer than the row above, from GetZAdjustment - 2 at its top row.
     #[test]
@@ -3647,12 +3320,14 @@ mod tests {
                     .with_colour_word(int(&row["word"]) as u16);
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
+            let record = ObjectRecord::of_test(&unit);
             let (lit_tint, lit) = crate::app::presentation::lighting::techno_effect_light(
-                &ObjectRecord::of_test(&unit),
+                &record,
                 tint,
                 light,
                 &sim,
                 None,
+                record.place.airstrike_tint_active,
                 crate::app::presentation::lighting::TechnoDraw::Voxel,
             );
             let (lit_tint, lit) = crate::app::presentation::lighting::unit_voxel_effect_light(
@@ -3836,6 +3511,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
+                0,
                 false,
                 false
             ),
@@ -3853,6 +3529,7 @@ mod tests {
                 body_draw(
                     &ObjectRecord::of_test(&entity),
                     EntityDrawBand::Top,
+                    0,
                     false,
                     turret_parts
                 ),
@@ -3864,6 +3541,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Ground,
+                0,
                 false,
                 false
             ),
@@ -3875,6 +3553,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
+                0,
                 false,
                 true
             ),
@@ -3884,6 +3563,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Ground,
+                0,
                 true,
                 true
             ),
@@ -3900,6 +3580,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
+                0,
                 true,
                 true
             ),
@@ -4123,6 +3804,7 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&level),
                 EntityDrawBand::Top,
+                0,
                 false,
                 false
             ),
@@ -4140,7 +3822,7 @@ mod tests {
         for band in [EntityDrawBand::Top, EntityDrawBand::Ground] {
             for turret_parts in [false, true] {
                 assert_eq!(
-                    body_draw(&ObjectRecord::of_test(&raised), band, false, turret_parts),
+                    body_draw(&ObjectRecord::of_test(&raised), band, 0, false, turret_parts),
                     BodyDraw::Pose(PoseTilt::Rocket(pitch))
                 );
             }

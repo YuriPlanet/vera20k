@@ -90,7 +90,6 @@ fn factory_plant_multiplier_scales_the_discount() {
     let mut factors = HouseCostFactors {
         country: [NativeF32Bits::ONE; 5],
         factory_plant: [NativeF32Bits::ONE; 5],
-        #[cfg(feature = "phobos")]
         restricted_plant: NativeF32Bits::ONE,
     };
     factors.factory_plant[0] = NativeF32Bits::from_bits(0.75f32.to_bits());

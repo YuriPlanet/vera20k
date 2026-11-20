@@ -1039,7 +1039,6 @@ fn non_bincode_missing_house_field_uses_native_constructor_defaults() {
 /// `Ext/House/Hooks.cpp:518-541`): with the key set, a per-house timer gates
 /// the per-frame `AI_TryFireSW`; `<= 0` tries every frame; unset adds no
 /// per-frame call.
-#[cfg(feature = "phobos")]
 #[test]
 fn ai_superweapon_delay_gates_the_per_frame_try() {
     use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
@@ -1096,7 +1095,6 @@ fn ai_superweapon_delay_gates_the_per_frame_try() {
 
 /// `[General]` alone over the Strategy replay's type set (`rules()` plus the
 /// key): one factory and one plain building, no `AISuperWeaponDelay`.
-#[cfg(feature = "phobos")]
 fn ai_sw_rules(global: &str) -> RuleSet {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\n{global}\
@@ -1110,7 +1108,6 @@ fn ai_sw_rules(global: &str) -> RuleSet {
 }
 
 /// `AI_TryFireSW` calls logged since the last reset.
-#[cfg(feature = "phobos")]
 fn ai_sw_tries() -> usize {
     use crate::sim::superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
     AI_FIRE_LOG.with(|log| {
@@ -1125,7 +1122,6 @@ fn ai_sw_tries() -> usize {
 
 /// Run the Strategy step at `frame` and answer how many times it reached
 /// `AI_TryFireSW`.
-#[cfg(feature = "phobos")]
 fn ai_sw_strategy_tries(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1146,7 +1142,6 @@ fn ai_sw_strategy_tries(
 }
 
 /// Run Phobos' per-frame `HouseClass_AI_Superweapons` owner at `frame`.
-#[cfg(feature = "phobos")]
 fn ai_sw_per_frame_tries(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1170,7 +1165,6 @@ fn ai_sw_per_frame_tries(
 /// both hooks inert: `0x4FD77C` does not skip, `0x4F9038` does not run, and the
 /// strategy timer keeps the vanilla `RandomRanged(1, 7) + 105`
 /// (`0x004FD918..0x004FD928`) schedule drawn in `building_strategy`.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_unset_key_keeps_the_vanilla_strategy_timer() {
     let rules = ai_sw_rules("");
@@ -1215,7 +1209,6 @@ fn an_unset_key_keeps_the_vanilla_strategy_timer() {
 /// `AISuperWeaponDelay=40` (`Ext/House/Hooks.cpp:518-541`): `0x4F9038` runs
 /// `AI_TryFireSW` behind the per-house `CDTimerClass`, and `0x4FD77C` stops the
 /// strategy-side call, so the key alone paces the launches.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_set_key_runs_ai_sw_on_its_own_timer_and_skips_the_vanilla_step() {
     let rules = ai_sw_rules("AISuperWeaponDelay=40\n");
@@ -1265,7 +1258,6 @@ fn a_set_key_runs_ai_sw_on_its_own_timer_and_skips_the_vanilla_step() {
 /// The native timer block runs only for a positive delay
 /// (`Ext/House/Hooks.cpp:527`), so `0` and `-1` reach `AI_TryFireSW` on every
 /// frame.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_nonpositive_key_fires_every_frame() {
     for global in ["AISuperWeaponDelay=0\n", "AISuperWeaponDelay=-1\n"] {

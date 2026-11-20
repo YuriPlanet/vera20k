@@ -483,7 +483,6 @@ mod tests {
     /// (`Ext/Building/Hooks.cpp:381-388`) answers the stock `cmp +0xF8, 0x17`
     /// with the type's value, so the archive-less `UndeploysInto=` sale's
     /// `+0x6DD` write (0x4511DF) lands on the authored stage.
-    #[cfg(feature = "phobos")]
     #[test]
     fn archive_less_sale_opens_at_the_types_sell_buildup_length() {
         let (_, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules_and_fixed_art(

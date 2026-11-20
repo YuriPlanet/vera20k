@@ -146,7 +146,6 @@ impl BuildingEntryLatches {
     /// Phobos `ChangeOwnerMissionFix` (`Ext/Techno/Body.Internal.cpp:234-260`)
     /// clears `+0x68F` and `+0x690`; the `+0x691` nearest-occupiable seek
     /// stays set.
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_mission_fix_seeks(&mut self) {
         self.should_enter_absorber = false;
         self.should_enter_occupiable = false;
@@ -221,10 +220,7 @@ impl Simulation {
         // Phobos `FootClass_Try_Grinding_CheckIfAllowed` (`0x4DFABD`,
         // `Hooks.Grinding.cpp:169-180`): a candidate the building cannot grind
         // is skipped instead of becoming the destination.
-        #[cfg(feature = "phobos")]
         let admits = |candidate| self.can_grind_techno(candidate, id, rules);
-        #[cfg(not(feature = "phobos"))]
-        let admits = |_candidate| true;
         let Some(best) = pick_nearest_admitted(walk, admits) else {
             return false;
         };
@@ -293,15 +289,12 @@ impl Simulation {
         //Playback may draw Main too, so flush before selecting the next list.
         // Phobos `Grinding.PlayDieSound=no` skips both sounds
         // (`Hooks.Grinding.cpp:182-193`, `:211-223`).
-        #[cfg(feature = "phobos")]
         let play_die_sound = self
             .substrate
             .entities
             .get(building_id)
             .and_then(|building| self.object_type(building.type_ref(), rules))
             .is_none_or(|object| object.phobos_grinding.play_die_sound);
-        #[cfg(not(feature = "phobos"))]
-        let play_die_sound = true;
         if play_die_sound {
             for voice in [true, false] {
                 if let Some(foot) = self.substrate.entities.get(id)
@@ -325,7 +318,6 @@ impl Simulation {
         // Phobos records the grinder owner's balance before the refund to
         // feed `DoGrindingExtras` the refund actually credited
         // (`Hooks.Grinding.cpp:196-209`, `:225-243`).
-        #[cfg(feature = "phobos")]
         let refund_balance_before = self
             .substrate
             .entities
@@ -342,10 +334,7 @@ impl Simulation {
         }
         //73A13E..73A18D credits the eater before suppression50 + ExitUnit;
         // Phobos adds the same arm for Infantry at `0x51986A`.
-        #[cfg(feature = "phobos")]
         let refund_parasite = unit || infantry;
-        #[cfg(not(feature = "phobos"))]
-        let refund_parasite = unit;
         if refund_parasite
             && let Some(eater) = self
                 .substrate
@@ -372,7 +361,6 @@ impl Simulation {
         // balance delta (cargo and parasite refunds included) to the grinder's
         // weapon accumulator; a type `Grinding.Sound=` replaces the stock
         // EnterGrinderSound below.
-        #[cfg(feature = "phobos")]
         let grinding_sound_played = grinding && {
             let balance_after = self
                 .substrate
@@ -410,10 +398,7 @@ impl Simulation {
             // Phobos `Grinding.Sound=` replaces the stock sound for this
             // building; the extras hook jumps past the stock call once it
             // plays (`Hooks.Grinding.cpp:155-166`, `:239-244`).
-            #[cfg(feature = "phobos")]
             let play_stock_sound = !grinding_sound_played;
-            #[cfg(not(feature = "phobos"))]
-            let play_stock_sound = true;
             if play_stock_sound
                 && let Some(sound_id) = rules.general.enter_grinder_sound.clone()
                 && let Some(foot) = self.substrate.entities.get(id)

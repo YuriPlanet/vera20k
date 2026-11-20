@@ -903,7 +903,6 @@ pub struct ScenarioSession {
     /// Phobos `BannerClass::Array` (`New/Entity/BannerClass.h:11`): the
     /// trigger actions 800-802 create these; mutations belong to
     /// [`crate::sim::banner`], the draw reads them.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     banners: crate::sim::banner::BannerList,
     /// Destination Scenario+1C78/+1C80; immutable after its Basic read.
@@ -2144,7 +2143,6 @@ impl ScenarioSession {
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
             scenario_pause: pause::ScenarioPause::default(),
             scenario_countdown: countdown::ScenarioCountdown::new(desc.timer_inherit),
-            #[cfg(feature = "phobos")]
             banners: crate::sim::banner::BannerList::default(),
             carry_over_money: desc.carry_over_money,
             carry_over_cap: desc.carry_over_cap.unwrap_or(0),
@@ -2726,7 +2724,6 @@ mod tests {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl ScenarioSession {
     pub fn banner_create_or_replace(&mut self, banner: crate::sim::banner::RuntimeBanner) {
         self.banners.create_or_replace(banner);

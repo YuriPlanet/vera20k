@@ -238,8 +238,7 @@ pub(crate) fn build_banner_instances(
     // then borrows the presentation's blink store mutably on its own.
     let banners: Vec<crate::sim::banner::RuntimeBanner> = state
         .match_state
-        .sim_runtime
-        .as_ref()
+        .sim_runtime.runtime()
         .map(|sim| sim.simulation.session().banners().to_vec())
         .unwrap_or_default();
     if banners.is_empty() {
@@ -250,8 +249,7 @@ pub(crate) fn build_banner_instances(
     // (`BannerClass.cpp:146-155`); `None` renders no text at all.
     let variables_values: Vec<Option<i32>> = state
         .match_state
-        .sim_runtime
-        .as_ref()
+        .sim_runtime.runtime()
         .map(|sim| {
             banners
                 .iter()

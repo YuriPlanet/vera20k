@@ -255,7 +255,6 @@ pub fn build_credits_instances(
 /// carries the bits Phobos ORs in from `Sidebar.PowerDelta.Align`: left starts
 /// the string at the anchor, centre pulls it back half its *measured* width and
 /// right ends it at the anchor.
-#[cfg(feature = "phobos")]
 pub fn build_indicator_instances(
     font: &BitFont,
     text: &str,

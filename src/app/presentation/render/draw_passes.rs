@@ -24,7 +24,6 @@ use super::terrain_picture::{GroundFrame, TERRAIN_STREAMS, TerrainInputs, Terrai
 /// One isolated pass for the Phobos placement preview artwork. The texture is
 /// owned by a `RefCell` cache, so the pass must end inside this call and the
 /// caller recreates its own pass afterwards.
-#[cfg(feature = "phobos")]
 fn draw_placement_ghost_pass(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
@@ -76,10 +75,8 @@ pub(super) struct DrawPassData<'a> {
     /// Phobos `SurfaceExt::BlurRect`'s tooltip background rects
     /// (`[x, y, w, h]` in composition pixels), empty when the switch or the
     /// size keeps native's no-op.
-    #[cfg(feature = "phobos")]
     pub tooltip_blur_rects: Vec<[f32; 4]>,
     /// The resolved `ToolTip.Background.BlurSize` for those rects.
-    #[cfg(feature = "phobos")]
     pub tooltip_blur_size: f32,
 }
 
@@ -1091,7 +1088,6 @@ pub(super) fn dispatch_draw_passes(
     // Phobos placement preview artwork (`0x6D528A`), after the PLACE cells.
     // The texture lives behind the cache's RefCell borrow, so end this pass
     // before releasing the guard and recreate it for the following stages.
-    #[cfg(feature = "phobos")]
     if let Some((buffer, count)) = pool.get("placement_ghost")
         && count > 0
     {
@@ -1274,7 +1270,6 @@ pub(super) fn dispatch_draw_passes(
     // Phobos `TacticalClass_Render_Banner` (`0x6D4B25`, Hooks.UI.cpp:310):
     // every banner draws after the timer lines, before the outcome banner.
     // The shapes sample the shared banner atlas; the texts bind the font.
-    #[cfg(feature = "phobos")]
     if text_in_frame {
         draw_pooled_ui(
             &mut pass,
@@ -1377,7 +1372,6 @@ pub(super) fn dispatch_draw_passes(
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
     // the right sidebar blit and before messages, like Phobos' own gadgets.
-    #[cfg(feature = "phobos")]
     {
         let presentation = &state.match_state.match_presentation;
         let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
@@ -1471,7 +1465,6 @@ pub(super) fn dispatch_draw_passes(
         // the background fill (`Misc/PhobosToolTip.cpp:437-440`): the pass
         // ends so the blur can sample the composition it just drew into, and
         // the frame/frame border/text resume on a fresh load pass.
-        #[cfg(feature = "phobos")]
         if !data.tooltip_blur_rects.is_empty() && data.tooltip_blur_size > 0.0 {
             drop(pass);
             if state.renderer.tooltip_blur.is_none() {

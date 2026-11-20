@@ -66,7 +66,6 @@ fn active(sim: &Simulation, owner: InternedId) -> bool {
 /// The three keys land in the projected availability with their native
 /// meaning: a minimum TechLevel, any-of `SW.AuxTechnos`, none-of
 /// `SW.NegTechnos`, and unknown techno names skipped.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_reads_the_three_superweapon_gates() {
     let rules = rules_with(
@@ -109,7 +108,6 @@ fn phobos_reads_the_three_superweapon_gates() {
 
 /// `SW.AuxTechnos` looks at every techno category, so one owned vehicle
 /// satisfies a list whose other entry is infantry.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_aux_technos_scan_every_category() {
     let rules = rules_with(
@@ -124,7 +122,6 @@ fn phobos_aux_technos_scan_every_category() {
 
 /// `SW.NegTechnos` refuses availability as soon as one listed techno exists,
 /// and `SW.TechLevel` gates before any techno test.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_neg_technos_and_tech_level_gate_availability() {
     let rules = rules_with(

@@ -55,7 +55,6 @@ impl RankingSection {
     /// Scenario+0x125C, the loaded map file name) overrides each ranking field
     /// through `Ranking.<Name>`. Missing keys and values keep the map's
     /// `[Ranking]` result, which is the current field.
-    #[cfg(feature = "phobos")]
     pub fn apply_missionmd_overrides(
         &mut self,
         campaign: bool,
@@ -139,7 +138,6 @@ mod tests {
 
     /// Phobos `ScenarioExt::LoadFromINIFile`: the scenario's own MISSIONMD
     /// section overrides the map's `[Ranking]` fields key by key.
-    #[cfg(feature = "phobos")]
     #[test]
     fn missionmd_scenario_section_overrides_the_map_ranking() {
         let mut ranking = parse_ranking_section(&IniFile::from_str(
@@ -175,7 +173,6 @@ Ranking.ParTimeEasy=09:00:00
     }
 
     /// A scenario lacking a MISSIONMD section (or keys) keeps the map result.
-    #[cfg(feature = "phobos")]
     #[test]
     fn missionmd_without_the_scenario_section_keeps_the_map_ranking() {
         let mut ranking = parse_ranking_section(&IniFile::from_str(

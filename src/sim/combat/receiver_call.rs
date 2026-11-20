@@ -521,15 +521,11 @@ pub(super) fn resolve_receive_damage_with_input(
     // without an attacker, and `[CombatDamage] AllowBerzerkOnAllies=yes`
     // lets the allied hit through
     // (`Ext/Techno/Hooks.ReceiveDamage.cpp:528-539`).
-    #[cfg(feature = "phobos")]
     let psychedelic_allied_rejection = !rules.phobos_globals.allow_berzerk_on_allies
         && source
             .map(|entity| entity.owner())
             .or(event.source_house)
             .is_some_and(|owner| allied(target.owner(), owner));
-    #[cfg(not(feature = "phobos"))]
-    let psychedelic_allied_rejection =
-        source_house.is_some_and(|owner| allied(target.owner(), owner));
     // Techno701CA1 asks the live attacker's House about the target;
     // Psychedelic701CE5 asks the target's House about the literal sourceHouse argument.
     let attacker_is_allied =
@@ -743,13 +739,12 @@ pub(crate) fn wave_post_object_damage(
     scenario_no_damage: bool,
     current_tick: u64,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    #[cfg(feature = "phobos")] simulation: Option<&crate::sim::world::Simulation>,
+    simulation: Option<&crate::sim::world::Simulation>,
 ) -> Option<i32> {
     let event = prepare_infantry_receiver(event, entities, rules, interner, terrain);
     // The receiver runs the Phobos damage-multiplier block before the shield
     // stage, so this preview of the shared per-cell damage applies it first
     // (`Ext/Techno/Hooks.ReceiveDamage.cpp:48-82`).
-    #[cfg(feature = "phobos")]
     let event = match simulation {
         Some(simulation) => {
             let mut scaled = event;
@@ -762,12 +757,9 @@ pub(crate) fn wave_post_object_damage(
     // The shield hook writes its surviving value into the caller pointer
     // before Techno's body; preview the stage without committing it, because
     // the receiver commit that follows applies the absorption exactly once.
-    #[cfg(feature = "phobos")]
     let shield_remaining = simulation.and_then(|simulation| {
         crate::sim::shield::preview_receive_damage(simulation, rules, &event, event.damage)
     });
-    #[cfg(not(feature = "phobos"))]
-    let shield_remaining: Option<i32> = None;
     let resolved = match shield_remaining {
         Some(remaining) => resolve_receive_damage_with_input(
             &event,

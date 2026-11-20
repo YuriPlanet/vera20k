@@ -578,7 +578,6 @@ fn voxel_shadow_index_retains_art_image_history_and_save_state() {
 /// pass's retained Image section, keyed by HVA section: a repeated index
 /// collapses (later entries overwrite), and a pass whose section lacks the key
 /// leaves the list empty rather than keeping the previous pass's.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_shadow_indices_read_the_image_section_on_every_pass() {
     use crate::rules::ruleset::RuleSet;
@@ -615,7 +614,6 @@ fn phobos_shadow_indices_read_the_image_section_on_every_pass() {
 /// `Valueable<int>` constructed 0, read from the retained `Image=` section
 /// after the plural `ShadowIndices` tags, so a section without the key keeps
 /// the prior pass's value.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_shadow_index_frame_reads_the_image_section_on_every_pass() {
     use crate::rules::ruleset::RuleSet;
@@ -653,7 +651,6 @@ fn phobos_shadow_index_frame_reads_the_image_section_on_every_pass() {
 /// Phobos `TurretShadow=` (`Ext/TechnoType/Body.cpp:1323`): read from the
 /// fixed ART section that pass's `Image=` selects, `Nullable<bool>` so a
 /// section without the key keeps the value the previous pass left.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_turret_shadow_reads_the_image_section_and_keeps_its_prior_value() {
     use crate::rules::ruleset::RuleSet;
@@ -4596,7 +4593,6 @@ fn ares_country_reads_start_in_multiplayer_with_const() {
 /// read beside the section list and shares its `Image=` section: a shorter
 /// frame list is resized with `-1`, a repeated section overwrites its frame,
 /// and a pass whose Image section lacks the list keeps both empty.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_shadow_indices_frames_read_the_image_section_on_every_pass() {
     use crate::rules::ruleset::RuleSet;

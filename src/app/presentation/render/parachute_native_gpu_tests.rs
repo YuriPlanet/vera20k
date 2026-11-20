@@ -244,7 +244,7 @@ impl Scene {
                 ignore_visibility: true,
                 lighting: light,
                 house_colors: colors,
-                building_zshape: false,
+                building_zshape: None,
             },
             &mut parents,
             &order,

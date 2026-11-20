@@ -165,13 +165,8 @@ pub fn kind_from_clsid(text: &str) -> Option<LocomotorKind> {
         return Some(kind);
     }
 
-    #[cfg(feature = "phobos")]
     {
         kind_from_alias(text)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        None
     }
 }
 
@@ -181,7 +176,6 @@ pub fn kind_from_clsid(text: &str) -> Option<LocomotorKind> {
 /// CLSIDs — to `None` — rather than selecting a different movement system.
 /// `Chrono` is not an alias either; it falls back to the Teleport constructor
 /// seed.
-#[cfg(feature = "phobos")]
 fn kind_from_alias(text: &str) -> Option<LocomotorKind> {
     let text = text.trim();
     if text.starts_with('{') {
@@ -681,7 +675,6 @@ mod tests {
 
     /// Phobos `read<CLSID>` semantic aliases: braceless, ASCII
     /// case-insensitive, and equivalent to the CLSID they abbreviate.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_locomotor_aliases_select_their_kinds() {
         for (alias, kind) in [
@@ -704,7 +697,6 @@ mod tests {
     /// `Chrono` is not an alias; Mech and DropPod have no VERA kind. All of
     /// them keep the Teleport constructor seed, and a braced alias is not an
     /// alias.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_dormant_and_unknown_aliases_keep_the_teleport_seed() {
         for value in ["Chrono", "Mech", "DropPod", "droppod", "{Drive}"] {

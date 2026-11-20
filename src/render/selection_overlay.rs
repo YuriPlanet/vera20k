@@ -74,17 +74,14 @@ pub struct SelectionOverlay {
     /// One optional custom SHP per `[DigitalDisplayTypes]` catalog entry, in
     /// catalog order. `None` for an entry without `Shape=` or a missing file;
     /// Phobos then draws that display with the game font.
-    #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
     insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
     /// One optional `[SelectBoxTypes]` `Shape=` per catalog entry, in catalog
     /// order (`Ext/Techno/Body.Visuals.cpp:394-407`).
-    #[cfg(feature = "phobos")]
     select_box_shapes: Vec<Option<CenteredShapeStrip>>,
     /// One optional `[SelectBoxTypes]` `GroundShape=` per catalog entry
     /// (`Ext/Techno/Body.Visuals.cpp:371-380`).
-    #[cfg(feature = "phobos")]
     select_box_ground_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
@@ -532,12 +529,9 @@ impl SelectionOverlay {
             repair_wrench,
             power_off,
             pips,
-            #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
             insignia_shapes: std::collections::HashMap::new(),
-            #[cfg(feature = "phobos")]
             select_box_shapes: Vec::new(),
-            #[cfg(feature = "phobos")]
             select_box_ground_shapes: Vec::new(),
             ares_bomb_images: std::collections::HashMap::new(),
         }
@@ -596,7 +590,6 @@ impl SelectionOverlay {
 
     /// Load each `[DigitalDisplayTypes]` entry's `Shape=`/`Palette=` once per
     /// match, matching `DigitalDisplayTypeClass`'s retained `SHPStruct*`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn load_digital_display_shapes(
         &mut self,
         device: &wgpu::Device,
@@ -630,7 +623,6 @@ impl SelectionOverlay {
     }
 
     /// One catalog entry's custom SHP, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn digital_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
         self.digital_shapes.get(index)?.as_ref()
     }
@@ -638,7 +630,6 @@ impl SelectionOverlay {
     /// Load every `[SelectBoxTypes]` entry's `Shape=`/`Palette=` and
     /// `GroundShape=`/`GroundPalette=` once per match, matching
     /// `SelectBoxTypeClass`'s retained `SHPStruct*` pointers.
-    #[cfg(feature = "phobos")]
     pub(crate) fn load_select_box_shapes(
         &mut self,
         device: &wgpu::Device,
@@ -680,13 +671,11 @@ impl SelectionOverlay {
     }
 
     /// One `[SelectBoxTypes]` entry's box SHP, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn select_box_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
         self.select_box_shapes.get(index)?.as_ref()
     }
 
     /// One `[SelectBoxTypes]` entry's ground SHP, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn select_box_ground_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
         self.select_box_ground_shapes.get(index)?.as_ref()
     }
@@ -704,7 +693,6 @@ impl SelectionOverlay {
         rules: &crate::rules::ruleset::RuleSet,
     ) {
         let mut names = std::collections::BTreeSet::new();
-        #[cfg(feature = "phobos")]
         for object in rules.all_objects() {
             let insignia = &object.phobos_insignia;
             for variant in std::iter::once(&insignia.base)
@@ -714,7 +702,6 @@ impl SelectionOverlay {
                 names.extend(variant.images.iter().flatten().cloned());
             }
         }
-        #[cfg(feature = "phobos")]
         for entry in rules.insignia_types().entries() {
             names.extend(entry.images.iter().flatten().cloned());
         }

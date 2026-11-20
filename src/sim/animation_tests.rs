@@ -1860,6 +1860,7 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
         set.set_shp_vehicle_turret(ShpVehicleTurret {
             start_frame: 96,
             facings: 8,
+            frame_count: 8,
         });
     let body_slot = super::vehicle_facing_slot(0);
     assert_eq!(
@@ -1882,6 +1883,7 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
         set.set_shp_vehicle_turret(ShpVehicleTurret {
             start_frame: 0,
             facings: 8,
+            frame_count: 8,
         });
     assert_eq!(
         resolve_shp_vehicle_turret_frame(&without, 0, true),
@@ -1894,6 +1896,7 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
         set.set_shp_vehicle_turret(ShpVehicleTurret {
             start_frame: 24,
             facings: 6,
+            frame_count: 6,
         });
     assert_eq!(resolve_shp_vehicle_turret_frame(&six, 64, true), Some(0));
     assert_eq!(resolve_shp_vehicle_turret_frame(&six, 64, false), Some(24));

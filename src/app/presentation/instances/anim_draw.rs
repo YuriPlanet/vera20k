@@ -30,7 +30,10 @@ use crate::rules::art_data::AnimTypeRuntimeConfig;
 /// follows that Unit's drawer arm: flash/curtain intensity plus the shield and
 /// AttachEffect colour word. The `IsBuildingAnim` half is the instance
 /// `use_cell_drawer` flag written at construction.
-#[cfg(feature = "phobos")]
+///
+/// RESIDUAL: the owner's class colour words (berserk, shield/curtain word and
+/// the `TintColorAirstrike` word) are not applied here; only the shared
+/// custom tint and the effect intensity are.
 pub(crate) fn deploy_unit_drawer_light(
     anim: &crate::sim::anim_class::AnimObject,
     stable_id: u64,
@@ -47,13 +50,14 @@ pub(crate) fn deploy_unit_drawer_light(
     if entity.deploy_anim() != Some(stable_id) {
         return None;
     }
-    let word = crate::app::presentation::lighting::shp_colour_word(entity, sim, rules, || false);
+    let word = crate::app::presentation::lighting::custom_tint(entity, sim, rules).0;
     let (tint, light) = crate::app::presentation::lighting::techno_effect_light(
         entity,
         tint,
         light,
         sim,
         Some(rules),
+        sim.airstrike_tint_active(entity.stable_id()),
         crate::app::presentation::lighting::TechnoDraw::Shape,
     );
     Some((tint, light.with_colour_word(light.colour_word() | word)))
@@ -189,7 +193,6 @@ pub(super) fn anim_draw_pieces(
             // Phobos `AnimClass_DrawIt_Tiled_Interval` (`0x423654`,
             // `Ext/Anim/Hooks.cpp:431-446`): a positive `Tiled.Interval`
             // replaces the frame-height term before the halving and row step.
-            #[cfg(feature = "phobos")]
             if let Some(config) = input.config
                 && config.phobos_tiled_interval > 0
             {
@@ -362,12 +365,9 @@ fn tiled_column(
     body: SpriteInstance,
     height: i32,
 ) -> Vec<ObjectPieceInstance> {
-    #[cfg(feature = "phobos")]
     let align_to_center = input
         .config
         .is_some_and(|config| config.phobos_tiled_align_to_center);
-    #[cfg(not(feature = "phobos"))]
-    let align_to_center = false;
     let half = if align_to_center { 0 } else { height / 2 };
     let mut tile = body;
     tile.palette_light = PaletteLight::plain(53, body.palette_light.brightness())
@@ -400,13 +400,11 @@ fn tiled_column(
 
 /// `Unsorted::CellWidthInPixels`: the native 60-pixel cell width the Phobos
 /// building bracket X shift multiplies (`Ext/Anim/Hooks.cpp:313`).
-#[cfg(feature = "phobos")]
 const CELL_WIDTH_IN_PIXELS: i32 = 60;
 
 /// Which native class arm the Phobos draw-offset hook takes. A Building uses
 /// `GetBuildingSelectBracketPosition(Top)` and the `Height`/foundation gates;
 /// every other Techno uses the `GetFootSelectBracketPosition` rect.
-#[cfg(feature = "phobos")]
 #[derive(Clone, Copy)]
 pub(super) enum PhobosBracketOwner {
     Building {
@@ -431,7 +429,6 @@ pub(super) enum PhobosBracketOwner {
 /// offset that the native assignment discards. `shield_bracket_delta` is the
 /// owner shield type's `BracketDelta` when the shield bar would draw; either
 /// arm then adds `BracketDelta - 3` (`SHIELD_HEALTHBAR_OFFSET`).
-#[cfg(feature = "phobos")]
 pub(super) fn phobos_bracket_draw_point(
     point: [f32; 2],
     anchor: [f32; 2],
@@ -493,74 +490,10 @@ pub(super) fn phobos_bracket_draw_point(
 /// bracket overwrite, before the caller adds `AEDrawOffset`. The hook reads
 /// `pThis->OwnerObject`; a building slot animation has none, so only attached
 /// animations reach these arms.
-#[cfg(feature = "phobos")]
-pub(super) fn phobos_draw_offset_point(
-    sim: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
-    anim: &crate::sim::anim_class::AnimObject,
-    config: Option<&AnimTypeRuntimeConfig>,
-    point: [f32; 2],
-) -> [f32; 2] {
-    let Some(settings) = config.map(|config| &config.phobos_draw_offset) else {
-        return point;
-    };
-    if !settings.applies_bracket() {
-        return point;
-    }
-    let Some(owner) = anim.owner_entity().and_then(|id| sim.entities().get(id)) else {
-        return point;
-    };
-    let Some(object) = rules.object(sim.interner().resolve(owner.type_ref())) else {
-        return point;
-    };
-    let shield_bracket_delta =
-        shield_type_bracket_delta(owner, rules, sim.session().binary_frame() as i32);
-    if owner.category() == crate::map::entities::EntityCategory::Structure {
-        let anchor = crate::app::presentation::digital_display::building_bracket(
-            sim,
-            owner,
-            object,
-            rules,
-            crate::rules::building_select_bracket::BuildingSelectBracketPosition::Top,
-        );
-        phobos_bracket_draw_point(
-            point,
-            [anchor.0, anchor.1],
-            settings,
-            PhobosBracketOwner::Building {
-                art_height: rules.building_dimensions(object)[2]
-                    / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
-                foundation_width: i32::from(object.foundation.dimensions().0),
-            },
-            shield_bracket_delta,
-        )
-    } else {
-        let (sx, sy) = crate::app::presentation::digital_display::screen_point(sim, owner);
-        let infantry = owner.category() == crate::map::entities::EntityCategory::Infantry;
-        let rect = crate::app::presentation::ui_overlays::foot_select_bracket(sx, sy, infantry);
-        // `Anchor(invertX ? Left : Right, Top).OffsetPosition(rect)`: the
-        // Top vertical offset is zero, so the right side is `rect` + width.
-        let anchor_x = if settings.x_invert_bracket_shift {
-            rect[0]
-        } else {
-            rect[0] + rect[2]
-        };
-        phobos_bracket_draw_point(
-            point,
-            [anchor_x, rect[1]],
-            settings,
-            PhobosBracketOwner::Foot {
-                pixel_selection_bracket_delta: object.pixel_selection_bracket_delta,
-            },
-            shield_bracket_delta,
-        )
-    }
-}
 
 /// The owner shield type's `BracketDelta` while the shared shield-bar
 /// admission draws it: `!IsBrokenAndNonRespawning && (HealthRatio > 0 ||
 /// !Pips.HideIfNoStrength)`.
-#[cfg(feature = "phobos")]
 fn shield_type_bracket_delta(
     owner: &crate::sim::game_entity::GameEntity,
     rules: &crate::rules::ruleset::RuleSet,

@@ -327,7 +327,6 @@ impl Veterancy {
     /// sum is capped at `[General] VeteranCap` and stored as a chopped `f32`.
     /// The rank cache is left alone, so the next `AI_Update` sample announces
     /// the crossing.
-    #[cfg(feature = "phobos")]
     pub(crate) fn promote_toward(&mut self, owner: NativeF32Bits, veteran_cap: f64) {
         use crate::util::native_x87::X87Chop53;
         if !(f32::from_bits(self.raw.bits()) < f32::from_bits(owner.bits())) {

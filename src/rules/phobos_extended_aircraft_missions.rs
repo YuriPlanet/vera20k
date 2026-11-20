@@ -53,7 +53,6 @@ impl PhobosExtendedAircraftMissions {
     /// (`Ext/AircraftType/Body.cpp:30-35`). `Nullable` semantics come from
     /// the section readers, so a blank/`none`/`<default>` value clears the
     /// entry back to unset.
-    #[cfg(feature = "phobos")]
     pub(crate) fn from_section(section: &IniSection) -> Self {
         Self {
             master: section.read_phobos_nullable_bool("ExtendedAircraftMissions", None),

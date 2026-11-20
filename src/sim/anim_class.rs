@@ -33,7 +33,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(any(test, feature = "phobos"))]
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
@@ -181,7 +180,6 @@ const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
 
 /// `static_cast<int>(cells * Unsorted::LeptonsPerCell)`, the fire-spawn
 /// distance conversion (`Ext/Anim/Body.cpp:369,371`): truncation toward zero.
-#[cfg(feature = "phobos")]
 fn leptons_of_cells(cells: f64) -> i32 {
     (cells * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32)) as i32
 }
@@ -243,16 +241,13 @@ pub struct AnimTranslucencyInput {
     /// Phobos `Translucency.Get(currentFrame / End)` for this frame
     /// (`Ext/Anim/Hooks.cpp:601-605`, hook `0x423183`). `None` is native
     /// `BlitterFlags::None`, which keeps the stock ladder.
-    #[cfg(feature = "phobos")]
     pub translucency_level: Option<u8>,
     /// Phobos `Translucency.Cloaked.Get(...)` for this frame (`:588-599`),
     /// consulted only while [`Self::cloaked_translucency_answers`].
-    #[cfg(feature = "phobos")]
     pub translucency_cloaked_level: Option<u8>,
     /// The cloaked track has values and the owner is Cloaking or Cloaked, so
     /// the plain track is not consulted even when the cloaked answer is
     /// `None` — native's `hasValue` (`:588-605`).
-    #[cfg(feature = "phobos")]
     pub cloaked_translucency_answers: bool,
     pub instance_ramp: i32,
 }
@@ -284,11 +279,8 @@ impl AnimTranslucencyInput {
         owner_cloaked: bool,
     ) -> Self {
         let end_frame = config.map_or(shp_frame_count, |value| value.loaded_end(shp_frame_count));
-        #[cfg(feature = "phobos")]
         let percentage = f64::from(current_frame) / f64::from(end_frame);
         // Without Phobos there is no cloaked track to gate.
-        #[cfg(not(feature = "phobos"))]
-        let _ = owner_cloaked;
         Self {
             base_flags,
             forced_translucent: draw_runtime.forced_translucent,
@@ -300,12 +292,9 @@ impl AnimTranslucencyInput {
             end_frame,
             #[cfg(not(feature = "phobos"))]
             explicit_translucency: config.map_or(0, |value| value.translucency),
-            #[cfg(feature = "phobos")]
             translucency_level: config.and_then(|value| value.phobos_translucency.get(percentage)),
-            #[cfg(feature = "phobos")]
             translucency_cloaked_level: config
                 .and_then(|value| value.phobos_translucency_cloaked.get(percentage)),
-            #[cfg(feature = "phobos")]
             cloaked_translucency_answers: owner_cloaked
                 && config.is_some_and(|value| value.phobos_translucency_cloaked.has_values()),
             instance_ramp: i32::from(draw_runtime.translucency_ramp),
@@ -363,7 +352,6 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
     // level. A cloaked Techno owner answers from `Translucency.Cloaked` and
     // never consults the plain track, even when that answer is `None`
     // (`hasValue`, `:588-605`). A `None` answer keeps the stock ladder below.
-    #[cfg(feature = "phobos")]
     {
         let level = if input.cloaked_translucency_answers {
             input.translucency_cloaked_level
@@ -475,7 +463,6 @@ pub enum AnimRemap {
     },
 }
 
-#[cfg(feature = "phobos")]
 fn one_f64_bits() -> NativeF64Bits {
     NativeF64Bits::ONE
 }
@@ -483,7 +470,6 @@ fn one_f64_bits() -> NativeF64Bits {
 /// `Phobos AnimExt::FiringAnim_*` (`Ext/Anim/Body.h`): the muzzle anim a
 /// `[WeaponType] Anim=` list produced keeps following its firer, and every
 /// firing direction re-picks its own type (`Ext/Anim/Body.cpp:72-101`).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FiringAnimState {
     /// `FiringAnim_Weapon`: the weapon whose `Anim=` list supplied the type.
@@ -544,7 +530,6 @@ pub struct AnimObject {
     /// Present only on a muzzle anim `Anim.Update` keeps following its firer
     /// (`Ext/Anim/Hooks.cpp:714-740`); every other anim leaves it None.
     #[serde(default)]
-    #[cfg(feature = "phobos")]
     firing_anim: Option<FiringAnimState>,
     /// Anim+188. Normal ctor421FA4/421FC8 seeds1; default ctor4227FD/
     ///42280F and Next424877/424885 seed0. Load425280 retains saved bytes.
@@ -559,7 +544,6 @@ pub struct AnimObject {
     /// 1.0): the invoker's firepower multiplier cached on the first damage
     /// round (`Ext/Anim/Hooks.cpp:119-128`); `Damage.ApplyFirepowerMult`
     /// scales each damage application by it.
-    #[cfg(feature = "phobos")]
     #[serde(default = "one_f64_bits")]
     phobos_firepower_mult: NativeF64Bits,
     /// LogicClass membership is reconstructed from the serialized vector.
@@ -609,32 +593,25 @@ pub struct AnimObject {
     /// `SetInvoker` named this anim. `InvalidateTechnoPointers`
     /// (`Body.cpp:497`) clears it when that Techno is destroyed; VERA keeps
     /// the identity and a stable-id lookup answers absent instead.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     invoker: Option<u64>,
     /// Phobos `AnimExt::InvokerHouse` (`Ext/Anim/Body.h:29`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     invoker_house: Option<InternedId>,
     /// Phobos `AnimExt::FromDeathUnit` (`Ext/Anim/Body.h`): the anim came
     /// from `AnimTypeExt::ProcessDestroyAnims` (`Ext/AnimType/Body.cpp:55`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     from_death_unit: bool,
     /// Phobos `AnimExt::DeathUnitFacing`: the destroyed unit's body direction.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     death_unit_facing: Option<u8>,
     /// Phobos `AnimExt::DeathUnitHasTurret`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     death_unit_has_turret: bool,
     /// Phobos `AnimExt::DeathUnitTurretFacing`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     death_unit_turret_facing: Option<u8>,
     /// VERA-internal: the `CreateUnit` actual-effects arm already ran.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     create_unit_fired: bool,
     /// `AnimClass+0xCC` when it names a `TerrainClass`: a tree's fire, which
@@ -792,7 +769,6 @@ impl AnimObject {
     /// `ShieldClass::AI_Temporal`/`OnlineCheck` write it and `TemporalCheck`
     /// clears it (`src/New/Entity/ShieldClass.cpp:398..437,585..604`); the AI
     /// stops on it exactly as on +19E (`0x004244A9`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_under_temporal(&mut self, under: bool) {
         self.runtime.temporal_paused = under;
     }
@@ -948,12 +924,10 @@ impl AnimObject {
     /// `TechnoClass_Fire_Anim @ 0x6FF42B` stores the weapon, barrel and
     /// burst the muzzle came from; the per-frame pass then keeps the flash
     /// on the firer (`0x423B95`, `Ext/Anim/Hooks.cpp:714-740`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_firing_anim(&mut self, state: FiringAnimState) {
         self.firing_anim = Some(state);
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn firing_anim(&self) -> Option<FiringAnimState> {
         self.firing_anim
     }
@@ -962,12 +936,10 @@ impl AnimObject {
     /// `UpdateAsFiringAnim` writes `GetFLH - GetRenderCoords`
     /// (`Ext/Anim/Body.cpp:93..103`) while the muzzle anim is owner-attached,
     /// so the stored coordinate stays owner-relative.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_stored_location(&mut self, coord: AnimWorldCoord) {
         self.world_coord = coord;
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn retype_for_firing_anim(
         &mut self,
         type_id: InternedId,
@@ -1024,7 +996,6 @@ impl AnimObject {
             remap: None,
             effective_end: 1,
             effective_loop_end: 1,
-            #[cfg(feature = "phobos")]
             firing_anim: None,
             runtime,
             draw_runtime: AnimDrawRuntime::default(),
@@ -1033,7 +1004,6 @@ impl AnimObject {
             terrain_attached: false,
             no_effects: false,
             damage_accumulator: NativeF64Bits::POSITIVE_ZERO,
-            #[cfg(feature = "phobos")]
             phobos_firepower_mult: NativeF64Bits::ONE,
             in_logic_vector: false,
             owner_entity: None,
@@ -1048,19 +1018,12 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "phobos")]
             invoker: None,
-            #[cfg(feature = "phobos")]
             invoker_house: None,
-            #[cfg(feature = "phobos")]
             from_death_unit: false,
-            #[cfg(feature = "phobos")]
             death_unit_facing: None,
-            #[cfg(feature = "phobos")]
             death_unit_has_turret: false,
-            #[cfg(feature = "phobos")]
             death_unit_turret_facing: None,
-            #[cfg(feature = "phobos")]
             create_unit_fired: false,
             owner_terrain: None,
             presentation: None,
@@ -1069,55 +1032,46 @@ impl AnimObject {
     }
 
     /// The owning House (`AnimClass+0x180`).
-    #[cfg(any(test, feature = "test-support", feature = "phobos"))]
     pub fn owner_house(&self) -> Option<InternedId> {
         self.owner_house
     }
 
     /// The invoker Techno (`AnimExt::Invoker`).
-    #[cfg(feature = "phobos")]
     pub fn invoker(&self) -> Option<u64> {
         self.invoker
     }
 
     /// The invoker House (`AnimExt::InvokerHouse`).
-    #[cfg(feature = "phobos")]
     pub fn invoker_house(&self) -> Option<InternedId> {
         self.invoker_house
     }
 
     /// Phobos `AnimExt::FromDeathUnit`: a destruction-animation receipt.
-    #[cfg(feature = "phobos")]
     pub fn from_death_unit(&self) -> bool {
         self.from_death_unit
     }
 
     /// Phobos `AnimExt::DeathUnitFacing`: the destroyed unit's body DirType.
-    #[cfg(feature = "phobos")]
     pub fn death_unit_facing(&self) -> Option<u8> {
         self.death_unit_facing
     }
 
     /// Phobos `AnimExt::DeathUnitHasTurret`.
-    #[cfg(feature = "phobos")]
     pub fn death_unit_has_turret(&self) -> bool {
         self.death_unit_has_turret
     }
 
     /// Phobos `AnimExt::DeathUnitTurretFacing`.
-    #[cfg(feature = "phobos")]
     pub fn death_unit_turret_facing(&self) -> Option<u8> {
         self.death_unit_turret_facing
     }
 
     /// VERA-internal one-shot latch for the `CreateUnit` actual-effects arm
     /// (native reaches it once per anim).
-    #[cfg(feature = "phobos")]
     pub(crate) fn create_unit_fired(&self) -> bool {
         self.create_unit_fired
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_create_unit_fired(&mut self) {
         self.create_unit_fired = true;
     }
@@ -1176,7 +1130,6 @@ impl AnimObject {
             b"anim-damage-accumulator-v1".hash(hasher);
             self.damage_accumulator.hash(hasher);
         }
-        #[cfg(feature = "phobos")]
         if self.phobos_firepower_mult != NativeF64Bits::ONE {
             b"anim-phobos-firepower-mult-v1".hash(hasher);
             self.phobos_firepower_mult.hash(hasher);
@@ -1187,13 +1140,11 @@ impl AnimObject {
             self.owner_house.hash(hasher);
             self.attached_bullet.hash(hasher);
         }
-        #[cfg(feature = "phobos")]
         if self.invoker.is_some() || self.invoker_house.is_some() {
             b"anim-invoker-v1".hash(hasher);
             self.invoker.hash(hasher);
             self.invoker_house.hash(hasher);
         }
-        #[cfg(feature = "phobos")]
         if self.from_death_unit
             || self.death_unit_facing.is_some()
             || self.death_unit_has_turret
@@ -1894,7 +1845,6 @@ impl Simulation {
     /// (`pExt->IsTechnoTrailerAnim` then `Invoker` when `OwnerObject` is not a
     /// techno) has no trailer-anim marker in VERA; such an anim keeps the
     /// non-techno answer.
-    #[cfg(feature = "phobos")]
     pub fn anim_visibility_skipped(
         &self,
         id: AnimId,
@@ -1965,7 +1915,6 @@ impl Simulation {
     /// The anim's entity owner is Cloaking (1) or Cloaked (2): the
     /// `Translucency.Cloaked` gate in `AnimClass_DrawIt_Translucency`
     /// (`0x423183`, `Ext/Anim/Hooks.cpp:573-615`).
-    #[cfg(feature = "phobos")]
     pub fn anim_owner_is_cloaked(&self, id: u64) -> bool {
         let Some(owner_id) = self.anim(id).and_then(AnimObject::owner_entity) else {
             return false;
@@ -2238,7 +2187,6 @@ impl Simulation {
     /// this owner keeps the invoker House, like the existing combat producer.
     /// `invoker` is `CreateRandomAnim`'s `pTechno` under its `invoker` flag
     /// (the same object may or may not also be the `ownedObject`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn spawn_owned_anim(
         &mut self,
         rules: &RuleSet,
@@ -2274,7 +2222,6 @@ impl Simulation {
     /// RESIDUAL: a `MakeInfantry=`/`CreateUnit=` trailer type re-selects its
     /// own owner kind in native, as [`Self::spawn_owned_anim`] records; this
     /// keeps the invoker house like the combat producer.
-    #[cfg(feature = "phobos")]
     pub(crate) fn spawn_trailer_anim(
         &mut self,
         rules: &RuleSet,
@@ -2302,7 +2249,6 @@ impl Simulation {
     /// unresolvable `ValueableVector<AnimTypeClass*>` token never reached the
     /// native vector, so only names with a type take part in
     /// `RandomRanged(0, size - 1)`; an empty list draws nothing.
-    #[cfg(feature = "phobos")]
     pub(crate) fn resolve_random_anim_name<'n>(
         &mut self,
         rules: &RuleSet,
@@ -2324,7 +2270,6 @@ impl Simulation {
 
     /// [`Self::resolve_random_anim_name`] plus construction with the owner
     /// house and owner object.
-    #[cfg(feature = "phobos")]
     pub(crate) fn spawn_random_owned_anim(
         &mut self,
         rules: &RuleSet,
@@ -2357,7 +2302,6 @@ impl Simulation {
         owner_house: InternedId,
     ) {
         self.substrate.set_anim_owner_house(id, owner_house);
-        #[cfg(feature = "phobos")]
         {
             let remaps = {
                 let name = self.interner.resolve(type_name);
@@ -2377,13 +2321,10 @@ impl Simulation {
                 self.substrate.anims.set_anim_house_remap(id, owner_house);
             }
         }
-        #[cfg(not(feature = "phobos"))]
-        let _ = (rules, type_name);
     }
 
     /// `0x6FF42B` marks the anim the muzzle block just built and counts it
     /// into `FiringAnimUpdateCount`; the anim also holds it for its own AI.
-    #[cfg(feature = "phobos")]
     pub(crate) fn attach_firing_anim(&mut self, id: AnimId, state: FiringAnimState) {
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.set_firing_anim(state);
@@ -2391,13 +2332,11 @@ impl Simulation {
         }
     }
 
-    #[cfg(feature = "phobos")]
     pub const fn firing_anim_update_count(&self) -> u32 {
         self.firing_anim_update_count
     }
 
     /// Phobos `AnimExt::~AnimExt` releases the owner count for a marked anim.
-    #[cfg(feature = "phobos")]
     pub(crate) fn release_firing_anim_count(&mut self, anim: &AnimObject) {
         if anim.firing_anim().is_some() {
             self.firing_anim_update_count = self.firing_anim_update_count.saturating_sub(1);
@@ -2416,7 +2355,6 @@ impl Simulation {
     /// that value: the barrel facing when the object has one (and for
     /// aircraft), the body heading otherwise; `Fire_At` picks the muzzle type
     /// from the same facing.
-    #[cfg(feature = "phobos")]
     fn update_as_firing_anim(&mut self, id: AnimId, rules: &RuleSet) {
         let Some(anim) = self.substrate.anims.get(id) else {
             return;
@@ -2870,7 +2808,6 @@ impl Simulation {
             remap: None,
             effective_end,
             effective_loop_end,
-            #[cfg(feature = "phobos")]
             firing_anim: None,
             runtime: AnimRuntime {
                 current_frame: if reverse {
@@ -2895,7 +2832,6 @@ impl Simulation {
             terrain_attached: descriptor.terrain_attached,
             no_effects: false,
             damage_accumulator: NativeF64Bits::ONE,
-            #[cfg(feature = "phobos")]
             phobos_firepower_mult: NativeF64Bits::ONE,
             in_logic_vector: false,
             owner_entity: None,
@@ -2918,19 +2854,12 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "phobos")]
             invoker: None,
-            #[cfg(feature = "phobos")]
             invoker_house: None,
-            #[cfg(feature = "phobos")]
             from_death_unit: false,
-            #[cfg(feature = "phobos")]
             death_unit_facing: None,
-            #[cfg(feature = "phobos")]
             death_unit_has_turret: false,
-            #[cfg(feature = "phobos")]
             death_unit_turret_facing: None,
-            #[cfg(feature = "phobos")]
             create_unit_fired: false,
             owner_terrain: None,
             presentation: presentation.then_some(None),
@@ -2944,7 +2873,6 @@ impl Simulation {
         // Phobos `AnimClass_CTOR_CreateUnit_MarkOccupationBits @ 0x4226F0`.
         // A `CreateUnit=` naming no loaded unit type is null at load natively,
         // so it marks nothing.
-        #[cfg(feature = "phobos")]
         if config
             .phobos_create_unit
             .as_ref()
@@ -3216,10 +3144,7 @@ impl Simulation {
             // gate and compares instead: `GetContainedTiberiumValue() <=
             // abs(HideIfNoOre.Threshold)`. `wrapping_abs` keeps the native
             // two's-complement result for INT_MIN, where C++'s `abs` overflows.
-            #[cfg(feature = "phobos")]
             let hidden = value <= config.hide_if_no_ore_threshold.wrapping_abs();
-            #[cfg(not(feature = "phobos"))]
-            let hidden = value == 0;
             self.substrate.set_anim_hidden(id, hidden);
         }
 
@@ -3371,7 +3296,6 @@ impl Simulation {
         // Phobos `AnimClass_Update_VeinholeAttack` (hook `0x4243BC`,
         // `Misc/Hooks.VeinholeMonster.cpp:59-67`): an `IsVeins=` anim runs
         // the veinhole attack AI before the animated-tiberium check.
-        #[cfg(feature = "phobos")]
         if config.is_veins {
             self.vein_attack_ai(id, rules, overlay_registry, frame_effects)?;
         }
@@ -3452,7 +3376,6 @@ impl Simulation {
             }
             AnimBoundary::Complete => {
                 // Phobos `AnimClass_AI_CreateUnit_ActualEffects @ 0x424932`.
-                #[cfg(feature = "phobos")]
                 if let Some(settings) = config.phobos_create_unit.clone()
                     && !self.anim(id).is_some_and(|anim| anim.create_unit_fired())
                 {
@@ -3483,7 +3406,6 @@ impl Simulation {
         match action {
             VisitAction::None => {}
             VisitAction::Destroy => {
-                #[cfg(feature = "phobos")]
                 self.anim_spawn_fire_anims(id, &config, rules);
                 if let Some(anim) = self.substrate.anims.get_mut(id) {
                     anim.completed = true;
@@ -3498,7 +3420,6 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 ) {
-                    #[cfg(feature = "phobos")]
                     self.anim_spawn_fire_anims(id, &config, rules);
                     if let Some(anim) = self.substrate.anims.get_mut(id) {
                         anim.completed = true;
@@ -3526,7 +3447,6 @@ impl Simulation {
     /// unset; a damage packet needs a live warhead, so an unset/unknown key
     /// deals no damage (retail leaves it unset with `VeinDamage=0`). The TS
     /// `VeinProof` ability has no YR type flag to read.
-    #[cfg(feature = "phobos")]
     fn vein_attack_ai(
         &mut self,
         id: u64,
@@ -3594,6 +3514,7 @@ impl Simulation {
         let Some(warhead_name) = rules.phobos_globals.veinhole_warhead.as_deref() else {
             return Ok(());
         };
+
         let Some(warhead) = rules.warhead(warhead_name) else {
             return Ok(());
         };
@@ -3680,21 +3601,15 @@ impl Simulation {
         // flag trigger action 41 writes (`IsInert`,
         // `Ext/TAction/Hooks.cpp:118`) before the accumulator runs, where the
         // stock body gates after it.
-        #[cfg(feature = "phobos")]
         if no_effects {
             return false;
         }
         let type_id = anim.type_id;
         let accumulator = f64::from_bits(anim.damage_accumulator.bits());
-        #[cfg(feature = "phobos")]
         let anim_invoker = anim.invoker();
-        #[cfg(feature = "phobos")]
         let anim_invoker_house = anim.invoker_house();
-        #[cfg(feature = "phobos")]
         let anim_owner_entity = anim.owner_entity;
-        #[cfg(feature = "phobos")]
         let anim_owner_house = anim.owner_house;
-        #[cfg(feature = "phobos")]
         let anim_frame = anim.runtime.current_frame;
         // Rust does not specify arithmetic NaN payloads across platforms.
         let store = |sim: &mut Self, value: f64| {
@@ -3712,11 +3627,9 @@ impl Simulation {
         // `OwnerObject` when unset) and the damage house the invoker house or
         // the invoker's owner. RESIDUAL: the hook's `IsBuildingAnim ->
         // ParentBuilding` fallback has no VERA model.
-        #[cfg(feature = "phobos")]
         let dealt_by_invoker = config
             .damage_dealt_by_invoker
             .unwrap_or(rules.combat_damage.anim_damage_dealt_by_invoker);
-        #[cfg(feature = "phobos")]
         let anim_attacker = if dealt_by_invoker {
             let mut invoker = anim_invoker;
             if invoker.is_none() {
@@ -3735,9 +3648,6 @@ impl Simulation {
         } else {
             crate::sim::combat::RAD_NO_ATTACKER
         };
-        #[cfg(not(feature = "phobos"))]
-        let anim_attacker = crate::sim::combat::RAD_NO_ATTACKER;
-        #[cfg(feature = "phobos")]
         let anim_source_house = if dealt_by_invoker {
             match anim_invoker_house {
                 Some(house) => Some(house),
@@ -3753,23 +3663,18 @@ impl Simulation {
         } else {
             source_house
         };
-        #[cfg(not(feature = "phobos"))]
-        let anim_source_house = source_house;
         // Phobos `Damage.ApplyFirepowerMult` (`Ext/Anim/Hooks.cpp:119-128`):
         // with the type key or the `[CombatDamage] AnimDamage.ApplyFirepowerMult`
         // global, an anim inside the `Damage.DealtByInvoker` block caches the
         // invoker's current firepower multiplier on its first damage round
         // (`Animation.Value == max(Damage.Delay-1, 1)`, after the applied>0
         // gate) and scales every application by it.
-        #[cfg(feature = "phobos")]
         let apply_firepower = config
             .damage_apply_firepower_mult
             .unwrap_or(rules.combat_damage.anim_damage_apply_firepower_mult)
             && dealt_by_invoker;
-        #[cfg(feature = "phobos")]
         let first_damage_round =
             anim_frame == std::cmp::max(config.ares_damage_delay.wrapping_sub(1), 1);
-        #[cfg(feature = "phobos")]
         let refresh_firepower = |sim: &mut Self| {
             if first_damage_round
                 && let Some(multiplier) =
@@ -3785,7 +3690,6 @@ impl Simulation {
                 anim.phobos_firepower_mult = multiplier;
             }
         };
-        #[cfg(feature = "phobos")]
         let fold_firepower = |sim: &mut Self, value: i32| -> i32 {
             if !apply_firepower || value <= 0 {
                 return value;
@@ -3800,8 +3704,6 @@ impl Simulation {
             );
             crate::sim::attach_effect::scale_i32(value, cached)
         };
-        #[cfg(not(feature = "phobos"))]
-        let fold_firepower = |_sim: &mut Self, value: i32| -> i32 { value };
         // Phobos `Damage.ApplyOncePerLoop` (`Ext/Anim/Hooks.cpp:56-66`): the
         // damage lands only on the loop's first frame —
         // `Animation.Value == max(Damage.Delay-1, 1)` — as
@@ -3809,7 +3711,6 @@ impl Simulation {
         // accumulator and the delay counter. RESIDUAL: Phobos's replaced body
         // would also fold the stock branches through `std::round`; VERA keeps
         // the native/Ares conversion for the stock paths.
-        #[cfg(feature = "phobos")]
         let once_per_loop = if config.damage_apply_once_per_loop {
             let delay = config.ares_damage_delay;
             if anim_frame != std::cmp::max(delay.wrapping_sub(1), 1) {
@@ -3840,8 +3741,6 @@ impl Simulation {
         } else {
             None
         };
-        #[cfg(not(feature = "phobos"))]
-        let once_per_loop: Option<i32> = None;
         let whole = if let Some(applied) = once_per_loop {
             applied
         } else {
@@ -4265,7 +4164,6 @@ impl Simulation {
         // the immutable FoggedObject record does not retain this Anim pointer.
         self.fog.forget_fogged_live_object(id);
         if let Some(anim) = self.substrate.anims.remove(id) {
-            #[cfg(feature = "phobos")]
             self.release_firing_anim_count(&anim);
         }
     }
@@ -4401,7 +4299,6 @@ impl Simulation {
             // Phobos `AnimClass_InWhichLayer` (hook `0x424CB0`,
             // `Ext/Anim/Hooks.cpp:354-375`): a set `Layer.UseObjectLayer`
             // picks the owner object's layer (true) or the type's (false).
-            #[cfg(feature = "phobos")]
             if let Some(use_object_layer) =
                 config.and_then(|config| config.phobos_layer_use_object_layer)
             {
@@ -4568,14 +4465,8 @@ impl Simulation {
             .filter(|(_, anim)| anim.owner_entity() == Some(owner_id))
             .filter(|(_, anim)| {
                 let name = self.interner.resolve(anim.type_id());
-                #[cfg(feature = "phobos")]
                 {
                     anim_type_detach_on_cloak(rules, name)
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    let _ = name;
-                    true
                 }
             })
             .map(|(&id, _)| id)
@@ -4942,7 +4833,6 @@ impl Simulation {
     /// `Start=0` bodies and the restart arm re-arms the same offset a fresh
     /// construction would. A body with a nonzero `Start=` lands within one
     /// `Start` of native in both arms; no retail ART sets that key.
-    #[cfg(feature = "phobos")]
     pub(crate) fn change_anim_type(
         &mut self,
         id: AnimId,
@@ -5173,10 +5063,7 @@ impl Simulation {
         //Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`,
         //`Ext/Anim/Body.cpp:252`): a water landing still takes the explosion
         //arm when the type sets the key.
-        #[cfg(feature = "phobos")]
         let explode_on_water = config.explode_on_water;
-        #[cfg(not(feature = "phobos"))]
-        let explode_on_water = false;
         if self.bounce_cell_is_water(position, rules) && !above_deck && !explode_on_water {
             //423CDB..423DE2: a meteor uses the LAST splash, without a Wake.
             //Phobos `SplashAnims=`/`SplashAnims.PickRandom=`
@@ -5184,7 +5071,6 @@ impl Simulation {
             //the type's list, filtered by the animation registry, replaces
             //the stock `SplashList=`, and PickRandom draws
             //`RandomRanged(0, last)` before the Wake is created.
-            #[cfg(feature = "phobos")]
             let splash_names: Vec<&str> = match config.splash_anims.as_deref() {
                 Some(names) => names
                     .iter()
@@ -5203,14 +5089,6 @@ impl Simulation {
                     .map(String::as_str)
                     .collect(),
             };
-            #[cfg(not(feature = "phobos"))]
-            let splash_names: Vec<&str> = rules
-                .combat_damage
-                .splash_list
-                .iter()
-                .map(String::as_str)
-                .collect();
-            #[cfg(feature = "phobos")]
             let splash = if splash_names.is_empty() {
                 None
             } else if config.splash_anims_pick_random {
@@ -5220,12 +5098,6 @@ impl Simulation {
                     as usize;
                 splash_names.get(index).copied()
             } else if config.is_meteor {
-                splash_names.last().copied()
-            } else {
-                splash_names.first().copied()
-            };
-            #[cfg(not(feature = "phobos"))]
-            let splash = if config.is_meteor {
                 splash_names.last().copied()
             } else {
                 splash_names.first().copied()
@@ -5251,7 +5123,6 @@ impl Simulation {
         // the type names one, before the ExpireAnim and without requiring it.
         // Stock `0x423DE7` nests both under the ExpireAnim slot and creates
         // the anim first, so retain that order without the feature.
-        #[cfg(feature = "phobos")]
         {
             bridge_state_changed |= self.bounce_landing_warhead(
                 config,
@@ -5270,24 +5141,6 @@ impl Simulation {
                     BOUNCE_EXPIRE_Z_ADJUST,
                 );
             }
-        }
-        #[cfg(not(feature = "phobos"))]
-        if let Some(expire) = config.expire_anim.as_deref() {
-            self.spawn_named_anim(
-                rules,
-                expire,
-                location,
-                0,
-                BOUNCE_EXPIRE_DRAW_FLAGS,
-                BOUNCE_EXPIRE_Z_ADJUST,
-            );
-            bridge_state_changed |= self.bounce_landing_warhead(
-                config,
-                rules,
-                overlay_registry,
-                position,
-                frame_effects,
-            );
         }
         //423F37..423FC4: two inclusive draws precede the live constructor loop.
         //Each child completes constructor/Start before constructing the next.
@@ -5333,10 +5186,7 @@ impl Simulation {
         let warhead_ref = self.interner.intern(warhead_name);
         let impact =
             crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z);
-        #[cfg(feature = "phobos")]
         let detonate_at = config.phobos_warhead_detonate;
-        #[cfg(not(feature = "phobos"))]
-        let detonate_at = false;
         if detonate_at {
             // `WarheadTypeExt::DetonateAt` builds a bullet with no weapon and
             // explodes it at the landing coords instead of the stock damage
@@ -5533,7 +5383,6 @@ impl Simulation {
     /// reuses the recorded single-angle form (`sim::projectile::launch`). The
     /// `Chances`/`Distances` shorter-than-count arm reads past its vector in
     /// gamemd (a native bug); VERA reads the last entry instead.
-    #[cfg(feature = "phobos")]
     fn anim_spawn_fire_anims(
         &mut self,
         id: AnimId,
@@ -5619,7 +5468,6 @@ impl Simulation {
 
     /// `AnimExt::SpawnFireAnims`'s `LoopAnims` lambda
     /// (`Ext/Anim/Body.cpp:342-377`).
-    #[cfg(feature = "phobos")]
     #[allow(clippy::too_many_arguments)]
     fn fire_anim_loop(
         &mut self,
@@ -5678,7 +5526,6 @@ impl Simulation {
 
     /// `AnimExt::SpawnFireAnims`'s `SpawnAnim` lambda
     /// (`Ext/Anim/Body.cpp:317-340`).
-    #[cfg(feature = "phobos")]
     fn spawn_fire_anim(
         &mut self,
         rules: &RuleSet,
@@ -5800,7 +5647,6 @@ impl Simulation {
         // Phobos `DetachedReport=` (`0x424CF1`, `Ext/Anim/Hooks.cpp:269-280`):
         // `VocClass::PlayAt` at the animation's own coordinate, with no
         // NoEffects gate in the hook.
-        #[cfg(feature = "phobos")]
         if let Some(sound_id) = config.detached_report.clone()
             && let Some(world) = self.anim_absolute_coord(id)
         {
@@ -6075,12 +5921,9 @@ impl Simulation {
                 (i32::from(entry.frame_width), i32::from(entry.frame_height))
             });
         // 0x4250E1: the AnimType's Phobos key, else the `[General]` fallback.
-        #[cfg(feature = "phobos")]
         let destroy_tiberium = config
             .crater_destroy_tiberium
             .unwrap_or(rules.phobos_globals.anim_crater_destroy_tiberium);
-        #[cfg(not(feature = "phobos"))]
-        let destroy_tiberium = true;
         let marks = crate::sim::combat::smudge_dispatch::AnimMiddleMarks {
             scorch: config.scorch,
             crater: config.crater,
@@ -6205,7 +6048,6 @@ impl Simulation {
             anim.runtime.loop_remaining = native_loop_remaining(config.loop_count, 1);
             anim.runtime.first_ai_guard = false;
             anim.runtime.inactive = false;
-            #[cfg(feature = "phobos")]
             {
                 // The one-shot CreateUnit latch belongs to the current type:
                 // a `Next=` chain of two CreateUnit= types spawns each.
@@ -6346,7 +6188,6 @@ impl crate::sim::world::ObjectSubstrate {
     /// Phobos `AnimTypeExt::ProcessDestroyAnims`' death-unit facts
     /// (`Ext/AnimType/Body.cpp:55-70`): `FromDeathUnit` and the inherited
     /// facing/turret facts a `CreateUnit` anim consumes.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_anim_death_facts(
         &mut self,
         id: AnimId,
@@ -6369,7 +6210,6 @@ impl crate::sim::world::ObjectSubstrate {
     /// invoker Techno and its House. RESIDUAL: the native per-Techno
     /// `AnimRefCount` and `InvalidateTechnoPointers` (clearing a destroyed
     /// invoker) are not modeled; a stable-id lookup answers absent instead.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_anim_invoker(
         &mut self,
         id: AnimId,
@@ -6392,7 +6232,6 @@ impl crate::sim::world::ObjectSubstrate {
 /// Phobos `AnimTypeExt::DetachOnCloak` (`Ext/AnimType/Body.cpp:112`,
 /// `Valueable<bool>` constructor `true`): one query for every consumer. A type
 /// with no art entry keeps the constructor default.
-#[cfg(feature = "phobos")]
 pub(crate) fn anim_type_detach_on_cloak(rules: &RuleSet, type_name: &str) -> bool {
     rules
         .art()
@@ -6636,7 +6475,6 @@ fn ares_truncate(value: f64) -> i32 {
 /// C++ `static_cast<int>(std::round(value))` in Phobos's replaced anim
 /// damage body (`Ext/Anim/Hooks.cpp:60,75,91`): round half away from zero,
 /// then the x87 masked conversion (the integer indefinite out of range).
-#[cfg(feature = "phobos")]
 fn phobos_anim_round(value: f64) -> i32 {
     let rounded = if value.is_nan() {
         value
@@ -6733,7 +6571,6 @@ mod long_tail_contract_tests {
     /// The answer a single-entry `Translucency` fallback track gives for an
     /// authored integer (`Utilities/Constructs.h:481-501`): only the three
     /// translucent stages survive, everything else is `BlitterFlags::None`.
-    #[cfg(feature = "phobos")]
     fn plain_level(value: i32) -> Option<u8> {
         match value {
             25 => Some(25),
@@ -6760,11 +6597,8 @@ mod long_tail_contract_tests {
             end_frame: 10,
             #[cfg(not(feature = "phobos"))]
             explicit_translucency,
-            #[cfg(feature = "phobos")]
             translucency_level: plain_level(explicit_translucency),
-            #[cfg(feature = "phobos")]
             translucency_cloaked_level: None,
-            #[cfg(feature = "phobos")]
             cloaked_translucency_answers: false,
             instance_ramp,
         };
@@ -6802,11 +6636,8 @@ mod long_tail_contract_tests {
                 end_frame: 10,
                 #[cfg(not(feature = "phobos"))]
                 explicit_translucency: 0,
-                #[cfg(feature = "phobos")]
                 translucency_level: None,
-                #[cfg(feature = "phobos")]
                 translucency_cloaked_level: None,
-                #[cfg(feature = "phobos")]
                 cloaked_translucency_answers: false,
                 instance_ramp,
             });
@@ -6835,11 +6666,8 @@ mod long_tail_contract_tests {
                 end_frame: 15,
                 #[cfg(not(feature = "phobos"))]
                 explicit_translucency: 0,
-                #[cfg(feature = "phobos")]
                 translucency_level: None,
-                #[cfg(feature = "phobos")]
                 translucency_cloaked_level: None,
-                #[cfg(feature = "phobos")]
                 cloaked_translucency_answers: false,
                 instance_ramp: 0,
             });
@@ -6875,11 +6703,8 @@ mod long_tail_contract_tests {
                     end_frame: 10,
                     #[cfg(not(feature = "phobos"))]
                     explicit_translucency,
-                    #[cfg(feature = "phobos")]
                     translucency_level: plain_level(explicit_translucency),
-                    #[cfg(feature = "phobos")]
                     translucency_cloaked_level: None,
-                    #[cfg(feature = "phobos")]
                     cloaked_translucency_answers: false,
                     instance_ramp: 0,
                 }),
@@ -6905,7 +6730,6 @@ mod mineral_start_tests;
 #[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
-    #[cfg(feature = "phobos")]
     use crate::map::entities::EntityCategory;
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
@@ -6918,7 +6742,6 @@ mod tests {
     /// Cloaking or Cloaked the alternate level replaces `Translucency`; an
     /// animation without the key keeps the plain level.
     #[test]
-    #[cfg(feature = "phobos")]
     fn translucency_cloaked_overrides_on_a_cloaked_owner_only() {
         use crate::sim::world::Simulation;
 
@@ -7035,7 +6858,6 @@ mod tests {
     /// keeps the stock instance ramp. A cloaked owner answers from
     /// `Translucency.Cloaked` and never from the plain track.
     #[test]
-    #[cfg(feature = "phobos")]
     fn translucency_keyframes_answer_per_frame_and_keep_the_stock_fallback() {
         const TRACK: &str = "TINTTRACK";
         let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
@@ -7082,7 +6904,6 @@ mod tests {
     /// object's `InWhichLayer` when true, its own type layer when false, and
     /// the stock Ground when the key is unset.
     #[test]
-    #[cfg(feature = "phobos")]
     fn layer_use_object_layer_selects_between_the_owner_and_the_type() {
         use crate::sim::world::Simulation;
         use crate::sim::world::display_layers::DisplayLayer;
@@ -7157,7 +6978,6 @@ mod tests {
     /// the cloak state of the anim's techno owner, its alliance with the viewer
     /// and the viewer's sensors on the owner's cell decide the skip.
     #[test]
-    #[cfg(feature = "phobos")]
     fn a_cloaked_owners_anim_hides_only_from_unsensing_unallied_viewers() {
         use crate::sim::world::Simulation;
 
@@ -7261,7 +7081,6 @@ mod tests {
     /// (`0x423061`, `Ext/Anim/Hooks.cpp:530-568`): the anim's owning house
     /// gates the draw, and the invoker's house replaces it when keyed.
     #[test]
-    #[cfg(feature = "phobos")]
     fn visible_to_filters_anim_draws_by_the_owner_or_invoker_house() {
         use crate::rules::phobos_shields::AffectedHouse;
         use crate::sim::world::Simulation;
@@ -7350,7 +7169,6 @@ mod tests {
     /// `HideIfNoOre` test: the anim's cell `Get_Tiberium_Value @ 0x00485020`
     /// hides it at or below `abs(HideIfNoOre.Threshold=)`, not only at zero.
     #[test]
-    #[cfg(feature = "phobos")]
     fn hide_if_no_ore_threshold_moves_the_value_cut_off() {
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::world::Simulation;
@@ -7942,7 +7760,6 @@ mod tests {
     /// Phobos `DetachOnCloak=`: `Detach_All(false)` on a cloaking object
     /// detaches attached anims, and only the type that reads the key `no`
     /// stays attached (`Ext/AnimType/Body.cpp:112`, hook `0x425174`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn detach_on_cloak_keeps_only_the_anim_type_that_asks_for_it() {
         let rules = runtime_rules(
@@ -8648,7 +8465,6 @@ mod tests {
     /// `Ext/AnimType/Body.cpp:108`): `AnimClass::Start`'s hook `0x424CF1`
     /// (`Ext/Anim/Hooks.cpp:269-280`) plays a positional `VocClass::PlayAt` cue
     /// at the animation itself, alongside its own `Report=`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn detached_report_plays_a_positional_cue_from_start() {
         let rules = runtime_rules(
@@ -9824,7 +9640,6 @@ mod tests {
     /// detonation, instead of `MapClass::DamageArea`. A warhead with
     /// `DetonateOnAllMapObjects=yes` therefore reaches a tank parked away
     /// from the impact only under the key.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_warhead_detonate_key_routes_the_landing_through_detonate_at() {
         for (key, far_damaged) in [
@@ -9980,7 +9795,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// block at `0x423DE7` nests both under the ExpireAnim slot. Both key
     /// states must damage the tank at the impact, while only
     /// `Warhead.Detonate=yes` reaches a tank away from it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_warhead_applies_without_an_expire_anim() {
         for (key, far_damaged) in [("Warhead.Detonate=yes\n", true), ("", false)] {
@@ -10139,7 +9953,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// `0x425060`): a completing `Scorch=` anim runs `SmallFireCount` iterations
     /// over its `SmallFireAnims=` vector, and `SmallFireChances=0` keeps every
     /// iteration's anim unspawned while still drawing.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_scorch_anim_spawns_its_small_fire_anims_when_it_completes() {
         fn spawned_fire_anims(count: i32, chances: &str) -> usize {
@@ -10192,7 +10005,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// A `Flamer=` type runs the small loop `1 + Flamer` times (here the
     /// authored `SmallFireCount=1`) and then the large loop
     /// `LargeFireCount` times (`Ext/Anim/Body.cpp:391-399`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_flamer_anim_runs_both_its_fire_loops() {
         let art = "[MARK]\nRate=900\nFlamer=yes\nSmallFireCount=1\n\
@@ -10269,7 +10081,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     /// `0x4250E1`) resolved at Middle through the AnimType ART key and the
     /// `[General] AnimCraterDestroyTiberium=` fallback: false leaves the
     /// cell's ore untouched, true still reduces it by 6.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_crater_destroy_tiberium_controls_the_middle_frame_ore_reduction() {
         use crate::sim::overlay_grid::OverlayGrid;

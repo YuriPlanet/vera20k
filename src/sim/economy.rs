@@ -294,7 +294,6 @@ impl Economy {
     /// by the Phobos `UseWeeds` drain: the amount narrows to f32 and comes out
     /// of **slot 0 only**. `GetTotalAmount` compared the whole store before the
     /// call, so the other slots keep what the drain does not reach.
-    #[cfg(feature = "phobos")]
     pub(crate) fn remove_weed_amount(&mut self, amount: i32) -> NativeF32Bits {
         let amount = X87::store_f32_masked_chop(X87::load_i32(amount));
         self.owned_weed.remove_amount(amount, 0)

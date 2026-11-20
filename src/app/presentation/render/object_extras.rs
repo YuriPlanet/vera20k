@@ -292,12 +292,10 @@ fn status_instances<'a>(
     run: &ObjectExtrasRun,
     instances: &'a [SpriteInstance],
 ) -> &'a [SpriteInstance] {
-    #[cfg(feature = "phobos")]
     let select_box = match run {
         ObjectExtrasRun::Status { select_box, .. } => *select_box,
         _ => None,
     };
-    #[cfg(feature = "phobos")]
     let select_box_ground = match run {
         ObjectExtrasRun::Status {
             select_box_ground, ..
@@ -346,12 +344,10 @@ fn status_instances<'a>(
         first = first.min(*index);
         last = last.max(*index + 1);
     }
-    #[cfg(feature = "phobos")]
     if let Some((_, index)) = select_box {
         first = first.min(index);
         last = last.max(index + 1);
     }
-    #[cfg(feature = "phobos")]
     if let Some((_, index)) = select_box_ground {
         first = first.min(index);
         last = last.max(index + 1);
@@ -394,25 +390,21 @@ fn draw_status_prefix<'a>(
     };
     // Phobos `TechnoExt::DrawSelectBox` after-body box: the DrawHealthBar hook
     // runs before the health bar itself (`Ext/Techno/Hooks.Pips.cpp:82-87,110-115`).
-    #[cfg(feature = "phobos")]
     let select_box = match run {
         ObjectExtrasRun::Status { select_box, .. } => *select_box,
         _ => None,
     };
-    #[cfg(feature = "phobos")]
     let select_box_ground = match run {
         ObjectExtrasRun::Status {
             select_box_ground, ..
         } => *select_box_ground,
         _ => None,
     };
-    #[cfg(feature = "phobos")]
     if let Some((catalog, index)) = select_box
         && let Some(shape) = overlay.select_box_shape(catalog as usize)
     {
         batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, index, 1);
     }
-    #[cfg(feature = "phobos")]
     if let Some((catalog, index)) = select_box_ground
         && let Some(shape) = overlay.select_box_ground_shape(catalog as usize)
     {
@@ -535,7 +527,6 @@ fn draw_status_group<'a>(
             batch.surface_camera_bind_group(),
         );
     }
-    #[cfg(feature = "phobos")]
     for (catalog, index) in digital_shapes {
         if let Some(shape) = overlay.digital_shape(*catalog as usize) {
             batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, *index, 1);

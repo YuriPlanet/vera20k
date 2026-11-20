@@ -868,7 +868,6 @@ fn the_mechanism_runs_on_a_real_map() {
 /// Phobos `SelfHealGainType` (`0x6FA793`, `Ext/Techno/Body.Update.cpp:591`):
 /// the type's key picks which house capacity and cadence the techno draws
 /// on; unset keeps the stock classification.
-#[cfg(feature = "phobos")]
 mod phobos_gain_type {
     use super::*;
 

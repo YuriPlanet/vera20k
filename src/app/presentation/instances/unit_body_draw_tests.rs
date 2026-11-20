@@ -22,7 +22,6 @@ use crate::sim::world::Simulation;
 /// Phobos `JumpjetTilt.*`: an airborne Unit whose drawn type enables the tilt
 /// gains the pose; a grounded one, a stopped one and a type that disables it
 /// keep the stock draw.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -44,7 +43,7 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
     // Jumpjet runtime, so bind it the way a placed Unit gets it.
     for (id, name) in [(tilted, "TILT"), (disabled, "NOTILT")] {
         let object = rules.object(name).expect("the spawned type");
-        sim.entities_mut_for_test().get_mut(id).unwrap().locomotor =
+        sim.entities_mut_for_test().get_mut_for_test(id).unwrap().locomotor =
             Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(object, 0));
     }
     // A live airborne jumpjet: phase 1 (ascend), CurrentSpeed 32 binary64, and
@@ -52,7 +51,7 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
     let set_runtime = |sim: &mut Simulation, id: u64, phase: i32, current_speed: f64| {
         let locomotor = sim
             .entities_mut_for_test()
-            .get_mut(id)
+            .get_mut_for_test(id)
             .unwrap()
             .locomotor
             .as_mut()
@@ -70,12 +69,12 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
         *locomotor = serde_json::from_value(saved).unwrap();
     };
     let pose = |sim: &Simulation, id: u64| {
-        let entity = sim.entities().get(id).unwrap();
+        let entity = ObjectRecord::of_test_sim(sim, &rules, id);
         let object = rules
             .object(sim.interner().resolve(entity.type_ref()))
             .expect("the spawned type");
         body_pose_with_angles(
-            entity,
+            &entity,
             EntityDrawBand::Top,
             object.tilt_crash_jumpjet,
             BodyPoseContext {
@@ -126,15 +125,15 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
     // rotation on `TiltCrashJumpjet=`: live rocking angles draw for any
     // jumpjet, airborne with the raw angles and no crash translation.
     use crate::render::unit_atlas::PoseTilt;
-    sim.entities_mut_for_test().get_mut(tilted).unwrap().rocking =
+    sim.entities_mut_for_test().get_mut_for_test(tilted).unwrap().rocking =
         Some(crate::sim::rocking::RockingState::default());
     let live_pose = |sim: &Simulation| {
-        let entity = sim.entities().get(tilted).unwrap();
+        let entity = ObjectRecord::of_test_sim(&sim, &rules, tilted);
         let object = rules
             .object(sim.interner().resolve(entity.type_ref()))
             .unwrap();
         body_pose_with_angles(
-            entity,
+            &entity,
             EntityDrawBand::Top,
             false,
             BodyPoseContext {
@@ -158,7 +157,6 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
 /// `JumpjetTilt=` jumpjet's shadow inherits the body's roll/pitch pose. The
 /// shadow anchor stays its own `Shadow_Point`; the tilt does not enter the
 /// baked atlas stencil key.
-#[cfg(feature = "phobos")]
 #[test]
 fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
     use crate::render::foot_depth::DepthCell;
@@ -177,13 +175,13 @@ fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
         .unwrap_or_else(|| panic!("build TILT"));
     let object = rules.object("TILT").expect("the spawned type");
     sim.entities_mut_for_test()
-        .get_mut(tilted)
+        .get_mut_for_test(tilted)
         .unwrap()
         .locomotor =
         Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(object, 0));
     let locomotor = sim
         .entities_mut_for_test()
-        .get_mut(tilted)
+        .get_mut_for_test(tilted)
         .unwrap()
         .locomotor
         .as_mut()
@@ -200,9 +198,9 @@ fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
     flight["facing"]["rot_per_frame"] = serde_json::json!(0x0400_u16);
     *locomotor = serde_json::from_value(saved).unwrap();
 
-    let entity = sim.entities().get(tilted).unwrap();
+    let entity = ObjectRecord::of_test_sim(&sim, &rules, tilted);
     let body_tilt = body_pose_with_angles(
-        entity,
+        &entity,
         EntityDrawBand::Top,
         object.tilt_crash_jumpjet,
         BodyPoseContext {
@@ -260,7 +258,6 @@ fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
 
 /// A grounded, stopped, disabled or non-`JumpjetTilt` body keeps the stock
 /// shadow: no tilt on the shadow pose, and the existing Stable/slope keying.
-#[cfg(feature = "phobos")]
 #[test]
 fn jumpjet_tilt_shadow_stays_stock_when_the_body_does_not_tilt() {
     use crate::render::foot_depth::DepthCell;
@@ -284,13 +281,13 @@ fn jumpjet_tilt_shadow_stays_stock_when_the_body_does_not_tilt() {
     let disabled = spawn(&mut sim, "NOTILT");
     for (id, name) in [(tilted, "TILT"), (disabled, "NOTILT")] {
         let object = rules.object(name).expect("the spawned type");
-        sim.entities_mut_for_test().get_mut(id).unwrap().locomotor =
+        sim.entities_mut_for_test().get_mut_for_test(id).unwrap().locomotor =
             Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(object, 0));
     }
     let set_runtime = |sim: &mut Simulation, id: u64, phase: i32, current_speed: f64| {
         let locomotor = sim
             .entities_mut_for_test()
-            .get_mut(id)
+            .get_mut_for_test(id)
             .unwrap()
             .locomotor
             .as_mut()
@@ -308,12 +305,12 @@ fn jumpjet_tilt_shadow_stays_stock_when_the_body_does_not_tilt() {
         *locomotor = serde_json::from_value(saved).unwrap();
     };
     let body_pose = |sim: &Simulation, id: u64| {
-        let entity = sim.entities().get(id).unwrap();
+        let entity = ObjectRecord::of_test_sim(sim, &rules, id);
         let object = rules
             .object(sim.interner().resolve(entity.type_ref()))
             .expect("the spawned type");
         body_pose_with_angles(
-            entity,
+            &entity,
             EntityDrawBand::Top,
             object.tilt_crash_jumpjet,
             BodyPoseContext {
@@ -1503,7 +1500,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
             ..Default::default()
         };
         let actor = ObjectRecord::of_test_sim(&sim, rules, id);
-        let model = drawn_model_id(&actor, sim.interner(), Some(rules), frame, observer);
+        let model = drawn_model_id(&actor, sim.interner(), Some(rules), frame, observer, false);
         let pointer = |field: &str| {
             u64::from_str_radix(row[field].as_str().unwrap().strip_prefix("0x").unwrap(), 16)
                 .unwrap()
@@ -1636,7 +1633,6 @@ fn indexed_turret_animation_uses_its_selected_hva_count() {
 /// `0x7062FB`): `DisguiseBlinkingVisibility` decides whether the viewer sees
 /// through a disguise. The campaign arm of a human owner reads Owner and
 /// Allies; an AI owner takes the `CanTargetHouse` arm.
-#[cfg(feature = "phobos")]
 #[test]
 fn disguise_viewer_sees_through_per_disguise_blinking_visibility() {
     use crate::rules::ini_parser::IniFile;
@@ -1689,7 +1685,6 @@ fn disguise_viewer_sees_through_per_disguise_blinking_visibility() {
 /// `Ext/Unit/Hooks.SimpleDeployer.cpp:378-397`): a deploy transition hides
 /// the Unit body unless `DeployingAnim.KeepUnitVisible` keeps it, or it is
 /// deploying with no deploy animation attached.
-#[cfg(feature = "phobos")]
 #[test]
 fn deploying_anim_keep_unit_visible_gates_the_unit_body() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -1711,12 +1706,12 @@ fn deploying_anim_keep_unit_visible_gates_the_unit_body() {
         .unwrap();
     for id in [keep, hide] {
         sim.entities_mut_for_test()
-            .get_mut(id)
+            .get_mut_for_test(id)
             .unwrap()
             .set_unit_simple_deploy_for_test(true, false, true);
     }
     sim.entities_mut_for_test()
-        .get_mut(begin)
+        .get_mut_for_test(begin)
         .unwrap()
         .set_unit_simple_deploy_for_test(false, true, false);
     let hides = |sim: &Simulation, id: u64| {

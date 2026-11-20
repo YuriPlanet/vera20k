@@ -94,7 +94,6 @@ impl GameEntity {
     }
     /// The strike owner this marker borrows its `+0x294` pointer from; its
     /// type supplies the Phobos airstrike colours. `None` without a marker.
-    #[cfg(feature = "phobos")]
     pub fn airstrike_owner(&self) -> Option<u64> {
         self.airstrike.link
     }
@@ -590,7 +589,6 @@ impl Simulation {
     /// (`src/Ext/Techno/Body.Internal.cpp`): the `[ColorAdd]` index of the
     /// strike owner type's `TintColorAirstrike`, which `TechnoTypeExt` resolves
     /// as its own `LaserTargetColor`, then `[AudioVisual] LaserTargetColor`.
-    #[cfg(feature = "phobos")]
     pub fn airstrike_laser_target_color(&self, target: u64, rules: &RuleSet) -> i32 {
         self.substrate
             .entities
@@ -605,7 +603,6 @@ impl Simulation {
     /// Phobos `AirstrikeLineColor.Get(RulesExt::AirstrikeLineColor)` for a
     /// strike drawn by `owner` (`TechnoClass_DrawAirstrikeFlare_LineColor`,
     /// `0x007058F6`): its type's own value, then `[AudioVisual]`.
-    #[cfg(feature = "phobos")]
     pub fn airstrike_line_color(&self, owner: u64, rules: &RuleSet) -> [u8; 3] {
         self.substrate
             .entities

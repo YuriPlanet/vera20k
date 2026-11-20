@@ -677,7 +677,6 @@ impl Simulation {
     /// mutation of the type record becomes a per-call config override; the
     /// slot's persistent power flags stay stock. Returns whether the roof path
     /// handled the play (the caller then skips the stock ProductionAnim).
-    #[cfg(feature = "phobos")]
     pub(crate) fn play_roof_production_anim(
         &mut self,
         id: u64,
@@ -1041,7 +1040,6 @@ impl Simulation {
     /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/Building/Hooks.Refinery.cpp:63,70`):
     /// a set key sends the refinery past the storage-tier arms at `0x00445FE4`
     /// and `0x00450DAA`.
-    #[cfg(feature = "phobos")]
     fn refinery_uses_normal_active_anim(&self, id: u64, rules: &RuleSet) -> bool {
         self.building_art_entry(id, rules)
             .is_some_and(|entry| entry.refinery_use_normal_active_anim)

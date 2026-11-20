@@ -941,7 +941,6 @@ pub(crate) fn building_dock_cell(
     // offset. That cell must be legal and admit the mover, else the hook jumps
     // to the call's failure tail (0x44F13B) and no flag, offered or foundation
     // cell is tried.
-    #[cfg(feature = "phobos")]
     if let Some((dx, dy)) = object.barracks_exit_cell() {
         let cell = relative(dx as i16, dy as i16);
         return admits(cell, EntryQueryMode::CheckLocomotor).then(|| published(cell));
@@ -1031,7 +1030,6 @@ fn depot_rally_cell(
             );
             Some((u16::try_from(x / 256).ok()?, u16::try_from(y / 256).ok()?))
         }
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(id) => {
             let point = sim.projectiles.get(id)?.position();
             Some((
@@ -1428,7 +1426,6 @@ fn plain_repair_delay(
     bunker_installing: Option<bool>,
     rules: &RuleSet,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         if object.bunker && bunker_installing == Some(true) {
             return object
@@ -1510,13 +1507,10 @@ pub(crate) fn mission_repair(
     // Phobos `BuildingClass_Mission_Repair_UnitRepair` (`0x44BD38`,
     // `Hooks.cpp:630-640`): the building type's `Units.RepairRate=`
     // replaces `[General] URepairRate=`.
-    #[cfg(feature = "phobos")]
     let unit_repair_rate = object
         .phobos_units_repair
         .repair_rate
         .unwrap_or(rules.general.unit_repair_rate);
-    #[cfg(not(feature = "phobos"))]
-    let unit_repair_rate = rules.general.unit_repair_rate;
     // 0x0044B791..0x0044B7A3: a Bunker= type steps its install first.
     if object.bunker {
         super::bunker_install::update_bunker(sim, rules, registry, depot, frame_effects);
@@ -1851,7 +1845,6 @@ mod tests {
     /// hook `0x44C976`): the BuildingType nullable, else `[General]`, replaces
     /// the plain-family return only while a `Bunker=` type's install is
     /// underway; every other state keeps the stock 15 frames.
-    #[cfg(feature = "phobos")]
     #[test]
     fn bunker_state_update_delay_covers_the_install_states_only() {
         use crate::rules::object_type::{ObjectCategory, ObjectType};
@@ -2052,7 +2045,6 @@ mod tests {
     /// (`Ext/Building/Hooks.cpp:794-822`): a set offset replaces the whole
     /// search. The producer stands at (14,14) with `GDIBarracks=yes`, whose
     /// stock preferred cell is (15,16).
-    #[cfg(feature = "phobos")]
     #[test]
     fn barracks_exit_cell_replaces_the_stock_cell_search() {
         // (17,15): the authored offset, not the GDIBarracks (15,16).
@@ -2519,7 +2511,6 @@ mod tests {
     /// `Ext/Building/Hooks.cpp:1475-1483`): a bunker mid-install returns the
     /// type's `BunkerStateUpdateDelay=` else `[General]`, default 15; a settled
     /// or idle state keeps the stock return.
-    #[cfg(feature = "phobos")]
     #[test]
     fn bunker_state_update_delay_replaces_the_plain_repair_return() {
         use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState};

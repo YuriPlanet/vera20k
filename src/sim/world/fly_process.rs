@@ -71,7 +71,6 @@ const LANDING_DRIFT_STEP: i32 = 5;
 /// `Unsorted::AdjacentCoord @ 0x0089F6D8`: the eight adjacent-cell offsets in
 /// leptons, indexed by an eight-way facing (`[0]` north, `[2]` east). Phobos'
 /// rear approach reads them (`Ext/Aircraft/Hooks.cpp:629-640`).
-#[cfg(feature = "phobos")]
 const ADJACENT_COORD: [[i32; 2]; 8] = [
     [0, -256],
     [181, -181],
@@ -863,12 +862,6 @@ impl Simulation {
         rules: &RuleSet,
         frame: u32,
     ) -> Option<RearApproach> {
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = (id, coord, owner, object, rules, frame);
-            return None;
-        }
-        #[cfg(feature = "phobos")]
         {
             let flags = rules.extended_aircraft_missions_for(object);
             if !flags.rear_approach || !self.aircraft_returning_to_dock(id) {
@@ -942,12 +935,6 @@ impl Simulation {
     /// [`TechnoAmmo::dock`](crate::sim::ammo::TechnoAmmo::dock)) or the object
     /// that spawned it (`TechnoClass+0x2D4`).
     fn aircraft_returning_to_dock(&self, id: u64) -> bool {
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = id;
-            return false;
-        }
-        #[cfg(feature = "phobos")]
         {
             let Some(entity) = self.substrate.entities.get(id) else {
                 return false;
@@ -979,12 +966,6 @@ impl Simulation {
         rules: &RuleSet,
         frame: u32,
     ) -> Option<i32> {
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = (id, distance, flight_level, object, rules, frame);
-            return None;
-        }
-        #[cfg(feature = "phobos")]
         {
             let object = object.filter(|object| !object.hunter_seeker)?;
             let flags = rules.extended_aircraft_missions_for(object);

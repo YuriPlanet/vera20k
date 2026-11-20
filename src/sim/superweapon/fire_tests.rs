@@ -214,7 +214,6 @@ fn click_fire_matches_native() {
 /// Phobos `FireSuperWeaponExt`'s `sw_ext.ShotCount++`
 /// (`Ext/SWType/FireSuperWeapon.cpp:45`) runs at the shared Launch tail, so
 /// a stock-handled type counts too; Ares' 100226D0 shares the field.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_accepted_stock_launch_counts_one_shot() {
     let rules = rules();

@@ -169,7 +169,6 @@ pub(crate) fn line_damage(
     // Phobos `AmbientDamage.IgnoreTarget` hooks `0x70C862`/`0x70CA8B`
     // (`Ext/Techno/Hooks.WeaponEffects.cpp:136-151`): the primary target is
     // left out of the ambient-damage list.
-    #[cfg(feature = "phobos")]
     if weapon
         .phobos_ambient_damage_ignore_target
         .unwrap_or(rules.phobos_globals.ambient_damage_ignore_target)
@@ -179,13 +178,10 @@ pub(crate) fn line_damage(
     }
     // Phobos `AmbientDamage.Warhead` (`0x70CBDA`, `:162-171`): unset keeps the
     // weapon's own warhead.
-    #[cfg(feature = "phobos")]
     let ambient_warhead = weapon
         .phobos_ambient_damage_warhead
         .as_deref()
         .or(weapon.warhead.as_deref());
-    #[cfg(not(feature = "phobos"))]
-    let ambient_warhead = weapon.warhead.as_deref();
 
     // 0x0070CBB0..0x0070CBF5: ReceiveDamage on each in list order, the
     // weapon's AmbientDamage reloaded per call, distance 0, the ambient

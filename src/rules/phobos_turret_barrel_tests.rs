@@ -13,7 +13,6 @@ fn read(keys: &str) -> PhobosTurretBarrel {
     )
 }
 
-#[cfg(feature = "phobos")]
 fn project(rules_keys: &str, art_sections: &str) -> PhobosTurretBarrel {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(&format!(
@@ -28,7 +27,6 @@ fn project(rules_keys: &str, art_sections: &str) -> PhobosTurretBarrel {
 
 /// `Ext/UnitType/Body.cpp:100-134`: every key comes from the ART section, and
 /// `RuleSet::project_art_data` copies the block onto the Vehicle type.
-#[cfg(feature = "phobos")]
 #[test]
 fn projection_reads_the_multi_turret_block_from_art() {
     let set = project(
@@ -49,7 +47,6 @@ fn projection_reads_the_multi_turret_block_from_art() {
 
 /// Native `UnitTypeExt` reads ART only: the same keys in the rule section
 /// leave the constructor defaults in place.
-#[cfg(feature = "phobos")]
 #[test]
 fn rules_section_keys_do_not_supply_the_multi_turret_block() {
     let set = project(
@@ -62,7 +59,6 @@ fn rules_section_keys_do_not_supply_the_multi_turret_block() {
 
 /// `Image=` selects the ART section: keys under the unrenamed type ID are not
 /// consulted.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_image_override_selects_the_art_section() {
     let set = project(

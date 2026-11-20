@@ -218,7 +218,6 @@ pub struct WarheadType {
     /// (`Misc/Hooks.LightEffects.cpp:69-74`). Read through `ReadDouble`'s
     /// `float` out-parameter, so an authored value is the nearest binary32
     /// widened back; the constructor 1.0 is an exact f64 literal.
-    #[cfg(feature = "phobos")]
     pub phobos_combat_light_chance: f64,
     /// `ProneDamage=` (`WarheadTypeClass+0xF8`, ReadDouble at `0x0075D999`,
     /// `FSTP qword` at `0x0075D9A4`; the constructor stores 1.0 at
@@ -234,16 +233,13 @@ pub struct WarheadType {
     /// detonation Z with the victim's), making the splash a cylinder. The
     /// underground walk (`0x4899DA`) and the per-target detonation pass read
     /// the same key.
-    #[cfg(feature = "phobos")]
     pub phobos_cell_spread_cylinder: bool,
     /// Phobos `Temporal.ApplyMultiplier=` / `.ApplyVersus=` (`Nullable<bool>`,
     /// `Ext/WarheadType/Body.cpp:190-191`, `Body.h:61-62`, constructors `{}`):
     /// the temporal warp-per-step extension gates
     /// (`Ext/Techno/Hooks.cpp:2359-2379`), falling back to the
     /// `[CombatDamage]` globals.
-    #[cfg(feature = "phobos")]
     pub phobos_temporal_apply_multiplier: Option<bool>,
-    #[cfg(feature = "phobos")]
     pub phobos_temporal_apply_versus: Option<bool>,
     /// Phobos `PreventScatter=` (`Nullable<bool>`, constructor unset,
     /// `Ext/WarheadType/Body.cpp:491` in the Ares-tag block, `Body.h:283,521`):
@@ -251,7 +247,6 @@ pub struct WarheadType {
     /// `FootClass::Scatter`. Phobos re-hooks the native scatter call site
     /// (`Misc/Hooks.Ares.cpp:273-281`, returns `0x702D11`) and falls back to
     /// the `[CombatDamage] Warhead.PreventScatter=` global when unset.
-    #[cfg(feature = "phobos")]
     pub phobos_prevent_scatter: Option<bool>,
     /// Instantly destroys any wall. `WarheadTypeClass+0x145`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d522` from the key string at
@@ -288,7 +283,6 @@ pub struct WarheadType {
     /// `Nullable<StackingMode>` unset at `Body.h:267,569`): how a hit
     /// combines its damage with an existing berserk time; unset takes
     /// `[CombatDamage] Psychedelic.StackingMode`.
-    #[cfg(feature = "phobos")]
     pub phobos_psychedelic_stacking_mode: Option<crate::rules::phobos_stacking_mode::StackingMode>,
     /// Crazy ivan bomb attach. `WarheadTypeClass+0x157` (ReadINI
     /// `0x0075D823`, key string `0x0081BD60`), tested by the detonation chain
@@ -306,7 +300,6 @@ pub struct WarheadType {
     pub airstrike: bool,
     /// Phobos `AirstrikeTargets=`: which target kinds an `Airstrike=` warhead
     /// may designate. Default `buildings`.
-    #[cfg(feature = "phobos")]
     pub airstrike_targets: crate::rules::airstrike_targets::AirstrikeTargets,
     /// Radiation contamination. `WarheadTypeClass+0x177`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d9c7` from the key string at
@@ -339,7 +332,6 @@ pub struct WarheadType {
     /// `Body.h:221`, `Valueable<int>` constructed 1 `:493`): the level one
     /// charger adds to a building's overpower sum
     /// (`Ext/Building/Hooks.cpp:932,978`).
-    #[cfg(feature = "phobos")]
     pub electric_assault_level: i32,
     /// Engineer defuse kit. `WarheadTypeClass+0x16E` (ReadINI `0x0075D91B`,
     /// key string `0x00847D24`), tested by the detonation chain at
@@ -398,16 +390,13 @@ pub struct WarheadType {
     /// `Ext/WarheadType/Body.cpp:300`, `Body.h:149`): when resolved true and
     /// the detonation cell is water, the bullet debris block is skipped
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:171-177`, hook `0x469D1A`).
-    #[cfg(feature = "phobos")]
     pub phobos_debris_conventional: Option<bool>,
     /// Phobos `WarheadTypeExt::DebrisTypes.Limit=` (`Nullable<bool>`, `:301`,
     /// `Body.h:150`): the restored bullet loop's one-pass gate; unset keeps
     /// `count > 1`.
-    #[cfg(feature = "phobos")]
     pub phobos_debris_types_limit: Option<bool>,
     /// Phobos `WarheadTypeExt::DebrisMinimums=` (`ValueableVector<int>`,
     /// `:302`, `Body.h:151`): per-slot floor for the restored bullet loop.
-    #[cfg(feature = "phobos")]
     pub phobos_debris_minimums: Vec<i32>,
     /// Phobos `WarheadTypeExt::DebrisAnims=` (`NullableVector<
     /// AnimTypeClass*>`, `:299`): the SHP debris list used before
@@ -415,7 +404,6 @@ pub struct WarheadType {
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:222-240`). `None` is the unset
     /// (`<default>`) state that falls back to the metallic list; `Some`
     /// holds the authored names with unresolvable ones dropped at load.
-    #[cfg(feature = "phobos")]
     pub phobos_debris_anims: Option<Vec<String>>,
     /// Phobos `WarheadTypeExt::AllowDamageOnSelf` (`Nullable<bool>`): this
     /// warhead may deal damage and damage-adjacent effects to the object that
@@ -427,7 +415,6 @@ pub struct WarheadType {
     /// rule to the airborne phase. `None` falls back to
     /// [`crate::rules::ruleset::RuleSet::allow_damage_on_self_for`]'s
     /// `[General] AllowDamageOnSelf` value.
-    #[cfg(feature = "phobos")]
     allow_damage_on_self: Option<bool>,
     /// Phobos `WarheadTypeExt::DecloakDamagedTargets` (`Nullable<bool>`): a
     /// surviving object this warhead damages calls native
@@ -435,282 +422,220 @@ pub struct WarheadType {
     /// when this is true. `None` falls back to
     /// [`crate::rules::ruleset::RuleSet::decloak_damaged_targets_for`]'s
     /// `[General] DecloakDamagedTargets` value.
-    #[cfg(feature = "phobos")]
     decloak_damaged_targets: Option<bool>,
     /// Phobos warhead shield overrides (`Shield.Penetrate`, the absorb/pass
     /// and received-damage bounds, `Shield.AffectTypes`, and the Break,
     /// Respawn, SelfHealing and Attach/Remove/Replace families). Phobos
     /// `WarheadTypeExt` reads them at `Body.cpp:246..287`; a build without
     /// the capability carries only the defaults.
-    #[cfg(feature = "phobos")]
     pub shield: crate::rules::phobos_shields::ShieldWarheadRules,
     /// Phobos `WarheadTypeExt`'s `Crit.*` block, read in `LoadFromINI` order.
-    #[cfg(feature = "phobos")]
     pub crit: crate::rules::phobos_crit::CritRules,
     /// Phobos `DetonateOnAllMapObjects.*` (`Body.cpp:304-319`): the
     /// whole-map detonation replacement at `0x4690C1`.
-    #[cfg(feature = "phobos")]
     pub detonate_on_all_map: crate::rules::phobos_detonate_all_map::DetonateOnAllMapObjectsRules,
     /// Phobos `WarheadTypeExt::Jumpjet*`: overrides for an `IsLocomotor=`
     /// warhead whose installed locomotor is Jumpjet.
-    #[cfg(feature = "phobos")]
     pub jumpjet_override: crate::rules::jumpjet_params::JumpjetOverride,
     /// Phobos `WarheadTypeExt::MindControl_Anim` (`MindControl.Anim=`): the
     /// ring animation this warhead gives a captured object; `None` uses
     /// `[CombatDamage] ControlledAnimationType`.
-    #[cfg(feature = "phobos")]
     pub mind_control_anim: Option<String>,
     /// Phobos `WarheadTypeExt::MindControl_ThreatDelay`
     /// (`Ext/WarheadType/Body.cpp:244`, `Nullable<int>`): frames its capture
     /// shields the new pawn from its former allies' retaliation and
     /// auto-targeting; unset falls back to `[General] MindControl.ThreatDelay`.
-    #[cfg(feature = "phobos")]
     pub mind_control_threat_delay: Option<i32>,
     /// Phobos AttachEffect attach/remove lists and the reflected-damage
     /// suppressor this warhead carries.
-    #[cfg(feature = "phobos")]
     pub attach_effect: WarheadAttachEffectRules,
     /// Phobos `WarheadTypeExt::AffectsGround`/`AffectsAir` (`Body.cpp:413..414`,
     /// `Valueable<bool>` default true): `CanAffectTarget`'s air/ground split.
-    #[cfg(feature = "phobos")]
     pub affects_ground: bool,
-    #[cfg(feature = "phobos")]
     pub affects_air: bool,
     /// Phobos `AffectsBelowPercent=`/`AffectsAbovePercent=`
     /// (`Body.cpp:402-403`, `Valueable<double>` defaults 1.0/0.0): the
     /// `IsHealthInThreshold` interval `(above, below]`.
-    #[cfg(feature = "phobos")]
     pub affects_below_percent: f64,
-    #[cfg(feature = "phobos")]
     pub affects_above_percent: f64,
     /// Phobos `AffectsVeterancy=` (`Body.cpp:404`), default All.
-    #[cfg(feature = "phobos")]
     pub affects_veterancy: crate::rules::phobos_airburst::AffectedVeterancy,
     /// Phobos `AffectsInvokerOnly=` (`Body.cpp:411`), default `no`: only the
     /// damaging techno itself (or, reversed, anything but it) is affected.
-    #[cfg(feature = "phobos")]
     pub affects_invoker_only: bool,
-    #[cfg(feature = "phobos")]
     pub affects_invoker_only_reverse: bool,
     /// Phobos `AffectsInvokerOnly.IgnoreInvokerState=` (`Body.cpp:413`,
     /// `Nullable<bool>`); `None` inherits `[CombatDamage]`.
-    #[cfg(feature = "phobos")]
     pub affects_invoker_only_ignore_invoker_state: Option<bool>,
     /// Phobos `EffectsRequireVerses` (`Body.cpp:501`, default true): the
     /// per-target pass skips a target whose armor this warhead's Verses zero.
-    #[cfg(feature = "phobos")]
     pub effects_require_verses: bool,
     /// Phobos `ApplyPerTargetEffectsOnDetonate` (`Body.cpp:442`,
     /// `Nullable<bool>`); `None` inherits `[CombatDamage]`.
-    #[cfg(feature = "phobos")]
     pub apply_per_target_effects_on_detonate: Option<bool>,
     /// Phobos `CreateGap=` (`Body.cpp:158`, default 0, cells): a positive
     /// value shrouds that radius for enemies of the firing house; negative
     /// reshrouds the whole map for every non-allied house
     /// (`Ext/WarheadType/Detonate.cpp:51-80`).
-    #[cfg(feature = "phobos")]
     pub create_gap: i32,
     /// Phobos `ApplyModifiersOnNegativeDamage=` (`Body.cpp:185`,
     /// `Nullable<bool>`): a negative packet runs the falloff/Verses kernel
     /// instead of the stock early-out; `None` inherits `[General]`
     /// (`Ext/WarheadType/Hooks.cpp:334-360`, hooks `0x4891AF`/`0x48922D`).
-    #[cfg(feature = "phobos")]
     pub phobos_apply_modifiers_on_negative_damage: Option<bool>,
     /// Phobos `Reveal=` (`Body.cpp:157`, default 0, cells): a positive value
     /// reveals that radius to the firing house; negative reveals the whole
     /// map for it (`Ext/WarheadType/Detonate.cpp:82-100`).
-    #[cfg(feature = "phobos")]
     pub reveal: i32,
     /// Phobos `CanKill=` (`Body.cpp:369`, default **true**): when false, a
     /// lethal hit leaves `Health`/`EstimatedHealth` at 1
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:178-188`).
-    #[cfg(feature = "phobos")]
     pub can_kill: bool,
     /// Phobos `Taunt=` (`Body.cpp:444`, default false): each hit target is
     /// forced into `Mission::Attack` against the detonation's owner
     /// (`Ext/WarheadType/Detonate.cpp:236-237`).
-    #[cfg(feature = "phobos")]
     pub taunt: bool,
     /// Phobos `IvanBomb.Detonate=` (`Ext/WarheadType/Body.cpp`'s
     /// `IvanBomb_Detonate.Read`, default false): a hit target's attached
     /// bombs detonate now (`Ext/WarheadType/Detonate.cpp:944-978`). The key is
     /// also a `PossibleCellSpreadDetonate` member, so it starts the
     /// per-target pass and its two draws.
-    #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate: bool,
     /// Phobos `IvanBomb.Detonate.PenetratesTransport=` (`Body.cpp`'s
     /// `IvanBomb_Detonate_PenetratesTransport`, default false): the arm also
     /// cuts the fuse of the bombs the target's passengers carry
     /// (`Detonate.cpp:966-971`).
-    #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate_penetrates_transport: bool,
     /// Phobos `IvanBomb.Detonate.PenetratesGarrison=` (default false): the
     /// bombs the occupants of a hit Building carry (`Detonate.cpp:973-982`).
-    #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate_penetrates_garrison: bool,
     /// Phobos `IvanBomb.Detonate.AffectsParasite=` (default false): the bomb
     /// on the parasite eating a hit Foot (`Detonate.cpp:984-990`).
-    #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate_affects_parasite: bool,
     /// Phobos `IvanBomb.Detonate.SameInvokerOnly=` (default false): only the
     /// bombs planted by the detonation's own owner are cut
     /// (`Detonate.cpp:950-956`).
-    #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate_same_invoker_only: bool,
     /// Phobos `IvanBomb.Detonate.AffectTypes=` (default empty, no filter):
     /// the planting techno's type must be listed for its bomb to go off
     /// (`Detonate.cpp:948-953`).
-    #[cfg(feature = "phobos")]
     pub phobos_ivan_bomb_detonate_affect_types: Vec<String>,
     /// Phobos `Ammo=` (`Body.cpp:452`, default 0): the per-target ammo delta,
     /// clamped to `0..type->Ammo` (`Ext/WarheadType/Detonate.cpp:221-222,
     /// 923-932`).
-    #[cfg(feature = "phobos")]
     pub ammo: i32,
     /// Phobos `RemoveDisguise=` (`Body.cpp:177`, default false): a disguised
     /// target loses its disguise on impact
     /// (`Ext/WarheadType/Detonate.cpp:224-225,466-475`).
-    #[cfg(feature = "phobos")]
     pub remove_disguise: bool,
     /// Phobos `ReverseEngineer=` (`Body.cpp:418`, default false): each hit
     /// target's type is recorded for the firing house through Ares'
     /// `ReverseEngineer` (`Ext/WarheadType/Detonate.cpp:227-228,260-264`).
-    #[cfg(feature = "phobos")]
     pub reverse_engineer: bool,
     /// Phobos `PreventCrewEscape=` (`Body.cpp:448`, default false): a killing
     /// hit latches the victim's crew count to 0
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:259-280`).
-    #[cfg(feature = "phobos")]
     pub prevent_crew_escape: bool,
     /// Phobos `PreventPassengerEscape=` (`Body.cpp:449`, default false): a
     /// killing hit kills the victim's passengers
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:276-277`).
-    #[cfg(feature = "phobos")]
     pub prevent_passenger_escape: bool,
     /// Phobos `PreventOccupantEscape=` (`Body.cpp:450`, default false): a
     /// killing hit kills a building's occupants instead of releasing them
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:282-297`).
-    #[cfg(feature = "phobos")]
     pub prevent_occupant_escape: bool,
     /// Phobos animation-list enhancement settings (`AnimList.*`,
     /// `SplashList.*`, `CreateAnimsOnZeroDamage`, `Conventional.IgnoreUnits`).
-    #[cfg(feature = "phobos")]
     pub phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules,
     /// Phobos `KillWeapon.*` (`Ext/WarheadType/Body.cpp:371-390`).
-    #[cfg(feature = "phobos")]
     pub phobos_kill_weapon: crate::rules::phobos_kill_weapon::PhobosKillWeaponRules,
     /// Phobos `SuppressRevengeWeapons=` / `.Types=`
     /// (`Ext/WarheadType/Body.cpp:356-357`): the victim's revenge weapons do
     /// not fire at this warhead's source.
-    #[cfg(feature = "phobos")]
     pub phobos_revenge_weapon: crate::rules::phobos_revenge_weapon::SuppressRevengeWeaponsRules,
     /// Phobos `PenetratesTransport.*` (`Ext/WarheadType/Body.cpp:437-442`).
-    #[cfg(feature = "phobos")]
     pub phobos_penetrates_transport:
         crate::rules::phobos_penetrates_transport::PenetratesTransportWarheadRules,
     /// Phobos `TransactMoney.*` (`Ext/WarheadType/Body.cpp:159-163`): the
     /// amount a detonation moves to the firing house and its optional flying
     /// credit label (`Ext/WarheadType/Detonate.cpp:102-111`).
-    #[cfg(feature = "phobos")]
     pub transact_money: crate::rules::phobos_transact_money::TransactMoneyRules,
     /// Phobos `Convert{i}.From`/`.To`/`.AffectsHouse` pairs
     /// (`New/Type/Affiliated/TypeConvertGroup.cpp`); the default source-house
     /// filter is `All`.
-    #[cfg(feature = "phobos")]
     pub phobos_convert_pairs: Vec<crate::rules::type_convert_group::TypeConvertGroup>,
     /// Phobos `ReturnWarhead=` and its `.Damage`/`.Chance`/`.FullDetonation`/
     /// `.AffectsTarget`/`.AffectsHouse` (`Ext/WarheadType/Body.cpp:235-241`,
     /// consumer `Detonate.cpp:610-636`).
-    #[cfg(feature = "phobos")]
     pub phobos_return_warhead: crate::rules::phobos_return_warhead::PhobosReturnWarhead,
     /// Phobos `LaunchSW=` and its `.RealLaunch`/`.IgnoreInhibitors`/
     /// `.IgnoreDesignators`/`.DisplayMoney.*` (`Ext/WarheadType/Body.cpp:290-296`,
     /// consumer `Detonate.cpp:121-150`).
-    #[cfg(feature = "phobos")]
     pub phobos_launch_sw: crate::rules::phobos_launch_sw::PhobosLaunchSw,
     /// Phobos `NotHuman.DeathSequence=` (`Ext/WarheadType/Body.cpp:289`,
     /// `Valueable<int>` default -1): the Die1..Die5 sequence a `NotHuman=`
     /// infantryman plays when this warhead kills it.
-    #[cfg(feature = "phobos")]
     pub phobos_not_human_death_sequence: i32,
     /// Phobos `Nonprovocative=` (`Ext/WarheadType/Body.cpp:337`,
     /// `Valueable<bool>` default `no`, `Body.h:461`): a non-provocative hit
     /// suppresses the victim House's combat alert when the warhead does not
     /// also override `CombatAlert.Suppress`
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:95`).
-    #[cfg(feature = "phobos")]
     pub nonprovocative: bool,
     /// Phobos `CombatAlert.Suppress=` (`Ext/WarheadType/Body.cpp:367`,
     /// `Nullable<bool>`, `Body.h:212` unset): when set, decides the alert
     /// suppression directly; unset uses `!Malicious || Nonprovocative`.
-    #[cfg(feature = "phobos")]
     pub combat_alert_suppress: Option<bool>,
     /// Phobos `Parasite.ParticleSystem`/`.DisableParticleSystem`/
     /// `.CullingTarget`/`.GrappleAnim` (`Ext/WarheadType/Body.cpp:322-325`).
-    #[cfg(feature = "phobos")]
     pub phobos_parasite: crate::rules::phobos_parasite::PhobosParasiteWarhead,
     /// Phobos `RemoveParasite=` (`Nullable<bool>`) and its typed Allow/
     /// Disallow lists (`Ext/WarheadType/Body.cpp:181-182`): which parasites a
     /// damage removes, defaulting to negative (healing) damage.
-    #[cfg(feature = "phobos")]
     pub phobos_remove_parasite: Option<bool>,
-    #[cfg(feature = "phobos")]
     pub phobos_remove_parasite_allow: Vec<String>,
-    #[cfg(feature = "phobos")]
     pub phobos_remove_parasite_disallow: Vec<String>,
     /// Phobos `ChangeOwner=` and its `SetAsMindControl`/`MindControlAnim`
     /// options (`Ext/WarheadType/Body.cpp:431-433`): the warhead transfers
     /// the target to the firing House, optionally as a mind-control capture.
-    #[cfg(feature = "phobos")]
     pub phobos_change_owner: bool,
-    #[cfg(feature = "phobos")]
     pub phobos_change_owner_set_as_mind_control: bool,
-    #[cfg(feature = "phobos")]
     pub phobos_change_owner_mind_control_anim: Option<String>,
     /// Phobos `SpawnsCrate{i}.Type`/`.Weight` (`Ext/WarheadType/Body.cpp:520-560`):
     /// the weighted powerup crates one detonation places.
-    #[cfg(feature = "phobos")]
     pub phobos_spawns_crate: crate::rules::phobos_spawns_crate::PhobosSpawnsCrate,
     /// Phobos `Rocker.AmplitudeMultiplier=` (`Valueable<double>`, default
     /// 1.0) and `.AmplitudeOverride=` (`Nullable<int>`): the area rocker's
     /// base amplitude (`Ext/WarheadType/Hooks.cpp:395-410`).
-    #[cfg(feature = "phobos")]
     pub phobos_rocker_amplitude_multiplier: f64,
-    #[cfg(feature = "phobos")]
     pub phobos_rocker_amplitude_override: Option<i32>,
     /// Phobos `DamageOwnerMultiplier=` / `DamageAlliesMultiplier=` /
     /// `DamageEnemiesMultiplier=` and their `.Berzerk` variants, plus the two
     /// health-fraction terms (`Ext/WarheadType/Body.cpp:347-354`). The
     /// consumer rewrites the receiver's damage before the shield stage
     /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:48-82`).
-    #[cfg(feature = "phobos")]
     pub phobos_damage_multiplier: crate::rules::phobos_damage_multiplier::DamageMultiplierRules,
     /// Phobos `RemoveMindControl`/`.Silent`, `MergeBuildingDamage` and the
     /// four `BuildingSell`/`BuildingUndeploy` keys
     /// (`Ext/WarheadType/Body.cpp:178-179`, `:339`, `:362-365`).
-    #[cfg(feature = "phobos")]
     pub phobos_extras: crate::rules::phobos_warhead_extras::PhobosWarheadExtras,
     /// Phobos `UnlimboDetonate=` (`Ext/WarheadType/Body.cpp:420`,
     /// `Valueable<bool>`, constructor default `no` `Body.h:550`): a
     /// `LimboLaunch=` firer whose bullet detonates with this warhead
     /// reappears there instead of staying off the map
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:507-592`).
-    #[cfg(feature = "phobos")]
     pub unlimbo_detonate: bool,
     /// `UnlimboDetonate.ForceLocation=` (`Body.cpp:421`, default `no`): the
     /// firer reappears at the detonation coordinate itself, without the
     /// nearby passable-cell search (`Hooks.DetonateLogics.cpp:514-550`).
-    #[cfg(feature = "phobos")]
     pub unlimbo_detonate_force_location: bool,
     /// `UnlimboDetonate.KeepTarget=` (`Body.cpp:422`, default `yes`): the
     /// firer keeps the target its detonating bullet aimed at
     /// (`Hooks.DetonateLogics.cpp:562-570`).
-    #[cfg(feature = "phobos")]
     pub unlimbo_detonate_keep_target: bool,
     /// `UnlimboDetonate.KeepSelected=` (`Body.cpp:423`, default `yes`): the
     /// firer is re-selected on reappear if it was selected when it fired
     /// (`Ext/WarheadType/Hooks.cpp:641-651`, `Hooks.DetonateLogics.cpp:572-578`).
-    #[cfg(feature = "phobos")]
     pub unlimbo_detonate_keep_selected: bool,
 }
 
@@ -718,7 +643,6 @@ pub struct WarheadType {
 /// detonation applies to every target it reaches, the attach parameters its
 /// `Attach` call passes (`hasDelay = false`, so the delay lists never apply),
 /// and the reflect suppressor.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WarheadAttachEffectRules {
     /// `AttachEffect.AttachTypes`.
@@ -748,7 +672,6 @@ pub struct WarheadAttachEffectRules {
     pub suppress_reflect_damage_groups: Vec<String>,
 }
 
-#[cfg(feature = "phobos")]
 impl Default for WarheadAttachEffectRules {
     /// `AEAttachInfoTypeClass`'s constructor defaults.
     fn default() -> Self {
@@ -771,7 +694,6 @@ impl Default for WarheadAttachEffectRules {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl WarheadAttachEffectRules {
     fn from_section(section: &IniSection) -> Self {
         let list = |key: &str| {
@@ -818,13 +740,11 @@ impl WarheadAttachEffectRules {
 
 impl WarheadType {
     /// Phobos `HealthCheck`, derived after each read (`Body.cpp:409`).
-    #[cfg(feature = "phobos")]
     pub fn health_check(&self) -> bool {
         self.affects_above_percent > 0.0 || self.affects_below_percent < 1.0
     }
 
     /// Phobos `VeterancyCheck`, derived after each read (`Body.cpp:410`).
-    #[cfg(feature = "phobos")]
     pub fn veterancy_check(&self) -> bool {
         self.affects_veterancy != crate::rules::phobos_airburst::AffectedVeterancy::ALL
     }
@@ -835,15 +755,9 @@ impl WarheadType {
         &self,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_apply_modifiers_on_negative_damage
                 .unwrap_or(rules.phobos_globals.apply_modifiers_on_negative_damage)
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = rules;
-            false
         }
     }
 
@@ -858,11 +772,8 @@ impl WarheadType {
     /// it. Ares alone keeps its plain bool, and Phobos' hook replaces Ares'
     /// wherever both features are on.
     pub fn prevents_scatter(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
-        #[cfg(feature = "phobos")]
-        {
-            self.phobos_prevent_scatter
-                .unwrap_or(rules.phobos_globals.warhead_prevent_scatter)
-        }
+        self.phobos_prevent_scatter
+            .unwrap_or(rules.phobos_globals.warhead_prevent_scatter)
     }
 
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
@@ -917,14 +828,12 @@ impl WarheadType {
 
     /// Phobos `AllowDamageOnSelf`: `Some` is the authored per-warhead value;
     /// `None` falls back to the `[General]` global.
-    #[cfg(feature = "phobos")]
     pub fn allow_damage_on_self(&self) -> Option<bool> {
         self.allow_damage_on_self
     }
 
     /// Phobos `DecloakDamagedTargets`: `Some` is the authored per-warhead
     /// value; `None` falls back to the `[General]` global.
-    #[cfg(feature = "phobos")]
     pub fn decloak_damaged_targets(&self) -> Option<bool> {
         self.decloak_damaged_targets
     }
@@ -1029,10 +938,8 @@ impl WarheadType {
             combat_light_size_f64: section.read_double("CombatLightSize", 0.0),
             // Phobos `CombatLightChance=` (`Ext/WarheadType/Body.cpp:343`,
             // `Valueable<double>` `Body.h:188`, constructor 1.0 `Body.h:467`).
-            #[cfg(feature = "phobos")]
             phobos_combat_light_chance: section.read_phobos_double("CombatLightChance", 1.0),
             prone_damage_f64: section.read_double("ProneDamage", 1.0),
-            #[cfg(feature = "phobos")]
             phobos_cell_spread_cylinder: section.read_bool("CellSpread.Cylinder", false),
             wall_absolute_destroyer: section.read_bool("WallAbsoluteDestroyer", false),
             temporal: section.read_bool("Temporal", false),
@@ -1042,7 +949,6 @@ impl WarheadType {
             ),
             parasite: section.read_bool("Parasite", false),
             psychedelic: section.read_bool("Psychedelic", false),
-            #[cfg(feature = "phobos")]
             phobos_psychedelic_stacking_mode:
                 crate::rules::phobos_stacking_mode::StackingMode::read_nullable(
                     section,
@@ -1052,7 +958,6 @@ impl WarheadType {
             mind_control: section.read_bool("MindControl", false),
             poison: section.read_bool("Poison", false),
             airstrike: section.read_bool("Airstrike", false),
-            #[cfg(feature = "phobos")]
             airstrike_targets: {
                 let raw = section.read_string("AirstrikeTargets", "", 0x100);
                 crate::rules::airstrike_targets::AirstrikeTargets::parse(&raw)
@@ -1064,7 +969,6 @@ impl WarheadType {
             sonic: section.read_bool("Sonic", false),
             makes_disguise: section.read_bool("MakesDisguise", false),
             electric_assault: section.read_bool("ElectricAssault", false),
-            #[cfg(feature = "phobos")]
             electric_assault_level: section.read_int("ElectricAssaultLevel", 1),
             bomb_disarm: section.read_bool("BombDisarm", false),
             nuke_maker: section.read_bool("NukeMaker", false),
@@ -1077,7 +981,6 @@ impl WarheadType {
             max_debris,
             // Phobos `WarheadTypeExt`'s four debris keys, read in
             // `Ext/WarheadType/Body.cpp:299-302` order.
-            #[cfg(feature = "phobos")]
             phobos_debris_anims: section.raw_value("DebrisAnims").and_then(|raw| {
                 if raw.trim().eq_ignore_ascii_case("<default>") {
                     return None;
@@ -1089,218 +992,149 @@ impl WarheadType {
                         .unwrap_or_default(),
                 )
             }),
-            #[cfg(feature = "phobos")]
             phobos_debris_conventional: section
                 .read_phobos_nullable_bool("Debris.Conventional", None),
-            #[cfg(feature = "phobos")]
             phobos_debris_types_limit: section
                 .read_phobos_nullable_bool("DebrisTypes.Limit", None),
-            #[cfg(feature = "phobos")]
             phobos_debris_minimums: section.read_int_list("DebrisMinimums").unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             allow_damage_on_self: section.read_phobos_nullable_bool("AllowDamageOnSelf", None),
-            #[cfg(feature = "phobos")]
             phobos_temporal_apply_multiplier: section
                 .read_phobos_nullable_bool("Temporal.ApplyMultiplier", None),
-            #[cfg(feature = "phobos")]
             phobos_temporal_apply_versus: section
                 .read_phobos_nullable_bool("Temporal.ApplyVersus", None),
             // Phobos reads this Ares tag as a `Nullable<bool>` at
             // `Ext/WarheadType/Body.cpp:491`, so an authored `no` differs from
             // an absent key: only an absent one consults the global.
-            #[cfg(feature = "phobos")]
             phobos_prevent_scatter: section.read_phobos_nullable_bool("PreventScatter", None),
-            #[cfg(feature = "phobos")]
             decloak_damaged_targets: section
                 .read_phobos_nullable_bool("DecloakDamagedTargets", None),
-            #[cfg(feature = "phobos")]
             shield: crate::rules::phobos_shields::ShieldWarheadRules::from_section(section),
-            #[cfg(feature = "phobos")]
             crit: crate::rules::phobos_crit::CritRules::from_section(section),
-            #[cfg(feature = "phobos")]
             detonate_on_all_map:
                 crate::rules::phobos_detonate_all_map::DetonateOnAllMapObjectsRules::from_section(
                     section,
                 ),
-            #[cfg(feature = "phobos")]
             attach_effect: WarheadAttachEffectRules::from_section(section),
-            #[cfg(feature = "phobos")]
             affects_ground: section.read_bool("AffectsGround", true),
-            #[cfg(feature = "phobos")]
             affects_air: section.read_bool("AffectsAir", true),
-            #[cfg(feature = "phobos")]
             affects_below_percent: section
                 .read_phobos_double("AffectsBelowPercent", 1.0),
-            #[cfg(feature = "phobos")]
             affects_above_percent: section
                 .read_phobos_double("AffectsAbovePercent", 0.0),
-            #[cfg(feature = "phobos")]
             affects_veterancy: section
                 .read_name("AffectsVeterancy", 2048)
                 .and_then(crate::rules::phobos_airburst::AffectedVeterancy::parse)
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             affects_invoker_only: section.read_bool("AffectsInvokerOnly", false),
-            #[cfg(feature = "phobos")]
             affects_invoker_only_reverse: section
                 .read_bool("AffectsInvokerOnly.Reverse", false),
-            #[cfg(feature = "phobos")]
             affects_invoker_only_ignore_invoker_state: section
                 .read_phobos_nullable_bool("AffectsInvokerOnly.IgnoreInvokerState", None),
-            #[cfg(feature = "phobos")]
             effects_require_verses: section.read_bool("EffectsRequireVerses", true),
-            #[cfg(feature = "phobos")]
             apply_per_target_effects_on_detonate: section
                 .read_phobos_nullable_bool("ApplyPerTargetEffectsOnDetonate", None),
-            #[cfg(feature = "phobos")]
             create_gap: section.read_int("CreateGap", 0),
-            #[cfg(feature = "phobos")]
             phobos_apply_modifiers_on_negative_damage: section
                 .read_phobos_nullable_bool("ApplyModifiersOnNegativeDamage", None),
-            #[cfg(feature = "phobos")]
             reveal: section.read_int("Reveal", 0),
-            #[cfg(feature = "phobos")]
             can_kill: section.read_bool("CanKill", true),
-            #[cfg(feature = "phobos")]
             taunt: section.read_bool("Taunt", false),
-            #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate: section.read_bool("IvanBomb.Detonate", false),
-            #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate_penetrates_transport: section
                 .read_bool("IvanBomb.Detonate.PenetratesTransport", false),
-            #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate_penetrates_garrison: section
                 .read_bool("IvanBomb.Detonate.PenetratesGarrison", false),
-            #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate_affects_parasite: section
                 .read_bool("IvanBomb.Detonate.AffectsParasite", false),
-            #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate_same_invoker_only: section
                 .read_bool("IvanBomb.Detonate.SameInvokerOnly", false),
-            #[cfg(feature = "phobos")]
             phobos_ivan_bomb_detonate_affect_types: section
                 .read_list("IvanBomb.Detonate.AffectTypes", 0x80)
                 .map(|list| list.iter().map(|name| name.to_string()).collect())
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             ammo: section.read_int("Ammo", 0),
-            #[cfg(feature = "phobos")]
             remove_disguise: section.read_bool("RemoveDisguise", false),
-            #[cfg(feature = "phobos")]
             reverse_engineer: section.read_bool("ReverseEngineer", false),
-            #[cfg(feature = "phobos")]
             prevent_crew_escape: section.read_bool("PreventCrewEscape", false),
-            #[cfg(feature = "phobos")]
             prevent_passenger_escape: section.read_bool("PreventPassengerEscape", false),
-            #[cfg(feature = "phobos")]
             prevent_occupant_escape: section.read_bool("PreventOccupantEscape", false),
-            #[cfg(feature = "phobos")]
             phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::from_section(
                 section,
             ),
-            #[cfg(feature = "phobos")]
             phobos_kill_weapon: crate::rules::phobos_kill_weapon::PhobosKillWeaponRules::from_section(
                 section,
             ),
-            #[cfg(feature = "phobos")]
             phobos_revenge_weapon:
                 crate::rules::phobos_revenge_weapon::SuppressRevengeWeaponsRules::from_section(
                     section,
                 ),
-            #[cfg(feature = "phobos")]
             phobos_penetrates_transport:
                 crate::rules::phobos_penetrates_transport::PenetratesTransportWarheadRules::from_section(
                     section,
                 ),
-            #[cfg(feature = "phobos")]
             transact_money:
                 crate::rules::phobos_transact_money::TransactMoneyRules::from_section(section),
-            #[cfg(feature = "phobos")]
             phobos_convert_pairs: crate::rules::type_convert_group::parse(
                 section,
                 crate::rules::phobos_shields::AffectedHouse::ALL,
             ),
-            #[cfg(feature = "phobos")]
             phobos_return_warhead:
                 crate::rules::phobos_return_warhead::PhobosReturnWarhead::from_section(section),
-            #[cfg(feature = "phobos")]
             phobos_launch_sw: crate::rules::phobos_launch_sw::PhobosLaunchSw::from_section(
                 section,
             ),
-            #[cfg(feature = "phobos")]
             phobos_not_human_death_sequence: section.read_int("NotHuman.DeathSequence", -1),
-            #[cfg(feature = "phobos")]
             nonprovocative: section.read_bool("Nonprovocative", false),
-            #[cfg(feature = "phobos")]
             combat_alert_suppress: section.read_phobos_nullable_bool("CombatAlert.Suppress", None),
             // `WarheadTypeExt::LoadFromINI` reads the four `UnlimboDetonate`
             // keys in this order (`Ext/WarheadType/Body.cpp:420-423`); their
             // constructor defaults are no/no/yes/yes (`Body.h:550-553`).
-            #[cfg(feature = "phobos")]
             unlimbo_detonate: section.read_bool("UnlimboDetonate", false),
-            #[cfg(feature = "phobos")]
             unlimbo_detonate_force_location: section
                 .read_bool("UnlimboDetonate.ForceLocation", false),
-            #[cfg(feature = "phobos")]
             unlimbo_detonate_keep_target: section.read_bool("UnlimboDetonate.KeepTarget", true),
-            #[cfg(feature = "phobos")]
             unlimbo_detonate_keep_selected: section
                 .read_bool("UnlimboDetonate.KeepSelected", true),
-            #[cfg(feature = "phobos")]
             phobos_parasite:
                 crate::rules::phobos_parasite::PhobosParasiteWarhead::from_section(section),
-            #[cfg(feature = "phobos")]
             phobos_remove_parasite: section.read_phobos_nullable_bool("RemoveParasite", None),
-            #[cfg(feature = "phobos")]
             phobos_remove_parasite_allow: section
                 .read_list("RemoveParasite.Allow", 0x80)
                 .unwrap_or_default()
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
-            #[cfg(feature = "phobos")]
             phobos_remove_parasite_disallow: section
                 .read_list("RemoveParasite.Disallow", 0x80)
                 .unwrap_or_default()
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
-            #[cfg(feature = "phobos")]
             phobos_change_owner: section.read_bool("ChangeOwner", false),
-            #[cfg(feature = "phobos")]
             phobos_change_owner_set_as_mind_control: section
                 .read_bool("ChangeOwner.SetAsMindControl", false),
-            #[cfg(feature = "phobos")]
             phobos_change_owner_mind_control_anim: section.read_phobos_nullable_with(
                 "ChangeOwner.MindControlAnim",
                 None,
                 |raw| Some(raw.to_owned()),
             ),
-            #[cfg(feature = "phobos")]
             phobos_spawns_crate:
                 crate::rules::phobos_spawns_crate::PhobosSpawnsCrate::from_section(section),
-            #[cfg(feature = "phobos")]
             phobos_rocker_amplitude_multiplier: section
                 .read_double("Rocker.AmplitudeMultiplier", 1.0),
-            #[cfg(feature = "phobos")]
             phobos_rocker_amplitude_override: section
                 .read_phobos_nullable_int("Rocker.AmplitudeOverride", None),
-            #[cfg(feature = "phobos")]
             phobos_damage_multiplier:
                 crate::rules::phobos_damage_multiplier::DamageMultiplierRules::from_section(section),
-            #[cfg(feature = "phobos")]
             phobos_extras: crate::rules::phobos_warhead_extras::PhobosWarheadExtras::from_section(
                 section,
             ),
-            #[cfg(feature = "phobos")]
             jumpjet_override: crate::rules::jumpjet_params::JumpjetOverride::from_section(section),
-            #[cfg(feature = "phobos")]
             // The name resolves at the capture site; an unknown later-layer
             // name replaces an earlier valid one, where Phobos keeps it.
             mind_control_anim: section.read_phobos_nullable_with("MindControl.Anim", None, |raw| {
                 Some(raw.to_owned())
             }),
-            #[cfg(feature = "phobos")]
             mind_control_threat_delay: section
                 .read_phobos_nullable_int("MindControl.ThreatDelay", None),
         }
@@ -1398,7 +1232,6 @@ mod tests {
     /// at `:539`: `CanKill=` is a plain `Valueable<bool>` defaulting to
     /// **true**, so a no-kill warhead is opt-in and an absent or blank key
     /// keeps the stock lethal hit.
-    #[cfg(feature = "phobos")]
     #[test]
     fn can_kill_reads_false_only_when_the_key_says_no() {
         let verses = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
@@ -1419,7 +1252,6 @@ mod tests {
     /// default `0` at `Body.h:307`) read through the production Rules reader
     /// as a signed cell radius: `-1` is the whole-map sentinel
     /// (`Ext/WarheadType/Detonate.cpp:94-99`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn reveal_reads_as_a_signed_cell_radius() {
         use crate::rules::ruleset::RuleSet;
@@ -1437,7 +1269,6 @@ mod tests {
     /// Phobos `AEAttachInfoTypeClass` and `SuppressReflectDamage` on a
     /// warhead, through the production Rules reader, plus the `ReflectDamage`
     /// warhead the AttachEffect catalog alone names.
-    #[cfg(feature = "phobos")]
     #[test]
     fn attach_effect_lists_and_reflect_suppressor_read_through_rules() {
         use crate::rules::ruleset::RuleSet;
@@ -1639,7 +1470,6 @@ MaxDebris=2
 
     /// The `[General] AllowDamageOnSelf` fallback and per-warhead override
     /// that Phobos `WarheadTypeExt::AllowDamageOnSelf.Get(...)` applies.
-    #[cfg(feature = "phobos")]
     #[test]
     fn allow_damage_on_self_falls_back_to_general() {
         let read = |text: &str, warhead: &str| {
@@ -1668,7 +1498,6 @@ MaxDebris=2
     /// The `[General] DecloakDamagedTargets` fallback (default yes) and the
     /// per-warhead override that Phobos
     /// `WarheadTypeExt::DecloakDamagedTargets.Get(...)` applies.
-    #[cfg(feature = "phobos")]
     #[test]
     fn decloak_damaged_targets_falls_back_to_general() {
         let read = |text: &str, warhead: &str| {
@@ -1693,7 +1522,6 @@ MaxDebris=2
         );
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn mind_control_anim_reads_nullable_name() {
         let ini = IniFile::from_str(
@@ -1716,7 +1544,6 @@ MaxDebris=2
     /// Phobos `AffectsAbovePercent`/`AffectsBelowPercent`/`AffectsVeterancy`
     /// and `AffectsInvokerOnly.*` (`Ext/WarheadType/Body.cpp:402-413`) with
     /// their constructor defaults and derived checks.
-    #[cfg(feature = "phobos")]
     #[test]
     fn warhead_trigger_keys_read_with_their_derived_checks() {
         use crate::rules::phobos_airburst::AffectedVeterancy;
@@ -1769,7 +1596,6 @@ AffectsInvokerOnly.Reverse=yes
     /// `Valueable<bool>` (default no), `Temporal.Apply*` and `PreventScatter`
     /// are `Nullable<bool>`. An explicit `no` must stay `Some(false)` so a
     /// warhead can refuse a `yes` `[CombatDamage]` global.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_g1_warhead_gates_default_and_keep_an_explicit_no() {
         let ini = IniFile::from_str(

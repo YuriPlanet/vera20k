@@ -246,7 +246,6 @@ fn one_and_three_explicit_gas_births_match_original_constructors_and_rng() {
 /// constructor 2): the Gas AI's per-pass Velocity.X/Y clamp uses the type's
 /// value instead of the stock ±2 (`ParticleClass_Gas_AI_DriftSpeed`, hook
 /// `0x62BE30`, `Ext/ParticleType/Hooks.cpp:4-30`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_gas_drift_clamp_uses_the_particle_types_max_speed() {
     use crate::rules::ini_parser::IniFile;

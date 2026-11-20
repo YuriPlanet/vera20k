@@ -142,12 +142,9 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
         // Hooks.MessageList.cpp:3-33`) skips the native multiplayer checks,
         // so the box opens in single player too. The send path below keeps
         // its own network gate, as native's does.
-        #[cfg(feature = "phobos")]
         let single_player_chat = state
             .rules()
             .is_some_and(|rules| rules.phobos_globals.allow_chat_box_in_single_player);
-        #[cfg(not(feature = "phobos"))]
-        let single_player_chat = false;
         let chat_allowed = state.match_state.session_mode().is_network() || single_player_chat;
         if !edge.state.is_pressed() || edge.repeat || !chat_allowed {
             return false;

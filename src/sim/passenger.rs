@@ -579,7 +579,6 @@ impl Simulation {
         // Phobos `TechnoClass_EnterTransport @ 0x71067B` records the
         // board-time house before the Cargo add (see
         // [`Self::phobos_record_original_passenger_owner`]).
-        #[cfg(feature = "phobos")]
         self.phobos_record_original_passenger_owner(carrier, head_first, context.rules());
         if !self.add_cargo_passenger_chain(carrier, head_first, context) {
             return false;
@@ -1505,7 +1504,6 @@ pub(crate) fn board_passenger(
     }
     // Phobos `TechnoClass_EnterTransport` (0x71067B): a qualifying
     // passenger joins the scenario reloader list.
-    #[cfg(feature = "phobos")]
     sim.register_transport_reloader(rules, pax_id);
     true
 }
@@ -1528,7 +1526,6 @@ pub(crate) fn board_passenger(
 /// VERA's `sim::radio::receive::unit_can_enter_radio` is that receiver.
 /// `DoEnterNow` (`:292-326`) raises the transport's Tag event 1 ("entered
 /// by") and then boards through the shared arrival owner.
-#[cfg(feature = "phobos")]
 pub(crate) fn try_fast_enter(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1785,7 +1782,6 @@ impl Simulation {
     /// non-null destination is admitted — the same call, before the NavCom
     /// write instead of after it; only the passengers' own destinations move,
     /// so the order against the carrier's publication does not matter.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_open_topped_release_locks(
         &mut self,
         carrier: u64,
@@ -1868,7 +1864,6 @@ impl Simulation {
     /// against `target` is an `IsLocomotor=` (or `Temporal=`) warhead and is
     /// not `FireWhileMoving=yes`. A missing weapon keeps the link, as the
     /// native `GetWeapon(...)->WeaponType` chain has nothing to read.
-    #[cfg(feature = "phobos")]
     fn phobos_fire_while_moving_forbids(
         &self,
         passenger: u64,
@@ -2150,16 +2145,11 @@ impl Simulation {
         // a null target (the Stop / DecideUnitFate / boarding clearing callers)
         // is never intercepted, so the stock clear semantic is preserved.
         let suppress_target = {
-            #[cfg(feature = "phobos")]
             {
                 target.is_some()
                     && transport_type.is_some_and(|kind| {
                         !kind.phobos_open_topped().share_transport_target(rules)
                     })
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                false
             }
         };
         if suppress_target {
@@ -2329,7 +2319,6 @@ impl Simulation {
     /// through VERA's one owner-change path. Each member's own ChangeHouse
     /// runs in full, so a member that is itself a loaded transport syncs
     /// its hold the same way.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_sync_cargo_on_owner_change(
         &mut self,
         transport_id: u64,
@@ -2372,7 +2361,6 @@ impl Simulation {
     /// `.RevertOnExit` transport records each entering passenger's current
     /// house on the passenger's FootExt. Native boarding itself changes no
     /// house; the record is what the exit and dying-cargo arms restore.
-    #[cfg(feature = "phobos")]
     fn phobos_record_original_passenger_owner(
         &mut self,
         carrier: u64,
@@ -2409,7 +2397,6 @@ impl Simulation {
     /// `IsOwnerChangeFromRevertOnExit` latch, which the AutoDeath
     /// owner-change hook reads around the revert (`Ext/House/Hooks.cpp:225`).
     /// Native leaves the record standing (`:111-118` clears only the latch).
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_revert_passenger_on_exit(
         &mut self,
         transport_id: u64,
@@ -2456,7 +2443,6 @@ impl Simulation {
     /// (`0x00737F80..0x00737F92`) and before Ares survivor handling: every
     /// dying-transport passenger that still holds a recorded board-time
     /// house takes it back, with no latch and no record clear.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_revert_cargo_on_dying_transport(
         &mut self,
         transport_id: u64,
@@ -2503,14 +2489,12 @@ impl Simulation {
 /// passengers reloaded by the pre-Logic pass while inside a transport, in
 /// boarding order. One owner for the queue; serialized as its former plain
 /// list so existing saves load unchanged.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct TransportReloaderQueue {
     ids: Vec<u64>,
 }
 
-#[cfg(feature = "phobos")]
 impl TransportReloaderQueue {
     fn add(&mut self, id: u64) {
         if !self.ids.contains(&id) {
@@ -2546,7 +2530,6 @@ impl TransportReloaderQueue {
 /// Phobos `ReloadInTransport` (`Ext/Techno/Hooks.Transport.cpp:70-165`):
 /// the scenario reloader list, its pre-Logic pass and the infantry FireAt
 /// restart.
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// `TechnoClass_EnterTransport` (hook `0x71067B`, `:82-89`): a boarded
     /// Infantry or Unit with a positive `Ammo=` and the resolved key joins
@@ -2954,7 +2937,6 @@ ConditionYellow=50%
     /// Phobos `NoQueueUpToEnter=` on the transport type, with the per-type
     /// `NoQueueUpToEnter.BoardDistance=` / `[General]` fallbacks
     /// (`Ext/Techno/Hooks.Transport.cpp:220-228`, `:332`).
-    #[cfg(feature = "phobos")]
     fn no_queue_rules(transport_keys: &str, general_keys: &str) -> RuleSet {
         let ini = IniFile::from_str(&format!(
             "\
@@ -2994,7 +2976,6 @@ ConditionYellow=50%
     /// standing one cell away (256 leptons, below the 384 default) as soon as
     /// its Foot update runs, without the walk into the transport's cell.
     /// Without the key the stock queue keeps him an outside player.
-    #[cfg(feature = "phobos")]
     #[test]
     fn no_queue_up_to_enter_boards_from_the_neighbouring_cell() {
         let stock = no_queue_rules("", "");
@@ -3068,7 +3049,6 @@ ConditionYellow=50%
     /// (`Ext/Techno/Hooks.Transport.cpp:226-228`): at exactly
     /// `NoQueueUpToEnter.BoardDistance=` the passenger stays outside, and an
     /// unset per-type distance keeps the `[General]` fallback of 384.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_board_distance_is_strict_and_keeps_the_general_fallback() {
         let exact = no_queue_rules(
@@ -3123,7 +3103,6 @@ ConditionYellow=50%
     /// `Reload()` (plus its own StartReloading) per pre-Logic pass, leaves the
     /// list on the leave hook, and a transported infantryman's FireAt
     /// restarts the clock.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_reload_in_transport_registers_reloads_and_unlists() {
         use crate::sim::ammo::TechnoAmmo;
@@ -3244,7 +3223,6 @@ FixtureOnly=1
 
     /// The same registration reads `[General] ReloadInTransport` when the
     /// type key is unset, and a type with `Ammo=-1` never joins the list.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_reload_in_transport_reads_the_general_and_skips_infinite_ammo() {
         let rules = RuleSet::from_ini(&IniFile::from_str(

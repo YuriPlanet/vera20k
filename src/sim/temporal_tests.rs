@@ -1619,7 +1619,6 @@ fn a_chrono_legionnaire_erases_a_tank() {
 /// (`Ext/Techno/Hooks.cpp:1476-1490`); the erase anim therefore carries the
 /// target's house, which the stock `AnimClass(WarpAway, ...)` construction
 /// does not.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_phobos_warp_away_anim_is_owned_by_the_target_house() {
     use crate::sim::command::{Command, CommandEnvelope};
@@ -3465,7 +3464,6 @@ fn an_untouched_tank_costs_the_prologue_one_lookup() {
 /// `NoRearm.Temporal=yes` / `NoReload.Temporal=yes` keeps its running rearm
 /// and Techno Reload timers still across updates (`StartTime++` per visit),
 /// while a target without the keys counts down as the frames pass.
-#[cfg(feature = "phobos")]
 #[test]
 fn no_rearm_temporal_holds_the_held_target_timers() {
     let held_rules = rules_from(
@@ -3566,7 +3564,6 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
 /// no warhead keeps its raw `Damage=` even when the globals read yes; a
 /// warhead with `Temporal.ApplyMultiplier=yes` scales it by the attacker's
 /// firepower before the target-dependent factors.
-#[cfg(feature = "phobos")]
 #[test]
 fn warp_per_step_needs_a_resolved_warhead_for_the_extension() {
     use crate::util::native_x87::NativeF64Bits;

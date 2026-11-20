@@ -63,12 +63,10 @@ pub struct VoxelAnimObject {
     /// countdown between trailer spawns. Starts expired and restarts after
     /// every spawn (`VoxelAnimClass_AI_Trailer @ 0x74A70E`); saved with the
     /// object like Phobos' extension.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     trailer_spawn_timer: crate::sim::timer::CdTimer,
     /// Phobos `VoxelAnimExt::LaserTrails`, built in the constructor from the
     /// type's `LaserTrail.Types` (`Ext/VoxelAnim/Body.cpp:5..18`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     laser_trails: Vec<crate::sim::laser_trail::LaserTrailState>,
     /// `+0x108`: the type's `AttachedSystem=` (`+0x2FC`), which the
@@ -87,14 +85,12 @@ pub struct VoxelAnimObject {
 }
 
 impl VoxelAnimObject {
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_laser_trails_mut(
         &mut self,
     ) -> &mut Vec<crate::sim::laser_trail::LaserTrailState> {
         &mut self.laser_trails
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_laser_trails(&self) -> &[crate::sim::laser_trail::LaserTrailState] {
         &self.laser_trails
     }
@@ -207,7 +203,6 @@ impl VoxelAnimObject {
     /// Phobos `VoxelAnimClass_AI_Trailer @ 0x74A70E`: the trailer spawn timer
     /// reads expired every `Trailer.SpawnDelay` game frames; a due visit
     /// restarts it with the type's delay.
-    #[cfg(feature = "phobos")]
     pub(crate) fn trailer_spawn_due(&mut self, now: i32, delay: i32) -> bool {
         if !self.trailer_spawn_timer.expired(now) {
             return false;
@@ -219,7 +214,6 @@ impl VoxelAnimObject {
     /// The trailer countdown's hash fold. Only a running timer contributes,
     /// so pieces that never spawned (all retail ones) keep their previous
     /// state hash.
-    #[cfg(feature = "phobos")]
     pub(crate) fn trailer_spawn_timer_hash(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         if self.trailer_spawn_timer != crate::sim::timer::CdTimer::default() {
@@ -445,9 +439,7 @@ pub fn spawn_debris_piece(
             location: launch.start.to_array(),
             lifecycle: ObjectLifecycle::default(),
             bounce,
-            #[cfg(feature = "phobos")]
             trailer_spawn_timer: crate::sim::timer::CdTimer::default(),
-            #[cfg(feature = "phobos")]
             laser_trails: crate::sim::laser_trail::LaserTrailState::from_names(
                 &voxel_anim_type.laser_trail_types,
             ),
@@ -512,9 +504,7 @@ pub fn spawn_debris_piece(
         location: origin.to_array(),
         lifecycle: ObjectLifecycle::default(),
         bounce,
-        #[cfg(feature = "phobos")]
         trailer_spawn_timer: crate::sim::timer::CdTimer::default(),
-        #[cfg(feature = "phobos")]
         laser_trails: crate::sim::laser_trail::LaserTrailState::from_names(
             &voxel_anim_type.laser_trail_types,
         ),
@@ -913,15 +903,12 @@ pub fn throw_death_debris(
     // native computes: `MinDebris` can sit on or above the top, and an
     // unsigned read would invent a huge span instead of letting the helper
     // sort it.
-    #[cfg(feature = "phobos")]
     let mut budget = if data.max_debris <= 0 {
         0
     } else {
         host.rng()
             .next_range_i32_inclusive(data.min_debris, data.max_debris)
     };
-    #[cfg(not(feature = "phobos"))]
-    let mut budget = debris_budget(data.min_debris, data.max_debris, host.rng());
 
     budget = throw_typed_debris(
         budget,
@@ -1003,13 +990,8 @@ mod tests {
     /// The budget draw of the arm under test: the stock `MaxDebris - 1` top,
     /// or Phobos's `MaxDebris` top for the Techno hook.
     fn budget(min: i32, max: i32, rng: &mut SimRng) -> i32 {
-        #[cfg(feature = "phobos")]
         {
             rng.next_range_i32_inclusive(min, max)
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            debris_budget(min, max, rng)
         }
     }
 
@@ -1237,7 +1219,6 @@ mod tests {
     /// 167-196`): with more than one slot and no `DebrisTypes.Limit=` key, the
     /// restored loop stops after one whole pass, so a pass that spends less
     /// than the budget never cycles to drain it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_debris_one_pass_limit_leaves_the_rest_of_the_budget() {
         let voxel_type = tire();
@@ -1274,7 +1255,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_debris_minimums_floor_each_slots_throw() {
         // Phobos `TechnoClass_ReceiveDamage_Debris`
@@ -1357,7 +1337,6 @@ mod tests {
     /// (no `- 1`), and its restored per-slot loop runs for a type with
     /// `DebrisTypes=` even when `DebrisMinimums=` is absent; the pass gate is
     /// `DebrisTypes.Limit`, here an explicit no.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_debris_budget_range_and_restored_loop_need_no_minimums() {
         use crate::rules::ini_parser::IniFile;
@@ -1438,12 +1417,9 @@ DebrisTypes.Limit=no
         let mut spawned = 0;
         let mut iterations = 0;
         while spawned < budget && iterations < 4096 {
-            #[cfg(feature = "phobos")]
             let count = expected
                 .next_range_i32_inclusive(0, 9)
                 .min(budget - spawned);
-            #[cfg(not(feature = "phobos"))]
-            let count = (expected.next_raw_abs_modulo(10) as i32).min(budget - spawned);
             for _ in 0..count {
                 for _ in 0..4 {
                     expected.next_u32();

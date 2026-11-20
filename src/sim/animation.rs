@@ -423,7 +423,6 @@ impl UnitDeathCounter {
 /// `TechnoExt::DelayedFireSequencePaused` is set, so the counter is not
 /// decremented for the duration of a `DelayedFire.PauseFiringSequence` delay.
 pub(crate) fn tick_unit_firing_counter(entity: &mut crate::sim::game_entity::GameEntity) {
-    #[cfg(feature = "phobos")]
     if entity.phobos_delayed_fire_sequence_paused() {
         return;
     }

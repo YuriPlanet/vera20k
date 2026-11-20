@@ -430,7 +430,6 @@ fn approach_takes_the_first_queued_destination_of_any_kind() {
 }
 
 /// Phobos `ApproachTarget.*` fixtures (`Ext/TechnoType/Body.cpp:1093-1101`).
-#[cfg(feature = "phobos")]
 fn approach_target_rules(techno: &str, general: &str) -> RuleSet {
     RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
         "[General]\n{general}\
@@ -447,7 +446,6 @@ fn approach_target_rules(techno: &str, general: &str) -> RuleSet {
 /// A tank at (2,10) driving to (20,10) with a Russian tank three cells out.
 /// The locomotor corridor advances without mission AI, so the foot is really
 /// moving when the approach owner reads it.
-#[cfg(feature = "phobos")]
 fn moving_tank_scene(rules: &RuleSet, seed: u64) -> (Simulation, u64, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, seed);
     let tank = sim
@@ -487,7 +485,6 @@ fn moving_tank_scene(rules: &RuleSet, seed: u64) -> (Simulation, u64, u64) {
     (sim, tank, enemy)
 }
 
-#[cfg(feature = "phobos")]
 fn approach_target_moving(sim: &Simulation, tank: u64, rules: &RuleSet) -> bool {
     crate::sim::movement::motion_query::is_really_moving_now(
         sim.substrate.entities.get(tank).unwrap(),
@@ -499,7 +496,6 @@ fn approach_target_moving(sim: &Simulation, tank: u64, rules: &RuleSet) -> bool 
 /// `FootClass_ApproachTarget_StopWhenInRange` (`0x4D5A34`,
 /// `Ext/Techno/Hooks.Firing.cpp:1303-1340`): in range and really moving, the
 /// type key — else the `[General]` key — calls StopMoving and AbortMotion.
-#[cfg(feature = "phobos")]
 #[test]
 fn approach_stop_when_in_range_stops_a_moving_close_foot() {
     for (techno, general) in [
@@ -527,7 +523,6 @@ fn approach_stop_when_in_range_stops_a_moving_close_foot() {
 }
 
 /// Without the key the same in-range tail leaves the foot driving.
-#[cfg(feature = "phobos")]
 #[test]
 fn approach_without_stop_when_in_range_keeps_the_moving_foot_going() {
     let rules = approach_target_rules("", "");
@@ -557,7 +552,6 @@ fn approach_without_stop_when_in_range_keeps_the_moving_foot_going() {
 /// `Ext/Techno/Hooks.Firing.cpp:1343-1362`): the type key sets the Target as
 /// the destination and returns through the zeroed `0x4D5A34` pointer, before
 /// the existing-path gate would have returned.
-#[cfg(feature = "phobos")]
 #[test]
 fn approach_pursuit_target_sets_the_target_destination() {
     let rules = approach_target_rules("ApproachTarget.PursuitTarget=yes\n", "");

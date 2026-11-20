@@ -181,19 +181,16 @@ impl JumpjetFlightParams {
     }
 
     /// See the field.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) const fn wobbles_bits(&self) -> u32 {
         self.wobbles_bits
     }
 
     /// See the field.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) const fn deviation(&self) -> i32 {
         self.deviation
     }
 
     /// See the field.
-    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
     pub(crate) const fn no_wobbles(&self) -> bool {
         self.no_wobbles
     }
@@ -275,7 +272,6 @@ impl JumpjetFlight {
     /// Phobos `pJJLoco->LocomotionFacing.SetCurrent(DirStruct(facing))` for a
     /// spawn order (`Ext/TechnoType/Body.cpp:686`): both the current and the
     /// target bytes move to the spawn facing, with no turn.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_locomotion_facing(&mut self, facing: u16, binary_frame: u32) {
         self.facing.snap(facing, binary_frame);
     }
@@ -445,9 +441,7 @@ pub(crate) trait JumpjetFlightHost {
     fn balloon_hover(&self) -> bool;
     /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`), read by
     /// the Ascending handler (`0x54BB D0`) and by MovementAI (`0x54D600`).
-    #[cfg(feature = "phobos")]
     fn straight_ascend(&self) -> bool;
-    #[cfg(feature = "phobos")]
     fn set_straight_ascend(&mut self, on: bool);
     /// Owner `+0x2B4` TarCom is set.
     fn has_target(&self) -> bool;
@@ -1012,7 +1006,6 @@ pub(crate) fn update_coordinates_and_altitude(
     // `Ext/Unit/Hooks.Jumpjet.cpp:413-437`): a crashing or dead owner, or a
     // state past the ascend, clears the latch and moves normally; otherwise the
     // location write and the body-facing snap are skipped, so only Z changes.
-    #[cfg(feature = "phobos")]
     let skip_horizontal = if host.straight_ascend() {
         if host.crashing() || !host.is_object_alive() {
             host.set_straight_ascend(false);
@@ -1026,8 +1019,6 @@ pub(crate) fn update_coordinates_and_altitude(
     } else {
         false
     };
-    #[cfg(not(feature = "phobos"))]
-    let skip_horizontal = false;
 
     // Horizontal step along the locomotor facing (0x0054D55A..D607).
     let location = host.location();
@@ -1517,10 +1508,7 @@ pub(crate) fn state1_ascend(
             // Phobos `0x54BBD0` (`Ext/Unit/Hooks.Jumpjet.cpp:397-411`): a
             // straight ascent skips the speed raise and the turn, resuming at
             // `0x54BC59` where only the factory notice remains.
-            #[cfg(feature = "phobos")]
             let straight = host.straight_ascend();
-            #[cfg(not(feature = "phobos"))]
-            let straight = false;
             if !straight {
                 runtime.flight.target_speed_bits = store_double(int(params.speed));
                 runtime
@@ -2058,11 +2046,9 @@ mod tests {
         fn balloon_hover(&self) -> bool {
             self.balloon_hover
         }
-        #[cfg(feature = "phobos")]
         fn straight_ascend(&self) -> bool {
             self.straight_ascend
         }
-        #[cfg(feature = "phobos")]
         fn set_straight_ascend(&mut self, on: bool) {
             self.straight_ascend = on;
         }
@@ -2545,11 +2531,9 @@ mod tests {
         fn balloon_hover(&self) -> bool {
             self.balloon_hover
         }
-        #[cfg(feature = "phobos")]
         fn straight_ascend(&self) -> bool {
             self.straight_ascend
         }
-        #[cfg(feature = "phobos")]
         fn set_straight_ascend(&mut self, on: bool) {
             self.straight_ascend = on;
         }
@@ -3456,7 +3440,6 @@ mod tests {
     /// `Ext/Unit/Hooks.Jumpjet.cpp:413-437`): while the latch is set and the
     /// owner is in state 0/1, MovementAI writes no horizontal location and snaps
     /// no body facing, so only the altitude changes.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_straight_ascend_keeps_the_horizontal_position() {
         let trig = TrigTable::embedded();
@@ -3500,7 +3483,6 @@ mod tests {
 
     /// The same hook past the ascend: any state after 0/1 clears the latch and
     /// the frame moves normally.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_state_past_the_ascend_clears_the_straight_ascend_latch() {
         let trig = TrigTable::embedded();

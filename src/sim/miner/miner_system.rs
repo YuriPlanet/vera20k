@@ -436,7 +436,6 @@ fn harvest_looking(
     // `0x73E730`, `Ext/Unit/Hooks.Harvester.cpp:145-170`): a harvester
     // released with a focus whose type enables the key replaces that focus
     // with a nearer `TiberiumLongScan` ore cell.
-    #[cfg(feature = "phobos")]
     if let Some(focus) = archive {
         let (enabled, weeder) = sim.interner.object_type(snap.type_id, rules).map_or(
             (rules.phobos_globals.harvester_scan_after_unload, false),

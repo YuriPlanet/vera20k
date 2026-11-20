@@ -3149,7 +3149,6 @@ fn base_normal_false_structures_do_not_extend_build_area() {
 /// Two same-house providers around the previewed cell `(12,10)`: a GAPOWR the
 /// rows vary and a yard far away that only supplies the house's producer.
 /// `provider_in_construction` writes the GAPOWR's live mission.
-#[cfg(feature = "phobos")]
 fn buildup_provider_sim(rules: &RuleSet, provider_in_construction: bool) -> Simulation {
     let mut sim = placement_sim();
     spawn_structure(&mut sim, rules, 1, "Americans", "GAPOWR", 10, 10);
@@ -3181,7 +3180,6 @@ fn buildup_provider_sim(rules: &RuleSet, provider_in_construction: bool) -> Simu
 /// `0x4A8FD7` in `Ext/BuildingType/Hooks.cpp:245`): a provider still in its
 /// construction mission extends no build area, and the flag is what matters —
 /// the mission alone does not skip an unkeyed provider.
-#[cfg(feature = "phobos")]
 #[test]
 fn no_build_area_on_buildup_provider_is_ignored_only_while_building() {
     let rules = super::tests::placement_radius_rules_with("NoBuildAreaOnBuildup=yes\n");

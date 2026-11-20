@@ -769,7 +769,6 @@ pub(crate) fn drain_common_step(
             // `Ext/Techno/Hooks.cpp:185-188`: a negative amount is a payment
             // from the drainer, bounded by its own available money (a source
             // already in debt caps the payment at `-available`).
-            #[cfg(feature = "phobos")]
             if amount < 0 {
                 let source_available = available_money(&sim.houses, drainer_owner);
                 amount = amount.max(source_available.wrapping_neg());
@@ -778,14 +777,11 @@ pub(crate) fn drain_common_step(
             add_credits(&mut sim.houses, drainer_owner, amount);
             // `Ext/Techno/Hooks.cpp:193-194`: a zero clamped amount returns
             // before the transfers and the labels.
-            #[cfg(feature = "phobos")]
             if amount != 0 {
                 emit_drain_money_text(sim, rules, stable_id, drainer_id, amount, effects);
             }
         }
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = effects;
 
     if let Some(victim_id) = drain_target
         && let Some(target_owner) = sim
@@ -819,7 +815,6 @@ pub(crate) fn drain_common_step(
 ///
 /// The local-player checks (visibility and the House filter) run in the
 /// client's `FlyingCredits` owner, exactly as the DisplaySoylent label does.
-#[cfg(feature = "phobos")]
 fn emit_drain_money_text(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1917,7 +1912,6 @@ mod tests {
     /// drainer label from its own type keys and the target label with
     /// `UseDisplayIncome=no`, which keeps the drainer's House as the filter
     /// owner while anchoring at the drained building's GetCoords.
-    #[cfg(feature = "phobos")]
     #[test]
     fn drain_money_labels_use_the_drain_keys_and_the_firer_owner_on_target() {
         use crate::rules::phobos_shields::AffectedHouse;
@@ -2016,7 +2010,6 @@ mod tests {
     /// (`Ext/Techno/Hooks.cpp:213-219`): the label's House filter and offset
     /// come from the drained building's type, falling back to the
     /// `[AudioVisual]` globals, and the anchor object's House filters it.
-    #[cfg(feature = "phobos")]
     #[test]
     fn drain_target_label_takes_the_building_display_income_house_and_offset() {
         use crate::rules::phobos_shields::AffectedHouse;
@@ -2095,7 +2088,6 @@ mod tests {
     /// `Ext/Techno/Hooks.cpp:185-188`: a negative `DrainMoneyAmount` makes the
     /// drainer pay the drained building, bounded by the drainer's available
     /// money so the transfer can take it to zero but not below.
-    #[cfg(feature = "phobos")]
     #[test]
     fn negative_drain_amount_is_bounded_by_the_drainers_balance() {
         use crate::sim::world::{FrameEffects, TickLane};

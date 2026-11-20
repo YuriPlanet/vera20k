@@ -421,14 +421,12 @@ fn a_unit_owns_one_bolt_whose_source_follows_it() {
     // the slot test and links every bolt into `TechnoExt::ElectricBolts`.
     #[cfg(not(feature = "phobos"))]
     assert_eq!(owners, [Some(owner), None]);
-    #[cfg(feature = "phobos")]
     assert_eq!(owners, [Some(owner), Some(owner)]);
 
     bolts.follow_owners(|_| Some(ProjectileCoord::new(99, 1, 2)));
     let sources: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.from.x).collect();
     #[cfg(not(feature = "phobos"))]
     assert_eq!(sources, [99, 20], "only the owned bolt follows");
-    #[cfg(feature = "phobos")]
     assert_eq!(sources, [99, 99], "every linked bolt follows");
     bolts.follow_owners(|_| Some(ProjectileCoord::new(0, 0, 0)));
     assert_eq!(bolts.live[0].birth.from, ProjectileCoord::new(99, 1, 2));
@@ -474,7 +472,6 @@ fn the_registry_seeds_decay_from_the_birth() {
 /// at `Body.h:720`) and the weapon's `Nullable<bool>`
 /// (`Ext/WeaponType/Body.cpp:132`, constructor unset `Body.h:157`),
 /// consumed at `Ext/EBolt/Hooks.cpp:196-200` (0x6FD4E4).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_ebolt_building_clamp_reads_audio_visual_and_a_weapon_overrides_it() {
     use crate::rules::ini_parser::IniFile;

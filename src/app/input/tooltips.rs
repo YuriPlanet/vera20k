@@ -29,7 +29,6 @@ const ID_TACTICAL_TIP: u32 = 500;
 
 /// Phobos left superweapon sidebar cameo tips, one id per visible slot. Kept
 /// clear of the right sidebar's cameo range.
-#[cfg(feature = "phobos")]
 pub(crate) const SW_SIDEBAR_TIP_ID_BASE: u32 = 2000;
 
 /// CSF label carrying the cameo tooltip money format. Retail English value is
@@ -657,7 +656,6 @@ fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) ->
 /// the description line last; the stock text never carries it because the
 /// hooks (`0x6A9316`, `0x4AE51E`) return before `HelpText_*` when
 /// `ExtendedToolTips` is off.
-#[cfg(feature = "phobos")]
 fn ui_description(state: &AppState, label: Option<&str>) -> Option<String> {
     if !state.match_state.match_presentation.tool_tip_descriptions {
         return None;
@@ -666,7 +664,6 @@ fn ui_description(state: &AppState, label: Option<&str>) -> Option<String> {
 }
 
 /// Phobos `PhobosToolTip::TickTimeToSeconds` (`Misc/PhobosToolTip.cpp:115-134`).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct TooltipClock {
     /// `[Phobos] RealTimeTimers=`.
@@ -681,7 +678,6 @@ struct TooltipClock {
     frame_rate: f64,
 }
 
-#[cfg(feature = "phobos")]
 impl TooltipClock {
     fn for_state(state: &AppState, sim: &crate::sim::world::Simulation) -> Self {
         let presentation = &state.match_state.match_presentation;
@@ -699,7 +695,6 @@ impl TooltipClock {
 /// measured rate (adaptive, unlimited SP speed, and Phobos' custom game speed,
 /// which VERA does not port) or the speed table's frames per second
 /// (`60 / GameSpeed`). One truncating divide, unlike the tactical timer hook.
-#[cfg(feature = "phobos")]
 fn tooltip_seconds(frames: i32, clock: &TooltipClock) -> i32 {
     if !clock.real_time {
         return frames / 15;
@@ -711,7 +706,6 @@ fn tooltip_seconds(frames: i32, clock: &TooltipClock) -> i32 {
 }
 
 /// `setw(2) << setfill('0')` minutes and seconds (`Misc/PhobosToolTip.cpp:137-142`).
-#[cfg(feature = "phobos")]
 fn tooltip_minutes_seconds(seconds: i32) -> String {
     format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }
@@ -721,7 +715,6 @@ fn tooltip_minutes_seconds(seconds: i32) -> String {
 /// behind `TimeLabel`, then a nonzero power readout behind `PowerLabel` and the
 /// optional description line. The unit arm of `GetPower` still needs the
 /// `UnitPowerDrain` mechanism; only buildings report (`:78-101`).
-#[cfg(feature = "phobos")]
 fn extended_techno_tip(
     ui: &crate::rules::phobos_tooltips_ui::ToolTipsUi,
     power_label: &str,
@@ -753,7 +746,6 @@ fn extended_techno_tip(
 /// The building arm of Phobos' `GetPower` for the local owner
 /// ([`Simulation::cameo_power_delta`]). `None` when the value is zero, which
 /// prints no line, or while the simulation view is unavailable.
-#[cfg(feature = "phobos")]
 fn extended_techno_power(state: &AppState, type_id: &str) -> Option<i32> {
     let view = state.sim_view()?;
     let sim = view.simulation();
@@ -775,7 +767,6 @@ fn extended_techno_power(state: &AppState, type_id: &str) -> Option<i32> {
 /// the UIName, then any of cost, recharge time and shot count that apply,
 /// separated by spaces on one line unless the line was empty, then the
 /// optional description.
-#[cfg(feature = "phobos")]
 fn extended_super_tip(
     ui: &crate::rules::phobos_tooltips_ui::ToolTipsUi,
     name: &str,
@@ -828,7 +819,6 @@ fn extended_super_tip(
 /// [`tooltip_build_time`](crate::sim::production::tooltip_build_time) for the
 /// local owner, in printed seconds. `54` (the native minimum) stands in while
 /// the simulation view is unavailable.
-#[cfg(feature = "phobos")]
 fn extended_techno_seconds(state: &AppState, type_id: &str) -> i32 {
     let Some(view) = state.sim_view() else {
         return 54 / 15;
@@ -852,7 +842,6 @@ fn extended_techno_seconds(state: &AppState, type_id: &str) -> i32 {
 
 /// The super tooltip's recharge seconds and `SW.Shots` pair for the local
 /// owner ([`super_tooltip_facts`](crate::sim::superweapon::super_tooltip_facts)).
-#[cfg(feature = "phobos")]
 fn extended_super_facts(state: &AppState, section: &str) -> (i32, Option<(i32, i32)>) {
     let Some(view) = state.sim_view() else {
         return (0, None);
@@ -878,7 +867,6 @@ fn extended_super_facts(state: &AppState, section: &str) -> (i32, Option<(i32, i
 }
 
 /// The `!empty()` arm: a resolved description appends as the last line.
-#[cfg(feature = "phobos")]
 fn append_ui_description(tip: String, text: Option<&str>) -> String {
     match text {
         Some(text) if !text.is_empty() => format!("{tip}\n{text}"),
@@ -1024,7 +1012,6 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                     // `ExtendedToolTips` switches the whole cameo tip to the
                     // Phobos text (`Misc/PhobosToolTip.cpp:19-21`); the stock
                     // text never carries the description.
-                    #[cfg(feature = "phobos")]
                     let tip = if state.process_assets.phobos_tooltips_ui.extended_tooltips {
                         let section = item.super_weapon_section.as_deref().unwrap_or_default();
                         let (seconds, shots) = extended_super_facts(state, section);
@@ -1058,7 +1045,6 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         &item.display_name,
                         item.cost.map(i64::from),
                     );
-                    #[cfg(feature = "phobos")]
                     let tip = if state.process_assets.phobos_tooltips_ui.extended_tooltips {
                         match item.cost {
                             Some(cost) => {
@@ -1113,7 +1099,6 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     }
     // Phobos left superweapon sidebar: `SWButtonClass` shows the same super
     // weapon name/cost tip as the right cameo.
-    #[cfg(feature = "phobos")]
     {
         let sw = &state.match_state.match_presentation.sw_sidebar;
         if sw.ui.enabled && sw.expanded {
@@ -1181,7 +1166,6 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
 /// alpha (`FillRectTrans`'s 0..100 percent). The blur radius is read for
 /// parity; the `ToolTipBlur` client switch's blur pass is a residual.
 fn tooltip_background(rules: &crate::rules::ruleset::RuleSet, side: i32) -> ([f32; 3], f32) {
-    #[cfg(feature = "phobos")]
     {
         let globals = &rules.phobos_globals;
         let (side_color, side_opacity, _side_blur) = rules.side_tooltip_background(side);
@@ -1198,11 +1182,6 @@ fn tooltip_background(rules: &crate::rules::ruleset::RuleSet, side: i32) -> ([f3
             color.map(|channel| f32::from(channel) / 255.0),
             opacity as f32 / 100.0,
         )
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, side);
-        ([0.0; 3], 1.0)
     }
 }
 
@@ -1240,17 +1219,11 @@ pub(crate) fn build_tooltip_instances(
     let fill = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| tooltip_background(&runtime.resources.rules, current_sidebar_side(state)))
         // Without a live Rules the stock opaque black stays.
         .unwrap_or(([0.0; 3], 1.0));
-    #[cfg(feature = "phobos")]
     let cameo = cameo_tip_draw(state, tip.id);
-    #[cfg(not(feature = "phobos"))]
-    let cameo = {
-        let _ = tip.id;
-        None
-    };
     tooltip_quads(
         &state.renderer.bit_font,
         &tip.text,
@@ -1314,7 +1287,6 @@ pub(crate) enum TipAnchor {
 /// Phobos `CCToolTip_Draw2_SetMaxWidth @ 0x478EF8` and the padding hook
 /// `0x479029`: a positive `MaxWidth` replaces the wrap limit and reserves five
 /// pixels so the text stops short of the border; zero keeps the view width.
-#[cfg(feature = "phobos")]
 fn cameo_wrap_width(max_width: i32, view_width: u32) -> u32 {
     if max_width > 0 {
         (max_width - 5).max(1) as u32
@@ -1324,7 +1296,6 @@ fn cameo_wrap_width(max_width: i32, view_width: u32) -> u32 {
 }
 
 /// The cameo draw overrides for tip id `id`, or `None` for every other tip.
-#[cfg(feature = "phobos")]
 fn cameo_tip_draw(state: &AppState, id: u32) -> Option<CameoTipDraw> {
     let in_cameo = (CAMEO_TIP_ID_BASE..CAMEO_TIP_ID_BASE + 1000).contains(&id)
         || (id >= SW_SIDEBAR_TIP_ID_BASE && id < SW_SIDEBAR_TIP_ID_BASE + 1000);
@@ -2614,7 +2585,6 @@ mod tests {
     /// reader keeps the 0x20-byte CSF label only when present, and the tip's
     /// `!empty()` arm appends the resolved text as the last line
     /// (`Misc/PhobosToolTip.cpp:22-32,150,205`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn ui_description_reads_the_label_and_appends_the_last_line() {
         use crate::rules::ini_parser::IniFile;
@@ -2654,7 +2624,6 @@ mod tests {
     /// (`Misc/PhobosToolTip.cpp:420-443`): the fill is the resolved
     /// `[AudioVisual]` `ToolTip.Background.*` values — the constructor's
     /// black at 100 is the stock opaque fill — and a side override wins.
-    #[cfg(feature = "phobos")]
     #[test]
     fn tooltip_background_resolves_globals_and_side_overrides() {
         use crate::rules::ini_parser::IniFile;
@@ -2698,7 +2667,6 @@ ToolTip.Background.Opacity={opacity}
     /// Phobos `PhobosToolTip::TickTimeToSeconds` (`Misc/PhobosToolTip.cpp:115-134`):
     /// stock divides by 15; `RealTimeTimers` divides by the measured rate when
     /// adaptive or at GameSpeed 0, else by the speed table's frames per second.
-    #[cfg(feature = "phobos")]
     #[test]
     fn tooltip_seconds_follow_the_phobos_tooltip_divisors() {
         let clock = |real_time, adaptive, game_speed, frame_rate| TooltipClock {
@@ -2724,7 +2692,6 @@ ToolTip.Background.Opacity={opacity}
     /// `PhobosToolTip::HelpText_Techno` (`Misc/PhobosToolTip.cpp:130-153`): the
     /// cost and the build time share one line under the name; a negative cost
     /// takes the native `+` prefix, and the description lands last.
-    #[cfg(feature = "phobos")]
     #[test]
     fn extended_techno_tip_prints_cost_time_and_the_description() {
         let ui = crate::rules::phobos_tooltips_ui::ToolTipsUi::default();
@@ -2758,7 +2725,6 @@ ToolTip.Background.Opacity={opacity}
     /// `PhobosToolTip::HelpText_Super` (`Misc/PhobosToolTip.cpp:155-215`): cost,
     /// recharge and shots join with spaces once the name line broke, and the
     /// `SWShotsFormat` is a CSF-format string, not a Rust template.
-    #[cfg(feature = "phobos")]
     #[test]
     fn extended_super_tip_joins_cost_time_and_shots() {
         let ui = crate::rules::phobos_tooltips_ui::ToolTipsUi::default();
@@ -2800,6 +2766,8 @@ ToolTip.Background.Opacity={opacity}
             [0.0; 2],
             fill(),
             None,
+            false,
+            crate::ui::field_layout::TooltipPlace::default(),
         );
         let constrained = tooltip_quads(
             &font,
@@ -2813,6 +2781,8 @@ ToolTip.Background.Opacity={opacity}
                 wrap_width: 40,
                 anchor: None,
             }),
+            false,
+            crate::ui::field_layout::TooltipPlace::default(),
         );
         assert!(
             unconstrained.1[0].size[0] > constrained.1[0].size[0],
@@ -2831,6 +2801,8 @@ ToolTip.Background.Opacity={opacity}
                 wrap_width: 1024,
                 anchor: Some(TipAnchor::Sidebar { left: 856.0 }),
             }),
+            false,
+            crate::ui::field_layout::TooltipPlace::default(),
         );
         let box_w = anchored.1[0].size[0];
         assert_eq!(anchored.1[0].position, [856.0 - box_w - 2.0, 116.0 - 40.0]);
@@ -2850,6 +2822,8 @@ ToolTip.Background.Opacity={opacity}
                     top: 300.0,
                 }),
             }),
+            false,
+            crate::ui::field_layout::TooltipPlace::default(),
         );
         assert_eq!(button.1[0].position, [202.0, 303.0]);
     }
@@ -2867,6 +2841,8 @@ ToolTip.Background.Opacity={opacity}
             [0.0, 0.0],
             Some(([0.25, 0.5, 0.75], 0.4)),
             None,
+            false,
+            crate::ui::field_layout::TooltipPlace::default(),
         );
         assert_eq!(fill[0].tint, [0.25, 0.5, 0.75]);
         assert_eq!(fill[0].alpha, 0.4);
@@ -2874,7 +2850,6 @@ ToolTip.Background.Opacity={opacity}
 
     /// Phobos `MaxWidth` reserves five pixels for the border (`0x479029`);
     /// zero keeps the view width.
-    #[cfg(feature = "phobos")]
     #[test]
     fn cameo_max_width_reserves_the_five_pixel_padding() {
         assert_eq!(cameo_wrap_width(200, 1024), 195);

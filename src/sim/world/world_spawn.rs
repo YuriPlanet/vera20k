@@ -382,7 +382,6 @@ impl Simulation {
         // PostMapInit68691C clears that context for starting-unit callbacks,
         // which use the separate runtime spawn path. This projection retains
         // the same admission context through all constructor/Unlimbo callbacks.
-        #[cfg(feature = "phobos")]
         self.begin_phobos_map_objects();
         let result = self.with_object_placement_scope(|sim| {
             let mut count: u32 = 0;
@@ -597,7 +596,6 @@ impl Simulation {
                 );
                 // TechnoClass::Init (hook 0x6F42F7) runs before the map
                 // readers below (`BuildingClass::ReadFromINI 0x0044FB5B`).
-                #[cfg(feature = "phobos")]
                 sim.phobos_initialize_state(
                     &mut ge,
                     authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules),
@@ -615,7 +613,6 @@ impl Simulation {
                     // `CreateBuildingFromINIFile` origin; Unlimbo's
                     // AI-repairable grant skips these preplaced structures
                     // (`Ext/Building/Hooks.cpp:321-323`).
-                    #[cfg(feature = "phobos")]
                     ge.set_created_from_map_file(true);
                 }
                 // The map readers apply optional signed percentages after the
@@ -711,7 +708,6 @@ impl Simulation {
             log::info!("Spawned {} entities", count);
             Ok(count)
         });
-        #[cfg(feature = "phobos")]
         self.finish_phobos_map_objects();
         result
     }
@@ -2014,7 +2010,6 @@ impl Simulation {
         substrate.entities.insert(ge);
         // Phobos TechnoExt::InitializeState, hook 0x006F42F7: every Foot
         // requests the owner's existing tech-tree tail for Aux/NegTechnos.
-        #[cfg(feature = "phobos")]
         if let Some(entity) = substrate.entities.get(stable_id)
             && entity.category().is_foot()
         {
@@ -2218,7 +2213,6 @@ impl Simulation {
         // `Ext/Building/Hooks.cpp:1530-1543`): a runtime-created building that
         // is not a LaserFence takes the configured start facing instead of
         // the constructor's byte, ahead of the Unlimbo facing application.
-        #[cfg(feature = "phobos")]
         if !scenario_initialization
             && self
                 .substrate
@@ -2499,7 +2493,6 @@ impl Simulation {
     /// object when the source type's `KeptOnDeploy` (else its global) allows
     /// it. The copied state keeps the timer, kind and tint stage;
     /// `IronTintTimer` restarts, as Phobos copies only those fields.
-    #[cfg(feature = "phobos")]
     fn curtain_to_carry(
         &self,
         from: u64,
@@ -2880,7 +2873,6 @@ impl Simulation {
         // slot initialization. Otherwise full-health animations consume IDs/RNG
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
-        #[cfg(feature = "phobos")]
         {
             destination.invulnerability = self.curtain_to_carry(stable_id, rules);
         }
@@ -3002,10 +2994,7 @@ impl Simulation {
         // `!AISetBaseCenter && NumConYards > 1` skips the whole
         // `0x00739889..0x0073992B` block, including the gather call at
         // `0x00739926`; key on (constructed default) always runs it.
-        #[cfg(feature = "phobos")]
         let base_center_block = rules.phobos_globals.ai_set_base_center || prior_conyards <= 1;
-        #[cfg(not(feature = "phobos"))]
-        let base_center_block = true;
         if recalc_context.is_some() && base_center_block {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
@@ -3042,7 +3031,6 @@ impl Simulation {
         // Phobos `UnitClass_Deploy_Transfer @ 0x739956`: the unit's
         // AttachEffects move to the building before the slave hand-off and
         // the unit's UnInit.
-        #[cfg(feature = "phobos")]
         self.transfer_phobos_attach_effects(stable_id, new_sid, rules);
         // Ares UnitClass_Deploy_Transfer (10048E90 -> 10045A80): the bomb,
         // then the original owner.
@@ -3195,7 +3183,6 @@ impl Simulation {
             );
             return;
         };
-        #[cfg(feature = "phobos")]
         let unit = {
             let mut unit = unit;
             unit.invulnerability = self.curtain_to_carry(sid, rules);
@@ -3289,7 +3276,6 @@ impl Simulation {
         // Phobos `BuildingClass_Mi_Selling_Transfer @ 0x44A03C`: after the
         // building's health/state hand-off and before the slave move and the
         // building's UnInit, its AttachEffects move to the new unit.
-        #[cfg(feature = "phobos")]
         self.transfer_phobos_attach_effects(sid, new_sid, rules);
         // Ares BuildingClass_Mi_Selling_Transfer (10048E90 -> 10045A80).
         if rules.ares() {
@@ -3379,10 +3365,7 @@ impl Simulation {
         // `ShouldShowDeployButton @ 0x0044F614`: a mind-controlled yard (+0x2C0)
         // cannot repack. Phobos `AllowDeployControlledMCV`
         // (`Ext/TAction/Body.cpp:234-242`) lifts that same refusal.
-        #[cfg(feature = "phobos")]
         let allow_controlled = rules.phobos_globals.allow_deploy_controlled_mcv;
-        #[cfg(not(feature = "phobos"))]
-        let allow_controlled = false;
         if entity.mind_control.controller().is_some() && !allow_controlled {
             return false;
         }

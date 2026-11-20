@@ -143,7 +143,6 @@ impl Simulation {
         {
             ge.ares.ares_initial_payload.mark_created();
         }
-        #[cfg(feature = "phobos")]
         self.phobos_initialize_state(&mut ge, Some(obj), rules);
         Ok(Some(ge))
     }
@@ -156,7 +155,6 @@ impl Simulation {
     /// type.Get(global)`) re-arms the construction-anchored targeting timer at
     /// `45 + RandomFactor` — vanilla arms 45 at the constructor
     /// (`0x006F2C33`, `0x006F2C39`, the `PassiveScan::new` anchor).
-    #[cfg(feature = "phobos")]
     pub(in crate::sim) fn phobos_initialize_state(
         &mut self,
         ge: &mut GameEntity,
@@ -196,7 +194,6 @@ impl Simulation {
         // Phobos attaches the type's AttachEffect.AttachTypes at creation,
         // before the object can be observed or act. The list mutably borrows
         // the entity, so the gate's target facts are read first.
-        #[cfg(feature = "phobos")]
         if let Some(obj) = obj {
             let invulnerability = ge.invulnerability.clone();
             crate::sim::attach_effect::attach_initial_effects(
@@ -254,7 +251,6 @@ impl Simulation {
         // Phobos `TechnoClass_Init` (`Hooks.cpp:297..301`): allocate the
         // ShieldClass only when the bound type resolves and its `Strength` is
         // above zero; `SetHP(InitialStrength.Get(Strength))` clamps at creation.
-        #[cfg(feature = "phobos")]
         if let Some(object) = obj
             && let Some(name) = object.shield_type()
             && let Some(ty) = rules.shield_type(name)

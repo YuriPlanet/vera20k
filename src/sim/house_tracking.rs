@@ -145,12 +145,10 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
-#[cfg(feature = "phobos")]
 mod phobos;
 #[cfg(all(test, tests_sim_h_o, feature = "phobos"))]
 #[path = "house_tracking/phobos_harvester_tests.rs"]
 mod phobos_harvester_tests;
-#[cfg(feature = "phobos")]
 pub(crate) use phobos::{PhobosLimboControl, PhobosPlacement};
 
 /// The type facts the counters test, fixed when the Techno is constructed
@@ -280,7 +278,6 @@ impl TrackingFacts {
                 // the category globals supply the default, with Combat
                 // buildings taking `KeepAlive.Defenses`; a type's own
                 // `KeepAlive=` still wins.
-                #[cfg(feature = "phobos")]
                 let default = {
                     let globals = &rules.phobos_globals;
                     let category_default = match category {
@@ -299,9 +296,6 @@ impl TrackingFacts {
                     };
                     category_default && !ty.insignificant && !ty.dont_score
                 };
-                #[cfg(not(feature = "phobos"))]
-                let default =
-                    category == EntityCategory::Structure && !ty.insignificant && !ty.dont_score;
                 ty.keep_alive().unwrap_or(default)
             },
         }
@@ -327,7 +321,6 @@ impl TrackingFacts {
     /// The `!Insignificant && !DontScore` gate Phobos' limbo tracking shares
     /// with the native tracking writers (`AddToLimboTracking` /
     /// `RemoveFromLimboTracking`, `Ext/House/Body.cpp`).
-    #[cfg(feature = "phobos")]
     pub(crate) const fn counts_toward_limbo_tracking(self) -> bool {
         !self.insignificant && !self.dont_score
     }
@@ -408,7 +401,6 @@ impl InfantryTrackingLatches {
     /// Techno `+0x439`, the native `Absorbed` byte: `Add_Tracking` skips its
     /// total arm while it is set, and `InfantryAbsorb` entry/exit sets and
     /// clears it.
-    #[cfg(any(test, feature = "test-support", feature = "phobos"))]
     pub(crate) fn is_absorbed(&self) -> bool {
         self.skip_infantry_total_on_add
     }
@@ -562,13 +554,11 @@ impl ForceValues {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HouseTracking {
     /// Phobos HouseExt's separate limbo counters, in Unit/Infantry/Building/Aircraft order.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_limbo_counts: [BTreeMap<InternedId, i32>; 4],
     /// Phobos `HouseExt::OwnedLimboDeliveredBuildings`: the buildings
     /// LimboDelivery created (alive and on the map, not in limbo) with their
     /// `BuildingExt::LimboID`, in delivery order.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     limbo_delivered: Vec<(u64, i32)>,
     /// `HouseClass+0x2F0`.
@@ -804,18 +794,14 @@ impl HouseTracking {
     /// `GetFactoryCountWithoutNonMFB` (`Ext/House/Body.cpp:505-536`): the raw
     /// counter minus its excluded part, raised to zero.
     pub(crate) const fn factory_count(&self, slot: FactorySlot) -> i32 {
-        #[cfg(feature = "phobos")]
         {
             let index = slot as usize;
             let count = self.factories[index].wrapping_sub(self.non_mfb_factories[index]);
             if count < 0 { 0 } else { count }
         }
-        #[cfg(not(feature = "phobos"))]
-        self.factories[slot as usize]
     }
 
     /// The excluded part of the factory counters, for the world hash.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn non_mfb_factories(&self) -> [i32; 5] {
         self.non_mfb_factories
     }
@@ -878,7 +864,6 @@ impl HouseTracking {
     /// the gatherer count joined it (schema `HouseDefeatTracking`).
     pub(crate) fn hash_defeat_counters(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        #[cfg(feature = "phobos")]
         {
             b"phobos-house-limbo-v1".hash(hasher);
             self.phobos_limbo_counts.hash(hasher);
@@ -973,7 +958,6 @@ impl HouseTracking {
     /// `Ext/House/Hooks.cpp:34-58`): each owned and present Infantry, Unit
     /// and Aircraft type adds `Power * count` to output when positive, else
     /// to drain.
-    #[cfg(feature = "phobos")]
     pub(crate) fn add_unit_power_types(
         &self,
         produced: &mut i32,

@@ -151,7 +151,6 @@ impl Simulation {
         };
         let (capacity, refinery) = (object.storage, object.refinery);
         // 0x00450DAA jumps past the storage-tier arm for a keyed refinery.
-        #[cfg(feature = "phobos")]
         let refinery = refinery && !self.refinery_uses_normal_active_anim(id, rules);
         // The type's ART resolved from its own ID, which names it as the
         // entity's type reference does.
@@ -362,7 +361,6 @@ mod tests {
         assert_eq!(faults, 120);
     }
 
-    #[cfg(feature = "phobos")]
     fn phobos_refinery_rules(use_normal: bool) -> RuleSet {
         let ini = IniFile::from_str(
             "[BuildingTypes]\n0=B\n[B]\nStrength=100\nStorage=1000\nRefinery=true\n\
@@ -385,7 +383,6 @@ mod tests {
         rules
     }
 
-    #[cfg(feature = "phobos")]
     fn phobos_refinery_entity(sim: &mut Simulation, capacity_amount: f32) -> u64 {
         let id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default_of_category(
@@ -413,7 +410,6 @@ mod tests {
     /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/Building/Hooks.Refinery.cpp:63`):
     /// a set key sends `0x00445FE4` to the normal opening path, so the storage
     /// tier stays unwritten and slots 3..6/18 allocate normally.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_refinery_use_normal_active_anim_skips_the_place_storage_arm() {
         for use_normal in [false, true] {
@@ -447,7 +443,6 @@ mod tests {
     /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/Building/Hooks.Refinery.cpp:70`):
     /// a set key makes `0x00450DAA` jump past the tier comparison, so storage
     /// changes allocate no anim.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_refinery_use_normal_active_anim_skips_the_update_tier_arm() {
         for use_normal in [false, true] {

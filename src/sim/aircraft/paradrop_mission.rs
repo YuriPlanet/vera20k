@@ -48,23 +48,16 @@ fn overfly_delay(
     plane: &crate::rules::object_type::ObjectType,
     carrying: bool,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     if carrying {
         return plane
             .phobos_paradrop_delay
             .unwrap_or(rules.phobos_globals.paradrop_delay);
     }
-    #[cfg(feature = "phobos")]
     {
         return end_delay(
             plane.phobos_paradrop_end_delay,
             rules.phobos_globals.paradrop_end_delay,
         );
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, plane, carrying);
-        OVERFLY_FRAMES
     }
 }
 
@@ -187,7 +180,6 @@ pub(super) fn overfly(
 
 /// Phobos `ParadropEndDelay.Get(RulesExt::Global()->ParadropEndDelay)` with
 /// the negative special case (`Ext/Aircraft/Hooks.cpp:1278-1282`).
-#[cfg(feature = "phobos")]
 pub(crate) fn paradrop_end_delay(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
     let typed = sim
         .substrate
@@ -200,7 +192,6 @@ pub(crate) fn paradrop_end_delay(sim: &Simulation, id: u64, rules: &RuleSet) -> 
 
 /// `ParadropEndDelay`'s negative special case, shared by the overfly return
 /// and the test-facing reader.
-#[cfg(feature = "phobos")]
 fn end_delay(typed: Option<i32>, global: i32) -> i32 {
     let delay = typed.unwrap_or(global);
     if delay < 0 { i32::MAX } else { delay }

@@ -320,6 +320,8 @@ pub struct ShpVehicleTurret {
     pub start_frame: u16,
     /// Facing frames in the block: `SHP_TURRET_FACING_FRAMES`.
     pub facings: u16,
+    /// Frames in the turret block, for the atlas' turret page.
+    pub frame_count: u16,
 }
 
 /// Rules-owned divisors consumed by the shared Foot body counter.

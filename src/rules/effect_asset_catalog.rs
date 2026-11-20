@@ -360,7 +360,6 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // Phobos `TerrainTypeExt::PlayDestroyEffects` (`Ext/TerrainType/Body.cpp:20`)
     // constructs one random `DestroyAnim=` type through AnimClass421EA0 when a
     // crumbling terrain reaches Frames/2 (`Ext/TerrainType/Hooks.cpp:88-91`).
-    #[cfg(feature = "phobos")]
     for terrain in rules.terrain_object_types.values() {
         for name in &terrain.destroy_anim {
             insert(name);
@@ -407,7 +406,6 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         if let Some(name) = &object.wake {
             insert(name);
         }
-        #[cfg(feature = "phobos")]
         for name in [&object.phobos_wake_grapple, &object.phobos_wake_sinking] {
             if let Some(name) = name {
                 insert(name);

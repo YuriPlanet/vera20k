@@ -115,10 +115,6 @@ enum PoseTiltKey {
     Shadow {
         body_offset: [i32; 2],
         parts: Vec<ShadowPartKey>,
-        /// The Phobos `JumpjetTilt` roll/pitch the shadow inherits, bit-keyed;
-        /// `None` keeps the stock stable stencil. A tilted shadow must not
-        /// reuse an untilted frame-local slot.
-        tilt: Option<[u32; 2]>,
     },
 }
 
@@ -185,42 +181,6 @@ fn image_model<'a>(
             model: UnitModel::load(asset_manager, image, None),
             poses: BTreeMap::new(),
         })
-}
-
-/// The `JumpjetTilt` angles a shadow inherits from the body parts it masks,
-/// bit-keyed so an equal pose reuses one frame slot.
-fn shadow_tilt_of(parts: &[crate::render::unit_atlas::UnitShadowPart]) -> Option<[u32; 2]> {
-    match parts.iter().find_map(|part| part.tilt) {
-        Some(PoseTilt::JumpjetTilt(angles)) => Some(angles.map(f32::to_bits)),
-        Some(_) => unreachable!("the shadow only inherits the JumpjetTilt arm"),
-        None => None,
-    }
-}
-
-/// The frame-local identity of one shadow request: the masked pieces (none
-/// when it is drawn unmasked), the mask displacement and the inherited tilt.
-/// `begin_frame` clears it before any atlas or pose-page region can be reused.
-fn shadow_pose_key(
-    parts: &[crate::render::unit_atlas::UnitShadowPart],
-    body_offset: [i32; 2],
-    tilt: Option<[u32; 2]>,
-) -> PoseTiltKey {
-    PoseTiltKey::Shadow {
-        body_offset,
-        parts: parts
-            .iter()
-            .map(|p| {
-                (
-                    p.posed,
-                    p.entry.page,
-                    p.entry.uv_origin.map(f32::to_bits),
-                    p.entry.pixel_size.map(f32::to_bits),
-                    p.point,
-                )
-            })
-            .collect(),
-        tilt,
-    }
 }
 
 impl VxlPoseFrameCache {
@@ -313,8 +273,22 @@ impl VxlPoseFrameCache {
         body_offset: [i32; 2],
         parts: &[crate::render::unit_atlas::UnitShadowPart],
     ) -> Option<UnitSpriteEntry> {
-        let tilt_key = shadow_tilt_of(parts);
-        let pose_key = (shadow_pose_key(parts, body_offset, tilt_key), false);
+        let pose_key = PoseTiltKey::Shadow {
+            body_offset,
+            parts: parts
+                .iter()
+                .map(|p| {
+                    (
+                        p.posed,
+                        p.entry.page,
+                        p.entry.uv_origin.map(f32::to_bits),
+                        p.entry.pixel_size.map(f32::to_bits),
+                        p.point,
+                    )
+                })
+                .collect(),
+        };
+        let pose_key = (pose_key, false);
         if let Some(entry) = self
             .unit_poses
             .get(key)
@@ -322,70 +296,9 @@ impl VxlPoseFrameCache {
         {
             return Some(*entry);
         }
-        let stencil = atlas.baked_shadow_stencil(key)?;
-        let sprite = atlas.mask_stencil(key, body_offset, &stencil, |body| {
+        let sprite = atlas.masked_shadow(key, body_offset, |body| {
             self.stamp_shadow_parts(atlas, parts, body)
         })?;
-        self.place_shadow(key, pose_key, sprite)
-    }
-
-    /// A tilted shadow's frame-local stencil. Phobos writes the airborne
-    /// `JumpjetTilt` roll/pitch into `shadowMatrix` and invalidates
-    /// `vxlIndexKey` (`Ext/TechnoType/Hooks.MatrixOp.cpp:768-773`), so native
-    /// draws that frame from a fresh stencil raster instead of the baked
-    /// atlas key; `Shadow_Point` still anchors it (`:726-727`). `mask` is the
-    /// body-mask displacement: `None` is the high-flight stencil the caller
-    /// draws unmasked, which takes the same re-raster path.
-    pub(crate) fn render_tilted_unit_shadow(
-        &mut self,
-        asset_manager: &AssetManager,
-        rules: Option<&RuleSet>,
-        atlas: &crate::render::unit_atlas::UnitAtlas,
-        key: &UnitSpriteKey,
-        tilt: PoseTilt,
-        mask: Option<[i32; 2]>,
-        parts: &[crate::render::unit_atlas::UnitShadowPart],
-    ) -> Option<UnitSpriteEntry> {
-        let PoseTilt::JumpjetTilt(angles) = tilt else {
-            unreachable!("the shadow only inherits the JumpjetTilt arm");
-        };
-        let tilt_key = Some(angles.map(f32::to_bits));
-        let body_offset = mask.unwrap_or([0, 0]);
-        let pose_key = (shadow_pose_key(parts, body_offset, tilt_key), false);
-        if let Some(entry) = self
-            .unit_poses
-            .get(key)
-            .and_then(|poses| poses.get(&pose_key))
-        {
-            return Some(*entry);
-        }
-        let stencil = self
-            .models
-            .entry(key.type_id.clone())
-            .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
-            .as_ref()?
-            .shadow_stencil(
-                key,
-                Some(crate::render::vxl_raster::BodyTilt::JumpjetTilt(angles)),
-            )?;
-        let sprite = match mask.filter(|_| !parts.is_empty()) {
-            Some(body_offset) => atlas.mask_stencil(key, body_offset, &stencil, |body| {
-                self.stamp_shadow_parts(atlas, parts, body)
-            })?,
-            None => stencil.sprite,
-        };
-        self.place_shadow(key, pose_key, sprite)
-    }
-
-    /// Place a frame-local shadow image on this frame's page and reuse an
-    /// equal pose within it. `begin_frame` clears the identity before a page
-    /// region can be reused.
-    fn place_shadow(
-        &mut self,
-        key: &UnitSpriteKey,
-        pose_key: (PoseTiltKey, bool),
-        sprite: VxlSprite,
-    ) -> Option<UnitSpriteEntry> {
         let bounds = Some([
             sprite.offset_x as i32,
             sprite.offset_y as i32,

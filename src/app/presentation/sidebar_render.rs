@@ -84,10 +84,14 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
         return;
     }
     let credits = counter_credits(sim, &owner_name);
+    let (max_step, smooth) = {
+        let ui = &state.match_state.match_presentation.sidebar_indicators;
+        (ui.credits_max_step, ui.credits_smooth)
+    };
     let projection = &mut state.match_state.match_presentation.sidebar_projection;
     let mut last_step = None;
     for _ in 0..visits {
-        let Some(step) = projection.advance_credits(&owner_name, credits) else {
+        let Some(step) = projection.advance_credits(&owner_name, credits, max_step, smooth) else {
             break;
         };
         last_step = Some(step);
@@ -162,13 +166,10 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
     // VERA-only: a map picture is taken with the original interface, whose
     // battlefield its tiles are cut for.
     let map_picture = state.platform.capture_presentation.map_picture;
-    #[cfg(feature = "phobos")]
     let gdi_positions = state.rules().map_or(
         theme == crate::render::sidebar_chrome::SidebarTheme::Allied,
         |rules| rules.side_gdi_positions(current_sidebar_side(state)),
     );
-    #[cfg(not(feature = "phobos"))]
-    let gdi_positions = theme == crate::render::sidebar_chrome::SidebarTheme::Allied;
     let mut spec =
         crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
     if let Some(atlas) = current_sidebar_chrome(state) {
@@ -364,9 +365,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
     // Phobos adds a superweapon to the left sidebar first and skips its right
     // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
-    #[cfg(feature = "phobos")]
     let sw_plan = crate::app::presentation::sw_sidebar::plan(state, owner, &inputs.sw_views);
-    #[cfg(feature = "phobos")]
     let right_sw_views: Vec<crate::sim::superweapon::SuperWeaponView> = {
         let left: std::collections::HashSet<&str> = sw_plan
             .1
@@ -380,8 +379,6 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .cloned()
             .collect()
     };
-    #[cfg(not(feature = "phobos"))]
-    let right_sw_views = inputs.sw_views.clone();
     let cameos = state
         .match_state
         .match_presentation
@@ -530,7 +527,6 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         }
         projection.replace_built_view(view, view_inputs);
     }
-    #[cfg(feature = "phobos")]
     {
         let sw = &mut state.match_state.match_presentation.sw_sidebar;
         sw.layout = sw_plan.0;
@@ -771,7 +767,6 @@ fn shows_alt_cameo(
     }
     if rules.ares() {
         if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
-            #[cfg(feature = "phobos")]
             return undeploying_building_is_veteran(house, obj, rules, country);
             #[cfg(not(feature = "phobos"))]
             return false;
@@ -824,6 +819,29 @@ pub(crate) fn is_cursor_over_radar_gadget(state: &AppState) -> bool {
         .sidebar_layout_spec
         .shows(crate::ui::sidebar::SidebarPart::Radar)
         && active_minimap_screen_rect(state).contains(x, y)
+}
+
+/// that undeploys answers with its unit, so a `Factory=UnitType` infiltration
+/// and the unit's `VeteranUnits` entry promote the building too. Ares instead
+/// compared the BuildingType pointer against the unit list, which an INI list
+/// can never match. VERA keeps one ground veteran flag, so the naval variant
+/// Phobos reads separately cannot differ here.
+fn undeploying_building_is_veteran(
+    house: &crate::sim::house_state::HouseState,
+    obj: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    country: &str,
+) -> bool {
+    if !obj.trainable {
+        return false;
+    }
+    if house.veteran_units() {
+        return true;
+    }
+    obj.undeploys_into
+        .as_deref()
+        .and_then(|unit| rules.object(unit))
+        .is_some_and(|unit| rules.country_starts_veteran(country, unit))
 }
 
 pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
@@ -1016,13 +1034,12 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 /// the sidebar text lane. gamemd's hook runs inside the credits tick, so the
 /// caller is the per-frame pass that also ticks the power bar
 /// (`match_runtime::sim_tick`), not the cameo-driven projection refresh.
-#[cfg(feature = "phobos")]
 pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
     let resolved = (|| {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)?;
         let rules = state.rules()?;
         let owner_name = preferred_local_owner_name(state)?;
@@ -1115,22 +1132,18 @@ pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
 
 /// `Sidebar.*` colours are `ColorStruct` triples; the sidebar text lane takes a
 /// linear tint, which is also what the nullable harvester green falls back to.
-#[cfg(feature = "phobos")]
 fn sidebar_colour(rgb: [u8; 3]) -> [f32; 3] {
     rgb.map(|value| f32::from(value) / 255.0)
 }
 
 /// The hook's own base column for the harvester and weeds branches: `+50`.
-#[cfg(feature = "phobos")]
 const HARVESTER_ANCHOR_X: i32 = 50;
 /// The hook's own base column for the power delta: `0x4A25E0` passes
 /// `DSurface::Sidebar->GetWidth() / 2 - 70`, while the harvester and weeds
 /// branches use `+ 50` and overlap each other by design.
-#[cfg(feature = "phobos")]
 const POWER_DELTA_ANCHOR_X: i32 = -70;
 /// The literal `y = 2` row every indicator branch passes, the same anchor row
 /// as the credits counter.
-#[cfg(feature = "phobos")]
 const INDICATOR_SURFACE_Y: i32 = 2;
 
 /// The harvester-counter branch of the same hook (`Hooks.UI.cpp:111-135`),
@@ -1144,7 +1157,6 @@ const INDICATOR_SURFACE_Y: i32 = 2;
 /// it (`OnlyMaxValue`). The branch opens on `HarvesterCounter.Show`, the
 /// `[Phobos] ShowHarvesterCounter` client switch and a player who has not been
 /// defeated; unlike the power delta it asks nothing about owned buildings.
-#[cfg(feature = "phobos")]
 fn harvester_counter_indicator(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1216,7 +1228,6 @@ fn harvester_counter_indicator(
 /// fallback. A blackout (`HouseClass::PowerBlackoutTimer`, started by spy
 /// infiltration at `House50BC90` and by the force shield) drops the number
 /// entirely and draws `PowerBlackoutLabel` in `ColorGrey`.
-#[cfg(feature = "phobos")]
 fn power_delta_indicator(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1287,7 +1298,6 @@ fn power_delta_indicator(
 /// It prints the bare total with no label (`L"%d"`), takes one nullable colour
 /// falling back to the tooltip tint, and hardcodes `TextPrintType::Center`
 /// rather than reading an alignment key.
-#[cfg(feature = "phobos")]
 fn weeds_counter_indicator(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1324,7 +1334,6 @@ fn weeds_counter_indicator(
 /// naval and then aircraft. The last chain asks for a factory *with* a held
 /// object before falling through; `None` is native's `-1` (no factory, no
 /// strip).
-#[cfg(feature = "phobos")]
 fn producing_progress_columns(
     sim: &crate::sim::world::Simulation,
     owner: crate::sim::intern::InternedId,
@@ -1360,7 +1369,6 @@ fn producing_progress_columns(
 /// completion as a percentage (`hud_boards::producing_progress_label`). The
 /// text lane anchors on the surface midpoint, so the native absolute x is
 /// rebased here.
-#[cfg(feature = "phobos")]
 fn producing_progress_indicators(
     ui: &crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
     side_settings: &crate::rules::phobos_sidebar_indicators::ProducingProgressSideSettings,
@@ -1919,7 +1927,6 @@ mod tests {
     /// Phobos `TechnoTypeExt::CameoIsVeteran`'s fixed building arm: a building
     /// that undeploys answers with its unit, so the war factory infiltration
     /// and the unit's own `VeteranUnits` entry both promote it.
-#[cfg(feature = "phobos")]
     #[test]
     fn a_deployable_building_reads_its_unit_for_the_alternate_cameo() {
         let rules = undeploying_building_rules();

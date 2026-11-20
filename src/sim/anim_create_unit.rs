@@ -275,7 +275,6 @@ impl Simulation {
         //   Jumpjet (`:684-700`) `LocomotionFacing.SetCurrent(DirStruct(facing)`,
         //                        `Move_To(location)` when `inAir`;
         //   other (`:702-706`)   `IsFallingDown` + `OnParachuted`.
-        #[cfg(feature = "phobos")]
         if !settings.always_spawn_on_ground {
             let facts = self.substrate.entities.get(unit).map(|entity| {
                 let fly = entity

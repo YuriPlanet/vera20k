@@ -103,7 +103,6 @@ impl PrismScene {
     fn launch_from(&mut self, source: u64, target: TargetKind) -> u64 {
         self.world.session.set_binary_frame_for_test(100);
         let (target_coords, target_type_ref) = match target {
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(..) => unreachable!("no bullet launch target"),
             TargetKind::Entity(id) => {
                 let target = self.world.substrate.entities.get(id).unwrap();

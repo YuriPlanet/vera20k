@@ -121,36 +121,30 @@ pub struct CombatDamageDefaults {
     /// (`Ext/Rules/Body.cpp:570`, constructor `false`, `Ext/Rules/Body.h:481`,
     /// `:982`): the global fallback of the AnimType
     /// `Damage.DealtByInvoker=` key.
-    #[cfg(feature = "phobos")]
     pub anim_damage_dealt_by_invoker: bool,
     /// Phobos `[CombatDamage] AnimDamage.ApplyFirepowerMult=`
     /// (`Ext/Rules/Body.cpp:571`, constructor `false`, `Ext/Rules/Body.h:482`,
     /// `:983`): the global fallback of the AnimType
     /// `Damage.ApplyFirepowerMult=` key.
-    #[cfg(feature = "phobos")]
     pub anim_damage_apply_firepower_mult: bool,
     /// Phobos `[CombatDamage] ProjectileRange.ApplyModifiers=`
     /// (`Ext/Rules/Body.cpp:650`, `Valueable<bool>` constructed **true** at
     /// `Ext/Rules/Body.h:544,1044`): a `Ranged=` bullet's max range passes
     /// `GetRangeWithModifiers` before its travel budget is spent.
-    #[cfg(feature = "phobos")]
     pub phobos_projectile_range_apply_modifiers: bool,
     /// Phobos `[CombatDamage] Psychedelic.StackingMode=`
     /// (`Ext/Rules/Body.cpp:551`, `Valueable<StackingMode>` with constructor
     /// `Override` at `Ext/Rules/Body.h:462,967`): how a Psychedelic hit
     /// combines its damage with an existing berserk time.
-    #[cfg(feature = "phobos")]
     pub phobos_psychedelic_stacking_mode: crate::rules::phobos_stacking_mode::StackingMode,
     /// Phobos `[CombatDamage] FallingDownDamage=` (`Ext/Rules/Body.cpp:227`,
     /// constructor `1.0`, `Ext/Rules/Body.h:671`): the landing-damage ratio
     /// fallback of the TechnoType `FallingDownDamage=` key.
-    #[cfg(feature = "phobos")]
     pub falling_down_damage: f64,
     /// Phobos `[CombatDamage] FallingDownDamage.AllowEMP=`
     /// (`Ext/Rules/Body.cpp:228`, constructor `true`, `Ext/Rules/Body.h:672`):
     /// `no` lets an EMP-locked unit take the ratio packet instead of the
     /// vanilla full-Health kill on landing.
-    #[cfg(feature = "phobos")]
     pub falling_down_damage_allow_emp: bool,
     /// `TiberiumExplosive=` (`RulesClass+0x17E5`, ReadBool over the current
     /// value at `0x0066CE7E`; constructor false). Stock UnitClass::
@@ -245,23 +239,17 @@ impl CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
-            #[cfg(feature = "phobos")]
             anim_damage_dealt_by_invoker: section.read_bool("AnimDamage.DealtByInvoker", false),
-            #[cfg(feature = "phobos")]
             anim_damage_apply_firepower_mult: section
                 .read_bool("AnimDamage.ApplyFirepowerMult", false),
-            #[cfg(feature = "phobos")]
             phobos_projectile_range_apply_modifiers: section
                 .read_bool("ProjectileRange.ApplyModifiers", true),
-            #[cfg(feature = "phobos")]
             phobos_psychedelic_stacking_mode:
                 crate::rules::phobos_stacking_mode::StackingMode::read_valueable(
                     section,
                     "Psychedelic.StackingMode",
                 ),
-            #[cfg(feature = "phobos")]
             falling_down_damage: section.read_double("FallingDownDamage", 1.0),
-            #[cfg(feature = "phobos")]
             falling_down_damage_allow_emp: section.read_bool("FallingDownDamage.AllowEMP", true),
             tiberium_explosive: crate::rules::ares_switch::ares_way()
                 && section.read_bool("TiberiumExplosive", false),
@@ -306,18 +294,12 @@ impl Default for CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,
-            #[cfg(feature = "phobos")]
             anim_damage_dealt_by_invoker: false,
-            #[cfg(feature = "phobos")]
             anim_damage_apply_firepower_mult: false,
-            #[cfg(feature = "phobos")]
             phobos_projectile_range_apply_modifiers: true,
-            #[cfg(feature = "phobos")]
             phobos_psychedelic_stacking_mode:
                 crate::rules::phobos_stacking_mode::StackingMode::Override,
-            #[cfg(feature = "phobos")]
             falling_down_damage: 1.0,
-            #[cfg(feature = "phobos")]
             falling_down_damage_allow_emp: true,
             tiberium_explosive: false,
             ivan_warhead: None,

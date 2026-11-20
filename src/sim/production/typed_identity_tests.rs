@@ -825,7 +825,6 @@ fn name_only_compatibility_and_shared_creators_keep_their_native_type_families()
 /// Produce one infantry through the typed pipeline and frame until its
 /// source exit places it; the same-house `Cloning=` vat adds one copy.
 /// Returns (source, copy).
-#[cfg(feature = "phobos")]
 fn exit_one_infantry_with_vat(vat_key: &str) -> (SimRuntime, InternedId, u64, u64) {
     let (mut runtime, owner) = world_with(false, true, vat_key);
     let command = produce(&runtime, owner, ObjectCategory::Infantry, "E1", None);
@@ -867,7 +866,6 @@ fn exit_one_infantry_with_vat(vat_key: &str) -> (SimRuntime, InternedId, u64, u6
 /// (`Ext/BuildingType/Body.cpp:196`, default `{1.0}` at `Body.h:169`),
 /// floored by the `(int)` cast. The barracks' own product keeps the stock
 /// full-health exit, with and without the key.
-#[cfg(feature = "phobos")]
 #[test]
 fn initial_cloning_percentage_scales_the_clone_health() {
     // E1 Strength is 125; f32(0.335) widens to 0.33000001311302185..., so
@@ -921,7 +919,6 @@ fn initial_cloning_percentage_scales_the_clone_health() {
 /// divides it by 100, then `Math::clamp((int)(health * percentage), 1,
 /// health)` caps the result at the clone type's Strength. The reachable
 /// sets below are that native formula over each key's integer draw range.
-#[cfg(feature = "phobos")]
 #[test]
 fn initial_cloning_ranges_draw_one_scenario_percentage() {
     // The draw bounds are the native `(int)(X * 100)` / `(int)(Y * 100)`
@@ -965,7 +962,6 @@ fn initial_cloning_ranges_draw_one_scenario_percentage() {
 /// The no-draw spellings — the keyless `{1.0}` default, a single value and
 /// a single-point `min,max` — leave the whole draw sequence identical, so
 /// only the clone's own health differs.
-#[cfg(feature = "phobos")]
 #[test]
 fn initial_cloning_single_value_spellings_draw_nothing() {
     let mut states = Vec::new();
@@ -998,7 +994,6 @@ fn initial_cloning_single_value_spellings_draw_nothing() {
 /// Phobos `Cloning.Powered` (`Ext/Building/Body.cpp:476-486`): a dead,
 /// limboed, warping-out or (default `Powered=yes`) powered-down vat exits no
 /// clone; `Powered=no` restores the vanilla unconditioned exit.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_powered_down_vat_exits_no_clone_unless_powered_is_no() {
     let copies_with_offline_vat = |vat_key: &str| -> usize {

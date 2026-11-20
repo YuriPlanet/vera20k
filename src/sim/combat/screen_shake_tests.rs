@@ -110,7 +110,6 @@ fn warhead_shake_rules_drive_ordered_conditional_main_rng_detonation_updates() {
 /// Phobos `[Warhead] ShakeIsLocal=` (`Ext/WarheadType/Body.cpp:184`) falls
 /// back to `[General] ShakeIsLocal` (`Ext/Rules/Body.cpp:491`), whose
 /// constructor default is `no`; the per-warhead key wins either way.
-#[cfg(feature = "phobos")]
 #[test]
 fn shake_is_local_reads_the_warhead_key_over_the_general_fallback() {
     let mut layers = RulesLayerStack::new(IniFile::from_str(
@@ -149,7 +148,6 @@ fn shake_is_local_reads_the_warhead_key_over_the_general_fallback() {
 }
 
 /// A run without the `[General]` switch keeps every write ordinary.
-#[cfg(feature = "phobos")]
 #[test]
 fn shake_is_local_is_off_by_default() {
     let rules = layered_rules();

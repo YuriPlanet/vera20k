@@ -84,7 +84,6 @@ impl Simulation {
         // (`RadarJammerClass.cpp:10`), plus the House filter and the two type
         // lists its scan applies (`:17-27`). All of them come from the
         // jammer's own type, read before the mutable borrow below.
-        #[cfg(feature = "phobos")]
         let (scan_interval, jam_houses, jam_affect, jam_ignore) = {
             let extras = self
                 .entity_object_type(entity, rules)
@@ -101,8 +100,6 @@ impl Simulation {
                 extras.radar_jam_ignore,
             )
         };
-        #[cfg(not(feature = "phobos"))]
-        let scan_interval = SCAN_INTERVAL;
         let entity = self.substrate.entities.get_mut(id).expect("same jammer");
         let jammer = entity.ares.radar_jam.jammer.get_or_insert_default();
         if frame.wrapping_sub(jammer.last_scan) < scan_interval {
@@ -136,7 +133,6 @@ impl Simulation {
                             .entity_object_type(target, rules)
                             .is_some_and(|object| object.radar || object.spy_sat)
                         && {
-                            #[cfg(feature = "phobos")]
                             {
                                 crate::sim::combat::can_target_house(
                                     jam_houses,
@@ -145,17 +141,6 @@ impl Simulation {
                                     &self.houses,
                                     &self.house_alliances,
                                     &self.interner,
-                                )
-                            }
-                            #[cfg(not(feature = "phobos"))]
-                            {
-                                // IsEligible: the jammer's house is not
-                                // allied with the building's.
-                                !crate::sim::combat::combat_weapon::is_ally_by_object(
-                                    Some(&self.house_alliances),
-                                    &self.interner,
-                                    owner,
-                                    target.owner(),
                                 )
                             }
                         }
@@ -174,7 +159,6 @@ impl Simulation {
             // Phobos adds the two type lists (`RadarJammerClass.cpp:26-27`):
             // an ignored type is never jammed, and a nonempty `Affect=` admits
             // only the types it names.
-            #[cfg(feature = "phobos")]
             let admitted = {
                 let type_id = self
                     .substrate
@@ -186,8 +170,6 @@ impl Simulation {
                     |names: &[String]| names.iter().any(|name| name.eq_ignore_ascii_case(&type_id));
                 !listed(&jam_ignore) && (jam_affect.is_empty() || listed(&jam_affect))
             };
-            #[cfg(not(feature = "phobos"))]
-            let admitted = true;
             if in_range && admitted {
                 self.jam(id, building);
             } else {

@@ -67,7 +67,6 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, type_name: &str, rx: u16, ry: u1
 /// follow the drawn class with only the pair component from the arm
 /// (`Body.Visuals.cpp:91-114`), the bracket delta shifts Y, and the Building
 /// arm stays a residual.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_self_heal_arm_follows_gain_type() {
     let (mut sim, rules) = scene("");
@@ -133,7 +132,6 @@ fn the_self_heal_arm_follows_gain_type() {
 /// (`Ext/Rules/Body.cpp:154-159`): the infantry arm reads the Infantry pair's
 /// X, the units arm the Units pair's Y, and the offsets replace the native
 /// draw offset before the anchor and bracket-delta shift.
-#[cfg(feature = "phobos")]
 #[test]
 fn authored_self_heal_frames_and_offsets_apply() {
     let (mut sim, rules) = scene(
@@ -172,7 +170,6 @@ fn authored_self_heal_frames_and_offsets_apply() {
 /// (`Ext/Rules/Body.cpp:111-115`) widen or close the marker's house scan; the
 /// damaged pulse divides the session frame by the arm period and selects the
 /// darkening material while the remainder is at most 5 and Health is low.
-#[cfg(feature = "phobos")]
 #[test]
 fn house_sources_and_the_damage_pulse_gate_the_marker() {
     let (mut sim, rules) = scene("[General]\nGainSelfHealFromAllies=yes\n");
@@ -243,7 +240,7 @@ fn house_sources_and_the_damage_pulse_gate_the_marker() {
         "a healthy object keeps the ordinary material"
     );
     sim.entities_mut_for_test()
-        .get_mut(mtnk)
+        .get_mut_for_test(mtnk)
         .unwrap()
         .health
         .set_for_test(50);
@@ -254,7 +251,6 @@ fn house_sources_and_the_damage_pulse_gate_the_marker() {
     );
 }
 
-#[cfg(feature = "phobos")]
 fn grant_at(
     sim: &mut Simulation,
     owner: crate::sim::intern::InternedId,

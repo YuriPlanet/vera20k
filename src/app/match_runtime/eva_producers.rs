@@ -158,7 +158,6 @@ pub(crate) fn resolved_superweapon_eva<'a>(
 /// `IsAlliedWith(CurrentPlayer)` the rest of the app reads. A client with no
 /// local player has no column to pick: the dispatcher drops the fact first,
 /// and this answers the enemy column for `None` so it stays total.
-#[cfg(feature = "phobos")]
 pub(crate) fn activated_audience(
     launcher_owned_by_current_player: bool,
     launcher_name: &str,
@@ -472,7 +471,6 @@ mod tests {
     /// (`Ext/SWType/FireSuperWeapon.cpp:495-499`, `:516-520`): the Owner arm
     /// is the sim's `IsControlledByCurrentPlayer`, then the launching House's
     /// own `IsAlliedWith(CurrentPlayer)` bitfield, else the enemy column.
-    #[cfg(feature = "phobos")]
     #[test]
     fn activated_column_follows_the_launchers_relation_to_the_local_player() {
         use crate::map::houses::HouseAllianceMap;

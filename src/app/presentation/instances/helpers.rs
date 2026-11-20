@@ -13,6 +13,7 @@ use crate::map::terrain;
 use crate::render::batch::DepthAxis;
 use crate::render::native_z;
 use crate::sim::components::Position;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 
@@ -63,7 +64,6 @@ fn disguise_owner_visible(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     owner_is_allied: bool,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     if let Some(rules) = rules {
         use crate::rules::phobos_shields::AffectedHouse;
         let flags = rules.phobos_draw_globals().disguise_blinking_visibility;
@@ -1686,7 +1686,6 @@ pub(crate) fn deploy_hides_unit_body(
     if entity.category() != EntityCategory::Unit || !entity.unit_deploying() {
         return false;
     }
-    #[cfg(feature = "phobos")]
     {
         let object = rules.and_then(|rules| rules.object(interner.resolve(entity.type_ref())));
         if object.is_some_and(|object| object.phobos_deploying_anim_keep_unit_visible) {
@@ -1696,8 +1695,6 @@ pub(crate) fn deploy_hides_unit_body(
             return false;
         }
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = (interner, rules);
     true
 }
 

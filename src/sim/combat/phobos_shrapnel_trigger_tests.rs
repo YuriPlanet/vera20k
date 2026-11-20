@@ -36,7 +36,6 @@ fn rules(bullet_keys: &str) -> RuleSet {
 
 /// Default (global `yes`): the failing direct target sends the whole body —
 /// area damage and the shake draw included — to the extras.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_failing_trigger_target_skips_the_body_and_its_shake_draw() {
     let rules = rules("");
@@ -86,7 +85,6 @@ fn a_failing_trigger_target_skips_the_body_and_its_shake_draw() {
 /// `Shrapnel.ObeyWarheadTriggerConditions=no` on the bullet type: the body
 /// runs, so the bystander inside CellSpread takes area damage and the shake
 /// draws advance Main.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_bullet_key_off_runs_the_body_and_its_shake_draw() {
     let rules = rules("Shrapnel.ObeyWarheadTriggerConditions=no\n");

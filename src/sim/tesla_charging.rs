@@ -160,12 +160,9 @@ impl Simulation {
             // Phobos (`Ext/Building/Hooks.cpp:924-930`) also drops a charger
             // whose slot-1 weapon, warhead or `ElectricAssault` is missing;
             // the stock body's compare at 0x44011F tests only the target.
-            #[cfg(feature = "phobos")]
             let level = valid_target
                 .then(|| Self::electric_assault_level(interner, substrate, rules, charger))
                 .flatten();
-            #[cfg(not(feature = "phobos"))]
-            let level = valid_target.then_some(1_i32);
             match level {
                 Some(level) => over_power = over_power.wrapping_add(level),
                 None => {
@@ -181,19 +178,12 @@ impl Simulation {
             }
         }
         let building = substrate.entities.get(id).unwrap();
-        #[cfg(feature = "phobos")]
         let object = interner.object_type(building.type_ref(), rules).unwrap();
-        #[cfg(feature = "phobos")]
         let charge = object.overpower_charge_weapon;
-        #[cfg(not(feature = "phobos"))]
-        let charge = 1_i32;
         let overpowered = if charge < 0 {
             false
         } else {
-            #[cfg(feature = "phobos")]
             let keep = object.overpower_keep_online;
-            #[cfg(not(feature = "phobos"))]
-            let keep = 2_i32;
             over_power >= keep.wrapping_add(charge)
                 || (over_power >= charge
                     && building.building_online()
@@ -219,7 +209,6 @@ impl Simulation {
     /// The slot-1 weapon's `ElectricAssaultLevel` when the charger validates for
     /// the overpower sample (`Ext/Building/Hooks.cpp:914-932`): the weapon, its
     /// warhead and `ElectricAssault` must all exist.
-    #[cfg(feature = "phobos")]
     pub(crate) fn electric_assault_level(
         interner: &StringInterner,
         substrate: &ObjectSubstrate,
@@ -244,7 +233,6 @@ impl Simulation {
 
     /// The power gate's laxer sum (`Ext/Building/Hooks.cpp:970-981`): every
     /// slot-1 weapon with a warhead adds its `ElectricAssaultLevel`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn power_charger_level_sum(
         interner: &StringInterner,
         substrate: &ObjectSubstrate,

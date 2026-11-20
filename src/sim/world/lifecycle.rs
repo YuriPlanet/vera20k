@@ -1380,7 +1380,6 @@ impl Simulation {
         // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
         // returns success before it).
         if techno_alive_on_entry {
-            #[cfg(feature = "phobos")]
             self.phobos_tracking_before_unlimbo(stable_id);
             self.house_added_to_game(stable_id, context.rules());
         }
@@ -1903,7 +1902,6 @@ impl Simulation {
             // Vanilla: a campaign building never takes the grant. Phobos
             // admits it through the per-house/global flag, still skipping
             // map-created structures.
-            #[cfg(feature = "phobos")]
             {
                 if entity.created_from_map_file() {
                     return;
@@ -2530,7 +2528,6 @@ impl Simulation {
     /// zones of a type that sets the key. Navigation caches publish the same
     /// result; during an initial load with no installed views the first full
     /// rebuild derives it instead.
-    #[cfg(feature = "phobos")]
     fn republish_destroyable_obstacle_navigation(&mut self, stable_id: u64, rules: &RuleSet) {
         if self.path_grid.is_none() && self.zone_grid.is_none() {
             return;
@@ -2584,7 +2581,6 @@ impl Simulation {
         // PlaceDown removes a buildable Terrain in the origin cell. This is
         // the PlaceDown owner, so the ordinary production reveal and the
         // foundation-clearing trigger path both take it exactly once.
-        #[cfg(feature = "phobos")]
         if let Some(terrain_id) = self.terrain_objects.id_at(current_cell)
             && self
                 .terrain_objects
@@ -2636,7 +2632,6 @@ impl Simulation {
         // Cell Recalc47D2B0 before returning. Keep the derived path view at
         // that boundary too; the marked structures remain its authority.
         self.publish_recalculated_cells(context.rules(), &cells);
-        #[cfg(feature = "phobos")]
         self.republish_destroyable_obstacle_navigation(stable_id, context.rules());
         // BuildingMark43F738 moves its retained animations after PlaceDown
         // publishes the cells, before43F79B begins the smudge-clear scan.
@@ -3027,7 +3022,6 @@ impl Simulation {
         // This projects current marked owners, retaining overlapping or
         // still-marked dying structures; it adds no RNG/timer/detach work.
         self.publish_recalculated_cells(context.rules(), &cells);
-        #[cfg(feature = "phobos")]
         self.republish_destroyable_obstacle_navigation(stable_id, context.rules());
         true
     }
@@ -3060,7 +3054,6 @@ impl Simulation {
         // Phobos `ObjectClass_DropAsBomb_Track` (`0x5F4160`,
         // `Ext/Techno/Hooks.cpp:1656-1670`): track the Techno that starts the
         // fall so the AA auto-target scan can still see it.
-        #[cfg(feature = "phobos")]
         if rules.phobos_globals.falling_down_targeting_fix
             && self
                 .substrate
@@ -3649,7 +3642,6 @@ impl Simulation {
     /// (`0x71BB2C`) it neither restarts the Stage nor plays `CrumblingSound`;
     /// `TerrainClass_AI_Crumbling` (`0x71C812`) clears it while Health is above
     /// zero, so it lasts exactly one AI visit.
-    #[cfg(feature = "phobos")]
     pub(crate) fn terrain_latch_damaged_frame(&mut self, stable_id: u64) {
         self.terrain_objects.set_crumbling(stable_id, true);
         self.register_logic_object(stable_id);
@@ -3659,7 +3651,6 @@ impl Simulation {
     /// gates removal on the object's membership flag, performs the first-match
     /// stable erase, then repairs that flag.
     /// Phobos `LogicClass::Remove` for the damaged-redraw crumble latch.
-    #[cfg(feature = "phobos")]
     pub(crate) fn terrain_remove_from_logic(&mut self, stable_id: u64) {
         self.unregister_logic_object(stable_id);
     }
@@ -3669,7 +3660,6 @@ impl Simulation {
     /// stays alive for its crumble sequence. IsCrumbling and Stage rate 2
     /// (`Start_To_Crumble @ 0x0071C8E0`), Logic membership, then
     /// `CrumblingSound` at the tree's coordinate.
-    #[cfg(feature = "phobos")]
     pub(crate) fn terrain_start_crumble(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some((type_ref, coords)) = self
             .terrain_objects
@@ -3706,7 +3696,6 @@ impl Simulation {
     /// The crumble sequence's end (`TerrainTypeExt::Remove`,
     /// `Ext/TerrainType/Body.cpp:23-33`): UnInit the tree. The AI plays the
     /// destroy effects before calling this.
-    #[cfg(feature = "phobos")]
     pub(crate) fn terrain_crumble_finish(
         &mut self,
         stable_id: u64,
@@ -4586,7 +4575,6 @@ impl Simulation {
         // therefore precedes the hooks inside that body; the Ares extension's
         // relative position is unobserved and kept as the AttachEffect branch
         // had it.
-        #[cfg(feature = "phobos")]
         self.limbo_phobos_attach_effects(
             stable_id,
             context.rules(),
@@ -4645,7 +4633,6 @@ impl Simulation {
                 context.effects(),
             );
             // 6F6BD1: Removed_From_Game, also only on the first Limbo.
-            #[cfg(feature = "phobos")]
             self.phobos_tracking_before_limbo(stable_id);
             self.house_removed_from_game(stable_id, context.rules(), context.effects());
             // Ares BuildingClass_Remove_Academy (hook 0x00445905 ->
@@ -5031,7 +5018,6 @@ impl Simulation {
             // `ExtendedAircraftMissions.FastScramble` takes the RUN_AWAY arm
             // instead of the `Strength * 10` C4 kill, even when it sits within
             // 0x100 of the building.
-            #[cfg(feature = "phobos")]
             let fast_scramble = helipad
                 && self
                     .substrate
@@ -5046,8 +5032,6 @@ impl Simulation {
                     .is_some_and(|object| {
                         rules.extended_aircraft_missions_for(object).fast_scramble
                     });
-            #[cfg(not(feature = "phobos"))]
-            let fast_scramble = false;
             if (far && !helipad) || fast_scramble {
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::BuildingNowDeadRunAway {
@@ -5290,7 +5274,6 @@ impl Simulation {
                 Some(TargetKind::Entity(id)) => name(id),
                 // A Bullet TarCom is cleared by the same pointer-expiry
                 // broadcast when the projectile uninitializes.
-                #[cfg(feature = "phobos")]
                 Some(TargetKind::Bullet(id)) => name(id),
                 _ => {}
             }
@@ -5727,7 +5710,6 @@ impl Simulation {
                 .target()
                 .is_some_and(|target| match target {
                     TargetKind::Entity(id) => id == expired_id,
-                    #[cfg(feature = "phobos")]
                     TargetKind::Bullet(id) => id == expired_id,
                     TargetKind::Cell(..) => false,
                 });
@@ -5856,7 +5838,6 @@ impl Simulation {
                 .target()
                 .is_some_and(|target| match target {
                     TargetKind::Entity(id) => id == expired_id,
-                    #[cfg(feature = "phobos")]
                     TargetKind::Bullet(id) => id == expired_id,
                     TargetKind::Cell(..) => false,
                 });
@@ -7038,7 +7019,6 @@ impl Simulation {
             }
 
             self.run_represented_uninit_pre_hook(stable_id);
-            #[cfg(feature = "phobos")]
             self.phobos_tracking_begin_uninit(stable_id);
             // `ObjectClass::UnInit` kills a Techno's passengers with no attacker
             // (`0x005F660D`).
@@ -7116,7 +7096,6 @@ impl Simulation {
         self.substrate.pending_delete.queue_object(stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
-        #[cfg(feature = "phobos")]
         if kind == ObjectKind::Entity {
             self.phobos_tracking_end_uninit();
         }
@@ -7718,7 +7697,6 @@ impl Simulation {
             }
             Some(ObjectKind::Anim) => {
                 let removed = self.substrate.anims.remove(stable_id);
-                #[cfg(feature = "phobos")]
                 if let Some(anim) = removed.as_ref() {
                     // Phobos `AnimExt::~AnimExt` drops the firing-anim count.
                     self.release_firing_anim_count(anim);

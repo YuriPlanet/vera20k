@@ -1497,21 +1497,16 @@ pub struct PresentationLoadAssets {
     /// The mod's `veraui.ini`, parsed; the match lays the player's own over
     /// it (`presentation::player_layout`).
     pub match_layout_ini: Option<crate::rules::ini_parser::IniFile>,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi,
     /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`, read from the
     /// same file as the superweapon sidebar settings.
-    #[cfg(feature = "phobos")]
     pub center_pause_menu_background: bool,
     /// Phobos `uimd.ini [Sidebar] PowerDelta.*` and the `[ToolTips]` power
     /// labels, read from the same file as the other sidebar settings.
-    #[cfg(feature = "phobos")]
     pub sidebar_indicators: crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
     /// Phobos `uimd.ini [UISettings] ShowBriefingResumeButtonLabel` /
     /// `.StatusLabel`, read from the same UIMD.INI as the sidebar settings.
-    #[cfg(feature = "phobos")]
     pub briefing_dialog: crate::rules::phobos_briefing_ui::BriefingDialogUi,
-    #[cfg(feature = "phobos")]
     pub sw_sidebar_art: Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     /// This match's Ares `GraphicalText.Image/Palette` overlay art. `None`
     /// keeps the process InitGame art.
@@ -1520,7 +1515,6 @@ pub struct PresentationLoadAssets {
     /// The local country's `[EndGameScreens]` card for the in-game banner.
     pub(crate) end_game_banner: Option<crate::app::presentation::outcome_banner::EndGameBanner>,
     /// Phobos `[BannerTypes]` art for this world.
-    #[cfg(feature = "phobos")]
     pub(crate) banner_art: Option<crate::app::presentation::banners::BannerArtSet>,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     /// Overlay ID → type name mapping (from rules.ini [OverlayTypes]).

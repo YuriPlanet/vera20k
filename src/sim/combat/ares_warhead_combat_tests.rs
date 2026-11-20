@@ -83,7 +83,6 @@ fn resolved_delta(rules: &RuleSet, health: i32, damage: i32) -> i32 {
 /// Phobos `ApplyModifiersOnNegativeDamage` (`Ext/WarheadType/Hooks.cpp:334-360`):
 /// a negative packet with the key set runs the Verses kernel instead of the
 /// stock near-distance bypass; unset keeps the raw heal or the `[General]`.
-#[cfg(feature = "phobos")]
 #[test]
 fn negative_damage_modifiers_apply_verses_to_a_heal() {
     let keyed = rules_with(

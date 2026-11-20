@@ -283,7 +283,6 @@ fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
 /// `Ext/Techno/Hooks.Firing.cpp:340-369`) removes the stock T16 AI-only
 /// iron-curtain refusal and reads the weapon override, else the human/AI
 /// globals; the defaults preserve the stock split.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_iron_curtained_target_reads_the_weapon_and_owner_globals() {
     use crate::sim::combat::fire_error::FireError;
@@ -377,7 +376,6 @@ fn an_iron_curtained_target_reads_the_weapon_and_owner_globals() {
 /// (`Ext/Techno/Hooks.Firing.cpp:370-371`): `[CombatDamage] BerzerkTargeting=`
 /// (default `all`) limits the houses a berzerk firer may target; a
 /// non-berzerk firer is unaffected.
-#[cfg(feature = "phobos")]
 #[test]
 fn berzerk_firers_respect_berzerk_targeting() {
     use crate::sim::combat::fire_error::FireError;

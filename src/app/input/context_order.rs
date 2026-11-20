@@ -173,7 +173,6 @@ fn object_attack_is_admitted(
     // projectile has `AU`; otherwise the rung falls to the tail
     // (`0x70056C`). The force-fire key returns earlier (`0x700048..0x700072`),
     // so this gate is unforced-only, like the rest of this admission.
-    #[cfg(feature = "phobos")]
     if crate::sim::world::entity_is_underground(target)
         && !selected_weapon().as_ref().is_some_and(|selected| {
             rules
@@ -307,7 +306,6 @@ pub(crate) fn attack_action(
     // a current player's controllable Techno answers Move over a passable
     // Terrain unless force-firing. The hook sits inside the base function, so
     // it preempts every class tail below.
-    #[cfg(feature = "phobos")]
     if !forced
         && human
         && let Some(actor) = actor
@@ -585,7 +583,6 @@ pub(super) fn base_action(
         TargetKind::Cell(..) => human,
         // A Phobos interceptor bullet is never a click target: commands and
         // MEGAMISSION cannot encode it, so the client admits nothing.
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => false,
     };
     // TechnoClass::What_Action_OnObject's tail (`0x0070056C..0x007005E6`):
@@ -851,7 +848,6 @@ pub(crate) fn armed_action(
             rules,
             sim.interner(),
         ),
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => false,
     };
     armed.then(|| attack_action(sim, rules, actor_id, target, forced, overlay_registry))
@@ -926,7 +922,6 @@ pub(crate) fn resolved_unit_in_range(
     let techno = match *target {
         TargetKind::Entity(id) => sim.entities().get(id),
         TargetKind::Cell(..) => None,
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => return false,
     };
     let target = match techno {
@@ -1273,7 +1268,6 @@ fn attack_branch_orders(
                     }
                     // A Phobos interceptor bullet is AI-only and cannot be
                     // carried by a Command.
-                    #[cfg(feature = "phobos")]
                     TargetKind::Bullet(..) => continue,
                 };
                 queued.push(payload);
@@ -1895,7 +1889,6 @@ fn move_click_command(
         },
         // A bullet is never a click destination (commands cannot encode it);
         // never fabricate one from its id.
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => Command::Stop { entity_id },
     }
 }
@@ -3748,12 +3741,6 @@ fn phobos_cursor_skips_passengers(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
 ) -> bool {
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (entity, object);
-        false
-    }
-    #[cfg(feature = "phobos")]
     {
         let live = entity
             .passenger_role
@@ -4664,7 +4651,6 @@ pub(super) fn infantry_attack_action(
     // `CanC4` for a building and to targetable for every other kind, while
     // `InvisibleInGame` still refuses a building.
     if weapon.mig_attack_cursor {
-        #[cfg(feature = "phobos")]
         let air_strike = target.is_some_and(|target| {
             sim.interner()
                 .object_type(target.type_ref(), rules)
@@ -4672,14 +4658,6 @@ pub(super) fn infantry_attack_action(
                     let building = target.category() == EntityCategory::Structure;
                     object.allows_airstrike(building) && !(building && object.invisible_in_game)
                 })
-        });
-        #[cfg(not(feature = "phobos"))]
-        let air_strike = target.is_some_and(|target| {
-            target.category() == EntityCategory::Structure
-                && sim
-                    .interner()
-                    .object_type(target.type_ref(), rules)
-                    .is_some_and(|building| building.can_c4 && !building.invisible_in_game)
         });
         return Some(if air_strike {
             InfantryAttackAction::AirStrike
@@ -9163,7 +9141,7 @@ mod tests {
         assert_ne!(action(&sim, tank, 901, false), AttackAction::Move);
         // An offline (uncontrollable) player's actor keeps it too.
         sim.entities_mut_for_test()
-            .get_mut(tank)
+            .get_mut_for_test(tank)
             .unwrap()
             .deactivated
             .set_for_test(true);

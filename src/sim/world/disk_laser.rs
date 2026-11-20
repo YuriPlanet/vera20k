@@ -54,7 +54,6 @@ const RING: [[i32; 2]; 16] = [
 /// RESIDUAL: native keeps the rebuilt table globally, so a later 240-radius
 /// shot after a custom one would draw the recomputed 240 points (one point one
 /// pixel off the literal table); VERA always keeps the literal table at 240.
-#[cfg(feature = "phobos")]
 fn phobos_disk_laser_ring(radius: f64) -> [[i32; 2]; 16] {
     const COS: [f64; 16] = [
         0.0,
@@ -328,10 +327,7 @@ impl Simulation {
             let weapon = rules
                 .weapon(self.interner.resolve(weapon_id))
                 .expect("retained Disk weapon");
-            #[cfg(feature = "phobos")]
             let ring = phobos_disk_laser_ring(weapon.phobos_disk_laser_radius);
-            #[cfg(not(feature = "phobos"))]
-            let ring = RING;
             let source = self
                 .substrate
                 .entities
@@ -408,7 +404,6 @@ impl Simulation {
                     .expect("Disk effect target");
                 // ActivateMainBeam4A7696 skips a zero-length beam; every other
                 // disk laser (the ring animation) carries no tracking data.
-                #[cfg(feature = "phobos")]
                 let track = (first != impact)
                     .then(|| {
                         crate::sim::combat::laser::build_track(
@@ -426,8 +421,6 @@ impl Simulation {
                         )
                     })
                     .flatten();
-                #[cfg(not(feature = "phobos"))]
-                let track = None;
                 let birth = construct(
                     &self.session,
                     &mut self.lifecycle_outputs,
@@ -603,7 +596,6 @@ impl Simulation {
                             || self.terrain_objects.objects().contains_key(&target)
                     }
                     TargetKind::Cell(_, _) => true,
-                    #[cfg(feature = "phobos")]
                     TargetKind::Bullet(target) => self.projectiles.get(target).is_some(),
                 }) {
                     return Err((id, "missing active target"));

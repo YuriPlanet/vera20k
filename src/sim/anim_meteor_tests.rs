@@ -241,7 +241,6 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
 /// Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`,
 /// `Ext/Anim/Body.cpp:252`): a water landing takes the explosion arm, so the
 /// `ExpireAnim=` is created and no Wake or splash is, without spending a draw.
-#[cfg(feature = "phobos")]
 #[test]
 fn explode_on_water_takes_the_explosion_arm_on_a_water_cell() {
     let rules = formed_rules("[METSMALL]\nExpireAnim=EXPLODE\nExplodeOnWater=yes\n");
@@ -283,7 +282,6 @@ fn explode_on_water_takes_the_explosion_arm_on_a_water_cell() {
 /// Phobos `SplashAnims=` (`Ext/AnimType/Body.cpp:102`,
 /// `Ext/Anim/Hooks.cpp:236-241`): the AnimType's list replaces the stock
 /// `SplashList=`, a meteor still takes its last entry, and no draw is spent.
-#[cfg(feature = "phobos")]
 #[test]
 fn custom_splash_anims_replace_the_stock_water_splash() {
     let rules = formed_rules("[METSMALL]\nIsMeteor=yes\nSplashAnims=CHILD,SPLASH1\n");
@@ -327,7 +325,6 @@ fn custom_splash_anims_replace_the_stock_water_splash() {
 
 /// Phobos `SplashAnims.PickRandom=` (`Ext/AnimType/Body.cpp:103`): one
 /// `RandomRanged(0, last)` picks the entry before the Wake is created.
-#[cfg(feature = "phobos")]
 #[test]
 fn splash_pick_random_draws_one_index() {
     let rules = formed_rules(

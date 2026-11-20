@@ -1821,7 +1821,6 @@ fn a_transport_may_not_unload_on_or_beside_a_bridge_on_human_water_or_in_a_build
 /// Phobos `AmphibiousUnload` (hook `0x70107A`,
 /// `Ext/Techno/Hooks.Transport.cpp:646-657`): the human-on-water refusal
 /// yields to the transport type's key, else `[General]`.
-#[cfg(feature = "phobos")]
 #[test]
 fn amphibious_unload_admits_a_human_transport_on_water() {
     let build = |general: &str, type_keys: &str| {

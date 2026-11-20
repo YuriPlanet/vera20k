@@ -130,7 +130,6 @@ pub struct FrameEffects<'a> {
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
     command_applied: Option<&'a dyn Fn(&Simulation, &CommandRecord, bool)>,
-#[cfg(feature = "phobos")]
     bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::flying_text::BountyText)>,
     production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
     production_request_cleared: Option<&'a dyn Fn(crate::sim::intern::InternedId)>,
@@ -173,7 +172,6 @@ impl<'a> FrameEffects<'a> {
             overlay_registry: None,
             before_logic: None,
             command_applied: None,
-#[cfg(feature = "phobos")]
             bounty_text: None,
             production_factories: &[],
             production_request_cleared: None,

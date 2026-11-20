@@ -678,7 +678,6 @@ fn retail_aircraft_types_are_not_carryalls() {
 /// (`SlowdownDistance / 2` = 500 > 256 leptons) takes the hook's arrived arm,
 /// which writes no state. The returned state is the whole difference:
 /// ContinueMoving writes 4 or 0, EnterIdleAndReturn writes nothing.
-#[cfg(feature = "phobos")]
 #[test]
 fn smooth_moving_arrives_by_distance_instead_of_cell() {
     use crate::sim::world::FrameEffects;

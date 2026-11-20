@@ -223,16 +223,10 @@ pub(crate) fn building_palette_light(
 /// block, so a build without the feature has no such key and ownerless
 /// `AltPalette` anims keep index 0 (`0x4232E2`, `Ext/Anim/Hooks.cpp:635`).
 pub(crate) fn alt_palette_default_scheme(rules: Option<&crate::rules::ruleset::RuleSet>) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         rules.map_or(0, |rules| {
             rules.phobos_globals.anim_remap_default_color_scheme
         })
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rules;
-        0
     }
 }
 
@@ -297,7 +291,6 @@ pub(crate) fn anim_palette_light(
 
 /// `Drawing::RGB_To_Int` (YRpp `Drawing::Color16bit`): the 16-bit RGB565 word
 /// `(B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11)`.
-#[cfg(feature = "phobos")]
 fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
     (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
 }
@@ -307,21 +300,13 @@ fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
 /// `Ext/Rules/Body.cpp:734-736`) applies for IronCurtain/ForceShield/Berserk:
 /// `GetColorFromColorAdd`'s single RGB565 arm, or `Drawing::RGB_To_Int` with
 /// `ColorAddUse8BitRGB`. Stock draws OR the native three-arm word instead.
-#[cfg(feature = "phobos")]
-fn class_tint_word(rules: &RuleSet, index: i32) -> u16 {
-    rules
-        .color_add
-        .phobos_word(index, rules.phobos_globals.color_add_use_8bit_rgb)
-}
-
-#[cfg(not(feature = "phobos"))]
 fn class_tint_word(rules: &RuleSet, index: i32) -> u16 {
     rules.color_add.rgb565_word(index)
 }
 
+
 /// Phobos `GetLevelIntensity` (`Ext/Techno/Hooks.Tint.cpp:27-45`): the blit
 /// intensity from the scenario level and the object's height in level steps.
-#[cfg(feature = "phobos")]
 pub(crate) fn air_unit_level_brightness(
     level: i32,
     height: i32,
@@ -345,7 +330,6 @@ pub(crate) fn air_unit_level_brightness(
 /// `InfantryClass_DrawIt_LevelIntensity` (`0x51933B`)
 /// (`Ext/Techno/Hooks.Tint.cpp:320-379`): the draw intensity is rebuilt from
 /// the scenario level and the owner's height instead of the cell scalar.
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_air_unit_light(
     entity: &crate::sim::game_entity::GameEntity,
     sim: &Simulation,
@@ -397,20 +381,9 @@ pub(crate) fn phobos_air_unit_light(
     ))
 }
 
-#[cfg(not(feature = "phobos"))]
-pub(crate) fn phobos_air_unit_light(
-    _entity: &crate::sim::game_entity::GameEntity,
-    _sim: &Simulation,
-    _rules: Option<&RuleSet>,
-    _grid: &CellLightGrid,
-    light: crate::render::palette_light::PaletteLight,
-) -> crate::render::palette_light::PaletteLight {
-    light
-}
 
 /// `TechnoExt::ApplyCustomTintValues`'s viewer bucket: the owner's own draw
 /// takes Owner, an ally's Allies and anyone else's Enemies.
-#[cfg(feature = "phobos")]
 fn tint_bucket(
     owner: crate::sim::intern::InternedId,
     viewer: Option<crate::sim::intern::InternedId>,
@@ -432,14 +405,13 @@ fn tint_bucket(
 /// `Tint.VisibleToHouses`. Returns the OR word and the summed intensity.
 ///
 /// Read only: no simulation state, timer, RNG or detach is written.
-pub(crate) fn shield_tint(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+pub(crate) fn shield_tint<T: TintSource + ?Sized>(
+    entity: &T,
     simulation: &Simulation,
     rules: &RuleSet,
 ) -> (u16, i32) {
-    #[cfg(feature = "phobos")]
     {
-        let Some(shield) = entity.shield().filter(|shield| shield.is_active()) else {
+        let Some(shield) = entity.tint_shield().filter(|shield| shield.is_active()) else {
             return (0, 0);
         };
         let Some(shield_type) = rules.shield_type(shield.type_name()) else {
@@ -458,21 +430,81 @@ pub(crate) fn shield_tint(
         let intensity = (shield_type.tint_intensity() * 1000.0) as i32;
         (word, intensity)
     }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (entity, simulation, rules);
-        (0, 0)
+}
+
+/// The tint inputs both a live entity and a frame record carry, so the
+/// custom-tint and flash/curtain helpers have one owner for either view.
+pub(crate) trait TintSource {
+    fn tint_owner(&self) -> crate::sim::intern::InternedId;
+    fn tint_shield(&self) -> Option<&crate::sim::shield::ShieldState>;
+    fn tint_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList;
+    fn tint_category(&self) -> crate::map::entities::EntityCategory;
+    fn tint_flashed(&self) -> bool;
+    fn tint_invulnerability(
+        &self,
+    ) -> Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>;
+    fn tint_airstrike(&self) -> &crate::sim::superweapon::airstrike_tint::AirstrikeTintState;
+}
+
+impl TintSource for crate::app::presentation::frame::ObjectRecord {
+    fn tint_owner(&self) -> crate::sim::intern::InternedId {
+        self.owner()
+    }
+    fn tint_shield(&self) -> Option<&crate::sim::shield::ShieldState> {
+        self.shield()
+    }
+    fn tint_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
+        self.phobos_attach_effects()
+    }
+    fn tint_category(&self) -> crate::map::entities::EntityCategory {
+        self.category()
+    }
+    fn tint_flashed(&self) -> bool {
+        self.flashing.flashed()
+    }
+    fn tint_invulnerability(
+        &self,
+    ) -> Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState> {
+        self.invulnerability.as_ref()
+    }
+    fn tint_airstrike(&self) -> &crate::sim::superweapon::airstrike_tint::AirstrikeTintState {
+        &self.airstrike_tint
+    }
+}
+
+impl TintSource for crate::sim::game_entity::GameEntity {
+    fn tint_owner(&self) -> crate::sim::intern::InternedId {
+        self.owner()
+    }
+    fn tint_shield(&self) -> Option<&crate::sim::shield::ShieldState> {
+        self.shield()
+    }
+    fn tint_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
+        self.phobos_attach_effects()
+    }
+    fn tint_category(&self) -> crate::map::entities::EntityCategory {
+        self.category()
+    }
+    fn tint_flashed(&self) -> bool {
+        self.flashing.flashed()
+    }
+    fn tint_invulnerability(
+        &self,
+    ) -> Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState> {
+        self.invulnerability.as_ref()
+    }
+    fn tint_airstrike(&self) -> &crate::sim::superweapon::airstrike_tint::AirstrikeTintState {
+        &self.airstrike_tint
     }
 }
 
 /// `ApplyCustomTintValues`'s viewer bucket: the current player sees its own
 /// objects as Owner, an ally's as Allies and anyone else's as Enemies.
-#[cfg(feature = "phobos")]
-fn viewer_bucket(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+fn viewer_bucket<T: TintSource + ?Sized>(
+    entity: &T,
     simulation: &Simulation,
 ) -> crate::rules::phobos_shields::AffectedHouse {
-    let owner = entity.owner();
+    let owner = entity.tint_owner();
     tint_bucket(owner, simulation.session().current_house(), || {
         let Some(viewer) = simulation.session().current_house() else {
             return false;
@@ -501,15 +533,14 @@ fn viewer_bucket(
 /// the owner's custom tint to an owner-attached animation; building slot anims
 /// already take it, ordinary attached anims (AttachEffect and parachutes) do
 /// not yet.
-#[cfg(feature = "phobos")]
-pub(crate) fn attach_effect_tint(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+pub(crate) fn attach_effect_tint<T: TintSource + ?Sized>(
+    entity: &T,
     simulation: &Simulation,
     rules: &RuleSet,
 ) -> (u16, i32) {
     let mut word = 0;
     let mut intensity = 0;
-    let list = entity.phobos_attach_effects();
+    let list = entity.tint_attach_effects();
     if list.is_empty() {
         return (word, intensity);
     }
@@ -572,20 +603,15 @@ pub(crate) fn attach_effect_tint(
 
 /// The custom tint `TechnoExt::UpdateTintValues` aggregates from every owner:
 /// Phobos shields and AttachEffects today.
-pub(crate) fn custom_tint(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+pub(crate) fn custom_tint<T: TintSource + ?Sized>(
+    entity: &T,
     simulation: &Simulation,
     rules: &RuleSet,
 ) -> (u16, i32) {
     let base = shield_tint(entity, simulation, rules);
-    #[cfg(feature = "phobos")]
     {
         let (effect_word, effect_intensity) = attach_effect_tint(entity, simulation, rules);
         (base.0 | effect_word, base.1 + effect_intensity)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        base
     }
 }
 
@@ -618,25 +644,26 @@ pub(crate) enum TechnoDraw {
 /// DrawSHP and TechnoClass::Draw also enter this arm for a building with an
 /// Airstrike manager that targets it. GetEffectTintIntensity
 /// applies Iron then Airstrike stages, each with its own cap.
-pub(crate) fn techno_effect_light(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+pub(crate) fn techno_effect_light<T: TintSource + ?Sized>(
+    entity: &T,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
     rules: Option<&RuleSet>,
+    airstrike_active: bool,
     draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     let custom = rules.map_or(0, |rules| custom_tint(entity, sim, rules).1);
     let curtain_extra = curtain_extra_tint(
         rules,
-        entity.invulnerability.as_ref().map(|state| state.kind()),
+        entity.tint_invulnerability().map(|state| state.kind()),
     );
     techno_effect_light_at(
         entity,
         tint,
         light,
         sim.session().binary_frame(),
-        entity.place.airstrike_tint_active,
+        airstrike_active,
         custom,
         curtain_extra,
         draw,
@@ -699,8 +726,8 @@ pub(crate) fn building_anim_light(
     (tint, light.with_brightness(light.brightness() & 0xFFFF))
 }
 
-fn techno_effect_light_at(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+fn techno_effect_light_at<T: TintSource + ?Sized>(
+    entity: &T,
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     frame: u32,
@@ -713,13 +740,13 @@ fn techno_effect_light_at(
         tint,
         light,
         TintLightState {
-            building: entity.category() == crate::map::entities::EntityCategory::Structure,
+            building: entity.tint_category() == crate::map::entities::EntityCategory::Structure,
             custom_before_effects: matches!(draw, TechnoDraw::Voxel)
-                && entity.category() != crate::map::entities::EntityCategory::Unit,
-            flashed: entity.flashing.flashed(),
-            curtain: entity.invulnerability.as_ref(),
+                && entity.tint_category() != crate::map::entities::EntityCategory::Unit,
+            flashed: entity.tint_flashed(),
+            curtain: entity.tint_invulnerability(),
             curtain_extra,
-            airstrike: &entity.airstrike_tint,
+            airstrike: entity.tint_airstrike(),
             airstrike_active,
             frame,
             custom_intensity,
@@ -734,7 +761,6 @@ fn curtain_extra_tint(
     rules: Option<&RuleSet>,
     kind: Option<crate::sim::superweapon::invulnerability::InvulnKind>,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     if let (Some(rules), Some(kind)) = (rules, kind) {
         let globals = rules.invulnerability_globals();
         let extra = match kind {
@@ -976,7 +1002,6 @@ pub(crate) fn shp_colour_word(
     }
     // Phobos `GetTintColor` picks the Force Shield or Iron Curtain word while
     // `IsIronCurtained`; the stock arm only knows the Force Shield colour.
-    #[cfg(feature = "phobos")]
     let shield = if force_shield {
         class_tint_word(rules, rules.general.force_shield_color)
     } else if curtained {
@@ -984,29 +1009,14 @@ pub(crate) fn shp_colour_word(
     } else {
         0
     };
-    #[cfg(not(feature = "phobos"))]
-    let shield = if force_shield {
-        class_tint_word(rules, rules.general.force_shield_color)
-    } else {
-        0
-    };
     let laser = if marked {
         // Phobos `BuildingClass_Draw_TintColor` (`0x0043D386`) ORs the strike
         // owner type's `TintColorAirstrike`, Phobos's own conversion of its
         // resolved `LaserTargetColor`.
-        #[cfg(feature = "phobos")]
-        let word = rules.color_add.phobos_word(
-            sim.airstrike_laser_target_color(entity.stable_id(), rules),
+        rules.color_add.phobos_word(
+            entity.place.airstrike_laser_target_color,
             rules.phobos_globals.color_add_use_8bit_rgb,
-        );
-        let word = rules
-            .color_add
-            .phobos_word(entity.place.airstrike_laser_target_color);
-        #[cfg(not(feature = "phobos"))]
-        let word = rules
-            .color_add
-            .rgb565_word(rules.general.laser_target_color);
-        word
+        )
     } else {
         0
     };
@@ -1092,7 +1102,6 @@ impl MatchLighting {
     }
 
     /// Phobos `[AudioVisual] UseRetintFix=`, applied once per loaded match.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_use_retint_fix(&mut self, enabled: bool) {
         self.use_retint_fix = enabled;
     }

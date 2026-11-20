@@ -10,7 +10,6 @@ pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;
 pub(crate) mod options_profile;
-#[cfg(feature = "phobos")]
 pub(crate) mod phobos_settings;
 pub(crate) mod profile_file;
 mod resource_load;

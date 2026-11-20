@@ -2277,7 +2277,6 @@ impl Default for PhobosGlobals {
 
 /// One `[General]` key of [`PhobosGlobals::resolve_ai_chrono_super_names`]: the
 /// name whose `SuperWeaponTypeClass` index survives every Rules pass.
-#[cfg(feature = "phobos")]
 fn valueable_idx_name(
     section: &IniSection,
     key: &str,
@@ -2340,7 +2339,6 @@ impl PhobosGlobals {
     /// the pass that reads the key; this resolves against the union of every
     /// layer's `[SuperWeaponTypes]`, which answers the same index unless a
     /// pass names a type a later pass introduces.
-    #[cfg(feature = "phobos")]
     pub(crate) fn resolve_ai_chrono_super_names(&mut self, ini: &IniFile) {
         let general = ini.section_or_empty("General");
         let super_types: Vec<&str> = ini

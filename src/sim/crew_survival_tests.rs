@@ -2801,7 +2801,6 @@ fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
 /// arm (`Ext/Techno/Hooks.ReceiveDamage.cpp:273-274`, hook `0x702672`): a
 /// killing hit with that warhead latches the dying techno, and the latched
 /// crew-count queries answer zero.
-#[cfg(feature = "phobos")]
 #[test]
 fn prevent_crew_escape_latches_on_the_killing_hit_and_suppresses_crew() {
     let rules = rules();
@@ -2844,7 +2843,6 @@ fn prevent_crew_escape_latches_on_the_killing_hit_and_suppresses_crew() {
 /// `PreventPassengerEscape` arm (`Ext/Techno/Hooks.ReceiveDamage.cpp:276-277`,
 /// hook `0x702672`): a killing hit with that warhead kills the dying
 /// transport's cargo instead of releasing it.
-#[cfg(feature = "phobos")]
 #[test]
 fn prevent_passenger_escape_kills_the_dying_transports_cargo() {
     let rules = rules();
@@ -2868,7 +2866,6 @@ fn prevent_passenger_escape_kills_the_dying_transports_cargo() {
 /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:282-297`, hook `0x442635`): a killing
 /// hit with that warhead kills the building's occupants where the stock
 /// building would release them.
-#[cfg(feature = "phobos")]
 #[test]
 fn prevent_occupant_escape_kills_a_dying_buildings_occupants() {
     let rules = rules();

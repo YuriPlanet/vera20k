@@ -825,7 +825,6 @@ fn make_enemy_alternate_reveal_restores_the_released_client_cache() {
 /// Phobos `RevealToAll.Radius=` (`Ext/BuildingType/Body.cpp:284`,
 /// `0x446816`/`0x4ADE55`): the alternate sight circle uses the key, else the
 /// type's raw `Sight`.
-#[cfg(feature = "phobos")]
 fn world_with_reveal_radius(patch: &str) -> Option<(RuleSet, Simulation, InternedId)> {
     let (mut rules_ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
     rules_ini.merge(&crate::rules::ini_parser::IniFile::from_str(patch));
@@ -833,7 +832,6 @@ fn world_with_reveal_radius(patch: &str) -> Option<(RuleSet, Simulation, Interne
     Some(world_on(rules))
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_reveal_to_all_radius_overrides_the_alternate_sight_circle() {
     for (patch, expected) in [

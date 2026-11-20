@@ -106,7 +106,6 @@ pub struct SavedSidebarOrder {
     active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
-    #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
 }
 
@@ -125,19 +124,16 @@ impl SavedSidebarOrder {
             prediction_categories: Vec::new(),
             active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
-            #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
         }
     }
 
     /// Phobos stores `SWSidebar_Enable` in the scenario extension, outside the
     /// strips; this envelope carries it beside them for the same save.
-    #[cfg(feature = "phobos")]
     pub fn sw_sidebar_expanded(&self) -> bool {
         self.sw_sidebar_expanded
     }
 
-    #[cfg(feature = "phobos")]
     pub fn set_sw_sidebar_expanded(&mut self, expanded: bool) {
         self.sw_sidebar_expanded = expanded;
     }
@@ -1792,7 +1788,6 @@ fn restore_object_references(
                 anim_id,
             )?;
         }
-        #[cfg(feature = "phobos")]
         if let Some(target_id) = projectile.interceptor_target() {
             require_resolved_reference(
                 sim.projectiles.get(target_id).is_some(),

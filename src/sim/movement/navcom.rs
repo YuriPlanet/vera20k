@@ -968,7 +968,6 @@ impl crate::sim::world::Simulation {
         // (hook `0x4D9510`, `Ext/Techno/Hooks.Transport.cpp:933-1000`): an
         // admitted non-null destination on an `OpenTopped` Unit that carries
         // passengers drops the links its passengers cannot keep while moving.
-        #[cfg(feature = "phobos")]
         if nonnull {
             self.phobos_open_topped_release_locks(id, rules, registry, frame_effects);
         }

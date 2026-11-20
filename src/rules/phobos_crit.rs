@@ -46,7 +46,6 @@ impl AffectedTarget {
 
     /// `read<AffectedTarget>`: one token that matches no entry abandons the
     /// read; `None` keeps the caller's current value.
-    #[cfg(feature = "phobos")]
     pub(crate) fn parse(raw: &str) -> Option<Self> {
         let mut parsed = Self::NONE;
         for part in raw.split(',') {
@@ -77,7 +76,6 @@ impl Default for AffectedTarget {
 }
 
 /// `Valueable<AffectedTarget>` read: absent or rejected text keeps `current`.
-#[cfg(feature = "phobos")]
 pub(crate) fn read_affected_target(
     section: &crate::rules::ini_parser::IniSection,
     key: &str,
@@ -105,13 +103,11 @@ impl PhobosAbilityFlags {
 
     /// `ReadAdditionalAbilities`: a present key resets its tier and sets one
     /// bit per recognised token; an absent key keeps the tier.
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_pass(&mut self, section: &crate::rules::ini_parser::IniSection) {
         Self::read_tier(section, "VeteranAbilities", &mut self.veteran);
         Self::read_tier(section, "EliteAbilities", &mut self.elite);
     }
 
-    #[cfg(feature = "phobos")]
     fn read_tier(section: &crate::rules::ini_parser::IniSection, key: &str, tier: &mut [bool; 5]) {
         let Some(tokens) = section.read_list(key, 2048) else {
             return;
@@ -179,7 +175,6 @@ impl Default for CritGlobals {
 }
 
 impl CritGlobals {
-    #[cfg(feature = "phobos")]
     pub(crate) fn from_ini(ini: &crate::rules::ini_parser::IniFile) -> Self {
         let defaults = Self::default();
         let combat = ini.section_or_empty("CombatDamage");
@@ -295,7 +290,6 @@ impl Default for CritRules {
 }
 
 impl CritRules {
-    #[cfg(feature = "phobos")]
     pub(crate) fn from_section(section: &crate::rules::ini_parser::IniSection) -> Self {
         use crate::rules::phobos_shields::AffectedHouse;
         let mut crit = Self::default();

@@ -130,7 +130,6 @@ fn keep_alive_tracking_matches_executed_defaults_overrides_and_wrapping() {
 /// `Misc/Hooks.Ares.cpp:190-243`): the category globals supply the default,
 /// a `BuildCat=Combat` building takes `KeepAlive.Defenses`, and a type's own
 /// `KeepAlive=` still wins over both.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_keep_alive_globals_pick_the_category_default() {
     use crate::map::entities::EntityCategory;

@@ -29,29 +29,23 @@ mod airburst;
 mod ares_warhead_effects;
 mod attack_target;
 pub(crate) mod base_defense_response;
-#[cfg(feature = "phobos")]
 pub(crate) mod building_sell;
-#[cfg(feature = "phobos")]
 mod building_sell_leave;
 pub mod burst;
 pub(crate) mod cell_spread;
-#[cfg(feature = "phobos")]
 mod combat_alert;
 pub(crate) mod combat_aoe;
 pub(crate) mod combat_targeting;
 pub mod combat_weapon;
-#[cfg(feature = "phobos")]
 pub(crate) mod crit;
 #[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
-#[cfg(feature = "phobos")]
 pub(crate) mod damage_multiplier;
 pub(crate) mod destruction_effects;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
-#[cfg(feature = "phobos")]
 pub(crate) mod extra_range;
 pub(crate) mod extra_threat;
 pub mod fire_coord;
@@ -60,24 +54,17 @@ pub(crate) mod fire_error_world;
 pub mod gattling;
 pub(crate) mod greatest_threat;
 pub mod in_range;
-#[cfg(feature = "phobos")]
 mod interceptor;
 pub(crate) mod inviso_scatter;
 pub mod laser;
 pub mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
-#[cfg(feature = "phobos")]
 pub(crate) mod penetrates_transport;
-#[cfg(feature = "phobos")]
 mod phobos_airburst;
-#[cfg(feature = "phobos")]
 mod phobos_extra_warheads;
-#[cfg(feature = "phobos")]
 mod phobos_return_warhead;
-#[cfg(feature = "phobos")]
 mod phobos_return_weapon;
-#[cfg(feature = "phobos")]
 pub(crate) mod phobos_unlimbo_detonate;
 mod projectile_delivery;
 pub mod radiation_beam;
@@ -223,7 +210,6 @@ pub(crate) use attack_target::{resolve_target_coords, target_present};
 pub(crate) use combat_targeting::build_attacker_snapshot;
 pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
-#[cfg(feature = "phobos")]
 pub use effects::NO_COLOR_SPOTLIGHT_FLAGS;
 pub(crate) use effects::combat_light_chance_admits;
 pub use effects::{
@@ -235,7 +221,6 @@ pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range}
 pub use object_health::{Health, health_category};
 /// Phobos' `Helpers::Alex::getCellSpreadItemsExt` walk with the `includeInAir`
 /// switch exposed, shared with `sim::mission`'s `AttackMove.Follow` search.
-#[cfg(feature = "phobos")]
 pub(crate) use phobos_airburst::cell_spread_technos_with_air;
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet, admit_techno_fired_bullet};
 pub(crate) use receiver_call::{
@@ -261,7 +246,6 @@ pub(crate) use attack_target::{attack_world_z_leptons, cell_center_coords, targe
 use projectile_delivery::{
     ProjectileDelivery, bullet_type, classify_projectile_delivery, projectile_arm_delay,
 };
-#[cfg(feature = "phobos")]
 use receiver_call::resolve_receive_damage_with_input;
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,
@@ -485,7 +469,6 @@ pub(crate) struct LogicProjectileCommit {
 /// zero-health, zero-strength object matches unconditionally. A positive
 /// health over a zero strength is the native `inf` and misses every finite
 /// bound.
-#[cfg(feature = "phobos")]
 pub(crate) fn health_in_threshold(health: i32, strength: i32, above: f64, below: f64) -> bool {
     if health == 0 && strength == 0 {
         return true;
@@ -500,7 +483,6 @@ pub(crate) fn health_in_threshold(health: i32, strength: i32, above: f64, below:
 
 /// Phobos `EnumFunctions::CanTargetVeterancy` (`EnumFunctions.cpp:18`): the
 /// target's rank must be in the mask; `All` short-circuits.
-#[cfg(feature = "phobos")]
 pub(crate) fn affected_veterancy_allows(
     flags: crate::rules::phobos_airburst::AffectedVeterancy,
     rank: crate::sim::combat::veterancy::VeterancyRank,
@@ -520,7 +502,6 @@ pub(crate) fn affected_veterancy_allows(
 /// `WarheadTypeExt::IsHealthInThreshold` (`Ext/WarheadType/Body.cpp:59-65`):
 /// `HealthCheck` is on only for a non-default `AffectsAbovePercent=`/
 /// `AffectsBelowPercent=` pair, and an unset pair leaves every target in.
-#[cfg(feature = "phobos")]
 pub(crate) fn warhead_health_in_threshold(
     warhead: &crate::rules::warhead_type::WarheadType,
     target: &crate::sim::game_entity::GameEntity,
@@ -536,7 +517,6 @@ pub(crate) fn warhead_health_in_threshold(
 }
 
 /// `WarheadTypeExt::IsVeterancyInThreshold` (`Ext/WarheadType/Body.cpp:67-73`).
-#[cfg(feature = "phobos")]
 pub(crate) fn warhead_veterancy_in_threshold(
     warhead: &crate::rules::warhead_type::WarheadType,
     target: &crate::sim::game_entity::GameEntity,
@@ -549,7 +529,6 @@ pub(crate) fn warhead_veterancy_in_threshold(
 /// `AffectsInvokerOnly=`, a present invoker must be (or, reversed, must not be)
 /// the target; without one the type's `IgnoreInvokerState` or the
 /// `[CombatDamage]` fallback decides.
-#[cfg(feature = "phobos")]
 pub(crate) fn warhead_invoker_allows(
     warhead: &crate::rules::warhead_type::WarheadType,
     target: u64,
@@ -576,7 +555,6 @@ pub(crate) fn warhead_invoker_allows(
 
 /// `WarheadTypeExt::CanAffectTarget`'s first three gates
 /// (`Ext/WarheadType/Body.cpp:37-51`), in native order.
-#[cfg(feature = "phobos")]
 pub(crate) fn warhead_triggers_allow(
     warhead: &crate::rules::warhead_type::WarheadType,
     target: &crate::sim::game_entity::GameEntity,
@@ -605,7 +583,6 @@ pub(crate) fn warhead_triggers_allow(
 /// matches, the owner takes its bucket, a neutral target its Neutral flag, an
 /// ally's, otherwise the enemy's. Presentation's DigitalDisplay visibility
 /// asks it with the viewer as the target.
-#[cfg(feature = "phobos")]
 pub fn can_target_house(
     flags: crate::rules::phobos_shields::AffectedHouse,
     source: InternedId,

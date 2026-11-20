@@ -136,7 +136,6 @@ impl SidebarTab {
     /// Phobos `TabIndex` (`Ext/SWType/Body.cpp:285-286`): the tab a super
     /// weapon's cameo occupies. The reader has already reset any out-of-range
     /// value to `1`, so `index` is always `0..=3`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn for_sw_tab_index(index: usize) -> Self {
         match index {
             0 => Self::Building,
@@ -297,7 +296,6 @@ pub struct SidebarLayout {
 /// sidebar-surface pixels. `app::presentation::sidebar_render` resolves these on
 /// the same per-frame pass as the power bar, because the native hook runs inside
 /// the credits tick rather than on a cameo transition.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarIndicator {
     /// The formatted label and value, e.g. `⚡+12` or the blackout label alone.

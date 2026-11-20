@@ -45,7 +45,6 @@ fn native_stage_frames(stage: &str) -> Vec<usize> {
         .collect()
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn an_authored_empty_ammo_frame_continues_the_strip_to_capacity() {
     // Phobos `TechnoClass_DrawPips_Ammo` (`Ext/Techno/Hooks.Pips.cpp:287-305`):
@@ -89,7 +88,7 @@ fn an_authored_empty_ammo_frame_continues_the_strip_to_capacity() {
         .expect("stock Ammo unit");
     for id in [authored, stock] {
         sim.entities_mut_for_test()
-            .get_mut(id)
+            .get_mut_for_test(id)
             .unwrap()
             .install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(2)));
     }
@@ -264,7 +263,7 @@ fn ammo_pip_scene(max_ammo: i32, initial_ammo: i32, extra: &str) -> (RuleSet, Si
         .spawn_object("RIPU", "Americans", 10, 10, 0, &rules)
         .expect("RIPU spawns");
     sim.entities_mut_for_test()
-        .get_mut(id)
+        .get_mut_for_test(id)
         .unwrap()
         .install_ammo_for_test(Some(TechnoAmmo::new(initial_ammo)));
     assert!(sim.apply_command(
@@ -282,14 +281,15 @@ fn ammo_pip_scene(max_ammo: i32, initial_ammo: i32, extra: &str) -> (RuleSet, Si
 /// as well as the frame.
 fn draws(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<super::ui_overlays::ScalePipDraw> {
     let before = sim.state_hash();
-    let entity = sim.entities().get(id).expect("RIPU survives");
+    let entity = crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, rules, id);
     let result = super::ui_overlays::scale_pip_draws(
         sim,
-        entity,
+        &entity,
         None,
-        Some(sim.interner().resolve(entity.owner())),
+        Some(entity.owner()),
         rules,
-    );
+    )
+    .to_vec();
     assert_eq!(before, sim.state_hash(), "display cannot spend Ammo");
     result
 }
@@ -297,7 +297,6 @@ fn draws(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<super::ui_overlays::
 /// Phobos `AmmoPipFrame` (`Ext/TechnoType/Body.cpp:1002`, constructor 13 at
 /// `Body.h:666`, consumer `Ext/Techno/Hooks.Pips.cpp:286`): the unwrapped
 /// strip's filled frame is the authored value, not the hardcoded stock 13.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_authored_ammo_pip_frame_replaces_the_stock_thirteen() {
     let (rules, sim, id) = ammo_pip_scene(3, 2, "AmmoPipFrame=5\n");
@@ -314,7 +313,6 @@ fn an_authored_ammo_pip_frame_replaces_the_stock_thirteen() {
 /// constructor 14 at `Body.h:668`, consumer
 /// `Ext/Techno/Hooks.Pips.cpp:249`): the wrapped strip's start frame. This
 /// pins the production reader's authored value and constructor default.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_ammo_pip_wrap_start_frame_reads_its_authoring_and_constructor() {
     let (rules, _, _) = ammo_pip_scene(3, 2, "AmmoPipWrapStartFrame=21\n");
@@ -333,7 +331,6 @@ fn the_ammo_pip_wrap_start_frame_reads_its_authoring_and_constructor() {
 /// `Nullable<Point2D>` seeded empty at `Body.h:669`, consumer
 /// `Ext/Techno/Hooks.Pips.cpp:172`): a full pair replaces the strip's X/Y
 /// step, while the unset state keeps the stock 4 / 0 layout.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_ammo_pip_size_changes_the_strip_step_only_when_authored() {
     let (rules, sim, id) = ammo_pip_scene(3, 2, "AmmoPipSize=9,3\n");
@@ -357,7 +354,6 @@ fn the_ammo_pip_size_changes_the_strip_step_only_when_authored() {
 /// constructor `{0,0}` at `Body.h:670`, consumer
 /// `Ext/Techno/Hooks.Pips.cpp:241`): the pair translates every pip by the
 /// same amount, after the optional `AmmoPipSize` step.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_authored_ammo_pip_offset_translates_every_pip_in_the_strip() {
     let (rules, sim, id) = ammo_pip_scene(3, 2, "AmmoPipOffset=6,-2\n");
@@ -388,11 +384,10 @@ fn an_authored_ammo_pip_offset_translates_every_pip_in_the_strip() {
     );
 }
 
-#[cfg(feature = "phobos")]
 fn set_ammo(sim: &mut Simulation, id: u64, ammo: i32) {
     use crate::sim::ammo::TechnoAmmo;
     sim.entities_mut_for_test()
-        .get_mut(id)
+        .get_mut_for_test(id)
         .unwrap()
         .install_ammo_for_test(Some(TechnoAmmo::new(ammo)));
 }
@@ -402,7 +397,6 @@ fn set_ammo(sim: &mut Simulation, id: u64, ammo: i32) {
 /// levels above `AmmoPipWrapStartFrame`; a depleted slot keeps the bare start
 /// frame. The wrapped loop advances the origin before each draw, so the
 /// strip starts one step in, and `PipWrap=-1` takes Phobos's unwrapped arm.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_pip_wrap_arm_counts_the_wrap_levels() {
     let (rules, mut sim, id) = ammo_pip_scene(
@@ -500,7 +494,6 @@ fn a_negative_pip_wrap_draws_no_stock_strip() {
 
 /// `Pips.Ammo.Size` (`[AudioVisual]`, `Ext/Rules/Body.cpp:162`) is the Ammo
 /// strip's default X/Y advance; the per-type `AmmoPipSize` still overrides it.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_global_ammo_size_drives_the_strip_step() {
     let (rules, sim, id) = ammo_pip_scene(3, 2, "\n[AudioVisual]\nPips.Ammo.Size=9,3\n");
@@ -531,7 +524,6 @@ fn the_global_ammo_size_drives_the_strip_step() {
 /// `0x709B2E` selector keys on the drawn class, so a building with
 /// `PipScale=Ammo` takes `Pips.Ammo.Buildings.Size` and never the mobile
 /// `Pips.Ammo.Size`.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_building_ammo_size_global_drives_the_building_strip() {
     use crate::sim::ammo::TechnoAmmo;
@@ -553,7 +545,7 @@ fn the_building_ammo_size_global_drives_the_building_strip() {
         .spawn_object("RIPU", "Americans", 10, 10, 0, &rules)
         .expect("RIPU building spawns");
     sim.entities_mut_for_test()
-        .get_mut(id)
+        .get_mut_for_test(id)
         .unwrap()
         .install_ammo_for_test(Some(TechnoAmmo::new(2)));
     assert!(sim.apply_command(

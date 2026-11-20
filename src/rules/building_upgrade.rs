@@ -65,14 +65,12 @@ pub struct BuildingUpgradeRules {
     /// Phobos `PowersUp.Owner=` (`Ext/BuildingType/Body.cpp:185`,
     /// `Valueable<AffectedHouse>`, default `Owner`): the House relation
     /// between the installing owner and the host's owner.
-    #[cfg(feature = "phobos")]
     #[serde(default = "default_powers_up_owner")]
     powers_up_owner: crate::rules::phobos_shields::AffectedHouse,
     /// Phobos `PowersUp.Buildings=` (`:186`,
     /// `ValueableVector<BuildingTypeClass*>`): the host types this upgrade
     /// fits. `Body.cpp:270-277` keeps it in sync with the native
     /// `PowersUpBuilding` string.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     powers_up_buildings: Vec<String>,
     /// One authority for both fixed-ART reads and installation's name writes.
@@ -80,7 +78,6 @@ pub struct BuildingUpgradeRules {
     power_up_art: [BuildingPowerUpArt; 3],
 }
 
-#[cfg(feature = "phobos")]
 fn default_powers_up_owner() -> crate::rules::phobos_shields::AffectedHouse {
     crate::rules::phobos_shields::AffectedHouse::OWNER
 }
@@ -91,9 +88,7 @@ impl Default for BuildingUpgradeRules {
             host: String::new(),
             level: -1,
             slots: 0,
-            #[cfg(feature = "phobos")]
             powers_up_owner: crate::rules::phobos_shields::AffectedHouse::OWNER,
-            #[cfg(feature = "phobos")]
             powers_up_buildings: Vec::new(),
             power_up_art: Default::default(),
         }
@@ -115,7 +110,6 @@ impl BuildingUpgradeRules {
     /// host case-insensitively is not returned twice.
     pub fn hosts(&self) -> Vec<&str> {
         let legacy = self.host();
-        #[cfg(feature = "phobos")]
         {
             let mut hosts: Vec<&str> = legacy.into_iter().collect();
             for name in &self.powers_up_buildings {
@@ -125,18 +119,14 @@ impl BuildingUpgradeRules {
             }
             hosts
         }
-        #[cfg(not(feature = "phobos"))]
-        legacy.into_iter().collect()
     }
 
     /// Phobos `PowersUp.Owner=`, the installing owner's relation to the host.
-    #[cfg(feature = "phobos")]
     pub fn powers_up_owner(&self) -> crate::rules::phobos_shields::AffectedHouse {
         self.powers_up_owner
     }
 
     /// Phobos `PowersUp.Buildings=`, after the native-string sync.
-    #[cfg(feature = "phobos")]
     pub fn powers_up_buildings(&self) -> &[String] {
         &self.powers_up_buildings
     }
@@ -176,7 +166,6 @@ impl BuildingUpgradeRules {
         }
         self.level = section.read_int("PowersUpToLevel", self.level);
         self.slots = section.read_int("Upgrades", self.slots);
-        #[cfg(feature = "phobos")]
         {
             // `Ext/BuildingType/Body.cpp:185-186`, then the legacy-string
             // sync at `:270-277`: an empty native host takes the first list

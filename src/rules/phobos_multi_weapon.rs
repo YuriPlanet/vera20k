@@ -148,7 +148,6 @@ impl PhobosMultiWeapon {
     /// keys. `VoiceIFVRepair` is independent of the multi-weapon latch; the two
     /// slot vectors are cleared when `TurretCount > 0 || MultiWeapon` is off
     /// and sized to `WeaponCount`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn bind_voice_references(
         &mut self,
         section: Option<&IniSection>,
@@ -192,7 +191,6 @@ impl PhobosMultiWeapon {
 
     /// `VoiceWeapon%dAttack` / `VoiceEliteWeapon%dAttack` at a weapon slot;
     /// `None` lets the primary/secondary voice answer.
-    #[cfg(feature = "phobos")]
     pub(crate) fn voice_weapon_attack(&self, slot: i32, elite: bool) -> Option<&str> {
         let index = usize::try_from(slot).ok()?;
         let list = if elite {

@@ -372,7 +372,6 @@ impl SpawnHost for Replay<'_> {
 
     /// The oracle replays vanilla bodies; the Phobos destination hooks are
     /// disabled so the recorded native calls stay comparable.
-    #[cfg(feature = "phobos")]
     fn phobos_hooks(&self) -> bool {
         false
     }

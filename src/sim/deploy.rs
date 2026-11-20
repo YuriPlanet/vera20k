@@ -165,12 +165,6 @@ pub(crate) fn phobos_unload_skips_passengers(
     entity: &crate::sim::game_entity::GameEntity,
     rules: &RuleSet,
 ) -> bool {
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (sim, entity, rules);
-        false
-    }
-    #[cfg(feature = "phobos")]
     {
         let Some(object) = sim.object_type(entity.type_ref(), rules) else {
             return false;
@@ -376,7 +370,6 @@ impl Simulation {
                 // admission (deploy key, `UnitClass::Deploy`, AI/scripted)
                 // refuses outside the `Ammo.DeployUnlock*` band; a bunkered
                 // Unit is exempt.
-                #[cfg(feature = "phobos")]
                 if !self.phobos_unit_has_ammo_to_deploy(id, rules) {
                     return false;
                 }
@@ -385,7 +378,6 @@ impl Simulation {
                 // (`Ext/Techno/Hooks.cpp:1471-1473`): a simple deployer whose
                 // own cell fails `IsSimpleDeployer.ConsiderPathfinding` /
                 // `.DisallowedLandTypes` refuses deploy.
-                #[cfg(feature = "phobos")]
                 if !self.phobos_simple_deployer_allowed_to_deploy(id, rules) {
                     return false;
                 }
@@ -397,10 +389,7 @@ impl Simulation {
                 {
                     return false;
                 }
-                #[cfg(feature = "phobos")]
                 let allow_controlled_mcv = rules.phobos_globals.allow_deploy_controlled_mcv;
-                #[cfg(not(feature = "phobos"))]
-                let allow_controlled_mcv = false;
                 if object.deploys_into.is_some()
                     && (entity.parasite.eater().is_some()
                         || (crate::sim::mcv_deploy::deploys_into(self, entity, rules)
@@ -488,7 +477,6 @@ impl Simulation {
     /// gate: a disallowed cell land type refuses, else the cell must pass
     /// `CellClass::CheckCellPassability @ 0x004834A0` with the deploy type's
     /// SpeedType/MovementZone (the `Convert.Deploy` target's under Ares).
-    #[cfg(feature = "phobos")]
     fn phobos_simple_deployer_allowed_to_deploy(&self, id: u64, rules: &RuleSet) -> bool {
         use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         use crate::map::resolved_terrain::NativeCellQuery;
@@ -565,7 +553,6 @@ impl Simulation {
     /// no-link tail (`HasAnyLink() == false`, the `0x73DEE9` branch) that is not
     /// unloading skips the dump for the deploy path when `Deploy.NoTiberium` is
     /// unset or the hold holds no tiberium value (`Tiberium.GetTotalValue() == 0`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_harvester_skips_tiberium_dump(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -636,7 +623,6 @@ impl Simulation {
     /// sets `Convert.Deploy`/`Convert.Undeploy`, setting its own latch and
     /// clearing the other. Both latches clear in the DoingAI reset while the
     /// current sequence is neither Deploy nor Undeploy (`0x520E75`).
-    #[cfg(feature = "phobos")]
     fn phobos_infantry_deploy_convert(
         &mut self,
         id: u64,
@@ -724,7 +710,6 @@ impl Simulation {
         // `_Undeploy @ 0x520B99` (`Ext/Infantry/Hooks.cpp:18-50`): the
         // completed Deploy/Undeploy sequence converts a type that sets
         // `Convert.Deploy`/`Convert.Undeploy`, latching first.
-        #[cfg(feature = "phobos")]
         if completed_doing == 27 || completed_doing == 31 {
             self.phobos_infantry_deploy_convert(id, completed_doing == 27, rules, effects);
         }

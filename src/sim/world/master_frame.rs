@@ -351,11 +351,9 @@ impl Simulation {
                 // limboed Ares initial-payload object is absent from
                 // `LogicVector`, so this sweep is the only `AutoDeath` visit it
                 // receives. Registering nothing leaves the whole step empty.
-                #[cfg(feature = "phobos")]
                 self.update_auto_death_objects_in_limbo(rules, overlay_registry, effects);
                 // Phobos `LogicClass_Update_BeforeAll` (hook 0x55B4E1):
                 // transport reloaders tick before BombList's update.
-                #[cfg(feature = "phobos")]
                 self.phobos_update_transport_reloaders(rules);
                 Self::bomb_list_update(
                     &self.interner,

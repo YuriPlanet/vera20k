@@ -262,12 +262,6 @@ impl move_mission::MoveHost for WorldMove<'_> {
     /// turningRadius)` (`:520-525`).
     fn smooth_arrival(&mut self) -> move_mission::SmoothArrival {
         use move_mission::SmoothArrival;
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = self;
-            SmoothArrival::Stock
-        }
-        #[cfg(feature = "phobos")]
         {
             let Some(entity) = self.sim.substrate.entities.get(self.id) else {
                 return SmoothArrival::Stock;

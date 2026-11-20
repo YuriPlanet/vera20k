@@ -410,7 +410,6 @@ fn actual_ground_process_samples_disagreement_and_active_tracks_bypass_it() {
 /// `Ext/Techno/Hooks.Transport.cpp:560-574`) and its Ship twin (`0x69FFB6`):
 /// an Unload mission keeps processing while a passenger remains aboard, so an
 /// emptying transport can still be driven.
-#[cfg(feature = "phobos")]
 #[test]
 fn unload_mission_keeps_processing_only_while_a_passenger_remains() {
     use crate::sim::passenger::{PassengerCargo, PassengerRole};

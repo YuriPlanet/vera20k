@@ -192,7 +192,6 @@ impl Simulation {
         // `BuildingClass_InfiltratedBy_Wrapper` (`Ext/Building/Body.cpp:662-671`)
         // samples the owner's balance before the native call and feeds the
         // delta to `BuildingExt::HandleInfiltrate`'s `AccumulatedIncome`.
-        #[cfg(feature = "phobos")]
         let money_before = credit_income::available_money(&self.houses, owner);
         let ares = rules.ares_form();
         // Ares 3.0 10012000 (hook 0x004571E0): the spy's house answers
@@ -219,7 +218,6 @@ impl Simulation {
         };
         if ares && object.infiltration_rules().custom {
             let arms = self.ares_infiltrated_by(building_id, owner, infiltrator, object, rules);
-            #[cfg(feature = "phobos")]
             self.accumulate_infiltrated_income(building_id, owner, money_before);
             self.announce_infiltration(owner, infiltrator, InfiltrationEffect::Ares(arms), radar);
             return;
@@ -282,7 +280,6 @@ impl Simulation {
         } else {
             InfiltrationEffect::None
         };
-        #[cfg(feature = "phobos")]
         self.accumulate_infiltrated_income(building_id, owner, money_before);
         self.announce_infiltration(owner, infiltrator, effect, radar);
     }
@@ -291,7 +288,6 @@ impl Simulation {
     /// `AccumulatedIncome += Available_Money() - moneybefore`
     /// (`Ext/Building/Body.cpp:316-322`): the victim building's own balance
     /// delta, cash steal included.
-    #[cfg(feature = "phobos")]
     fn accumulate_infiltrated_income(
         &mut self,
         building_id: u64,
@@ -534,7 +530,6 @@ impl Simulation {
     /// [`Simulation::infiltrate_building`] around the whole infiltration.
     /// RESIDUAL: the `DisplayIncome_AllowAI` Ares interop write into the
     /// victim House's reserved Ares field is not modelled (no consumer).
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_handle_infiltrate(
         &mut self,
         building_id: u64,

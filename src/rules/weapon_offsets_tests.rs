@@ -244,7 +244,6 @@ fn a_repeated_read_keeps_the_first_run_at_its_indices() {
 /// when it is authored (`Ext/Techno/Body.cpp:1368-1384`); the stock five keep
 /// defaulting to `Weapon[0].FLH`, and an absent sixth keeps the stock zero
 /// answer for a negative weapon index past the fifth port.
-#[cfg(feature = "phobos")]
 #[test]
 fn alternate_flh5_is_read_and_an_absent_sixth_stays_zero() {
     let offsets = read("[ART]\nPrimaryFireFLH=1,2,3\nAlternateFLH5=0,0,60\n", 0, 0);

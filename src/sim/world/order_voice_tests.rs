@@ -916,7 +916,6 @@ fn ares_firing_voice_tiers_fall_through() {
 /// type is `Grinding=` speaks the foot type's `VoiceEnterGrinder` catalog
 /// reference and skips the `VoiceSpecialAttack` selector (no Main draw);
 /// unset, a non-grinding target or an absent target keep the stock list.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_voice_enter_grinder_replaces_the_special_attack_voice() {
     use crate::map::entities::EntityCategory;
@@ -998,7 +997,6 @@ fn phobos_voice_enter_grinder_replaces_the_special_attack_voice() {
 /// selected multi-weapon slot uses its per-slot `VoiceWeapon%dAttack`; without
 /// one, `IsSecondary(slot)` chooses the `VoiceSecondaryWeaponAttack` slot
 /// voice instead of the stock `index != 0` rule.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_multi_weapon_voice_uses_the_slot_and_is_secondary() {
     use crate::sim::combat::TargetKind;
@@ -1058,7 +1056,6 @@ fn phobos_multi_weapon_voice_uses_the_slot_and_is_secondary() {
 /// hook `0x00708FC0`): `VoicePickup` (`Ext/AircraftType/Body.cpp:23`) replaces
 /// the VoiceMove choice for a `Carryall=` aircraft with a used radio link whose
 /// Destination is a Foot, and the registered scalar queues with no Main draw.
-#[cfg(feature = "phobos")]
 #[test]
 fn carryall_voice_pickup_replaces_move_only_for_a_linked_foot_destination() {
     use crate::map::entities::EntityCategory;

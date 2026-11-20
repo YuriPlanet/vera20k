@@ -230,14 +230,8 @@ pub(crate) fn tiberium_slope_admits(
     ty: &crate::rules::tiberium_type::TiberiumType,
     slope_type: i32,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     {
         registry.allows_ramp(ty, slope_type)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (registry, ty);
-        slope_type == 0
     }
 }
 
@@ -247,17 +241,11 @@ pub(crate) fn tiberium_type_allows_ramps(
     rules: &crate::rules::ruleset::RuleSet,
     type_id: TiberiumTypeId,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     {
         rules
             .tiberium_types
             .get(type_id)
             .is_some_and(|ty| ty.allow_ramps && rules.overlay_registry().has_ramp_art(ty))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, type_id);
-        false
     }
 }
 
@@ -267,7 +255,6 @@ pub(crate) fn overlay_tiberium_allows_ramps(
     registry: &OverlayTypeRegistry,
     overlay_id: u8,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     {
         registry
             .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
@@ -275,11 +262,6 @@ pub(crate) fn overlay_tiberium_allows_ramps(
             .flatten()
             .and_then(|id| rules.tiberium_types.get(id))
             .is_some_and(|ty| ty.allow_ramps && registry.has_ramp_art(ty))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, registry, overlay_id);
-        false
     }
 }
 
@@ -2363,7 +2345,6 @@ SpreadPercentage=.06
     /// Phobos `AllowRamps=` (`Ext/Tiberium/Hooks.cpp:46-90`): the spread
     /// admission refuses a cardinal ramp unless the type has the key and its
     /// first ramp overlay is Tiberium art.
-    #[cfg(feature = "phobos")]
     #[test]
     fn allow_ramps_admits_spread_onto_a_cardinal_ramp() {
         let build = |key: &str| {

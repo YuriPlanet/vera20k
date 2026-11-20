@@ -848,7 +848,6 @@ fn power_plant_to_splice(
     // to stay at or above the house's `PowerSurplus` target instead of merely
     // non-negative. `ScaleToDrainAmount > 0` scales that target by
     // `PowerDrain / scale`.
-    #[cfg(feature = "phobos")]
     let surplus_floor = if rules.phobos_globals.enable_power_surplus {
         let scale = rules.phobos_globals.power_surplus_scale_to_drain_amount;
         if scale > 0 {
@@ -860,8 +859,6 @@ fn power_plant_to_splice(
     } else {
         0
     };
-    #[cfg(not(feature = "phobos"))]
-    let surplus_floor = 0;
     let short = power_surplus_short(
         power.total_output(),
         power.total_drain(),

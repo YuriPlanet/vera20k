@@ -309,7 +309,6 @@ fn align_attackers_to_targets(store: &mut EntityStore) {
                     .get(target)
                     .map(crate::sim::combat::attack_target::target_coords),
                 TargetKind::Cell(rx, ry) => Some(cell_center_coords(rx, ry)),
-                #[cfg(feature = "phobos")]
                 TargetKind::Bullet(..) => None,
             };
             let Some((rx, ry, sub_x, sub_y)) = coords else {
@@ -761,7 +760,6 @@ fn gsi_04_05_building_attack_frame_prelude_obeys_object_and_type_gates() {
 
     // Phobos `BuildingClass_ReceiveDamage_DamageSelf @ 0x0044224F` skips the
     // `0x00442262` self return when the warhead admits the firer.
-    #[cfg(feature = "phobos")]
     {
         let allow_wh = interner.intern("SELFWH");
         let allow_self = EntityDamageEvent::area(5, 10, 0, 5, Some(victim_owner), allow_wh);
@@ -1616,7 +1614,6 @@ fn retail_gassed_infantry_drops_its_fire_and_path() {
 /// (`0x00701D96`): a positive combined time liberates the victim from its
 /// team through the receiver's starts-berserk gate; a non-positive one
 /// leaves membership untouched.
-#[cfg(feature = "phobos")]
 #[test]
 fn stop_berzerk_leaves_a_team_member_where_a_positive_stack_liberates_it() {
     use crate::rules::ini_parser::IniFile;
@@ -3375,7 +3372,6 @@ fn gsi_04_07_should_retaliate_world_refusals() {
 /// `Ext/Techno/Hooks.Firing.cpp:1226-1264`): a human's weapon override, else
 /// `[CombatDamage] AutoTarget.IronCurtained=`, can refuse retaliation at an
 /// iron-curtained source; a computer house keeps the stock answer.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_iron_curtained_source_gates_human_retaliation_by_weapon_and_global() {
     use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
@@ -3430,7 +3426,6 @@ fn an_iron_curtained_source_gates_human_retaliation_by_weapon_and_global() {
 /// with its original owner until `BeControlledThreatFrame` passes. The
 /// boundary frame, a berserk retaliator, a controller without a manager and
 /// a non-allied house all retaliate.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_freshly_mind_controlled_source_is_shielded_from_its_former_allies_retaliation() {
     use crate::sim::capture_manager::{CaptureManagerState, MindControlLink};
@@ -5883,7 +5878,6 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
 /// `Ext/BuildingType/Hooks.cpp:389-411`, `0x4426DB`, `0x70272E`, `0x702777`):
 /// a struck building with the key skips both of the building damage-cue
 /// owners, while a stock type still requests each one.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_disable_damage_sound_mutes_the_building_damage_cues() {
     let rules = building_damage_sound_rules();
@@ -6446,7 +6440,6 @@ fn infantry_standing_fire_waits_for_fire_frame() {
 /// shot clears his target, but the class target-change block is skipped, so
 /// the firing latch reset and the unforced idle `Do_Action` do not run and he
 /// keeps his firing action.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_fire_once_reset_sequence_keeps_the_firing_action() {
     for (key, keeps) in [
@@ -7550,7 +7543,6 @@ fn selected_weapon_range(
 /// (`Ext/Techno/Hooks.Firing.cpp:94-118`): a configured class arm answers the
 /// slot before the native ladder, and `ForceAAWeapon.Aircraft` takes over from
 /// `ForceWeapon.Aircraft` once the target is airborne.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_force_weapon_replaces_the_native_selection() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -7686,7 +7678,6 @@ fn phobos_force_weapon_replaces_the_native_selection() {
 /// `Ext/Techno/Hooks.Firing.cpp:100-116`): `SelectCount=2` never leaves the
 /// stock two slots, `SelectCount` above `WeaponCount` clamps, and the switch
 /// off keeps the stock answer even with the other keys authored.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_multi_weapon_cycles_only_the_admitted_slots() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -7819,7 +7810,6 @@ fn phobos_multi_weapon_cycles_only_the_admitted_slots() {
 /// force-fired cell admits only a `Wall=` warhead, or a `Wood=` warhead when
 /// the overlay's `Armor=` is wood. The slot walk therefore skips a plain
 /// weapon the wall refuses and answers the first slot the wall admits.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_multi_weapon_cell_wall_gate_reads_the_overlay_armor() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -7897,7 +7887,6 @@ fn phobos_multi_weapon_cell_wall_gate_reads_the_overlay_armor() {
 /// the key on, a two-weapon `SelectMultiWeapon` continues instead of falling
 /// through, and the drain priority is disabled, so the primary answers. The
 /// same type without the key keeps the stock drain arm's secondary.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_no_secondary_weapon_fallback_disables_the_drain_priority() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -7966,7 +7955,6 @@ fn phobos_no_secondary_weapon_fallback_disables_the_drain_priority() {
 /// (`Ext/Techno/WeaponHelpers.cpp:419-434`), unlike shrapnel's
 /// `IsAllowedSplitsTarget` (`Ext/Bullet/Hooks.cpp:314`): a `LegalTarget=no`
 /// airborne target still admits the AA third slot.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_multi_weapon_can_fire_ignores_legal_target() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -8026,7 +8014,6 @@ fn phobos_multi_weapon_can_fire_ignores_legal_target() {
 /// the stock ladder does not do because neither projectile is AA.
 /// `NoSecondaryWeaponFallback` suppresses the pick; `.AllowAA` restores the
 /// airborne-secondary arm through `secondIsAA`.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_stock_weapon_pick_honours_can_target_and_the_fallback_keys() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -9333,7 +9320,6 @@ fn irradiate_bound(
 
 /// [`irradiate_bound`] with Phobos `RadHasOwner`/`RadHasInvoker` attribution:
 /// the detonation names a firing house and an invoker object.
-#[cfg(feature = "phobos")]
 fn irradiate_attributed(
     sim: &mut crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -9795,7 +9781,6 @@ fn buildings_take_no_rad_damage() {
 
 /// Phobos custom radiation: the stock scene plus a `[RadiationTypes]` entry
 /// with its own level cap, factor and warhead, bound by `RadType=`.
-#[cfg(feature = "phobos")]
 fn phobos_radiation_ini() -> crate::rules::ini_parser::IniFile {
     crate::sim::arena_fixture::clear_ground_ini(
         "\
@@ -9830,7 +9815,6 @@ fn phobos_radiation_rules() -> RuleSet {
 /// A bound radiation type drives the site's level clamp, its damage factor
 /// and its own warhead; the default-type path on the same scene keeps the
 /// globals.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_custom_radiation_type_damage_uses_the_bound_types_parameters() {
     let rules = phobos_radiation_rules();
@@ -9869,7 +9853,6 @@ fn phobos_custom_radiation_type_damage_uses_the_bound_types_parameters() {
 
 /// A bound type's `RadColor`, `RadLightFactor` and `RadTintFactor` shape the
 /// site's published light, so two types on the same scene light differently.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_a_bound_types_color_drives_the_site_light() {
     let rules = phobos_radiation_rules();
@@ -9889,7 +9872,6 @@ fn phobos_a_bound_types_color_drives_the_site_light() {
 
 /// `UseGlobalRadApplicationDelay=false` moves the admission gate to each
 /// bound type's own `RadApplicationDelay`.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_per_type_application_delay_gates_damage_when_the_global_gate_is_off() {
     let mut rules = phobos_radiation_rules();
@@ -9939,7 +9921,6 @@ fn phobos_per_type_application_delay_gates_damage_when_the_global_gate_is_off() 
 
 /// Native keeps concurrent sites of different types at one center; this
 /// model's one-site-per-center merges and retains the existing binding.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_merge_at_one_center_keeps_the_existing_bound_type() {
     let rules = phobos_radiation_rules();
@@ -10076,7 +10057,6 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
 /// the stock cell under the firer with the firer object, `random` draws one
 /// `RandomRanged(0, last)` candidate per try around the firer's cell, and
 /// `base` keeps the stock cell.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_area_fire_target_self_and_random_replace_the_stock_cell() {
     use crate::sim::rng::SimRng;
@@ -10710,7 +10690,6 @@ fn campaign_reverse_only_alliance_keeps_shrapnel_hostile_head_before_random_cell
 /// cell holds no ground object; `Shrapnel.AffectsGround` admits it. The key is
 /// a `Nullable` falling back to the `[CombatDamage]` global, whose value
 /// default is `no`, so the unset case must stay at the stock refusal.
-#[cfg(feature = "phobos")]
 #[test]
 fn ground_shrapnel_needs_the_phobos_affects_ground_key() {
     const BODY: &str = "[VehicleTypes]\n0=MTNK\n\n[MTNK]\nStrength=100\nArmor=heavy\nPrimary=PARENT\nSecondary=CHILD\n\n[PARENT]\nDamage=20\nROF=10\nRange=6\nSpeed=30\nProjectile=PARENTPROJ\nWarhead=WH\n\n[PARENTPROJ]\nAirburst=yes\nShrapnelWeapon=CHILD\nShrapnelCount=2\n{AFFECTS}\n\n[CHILD]\nDamage=5\nROF=10\nRange=3\nSpeed=40\nProjectile=CHILDPROJ\nWarhead=WH\n\n[CHILDPROJ]\nSubjectToWalls=yes\n\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{GLOBAL}";
@@ -10796,7 +10775,6 @@ fn ground_shrapnel_needs_the_phobos_affects_ground_key() {
 /// `InitialTargetBuilding`, which the ring skips by identity, so it is never a
 /// child's target. `Shrapnel.IgnoreHitBuildings` then keeps every other
 /// building to one child per emission.
-#[cfg(feature = "phobos")]
 #[test]
 fn shrapnel_building_targets_need_affects_buildings_and_hit_buildings_once() {
     const BODY: &str = "[VehicleTypes]\n0=MTNK\n\n[BuildingTypes]\n0=HQ\n\n[HQ]\nStrength=100\n\n[MTNK]\nStrength=100\nArmor=heavy\nPrimary=PARENT\nSecondary=CHILD\n\n[PARENT]\nDamage=20\nROF=10\nRange=6\nSpeed=30\nProjectile=PARENTPROJ\nWarhead=WH\n\n[PARENTPROJ]\nAirburst=yes\nShrapnelWeapon=CHILD\nShrapnelCount=12\n{AFFECTS}\n{IGNORE}\n\n[CHILD]\nDamage=5\nROF=10\nRange=3\nSpeed=40\nProjectile=CHILDPROJ\nWarhead=WH\n\n[CHILDPROJ]\nSubjectToWalls=yes\n\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
@@ -10931,7 +10909,6 @@ fn shrapnel_building_targets_need_affects_buildings_and_hit_buildings_once() {
 /// targeting replaces the stock alliance test, so an allied unit becomes a
 /// legal child target while a `LegalTarget=no` type stops being one. The
 /// `[CombatDamage]` global supplies the same switch to a type that omits it.
-#[cfg(feature = "phobos")]
 #[test]
 fn shrapnel_use_weapon_targeting_replaces_the_alliance_test() {
     const BODY: &str = "\
@@ -12980,10 +12957,7 @@ fn gsi_05_14_a_dying_building_uses_its_own_debris_anims() {
     let own: usize = names.iter().filter(|n| n.starts_with("DBRI-WM")).count();
     // Vanilla pins the budget at `MaxDebris - 1` = 3; Phobos's Techno hook
     // draws `RandomRanged(3, 4)`.
-    #[cfg(feature = "phobos")]
     let budget = 3..=4;
-    #[cfg(not(feature = "phobos"))]
-    let budget = 3..=3;
     assert!(
         budget.contains(&own),
         "the whole budget comes from DebrisAnims=: {names:?}"
@@ -13038,10 +13012,7 @@ fn a_dying_buildings_debris_leaves_from_its_centre() {
         .collect();
     // Vanilla pins the budget at `MaxDebris - 1` = 1; Phobos's Techno hook
     // draws `RandomRanged(1, 2)`.
-    #[cfg(feature = "phobos")]
     let budget = 1..=2;
-    #[cfg(not(feature = "phobos"))]
-    let budget = 1..=1;
     assert!(
         budget.contains(&spawns.len()),
         "MinDebris=1, MaxDebris=2 pins one or two pieces"
@@ -13320,7 +13291,6 @@ fn clusters_scatter_around_the_impact() {
 /// `Ext/Bullet/Hooks.cpp:352-378`): the firing type's
 /// `ClusterScatter.Min=`/`Max=` replace the stock 256..512 lepton bounds of
 /// each cluster successor's distance from the impact.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_cluster_scatter_overrides_the_successor_distance() {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
@@ -13530,7 +13500,6 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
 
 /// The demo mod's own values: `RadColor=255,0,255`, `RadLightFactor=0.6`,
 /// `RadTintFactor=2.0`, duration x6 and a 400 level cap.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_demo_purple_values_reach_the_light() {
     let rules = phobos_radiation_rules();
@@ -13556,7 +13525,6 @@ fn phobos_demo_purple_values_reach_the_light() {
 /// replaces the retail activation with `RadSiteExt::CreateLight`, which tints
 /// from the bound type's `RadColor` with no theater test, so a purple field
 /// stays purple on a SNOW scenario.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_radiation_color_ignores_the_theater() {
     let rules = phobos_radiation_rules();
@@ -13608,7 +13576,6 @@ fn retail_snow_theater_substitutes_red_and_blue() {
 
 /// Phobos `RadHasOwner`/`RadHasInvoker`: the site keeps the round's house and
 /// firer, and its damage call carries them.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_rad_has_owner_and_invoker_reach_the_site_and_its_damage() {
     let rules = phobos_radiation_rules();
@@ -13673,7 +13640,6 @@ fn phobos_rad_has_owner_and_invoker_reach_the_site_and_its_damage() {
 /// foundation's radiation on `RadApplicationDelay.Building` boundaries, and
 /// each type clamps its level at `RadLevelMax` and scales it by its own
 /// `RadLevelFactor` through its own warhead.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_buildings_take_radiation_on_the_building_delay() {
     let rules = phobos_radiation_rules();
@@ -13710,7 +13676,6 @@ fn phobos_buildings_take_radiation_on_the_building_delay() {
 /// The branch is opt-in: with no `RadApplicationDelay.Building` the shared
 /// gate's building delay is 0, which native treats as "skip". Immune
 /// buildings and a warhead that verses the armor at 0% stay untouched.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
     let mut rules = phobos_radiation_rules();
@@ -13758,7 +13723,6 @@ fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
 /// never fires. This row pins that dormancy: with `1` on the global row and on
 /// the bound type, a building takes exactly the damage it takes without the
 /// key, so wiring a real cap has to come with a native body that increments.
-#[cfg(feature = "phobos")]
 #[test]
 fn dormant_building_damage_max_count_leaves_damage_unchanged() {
     let mut ini = phobos_radiation_ini();
@@ -13821,7 +13785,6 @@ fn dormant_building_damage_max_count_leaves_damage_unchanged() {
 /// warhead detonation at the target, so the warhead's `CellSpread` reaches
 /// neighbours the field itself never covered. The direct-receiver form stays
 /// on the target alone.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_rad_site_warhead_detonate_splashes_around_the_target() {
     let rules = phobos_radiation_rules();
@@ -13871,7 +13834,6 @@ fn phobos_rad_site_warhead_detonate_splashes_around_the_target() {
 /// replaces the `ObjectClass::ReceiveDamage` building minimum at `0x5F5416`:
 /// a zero packet is floored to 1 only while the key is off, and the vanilla
 /// `< 1` floor (which also covers healing packets) no longer runs.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_can_c4_allow_zero_damage_replaces_the_building_minimum() {
     fn rules(allow: bool) -> RuleSet {
@@ -13984,7 +13946,6 @@ fn phobos_can_c4_allow_zero_damage_replaces_the_building_minimum() {
 /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:178-188`): `NOKILL` carries
 /// `CanKill=no`, `HIT` leaves it unset and therefore keeps the native `true`
 /// default (`Ext/WarheadType/Body.cpp:369`).
-#[cfg(feature = "phobos")]
 fn can_kill_scene() -> (crate::sim::world::Simulation, RuleSet, u64, u64) {
     const VERSES: &str = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
     let ini = IniFile::from_str(&format!(
@@ -14009,7 +13970,6 @@ fn can_kill_scene() -> (crate::sim::world::Simulation, RuleSet, u64, u64) {
 
 /// One 100-damage hit on the victim through `commit_entities`; `forced` sets
 /// `args->IgnoreDefenses`, the branch that skips the whole shield block.
-#[cfg(feature = "phobos")]
 fn can_kill_hit(
     sim: &mut crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -14050,7 +14010,6 @@ fn can_kill_hit(
     );
 }
 
-#[cfg(feature = "phobos")]
 fn can_kill_victim_alive(sim: &crate::sim::world::Simulation, id: u64) -> bool {
     sim.substrate
         .entities
@@ -14063,7 +14022,6 @@ fn can_kill_victim_alive(sim: &crate::sim::world::Simulation, id: u64) -> bool {
 /// receiver packet at 0, which the replaced `SkipLowDamageCheck` lets through
 /// untouched, so the victim keeps living. The same packet from the default
 /// warhead kills.
-#[cfg(feature = "phobos")]
 #[test]
 fn can_kill_no_leaves_one_health_and_skips_the_low_damage_check() {
     for (warhead, survives) in [("NOKILL", true), ("HIT", false)] {
@@ -14102,7 +14060,6 @@ fn can_kill_no_leaves_one_health_and_skips_the_low_damage_check() {
 
 /// `:181`: the clamp needs the warhead's total damage to reach the target's
 /// health, so a packet that would not kill applies in full.
-#[cfg(feature = "phobos")]
 #[test]
 fn can_kill_no_still_lets_a_nonlethal_hit_through() {
     let (mut sim, rules, victim, attacker) = can_kill_scene();
@@ -14129,7 +14086,6 @@ fn can_kill_no_still_lets_a_nonlethal_hit_through() {
 /// `:141`: the shield block this arm lives in is skipped when
 /// `args->IgnoreDefenses` is set, so a forced hit is never clamped — C4
 /// damage still kills an `Unkillable` carrier.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_ignore_defenses_hit_bypasses_the_can_kill_clamp() {
     let (mut sim, rules, victim, attacker) = can_kill_scene();

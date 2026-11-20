@@ -395,9 +395,6 @@ pub(crate) fn build_loading_composition(
             let fit = aspect_fit_preview(region, preview.width, preview.height)?;
             let mut image = preview.clone();
             if let Some(bounds) = bounds {
-                if draw_start_dots {
-                    burn_black_start_indicators(&mut image, &prefix, bounds);
-                }
                 burn_black_start_indicators(&mut image, &prefix, bounds, 0);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
@@ -447,9 +444,6 @@ pub(crate) fn build_random_map_loading_composition(
                 crate::map::preview::START_STAGING_SLOTS as u32,
             );
             if let Some(bounds) = projected_playfield_bounds(launch_map) {
-                if draw_start_dots {
-                    burn_black_start_indicators(&mut image, &prefix, bounds);
-                }
                 let halvings = random_map_preview_halvings(image.width, bounds);
                 burn_black_start_indicators(&mut image, &prefix, bounds, halvings);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
@@ -1638,6 +1632,7 @@ mod tests {
                 [800, 600],
                 ShellScale::RETAIL,
                 &assignments,
+                false,
             )
             .markers
             .len()
@@ -1656,6 +1651,7 @@ mod tests {
             &map(""),
             &starts,
             &assignments,
+            true,
         );
         assert_eq!(random.markers.len(), 30);
         assert_eq!(random.markers[29].color_priority, 29);

@@ -1371,14 +1371,8 @@ pub(crate) fn damage_wall_overlay_with_terrain(
 /// a wall's penultimate hit applies to each pristine cardinal neighbour,
 /// `200` natively (`Ext/Cell/Hooks.cpp:5-11`).
 pub(crate) fn adjacent_wall_damage_for(rules: &crate::rules::ruleset::RuleSet) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         rules.phobos_globals.adjacent_wall_damage
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rules;
-        200
     }
 }
 

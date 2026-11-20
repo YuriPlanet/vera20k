@@ -93,7 +93,6 @@ fn transport_can_unload_now(sim: &Simulation, rules: &RuleSet, entity: &GameEnti
 /// Phobos `NoQueueUpToUnload` on a building type, falling back to
 /// `[General] NoQueueUpToUnload.Buildings=` and then
 /// `[General] NoQueueUpToUnload=` (`Ext/Techno/Hooks.Transport.cpp:810`).
-#[cfg(feature = "phobos")]
 fn building_no_queue_up_to_unload(
     object: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
@@ -139,7 +138,6 @@ fn emit_leave_transport_sound(sim: &mut Simulation, rules: &RuleSet, transport_i
 /// the allied content of the eight neighbouring cells away from the
 /// transport, on its `OnBridge` layer (`FindTechnoNearestTo` gates on the
 /// nearest object being allied, then the cell's objects scatter).
-#[cfg(feature = "phobos")]
 fn scatter_unload_neighbours(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -238,7 +236,6 @@ fn unload_epilogue(
 /// building key replaces the Unload epilogue's `RandomRanged(0, 2) + 14`
 /// and consumes no random draw.
 fn building_unload_delay(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
-    #[cfg(feature = "phobos")]
     if let Some(delay) = sim
         .substrate
         .entities
@@ -721,7 +718,6 @@ fn eject_head_passenger(
             }
             // Phobos `FootClass_LeaveTransport` (0x4DE722): the ejected
             // passenger leaves the scenario reloader list.
-            #[cfg(feature = "phobos")]
             sim.remove_transport_reloader(pax_id);
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
@@ -1022,7 +1018,6 @@ pub(crate) fn building_mission_unload_absorber(
     // else the Building global, else the General global, answers 0 for the
     // dispatch delay; the native hook runs after the stock draw, so the
     // epilogue's RandomRanged still consumes its value.
-    #[cfg(feature = "phobos")]
     if sim
         .substrate
         .entities
@@ -1296,13 +1291,10 @@ pub(crate) fn unit_mission_unload(
                 // and Phobos returns the CannotUnload arm (`0x73D87F`,
                 // `Ext/Techno/Hooks.Transport.cpp:691-698`) instead of
                 // setting (0,0) as the next destination.
-                #[cfg(feature = "phobos")]
                 let Some(cell) = nearby else {
                     queue_guard(sim, id, rules);
                     return unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id);
                 };
-                #[cfg(not(feature = "phobos"))]
-                let cell = nearby.unwrap_or((0, 0));
                 if let Some(terrain) = sim.resolved_terrain.as_ref() {
                     // This fresh lookup precedes the Unit setter. Retain its
                     // identity even if a later setter lookup restamps Dummy.

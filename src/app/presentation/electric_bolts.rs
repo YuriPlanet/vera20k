@@ -42,21 +42,6 @@ impl ElectricBolts {
         // live owned bolt until that bolt's last pass (`0x004C29A9`). The
         // Phobos `TechnoClass_InitEBolt` hook skips the whole slot test and
         // stores every bolt in `TechnoExt::ElectricBolts` instead.
-        #[cfg(not(feature = "phobos"))]
-        if let Some(owner) = birth.owner
-            && owner.unit_slot
-            && self
-                .live
-                .iter()
-                .any(|bolt| bolt.birth.owner.is_some_and(|held| held.unit == owner.unit))
-        {
-            birth.owner = None;
-        }
-        self.live.push(Bolt {
-            phase: birth.phase,
-            decay: birth.decay,
-            birth,
-        });
     }
 
     /// Manager4C2830's owner arm, ahead of each bolt's draw: an owned bolt's

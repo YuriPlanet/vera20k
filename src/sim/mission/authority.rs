@@ -279,15 +279,12 @@ fn evaluate_ready(
         // restores the native check; a queued Unload or a computer-controlled
         // house always queries (`HouseClass::IsControlledByHuman @ 0x0050B730`).
         // Without the Phobos capability VERA keeps the native always-query.
-        #[cfg(feature = "phobos")]
         let moving_check = rules.phobos_globals.ready_to_next_mission_moving_check
             || mission.queued().known() == Some(super::MissionType::Unload)
             || !sim
                 .houses
                 .get(&entity.owner())
                 .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
-        #[cfg(not(feature = "phobos"))]
-        let moving_check = true;
 
         match entity.category() {
             EntityCategory::Unit => {
@@ -569,7 +566,6 @@ impl Simulation {
             .get(receiver)
             .and_then(|entity| entity.attack_target.target());
         effects.apply_target(self, &prepared, requested);
-        #[cfg(feature = "phobos")]
         if requested != previous {
             // Phobos `UpdateGattlingRateDownReset` at `TechnoClass_SetTarget_After`
             // (`0x6FCF3E`): a `RateDown.Reset=yes` gattling restarts its value on
@@ -2087,7 +2083,6 @@ mod tests {
 /// `Ext/Techno/Hooks.cpp:1176-1184`): `!pUnit->Type->Turret`,
 /// `CurrentFiringFrame != -1`, and `FireUp.ResetInRetarget || !IsCloseEnough`
 /// clear the Unit's firing sequence to -1.
-#[cfg(feature = "phobos")]
 fn reset_fire_up_in_retarget(
     sim: &mut Simulation,
     id: u64,

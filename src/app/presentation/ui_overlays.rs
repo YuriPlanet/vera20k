@@ -160,7 +160,6 @@ impl HudFacts {
                 clock: sim.bomb_clock(id, rules),
                 images: sim.bomb_images(id, rules).to_vec(),
             }),
-            #[cfg(feature = "phobos")]
             digital_values: object
                 .filter(|object| !object.digital_display_disable())
                 .map_or_else(Vec::new, |object| {
@@ -180,8 +179,6 @@ impl HudFacts {
                         })
                         .collect()
                 }),
-            #[cfg(not(feature = "phobos"))]
-            digital_values: Vec::new(),
             // A tick's worth of countdowns, read here rather than at draw time:
             // the label is per-frame text like DrawExtraInfo's, and the
             // simulation may move on before the frame reaches the screen.
@@ -391,7 +388,6 @@ fn health_bar_switches(
     entity: &crate::sim::game_entity::GameEntity,
     rules: Option<&RuleSet>,
 ) -> (bool, bool) {
-    #[cfg(feature = "phobos")]
     {
         rules
             .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
@@ -402,11 +398,6 @@ fn health_bar_switches(
                 )
             })
             .unwrap_or((false, false))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (sim, entity, rules);
-        (false, false)
     }
 }
 
@@ -424,10 +415,6 @@ fn health_strip_visibility(
     widened: bool,
     ares: bool,
 ) -> (bool, bool) {
-    // `0x6F64A9` refuses the whole tail, background included.
-    if hide {
-        return (false, false);
-    }
     let selected = entity.selection.is_selected();
     // Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388) also
     // treats an object below the surface (IsSurfaced5F6C10: GetHeight >
@@ -464,7 +451,6 @@ pub(crate) struct BuildingBarGeometry {
     /// Both upper projections carry the same Z; it cancels in 6F65BC..CF.
     pub(crate) num_pips: i32,
     /// Fixed ART Height*104, in leptons.
-    #[cfg(feature = "phobos")]
     pub(crate) height_leptons: i32,
 }
 
@@ -479,7 +465,6 @@ impl BuildingBarGeometry {
             edge: (ax, ay),
             upper_y: ay - crate::util::native_x87::adjust_for_z_standard(z),
             num_pips: (ay - by) / 2,
-            #[cfg(feature = "phobos")]
             height_leptons: z,
         }
     }
@@ -497,7 +482,6 @@ impl BuildingBarGeometry {
 /// Phobos `TechnoExt::GetFootSelectBracketPosition`'s rectangle at screen
 /// point `(sx, sy)`: the 8-pip Infantry or 17-pip mobile bracket, as
 /// `[x, y, width, height]`.
-#[cfg(feature = "phobos")]
 pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] {
     let length = if infantry { 8.0 } else { 17.0 };
     let nudge = if infantry { 1.0 } else { 0.0 };
@@ -568,7 +552,6 @@ fn entity_status_pips_drawable(
     // pip call, and `HealthBar.Permanent.PipScale=` (`0x6F67E8`, `0x6F6A58`)
     // only lifts that call's hover/selection test. Scale pips, the self-heal
     // icon and the control-group digit all live inside it.
-    #[cfg(feature = "phobos")]
     {
         let (hide_pips, permanent_pip_scale) = rules
             .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
@@ -1285,7 +1268,6 @@ pub(crate) fn build_building_status_instances(
 }
 
 /// Which PIPS.SHP frame a self-healing non-building's health strip carries.
-#[cfg(any(not(feature = "phobos"), test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SelfHealPip {
     /// Frame `0x0D`, the red cross: an Infantry, or a Unit whose type is
@@ -1295,7 +1277,6 @@ pub(crate) enum SelfHealPip {
     Units,
 }
 
-#[cfg(any(not(feature = "phobos"), test))]
 impl SelfHealPip {
     /// The PIPS.SHP frame index this arm draws (`ebx` at `0x0070A573` /
     /// `0x0070A5DF`).
@@ -1311,7 +1292,6 @@ impl SelfHealPip {
 /// Health6F6A8E supplies(-10,+10),709B14 subtracts5 X and adds11 for
 /// Infantry.70A5F1 adds(38,-32) for every Unit, even Organic, while
 ///70A60A adds(19,-35) for Infantry. Type+3E0 bracket delta is not passed.
-#[cfg(any(not(feature = "phobos"), test))]
 fn self_heal_pip_offset(category: EntityCategory) -> (f32, f32) {
     if category == EntityCategory::Unit {
         (23.0, -22.0)
@@ -1329,7 +1309,6 @@ fn self_heal_pip_offset(category: EntityCategory) -> (f32, f32) {
 /// every other class passes both tests and draws nothing. Each arm first
 /// requires its owner house's counter — `HasInfSelfHeal @ 0x0050D9C0` on
 /// `House+0x164`, `HasUnitSelfHeal @ 0x0050D9D0` on `House+0x168`.
-#[cfg(any(not(feature = "phobos"), test))]
 pub(crate) fn self_heal_pip(
     category: EntityCategory,
     organic: bool,
@@ -1421,10 +1400,8 @@ pub(crate) struct TechnoExtras {
     pub digital_shapes: Vec<(u32, SpriteInstance)>,
     /// Phobos `TechnoExt::DrawSelectBox` after-body box: `[SelectBoxTypes]`
     /// catalog index plus the sprite drawn with that entry's SHP.
-    #[cfg(feature = "phobos")]
     pub select_box: Option<(u32, SpriteInstance)>,
     /// Phobos `TechnoExt::DrawSelectBox` ground shape, same encoding.
-    #[cfg(feature = "phobos")]
     pub select_box_ground: Option<(u32, SpriteInstance)>,
     ///709A90's group tail follows this parent's pip scale, not a global sweep.
     pub group: StatusTextOverlayInstances,
@@ -1477,12 +1454,10 @@ impl TechnoExtras {
             instance.position[0] += offset[0];
             instance.position[1] += offset[1];
         }
-        #[cfg(feature = "phobos")]
         if let Some((_, instance)) = &mut self.select_box {
             instance.position[0] += offset[0];
             instance.position[1] += offset[1];
         }
-        #[cfg(feature = "phobos")]
         if let Some((_, instance)) = &mut self.select_box_ground {
             instance.position[0] += offset[0];
             instance.position[1] += offset[1];
@@ -1523,7 +1498,6 @@ fn keep_health_strip_screen_size(strip: &mut TechnoExtras, anchor: (f32, f32), z
 /// Phobos `ShieldClass::DrawShieldBar_Pip`: the entry's own triplet when its
 /// X is set, otherwise the global `[AudioVisual] Pips.Shield*` triplet, then
 /// the native 5 (building) / 16 (mobile) fallback.
-#[cfg(feature = "phobos")]
 fn shield_pip_frame(
     building: bool,
     hp: i32,
@@ -1554,7 +1528,6 @@ fn shield_pip_frame(
 /// Phobos `DrawShieldBar_Building`/`DrawShieldBar_Other` sprite commands.
 /// `bracket` is the native bracket anchor after the class fixed offsets;
 /// `bracket_delta` is the shield's own `BracketDelta` (foot only).
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn shield_bar_instances(
     entity: &ObjectRecord,
@@ -1655,7 +1628,6 @@ fn shield_bar_instances(
 /// draw is refused. The
 /// hook replaces the native rank block whenever the Phobos capability is
 /// compiled in, so the stock negative-rank frame19 arm is not reached.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_insignia_draw<'a>(
     sim: &crate::sim::world::Simulation,
@@ -1972,7 +1944,6 @@ pub(crate) fn self_heal_marker(
     sx: f32,
     sy: f32,
 ) -> Option<SelfHealMarker> {
-    #[cfg(feature = "phobos")]
     let (frame, offset_x, offset_y, period) = {
         use crate::rules::phobos_self_heal::SelfHealGainType;
         let globals = &rules.phobos_globals;
@@ -2023,20 +1994,6 @@ pub(crate) fn self_heal_marker(
                 rules.general.self_heal_unit_frames
             },
         )
-    };
-    #[cfg(not(feature = "phobos"))]
-    let (frame, offset_x, offset_y, period) = {
-        let (infantry_heal, unit_heal) =
-            sim.houses().get(&entity.owner()).map_or((0, 0), |house| {
-                (house.self_heal_infantry(), house.self_heal_units())
-            });
-        let arm = self_heal_pip(entity.category(), object.organic, infantry_heal, unit_heal)?;
-        let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
-        let period = match arm {
-            SelfHealPip::Organic => rules.general.self_heal_infantry_frames,
-            SelfHealPip::Units => rules.general.self_heal_unit_frames,
-        };
-        (arm.frame(), offset_x, offset_y, period)
     };
     let session_frame = sim.session().binary_frame() as i32;
     let remainder = session_frame.checked_rem(period).unwrap_or_else(|| {
@@ -2218,8 +2175,6 @@ pub(crate) fn techno_extras_for_parent(
     let Some(observer) = admitted_techno_observer(sim, entity, local_owner_id) else {
         return strip;
     };
-    #[cfg(not(feature = "phobos"))]
-    let _ = observer;
     // Tactical6D9676 dispatches Object5F65A0/Building447AC0 GetCoords;
     //6D9691..9726 projects integer XYZ before subtracting the camera.
     let coord = entity.hud.get_coords;
@@ -2276,7 +2231,6 @@ pub(crate) fn techno_extras_for_parent(
                 });
         }
     }
-    #[cfg(feature = "phobos")]
     if character != 5
         && let Some(rules) = rules
         && let Some((shape, frame, point, insignia)) = phobos_insignia_draw(
@@ -2376,7 +2330,6 @@ pub(crate) fn techno_extras_for_parent(
         // Phobos `TechnoClass_DrawHealthBar_Buildings 0x6F65D1` ->
         // `DrawShieldBar_Building(length, bound)`, before the native health
         // fill. The building bracket is the Top anchor minus (6,3).
-        #[cfg(feature = "phobos")]
         {
             let top = geometry.first_pip(sx, sy);
             let bracket = (top.0 - 6.0, top.1 - 3.0);
@@ -2465,7 +2418,6 @@ pub(crate) fn techno_extras_for_parent(
     // `DrawShieldBar_Other`, before the native health fill. The foot bracket
     // is the (Left, Top) anchor minus (1,0); the shield's own `BracketDelta`
     // adds the object bracket delta and the type's offset -3.
-    #[cfg(feature = "phobos")]
     {
         let length = if infantry { 8 } else { 17 };
         let [left, top, _, _] = foot_select_bracket(sx, sy, infantry);
@@ -2541,13 +2493,18 @@ pub(crate) fn techno_extras_for_parent(
     //otherwise the same icon/frame uses ordinary600. Native controls:
     //procedural_drawing_oracle/self_heal_status. No render timer is retained.
     if entity_status_pips_drawable(sim, entity, hovered_id, observer_id, Some(rules))
-        && let Some(marker) = self_heal_marker(sim, entity, object, rules, sx, sy)
+        && let Some(live) = sim.entities().get(entity.stable_id())
+        && let Some(marker) = self_heal_marker(sim, live, object, rules, sx, sy)
     {
         strip.self_heal =
             instance(shape, marker.frame, marker.position, 0.0004).map(|mut instance| {
                 instance.draw_state =
                     crate::render::draw_state::DrawState::from_native_selector(0, marker.selector);
                 instance
+            });
+        let (infantry_heal, unit_heal) =
+            sim.houses().get(&entity.owner()).map_or((0, 0), |house| {
+                (house.self_heal_infantry(), house.self_heal_units())
             });
         if let Some(arm) =
             self_heal_pip(entity.category(), object.organic, infantry_heal, unit_heal)
@@ -2719,13 +2676,11 @@ fn scale_pip_rows(
     // whole DrawPips call by the type's `PipScale` and the building flag; the
     // Ammo arm takes the type's `AmmoPipSize` on top. The constructor
     // defaults reproduce the stock 4 / (building ? 2 : 0).
-    #[cfg(feature = "phobos")]
     let generic_size = if building {
         rules.phobos_globals.pips_generic_buildings_size
     } else {
         rules.phobos_globals.pips_generic_size
     };
-    #[cfg(feature = "phobos")]
     let pip_size = if object.pip_scale == crate::rules::object_type::PipScale::Ammo {
         let fallback = if building {
             rules.phobos_globals.pips_ammo_buildings_size
@@ -2736,10 +2691,6 @@ fn scale_pip_rows(
     } else {
         generic_size
     };
-    #[cfg(not(feature = "phobos"))]
-    let generic_size = if building { [4, 2] } else { [4, 0] };
-    #[cfg(not(feature = "phobos"))]
-    let pip_size = generic_size;
     let pip = |slot: usize, frame: usize, y: i32| ScalePipDraw {
         frame,
         offset_pixels: [
@@ -2763,7 +2714,6 @@ fn scale_pip_rows(
         // row; otherwise SpawnsPipFrame/EmptySpawnsPipFrame select the frames,
         // SpawnsPipSize (else the generic class size) the per-slot advance and
         // SpawnsPipOffset the row anchor.
-        #[cfg(feature = "phobos")]
         if object.phobos_show_spawns_pips() {
             let size = object.phobos_spawns_pip_size().unwrap_or(generic_size);
             let offset = object.phobos_spawns_pip_offset();
@@ -2947,10 +2897,7 @@ fn scale_pip_rows(
         // A Phobos build already carries the Ammo pair (and the type's
         // `AmmoPipSize`) in `pip`; the stock build keeps its per-arm
         // `AmmoPipSize` override.
-        #[cfg(feature = "phobos")]
         let sized_step: Option<[i32; 2]> = None;
-        #[cfg(not(feature = "phobos"))]
-        let sized_step = object.ammo_pip_size();
         // Phobos `TechnoClass_DrawPips_Ammo` (`0x70A36E`,
         // `Ext/Techno/Hooks.Pips.cpp:241`) adds the offset to the draw
         // origin, so every pip translates by the same pair after its slot
@@ -2977,17 +2924,11 @@ fn scale_pip_rows(
         // replacement (`Ext/Techno/Hooks.Pips.cpp:245-279`) takes its
         // unwrapped arm instead, and raises the start frame to its own key.
         let wrap = object.pip_wrap();
-        #[cfg(feature = "phobos")]
         let wrap_arm = wrap > 0;
-        #[cfg(not(feature = "phobos"))]
-        let wrap_arm = wrap != 0;
         if wrap_arm {
             let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
             let levels = object.pip_max(rules).wrapping_div(wrap).wrapping_sub(1);
-            #[cfg(feature = "phobos")]
             let start = object.ammo_pip_wrap_start_frame();
-            #[cfg(not(feature = "phobos"))]
-            let start = 14;
             let slots = usize::try_from(wrap).unwrap_or(0);
             pips.extend((0..slots).map(|slot| {
                 let mut frame = start;
@@ -3054,42 +2995,6 @@ fn scale_pip_rows(
     //70A1E9..70A340 reads the Techno's Storage (+0x33C) for every
     //PipScale=Tiberium type, with no harvester or slave test: a Yuri Slave
     //shows the load it digs as a War Miner does.
-    #[cfg(not(feature = "phobos"))]
-    {
-        let bales = entity.storage_bales();
-        let gems = bales
-            .iter()
-            .filter(|bale| bale.resource_type == crate::sim::miner::ResourceType::Gem)
-            .count();
-        let ore = bales.len() - gems;
-        let maximum = object.pip_max(rules);
-        let slots = usize::try_from(maximum).unwrap_or(0);
-        //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0
-        //(ore) through amount / current Type.Storage * GetPipMax + binary64 0.5.
-        //Ambient0E7F is PC53/chop: stock4/40 remains just below0.5 after the
-        //multiply, so rational half-up is wrong. Reuse the existing numeric owner;
-        //original executable controls: passenger_pips.json/numeric_results.
-        let count = |amount: usize| {
-            let rounded = crate::sim::game_entity::rounded_pip_quantity(
-                amount as i32,
-                object.storage,
-                maximum,
-            );
-            usize::try_from(rounded).unwrap_or(0).min(slots)
-        };
-        let gem_pips = count(gems);
-        let ore_pips = count(ore).min(slots - gem_pips);
-        pips.extend((0..slots).map(|slot| {
-            let frame = if slot < gem_pips {
-                5
-            } else if slot < gem_pips + ore_pips {
-                2
-            } else {
-                0
-            };
-            pip(slot, frame, row_y)
-        }));
-    }
     // Phobos `TechnoClass_DrawPips_Tiberium` (`0x70A1F6`,
     // `Ext/Techno/Hooks.Pips.cpp:306-410`) replaces the whole stock arm:
     // a Weeder draws its whole hold with `WeedFrame`/`WeedEmptyFrame`;
@@ -3098,7 +3003,6 @@ fn scale_pip_rows(
     // duplicates and out-of-range indices dropped, missing classes appended)
     // with `Frames[index]` (5 for gems, 2 otherwise past the list) and
     // `EmptyFrame` for a slot no class fills.
-    #[cfg(feature = "phobos")]
     {
         let globals = &rules.phobos_globals;
         let maximum = object.pip_max(rules);
@@ -3444,7 +3348,6 @@ mod tests {
 
     /// Phobos `DrawShieldBar_Pip`: the shield type's own frames first, then the
     /// global `[AudioVisual] Pips.Shield*` triplet, then the native 16/5.
-    #[cfg(feature = "phobos")]
     #[test]
     fn shield_pip_frames_follow_local_then_global_then_fallback() {
         use crate::rules::ini_parser::IniFile;
@@ -3771,7 +3674,6 @@ mod tests {
     /// unhovered, and `HealthBar.Permanent.PipScale=` (`0x6F67E8`,
     /// `0x6F6A58`) lifts the pip call's hover/selection test. All are
     /// `Valueable<bool>` defaulting to `no`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_health_bar_hide_and_permanent_reach_the_admission() {
         use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
@@ -3805,15 +3707,16 @@ mod tests {
             entity.selection.set_selected_for_test(selected);
             sim.entities_mut_for_test().insert(entity);
             sim.entities_mut_for_test()
-                .get_mut(1)
+                .get_mut_for_test(1)
                 .unwrap()
                 .lifecycle
                 .set_in_limbo_for_test(false);
             sim.resubmit_entity_display_for_test(1);
-            let entity = sim.entities().get(1).unwrap();
+            let frame = frame_of(&sim);
+            let entity = frame.object(1).unwrap();
             let hovered = hovered.then_some(1);
             (
-                health_bar_drawable(&sim, entity, hovered, Some("Player"), Some(&rules)),
+                health_bar_drawable(&sim, entity, hovered, Some("Player"), false),
                 entity_status_pips_drawable(&sim, entity, hovered, Some(viewer), Some(&rules)),
             )
         };
@@ -4020,7 +3923,6 @@ mod tests {
                 hovered.then_some(1),
                 Some(player),
                 widened,
-                false,
                 false,
             )
             .1

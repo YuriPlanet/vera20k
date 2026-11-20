@@ -235,7 +235,6 @@ impl Simulation {
         // `Ext/Techno/Hooks.Transport.cpp:560-574`) and its Ship twin
         // (`0x69FFB6`): an Unload mission keeps processing while a passenger
         // remains aboard, so an emptying transport can still be driven.
-        #[cfg(feature = "phobos")]
         let unload_keeps_processing = mission == Some(MissionType::Unload)
             && self
                 .entity_object_type(entity, rules)
@@ -244,8 +243,6 @@ impl Simulation {
                 .passenger_role
                 .cargo()
                 .is_some_and(|cargo| !cargo.passengers().is_empty());
-        #[cfg(not(feature = "phobos"))]
-        let unload_keeps_processing = false;
         if (mission == Some(MissionType::Guard) && !moving)
             || (mission == Some(MissionType::Unload) && !unload_keeps_processing)
         {

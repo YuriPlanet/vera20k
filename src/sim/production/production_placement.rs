@@ -9,7 +9,6 @@ use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-#[cfg(feature = "phobos")]
 use crate::sim::mission::MissionType;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::FrameEffects;
@@ -397,14 +396,12 @@ pub(crate) fn place_production_with_overlays(
                 // is yes and played positionally (`VocClass::PlayAt`) when it is
                 // not. Both arms sit inside the same current-player gate as the
                 // EVA line above (`IsControlledByCurrentPlayer`).
-                #[cfg(feature = "phobos")]
                 let voice_created = sim
                     .substrate
                     .entities
                     .get(entity_id)
                     .and_then(|entity| sim.entity_object_type(entity, rules))
                     .and_then(|object| object.phobos_techno_extras.voice_created.clone());
-                #[cfg(feature = "phobos")]
                 if sim.owner_is_human(owner_id)
                     && let Some(voice) = voice_created
                 {
@@ -865,7 +862,6 @@ pub fn is_within_build_area(
     // `Ext/BuildingType/Hooks.cpp:203-234`): a prohibit pass scans the larger
     // `Adjacent.Disallowed.ProhibitDistance` ring first, and the normal pass
     // then ignores the disallowed list.
-    #[cfg(feature = "phobos")]
     {
         let adjacent = &obj.phobos_adjacent;
         if adjacent.prohibit && adjacent.prohibit_distance > 0 {
@@ -942,8 +938,6 @@ fn build_area_scan(
 ) -> bool {
     let ares = rules.ares_form();
     let (width, height) = obj.foundation.dimensions();
-    #[cfg(not(feature = "phobos"))]
-    let _ = disallow;
     for e in sim.substrate.entities.values() {
         // A dying structure provides no build-area adjacency during its window.
         if e.death.is_dying() || e.lifecycle.in_limbo() {
@@ -974,7 +968,6 @@ fn build_area_scan(
         // `Ext/BuildingType/Hooks.cpp:236-273`): the allow list filters every
         // provider, and a same-house disallowed type is skipped (or fatal
         // with `Prohibit`).
-        #[cfg(feature = "phobos")]
         {
             let adjacent_rules = &obj.phobos_adjacent;
             // Phobos `DisplayClass_BuildingProximityCheck_BuildArea`

@@ -345,10 +345,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        #[cfg(feature = "phobos")]
         let prevent_crew_escape = entity.phobos_prevent_crew_escape;
-        #[cfg(not(feature = "phobos"))]
-        let prevent_crew_escape = false;
         if entity.building.no_survivor.is_set() || !object.crewed || prevent_crew_escape {
             return 0;
         }
@@ -773,10 +770,7 @@ impl Simulation {
             return;
         };
         let captor_type = entity.capture_infantry_type_index.get();
-        #[cfg(feature = "phobos")]
         let prevent_crew_escape = prevent_escape || entity.phobos_prevent_crew_escape;
-        #[cfg(not(feature = "phobos"))]
-        let prevent_crew_escape = prevent_escape;
         if captor_type == -1 && (prevent_crew_escape || !object.crewed || object.passengers != 0) {
             return;
         }
@@ -897,7 +891,6 @@ impl Simulation {
         // head of this block, before the stock open-topped clear below and
         // before Ares survivor handling: every passenger that still holds a
         // recorded board-time house takes it back.
-        #[cfg(feature = "phobos")]
         self.phobos_revert_cargo_on_dying_transport(unit_id, rules, registry, effects);
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -1088,7 +1081,6 @@ impl Simulation {
                 entity.clear_transporter();
             }
             // Phobos `FootClass_LeaveTransport` (0x4DE722): unlisted here.
-            #[cfg(feature = "phobos")]
             sim.remove_transport_reloader(passenger);
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).

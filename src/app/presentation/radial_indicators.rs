@@ -88,8 +88,6 @@ pub(crate) fn build(
     let (Some(sim), Some(frame), Some(rules)) = (sim, frame, rules) else {
         return RadialIndicators { draws: Vec::new() };
     };
-    #[cfg(not(feature = "phobos"))]
-    let _ = (show_power_plant_enhancer_range, show_designator_range);
     let mut draws = Vec::new();
     //6DBE39..72 walks CurrentObjects FORWARD. Overlapping destination edits
     //must retain this order, independently of EntityStore allocation order.
@@ -107,7 +105,6 @@ pub(crate) fn build(
         // 0x456776, `Misc/Hooks.UI.cpp:294-306`): the current player and an
         // observer always see it; any other owner shows only when the
         // configured `AffectedHouse` admits the allied or enemy arm.
-        #[cfg(feature = "phobos")]
         if let Some(viewer) = sim.session().current_house()
             && !sim.session().is_observer_house(viewer)
             && entity.owner() != viewer
@@ -141,7 +138,6 @@ pub(crate) fn build(
     // `SW.Designators`/`SW.Inhibitors` and `DesignatorRange`/`InhibitorRange`
     // are Ares' SWTypeExt keys in VERA's rules; a phobos-only build carries no
     // influence data, so the rings need both capabilities compiled in.
-#[cfg(feature = "phobos")]
     if show_designator_range
         && let Some(section) = armed_super_weapon
         && let Some(super_weapon) = rules.super_weapon(section)
@@ -160,7 +156,6 @@ pub(crate) fn build(
     // Extras @ 0x6DBEA3 filters by 1.5 * range cells from the current
     // foundation center cell, then calls Game::DrawRadialIndicator(false,
     // true, coords, owner color, range, false, true).
-    #[cfg(feature = "phobos")]
     if show_power_plant_enhancer_range
         && let (Some(armed), Some(center_cell)) = (armed_building, cursor_cell)
         && let Some(player) = sim.session().current_house()
@@ -343,7 +338,6 @@ pub(crate) fn build(
 /// only the explicit lists, ignoring `SW.AnyDesignator`/`SW.AnyInhibitor` and
 /// the health/deactivated/building-power predicates. Radius is the techno's
 /// `DesignatorRange`/`InhibitorRange` falling back to `Sight`.
-#[cfg(feature = "phobos")]
 fn push_designator_rings(
     draws: &mut Vec<RadialIndicatorDraw>,
     sim: &Simulation,

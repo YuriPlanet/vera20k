@@ -610,7 +610,6 @@ fn a_temporal_warhead_still_applies_the_minimum_shield_damage() {
 /// `DecloakDamagedTargets`. Only `ares,phobos` isolates the shield call: there
 /// Ares skips the native-slot uncloak for the unaffected hull (`1004AB68`),
 /// while plain `phobos` also uncloaks in the native slot.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_shield_damage_decloaks_only_when_the_warhead_allows_it() {
     fn hit_cloaked(rules: &RuleSet) -> i32 {
@@ -1140,7 +1139,6 @@ fn the_hit_anim_emits_unless_skip_hit_anim() {
 /// (`ShieldTypeClass.cpp:96..97`); the two actions are
 /// `Valueable<AttachedAnimFlag>` with the constructor's `Hides`
 /// (`:56..57,92..93`).
-#[cfg(feature = "phobos")]
 fn idle_rules(shield: &str, art_extra: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
         "[VehicleTypes]\n0=TEST\n\
@@ -1159,7 +1157,6 @@ fn idle_rules(shield: &str, art_extra: &str) -> RuleSet {
     rules
 }
 
-#[cfg(feature = "phobos")]
 fn idle_anims<'s>(sim: &'s Simulation, name: &str) -> Vec<&'s crate::sim::anim_class::AnimObject> {
     sim.anims()
         .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == name)
@@ -1170,7 +1167,6 @@ fn idle_anims<'s>(sim: &'s Simulation, name: &str) -> Vec<&'s crate::sim::anim_c
 /// `ShieldClass::CreateAnim` (`ShieldClass.cpp:1041..1074`): the `AI` tail
 /// constructs one idle anim at the owner's location, with `SetOwnerObject`,
 /// the techno owner and invoker, and `RemainingIterations = 0xFF`.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_online_shield_creates_one_owned_idle_anim() {
     let rules = idle_rules("IdleAnim=IDLE", "");
@@ -1197,7 +1193,6 @@ fn an_online_shield_creates_one_owned_idle_anim() {
 /// `ShieldClass::UpdateIdleAnim`/`GetIdleAnimType` (`ShieldClass.cpp:1076..1125`):
 /// `IdleAnimDamaged` replaces the animation while the techno is at or below
 /// `[AudioVisual] ConditionYellow`, and the replaced anim is killed.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_damaged_techno_retypes_the_idle_anim() {
     let rules = idle_rules("IdleAnim=IDLE\nIdleAnimDamaged=IDLE2", "");
@@ -1227,7 +1222,6 @@ fn a_damaged_techno_retypes_the_idle_anim() {
 /// `OnlineCheck` (`ShieldClass.cpp:529..591`): an offline powered shield
 /// applies `IdleAnim.OfflineAction` every visit, and its return online
 /// resumes and later recreates the animation.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_powered_shield_hides_and_restores_its_idle_anim() {
     let rules = idle_rules(
@@ -1269,7 +1263,6 @@ fn a_powered_shield_hides_and_restores_its_idle_anim() {
 
 /// `AttachedAnimFlag::Paused` pauses the frame advance, and the online
 /// branch's `Unpause` resumes it (`ShieldClass.cpp:566..568,585..589`).
-#[cfg(feature = "phobos")]
 #[test]
 fn an_offline_paused_shield_anim_resumes_online() {
     let rules = idle_rules(
@@ -1302,7 +1295,6 @@ fn an_offline_paused_shield_anim_resumes_online() {
 /// `AI_Temporal` (`ShieldClass.cpp:398..437`) applies
 /// `IdleAnim.TemporalAction` when the freeze starts; `TemporalCheck` clears
 /// the freeze flags and the AI recreates the anim afterwards.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_temporal_freeze_hides_the_idle_anim() {
     let rules = idle_rules("IdleAnim=IDLE\nIdleAnim.TemporalAction=Hides", "");
@@ -1344,7 +1336,6 @@ fn a_temporal_freeze_hides_the_idle_anim() {
 /// 0x728E5F` (`Ext/Techno/Hooks.Misc.cpp:487-527`): a sunk or travelling
 /// tunnel owner kills its shield idle animation and blocks the create gate
 /// until it starts to surface.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_tunnel_owner_hides_and_restores_the_shield_idle_anim() {
     let rules = idle_rules("IdleAnim=IDLE", "");
@@ -1401,7 +1392,6 @@ fn a_tunnel_owner_hides_and_restores_the_shield_idle_anim() {
 /// the conversion entry `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:186-187`):
 /// a `TEST` object whose `TestShield` (`Strength=100`) becomes `CHANGED`,
 /// whose `OtherShield` is twice as strong.
-#[cfg(feature = "phobos")]
 fn convert_rules(shield: &str, changed_shield: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
         "[VehicleTypes]\n0=TEST\n1=CHANGED\n\
@@ -1426,7 +1416,6 @@ fn convert_rules(shield: &str, changed_shield: &str) -> RuleSet {
 /// (`isAttached = false`) does not transfer and the destination type's shield
 /// takes over the instance, with `HP` rescaled by the strength ratio
 /// (`:712-725`).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_conversion_rebinds_the_shield_and_rescales_its_hp() {
     let rules = convert_rules("", "ShieldType=OtherShield");
@@ -1449,7 +1438,6 @@ fn a_conversion_rebinds_the_shield_and_rescales_its_hp() {
 /// `AllowTransfer.Convert=yes` (`ShieldTypeClass.h:54`) keeps the instance's
 /// own type, so the same-type arm returns without rescaling anything
 /// (`:705-706`).
-#[cfg(feature = "phobos")]
 #[test]
 fn an_allowed_conversion_keeps_the_shield_type() {
     let rules = convert_rules("AllowTransfer.Convert=yes", "ShieldType=OtherShield");
@@ -1471,7 +1459,6 @@ fn an_allowed_conversion_keeps_the_shield_type() {
 
 /// A conversion whose destination binds no shield type deletes the shield and
 /// kills its idle animation (`:615-626`, Case 1).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_conversion_without_a_new_shield_type_deletes_the_shield() {
     let rules = convert_rules("IdleAnim=IDLE", "");
@@ -1495,7 +1482,6 @@ fn a_conversion_without_a_new_shield_type_deletes_the_shield() {
 
 /// `AllowTransfer=yes` (`ShieldTypeClass.h:53`) transfers a type-bound shield
 /// as well, which is the same-type arm again.
-#[cfg(feature = "phobos")]
 #[test]
 fn allow_transfer_alone_also_keeps_the_shield() {
     let rules = convert_rules("AllowTransfer=yes", "ShieldType=OtherShield");
@@ -1516,7 +1502,6 @@ fn allow_transfer_alone_also_keeps_the_shield() {
 
 /// `CloakCheck` (`ShieldClass.cpp:493..500`): a cloaking object kills the
 /// idle anim when the anim type's `DetachOnCloak` is set (the default).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_cloaking_shield_detaches_its_idle_anim_per_type_flag() {
     let cloak = |sim: &mut Simulation| {
@@ -1549,7 +1534,6 @@ fn a_cloaking_shield_detaches_its_idle_anim_per_type_flag() {
 /// `AttachedAnimFlag::Temporal`/`PausedTemporal` (`ShieldClass.cpp:410..427`,
 /// `:562..573`) freeze the frame advance through Anim+11A `UnderTemporal`
 /// without killing the anim; `TemporalCheck` clears both flags.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_temporal_paused_anim_freezes_and_resumes() {
     let rules = idle_rules("IdleAnim=IDLE\nIdleAnim.TemporalAction=PausedTemporal", "");
@@ -1591,7 +1575,6 @@ fn a_temporal_paused_anim_freezes_and_resumes() {
 /// the shield type's `ConditionYellow`/`ConditionRed`, while `isDamaged` uses
 /// the techno ratio (`ShieldClass.cpp:1111..1124`,
 /// `New/Type/ShieldTypeClass.h:132..147`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_shield_ratio_selects_the_idle_band() {
     let rules = idle_rules(
@@ -1622,7 +1605,6 @@ fn the_shield_ratio_selects_the_idle_band() {
 /// The committed `force_create` light request, i.e. the shield's
 /// `FlashbangWarheadAt` call; the warhead's own detonation flash would carry
 /// `force_create=false`.
-#[cfg(feature = "phobos")]
 fn shield_flash(sim: &Simulation) -> Option<(i32, u32, [i32; 3])> {
     sim.combat_light_requests
         .as_slice()
@@ -1644,7 +1626,6 @@ fn shield_flash(sim: &Simulation) -> Option<(i32, u32, [i32; 3])> {
 /// `MapClass::FlashbangWarheadAt` at the owner's location with `Force=true`
 /// and no channel disabled; the strength defaults to twice the clamped
 /// shield damage.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_absorbed_hit_emits_the_shield_hit_flash() {
     let fixture = rules("HitFlash=yes", "");
@@ -1681,7 +1662,6 @@ fn an_absorbed_hit_emits_the_shield_hit_flash() {
 /// `HitFlash.FixedSize` replaces the doubled damage; `HitFlash.Red/Green/Blue`
 /// answer `SpotlightFlags::NoRed/NoGreen/NoBlue` and `HitFlash.Black` answers
 /// `NoColor` (`ShieldClass.cpp:285..296`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_hit_flash_reads_fixed_size_and_channel_flags() {
     let fixed = rules(
@@ -1704,7 +1684,6 @@ fn the_hit_flash_reads_fixed_size_and_channel_flags() {
 /// The type gate, the warhead's `Shield.HitFlash` gate and the breaking-hit
 /// arm all suppress the flash; the warhead's `CombatLightChance` still gates
 /// it at commit time.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_hit_flash_gates_on_type_warhead_and_break() {
     let off = rules("", "");

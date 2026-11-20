@@ -187,7 +187,6 @@ fn release_scene(
 /// (`0x4D9510`, `Ext/Techno/Hooks.Transport.cpp:933-1000`): with the carrier's
 /// or the rider's `FireWhileMoving` off, a moving carrier's passenger lets go
 /// of what it holds aloft.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_moving_open_topped_carrier_releases_a_rider_that_cannot_fire() {
     let (mut sim, rules, carrier, rider, _victim) =
@@ -220,7 +219,6 @@ fn a_moving_open_topped_carrier_releases_a_rider_that_cannot_fire() {
 
 /// The weapon term: both keys allow firing, but the selected `IsLocomotor=`
 /// weapon is `FireWhileMoving=no` — the link goes; `yes` keeps it.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_locomotor_weapon_without_fire_while_moving_releases_the_link() {
     let (mut sim, rules, carrier, rider, _victim) =

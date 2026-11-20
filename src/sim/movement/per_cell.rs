@@ -697,10 +697,7 @@ impl Simulation {
             // stock `TiltsWhenCrushes`) and replaces the stock +0.02 with the
             // type's `CrushOverlayExtraForwardTilt`.
             if object.tilts_when_crushes_overlays() {
-                #[cfg(feature = "phobos")]
                 let extra = object.phobos_crush_overlay_extra_forward_tilt as f32;
-                #[cfg(not(feature = "phobos"))]
-                let extra = 0.02f32;
                 actor.rocking_mut().recoil_after_overlay_crush(extra);
             }
             //73B067 clears Foot+6B5 after the damage call, even when the

@@ -2,7 +2,7 @@
 //! Source: installed Ares payout10043230..10043395 and display10044490.
 //! HouseTracking and Economy retain ownership of counts and money.
 
-use crate::sim::flying_text::BountyText;
+pub use crate::sim::flying_text::BountyText;
 
 use crate::{
     map::entities::EntityCategory,
@@ -110,9 +110,7 @@ impl Simulation {
                     z: coord.z,
                 },
                 z_offset: lift,
-                #[cfg(feature = "phobos")]
                 display_to: None,
-                #[cfg(feature = "phobos")]
                 display_owner: None,
                 pixel_offset: [0, 0],
             },

@@ -45,7 +45,6 @@ pub fn led_target_coordinate(
         }
         Some(TargetKind::Entity(target_id)) => target_id,
         // A Bullet target has no lead table; FireAt aims at its Location.
-        #[cfg(feature = "phobos")]
         Some(TargetKind::Bullet(id)) => {
             return world
                 .projectiles

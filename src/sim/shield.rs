@@ -163,14 +163,12 @@ pub struct ShieldState {
     /// `Timers.SelfHealing_WHModifier` runs.
     self_healing_modifier: Option<ShieldRecoveryModifier>,
     /// Phobos `ShieldClass::IdleAnim`: the live idle animation's stable id.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     idle_anim: Option<u64>,
     /// Phobos `ShieldClass::Attached` (`ShieldClass.h:159`), the constructor's
     /// `isAttached`: true for a shield a warhead attached, false for the one
     /// the techno type binds. `ConvertCheck`'s unset `AllowTransfer` falls
     /// back to it.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     attached: bool,
 }
@@ -190,16 +188,13 @@ impl ShieldState {
             timers: ShieldTimers::default(),
             respawn_modifier: None,
             self_healing_modifier: None,
-            #[cfg(feature = "phobos")]
             idle_anim: None,
-            #[cfg(feature = "phobos")]
             attached: false,
         }
     }
 
     /// The `isAttached = true` constructor the `Shield.Attach` warhead path
     /// uses (`Detonate.cpp`, `make_unique<ShieldClass>(pTarget, true)`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn attach_dynamic(mut self) -> Self {
         self.attached = true;
         self
@@ -592,7 +587,6 @@ pub(crate) fn preview_receive_damage(
     shield_stage(sim, rules, event, receiver_input, &divisors).map(|result| result.remaining)
 }
 
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone)]
 struct ShieldHitFlash {
     damage: i32,
@@ -608,7 +602,6 @@ struct ShieldHitFlash {
 pub(crate) struct ShieldEmissions {
     anims: Vec<PendingShieldAnim>,
     shots: Vec<BreakShot>,
-    #[cfg(feature = "phobos")]
     flash: Option<ShieldHitFlash>,
 }
 
@@ -663,7 +656,6 @@ pub(crate) fn pre_receive_damage(
     let mut state = result.state;
     // `BreakShield`'s `KillAnim` (`ShieldClass.cpp:849`) runs with the state
     // commit, before the break animation is constructed.
-    #[cfg(feature = "phobos")]
     if state.hp() <= 0 {
         kill_idle_anim(sim, rules, &mut state);
     }
@@ -672,7 +664,6 @@ pub(crate) fn pre_receive_damage(
     }
     // `FlashbangWarheadAt` runs inside `ReceiveDamage`, before the absorbed
     // hit's animation; its hook takes Phobos's `CombatLightChance` draw first.
-    #[cfg(feature = "phobos")]
     if let Some(flash) = emissions.flash.take()
         && crate::sim::combat::combat_light_chance_admits(sim, rules, flash.warhead_ref)
     {
@@ -912,7 +903,6 @@ fn shield_stage(
                 // `pType->HitFlash && pWHExt->Shield_HitFlash`
                 // (`ShieldClass.cpp:275..295`): the absorbed hit's spotlight,
                 // queued before `WeaponNullifyAnim`.
-                #[cfg(feature = "phobos")]
                 if ty.hit_flash() && warhead.shield.hit_flash {
                     // `ShieldClass.cpp:278..292`: the initialiser is
                     // `NoColor` (0x1, the black lane); `HitFlash.Red=no`
@@ -1029,7 +1019,6 @@ fn shield_stage(
 /// `GeneralUtils::GetWarheadVersusArmor(WH, Techno, Type)` for the split
 /// targeting check: the shield's armor while it is active and the warhead
 /// cannot penetrate it, else the TechnoType's.
-#[cfg(feature = "phobos")]
 pub(crate) fn warhead_armor_for_target(
     sim: &Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1339,7 +1328,6 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let was_temporal = state.temporal;
     state.temporal = temporal_now;
     if state.temporal {
-        #[cfg(feature = "phobos")]
         if !was_temporal {
             // `AI_Temporal` runs `CloakCheck` before the action switch
             // (`ShieldClass.cpp:409..427`).
@@ -1356,7 +1344,6 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         }
         return;
     }
-    #[cfg(feature = "phobos")]
     if was_temporal {
         // `ShieldClass::TemporalCheck`: clear the temporal look and resume.
         resume_idle_anim(sim, &mut state);
@@ -1384,7 +1371,6 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // `OnlineCheck` (`ShieldClass.cpp:529..591`) runs every visit: an active
     // shield resumes the look, an inactive one re-applies its action, which is
     // how an offline shield overrides a just-ended temporal freeze.
-    #[cfg(feature = "phobos")]
     if ty.powered() {
         if state.online {
             resume_idle_anim(sim, &mut state);
@@ -1437,7 +1423,6 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // AI, before the create tail (`ShieldClass.cpp:481`), so the staged
     // receipt commits first.
     emissions.spawn_anims(sim, rules);
-    #[cfg(feature = "phobos")]
     update_idle_anim(sim, rules, id, ty, &mut state);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.shield = Some(state);
@@ -1542,7 +1527,6 @@ fn self_healing(
 /// animation and clear the pointer. An anim destroyed by anything else already
 /// dropped the pointer through `ShieldClass::PointerGotInvalid`
 /// (`ShieldClass.cpp:52..76`).
-#[cfg(feature = "phobos")]
 fn kill_idle_anim(sim: &mut Simulation, rules: &RuleSet, state: &mut ShieldState) {
     let Some(id) = state.idle_anim.take() else {
         return;
@@ -1552,7 +1536,6 @@ fn kill_idle_anim(sim: &mut Simulation, rules: &RuleSet, state: &mut ShieldState
 
 /// `TemporalCheck`/`OnlineCheck`'s resume tail (`ShieldClass.cpp:598..604`,
 /// `:585..589`): `IdleAnim->UnderTemporal = false; IdleAnim->Unpause()`.
-#[cfg(feature = "phobos")]
 fn resume_idle_anim(sim: &mut Simulation, state: &mut ShieldState) {
     let Some(id) = state.idle_anim else {
         return;
@@ -1565,7 +1548,6 @@ fn resume_idle_anim(sim: &mut Simulation, state: &mut ShieldState) {
 
 /// One `AttachedAnimFlag` action on the live idle animation
 /// (`ShieldClass.cpp:410..427` and `:556..573`).
-#[cfg(feature = "phobos")]
 fn apply_idle_anim_action(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1602,7 +1584,6 @@ fn apply_idle_anim_action(
 /// destroys an idle anim whose type asks to detach (`DetachOnCloak`, default
 /// true). `AI_Temporal` runs it before applying the temporal action, and the
 /// ordinary AI visit runs it before the create/retype tail.
-#[cfg(feature = "phobos")]
 fn cloak_check_idle_anim(sim: &mut Simulation, rules: &RuleSet, id: u64, state: &mut ShieldState) {
     let Some(anim) = state.idle_anim else {
         return;
@@ -1632,7 +1613,6 @@ fn cloak_check_idle_anim(sim: &mut Simulation, rules: &RuleSet, id: u64, state: 
 /// `isDamaged` compares the techno ratio against the global `ConditionYellow`;
 /// the per-band picks compare the shield's own ratio against the shield
 /// type's thresholds and fall through to the base animation.
-#[cfg(feature = "phobos")]
 fn idle_anim_selection<'r>(
     ty: &'r ShieldType,
     rules: &RuleSet,
@@ -1661,7 +1641,6 @@ fn idle_anim_selection<'r>(
 /// `TechnoClass::GetHealthPercentage()`: `Health` over the type's `Strength`
 /// as binary64. A `0/0` divides to NaN, which every threshold comparison
 /// answers false, as it does natively.
-#[cfg(feature = "phobos")]
 fn techno_health_ratio(sim: &Simulation, rules: &RuleSet, id: u64) -> f64 {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 0.0;
@@ -1678,7 +1657,6 @@ fn techno_health_ratio(sim: &Simulation, rules: &RuleSet, id: u64) -> f64 {
 /// the techno owner and invoker, and hold its loops (`RemainingIterations =
 /// 0xFF`). A cloaking object skips creation when the type's `DetachOnCloak`
 /// is set.
-#[cfg(feature = "phobos")]
 fn create_idle_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1711,7 +1689,6 @@ fn create_idle_anim(
 /// `Tunnel` locomotor is in `DugIn` or `Digging` (`FootExt::UpdateOnTunnelEnter`
 /// from `TunnelLocomotionClass_Process_KillAnims @ 0x728F74`); the hook at
 /// `0x728E5F` clears it as soon as `State` becomes `PreDigOut`.
-#[cfg(feature = "phobos")]
 fn owner_is_hidden_in_tunnel(sim: &Simulation, id: u64) -> bool {
     sim.substrate
         .entities
@@ -1730,7 +1707,6 @@ fn owner_is_hidden_in_tunnel(sim: &Simulation, id: u64) -> bool {
 /// `ShieldClass::ConvertCheck` (`New/Entity/ShieldClass.cpp:608-760`) for the
 /// `pOldShield == nullptr` callers — `DeploysInto`/`UndeploysInto` and type
 /// conversion, entered from `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:186-187`).
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// A converted object keeps or drops its shield per the old type's
     /// `AllowTransfer`/`AllowTransfer.Convert`; otherwise the destination type
@@ -1878,7 +1854,6 @@ impl Simulation {
 
 /// Put a shield back on the object it was taken from, or drop it when the
 /// entity is already gone.
-#[cfg(feature = "phobos")]
 fn restore_shield(sim: &mut Simulation, id: u64, state: ShieldState) {
     if let Some(actor) = sim.substrate.entities.get_mut(id) {
         actor.shield = Some(state);
@@ -1892,7 +1867,6 @@ fn restore_shield(sim: &mut Simulation, id: u64, state: ShieldState) {
 /// native's `HasHealthRatioThresholdChanged` latch: the selection is a pure
 /// function of the techno and shield ratios, so an animation change can only
 /// happen on the same HP transitions native reacts to.
-#[cfg(feature = "phobos")]
 fn update_idle_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -2240,7 +2214,6 @@ pub(crate) fn apply_shield_modifiers(
             // animation (`:851`).
             if let Some(current) = state.as_mut() {
                 break_shield_state(current, ty, frame);
-                #[cfg(feature = "phobos")]
                 kill_idle_anim(sim, rules, current);
             }
             sim.spawn_random_owned_anim(

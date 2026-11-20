@@ -400,7 +400,6 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
 /// A radiation site's bound type drives the field's cell light: the same
 /// scene lights purple for a `255,0,255` type and green for the default one.
 /// Phobos builds only: other builds never read `[RadiationTypes]`.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
     let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
@@ -465,7 +464,6 @@ fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
 /// effect with a tint ORs its `Tint.Color` word and sums
 /// `Tint.Intensity * 1000`, filtered by `Tint.VisibleToHouses` against the
 /// current player's Owner/Allies/Enemies bucket.
-#[cfg(feature = "phobos")]
 #[test]
 fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
     let ini = IniFile::from_str(
@@ -518,7 +516,6 @@ fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
 /// `Tint.Cumulative`: stacked instances of one cumulative effect sum their
 /// colour channels and intensities before a single tint; without it the type
 /// tints once with its own colour.
-#[cfg(feature = "phobos")]
 #[test]
 fn cumulative_effect_tint_stacks_by_type_or_once() {
     let scene = |extra: &str| {
@@ -568,7 +565,6 @@ fn cumulative_effect_tint_stacks_by_type_or_once() {
 
 /// Phobos `ApplyCustomTintValues` selects the viewer's shield-tint bucket and
 /// `Drawing::RGB_To_Int` packs `Tint.Color` as RGB565.
-#[cfg(feature = "phobos")]
 #[test]
 fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
     use crate::rules::phobos_shields::AffectedHouse;
@@ -605,7 +601,6 @@ fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
 
 /// Phobos `TechnoClass_InvulnerabilityIntensity_Adjust` (`0x70E475`): the
 /// configured extra intensity scales by 1000 and is added by kind.
-#[cfg(feature = "phobos")]
 #[test]
 fn curtain_extra_tint_reads_the_audio_visual_globals() {
     use crate::sim::superweapon::invulnerability::InvulnKind;
@@ -668,7 +663,6 @@ fn use_retint_fix_relights_active_light_sources_after_a_normal_retint() {
 /// Phobos `GetLevelIntensity` (`Ext/Techno/Hooks.Tint.cpp:27-45`): the blit
 /// intensity from the scenario level, the height in level steps, the
 /// multiplier and the cell scalar.
-#[cfg(feature = "phobos")]
 #[test]
 fn air_unit_level_light_scales_the_height_and_takes_the_cell_scalar() {
     // Aircraft: two levels above the cell, multiplier 1, level 50, cell 800.

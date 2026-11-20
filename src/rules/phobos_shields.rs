@@ -24,13 +24,10 @@
 //! [`ShieldWarheadRules`]; the simulation owner `sim::shield` consumes them.
 
 use crate::rules::attach_effect::AttachedAnimFlag;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::truncate_native_bytes;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
-#[cfg(feature = "phobos")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// Phobos `AffectedHouse` flags (`Utilities/Enum.h:127..141`), the target of
@@ -90,7 +87,6 @@ impl Default for AffectedHouse {
 }
 
 /// `Valueable<AffectedHouse>` read: absent or rejected text keeps `current`.
-#[cfg(feature = "phobos")]
 pub(crate) fn read_affected_house(
     section: &crate::rules::ini_parser::IniSection,
     key: &str,
@@ -106,7 +102,6 @@ pub(crate) fn read_affected_house(
 /// the target house's `MultiplayPassive`, `is_allied` the source/target
 /// alliance. Pure decision logic so the sim combat owner and the radar's
 /// `RadarInvisibleToHouse` test share one port instead of copying the ladder.
-#[cfg(feature = "phobos")]
 pub fn can_target_house_ladder(
     flags: AffectedHouse,
     is_owner: bool,
@@ -205,7 +200,6 @@ fn read_anim_value(
     key: &str,
     current: Option<String>,
 ) -> Option<String> {
-    #[cfg(feature = "phobos")]
     {
         section.read_string_with(key, 2048, current, |current, raw| {
             if raw.eq_ignore_ascii_case("<default>") {
@@ -216,11 +210,6 @@ fn read_anim_value(
                 Some(raw.to_owned())
             }
         })
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (section, key);
-        current
     }
 }
 
@@ -233,7 +222,6 @@ fn read_anim_band(
     key: &str,
     current: Option<String>,
 ) -> Option<String> {
-    #[cfg(feature = "phobos")]
     {
         section.read_string_with(key, 2048, current, |_, raw| {
             if raw.eq_ignore_ascii_case("<default>") || is_none_name(raw) {
@@ -242,11 +230,6 @@ fn read_anim_band(
                 Some(raw.to_owned())
             }
         })
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (section, key);
-        current
     }
 }
 
@@ -540,7 +523,6 @@ impl ShieldType {
     }
 
     /// Phobos `ShieldTypeClass::ImmuneToCrit`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn immune_to_crit(&self) -> bool {
         self.immune_to_crit
     }
@@ -665,12 +647,10 @@ pub struct ShieldTypeCatalog {
 }
 
 impl ShieldTypeCatalog {
-    #[cfg(feature = "phobos")]
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(|entry| entry.name.as_str())
     }
 
-    #[cfg(feature = "phobos")]
     pub fn entry(&self, name: &str) -> Option<&ShieldType> {
         self.types
             .iter()
@@ -679,7 +659,6 @@ impl ShieldTypeCatalog {
 
     /// Read one reached Rules pass: the pass's `[ShieldTypes]` list appends
     /// entries, then every retained entry re-reads its own section.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("ShieldTypes") {
             // Phobos Enumerable::LoadFromINIList reads each physical key

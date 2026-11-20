@@ -345,7 +345,6 @@ fn anim_type_exists(rules: &RuleSet, name: &str) -> bool {
 /// The Foot type's Phobos drop-pod block. `TechnoTypeExt::LoadFromINI`
 /// creates it for every non-building TechnoType; a BuildingType has none (and
 /// never rides a pod).
-#[cfg(feature = "phobos")]
 fn phobos_drop_pod_settings<'a>(
     sim: &Simulation,
     id: u64,
@@ -361,7 +360,6 @@ fn phobos_drop_pod_settings<'a>(
 /// `Nullable<AnimTypeClass*>::Get(global)`: a per-type name overrides only
 /// when `AnimTypeClass::Find` would succeed (an unknown name leaves the
 /// `Nullable` unset at read time), otherwise the stock global stands.
-#[cfg(feature = "phobos")]
 fn per_type_anim<'a>(
     per_type: Option<&'a str>,
     global: Option<&'a str>,
@@ -376,7 +374,6 @@ fn per_type_anim<'a>(
 /// RulesExt::Global()->DropPodDefaultTrailer))`: the per-type anim, else Ares'
 /// `[General] DropPodTrailer=` (an explicit `none` there suppresses the
 /// trailer), else `SMOKEY` when that anim type exists.
-#[cfg(feature = "phobos")]
 fn phobos_trailer(
     settings: Option<&crate::rules::phobos_droppod::PhobosDropPodRules>,
     ares: &Option<Option<String>>,
@@ -396,7 +393,6 @@ fn phobos_trailer(
 /// `AnimExt::SetAnimOwnerHouseKind(anim, pod owner, null, false, true)` plus,
 /// for an attached trailer, `SetOwnerObject(pod)` (the spawn descriptor's
 /// `owner`). The stock arm keeps the anim house-less.
-#[cfg(feature = "phobos")]
 fn spawn_pod_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -416,17 +412,6 @@ fn spawn_pod_anim(
     )
 }
 
-#[cfg(not(feature = "phobos"))]
-fn spawn_pod_anim(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    anim_name: &str,
-    at: [i32; 3],
-    _owner_house: crate::sim::intern::InternedId,
-    _owner_object: Option<u64>,
-) -> Option<crate::sim::anim_class::AnimId> {
-    super::spawn_super_anim(sim, rules, anim_name, at)
-}
 
 impl Simulation {
     /// DropPodLocomotionClass::Move_To (`0x004B6040`) for the pod carrying
@@ -459,9 +444,7 @@ impl Simulation {
             return;
         }
         let locomotor = &rules.ares_drop_pod().locomotor;
-        #[cfg(feature = "phobos")]
         let settings = phobos_drop_pod_settings(self, id, rules).cloned();
-        #[cfg(feature = "phobos")]
         let (entry_height, entry_angle) = match settings.as_ref() {
             Some(settings) => (
                 settings.height.unwrap_or(locomotor.height),
@@ -469,8 +452,6 @@ impl Simulation {
             ),
             None => (locomotor.height, locomotor.angle),
         };
-        #[cfg(not(feature = "phobos"))]
-        let (entry_height, entry_angle) = (locomotor.height, locomotor.angle);
         let ground = self.resolved_terrain.as_ref().map_or(0, |terrain| {
             crate::sim::movement::ground_pose::query_ground_height(
                 &NativeCellQuery::canonical(terrain),
@@ -534,7 +515,6 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.body_facing.snap(0x8000, frame);
         }
-        #[cfg(feature = "phobos")]
         let entry_anim = per_type_anim(
             settings
                 .as_ref()
@@ -542,8 +522,6 @@ impl Simulation {
             locomotor.atmosphere_entry.as_deref(),
             rules,
         );
-        #[cfg(not(feature = "phobos"))]
-        let entry_anim = locomotor.atmosphere_entry.as_deref();
         if let Some(anim) = entry_anim {
             let Some(owner_house) = self.substrate.entities.get(id).map(|entity| entity.owner())
             else {
@@ -607,7 +585,6 @@ impl Simulation {
         let location = crate::sim::movement::ground_pose::object_location(entity, terrain);
         let height = crate::sim::movement::air_movement::current_fly_height(entity, terrain);
         let owner_house = entity.owner();
-        #[cfg(feature = "phobos")]
         let elapsed = {
             let timer = entity.parasite.paralysis();
             self.session.binary_frame() as i32 - timer.start_frame()
@@ -617,9 +594,7 @@ impl Simulation {
             self.land_drop_pod(id, pod, rules, registry, effects);
             return;
         }
-        #[cfg(feature = "phobos")]
         let settings = phobos_drop_pod_settings(self, id, rules).cloned();
-        #[cfg(feature = "phobos")]
         let (angle, configured_speed) = match settings.as_ref() {
             Some(settings) => (
                 settings.angle.unwrap_or(locomotor.angle),
@@ -627,8 +602,6 @@ impl Simulation {
             ),
             None => (locomotor.angle, locomotor.speed),
         };
-        #[cfg(not(feature = "phobos"))]
-        let (angle, configured_speed) = (locomotor.angle, locomotor.speed);
         let Ok(angle) = X::load_f64(angle) else {
             return;
         };
@@ -647,9 +620,6 @@ impl Simulation {
             z: X::ftol_i32_low_masked(X::sub(X::load_i32(location.z), drop)),
         };
         self.foot_set_location_marked(id, moved, rules, registry, effects);
-        #[cfg(not(feature = "phobos"))]
-        let frame = self.session.binary_frame();
-        #[cfg(feature = "phobos")]
         let trailer_due = {
             let delay = settings
                 .as_ref()
@@ -658,26 +628,15 @@ impl Simulation {
             // there, so VERA spawns nothing (recorded residual).
             delay > 0 && elapsed % delay == 1
         };
-        #[cfg(not(feature = "phobos"))]
-        let trailer_due = frame % 6 == 0;
         if trailer_due {
-            #[cfg(feature = "phobos")]
             let trailer = phobos_trailer(settings.as_ref(), &rules.ares_drop_pod().trailer, rules);
             // An unset trailer takes AnimTypeClass::Find("SMOKEY"), null
             // when no such type exists.
-            #[cfg(not(feature = "phobos"))]
-            let trailer = match &rules.ares_drop_pod().trailer {
-                Some(trailer) => trailer.clone(),
-                None => anim_type_exists(rules, "SMOKEY").then(|| "SMOKEY".to_owned()),
-            };
             if let Some(trailer) = trailer {
-                #[cfg(feature = "phobos")]
                 let attached = settings
                     .as_ref()
                     .is_some_and(|settings| settings.trailer_attached)
                     .then_some(id);
-                #[cfg(not(feature = "phobos"))]
-                let attached = None;
                 spawn_pod_anim(
                     self,
                     rules,
@@ -688,25 +647,19 @@ impl Simulation {
                 );
             }
         }
-        #[cfg(feature = "phobos")]
         let weapon = settings
             .as_ref()
             .and_then(|settings| settings.weapon.as_deref())
             .or(locomotor.weapon.as_deref());
-        #[cfg(not(feature = "phobos"))]
-        let weapon = locomotor.weapon.as_deref();
         let (Some(weapon), Some(destination)) = (weapon, pod.destination()) else {
             return;
         };
-        #[cfg(feature = "phobos")]
         let strafe_due = !settings
             .as_ref()
             .is_some_and(|settings| settings.weapon_hit_land_only)
             && rules
                 .weapon(weapon)
                 .is_some_and(|weapon| elapsed % weapon.rof.max(3) == 1);
-        #[cfg(not(feature = "phobos"))]
-        let strafe_due = frame % 3 == 0;
         if strafe_due {
             self.drop_pod_strafe(id, weapon, destination, moved, rules, registry, effects);
         }
@@ -844,7 +797,6 @@ impl Simulation {
         let Some(owner_house) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
             return;
         };
-        #[cfg(feature = "phobos")]
         let settings = phobos_drop_pod_settings(self, id, rules).cloned();
         self.set_object_height(id, 0, rules, registry, effects);
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -881,7 +833,6 @@ impl Simulation {
             return;
         }
         let locomotor = &rules.ares_drop_pod().locomotor;
-        #[cfg(feature = "phobos")]
         let puff = per_type_anim(
             settings
                 .as_ref()
@@ -889,13 +840,10 @@ impl Simulation {
             locomotor.puff.as_deref(),
             rules,
         );
-        #[cfg(not(feature = "phobos"))]
-        let puff = locomotor.puff.as_deref();
         if let Some(puff) = puff {
             spawn_pod_anim(self, rules, puff, at, owner_house, None);
         }
         let out_of_map = usize::from(pod.out_of_map);
-        #[cfg(feature = "phobos")]
         let ground_anim = per_type_anim(
             settings
                 .as_ref()
@@ -904,8 +852,6 @@ impl Simulation {
             locomotor.anims.get(out_of_map).map(String::as_str),
             rules,
         );
-        #[cfg(not(feature = "phobos"))]
-        let ground_anim = locomotor.anims.get(out_of_map).map(String::as_str);
         if let Some(anim) = ground_anim {
             spawn_pod_anim(self, rules, anim, at, owner_house, None);
         }
@@ -913,7 +859,6 @@ impl Simulation {
         // detonates once at the landing point as
         // `WeaponTypeExt::DetonateAt(weapon, location, foot, owner)`, a
         // targetless bullet at the Foot's own cost.
-        #[cfg(feature = "phobos")]
         if settings
             .as_ref()
             .is_some_and(|settings| settings.weapon_hit_land_only)

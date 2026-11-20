@@ -1,5 +1,4 @@
 use super::*;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
 use crate::sim::command::Command;
 use crate::sim::world::{FrameEffects, TickLane};
@@ -858,7 +857,6 @@ fn ordinary_temporal_warp_suppresses_gap_query_and_release_restores_it() {
     assert_eq!(query(&sim, rules, &[gap], 0).len(), 1);
 }
 
-#[cfg(feature = "phobos")]
 fn enhancer_rules(range: &str, amount: &str, global: bool) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "[BuildingTypes]\n0=ENH\n1=GAPOWR\n2=RADAR\n\
@@ -874,7 +872,6 @@ fn enhancer_rules(range: &str, amount: &str, global: bool) -> RuleSet {
 /// Insert a finished Structure fixture with the simulation's own interned
 /// type and owner handles; unlimbo admission is not what these display tests
 /// measure.
-#[cfg(feature = "phobos")]
 fn insert_enhancer(
     sim: &mut Simulation,
     type_id: &str,
@@ -899,7 +896,6 @@ fn insert_enhancer(
     1
 }
 
-#[cfg(feature = "phobos")]
 fn placement_query(
     sim: &Simulation,
     rules: &RuleSet,
@@ -934,7 +930,6 @@ fn placement_query(
     .draws
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn placement_draws_an_active_enhancers_range_at_the_enhancer_cell() {
     let rules = enhancer_rules("4", "10", true);
@@ -963,7 +958,6 @@ fn placement_draws_an_active_enhancers_range_at_the_enhancer_cell() {
     assert!(placement_query(&sim, &rules, "GAPOWR", (30, 16), true).is_empty());
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     // A list with the default Amount/Factor is not registered as an enhancer.
@@ -997,7 +991,6 @@ fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     );
 }
 
-#[cfg(feature = "phobos")]
 fn designator_rules(sw_extra: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
         "[Countries]\n0=Americans\n1=Russians\n\
@@ -1014,7 +1007,6 @@ fn designator_rules(sw_extra: &str) -> RuleSet {
         .expect("designator rules parse")
 }
 
-#[cfg(feature = "phobos")]
 fn designator_sim(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 17);
     sim.intern_rule_type_ids(rules);
@@ -1024,7 +1016,6 @@ fn designator_sim(rules: &RuleSet) -> Simulation {
     sim
 }
 
-#[cfg(feature = "phobos")]
 fn designator_colors() -> HouseColorMap {
     HouseColorMap::from([
         (
@@ -1038,7 +1029,6 @@ fn designator_colors() -> HouseColorMap {
     ])
 }
 
-#[cfg(feature = "phobos")]
 fn designator_query(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1048,8 +1038,10 @@ fn designator_query(
 ) -> Vec<RadialIndicatorDraw> {
     // Unit Action Lines off isolates the designator arm: it runs before the
     // 0x6DBE7B early-out, while the placement and superweapon rings do not.
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
     build(
         Some(sim),
+        Some(&frame),
         Some(rules),
         &[],
         armed,
@@ -1077,7 +1069,6 @@ fn designator_query(
 /// (`Phobos.INI.cpp:133`, `Ext/Rules/Body.cpp:176`, `Ext/SWType/Body.cpp:283`);
 /// the combined client/rules bool short-circuits the arm, no armed superweapon
 /// draws nothing, and the armed `[SuperWeaponType]` switch is checked in build.
-#[cfg(feature = "phobos")]
 #[test]
 fn designator_range_gates_default_and_short_circuit() {
     assert!(
@@ -1131,7 +1122,6 @@ fn designator_range_gates_default_and_short_circuit() {
 /// One own designator and one enemy inhibitor ring in their owning house's
 /// colour at `DesignatorRange`/`InhibitorRange`; a designator type without
 /// `DesignatorRange` falls back to `Sight` (`Ext/SWType/Hooks.cpp:81-88`).
-#[cfg(feature = "phobos")]
 #[test]
 fn designator_and_inhibitor_rings_use_house_colour_and_range() {
     let rules = designator_rules("");
@@ -1176,7 +1166,6 @@ fn designator_and_inhibitor_rings_use_house_colour_and_range() {
 
 /// The hook skips allies other than the current player, limbo and dead
 /// technos, and types absent from the lists (`Ext/SWType/Hooks.cpp:70-77`).
-#[cfg(feature = "phobos")]
 #[test]
 fn designator_scan_excludes_allies_limbo_dead_and_unlisted() {
     let rules = designator_rules("");
@@ -1198,7 +1187,7 @@ fn designator_scan_excludes_allies_limbo_dead_and_unlisted() {
         .spawn_object("DESIG", "Americans", 14, 12, 0, &rules)
         .unwrap();
     sim.entities_mut_for_test()
-        .get_mut(limbo)
+        .get_mut_for_test(limbo)
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
@@ -1208,7 +1197,7 @@ fn designator_scan_excludes_allies_limbo_dead_and_unlisted() {
         .spawn_object("DESIG", "Americans", 16, 12, 0, &rules)
         .unwrap();
     sim.entities_mut_for_test()
-        .get_mut(dead)
+        .get_mut_for_test(dead)
         .unwrap()
         .lifecycle
         .set_object_alive_for_test(false);

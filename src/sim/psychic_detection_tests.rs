@@ -6,7 +6,6 @@ use crate::sim::world::Simulation;
 /// true `Ext/TechnoType/Body.h:857`) is the gate at `0x0043B150`
 /// (`Ext/Techno/Hooks.Misc.cpp:1107-1118`): false answers the check before any
 /// site, alliance or distance test, so an in-range target stays unseen.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_psychic_detectable_false_techno_is_never_sensed() {
     let Some((mut rules_ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art()

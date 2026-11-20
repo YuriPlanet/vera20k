@@ -329,7 +329,6 @@ fn firing_force_scatter_gates_the_attack_missions_scatter() {
 /// reads the AircraftType section only; its nullable value wins over
 /// `[General] AircraftFiringForceScatter` (`Ext/Rules/Body.cpp:473`), whose
 /// constructor default is `yes`.
-#[cfg(feature = "phobos")]
 #[test]
 fn firing_force_scatter_reads_the_aircraft_section_then_the_general_fallback() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -698,7 +697,6 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
 /// wins over the projectile inference in
 /// `AircraftClass_IFlyControl_IsStrafe` (`Ext/Aircraft/Hooks.cpp:102`), and an
 /// unset key infers `ROT<=1 && !Inviso && no Trajectory=`.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_strafing_classifier_overrides_the_projectile_inference() {
     use crate::rules::ini_parser::IniFile;

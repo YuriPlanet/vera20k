@@ -2,7 +2,6 @@
 
 use super::*;
 
-#[cfg(feature = "phobos")]
 #[test]
 fn description_is_the_native_version_description() {
     assert_eq!(
@@ -35,7 +34,6 @@ fn place_tracks_the_text_width() {
 /// `src/Phobos.cpp:383-392`: the game-time board uses
 /// `ShowGameTime.BoardOpacity` through `FillRectTrans` and sits at `coordY`
 /// below the version description.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_game_time_board_takes_the_authored_opacity_and_coord_y() {
     let authored = game_time_board(

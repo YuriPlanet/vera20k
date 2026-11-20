@@ -125,7 +125,6 @@ impl TiberiumImageState {
 
     /// Phobos `AllowRamps=` load: `NumSlopes` rises to the eight overlay
     /// slots (`Ext/Tiberium/Body.cpp:26`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn force_ramp_slopes(&mut self) {
         if self.slope_count < 8 {
             self.slope_count = 8;
@@ -183,7 +182,6 @@ pub struct TiberiumType {
     /// `Ext/Tiberium/Body.h:26`, default false): cardinal ramp cells may
     /// germinate when the type's ramp art exists; the load also raises
     /// `NumSlopes` to eight (`Body.cpp:26`).
-    #[cfg(feature = "phobos")]
     pub allow_ramps: bool,
     /// Signed `Growth=` timer reload input (`TiberiumClass+0xA8`).
     pub growth: i32,
@@ -236,7 +234,6 @@ impl TiberiumTypeRegistry {
             ty.color_scheme = color;
             ty.debris = debris.to_vec();
             ty.image = image;
-            #[cfg(feature = "phobos")]
             if ty.allow_ramps {
                 ty.image.force_ramp_slopes();
             }
@@ -335,7 +332,6 @@ impl TiberiumType {
             inert: true,
             value: section.read_int("Value", 0),
             power: section.read_int("Power", 0),
-            #[cfg(feature = "phobos")]
             allow_ramps: section.read_bool("AllowRamps", false),
             // ReadInt stores its signed result directly, without a clamp
             // (`0x00721AE1`); original execution: spatial_oracle/ore_queue.md.

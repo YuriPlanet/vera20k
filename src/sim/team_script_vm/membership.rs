@@ -72,7 +72,6 @@ pub(crate) fn member_fills_entry(
     if member_type == entry_type {
         return true;
     }
-    #[cfg(feature = "phobos")]
     if let Some(object) = member_object {
         let entry_name = interner.resolve(entry_type.id);
         return object

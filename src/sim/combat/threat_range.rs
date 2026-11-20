@@ -364,10 +364,7 @@ pub(crate) fn threat_range_leptons(
     if mode == -1 {
         return -1;
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = area_guard;
     let mut guard = obj.guard_range.map_or(0, |range| range.to_bits() >> 8);
-    #[cfg(feature = "phobos")]
     if area_guard && let Some(range) = obj.phobos_area_guard_range {
         guard = range.to_bits() >> 8;
     }
@@ -407,14 +404,8 @@ pub(crate) fn threat_range_leptons(
 /// `Valueable<Leptons>`, constructor `Ext/TechnoType/Body.h:647` = 4096)
 /// replaces the stock 16-cell literal.
 fn max_guard_range(obj: &ObjectType) -> i32 {
-    #[cfg(feature = "phobos")]
     {
         obj.phobos_max_guard_range()
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = obj;
-        AREA_GUARD_MAX_SCAN_CELLS * 256
     }
 }
 
@@ -565,7 +556,6 @@ GuardRange=3\nMaxGuardRange=2\n\n\
     /// `TechnoClass_GetGuardRange` replacement `0x707E63`,
     /// `Ext/Techno/Hooks.cpp:1932`): an Area-Guard mission replaces
     /// `GuardRange` with the type key before the mode-1 double and clamps.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_area_guard_range_replaces_guard_range_only_in_area_guard() {
         let rules = test_rules();
@@ -606,7 +596,6 @@ GuardRange=3\nMaxGuardRange=2\n\n\
     /// `0x707E63`): the cap applies to the doubled radius, replaces the stock
     /// 16-cell ceiling, and does not lower the Patrol floor. Mode 0 keeps the
     /// undoubled `GuardRange` uncapped.
-    #[cfg(feature = "phobos")]
     #[test]
     fn max_guard_range_caps_the_doubled_scan_radius() {
         let rules = test_rules();

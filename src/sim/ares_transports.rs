@@ -167,7 +167,6 @@ impl Simulation {
                 // the limbo sweep owns its `AutoDeath` visits — a limboed
                 // object never reaches the live Logic walk. Ordinary boarding,
                 // a Chrono limbo and a sell/repair limbo do not register.
-                #[cfg(feature = "phobos")]
                 self.register_auto_death(payload, rules);
                 if occupiable {
                     self.substrate.attach_garrison_occupant(id, payload);

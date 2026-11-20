@@ -301,23 +301,17 @@ impl Simulation {
         // SkipWaterSequences (0x51D842) and leaves every requested action
         // unmapped. The water-state store and transition sound below are
         // still on that path.
-        #[cfg(feature = "phobos")]
         let only_land_sequences = rules
             .object_by_handle(facts.handle)
             .phobos_land_sequences
             .only_land(rules.phobos_globals.only_use_land_sequences);
-        #[cfg(not(feature = "phobos"))]
-        let only_land_sequences = false;
         // Phobos `SecondaryFireSequenceLandOnly` (`Ext/Techno/Hooks.Misc.cpp:895`):
         // the resolved yes keeps stock's SecondaryFire/Prone -> WetAttack
         // remap; no leaves those requests on their land records.
-        #[cfg(feature = "phobos")]
         let secondary_fire_land_only = rules
             .object_by_handle(facts.handle)
             .phobos_land_sequences
             .secondary_fire_land_only(rules.phobos_globals.secondary_fire_sequence_land_only);
-        #[cfg(not(feature = "phobos"))]
-        let secondary_fire_land_only = true;
         if facts.movement_zone == MovementZone::AmphibiousDestroyer {
             //51D7B0: virtual+1B8 is Abstract41BEA0, signed physical XYZ/256
             // packed to two WORDs. Map5657A0 retains one canonical Cell,
@@ -690,7 +684,6 @@ impl Simulation {
         // Phobos `InfantryClass_DoingAI_DeployConvert_ResetFlags @ 0x520E75`:
         // outside the Deploy (27) and Undeploy (31) sequences the conversion
         // latches clear.
-        #[cfg(feature = "phobos")]
         if !matches!(doing, DO_DEPLOY | 31)
             && let Some(actor) = self.substrate.entities.get_mut(id)
         {

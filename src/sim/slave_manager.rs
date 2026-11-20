@@ -1651,7 +1651,6 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        #[cfg(feature = "phobos")]
         let money_before =
             self.substrate.entities.get(master).map(|entity| {
                 crate::sim::credit_income::available_money(&self.houses, entity.owner())
@@ -1683,7 +1682,6 @@ impl Simulation {
         // miner whose type `DeploysInto=` a DisplayIncome building prints its
         // balance delta immediately at the miner's `Location`; a Building
         // master accumulates for the periodic label instead.
-        #[cfg(feature = "phobos")]
         if paid
             && let Some(money_before) = money_before
             && let Some(master_entity) = self.substrate.entities.get(master)
@@ -1804,17 +1802,11 @@ impl Simulation {
         // (the `Neutral` country), and its `0x6B0BA4` origin ignores an
         // explicit House argument. The stock build keeps the
         // Civilian-side/argument fallback.
-        #[cfg(feature = "phobos")]
         let neutral = self.neutral_house();
-        #[cfg(not(feature = "phobos"))]
-        let neutral = self.civilian_side_house(rules);
         let killer_house = killer
             .and_then(|id| self.substrate.entities.get(id))
             .map(|entity| entity.owner());
-        #[cfg(feature = "phobos")]
         let default_new_house = killer_house.or(neutral);
-        #[cfg(not(feature = "phobos"))]
-        let default_new_house = killer_house.or(house).or(neutral);
         let mut first_freed = None;
         // 6B0B3C retains the initial count; 6B0B4C..56 rereads each live
         // node. Keep Techno+2D8 attached so a synchronous slave death in an
@@ -1843,7 +1835,6 @@ impl Simulation {
             // Phobos `SlaveManagerClass_Killed` (`0x6B0B9C`/`0x6B0BA4`,
             // `Ext/Techno/Hooks.Misc.cpp:31-74`): each freed slave's own
             // InfantryType picks its owner; `Killer` keeps the vanilla arm.
-            #[cfg(feature = "phobos")]
             let new_house = match self
                 .interner
                 .object_type(type_ref, rules)
@@ -1864,8 +1855,6 @@ impl Simulation {
                 }
                 crate::rules::phobos_slave::SlaveChangeOwnerType::Killer => default_new_house,
             };
-            #[cfg(not(feature = "phobos"))]
-            let new_house = default_new_house;
             let Some(new_house) = new_house else {
                 self.slave_dies_unfreed(slave, rules, registry, frame_effects);
                 continue;
@@ -1879,15 +1868,12 @@ impl Simulation {
         // first freed slave's type `SlavesFreeSound=` over the fixed
         // `[AudioVisual]` value.
         if let Some(slave) = first_freed {
-            #[cfg(feature = "phobos")]
             let type_sound = self
                 .substrate
                 .entities
                 .get(slave)
                 .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                 .and_then(|object| object.phobos_slaved.slaves_free_sound.clone());
-            #[cfg(not(feature = "phobos"))]
-            let type_sound: Option<Option<String>> = None;
             // `NullableIdx`: an authored `none` is explicit silence; an unset
             // key plays the fixed `[AudioVisual]` sound.
             let sound = type_sound.unwrap_or_else(|| rules.general.slaves_free_sound.clone());

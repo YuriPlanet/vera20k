@@ -45,7 +45,6 @@ impl Simulation {
     /// is that gate: `world/techno_ai.rs` skips `apply_interceptor` when it is
     /// true, and the limbo sweep (`Ext/Scenario/Body.cpp:101-110`) never runs
     /// the interceptor at all.
-    #[cfg(feature = "phobos")]
     pub(crate) fn check_auto_death(
         &mut self,
         id: u64,
@@ -263,7 +262,6 @@ impl Simulation {
     /// RESIDUAL: the AttachEffect `DiscardOn.OwnerChange.
     /// IgnoreRevertOnExit` chain also reads the latch and still sees
     /// `false` there.
-    #[cfg(feature = "phobos")]
     pub(crate) fn check_auto_death_owner_change(
         &mut self,
         id: u64,
@@ -474,7 +472,6 @@ impl Simulation {
     /// order. Native reaches this only from the three Ares initial-payload
     /// admissions (`Misc/Hooks.Ares.cpp:31-57`); ordinary boarding, a Chrono
     /// limbo and a sell/repair limbo never register.
-    #[cfg(feature = "phobos")]
     pub(crate) fn register_auto_death(&mut self, id: u64, rules: &RuleSet) {
         let keyed = self
             .substrate
@@ -494,7 +491,6 @@ impl Simulation {
     /// `isInLimbo = true`. The collection is copied first because a visit may
     /// uninit the object; dead or erased entries are dropped at the end, which
     /// native reaches through the same erase that removes it from the vector.
-    #[cfg(feature = "phobos")]
     pub(crate) fn update_auto_death_objects_in_limbo(
         &mut self,
         rules: &RuleSet,

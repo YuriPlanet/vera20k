@@ -700,7 +700,6 @@ impl Simulation {
             // `[CombatDamage] OpenToppedWarpDistance` global. Keep the
             // signed `i32.wrapping_mul(256)` overflow semantics.
             let warp_distance = {
-                #[cfg(feature = "phobos")]
                 {
                     self.substrate
                         .entities
@@ -715,10 +714,6 @@ impl Simulation {
                         })
                         .map(|kind| kind.phobos_open_topped().warp_distance(rules))
                         .unwrap_or(rules.combat_damage.open_topped_warp_distance)
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    rules.combat_damage.open_topped_warp_distance
                 }
             };
             if distance > warp_distance.wrapping_mul(256) {
@@ -755,7 +750,6 @@ impl Simulation {
             // -> `UpdateRearmInTemporal` (`Ext/Techno/Body.Update.cpp:863,
             // 882-895`): the held target's timers freeze while the warp runs.
             // The <= 0 path erases the target, whose timers then cease.
-            #[cfg(feature = "phobos")]
             if let Some(target) = link.target {
                 self.update_rearm_in_temporal(target, rules);
             }
@@ -830,7 +824,6 @@ impl Simulation {
     /// damage.
     fn temporal_warp_per_step(&mut self, attacker: u64, rules: &RuleSet) -> i32 {
         let mut warp = self.temporal_owner_damage(attacker, rules);
-        #[cfg(feature = "phobos")]
         {
             let Some(entity) = self.substrate.entities.get(attacker) else {
                 return warp;
@@ -1855,10 +1848,7 @@ fn take_idle_trace() -> Vec<u64> {
 
 /// `(frame + phase) % 24 == 0` under the native signed IDIV.
 fn sparkle_delay(rules: &RuleSet) -> i32 {
-    #[cfg(feature = "phobos")]
     let delay = rules.phobos_globals.chrono_sparkle_display_delay;
-    #[cfg(not(feature = "phobos"))]
-    let delay = SPARKLE_PERIOD_FRAMES;
     // Native divides by this; a configured 0 would fault, so keep a positive
     // divisor (retail leaves it at the constructor's 24).
     delay.max(1)

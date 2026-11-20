@@ -114,7 +114,6 @@ fn register_on_map(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 /// `Ext/Techno/Body.Update.cpp:247-255`: `AutoDeath.TechnosExist=` kills the
 /// object while any listed type (its default `Any=yes`) is present for the
 /// selected houses.
-#[cfg(feature = "phobos")]
 #[test]
 fn technos_exist_kills_only_when_the_listed_type_is_present() {
     for (with_crew, expected_alive) in [(false, true), (true, false)] {
@@ -141,7 +140,6 @@ fn technos_exist_kills_only_when_the_listed_type_is_present() {
 
 /// `:236-245`: `AutoDeath.TechnosDontExist=` kills it while none of the listed
 /// types exist; native inverts `Any`, whose default `no` becomes "any of them".
-#[cfg(feature = "phobos")]
 #[test]
 fn technos_dont_exist_kills_only_when_the_listed_type_is_absent() {
     for (with_crew, expected_alive) in [(false, false), (true, true)] {
@@ -305,7 +303,6 @@ fn owner_change_flag_transported(kind: &str) -> bool {
 /// (`Ext/House/Hooks.cpp:231-259`): the master `OnOwnerChange` switch arms both
 /// directions, and `ShouldBeDead` then kills on the next
 /// `CheckDeathConditions` visit (`Ext/Techno/Body.Update.cpp:159-163`).
-#[cfg(feature = "phobos")]
 #[test]
 fn an_owner_change_sets_should_be_dead_by_direction() {
     assert!(
@@ -323,7 +320,6 @@ fn an_owner_change_sets_should_be_dead_by_direction() {
 }
 
 /// The direction keys default to the master and override it one way at a time.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_direction_keys_override_the_master() {
     assert!(
@@ -338,7 +334,6 @@ fn the_direction_keys_override_the_master() {
 
 /// `Ext/House/Hooks.cpp:240-243`: both direction keys on kills on any change,
 /// even between two houses of the same control kind.
-#[cfg(feature = "phobos")]
 #[test]
 fn both_directions_kill_across_two_human_houses() {
     assert!(
@@ -350,7 +345,6 @@ fn both_directions_kill_across_two_human_houses() {
 /// `:253-258` with `Ext/Rules/Body.h:1027`: `[CombatDamage] AutoDeath.AllowLimboed`
 /// constructs `true`, so a transported object dies by default and only an
 /// explicit `AllowLimboed=no` clears the flag.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_allow_limboed_gate_spares_only_when_it_is_off() {
     assert!(
@@ -584,7 +578,6 @@ fn an_ares_surface_conversion_stops_the_countdown() {
 /// (`Ext/Techno/Body.Update.cpp:771-790`): a random
 /// `AutoDeath.VanishAnimation` plays at the object's GetCoords owned by its
 /// house, and the object leaves the world without a death.
-#[cfg(feature = "phobos")]
 #[test]
 fn vanish_plays_its_animation_and_erases_the_object() {
     let (mut sim, mut rules) = arena();
@@ -625,7 +618,6 @@ fn vanish_plays_its_animation_and_erases_the_object() {
 /// (`Ext/Anim/Body.cpp:420-421`). Giving it an owner object would be invented
 /// behavior: the animation would then follow, and die with, an object native
 /// leaves it detached from.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_vanish_animation_gets_the_dying_object_as_invoker_and_no_owner_object() {
     let (mut sim, mut rules) = arena();
@@ -662,7 +654,6 @@ fn the_vanish_animation_gets_the_dying_object_as_invoker_and_no_owner_object() {
 /// `TechnoExt::KillSelf`'s `Sell` arm (`:792-807`): a building whose Buildup
 /// SHP is bound (`+0x6E9`) takes the Selling mission instead of dying; a
 /// building without one falls through to the `Kill` arm.
-#[cfg(feature = "phobos")]
 #[test]
 fn sell_starts_the_selling_mission_or_falls_back_to_kill() {
     let (mut sim, mut rules) = arena();
@@ -694,7 +685,6 @@ fn sell_starts_the_selling_mission_or_falls_back_to_kill() {
 /// `BuildingClass::UnloadBunker @ 0x004593A0`, the sell/death release: the
 /// installed unit's reciprocal link is cleared, and no reposition, NavCom or
 /// Move is produced. An empty `AutoDeath.VanishAnimation` draws nothing.
-#[cfg(feature = "phobos")]
 #[test]
 fn vanish_unloads_a_bunker_without_repositioning_the_unit() {
     let (mut sim, mut rules) = arena();

@@ -320,6 +320,7 @@ pub(crate) fn build_shp_vehicle_sequences(
             set.set_shp_vehicle_turret(ShpVehicleTurret {
                 start_frame,
                 facings: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
+                frame_count: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
             });
         }
     }
@@ -489,6 +490,7 @@ mod tests {
             Some(ShpVehicleTurret {
                 start_frame: 176,
                 facings: 32,
+                frame_count: 32,
             })
         );
 
@@ -508,14 +510,10 @@ mod tests {
 
     pub(super) fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
         ArtEntry {
-            #[cfg(feature = "phobos")]
             roof_production_anim: Default::default(),
-            #[cfg(feature = "phobos")]
             phobos_fire_up_reset_in_retarget: true,
-            #[cfg(feature = "phobos")]
             phobos_fire_up: -1,
             image: None,
-            #[cfg(feature = "phobos")]
             phobos_turret_barrel: Default::default(),
             cameo: None,
             alt_cameo: None,
@@ -548,10 +546,8 @@ mod tests {
             secondary_fire_pixel_offset: None,
             primary_fire_dual_offset: false,
             is_anim_delayed_fire: false,
-            #[cfg(feature = "phobos")]
             is_anim_delayed_burst: true,
             silo_damage: false,
-            #[cfg(feature = "phobos")]
             refinery_use_normal_active_anim: false,
             delayed_fire_delay: 0,
             walk_frames: walk,
@@ -564,7 +560,6 @@ mod tests {
             disable_voxel_cache: false,
             disable_shadow_cache: false,
             can_be_hidden: true,
-            #[cfg(feature = "phobos")]
             aircraft_docking_dir_default_to_pose_dir: None,
             queueing_cell: [0, 0],
             pads: Vec::new(),

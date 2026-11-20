@@ -226,24 +226,17 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
     // their rules switches are on, so the page does not list them otherwise.
-    #[cfg(feature = "phobos")]
     let sw_sidebar_globals = state.rules().map(|rules| rules.sw_sidebar);
     let commands = registered_commands()
         .iter()
         .enumerate()
         .filter(|(_, metadata)| {
-            #[cfg(feature = "phobos")]
             {
                 sw_sidebar_globals.is_none_or(|globals| match metadata.command {
                     hotkeys::HotkeyCommand::FireTacticalSw(_) => globals.keys_enabled,
                     hotkeys::HotkeyCommand::ToggleSwSidebar => globals.toggle_key_enabled,
                     _ => true,
                 })
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                let _ = metadata;
-                true
             }
         })
         .map(|(index, metadata)| KeyboardCommandRow {

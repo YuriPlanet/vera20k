@@ -20,7 +20,6 @@ use crate::render::bit_font::BitFont;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarView};
 // Generic credit glyph generation is render-owned (F06); this module keeps
 // only the sidebar-view adapter below. Re-exported for existing callers.
-#[cfg(feature = "phobos")]
 use crate::render::sidebar_text::build_indicator_instances;
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
@@ -63,7 +62,6 @@ pub fn build_sidebar_credits_instances(
 /// Every Phobos sidebar indicator resolved for this frame, in the order the
 /// per-frame owner stored them. Each carries its own colour, so unlike the
 /// credits counter this takes no theme tint.
-#[cfg(feature = "phobos")]
 pub fn build_sidebar_indicator_instances(
     font: &BitFont,
     indicators: &[crate::ui::sidebar::SidebarIndicator],
@@ -126,7 +124,6 @@ mod tests {
     /// and the `TextPrintType` bits decide how the measured string sits there:
     /// left starts at the anchor, centre pulls it back half its width, right
     /// ends at it. `"12"` measures `3 + 6 + 2 * spacing = 11`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn indicator_anchor_and_alignment_use_the_native_print_bits() {
         use crate::rules::phobos_sidebar_indicators::SidebarTextAlign;

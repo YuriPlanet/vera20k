@@ -768,7 +768,6 @@ fn indexed_turret_names_and_draw_admission_match_native_controls() {
 /// to `[AudioVisual] DrawTurretShadow=` (`Ext/Rules/Body.cpp:173`, default no),
 /// and when the gate is on the seeded demand carries a turret stencil under the
 /// turret's own facing steps (`Ext/TechnoType/Hooks.MatrixOp.cpp:803,870`).
-#[cfg(feature = "phobos")]
 #[test]
 fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
     use crate::map::source::test_support::TestDirectory;
@@ -1158,7 +1157,11 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
     );
     assert_eq!(
         paint_raster.pages,
-        crate::render::vxl_normals::diffuse_pages(4, glam::Mat3::from_mat4(matrix))
+        crate::render::vxl_normals::diffuse_pages(
+            4,
+            glam::Mat3::from_mat4(matrix),
+            crate::render::vxl_normals::VoxelLight::default(),
+        )
     );
     let Some(vxl_raster::VoxelImage::Stencil {
         raster: shadow_raster,

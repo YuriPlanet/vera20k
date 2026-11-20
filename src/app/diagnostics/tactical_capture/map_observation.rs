@@ -2152,13 +2152,10 @@ fn disguise_inputs(
             state.rules(),
         );
         // The Phobos water damaged-image pair reads the object's cell.
-        #[cfg(feature = "phobos")]
         let water = sim.resolved_terrain().is_some_and(|terrain| {
             let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
             instances::unit_on_water(entity, Some(&cells))
         });
-        #[cfg(not(feature = "phobos"))]
-        let water = false;
         // The record the draw reads (`presentation::frame`).
         let frame = state
             .match_state

@@ -127,7 +127,6 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
 /// Phobos `LaserZAdjust` (`Ext/WeaponType/Body.cpp:130`, nullable) with the
 /// `[AudioVisual]` default (`Ext/Rules/Body.cpp:277`), applied by the LaserDraw
 /// hook (`Misc/Hooks.LaserDraw.cpp:49-57`): the created beam carries the sum.
-#[cfg(feature = "phobos")]
 #[test]
 fn laser_z_adjust_reads_the_weapon_then_the_audio_visual_global() {
     let produce = |global: &str, weapon: &str| {
@@ -428,7 +427,6 @@ fn ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths() {
 /// laser with `IsSingleColor=` and no house colour keeps only its
 /// `LaserInnerColor=`; `IsHouseColor=` still wins, and an ordinary laser
 /// keeps the full inner/outer/spread triple.
-#[cfg(feature = "phobos")]
 #[test]
 fn stock_single_color_laser_keeps_only_the_inner_colour() {
     fn birth(
@@ -483,7 +481,6 @@ fn stock_single_color_laser_keeps_only_the_inner_colour() {
 /// Phobos `TechnoClass_LaserZap_ZAdjust` (`0x6FD3FD`,
 /// `Misc/Hooks.LaserDraw.cpp:51-58`): the weapon's `LaserZAdjust=` else the
 /// `[AudioVisual] LaserZAdjust` global adds to the native zAdjust.
-#[cfg(feature = "phobos")]
 #[test]
 fn laser_z_adjust_adds_the_weapon_value_else_the_global() {
     fn birth(weapon_z: Option<i64>, global_z: Option<i64>) -> i32 {

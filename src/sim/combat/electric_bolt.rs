@@ -128,26 +128,17 @@ pub(crate) fn fired(
     // hook bypasses the native SetOwner checks at `0x4C2BF2` (InLimbo) and
     // the Unit `+0x6DC` slot test at `0x006FD5F2`..`0x006FD600`, so every
     // linked bolt follows and a Limbo Unit links as well.
-    #[cfg(feature = "phobos")]
     let follow = selected
         .weapon
         .phobos_bolt_follow_flh
         .unwrap_or(source.category() == crate::map::entities::EntityCategory::Unit);
-    #[cfg(not(feature = "phobos"))]
-    let follow = source.category() == crate::map::entities::EntityCategory::Unit;
-    #[cfg(feature = "phobos")]
     let link = follow && source.is_object_alive();
-    #[cfg(not(feature = "phobos"))]
-    let link = follow && source.is_object_alive() && !source.in_limbo();
     let owner = link.then_some(ElectricBoltOwner {
         unit: source_id,
         weapon_index: index,
         unit_slot: source.category() == crate::map::entities::EntityCategory::Unit,
     });
-    #[cfg(feature = "phobos")]
     let visual_scatter = selected.weapon.phobos_visual_scatter();
-    #[cfg(not(feature = "phobos"))]
-    let visual_scatter = false;
     create(
         world,
         rules,
@@ -179,17 +170,12 @@ pub(crate) fn create(
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
-    #[cfg(not(feature = "phobos"))]
-    let _ = visual_scatter;
-    #[cfg(feature = "phobos")]
     let clamp_positive = crate::rules::phobos_beam_z_adjust::resolved_clamp(
         weapon.phobos_ebolt_clamp_initial_depth_for_building,
         rules
             .phobos_beam_z_adjust
             .ebolt_clamp_initial_depth_for_building,
     );
-    #[cfg(not(feature = "phobos"))]
-    let clamp_positive = true;
     let z_adjust = super::fire_coord::effect_z_adjust(
         world,
         source,
@@ -204,7 +190,6 @@ pub(crate) fn create(
     // (`0x6FD514`, `Ext/Techno/Hooks.WeaponEffects.cpp:220-248`). CreateEBolt
     // hands the same coordinate to the bolt and to its spark system, so the
     // replacement has to happen before `emit`.
-    #[cfg(feature = "phobos")]
     if visual_scatter
         && let Some(scattered) = super::fire_coord::visual_scatter_target(world, rules, target)
     {
@@ -228,7 +213,6 @@ pub(crate) fn create(
 /// Phobos `BulletExt::SimulatedFiringElectricBolt`: explicit endpoints and no
 /// live source Techno, so an airburst/split child still draws after its firer
 /// expired.
-#[cfg(feature = "phobos")]
 pub(crate) fn create_effect(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -259,7 +243,6 @@ fn emit(
     // Phobos `EBolt_Draw_*` (`Ext/EBolt/Hooks.cpp:215`): the weapon's
     // EBoltZAdjust else `[AudioVisual] EBoltZAdjust` adds to the bolt's
     // zAdjust before the birth is retained.
-    #[cfg(feature = "phobos")]
     let z_adjust = z_adjust.wrapping_add(crate::rules::phobos_beam_z_adjust::resolved(
         weapon.phobos_ebolt_z_adjust,
         rules.phobos_beam_z_adjust.ebolt,
@@ -271,16 +254,10 @@ fn emit(
     let phase = world.main_rng.next_range_i32_inclusive(0, 256);
     // `EBoltExt::CreateEBolt` (`Ext/EBolt/Body.cpp:30`): the constructor's
     // Lifetime is the weapon's `Bolt.Duration` exponent, default 17.
-    #[cfg(feature = "phobos")]
     let decay = 1_i32 << (weapon.phobos_bolt_duration.clamp(1, 31) - 1);
-    #[cfg(not(feature = "phobos"))]
-    let decay = 0x10000;
     // `EBoltExt::CreateEBolt` copies the weapon's `Bolt.Arcs`
     // (`Ext/EBolt/Body.cpp:29`); the constructor's 8 is the default.
-    #[cfg(feature = "phobos")]
     let arcs = weapon.phobos_bolt_arcs;
-    #[cfg(not(feature = "phobos"))]
-    let arcs = 8;
     world
         .lifecycle_outputs
         .emit(crate::sim::world::LifecycleOutput::ElectricBoltCreated(

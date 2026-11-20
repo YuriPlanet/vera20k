@@ -7,21 +7,10 @@ use crate::render::terrain_draw::TerrainPiece;
 
 /// Terrain DrawIt (0x71C1B0): a static type draws frame 1 below 2 health and
 /// frame 0 otherwise; an animated type draws its stage whatever its health.
-#[cfg(not(feature = "phobos"))]
-#[test]
-fn terrain_draw_frame_follows_health_and_stage() {
-    assert_eq!(terrain_draw_frame(None, 2), 0);
-    assert_eq!(terrain_draw_frame(None, 1), 1);
-    assert_eq!(terrain_draw_frame(Some(7), 1), 7);
-    // TerrainAI71C7DD and DrawIt71C208 retain the full Stage. A 514-frame
-    // animated spawner reaches256 before its midpoint257 resets the stage.
-    assert_eq!(terrain_draw_frame(Some(256), 1), 256);
-}
 
 /// Phobos `TerrainClass_Draw_PickFrame` (0x71C1FE): the type's
 /// `HasDamagedFrames`/`HasCrumblingFrames`/`AnimationLength` select the
 /// frame; an unset key set draws the static frame 0 whatever the health.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_terrain_draw_frame_follows_type_keys_and_crumbling() {
     // (stage, health, strength, has_damaged, has_crumbling, crumbling, anim_len, frames, animated)
@@ -162,7 +151,6 @@ fn terrain_retained_xyz_projection_and_piece_z_match_original_render() {
 /// `Ext/TerrainType/Hooks.cpp:106,274`): the damaged-frame threshold falls
 /// back to `[AudioVisual] ConditionYellow`, and a damaged-frame tree switches
 /// exactly at the authored ratio.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_terrain_condition_yellow_reads_and_switches_the_damaged_frame() {
     use super::terrain_condition_yellow;

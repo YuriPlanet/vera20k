@@ -230,7 +230,6 @@ fn parser_admitted_percent_overflow_uses_native_masked_kernel() {
 /// hooks `0x4891AF`/`0x48922D`): the armed negative packet skips the stock
 /// distance<8 bypass and the zero floor, so Verses scales a heal; unarmed
 /// packets keep the raw near value or zero far away.
-#[cfg(feature = "phobos")]
 #[test]
 fn negative_damage_modifiers_skip_the_stock_early_out_and_zero_floor() {
     let run = |damage: i32, distance: i32, armed: bool| {

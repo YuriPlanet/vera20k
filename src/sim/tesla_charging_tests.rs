@@ -912,12 +912,10 @@ fn retail_fireat_charges_low_power_coil_and_pruning_disables_it_again() {
 /// `ElectricAssaultLevel` (`Ext/BuildingType/Body.cpp:242-243`,
 /// `Ext/WarheadType/Body.cpp:398`) through the production sample and power
 /// gate: the summed level replaces the stock charger count.
-#[cfg(feature = "phobos")]
 fn overpower_scene(keep: i32, charge: i32, level: i32) -> (Simulation, RuleSet, u64) {
     overpower_scene_ini(keep, charge, level, true)
 }
 
-#[cfg(feature = "phobos")]
 fn overpower_scene_ini(
     keep: i32,
     charge: i32,
@@ -960,7 +958,6 @@ fn overpower_scene_ini(
     (sim, rules, coil)
 }
 
-#[cfg(feature = "phobos")]
 fn overpowered(sim: &mut Simulation, rules: &RuleSet, coil: u64, online: bool) -> bool {
     sim.substrate
         .entities
@@ -982,7 +979,6 @@ fn overpowered(sim: &mut Simulation, rules: &RuleSet, coil: u64, online: bool) -
         .is_overpowered()
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn overpower_sum_levels_and_the_type_thresholds_drive_the_latch() {
     let (mut sim, rules, coil) = overpower_scene(2, 1, 3);
@@ -1012,7 +1008,6 @@ fn overpower_sum_levels_and_the_type_thresholds_drive_the_latch() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_power_gate_uses_the_summed_level_against_keep_online() {
     let (mut sim, rules, coil) = overpower_scene(2, 1, 3);
@@ -1040,7 +1035,6 @@ fn the_power_gate_uses_the_summed_level_against_keep_online() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn the_power_gate_sums_any_warhead_and_rejects_negative_keep_online() {
     // The 0x4555E4/0x45563B gate takes any slot-1 warhead's level

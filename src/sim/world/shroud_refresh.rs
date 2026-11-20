@@ -2146,7 +2146,6 @@ impl Simulation {
         // player only when the techno's resolved `RevealHouses` (type, then
         // country, then `[AudioVisual]`) admits the owner against it. Each
         // logical client here is one such player.
-        #[cfg(feature = "phobos")]
         let reveal_houses = {
             let rules = context.rules();
             let country = self
@@ -2169,7 +2168,6 @@ impl Simulation {
                 vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
             })
             .filter(|&viewer| {
-                #[cfg(feature = "phobos")]
                 {
                     crate::sim::combat::can_target_house(
                         reveal_houses,
@@ -2179,10 +2177,6 @@ impl Simulation {
                         &self.house_alliances,
                         &self.interner,
                     )
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    true
                 }
             })
             .collect();
@@ -3265,14 +3259,11 @@ impl Simulation {
         // 0x446816 and 0x4ADE55 pass `Get(RevealToAll.Radius, Type->Sight)`
         // as UpdateSight's explicit radius, so the alternate circle uses the
         // key, else the type's raw Sight.
-        #[cfg(feature = "phobos")]
         let radius_override = self
             .interner
             .try_resolve(entity.type_ref())
             .and_then(|name| rules.object(name))
             .map(|_object| 4);
-        #[cfg(not(feature = "phobos"))]
-        let radius_override = None;
         let ability = config.sight_ability(entity, &self.interner, rules);
         vision::entity_sight_admission(
             &self.fog,

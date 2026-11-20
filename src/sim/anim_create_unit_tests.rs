@@ -237,7 +237,6 @@ fn create_unit_spawn_height_and_ground_gate() {
 /// `OnParachuted` — so its landing skips the `FallingDownDamage` ratio
 /// (`Ext/Techno/Hooks.cpp:1067`). `AlwaysSpawnOnGround` keeps it on the floor
 /// and takes no fall.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_air_spawned_unit_is_let_go_into_a_parachuted_fall() {
     fn spawn(keys: &str) -> (bool, bool) {
@@ -524,7 +523,6 @@ fn create_unit_marks_all_infantry_bits_until_the_actual_effects() {
 /// [`scene`] over a rules text that also defines a Fly aircraft (`ORCA`), an
 /// `AirportBound` Fly aircraft (`PLANE`), a Jumpjet (`ZEP`) and a BalloonHover
 /// jumpjet vehicle (`BHOV`), for `CreateUnit`'s per-locomotor spawn orders.
-#[cfg(feature = "phobos")]
 fn scene_air(make_lines: &str) -> (Simulation, RuleSet) {
     const AIR_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n2=Civilians\n\
         [Sides]\nCivilian=Civilians\n\
@@ -566,7 +564,6 @@ fn scene_air(make_lines: &str) -> (Simulation, RuleSet) {
 }
 
 /// The single spawned object of `name`, if any.
-#[cfg(feature = "phobos")]
 fn spawned<'a>(
     sim: &'a Simulation,
     rules: &RuleSet,
@@ -584,7 +581,6 @@ fn spawned<'a>(
 /// `Ext/TechnoType/Body.cpp:674-683`: a Fly spawn on a free cell takes
 /// `pFlyLoco->Move_To(pCell->GetCoordsWithBridge())`, so the destination is the
 /// cell centre and the aircraft starts moving.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_fly_spawn_on_a_free_cell_is_ordered_to_the_cell_centre() {
     let (mut sim, rules) =
@@ -609,7 +605,6 @@ fn a_fly_spawn_on_a_free_cell_is_ordered_to_the_cell_centre() {
 /// The same arm with `AirportBound=yes` and an empty cell: native calls
 /// `EnterIdleMode(false, true)` instead of `Move_To`, so the aircraft does not
 /// start moving.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_airport_bound_fly_spawn_enters_idle_mode() {
     let (mut sim, rules) =
@@ -630,7 +625,6 @@ fn an_airport_bound_fly_spawn_enters_idle_mode() {
 
 /// `pCell->GetContent()`: a ground object on the spawn cell also takes the
 /// idle arm, so a Fly spawn does not queue a `Move_To` onto it.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_fly_spawn_on_an_occupied_cell_enters_idle_mode() {
     let (mut sim, rules) =
@@ -650,7 +644,6 @@ fn a_fly_spawn_on_an_occupied_cell_enters_idle_mode() {
 
 /// `Ext/TechnoType/Body.cpp:686-687`: a Jumpjet spawn snaps its locomotion
 /// facing to `CreateUnit.Facing` before any movement order.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_jumpjet_spawn_snaps_its_locomotion_facing() {
     let (mut sim, rules) =
@@ -675,7 +668,6 @@ fn a_jumpjet_spawn_snaps_its_locomotion_facing() {
 /// ascend straight up — `IsMoving = true`, `DestinationCoords = GetCoords()`,
 /// and the `FootExt::JumpjetStraightAscend` latch its locomotion consumes
 /// (`Ext/Unit/Hooks.Jumpjet.cpp:394-437`).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_balloon_hover_jumpjet_spawn_holds_its_own_coords_and_the_latch() {
     let (mut sim, rules) = scene_air(

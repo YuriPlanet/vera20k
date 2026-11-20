@@ -31,13 +31,10 @@ pub(crate) fn mission_repair(
         .get(hospital)
         .and_then(|building| sim.object_type(building.type_ref(), rules))
         .map_or((-1, rules.general.infantry_repair_rate), |object| {
-            #[cfg(feature = "phobos")]
             let rate = object
                 .phobos_units_repair
                 .repair_rate
                 .unwrap_or(rules.general.infantry_repair_rate);
-            #[cfg(not(feature = "phobos"))]
-            let rate = rules.general.infantry_repair_rate;
             (object.ammo, rate)
         });
     let Some(building) = sim.substrate.entities.get_mut(hospital) else {

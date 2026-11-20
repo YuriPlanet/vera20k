@@ -207,15 +207,12 @@ fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64, pla
 /// The Ares arm (`0x6F7561`, hook `1005C450`) takes that branch for an
 /// Aircraft firer.
 fn direct_reach_is_planar(attacker: &GameEntity, weapon: &WeaponType, rules: &RuleSet) -> bool {
-    #[cfg(feature = "phobos")]
     if weapon
         .phobos_cylinder_rangefinding
         .unwrap_or(rules.phobos_globals.cylinder_rangefinding)
     {
         return true;
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = weapon;
     rules.ares() && attacker.category() == EntityCategory::Aircraft
 }
 
@@ -260,7 +257,6 @@ pub(crate) fn open_topped_range_bonus_leptons(
     }
 
     let bonus = {
-        #[cfg(feature = "phobos")]
         {
             let carrier = entities
                 .and_then(|store| {
@@ -277,11 +273,6 @@ pub(crate) fn open_topped_range_bonus_leptons(
                 .map(|kind| kind.phobos_open_transport().range_bonus(rules))
                 .unwrap_or(rules.phobos_globals.open_transport_range_bonus);
             carrier.wrapping_add(rider)
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = (entities, interner);
-            rules.garrison_rules.open_topped_range_bonus
         }
     };
     i64::from(bonus) << 8
@@ -346,7 +337,6 @@ fn elevation_bonus_leptons(
             }
             crate::sim::cell_kernel::native_cell_own_xy(cell, cells)
         }
-        #[cfg(feature = "phobos")]
         RangeTarget::Bullet(target) => {
             let point = target.position();
             [point.x, point.y]
@@ -422,7 +412,6 @@ fn minimum_range_blocks(weapon: &WeaponType, src: (i64, i64, i64), tgt: (i64, i6
 /// and the rearm remainder against `EarlyStopFrame`.
 ///
 /// Returns the `(minimum, maximum)` overrides to apply to a local weapon copy.
-#[cfg(feature = "phobos")]
 pub(crate) fn keep_range_overrides(
     world: &Simulation,
     rules: &RuleSet,
@@ -555,7 +544,6 @@ pub(crate) enum RangeTarget<'a> {
     Cell(NativeCellIdentity),
     /// Phobos interceptor Bullet target: its retained Location is the target
     /// point (`BulletClass::GetCoords` inherits Object5F65A0).
-    #[cfg(feature = "phobos")]
     Bullet(&'a crate::sim::projectile::Projectile),
     // InRange6F724E's -512 sentinel precedes even a missing target read.
     Missing,
@@ -578,7 +566,6 @@ impl<'a> RangeTarget<'a> {
             TargetKind::Cell(..) => target
                 .cell_identity(terrain)
                 .map_or(Self::Missing, Self::Cell),
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(id) => world
                 .projectiles
                 .get(id)
@@ -630,7 +617,6 @@ pub(crate) fn compute_range_target(
     // local weapon's maximum or minimum range before every gate below. The
     // live maximum short-circuits `GetRangeWithModifiers` entirely
     // (`0x6F7248`), so the veteran and AttachEffect folds never scale it.
-    #[cfg(feature = "phobos")]
     let keep_weapon = {
         let target_entity = match target {
             RangeTarget::Techno(entity) => Some(entity.stable_id()),
@@ -652,15 +638,10 @@ pub(crate) fn compute_range_target(
             Some((copy, keep_max))
         })
     };
-    #[cfg(feature = "phobos")]
     let (weapon, keep_max) = match &keep_weapon {
         Some((copy, maximum)) => (copy, *maximum),
         None => (weapon, None),
     };
-    #[cfg(not(feature = "phobos"))]
-    let (weapon, keep_max): (&WeaponType, Option<i32>) = (weapon, None);
-    #[cfg(not(feature = "phobos"))]
-    let _ = world;
     let weapon_range_lep: i64 = if let Some(keep) = keep_max {
         i64::from(keep)
     } else {
@@ -673,7 +654,6 @@ pub(crate) fn compute_range_target(
     // `Ext/Techno/Hooks.WeaponRange.cpp:145-168`): with no live KeepRange and
     // no -512 sentinel, the ExtraRange movement/prefire bonuses add to the
     // modified weapon range before every other InRange term.
-    #[cfg(feature = "phobos")]
     let weapon_range_lep = if keep_max.is_none()
         && weapon_range_lep != WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS
         && let Some(world) = world
@@ -698,7 +678,6 @@ pub(crate) fn compute_range_target(
         RangeTarget::Terrain(target) => target.is_high_flying_in_query(Some(cells)),
         // `ObjectClass::IsHighFlying`'s Techno override; a Bullet is not a
         // Techno and answers false.
-        #[cfg(feature = "phobos")]
         RangeTarget::Bullet(_) => false,
         RangeTarget::Cell(_) | RangeTarget::Missing => false,
     };
@@ -826,12 +805,9 @@ fn line_of_fire_clear(
     entities: Option<&crate::sim::entity_store::EntityStore>,
 ) -> bool {
     let ares = rules.ares_form();
-    #[cfg(feature = "phobos")]
     let phobos = phobos_scan_input(
         attacker, target, weapon, src, target_xyz, rules, interner, cells, entities,
     );
-    #[cfg(not(feature = "phobos"))]
-    let phobos = None;
     let blocked = line_of_fire::line_of_fire_blocking_cell(
         src,
         target_xyz,
@@ -859,7 +835,6 @@ fn line_of_fire_clear(
     // when the scan found nothing: an aircraft carrier asking for a launch
     // position blocks on its own source cell when that coordinate sits on,
     // beside or under an elevated bridge (`0x703B10`).
-    #[cfg(feature = "phobos")]
     let blocked = blocked || phobos_spawner_obstacle(attacker, src, rules, interner, cells);
     !blocked
 }
@@ -871,7 +846,6 @@ fn line_of_fire_clear(
 /// ([`is_on_bridge_for_firing_at`]) and — on a `true` answer — refused through
 /// its own source cell. Native mutates and restores `Location`, so the probe is
 /// coordinate-based here instead.
-#[cfg(feature = "phobos")]
 fn phobos_spawner_obstacle(
     attacker: &GameEntity,
     src: (i64, i64, i64),
@@ -898,7 +872,6 @@ fn phobos_spawner_obstacle(
 }
 
 /// The gate set and coordinate probe of the carrier arm, without the entity.
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_spawner_obstacle_at(
     has_spawn_manager: bool,
     foot: bool,
@@ -931,7 +904,6 @@ pub(crate) fn phobos_spawner_obstacle_at(
 /// coordinate, with the bridge deck rise when the firer stands on one, and the
 /// weapon FLH comes from the slot that holds the weapon `InRange` is checking
 /// (`GetWeapon(SelectWeapon(target))->FLH`).
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_scan_input(
     attacker: &GameEntity,
@@ -1071,7 +1043,6 @@ fn range_target_coords_3d(
             Some((i64::from(point.x), i64::from(point.y), z))
         }
         RangeTarget::Cell(cell) => native_cell_range_coords(cell, cells),
-        #[cfg(feature = "phobos")]
         RangeTarget::Bullet(target) => {
             let point = target.position();
             Some((i64::from(point.x), i64::from(point.y), i64::from(point.z)))
@@ -1146,7 +1117,6 @@ fn target_own_z_leptons(target: RangeTarget<'_>, cells: &NativeCellQuery<'_>) ->
         ))),
         RangeTarget::Terrain(target) => Some(i64::from(target.world_coord().z)),
         RangeTarget::Cell(cell) => native_cell_own_coords(cell, cells).map(|(_, _, z)| z),
-        #[cfg(feature = "phobos")]
         RangeTarget::Bullet(target) => Some(i64::from(target.position().z)),
         RangeTarget::Missing => None,
     }
@@ -1647,7 +1617,6 @@ mod tests {
     /// `Ext/Techno/Hooks.Firing.cpp:1265-1274`): the weapon's value wins,
     /// an unset weapon falls back to `[General]`, and the stock aircraft
     /// planar arm remains.
-    #[cfg(feature = "phobos")]
     #[test]
     fn weapon_and_global_cylinder_rangefinding_pick_the_planar_arm() {
         let ini = IniFile::from_str(
@@ -3488,7 +3457,6 @@ mod tests {
     /// `OpenTopped.RangeBonus` instead of the YR `[CombatDamage]` global.
     /// Boundary: `Range=4` (1024 lep) + target 2048 lep east is out of reach
     /// with the global bonus 2 (512) but inside the override 9 (2304).
-    #[cfg(feature = "phobos")]
     #[test]
     fn open_topped_task_d_range_bonus() {
         use crate::sim::components::DriveCoord;

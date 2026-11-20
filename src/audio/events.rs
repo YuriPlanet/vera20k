@@ -174,6 +174,15 @@ pub enum GameSoundEvent {
         source: Option<SoundSource>,
     },
 
+    /// A transport placed an ejected passenger — play the transport type's
+    /// LeaveTransportSound at the transport's screen position.
+    LeaveTransport {
+        /// sound.ini ID from the transport type's LeaveTransportSound= field.
+        sound_id: String,
+        /// Screen position of the sound source (for spatial audio).
+        source: Option<SoundSource>,
+    },
+
     /// Fly BeginTakeoff AuxSound1 or the one-shot landing AuxSound2.
     AircraftPhase {
         sound_id: String,
@@ -420,6 +429,7 @@ impl GameSoundEvent {
             | Self::EntityCrushed { sound_id, .. }
             | Self::AircraftPhase { sound_id, .. }
             | Self::EntityDeployed { sound_id, .. }
+            | Self::LeaveTransport { sound_id, .. }
             | Self::EntityUndeployed { sound_id, .. }
             | Self::ChronoTeleport { sound_id, .. }
             | Self::UnitPromoted { sound_id, .. }
@@ -460,6 +470,7 @@ impl GameSoundEvent {
             | Self::EntityCrushed { source, .. }
             | Self::AircraftPhase { source, .. }
             | Self::EntityDeployed { source, .. }
+            | Self::LeaveTransport { source, .. }
             | Self::EntityUndeployed { source, .. }
             | Self::ChronoTeleport { source, .. }
             | Self::UnitPromoted { source, .. }

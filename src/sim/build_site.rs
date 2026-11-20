@@ -306,7 +306,6 @@ pub(crate) fn flush_for_placement(
         let id = match first {
             CellObjectMember::Entity(id) => id,
             CellObjectMember::Terrain(id) => {
-                #[cfg(feature = "phobos")]
                 if sim
                     .terrain_objects
                     .get(id)
@@ -457,7 +456,6 @@ fn objects_admit(
                 // Phobos `CanBeBuiltOn` sets `builtOnCanBeBuiltOn`, which skips
                 // the occupation test for the whole cell
                 // (`Ext/Unit/Hooks.DeploysInto.cpp:196-220`).
-                #[cfg(feature = "phobos")]
                 if sim
                     .terrain_objects
                     .get(id)

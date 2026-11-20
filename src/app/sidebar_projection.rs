@@ -247,7 +247,6 @@ pub(crate) struct PreparedSidebarOrder {
     factory_links: HashMap<InternedId, CameoFactoryLink>,
     prediction_categories: HashSet<ProductionCategory>,
     active_tab: SidebarTab,
-    #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
 }
 
@@ -259,7 +258,6 @@ pub(crate) fn loaded_active_tab(order: Option<&PreparedSidebarOrder>) -> Sidebar
     order.map_or_else(SidebarTab::default_active_tab, |order| order.active_tab)
 }
 
-#[cfg(feature = "phobos")]
 impl PreparedSidebarOrder {
     /// Phobos `ScenarioExt::SWSidebar_Enable` carried with the local envelope.
     pub(crate) fn sw_sidebar_expanded(&self) -> bool {
@@ -1468,10 +1466,7 @@ fn object_cameo(
         object.category,
         ObjectCategory::Vehicle | ObjectCategory::Aircraft
     );
-    #[cfg(feature = "phobos")]
     let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
-    #[cfg(not(feature = "phobos"))]
-    let sort_by_internal_name = false;
     Some(Cameo {
         id: CameoId::Object(id),
         tab: SidebarTab::for_category(crate::sim::production::category_for_object(object)),
@@ -1498,14 +1493,8 @@ fn super_cameo(
     let kind = rules.super_weapon(sim.interner().try_resolve(id)?)?;
     // Phobos `TabIndex` (`Ext/SWType/Hooks.cpp:245-258`, `0x6ABC9D`): the
     // cameo goes to the tab its type names, which defaults to strip 1.
-    #[cfg(feature = "phobos")]
     let tab = crate::ui::sidebar::SidebarTab::for_sw_tab_index(kind.phobos_tab_index.index());
-    #[cfg(not(feature = "phobos"))]
-    let tab = crate::ui::sidebar::SidebarTab::Defense;
-    #[cfg(feature = "phobos")]
     let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
-    #[cfg(not(feature = "phobos"))]
-    let sort_by_internal_name = false;
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
         tab,
@@ -1541,7 +1530,6 @@ pub(crate) fn prepare_saved_order(
     let Some(saved) = saved else {
         return Ok(None);
     };
-    #[cfg(feature = "phobos")]
     let sw_sidebar_expanded = saved.sw_sidebar_expanded();
     let (flash_deadlines, redraw_until) = {
         let (deadlines, redraw_until) = saved.flash();
@@ -1677,7 +1665,6 @@ pub(crate) fn prepare_saved_order(
         factory_links,
         prediction_categories,
         active_tab,
-        #[cfg(feature = "phobos")]
         sw_sidebar_expanded,
     }))
 }
@@ -2064,6 +2051,8 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
@@ -2130,6 +2119,8 @@ mod tests {
                             naval: false,
                             tech_level: 0,
                             cost: 0,
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             name: String::new(),
                         },
                     })
@@ -2293,33 +2284,33 @@ mod tests {
         // Sim A: the first projection seeds silently, growth speaks.
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
         projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
         assert!(
             projection
-                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                 .build_inserted()
         );
         projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
         projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
         assert!(
             projection
-                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                 .build_inserted()
         );
         // Sim B with a different pre-placed base: without the reset its
@@ -2327,27 +2318,27 @@ mod tests {
         projection.reset_cameo_seed();
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(b)], 3, false)
                 .build_inserted(),
             "the first refresh after a sim install is the init window"
         );
         projection
-            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
         assert!(
             projection
-                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                 .build_inserted()
         );
         assert!(
             !projection
-                .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3)
+                .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3, false)
                 .build_inserted()
         );
         // Leaving the match still clears the seed.
         projection.replace_view(None);
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
     }
@@ -2374,7 +2365,6 @@ mod tests {
     /// Phobos `CreditsIndicator.MaxStep` (`0x4A2729`) and `.Smooth`
     /// (`0x4A26E8`): the step cap is configurable — a value at or below zero
     /// removes it — and smoothing off snaps to the balance with no tick cue.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_credits_indicator_step_cap_and_smooth() {
         let mut capped = SidebarProjectionState::default();

@@ -288,32 +288,14 @@ fn unit_z_adjust_in(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     ) {
-        return height_term;
+        return adjust_for_z_standard(world_z).wrapping_neg();
     }
     let Some(runtime) = world.runtime else {
         return adjust_for_z_standard(world_z).wrapping_neg();
     };
     let view = runtime.view();
-    let binary_frame = view.session().binary_frame();
-    // 0x004DAFC0 asks the locomotion vtable's +0x38 for a third additive term
-    // after 0x00704350; only Tunnel 0x00729E50 answers non-zero.
-    let tunnel_z = entity
-        .locomotor
-        .as_ref()
-        .and_then(|loco| loco.tunnel_runtime())
-        .map(|tunnel| {
-            let (timer_start, timer_duration) = tunnel.dig_timer();
-            crate::render::foot_depth::tunnel_z_adjust(
-                tunnel.state() as u8,
-                entity.body_facing_current(binary_frame),
-                binary_frame.saturating_sub(timer_start),
-                timer_duration,
-                height_term,
-            )
-        })
-        .unwrap_or(0);
     let Some(terrain) = view.resolved_terrain() else {
-        return height_term.wrapping_add(tunnel_z);
+        return adjust_for_z_standard(world_z).wrapping_neg();
     };
     let sim = &runtime.simulation;
     let object = draw_type(runtime, entity, unloading_body);
@@ -356,7 +338,7 @@ fn unit_z_adjust_in(
     let context = FootDepthContext {
         cell: coord,
         on_bridge: entity.on_bridge(),
-        facing_u16: entity.body_facing_current(binary_frame),
+        facing_u16: entity.body_facing_current(view.session().binary_frame()),
         world_z_leptons: world_z,
         // Drive 0x4B4870, Ship 0x6A3EA0, and the shared 0x55ABA0 inherited
         // by Walk/Hover/Fly/Jumpjet/Teleport all return zero at loco slot +0x38.

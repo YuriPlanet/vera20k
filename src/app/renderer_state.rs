@@ -57,7 +57,6 @@ pub(crate) struct RendererState {
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
     /// Phobos `SurfaceExt::BlurRect`'s GPU pass, built on first use against
     /// the composition's format; the tooltip draw owns its gate and rect.
-    #[cfg(feature = "phobos")]
     pub(crate) tooltip_blur: Option<crate::render::tooltip_blur::TooltipBlurRenderer>,
     /// The finished terrain layer, kept while its inputs hold still.
     pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,

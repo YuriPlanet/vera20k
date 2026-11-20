@@ -534,6 +534,7 @@ fn render_original_body_pixels(
                 light,
                 &sim,
                 None,
+                false,
                 crate::app::presentation::lighting::TechnoDraw::Shape,
             );
             let word = shp_colour_word(gi_record, &sim, &rules, || {
@@ -601,7 +602,7 @@ fn render_original_body_pixels(
                         ignore_visibility: true,
                         lighting: &light_grid,
                         house_colors: &house_colors,
-                        building_zshape: false,
+                        building_zshape: None,
                     },
                     &mut objects,
                     &order,

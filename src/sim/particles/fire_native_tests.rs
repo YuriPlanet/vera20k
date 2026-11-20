@@ -242,7 +242,6 @@ fn fire_system_matches_native_sweep_spawns_particles_and_damage_to_retirement() 
 /// the scripted owner still answers a sweep, but the system keeps its frozen
 /// target coordinates and FLH anchor; the default sweeps it in.
 #[test]
-#[cfg(feature = "phobos")]
 fn adjust_target_coords_on_rotation_gates_the_fire_sweep() {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::particles::ParticleSystem;

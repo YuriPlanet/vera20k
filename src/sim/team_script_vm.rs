@@ -230,7 +230,6 @@ pub struct TeamTypeIniMetadata {
     /// place of the house's plane (hook `0x65DBD0`,
     /// `Ext/TeamType/Hooks.cpp:9`). An unresolvable name keeps the vanilla
     /// choice, as `read<AircraftType*>` leaves nullptr.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub para_drop_aircraft: Option<String>,
     pub source: TeamAiDefinitionSource,
@@ -275,7 +274,6 @@ impl Default for TeamTypeIniMetadata {
             droppod: false,
             only_target_house_enemy: false,
             loadable: false,
-            #[cfg(feature = "phobos")]
             para_drop_aircraft: None,
             source: TeamAiDefinitionSource::FixedAimd,
         }
@@ -543,7 +541,6 @@ impl From<crate::sim::combat::TargetKind> for TeamTarget {
             crate::sim::combat::TargetKind::Entity(id) => Self::Object(id),
             // A bullet target has no team-object identity; the id names no
             // entity for any team consumer.
-            #[cfg(feature = "phobos")]
             crate::sim::combat::TargetKind::Bullet(id) => Self::Object(id),
         }
     }

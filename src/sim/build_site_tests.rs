@@ -226,7 +226,6 @@ fn a_laser_fence_may_stand_on_ore() {
     assert!(!without.cell_clear((10, 10), "GAFENCE", None));
 }
 
-#[cfg(feature = "phobos")]
 mod can_be_built_on {
     use super::*;
     use crate::sim::movement::locomotor::MovementLayer;

@@ -873,7 +873,6 @@ fn hover_transport_on_water_moves_to_shore_before_unloading() {
 /// Phobos `0x73D7B7` (`Ext/Techno/Hooks.Transport.cpp:691-698`): a failed
 /// water-to-land search answers the CannotUnload arm instead of setting cell
 /// `(0,0)` as the next destination.
-#[cfg(feature = "phobos")]
 #[test]
 fn amphibious_unload_with_no_land_cell_takes_the_cannot_unload_tail() {
     let mut fx = Fixture::new(|_, _| true);
@@ -978,7 +977,6 @@ fn board_vehicle(fx: &mut Fixture, transport: u64, type_id: &str) -> u64 {
 /// the transport's own cell answers the head passenger's land row and the
 /// unload places that passenger on water; without it the stock water refusal
 /// keeps the cargo aboard.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_amphibious_unload_puts_the_passenger_out_on_water() {
     // (a) Every cell is water, and only the passenger's own Hover row admits
@@ -1113,7 +1111,6 @@ fn an_amphibious_unload_puts_the_passenger_out_on_water() {
 /// water/land question `CanUnloadNow` answers for one on-water and one on-land
 /// cell; the mouse-over arm keeps native's water pass-through and its keyed
 /// low-cost land refusal, which the deploy-slash arm does not read.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_mouse_over_and_deploy_slash_gates_agree_with_the_predicate() {
     // The head passenger is a Hover vehicle, so both keyed arms read its row:
@@ -1180,7 +1177,6 @@ fn the_mouse_over_and_deploy_slash_gates_agree_with_the_predicate() {
 /// Original73D7B5 ->741970 ->514D90 controls: failed FNPC still passes
 /// Map(0,0), and the Unload setter's west-cell lookup may restamp that same
 /// Dummy before Foot reads its +4C. These states start stopped with no path.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_failed_shore_search_takes_the_cannot_unload_arm() {
     use crate::sim::world::FrameEffects;
@@ -3037,7 +3033,6 @@ fn retail_aligned_transports_wait_only_for_their_turrets() {
 /// `Ext/Techno/Hooks.Transport.cpp:427-466`): a transport whose type or
 /// `[General]` enables it ejects the whole cargo within one dispatch and
 /// plays `LeaveTransportSound` once; the stock path ejects one per dispatch.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_no_queue_up_to_unload_empties_the_cargo_in_one_dispatch() {
     let run = |patch: &str| {
@@ -3098,7 +3093,6 @@ NoQueueUpToUnload=yes
 /// Phobos `NoQueueUpToUnload` on a building (`0x44DCB1`,
 /// `Ext/Techno/Hooks.Transport.cpp:804-817`): the type key, else the
 /// `[General]` Building nullable, else the global.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_building_no_queue_up_to_unload_resolves_type_then_building_then_general() {
     let rules = rules_with_patch(
@@ -3147,7 +3141,6 @@ NoQueueUpToUnload.Buildings=no
 /// Phobos `DeployFireDelay` (`Ext/Building/Hooks.Unload.cpp:73-77`): a set
 /// building key replaces the Unload epilogue's `RandomRanged(0, 2) + 14` and
 /// consumes no random draw; an unset key keeps the stock epilogue's draw.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_deploy_fire_delay_replaces_the_unload_epilogue_draw() {
     let rules = rules_with_patch(

@@ -163,7 +163,6 @@ pub struct Bomb {
     /// (`0x469363`): the weapon whose `PlantBomb` (10055AE0) planted it,
     /// whose `IvanBomb.*` settings every bomb hook reads. Saved like the
     /// extension map; native's CRC omits it.
-#[cfg(feature = "phobos")]
     /// Ares `WeaponTypeExt::BombExt`: the weapon whose `PlantBomb`
     /// (10055AE0) planted it, whose `IvanBomb.*` settings every bomb hook
     /// reads. Saved like the extension map; native's CRC omits it. `None`
@@ -489,7 +488,6 @@ impl Simulation {
             // the planter's relation matches, or a `BombSight` detector whose
             // owner's relation matches stands within sight. RESIDUAL: the
             // hook's `IsObserver` spectator arm has no VERA model.
-            #[cfg(feature = "phobos")]
             let seen_by = {
                 let visibility = bomb
                     .weapon
@@ -517,14 +515,6 @@ impl Simulation {
                 }
                 mask
             };
-            #[cfg(not(feature = "phobos"))]
-            let mut seen_by = house_bit(order, bomb.planter_house);
-            #[cfg(not(feature = "phobos"))]
-            for &(_, house, detector, range) in &detectors {
-                if seen_by & house == 0 && within_bomb_sight(detector, center, range) {
-                    seen_by |= house;
-                }
-            }
             refreshed.push((carrier, seen_by));
         }
         for (carrier, seen_by) in refreshed {
@@ -892,7 +882,6 @@ impl Simulation {
     /// `IvanBomb.Detonate.AffectTypes=` filters by the planting techno's type
     /// (empty means every type); `SameInvokerOnly=` keeps only the bombs this
     /// detonation's own owner planted.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_ivan_bomb_detonate(
         &mut self,
         target: u64,
@@ -1060,14 +1049,11 @@ impl Simulation {
         // replaces the detonation coordinate with the target's
         // `GetCenterCoords()` (a building's foundation centre; a mobile's
         // Location), which the blast, its anim and the hut's bridge all use.
-        #[cfg(feature = "phobos")]
         let location = if rules.phobos_globals.ivan_bomb_attach_to_center {
             object_get_coords(entity, resolved_terrain.as_ref())
         } else {
             object_location(entity, resolved_terrain.as_ref())
         };
-        #[cfg(not(feature = "phobos"))]
-        let location = object_location(entity, resolved_terrain.as_ref());
         Some(BombBlast {
             source: bomb.planter.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
             location: ProjectileCoord::new(location.x, location.y, location.z),

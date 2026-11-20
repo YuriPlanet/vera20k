@@ -559,7 +559,6 @@ impl OverlayTypeRegistry {
     /// whose `AllowRamps=` is set and whose first ramp overlay exists and is
     /// a Tiberium overlay (`Ext/Tiberium/Hooks.cpp:46-90`). The map layer's
     /// slope recalc reads the flag instead of the Tiberium registry.
-    #[cfg(feature = "phobos")]
     pub fn project_tiberium_ramps(
         &mut self,
         types: &crate::rules::tiberium_type::TiberiumTypeRegistry,
@@ -587,7 +586,6 @@ impl OverlayTypeRegistry {
     /// Phobos `CanResourceGerminateOnRamp` (`Ext/Tiberium/Hooks.cpp:46`):
     /// slope 0 always, else cardinal ramps 1..=4 only for a type with
     /// `AllowRamps=` whose first ramp overlay is Tiberium art.
-    #[cfg(feature = "phobos")]
     pub fn allows_ramp(
         &self,
         ty: &crate::rules::tiberium_type::TiberiumType,
@@ -604,7 +602,6 @@ impl OverlayTypeRegistry {
 
     /// `HasRampArt` (`Ext/Tiberium/Hooks.cpp:33-44`): the overlay at
     /// `Image->ArrayIndex + NumFrames` exists and is Tiberium art.
-    #[cfg(feature = "phobos")]
     pub fn has_ramp_art(&self, ty: &crate::rules::tiberium_type::TiberiumType) -> bool {
         let Ok(base) = self.tiberium_image_base(ty) else {
             return false;
@@ -839,7 +836,6 @@ pub(crate) fn uses_early_recalc_land_branch(flags: &OverlayTypeFlags) -> bool {
 pub(crate) fn clears_tiberium_on_slope(flags: &OverlayTypeFlags, slope_type: u8) -> bool {
     // Phobos 0x47D36E (`Ext/Tiberium/Hooks.cpp:363`): the hook clears the
     // overlay for any slope that cannot germinate, before the stock clear.
-    #[cfg(feature = "phobos")]
     if flags.tiberium && slope_type != 0 && !(flags.tiberium_allows_ramps && slope_type <= 4) {
         return true;
     }
@@ -1201,7 +1197,6 @@ NoUseTileLandType=no
     /// `Ext/Tiberium/Hooks.cpp:46-90`): the load raises `NumSlopes` to 8 and
     /// the rules projection marks the type's overlay slots when the first
     /// ramp overlay is Tiberium art.
-    #[cfg(feature = "phobos")]
     #[test]
     fn allow_ramps_projects_slope_capacity_and_overlay_flags() {
         let build = |key: &str| {

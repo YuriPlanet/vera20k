@@ -39,7 +39,6 @@ pub(crate) fn max_speed(
     let Some(object) = object else {
         return 4;
     };
-    #[cfg(feature = "phobos")]
     {
         let enabled = object
             .phobos_techno_extras
@@ -60,8 +59,6 @@ pub(crate) fn max_speed(
             return speed;
         }
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = (entity, interner, rules);
     object.speed
 }
 

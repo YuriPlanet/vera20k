@@ -1162,7 +1162,6 @@ fn a_dive_breaks_contact_zero_only_with_a_house_its_owner_is_not_allied_with() {
 /// into the two cloak decisions (`Hooks.Cloak.cpp`): the effect can install
 /// the runtime for a type without `Cloakable=`, and a forced decloak vetoes
 /// the ready check while requesting the decloak.
-#[cfg(feature = "phobos")]
 #[test]
 fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

@@ -593,7 +593,6 @@ fn find_team_target(
         crate::sim::combat::TargetKind::Entity(target) => target,
         crate::sim::combat::TargetKind::Cell(x, y) => return (x as i16, y as i16),
         // A bullet is not a rally candidate.
-        #[cfg(feature = "phobos")]
         crate::sim::combat::TargetKind::Bullet(..) => return NO_CELL,
     };
     let Some(entity) = sim.substrate.entities.get(target) else {

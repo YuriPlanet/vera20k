@@ -433,7 +433,6 @@ impl Simulation {
         let teleport_relocating = teleport_armed && !teleport_reached;
         // Phobos `FootExt::LastWarpDistance`: the distance the warp-out step
         // stores, read below by the arrival WarpIn weapon arm.
-        #[cfg(feature = "phobos")]
         let warp_distance = if teleport_relocating {
             sim.substrate
                 .entities
@@ -454,7 +453,6 @@ impl Simulation {
             // Phobos `..._WarpOutWeapon @ 0x7193F6` detonates the type's
             // warp-out weapon at the departing object before the departure
             // WarpOut (`0x00719442`).
-            #[cfg(feature = "phobos")]
             sim.apply_warp_out_weapon(stable_id, rules, overlay_registry, ctx.effects);
             // `0x00719442`: the departure WarpOut at its Location.
             sim.teleport_warp_anim(
@@ -554,7 +552,6 @@ impl Simulation {
             );
             // Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim
             // @ 0x719742` fires the type's warp-in weapon after that animation.
-            #[cfg(feature = "phobos")]
             if let Some(distance) = warp_distance {
                 sim.apply_warp_in_weapon(stable_id, distance, rules, overlay_registry, ctx.effects);
             }
@@ -1216,7 +1213,6 @@ impl Simulation {
         // standing within its transport's `NoQueueUpToEnter.BoardDistance=`
         // instead of walking into its cell. Boarding limboes the passenger,
         // so the rest of its Foot update does not run.
-        #[cfg(feature = "phobos")]
         if crate::sim::passenger::try_fast_enter(
             sim,
             rules,

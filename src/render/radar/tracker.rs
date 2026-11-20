@@ -160,7 +160,6 @@ pub(super) fn radar_combat_flash_inverts(
 /// pTechno->Owner, CurrentPlayer)`. `source` is the techno's owner and `target`
 /// the viewing house, matching the native argument order; the ladder itself is
 /// the shared `phobos_shields::can_target_house_ladder` owner.
-#[cfg(feature = "phobos")]
 fn radar_invisible_to_house(
     object: &crate::rules::object_type::ObjectType,
     source: InternedId,
@@ -229,21 +228,16 @@ pub(super) fn radar_pixel_candidate_eligible(
         // hostile test with the type's `RadarInvisibleToHouse` (default
         // Enemies).
         if object.is_some_and(|object| object.radar_invisible) {
-            #[cfg(feature = "phobos")]
             let hides = object.is_some_and(|object| {
                 radar_invisible_to_house(
                     object,
                     entity.owner(),
                     local_owner,
                     houses,
-                    alliances,
+                    alliances.as_map(),
                     interner,
                 )
             });
-            #[cfg(not(feature = "phobos"))]
-            let hides = !friendly;
-            #[cfg(feature = "phobos")]
-            let _ = friendly;
             if hides {
                 return false;
             }

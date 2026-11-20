@@ -409,7 +409,6 @@ fn sale_refund_matches_the_original() {
                 &crate::rules::ruleset::HouseCostFactors {
                     country: [crate::util::native_x87::NativeF32Bits::ONE; 5],
                     factory_plant: [crate::util::native_x87::NativeF32Bits::ONE; 5],
-                    #[cfg(feature = "phobos")]
                     restricted_plant: crate::util::native_x87::NativeF32Bits::ONE,
                 },
                 game_mode_nonzero,

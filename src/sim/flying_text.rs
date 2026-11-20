@@ -22,13 +22,11 @@ pub struct BountyText {
     pub z_offset: i32,
     /// Phobos `FlyingStrings::AddMoneyString`'s `displayToHouses` filter;
     /// `None` keeps the bounty path's unconditional delivery.
-    #[cfg(feature = "phobos")]
     pub display_to: Option<crate::rules::phobos_shields::AffectedHouse>,
     /// Phobos `FlyingStrings::AddMoneyString`'s `pOwner`: the House the
     /// `displayToHouses` filter compares with the viewer. `None` uses the
     /// anchor object's owner; the drain target label passes the drainer's
     /// House while the anchor stays the drained building.
-    #[cfg(feature = "phobos")]
     pub display_owner: Option<crate::sim::intern::InternedId>,
     /// Screen-pixel offset added after the centred anchor (Phobos
     /// `DisplaySoylentOffset`); zero for the bounty path.

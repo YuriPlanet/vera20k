@@ -350,7 +350,6 @@ fn action56_missing_centre_or_primary_enemy_finishes_safely() {
 /// picks the pair action 56 fires: `[General] AIChronoWarpSW=` names another
 /// superweapon type, and Fire_SW receives that Super's `Type=` value
 /// (`0x6F02B6`, `0x6F030D`).
-#[cfg(feature = "phobos")]
 #[test]
 fn action56_fires_the_supers_the_ai_chronoshift_keys_name() {
     let mut scene = scene(NEAREST_PLANT, true);
@@ -365,7 +364,6 @@ fn action56_fires_the_supers_the_ai_chronoshift_keys_name() {
 /// With only `AIChronoSphereSW=` authored, the sphere type's
 /// `SW.PostDependent=` name (`Ext/SWType/Body.cpp:146`, `Ext/House/Body.cpp:347`)
 /// gives the warp; the scan's last ChronoWarp would have been SW4.
-#[cfg(feature = "phobos")]
 #[test]
 fn action56_takes_the_warp_from_the_sphere_post_dependent() {
     let mut scene = scene(NEAREST_PLANT, true);

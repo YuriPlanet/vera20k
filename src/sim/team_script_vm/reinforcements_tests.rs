@@ -1217,7 +1217,6 @@ fn ares_droppod_reinforcement_carrier_is_the_countrys_paradrop_plane() {
 /// Phobos hook 0x65DBD0 (`Ext/TeamType/Hooks.cpp:9`): a TeamType's
 /// `ParaDropAircraft=` replaces the carrier `CreateInstance` builds, ahead of
 /// the house's country/side plane.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_para_drop_aircraft_replaces_the_reinforcement_carrier() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(

@@ -103,12 +103,10 @@ pub struct VoxelAnimType {
     /// `Valueable<int>` constructor 2 at `Body.h:34,43`): game frames between
     /// trailer spawns. The AI starts the timer after every spawn
     /// (`VoxelAnimClass_AI_Trailer @ 0x74A70E`).
-    #[cfg(feature = "phobos")]
     pub trailer_spawn_delay: i32,
     /// Phobos `VoxelAnimTypeExt::LaserTrail_Types`
     /// (`Ext/VoxelAnimType/Body.cpp:12`): the `LaserTrail.Types` list, by
     /// `[LaserTrailTypes]` name, read from this section in the rules layer.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub laser_trail_types: Vec<String>,
     /// `+0x2F0` / `+0x2F4` / `+0x2F8`. Area damage applied on expiry.
@@ -155,9 +153,7 @@ impl VoxelAnimType {
             bounce_anim: None,
             expire_anim: None,
             trailer_anim: None,
-            #[cfg(feature = "phobos")]
             trailer_spawn_delay: 2,
-            #[cfg(feature = "phobos")]
             laser_trail_types: Vec::new(),
             damage: 0,
             damage_radius: 0,
@@ -183,7 +179,6 @@ impl VoxelAnimType {
         out.is_meteor = section.read_bool("IsMeteor", out.is_meteor);
         out.voxel_index = section.read_int("VoxelIndex", out.voxel_index);
         out.duration = section.read_int("Duration", out.duration);
-        #[cfg(feature = "phobos")]
         {
             out.trailer_spawn_delay =
                 section.read_int("Trailer.SpawnDelay", out.trailer_spawn_delay);
@@ -297,7 +292,6 @@ mod tests {
 
     /// `VoxelAnimTypeExt::LoadFromINIFile` reads `LaserTrail.Types` from the
     /// rules section (`Ext/VoxelAnimType/Body.cpp:12`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn laser_trail_types_read_from_the_rules_section() {
         let ini = section("[PIECE]\nDuration=10\nLaserTrail.Types= A ,, B\n[EMPTY]\nDuration=10\n");

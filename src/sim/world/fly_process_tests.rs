@@ -666,7 +666,6 @@ fn fly_process_matches_native_frames() {
         // the contact's facing, so these stock rows no longer apply; the
         // Phobos branch is covered by
         // `landing_base::tests::get_landing_dir_follows_the_native_branch_order`.
-        #[cfg(feature = "phobos")]
         if input["dock"].is_object() {
             continue;
         }
@@ -957,7 +956,6 @@ fn fly_death_stun_matches_native_rows() {
 /// `RETURN` with `ExtendedAircraftMissions.<key>=<value>`, its dock `+0x6CC`
 /// and NavCom (`Foot+0x5A4`) both the pad. `pad_extra` appends rules keys to
 /// the `[PAD]` section.
-#[cfg(feature = "phobos")]
 fn phobos_returning_aircraft(
     key: &str,
     value: bool,
@@ -1024,7 +1022,6 @@ fn phobos_returning_aircraft(
 /// off the heading aims at the dock; on, the destination shifts three cells
 /// sideways (the landing face is south, the bearing east puts it on the west
 /// side) so the heading curves in.
-#[cfg(feature = "phobos")]
 #[test]
 fn rear_approach_offsets_the_landing_destination() {
     let heading = |value: bool| {
@@ -1078,7 +1075,6 @@ fn rear_approach_offsets_the_landing_destination() {
 /// radio contacts selects the authored landing face, an absent index falls
 /// back to slot 0, and a building without an authored slot keeps the stock
 /// pad facing.
-#[cfg(feature = "phobos")]
 #[test]
 fn aircraft_docking_dir_names_the_landing_face_per_link_index() {
     let pick_pad_link = |sim: &mut Simulation, plane: u64, slot: Option<usize>| {
@@ -1153,7 +1149,6 @@ fn aircraft_docking_dir_names_the_landing_face_per_link_index() {
 /// (`Ext/Aircraft/Hooks.cpp:669-671`, hook `0x4CF3D0`): under `EarlyDescend`
 /// an aircraft within `SlowdownDistance` of the dock it returns to descends
 /// proportionally instead of holding its flight level at 512 of 1000 leptons.
-#[cfg(feature = "phobos")]
 #[test]
 fn early_descend_starts_the_slow_descent_within_slowdown_distance() {
     let level = |value: bool| {

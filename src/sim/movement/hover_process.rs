@@ -716,7 +716,6 @@ impl Simulation {
             // Phobos hook 0x514C07 (`Ext/Techno/Hooks.cpp:997-1006`): the
             // shutdown calls DropAsBomb and then marks the techno, so the
             // landing arm can tell a hover shutdown from a paradrop bomb.
-            #[cfg(feature = "phobos")]
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.mark_hover_shutdown();
             }
@@ -1543,7 +1542,6 @@ mod tests {
     /// calls `DropAsBomb` and then marks the techno, so the landing arm can
     /// tell this drop from a paradrop bomb. A spin that ends over clear ground
     /// neither drops nor marks.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_hover_shutdown_marks_the_techno_it_drops() {
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();

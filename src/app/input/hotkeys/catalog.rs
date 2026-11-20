@@ -37,7 +37,6 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
         all.extend_from_slice(&SHORTCUT_COMMANDS);
         #[cfg(feature = "verax")]
         all.extend_from_slice(&VERA_COMMANDS);
-        #[cfg(feature = "phobos")]
         all.extend_from_slice(&PHOBOS_COMMANDS);
         all
     })
@@ -916,7 +915,6 @@ const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
 
 /// Phobos `FireTacticalSW1..10` and `Toggle Super Weapon Sidebar`.
 /// `FireTacticalSW.ini` reads the CSF keys `TXT_FIRE_TACTICAL_SW_XX[_DESC]`.
-#[cfg(feature = "phobos")]
 const PHOBOS_COMMANDS: [CommandMetadata; 11] = [
     command!(
         HotkeyCommand::FireTacticalSw(0),

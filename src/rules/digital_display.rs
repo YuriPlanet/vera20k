@@ -21,14 +21,11 @@
 //! `app::persistence::phobos_settings`.
 
 use crate::rules::building_select_bracket::BuildingSelectBracketPosition;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
-#[cfg(feature = "phobos")]
 use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::phobos_shields::AffectedHouse;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
-#[cfg(feature = "phobos")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// Phobos `DisplayInfoType` (`Utilities/Enum.h:320..343`), in declaration
@@ -63,7 +60,6 @@ pub enum DigitalInfoType {
 }
 
 impl DigitalInfoType {
-    #[cfg(feature = "phobos")]
     /// Phobos `read<DisplayInfoType>` (`TemplateDef.h:1504..1598`):
     /// case-insensitive exact spelling, otherwise the key retains its value.
     fn parse(raw: &str) -> Option<Self> {
@@ -107,7 +103,6 @@ pub enum DigitalTextAlign {
 }
 
 impl DigitalTextAlign {
-    #[cfg(feature = "phobos")]
     fn parse(raw: &str) -> Option<Self> {
         Some(match raw.to_ascii_lowercase().as_str() {
             "left" => Self::Left,
@@ -130,7 +125,6 @@ pub enum DigitalHorizontalAnchor {
 }
 
 impl DigitalHorizontalAnchor {
-    #[cfg(feature = "phobos")]
     fn parse(raw: &str) -> Option<Self> {
         Some(match raw.to_ascii_lowercase().as_str() {
             "left" => Self::Left,
@@ -162,7 +156,6 @@ pub enum DigitalVerticalAnchor {
 }
 
 impl DigitalVerticalAnchor {
-    #[cfg(feature = "phobos")]
     fn parse(raw: &str) -> Option<Self> {
         Some(match raw.to_ascii_lowercase().as_str() {
             "top" => Self::Top,
@@ -202,7 +195,6 @@ impl DigitalShowType {
         self.0
     }
 
-    #[cfg(feature = "phobos")]
     /// Phobos `read<DisplayShowType>`: comma-separated flags, every token
     /// must match, and a failed token keeps the current value.
     fn parse(raw: &str) -> Option<Self> {
@@ -339,7 +331,6 @@ impl DigitalDisplayTypeCatalog {
         &self.types
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.types.iter().map(|entry| entry.name.as_str())
     }
@@ -358,7 +349,6 @@ impl DigitalDisplayTypeCatalog {
 
     /// Read one reached Rules pass: the pass's `[DigitalDisplayTypes]` list
     /// appends entries, then every retained entry re-reads its own section.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("DigitalDisplayTypes") {
             // Phobos Enumerable::LoadFromINIList reads each physical key
@@ -496,7 +486,6 @@ impl DigitalDisplayGlobals {
     /// `RulesExt::LoadFromINIFile` follows `[AudioVisual]`; the four lists are
     /// `ValueableVector<DigitalDisplayTypeClass*>` and the disguise default is
     /// `Valueable<bool>`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn from_ini(ini: &IniFile) -> Self {
         let section = ini.section_or_empty("AudioVisual");
         // Phobos `Parser<T>::Parse` skips leading spaces after each comma.
@@ -525,10 +514,8 @@ impl DigitalDisplayGlobals {
 #[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
-    #[cfg(feature = "phobos")]
     use crate::rules::ini_parser::IniFile;
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn catalog_reads_constructor_defaults_and_enum_spellings() {
         let ini = IniFile::from_str(
@@ -566,7 +553,6 @@ mod tests {
         assert!(entry.visible_in_special_state);
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn absent_keys_retain_the_previous_pass_and_later_layers_append() {
         let first = IniFile::from_str(
@@ -596,7 +582,6 @@ mod tests {
         assert_eq!(entry.text_color_for(0.25, 0.5, 0.25), [255, 0, 0]);
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn globals_default_the_disguise_health_switch_to_yes() {
         let ini = IniFile::from_str("[AudioVisual]\n");
@@ -616,7 +601,6 @@ mod tests {
         assert_eq!(entry.divisor(), 20);
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn explicit_lists_win_and_unknown_names_are_skipped() {
         use crate::rules::ruleset::RuleSet;
@@ -655,7 +639,6 @@ mod tests {
     /// Phobos `Read2Integers` trims spaces and takes `$`/`h` tokens, writes a
     /// one-token `Valueable<Point2D>` read into X only, and its SHP reader
     /// adds `.shp`; gamemd's `ReadMinMax` scan did neither.
-    #[cfg(feature = "phobos")]
     #[test]
     fn pair_keys_use_the_phobos_scan_and_shape_gains_its_extension() {
         let ini = IniFile::from_str(

@@ -437,10 +437,7 @@ fn advance_ordinary_mover(
             .filter(|entity| infantry::is_prone_for_damage(entity))
             .and_then(|entity| interner.object_type(entity.type_ref(), rules));
         let prone_crawls = prone_type.map(|obj| obj.crawls);
-        #[cfg(feature = "phobos")]
         let prone_multiplier = prone_type.map(|obj| rules.prone_speed_for(obj));
-        #[cfg(not(feature = "phobos"))]
-        let prone_multiplier = None;
         OrdinaryMoverVisit {
             snap,
             walk_position_before_step,

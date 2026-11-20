@@ -252,6 +252,10 @@ pub(super) fn dispatch_sim_sound_events(
                 sound_id: sim.interner().resolve(crush_sound_id).to_string(),
                 source: Some(anim_world_sound_source(world)),
             },
+            SimSoundEvent::LeaveTransport { sound_id, world } => GameSoundEvent::LeaveTransport {
+                sound_id: sim.interner().resolve(sound_id).to_string(),
+                source: Some(anim_world_sound_source(world)),
+            },
             SimSoundEvent::EntityDeployed {
                 deploy_sound_id,
                 world,
@@ -532,7 +536,6 @@ pub(super) fn dispatch_sim_sound_events(
             #[cfg(not(feature = "phobos"))]
             SimSoundEvent::SuperWeaponActivatedMessage { .. }
             | SimSoundEvent::SuperWeaponLinkedAcquired { .. } => continue,
-            #[cfg(feature = "phobos")]
             SimSoundEvent::SuperWeaponActivatedMessage { owner, sw_type } => {
                 // Phobos `SWTypeExt::ApplyActivatedMessage`/`ApplyActivatedEva`
                 // (`Ext/SWType/FireSuperWeapon.cpp:491-526`): every client
@@ -574,7 +577,6 @@ pub(super) fn dispatch_sim_sound_events(
                     None => continue,
                 }
             }
-            #[cfg(feature = "phobos")]
             SimSoundEvent::SuperWeaponLinkedAcquired { owner, sw_type } => {
                 // Phobos `SWTypeExt::ApplyLinkedSW`'s tail (`:482-488`): the
                 // granting House must BE the client's current player
@@ -668,7 +670,6 @@ pub(super) fn dispatch_sim_sound_events(
                 // the `VoxClass::Play(EVA_UnitReady)` call outright, so the
                 // line is dropped even when the produced type names no
                 // `VoiceCreated=`. The radar accept above still ran.
-                #[cfg(feature = "phobos")]
                 if rules.phobos_globals.is_voice_created_global {
                     continue;
                 }
@@ -1551,7 +1552,6 @@ fn owner_is_local(
 /// Phobos `TechnoTypeExt::EVA.Sold` for one resolved type: `None` keeps the
 /// stock sale line, `Some(None)` is native's explicit none (silence), and
 /// `Some(Some(name))` is the replacement cue.
-#[cfg(feature = "phobos")]
 fn phobos_eva_sold(
     rules: &RuleSet,
     sim: &Simulation,
@@ -1563,14 +1563,6 @@ fn phobos_eva_sold(
         .map(|cue| cue.map(str::to_owned))
 }
 
-#[cfg(not(feature = "phobos"))]
-fn phobos_eva_sold(
-    _rules: &RuleSet,
-    _sim: &Simulation,
-    _type_id: crate::sim::intern::InternedId,
-) -> Option<Option<String>> {
-    None
-}
 
 /// The outcome line: `HouseClass::Flag_To_Win 0x004FCBA9` plays
 /// `EVA_YouAreVictorious` (`0x00824C2C`) and `Flag_To_Lose 0x004FCDA1`

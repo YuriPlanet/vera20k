@@ -33,9 +33,7 @@ fn wobble(mut target: DriveCoord, wall_ms: u32) -> DriveCoord {
 /// `[AudioVisual] AirstrikeLineZAdjust`. Stock builds carry nothing.
 #[derive(Clone, Copy)]
 pub(crate) struct FlareStyle {
-    #[cfg(feature = "phobos")]
     pub(crate) color: [u8; 3],
-    #[cfg(feature = "phobos")]
     pub(crate) z_adjust: i32,
 }
 
@@ -44,9 +42,6 @@ fn shade(main: &MainRngDraws) -> i32 {
     //705905 draws the stock 190..270 shade. Phobos's hook at 7058F6 resumes
     //at 705976, past that call, and draws its 745..1000 scale from the same
     //process Main stream instead.
-    #[cfg(not(feature = "phobos"))]
-    let random = main.ranged(190, 270);
-    #[cfg(feature = "phobos")]
     let random = main.ranged(745, 1000);
     random
 }
@@ -99,32 +94,16 @@ fn geometry(
     let start_z = (-32i32).wrapping_sub(adjust_for_z_standard(from.z));
     let end_z = (-32i32).wrapping_sub(adjust_for_z_standard(to.z));
     //70597E draws the dot only when the target end is the higher one.
-    #[cfg(not(feature = "phobos"))]
-    let (rgb, dot_word, dot) = {
-        let _ = style;
-        let rgb = if random <= 255 {
-            [random as u8, 0, 0]
-        } else {
-            [
-                255,
-                (55 * (random - 256) / 7) as u8,
-                (15 * (random - 256) / 7) as u8,
-            ]
-        };
-        (rgb, 0xF800, end[1] < start[1])
-    };
     // Phobos `TechnoClass_DrawAirstrikeFlare_LineColor` gives the whole beam
     // one depth, `min(zSrc, zDest) + AirstrikeLineZAdjust`, scales each line
     // channel to `(BYTE)(base * RandomRanged(745,1000) / 1000.0)` and leaves
     // the dot the unscaled `RGB_To_Int(base)` word.
     // `TechnoClass_DrawAirstrikeFlare_DotColor` (`0x0070597A`) then always
     // draws the dot (`src/Ext/Techno/Hooks.Airstrike.cpp`).
-    #[cfg(feature = "phobos")]
     let (start_z, end_z) = {
         let z = start_z.min(end_z).wrapping_add(style.z_adjust);
         (z, z)
     };
-    #[cfg(feature = "phobos")]
     let (rgb, dot_word, dot) = {
         let percentage = f64::from(random) / 1000.0;
         (

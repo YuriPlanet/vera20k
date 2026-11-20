@@ -35,7 +35,6 @@ use crate::assets::vxl_file::VxlFile;
 use crate::map::voxel_pose::VxlSlopeBlend;
 use crate::render::atlas_growth::{self, GrowthShelf, ShelfCursor};
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::vxl_normals;
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
@@ -742,9 +741,8 @@ fn render_unit_key(
     key: &UnitSpriteKey,
     vpl: Option<&VplFile>,
     pose: &mut Option<PoseParts>,
-    light: vxl_normals::VoxelLight,
 ) -> Option<RenderedKey> {
-    let (sprite, native_draw_bounds) = model.render_lit(key, vpl, None, pose, light)?;
+    let (sprite, native_draw_bounds) = model.render(key, vpl, None, pose)?;
     // One companion per facing and slope, beside the flight template that
     // the ground draw's key falls back to.
     let legacy_shadow = (key.layer == VxlLayer::Shadow
@@ -754,7 +752,7 @@ fn render_unit_key(
     .then(|| {
         let mut fallback_key = key.clone();
         fallback_key.frame = LEGACY_SHADOW_FRAME;
-        let (fallback, _) = model.render_lit(&fallback_key, vpl, None, pose, light)?;
+        let (fallback, _) = model.render(&fallback_key, vpl, None, pose)?;
         Some(CachedUnitSprite::from_rendered(RenderedSprite {
             key: fallback_key,
             sprite: fallback,
@@ -767,12 +765,23 @@ fn render_unit_key(
         sprite,
         native_draw_bounds,
     });
-    // RESIDUAL: when `ShadowIndex.Frame` is non-zero the single-section
-    // sprite keeps its frame-0 crop/anchor while this center follows the
-    // frame-N body pose and the body mask stays the frame-0 face; retail ART
-    // authors no `ShadowIndex.Frame`.
-    if key.layer == VxlLayer::Shadow && native_draw_bounds.is_some() {
-        cached.shadow_center = model.shadow_center(key, None);
+    if key.layer == VxlLayer::Shadow
+        && native_draw_bounds.is_some()
+        && let Some(shadow) = &model.shadow
+        && let Some(body) = &model.body
+    {
+        cached.shadow_center = vxl_raster::shadow::center(
+            body.vxl(),
+            body.hva(),
+            &VxlRenderParams {
+                facing: key.facing,
+                slope_type: key.slope_type,
+                ..Default::default()
+            },
+            shadow.index,
+            key.frame as i32,
+            shadow.considered_aircraft,
+        );
     }
     Some(RenderedKey {
         sprite: cached,
@@ -905,17 +914,9 @@ pub(crate) fn turret_shadow_enabled(
     rules: Option<&RuleSet>,
     object: &crate::rules::object_type::ObjectType,
 ) -> bool {
-    #[cfg(feature = "phobos")]
-    {
-        object
-            .phobos_turret_shadow
-            .unwrap_or(rules.is_some_and(|rules| rules.phobos_globals.draw_turret_shadow))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, object);
-        false
-    }
+    object
+        .phobos_turret_shadow
+        .unwrap_or(rules.is_some_and(|rules| rules.phobos_globals.draw_turret_shadow))
 }
 
 fn seed_unit_variant_keys(
@@ -961,33 +962,7 @@ fn seed_unit_variant_keys(
     // Aircraft414728 includes the body frame remainder in its shadow cache
     // key, but707280 still samples ShadowIndex's HVA frame zero. Unit's key
     // (73B619, 73C21E..73C287) carries no body frame.
-    // Phobos `TurretShadow=` adds a second stencil per turret facing
-    // (`Ext/TechnoType/Hooks.MatrixOp.cpp:870`); it is seeded for every gun the
-    // model can draw, at the turret layer's own facing steps and slopes.
-    if rules
-        .and_then(|rules| rules.object(variant))
-        .is_some_and(|object| turret_shadow_enabled(rules, object))
-    {
-        for (layer, turret_index) in seed_layers_for(asset_manager, variant, rules) {
-            if layer != VxlLayer::Turret {
-                continue;
-            }
-            insert_unit_layer_keys(
-                needed,
-                variant,
-                VxlLayer::ShadowTurret,
-                turret_index,
-                1,
-                is_ground_vehicle,
-                &[0],
-            );
-        }
-    }
-    if is_ground_vehicle
-        || shadow
-            .as_ref()
-            .is_some_and(|shadow| shadow.aircraft || shadow.jumpjet)
-    {
+    if is_ground_vehicle || shadow.as_ref().is_some_and(|shadow| shadow.aircraft || shadow.jumpjet) {
         let mut shadows = HashSet::new();
         insert_unit_layer_keys(
             &mut shadows,
@@ -1255,18 +1230,9 @@ impl ShadowModel {
                 aircraft,
                 jumpjet: own_jumpjet || lifted,
                 ground: vehicle && !own_jumpjet,
-                #[cfg(feature = "phobos")]
                 indices: object.phobos_shadow_indices().to_vec(),
-                #[cfg(not(feature = "phobos"))]
-                indices: Vec::new(),
-                #[cfg(feature = "phobos")]
                 frames: object.phobos_shadow_indices_frames().to_vec(),
-                #[cfg(not(feature = "phobos"))]
-                frames: Vec::new(),
-                #[cfg(feature = "phobos")]
                 frame: object.phobos_shadow_index_frame(),
-                #[cfg(not(feature = "phobos"))]
-                frame: 0,
             })
     }
 }
@@ -1373,25 +1339,7 @@ impl UnitModel {
         slope_blend: Option<VxlSlopeBlend>,
         pose: &mut Option<PoseParts>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_lit(
-            key,
-            vpl,
-            slope_blend,
-            pose,
-            vxl_normals::VoxelLight::default(),
-        )
-    }
-
-    /// [`Self::render`] with the bake's rules-driven voxel lighting.
-    pub(crate) fn render_lit(
-        &self,
-        key: &UnitSpriteKey,
-        vpl: Option<&VplFile>,
-        slope_blend: Option<VxlSlopeBlend>,
-        pose: &mut Option<PoseParts>,
-        light: vxl_normals::VoxelLight,
-    ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_styled(key, vpl, slope_blend, pose, self.use_buffer, None, light)
+        self.render_styled(key, vpl, slope_blend, pose, self.use_buffer, None)
     }
 
     /// A stable key's sprite as a draw renders it while 0xB43180 is set
@@ -1405,15 +1353,7 @@ impl UnitModel {
         vpl: Option<&VplFile>,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_styled(
-            key,
-            vpl,
-            None,
-            &mut None,
-            true,
-            depth,
-            vxl_normals::VoxelLight::default(),
-        )
+        self.render_styled(key, vpl, None, &mut None, true, depth)
     }
 
     /// The style supplied by the native drawer/cache (706F02, 706640),
@@ -1428,7 +1368,6 @@ impl UnitModel {
         pose: &mut Option<PoseParts>,
         use_buffer: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
-        light: vxl_normals::VoxelLight,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let (turret, barrel) = self.gun_parts(key.turret_index);
         if (key.layer == VxlLayer::Turret && turret.is_none())
@@ -1446,7 +1385,6 @@ impl UnitModel {
             slope_type: key.slope_type,
             slope_blend,
             use_buffer,
-            voxel_light: light,
             ..VxlRenderParams::default()
         };
         // Aircraft templates are unmasked: the original4148A0->4DB0D0->
@@ -1456,9 +1394,26 @@ impl UnitModel {
         // Ground Drive retains its first-fill composed-body mask in the
         // grounded entry a Track/Wheel type keys at 73C468, so a lifted
         // vehicle's flight template stays unmasked.
-        if self.shadow_gate(key) {
-            if let Some(stencil) = self.shadow_stencil(key, None) {
-                let sprite = stencil.sprite;
+        if key.layer == VxlLayer::Shadow
+            && key.frame != LEGACY_SHADOW_FRAME
+            && let Some(shadow) = &self.shadow
+            && (shadow.aircraft
+                || shadow.jumpjet
+                || (params.slope_type == 0 && key.frame == GROUNDED_SHADOW_FRAME_FLAG))
+            && let Some(body) = &self.body
+        {
+            let sprite = vxl_raster::shadow::render(
+                body.vxl(),
+                body.hva(),
+                &params,
+                shadow.index,
+                key.frame as i32,
+                shadow.considered_aircraft,
+            );
+            if (shadow.aircraft || (shadow.jumpjet && !shadow.ground)) && sprite.is_none() {
+                return None;
+            }
+            if let Some(sprite) = sprite {
                 let bounds = [
                     sprite.offset_x as i32,
                     sprite.offset_y as i32,
@@ -1466,16 +1421,6 @@ impl UnitModel {
                     sprite.height as i32,
                 ];
                 return Some((sprite, Some(bounds)));
-            }
-            if self
-                .shadow
-                .as_ref()
-                .is_some_and(|shadow| shadow.aircraft || (shadow.jumpjet && !shadow.ground))
-            {
-                // An aircraft, or a Jumpjet outside its ground draw, has no
-                // legacy stencil to fall back to: a key whose shadow section
-                // does not raster draws nothing.
-                return None;
             }
         }
         // A barrel key draws its part at its pitch; the pose's other parts,
@@ -1657,9 +1602,7 @@ impl UnitModel {
                 VxlLayer::Turret => (turret?, matrices[1]),
                 VxlLayer::Barrel => (barrel?, matrices[2]),
                 // Unit consumer retains independent native-ordered parts;
-                // the existing un-tilted shadow has its own owner. A posed
-                // (tilted) turret shadow is not drawn: its stencil would need
-                // the tilt matrix, which the shadow layer does not carry.
+                // the existing un-tilted shadow has its own owner.
                 VxlLayer::Composite | VxlLayer::Shadow | VxlLayer::ShadowTurret => return None,
             };
             let params = VxlRenderParams {
@@ -1701,9 +1644,32 @@ impl UnitModel {
         Some((layers, params, bounds))
     }
 
-    /// The native shadow gate of [`Self::render_styled`]'s Shadow arm: a
-    /// non-legacy Shadow key on a type that draws its own ground shadow, at
-    /// the slope the type's arm covers.
+    /// A single-part type with no guns, as [`Self::load`] builds it from a
+    /// main voxel and its type's shadow section, for stencil tests.
+    #[cfg(test)]
+    pub(crate) fn from_test_shadow(
+        vxl: crate::assets::vxl_file::VxlFile,
+        hva: Option<crate::assets::hva_file::HvaFile>,
+        index: i32,
+    ) -> Self {
+        Self {
+            type_id: "test-shadow".into(),
+            body: Some(VoxelPart::from_parts(vxl, hva)),
+            guns: Vec::new(),
+            shadow: Some(ShadowModel {
+                index,
+                considered_aircraft: false,
+                aircraft: false,
+                jumpjet: true,
+                ground: false,
+                indices: Vec::new(),
+                frame: 0,
+                frames: Vec::new(),
+            }),
+            use_buffer: false,
+        }
+    }
+
     fn shadow_gate(&self, key: &UnitSpriteKey) -> bool {
         if key.layer != VxlLayer::Shadow || key.frame == LEGACY_SHADOW_FRAME {
             return false;
@@ -1806,32 +1772,6 @@ impl UnitModel {
             shadow.frame,
             shadow.considered_aircraft,
         )
-    }
-
-    /// A single-part type with no guns, as [`Self::load`] builds it from a
-    /// main voxel and its type's shadow section, for stencil tests.
-    #[cfg(test)]
-    pub(crate) fn from_test_shadow(
-        vxl: crate::assets::vxl_file::VxlFile,
-        hva: Option<crate::assets::hva_file::HvaFile>,
-        index: i32,
-    ) -> Self {
-        Self {
-            type_id: "test-shadow".into(),
-            body: Some(VoxelPart::from_parts(vxl, hva)),
-            guns: Vec::new(),
-            shadow: Some(ShadowModel {
-                index,
-                considered_aircraft: false,
-                aircraft: false,
-                jumpjet: true,
-                ground: false,
-                indices: Vec::new(),
-                frames: Vec::new(),
-                frame: 0,
-            }),
-            use_buffer: false,
-        }
     }
 
     /// A `VoxelAnimClass` piece at its bounce matrix: the body, drawn without

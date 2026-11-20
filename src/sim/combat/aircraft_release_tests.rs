@@ -586,7 +586,6 @@ fn a_strafers_bomb_leaves_at_its_weapon_speed_toward_the_target() {
 /// `Vertical.AircraftFix` (else the `[General]` key, default yes) is on keeps
 /// FireAt's launch velocity instead of the ROT 1 course; the bullet type's
 /// `no` and the global's `no` each re-enable the course.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_vertical_aircraft_bomb_keeps_fire_at_velocity() {
     let speed = |bullet_ini: &str, extra_ini: &str| {
@@ -660,7 +659,6 @@ fn a_fighter_that_drops_its_last_ammo_with_a_passenger_leaves() {
 /// `KickOutPassengers`, else `[General] AircraftWeapon.KickOutPassengers=`,
 /// keeps the stock drop when yes; no skips it (SkipKickOutPassengers
 /// `0x415F08`) and lets the shot fire.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_kick_out_passengers_gates_the_fire_drop() {
     let run = |input: Value| {
@@ -849,7 +847,6 @@ fn an_aircraft_strike_scatters_the_target_cell_away_from_the_aircraft() {
 /// `Ext/Aircraft/Hooks.cpp:341-355`) suppresses the forced target-cell
 /// Scatter. Same setup as the test above, only the type key differs: the
 /// computer tank on the struck cell keeps its Guard and no Move is queued.
-#[cfg(feature = "phobos")]
 #[test]
 fn firing_force_scatter_false_leaves_the_struck_cell_alone() {
     use crate::sim::mission::{MissionId, MissionType};
@@ -899,7 +896,6 @@ fn firing_force_scatter_false_leaves_the_struck_cell_alone() {
 /// (`Ext/Aircraft/Hooks.cpp:37-51`) and the ending shot takes
 /// `Strafing.EndDelay` (`:221`) or, unset, `(Range + 4 * LeptonsPerCell) /
 /// Speed`. Production dispatch: one shot per visit, the release first.
-#[cfg(feature = "phobos")]
 #[test]
 fn strafing_shots_cap_the_round_and_end_delay_overrides_the_derived_value() {
     let cap = serde_json::json!({
@@ -952,7 +948,6 @@ fn strafing_shots_cap_the_round_and_end_delay_overrides_the_derived_value() {
 /// Phobos `Strafing.UseAmmoPerShot` (`Ext/Aircraft/Body.cpp:36-45`): one Ammo
 /// per shot, `ShouldLoseAmmo` (`+0x6C8`) cleared, and Ammo 0 clears the
 /// Target and Destination; `GetDelay` then ends the round (`Hooks.cpp:218`).
-#[cfg(feature = "phobos")]
 #[test]
 fn strafing_ammo_per_shot_debits_each_shot_and_ends_the_round_at_zero() {
     let (mut sim, rules) = fixture(&serde_json::json!({
@@ -987,7 +982,6 @@ fn strafing_ammo_per_shot_debits_each_shot_and_ends_the_round_at_zero() {
 /// bombDropCount % 2 == 0` across the single-shot passes
 /// (`Ext/Aircraft/Body.cpp:26-27`); a shot FireAt refuses leaves that write
 /// in the retained index.
-#[cfg(feature = "phobos")]
 #[test]
 fn strafing_target_cell_and_simulate_burst_change_the_shots() {
     let (mut sim, rules) = fixture(&serde_json::json!({
@@ -1069,7 +1063,6 @@ fn strafing_target_cell_and_simulate_burst_change_the_shots() {
 /// (7) goes back to FireAtTarget2_Strafe (6) while
 /// `Strafing.Shots - 3 - counter > 0`, so the round fires the extra bombs
 /// from state 6. Production dispatch: one shot per visit.
-#[cfg(feature = "phobos")]
 #[test]
 fn strafing_shots_above_five_reenter_state_six_until_the_bombs_run_out() {
     let (mut sim, rules) = fixture(&serde_json::json!({

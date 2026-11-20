@@ -401,7 +401,6 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
 /// Phobos `EBolt_Draw` (`Ext/EBolt/Hooks.cpp:215`): the weapon's
 /// `EBoltZAdjust=` else `[AudioVisual] EBoltZAdjust` adds to the retained
 /// bolt zAdjust.
-#[cfg(feature = "phobos")]
 #[test]
 fn ebolt_z_adjust_adds_the_weapon_value_else_the_global() {
     let Some(retail) = retail_battle_rules_for_map("XMP03T4.MAP") else {
@@ -1108,7 +1107,6 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
 /// (`Ext/EBolt/Hooks.cpp:208-220`), while the simulated bolt passes it alone
 /// (`Ext/Bullet/Body.cpp:268-280`). An unset key takes
 /// `[AudioVisual] EBoltZAdjust` (`Ext/Rules/Body.cpp:278`).
-#[cfg(feature = "phobos")]
 #[test]
 fn ebolt_z_adjust_reads_the_weapon_then_the_audio_visual_global() {
     let produce = |global: &str, weapon: &str, simulated: bool| {
@@ -1223,7 +1221,6 @@ fn ares_bolt_keys_choose_colors_and_spark_system() {
 /// Body.cpp:132`, global default yes at `Ext/Rules/Body.h:197,720`) gates the
 /// stock positive-delta clamp at `0x6FD4E4..0x6FD4ED`: with the key off a
 /// building's bolt keeps the positive initial-depth delta.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_building_initial_depth_clamp_is_keyed() {
     let z = |weapon: Option<bool>, global: Option<bool>| {

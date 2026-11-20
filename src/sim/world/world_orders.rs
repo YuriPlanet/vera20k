@@ -678,7 +678,6 @@ impl Simulation {
         // Phobos `UnitClass_WhatAction_Grinding` (`0x740134`,
         // `Ext/Building/Hooks.Grinding.cpp:98-160`): with the force-fire key
         // and an armed Unit the hook continues past the building arm.
-        #[cfg(feature = "phobos")]
         if force_fire
             && self
                 .object_type(actor.type_ref(), rules)
@@ -713,7 +712,6 @@ impl Simulation {
         {
             // Phobos answers NoEnter for a refused grinder even though the
             // stock answer leaves Select.
-            #[cfg(feature = "phobos")]
             if target_type.grinding {
                 return Some(EntryClickAction::NoEnter);
             }
@@ -725,7 +723,6 @@ impl Simulation {
             return Some(EntryClickAction::NoEnter);
         }
         Some(if target_type.grinding {
-            #[cfg(feature = "phobos")]
             {
                 if self.can_grind_techno(target_id, actor_id, rules) {
                     EntryClickAction::Grind
@@ -733,8 +730,6 @@ impl Simulation {
                     EntryClickAction::NoEnter
                 }
             }
-            #[cfg(not(feature = "phobos"))]
-            EntryClickAction::Grind
         } else {
             EntryClickAction::Enter
         })
@@ -810,11 +805,8 @@ impl Simulation {
                 // Phobos runs the Unit building arm for a `Grinding=` target
                 // under any base action (`Hooks.Grinding.cpp:119`).
                 let target_obj = self.object_type(target.type_ref(), rules)?;
-                #[cfg(feature = "phobos")]
                 let ask_building = select
                     || (target.category() == EntityCategory::Structure && target_obj.grinding);
-                #[cfg(not(feature = "phobos"))]
-                let ask_building = select;
                 let building = if ask_building {
                     self.unit_building_click_action(actor_id, target_id, force_fire, rules)
                 } else {
@@ -839,7 +831,6 @@ impl Simulation {
                 // grinder answers the type gates under any base action when
                 // `Grinding.AllowAllies=yes`, otherwise only on Select. The
                 // stock row below keeps its own current-player owner gate.
-                #[cfg(feature = "phobos")]
                 if self.house_is_human_player(actor.owner())
                     && !target.is_warped_out()
                     && combat::combat_weapon::is_ally_by_object(
@@ -1063,7 +1054,6 @@ impl Simulation {
         // Phobos hook `0x740015` (`Ext/Unit/Hooks.Unload.cpp:86-88`) jumps to
         // `0x7400F0`, past the first-passenger land/height test (`0x7400A1`),
         // for a transport whose `Deploy.*` cursor gate admits it.
-        #[cfg(feature = "phobos")]
         {
             let live = entity
                 .passenger_role
@@ -1273,7 +1263,6 @@ impl Simulation {
             // `Ext/Techno/Hooks.cpp:790-798`). The rally-line (455DA0) and
             // ConYard/MCV-redeploy arms above stay native, so a factory with a
             // rally line and a yard under `MCVRedeploy` keep answering true.
-            #[cfg(feature = "phobos")]
             if object.phobos_no_manual_move {
                 return false;
             }
@@ -1290,7 +1279,6 @@ impl Simulation {
         // returns false, `Ext/Techno/Hooks.cpp:778-784`). Every player order
         // path that asks vt+0xA0 — Move, Stop, Deploy, the attack rung — sees
         // the same false the native hook produces; AI missions never ask it.
-        #[cfg(feature = "phobos")]
         if object.phobos_no_manual_move {
             return false;
         }
@@ -1502,7 +1490,6 @@ impl Simulation {
                 // (`0x51E63A`, `Hooks.Grinding.cpp:91-105`): the grinder
                 // action asks the type gates; a refusal is NoGRepair (0x20),
                 // `Repair(false)` here.
-                #[cfg(feature = "phobos")]
                 if !self.can_grind_techno(target_id, actor_id, rules) {
                     return Some(EngineerBuildingAction::Repair(false));
                 }
@@ -2241,7 +2228,6 @@ impl Simulation {
                 // Phobos's `BuildingClass_InfiltratedBy_Wrapper @ 0x51A00B`
                 // (`Ext/Building/Body.cpp:662-671`) runs `HandleInfiltrate`
                 // after the base function.
-                #[cfg(feature = "phobos")]
                 self.phobos_handle_infiltrate(building_id, owner, rules, registry, frame_effects);
             }
             true

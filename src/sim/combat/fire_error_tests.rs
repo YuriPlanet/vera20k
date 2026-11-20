@@ -156,11 +156,9 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
             aa: flag(&projectile["aa"]),
             ag: flag(&projectile["ag"]),
             // The corpus is stock gamemd output: there is no `AU` field.
-            #[cfg(feature = "phobos")]
             au: false,
             rot: int(&projectile["rot"]),
         },
-        #[cfg(feature = "phobos")]
         can_target_iron_curtained: None,
     })
 }
@@ -265,11 +263,9 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             // (1004BC80) weapon test.
             temporal_gunner_weapon: false,
             owner_is_human: flag(&f["owner_is_human"]),
-            #[cfg(feature = "phobos")]
             owner_controlled_by_human: flag(&f["owner_is_human"]),
             // The native corpus carries no `TransactMoney` facts; zero money
             // and a zero amount leave the `0x6FC339` money arm a no-op.
-            #[cfg(feature = "phobos")]
             owner_money: f.get("owner_money").map_or(0, int),
             // Foot `0x004DE770` (SETNE); a Building's vt+0x380 is false.
             paralyzed: class.is_foot()
@@ -303,27 +299,16 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             prism_breaks_support: false,
             // The native corpus carries no Phobos open-topped transport
             // facts; all-false leaves the `0x6FC5C7` branch a no-op.
-            #[cfg(feature = "phobos")]
             transport_deactivated: false,
-            #[cfg(feature = "phobos")]
             transport_weapons_disabled: false,
-            #[cfg(feature = "phobos")]
             transport_attacked_by_locomotor: false,
-            #[cfg(feature = "phobos")]
             transport_is_foot: false,
-            #[cfg(feature = "phobos")]
             transport_moving: false,
-            #[cfg(feature = "phobos")]
             transport_allow_firing_if_deactivated: false,
-            #[cfg(feature = "phobos")]
             transport_allow_firing_if_attacked_by_locomotor: false,
-            #[cfg(feature = "phobos")]
             transport_check_disable_weapons: false,
-            #[cfg(feature = "phobos")]
             transport_fire_while_moving: false,
-            #[cfg(feature = "phobos")]
             passenger_fire_while_moving: true,
-            #[cfg(feature = "phobos")]
             transport_decloak_to_fire: false,
         },
         firer_type: FirerTypeFacts {
@@ -353,7 +338,6 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             turret_anim_is_voxel: flag(&ft["turret_anim_is_voxel"]),
             // The native corpus has no `NoTurret.TrackTarget`; false keeps
             // the `0x7410BB` hook at its stock gate.
-            #[cfg(feature = "phobos")]
             no_turret_track_target: false,
         },
         target: TargetFacts {
@@ -395,13 +379,10 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             is_vehicle: false,
             ..TargetTypeFacts::default()
         },
-        #[cfg(feature = "phobos")]
         can_target_iron_curtained: true,
-        #[cfg(feature = "phobos")]
         can_target_ai_iron_curtained: false,
         // The native corpus predates the Phobos rules: `all` keeps the
         // berzerk arm a no-op.
-        #[cfg(feature = "phobos")]
         berzerk_targeting: crate::rules::phobos_shields::AffectedHouse::ALL,
     }
 }
@@ -517,9 +498,7 @@ impl FireQuery for RowQuery<'_> {
         let facts = crate::sim::power_system::OperationalFacts {
             online: flag(&f["online"]),
             tesla_chargers: int(&f["tesla_chargers"]),
-            #[cfg(feature = "phobos")]
             tesla_charge_levels: int(&f["tesla_chargers"]),
-            #[cfg(feature = "phobos")]
             overpower_keep_online: 2,
             charger_bypass: 2,
             emp_remaining: int(&f["emp_remaining"]),

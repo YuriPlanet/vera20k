@@ -114,7 +114,6 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
     // Drive/Walk/(Tunnel)/Teleport/Jumpjet, and BunkerableAnyway skips the
     // turret, current-weapon and SpeedType requirements. VERA models no
     // Tunnel locomotor kind.
-    #[cfg(feature = "phobos")]
     {
         use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
         obj.bunkerable
@@ -128,14 +127,6 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
             && unit.parasite.eater().is_none()
             && (obj.phobos_bunkerable_anyway
                 || (obj.has_turret && armed && obj.speed_type != SpeedType::Hover))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        obj.bunkerable
-            && obj.has_turret
-            && armed
-            && obj.speed_type != crate::rules::locomotor_type::SpeedType::Hover
-            && unit.parasite.eater().is_none()
     }
 }
 
@@ -844,7 +835,6 @@ mod tests {
     /// `Ext/Techno/Hooks.Misc.cpp:915-929`): the locomotor whitelist gates every
     /// admission and `BunkerableAnyway=yes` skips the turret, current-weapon
     /// and SpeedType requirements, without bypassing `Bunkerable=no`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn bunkerable_anyway_skips_the_turret_and_weapon_checks() {
         let rules = rules_with("");

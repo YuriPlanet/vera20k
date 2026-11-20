@@ -110,18 +110,13 @@ pub struct DeathAnimSpawn {
     /// `ProcessDestroyAnims`' `SetInvoker(pThis)` (`Ext/AnimType/
     /// Body.cpp:54`): the destroyed unit and its House. Only the Unit
     /// `DestroyAnim=` producer sets it.
-    #[cfg(feature = "phobos")]
     pub invoker: Option<(u64, InternedId)>,
     /// `ProcessDestroyAnims`' death-unit facts: the victim House the anim's
     /// `CreateUnit.Owner` selector reads, the body DirType and the turret
     /// facts (`Ext/AnimType/Body.cpp:52-70`).
-    #[cfg(feature = "phobos")]
     pub victim_house: Option<InternedId>,
-    #[cfg(feature = "phobos")]
     pub death_facing: Option<u8>,
-    #[cfg(feature = "phobos")]
     pub death_has_turret: bool,
-    #[cfg(feature = "phobos")]
     pub death_turret_facing: Option<u8>,
 }
 
@@ -133,15 +128,10 @@ impl DeathAnimSpawn {
             delay,
             draws: None,
             follow_up: None,
-            #[cfg(feature = "phobos")]
             invoker: None,
-            #[cfg(feature = "phobos")]
             victim_house: None,
-            #[cfg(feature = "phobos")]
             death_facing: None,
-            #[cfg(feature = "phobos")]
             death_has_turret: false,
-            #[cfg(feature = "phobos")]
             death_turret_facing: None,
         }
     }
@@ -360,7 +350,6 @@ impl Simulation {
                 }
             }
         }
-        #[cfg(feature = "phobos")]
         {
             // `AnimExt::SetAnimOwnerHouseKind` with the type's
             // `CreateUnit.Owner` kind (`Ext/Anim/Body.cpp:108-145`); this arm
@@ -540,7 +529,6 @@ impl Simulation {
         // `[General]` nullable, else the stock type-property gate) decides
         // whether the water/warp checks are reached; `no` keeps the unit out
         // of the sinking path entirely while `yes` skips the type properties.
-        #[cfg(feature = "phobos")]
         if let Some(configured) = object.phobos_sinkable.or(rules.phobos_globals.sinkable) {
             return configured && water_and_not_warping;
         }
@@ -569,11 +557,8 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        #[cfg(feature = "phobos")]
         let owner_house = entity.owner();
-        #[cfg(feature = "phobos")]
         let death_facing = Some(entity.body_facing_byte(self.session.binary_frame()));
-        #[cfg(feature = "phobos")]
         let death_turret_facing = if object.has_turret {
             entity.barrel_facing.as_ref().map(|facing| {
                 crate::util::direction_tables::round_facing16_to_8(
@@ -625,7 +610,6 @@ impl Simulation {
             // `Ext/Anim/Hooks.AnimCreateUnit.cpp:22-29`) replaces the stock
             // `Next() % count` pick with `AnimTypeExt::ProcessDestroyAnims`
             // (`Ext/AnimType/Body.cpp:15-43`).
-            #[cfg(feature = "phobos")]
             let anim = {
                 let list = object.destroy_anims.as_slice();
                 let random = object
@@ -655,22 +639,15 @@ impl Simulation {
                     &list[index]
                 }
             };
-            #[cfg(not(feature = "phobos"))]
-            let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(
                 rules,
                 anims,
                 anim,
                 DeathAnimSpawn {
-                    #[cfg(feature = "phobos")]
                     invoker: Some((unit_id, owner_house)),
-                    #[cfg(feature = "phobos")]
                     victim_house: Some(owner_house),
-                    #[cfg(feature = "phobos")]
                     death_facing,
-                    #[cfg(feature = "phobos")]
                     death_has_turret: object.has_turret,
-                    #[cfg(feature = "phobos")]
                     death_turret_facing,
                     ..DeathAnimSpawn::at(coord, 0)
                 },

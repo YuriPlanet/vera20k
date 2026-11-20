@@ -190,12 +190,9 @@ impl Simulation {
         // the replaced victim's `FreeUnit` silent flag is the warhead's
         // `RemoveMindControl.Silent=` else
         // `[AudioVisual] MindControl.Permanent.ReplaceSilent=`.
-        #[cfg(feature = "phobos")]
         let free_silent = warhead
             .phobos_extras
             .mind_control_silent(rules.phobos_globals.mind_control_permanent_replace_silent);
-        #[cfg(not(feature = "phobos"))]
-        let free_silent = false;
         self.ares_apply_perma_mc(target, house, rules, overlay_registry, effects, free_silent)
     }
 }

@@ -766,7 +766,6 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
 /// over one `WARPH` warhead that admits its own source, so the arrived object
 /// takes the detonation's damage. `type_chrono_range_minimum` writes the
 /// TechnoType `ChronoRangeMinimum=` override (`None` leaves the type unset).
-#[cfg(feature = "phobos")]
 fn warp_weapon_rules(
     warp_in: &str,
     min_range: &str,
@@ -809,7 +808,6 @@ fn warp_weapon_rules(
 /// One production object turn of a warp armed from cell 5,5 to 8,9 with the
 /// stored `LastWarpDistance`; the arrived object's health is the observable.
 /// `type_chrono_range_minimum` is the arriving type's own threshold override.
-#[cfg(feature = "phobos")]
 fn warp_in_health(
     warp_in: &str,
     min_range: &str,
@@ -851,7 +849,6 @@ fn warp_in_health(
 /// `WarpInMinRangeWeapon` replaces it, falling back to `WarpInWeapon` while
 /// unset.
 #[test]
-#[cfg(feature = "phobos")]
 fn warp_in_weapon_picks_the_min_range_weapon_by_last_warp_distance() {
     assert_eq!(
         warp_in_health("WARPWH", "", false, 0, 1000, None),
@@ -878,7 +875,6 @@ fn warp_in_weapon_picks_the_min_range_weapon_by_last_warp_distance() {
 /// `WarpInWeapon.UseDistanceAsDamage` (`Ext/TechnoType/Body.cpp:873`): the
 /// detonation's damage is `distance / 256` instead of the weapon's `Damage=`.
 #[test]
-#[cfg(feature = "phobos")]
 fn warp_in_weapon_use_distance_as_damage_divides_by_256() {
     assert_eq!(
         warp_in_health("WARPWH", "", true, 0, 1024, None),
@@ -897,7 +893,6 @@ fn warp_in_weapon_use_distance_as_damage_divides_by_256() {
 /// `ChronoRangeMinimum=` (`Nullable<int>`, `Ext/TechnoType/Body.cpp:865`)
 /// overrides the `[General]` threshold in the min-range weapon split.
 #[test]
-#[cfg(feature = "phobos")]
 fn a_type_chrono_range_minimum_overrides_the_general_threshold() {
     // Global 0 would keep `WARPWH`; the type's 2000 threshold puts the 1000
     // lepton warp inside min range, so `MINWH` detonates.
@@ -917,7 +912,6 @@ fn a_type_chrono_range_minimum_overrides_the_general_threshold() {
 /// `Some(0)` is a real override that never selects the min-range weapon, so
 /// absent and `Some(0)` are distinct.
 #[test]
-#[cfg(feature = "phobos")]
 fn an_absent_type_key_keeps_the_general_threshold() {
     assert_eq!(
         warp_in_health("WARPWH", "MINWH", false, 2000, 1000, None),

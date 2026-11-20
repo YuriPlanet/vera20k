@@ -197,7 +197,6 @@ impl Simulation {
         // stock `add edx, -5`, leaving the total at the configured value;
         // Aircraft keep the stock step (UnitClass hook only).
         let sink_speed = {
-            #[cfg(feature = "phobos")]
             {
                 if entity.category() == EntityCategory::Unit {
                     self.object_type(entity.type_ref(), rules)
@@ -206,10 +205,6 @@ impl Simulation {
                 } else {
                     5
                 }
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                5
             }
         };
         let mut coord = position_world_coord(&entity.position);
@@ -265,16 +260,11 @@ impl Simulation {
                 .get(id)
                 .and_then(|entity| self.entity_object_type(entity, rules))
                 .and_then(|object| {
-                    #[cfg(feature = "phobos")]
                     {
                         object
                             .phobos_wake_sinking
                             .clone()
                             .or_else(|| object.wake.clone())
-                    }
-                    #[cfg(not(feature = "phobos"))]
-                    {
-                        object.wake.clone()
                     }
                 })
                 .filter(|name| {

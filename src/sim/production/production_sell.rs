@@ -227,7 +227,6 @@ pub(crate) fn foot_on_sold(
         // (`Ext/Building/Hooks.Selling.cpp:18-21`) replaces the stock
         // `EVA_UnitSold` with the type's `EVA.Sold` when set: a named cue, or
         // native's -1 (silence) for an explicit none.
-        #[cfg(feature = "phobos")]
         let sold_eva = sim
             .substrate
             .entities
@@ -235,8 +234,6 @@ pub(crate) fn foot_on_sold(
             .and_then(|entity| sim.object_type(entity.type_ref(), rules))
             .and_then(|object| object.phobos_eva_sold())
             .map(|cue| cue.map(str::to_owned));
-        #[cfg(not(feature = "phobos"))]
-        let sold_eva: Option<Option<String>> = None;
         match sold_eva {
             Some(Some(cue)) => sim
                 .sound_events
@@ -261,7 +258,6 @@ pub(crate) fn foot_on_sold(
     // Phobos `FootClass`'s `DisplayIncome` label (`Hooks.Selling.cpp:26-27`):
     // every sold Foot prints its refund at its Location when the global is on,
     // filtered by the global Houses list.
-    #[cfg(feature = "phobos")]
     if rules.phobos_globals.display_income
         && refund != 0
         && let Some(location) = sim.substrate.entities.get(id).map(|entity| {
@@ -667,7 +663,6 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     if !object.construction_yard {
         // Phobos `UndeploysInto_Sellable` (`Ext/Building/Hooks.Selling.cpp:48-54`):
         // a repack building asks for a sell unless it holds an ArchiveTarget.
-        #[cfg(feature = "phobos")]
         if object.phobos_undeploys_into_sellable {
             return sale_archive(entity);
         }
@@ -999,10 +994,7 @@ pub(crate) fn sell_complete(
     // `Ext/Building/Hooks.Selling.cpp:70-76`): the announcement does not follow
     // the conversion answer; a repack building with no ArchiveTarget still
     // announces its sale.
-    #[cfg(feature = "phobos")]
     let announce_sold = !undeploys || !archive;
-    #[cfg(not(feature = "phobos"))]
-    let announce_sold = !undeploys;
     if announce_sold {
         sim.sound_events
             .emit(SimSoundEvent::StructureSold { owner, type_id });

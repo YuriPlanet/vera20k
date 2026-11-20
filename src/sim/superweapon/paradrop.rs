@@ -468,7 +468,6 @@ pub(super) fn send_planes(
     // over the four edges first. `Closest` also scatters the destination cell
     // and picks on `Edge::None`, which `find_paradrop_edge_cell` does not
     // model (RESIDUAL: such a type keeps the `Owner` pick).
-    #[cfg(feature = "phobos")]
     let edge = {
         let mode = rules
             .object_in_category(
@@ -479,8 +478,6 @@ pub(super) fn send_planes(
             .unwrap_or(rules.phobos_globals.aircraft_spawn_from_edge);
         crate::sim::world::edge_cell::edge_for_mode(mode, owned_edge, &mut sim.scenario_rng)
     };
-    #[cfg(not(feature = "phobos"))]
-    let edge = owned_edge;
     let Some(cell) = find_paradrop_edge_cell(
         sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),

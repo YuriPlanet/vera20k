@@ -143,7 +143,6 @@ fn detonate_at_firer_without_a_building_uses_the_empty_coordinate() {
 
 /// Phobos `SuperWeapons=` names a building as the detonation firer; the key
 /// is read without the Ares capability too.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_superweapons_list_names_the_detonation_firer() {
     let rules = rules_with(

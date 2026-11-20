@@ -135,18 +135,13 @@ impl BeaconManager {
             Some(slot) if slot < BEACONS_PER_HOUSE => slot,
             Some(_) => return None,
         };
-        row[slot] = Some(Beacon {
-            coord,
-            active: true,
-            selected: false,
-        });
+        row[slot] = Some(Beacon::placed(coord));
         // Phobos `BeaconManagerClass_PlaceBeacon_RecordOrder`
         // (`Ext/House/Hooks.cpp:856-872`): the placed slot becomes the newest
         // (`max(all orders) + 1`), whether it was empty or replaced.
         let order = self.placed_order.entry(house).or_default();
         let newest = order.iter().copied().max().unwrap_or(0).max(0) + 1;
         order[slot] = newest;
-        row[slot] = Some(Beacon::placed(coord));
         Some(slot)
     }
 

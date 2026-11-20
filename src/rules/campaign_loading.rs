@@ -140,7 +140,6 @@ impl CampaignLoadingMetadata {
         // `MISSIONMD.INI [Defaults] DefaultLS...` (itself default 0), not to
         // the retained scenario field, and a missing scenario section still
         // takes that fallback.
-        #[cfg(feature = "phobos")]
         {
             let defaults = ini.section("Defaults");
             self.brief_location_640 = [
@@ -367,7 +366,6 @@ mod tests {
             // corpus, which has no Defaults section) before the scenario read,
             // so an absent section or key answers 0 instead of the retained
             // field.
-            #[cfg(feature = "phobos")]
             let expected = if row["sections"]
                 .as_object()
                 .unwrap()
@@ -379,8 +377,6 @@ mod tests {
             } else {
                 0
             };
-            #[cfg(not(feature = "phobos"))]
-            let expected = row["coords"][key].as_i64().unwrap();
             assert_eq!(actual as i64, expected, "{key}");
         }
     }
@@ -417,7 +413,6 @@ mod tests {
     /// Phobos `Ext/Scenario/Hooks.cpp:24-27`: the four loading-briefing
     /// locations fall back to `[Defaults] DefaultLS...` (0 when absent), not
     /// to the retained scenario field.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_defaults_supply_the_loading_brief_locations() {
         let ini = IniFile::from_str(

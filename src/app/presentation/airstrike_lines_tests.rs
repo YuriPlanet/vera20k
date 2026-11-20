@@ -26,9 +26,7 @@ fn viewport(v: &Value) -> SurfaceLineViewport {
 }
 fn style() -> FlareStyle {
     FlareStyle {
-        #[cfg(feature = "phobos")]
         color: [255, 0, 0],
-        #[cfg(feature = "phobos")]
         z_adjust: 0,
     }
 }
@@ -195,7 +193,6 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         // 0x00705905 and draws only its own scale.
         #[cfg(not(feature = "phobos"))]
         reference.draws().ranged(190, 270);
-        #[cfg(feature = "phobos")]
         reference.draws().ranged(745, 1000);
         assert_eq!(result.first(), Some(&opaque));
         assert_eq!(result.last(), Some(&opaque));
@@ -211,7 +208,6 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
 /// depth, `min(zSrc, zDest) + AirstrikeLineZAdjust`, and the dot keeps the
 /// unscaled word even though the target end here is the lower one, where the
 /// stock draw skips it.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_flare_scales_the_lines_flattens_their_depth_and_always_draws_the_dot() {
     use crate::util::native_x87::adjust_for_z_standard;

@@ -295,7 +295,6 @@ impl Simulation {
         // Phobos `InfantryAutoDeploy`: the hook at `0x00522373`
         // (`InfantryClass_ApproachTarget_InfantryAutoDeploy`) turns the Foot
         // body's return into a jump to the deploy arm at `0x00522378`.
-        #[cfg(feature = "phobos")]
         if self
             .substrate
             .entities
@@ -450,7 +449,6 @@ impl Simulation {
                     self.substrate.entities.contains(target)
                         || self.terrain_objects.objects().contains_key(&target)
                 }
-                #[cfg(feature = "phobos")]
                 TargetKind::Bullet(id) => self.projectiles.get(id).is_some(),
             }
             && self.resolved_terrain.is_some()
@@ -499,7 +497,6 @@ impl Simulation {
         // Approach_Target reads the target object's GetCoords, and a
         // BulletClass answers its Location. The conversion runs every visit,
         // so the destination follows the projectile.
-        #[cfg(feature = "phobos")]
         let target = match target {
             TargetKind::Bullet(bullet) => {
                 let point = self.projectiles.get(bullet).map(|bullet| bullet.position());
@@ -620,11 +617,9 @@ impl Simulation {
         // nav recalc, queued-destination arm or search. InLimbo keeps the
         // original body; a close-enough foot that StopWhenInRange will stop
         // also keeps it (hook B returns 0).
-        #[cfg(feature = "phobos")]
         let phobos_stop_when_in_range = object
             .phobos_attack_move
             .stop_when_in_range(&rules.phobos_globals);
-        #[cfg(feature = "phobos")]
         if !actor.in_limbo()
             && !(can_fire && phobos_stop_when_in_range)
             && object.phobos_attack_move.approach_target_pursuit_target
@@ -674,7 +669,6 @@ impl Simulation {
             // `Ext/Techno/Hooks.Firing.cpp:1303-1340`): this in-range return
             // runs the hook. A close-enough foot that is not in limbo and is
             // really moving stops both its locomotor and its motion.
-            #[cfg(feature = "phobos")]
             if phobos_stop_when_in_range {
                 let really_moving = !actor.in_limbo()
                     && crate::sim::movement::motion_query::is_really_moving_now(
@@ -771,7 +765,6 @@ impl Simulation {
                     (i32::from(width), i32::from(height))
                 }),
             TargetKind::Cell(..) => None,
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(..) => None,
         };
         let mut radius = approach_search_radius(range, actor.category(), foundation);
@@ -787,7 +780,6 @@ impl Simulation {
             TargetKind::Entity(id) => self.substrate.entities.get(id).is_some_and(|target| {
                 target.category() != EntityCategory::Structure && target.on_bridge()
             }),
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(..) => false,
         };
         let category = actor.category();
@@ -1157,7 +1149,6 @@ impl Simulation {
                     .ok_or("Approach Cell Target")?,
                 &cells,
             ),
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(id) => {
                 let point = self
                     .projectiles
@@ -1288,7 +1279,6 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
-        #[cfg(feature = "phobos")]
         if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
             return Ok(true);
         }

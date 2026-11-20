@@ -195,7 +195,6 @@ pub(super) fn tick_particle(
             // `Ext/ParticleType/Hooks.cpp:4-30`) with the type's
             // `Gas.MaxDriftSpeed` - runs only at mutation events. The explicit
             // if/else keeps the native order for a negative bound.
-            #[cfg(feature = "phobos")]
             {
                 let max = rules.particle_type(p.type_id).phobos_gas_max_drift_speed;
                 let min = max.wrapping_neg();
@@ -209,11 +208,6 @@ pub(super) fn tick_particle(
                 } else if p.drift_y < min {
                     p.drift_y = min;
                 }
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                p.drift_x = p.drift_x.clamp(-2, 2);
-                p.drift_y = p.drift_y.clamp(-2, 2);
             }
         }
         p.motion = [

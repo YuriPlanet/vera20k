@@ -79,7 +79,6 @@ pub(super) fn bullet_type<'r>(
 /// FireAt's target-Z initial pitch arm (0x4000/0x8000) instead of the
 /// distance branch. The vanilla gate was `ObjectType+0x236` (Voxel) alone;
 /// the resolved flag replaces it, so a `Vertical=` shot gains the arm.
-#[cfg(feature = "phobos")]
 pub(crate) fn vertical_initial_facing(
     projectile: Option<&crate::rules::projectile_type::ProjectileType>,
 ) -> bool {
@@ -198,7 +197,6 @@ fn classify_projectile_type(
             explodes_airburst: Some(projectile.airburst_arm()),
             inaccurate: projectile.inaccurate,
             floater: projectile.floater,
-            #[cfg(feature = "phobos")]
             gravity: projectile.gravity(),
             elasticity_bits: projectile.elasticity.to_bits(),
             arcing: projectile.arcing,
@@ -461,11 +459,9 @@ fn admit_bullet(
     // Phobos `ObjectClass_Unlimbo_Parachuted_Wrapper` (`Ext/Bullet/Hooks.cpp:
     // 573-583`): the Unlimbo replacement and its canopy run inside Fire's
     // placement, before `BulletClass_Unlimbo_Trajectories @ 0x468B72`.
-    #[cfg(feature = "phobos")]
     world.init_parabomb(bullet_id, rules);
     // Phobos `BulletClass_Unlimbo_Trajectories @ 0x468B72`: a trajectory
     // instance is created and `OnUnlimbo` runs during Fire's placement.
-    #[cfg(feature = "phobos")]
     world.init_phobos_trajectory(bullet_id, rules, weapon);
     Simulation::construct_bullet_scheme(
         &world.interner,

@@ -74,7 +74,6 @@ pub struct HouseDefinition {
     /// first three entries are the campaign difficulty slots; a longer list
     /// is ignored whole (`:631`) and unset slots follow the `[Basic]`
     /// global.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub repair_base_nodes: [Option<bool>; 3],
 }
@@ -277,7 +276,6 @@ pub fn parse_house_roster(
         // `HouseExt::LoadFromINIFile` (`Ext/House/Body.cpp:626-639`): the
         // house section's `RepairBaseNodes=` list; only a list of at most
         // three entries is copied into the difficulty slots.
-        #[cfg(feature = "phobos")]
         let repair_base_nodes = fields
             .read_list("RepairBaseNodes", 0x800)
             .map(|tokens| {
@@ -301,7 +299,6 @@ pub fn parse_house_roster(
             ui_name,
             allies: 0,
             base_plan,
-            #[cfg(feature = "phobos")]
             repair_base_nodes,
         });
     }

@@ -377,7 +377,6 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
 
 /// `Pips.Generic.Size` (`[AudioVisual]`, `Ext/Rules/Body.cpp:160`) is the
 /// advance of every non-Ammo pip arm, here the passenger strip.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_global_generic_size_drives_the_passenger_strip() {
     use crate::rules::ini_parser::IniFile;
@@ -402,7 +401,7 @@ fn the_global_generic_size_drives_the_passenger_strip() {
     let mut cargo = PassengerCargo::new(2, 2.0);
     cargo.board_forced_chain(&[(first, 1.0)]);
     sim.entities_mut_for_test()
-        .get_mut(carrier)
+        .get_mut_for_test(carrier)
         .unwrap()
         .passenger_role = PassengerRole::transport(cargo);
     assert!(sim.apply_command(
@@ -413,9 +412,9 @@ fn the_global_generic_size_drives_the_passenger_strip() {
         },
         Some(&rules),
     ));
-    let entity = sim.entities().get(carrier).unwrap();
+    let entity = crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
     let placed: Vec<[i32; 2]> =
-        super::ui_overlays::scale_pip_draws(&sim, entity, None, Some(OWNER), &rules)
+        super::ui_overlays::scale_pip_draws(&sim, &entity, None, sim.interner().get(OWNER), &rules)
             .iter()
             .map(|pip| pip.offset_pixels)
             .collect();
@@ -428,7 +427,6 @@ fn the_global_generic_size_drives_the_passenger_strip() {
 /// `EmptyFrame` for a slot nothing fills. A 10-unit hold of 6 ore / 2 gems
 /// rounds to 3 + 1 pips at GetPipMax 5; a weeder rounds the whole hold (8
 /// bales) instead.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_tiberium_pip_globals_drive_the_strip() {
     use crate::rules::ini_parser::IniFile;
@@ -451,7 +449,7 @@ fn the_tiberium_pip_globals_drive_the_strip() {
             .spawn_object("HARVTEST", OWNER, 16, 16, 64, &rules)
             .expect("harvester");
         crate::sim::arena_fixture::install_status_miner_cargo(
-            sim.entities_mut_for_test().get_mut(id).unwrap(),
+            sim.entities_mut_for_test().get_mut_for_test(id).unwrap(),
             rules.object("HARVTEST").unwrap(),
             &rules,
             6,

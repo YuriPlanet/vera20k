@@ -187,7 +187,6 @@ impl JumpjetParams {
     /// instead of its own literals — seven from the stock `RulesClass` jumpjet
     /// block and the two Phobos-only `[JumpjetControls]` keys. The casts are
     /// the hook's `static_cast<float>` of the `RulesClass` doubles.
-    #[cfg(feature = "phobos")]
     pub fn from_controls(
         controls: &JumpjetControls,
         globals: &crate::rules::phobos_globals::PhobosGlobals,
@@ -291,7 +290,6 @@ impl JumpjetOverride {
     /// native read order. `Nullable<int>` uses `ReadInteger`, `Nullable<float>`
     /// uses `read<float>` over `Parser<double>` (binary32 result), and
     /// `Nullable<bool>` uses `ReadBool`.
-    #[cfg(feature = "phobos")]
     pub fn from_section(section: &IniSection) -> Self {
         let read_f32 = |key: &str, current: Option<f32>| {
             section
@@ -408,7 +406,6 @@ mod tests {
         assert_eq!(params.height, 750);
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn warhead_jumpjet_overrides_read() {
         let ini = IniFile::from_str(
@@ -470,7 +467,6 @@ mod tests {
     /// Phobos `TechnoTypeClass_CTOR_JumpjetControls` (`0x7115AE`): every
     /// techno type starts from the `[JumpjetControls]` block plus the two
     /// Phobos-only keys, and its own authored key still wins.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_phobos_constructor_reseeds_from_the_section() {
         use crate::rules::ruleset::RuleSet;

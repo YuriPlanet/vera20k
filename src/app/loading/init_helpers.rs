@@ -605,15 +605,12 @@ pub(crate) fn finish_presentation_assets(
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
     let match_layout_ini = read_match_layouts(asset_manager);
-    #[cfg(feature = "phobos")]
     let uimd_bytes = asset_manager.get_ref("UIMD.INI");
-    #[cfg(feature = "phobos")]
     let sw_sidebar_ui = uimd_bytes
         .map(crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::from_uimd_bytes)
         .unwrap_or_default();
     // The same loaded `uimd.ini` carries the pause-menu switch; Phobos reads
     // both from `[Sidebar]` at startup.
-    #[cfg(feature = "phobos")]
     let center_pause_menu_background = uimd_bytes
         .map(crate::rules::phobos_pause_menu::PauseMenuUi::from_uimd_bytes)
         .unwrap_or_default()
@@ -621,7 +618,6 @@ pub(crate) fn finish_presentation_assets(
     // The same loaded `uimd.ini` carries the indicator switches and the two
     // `[ToolTips]` labels; Phobos resolves a label key through the string table
     // it has already loaded by then (`GeneralUtils::LoadStringOrDefault`).
-    #[cfg(feature = "phobos")]
     let sidebar_indicators = uimd_bytes
         .map(|bytes| {
             crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::from_uimd_bytes(
@@ -632,11 +628,9 @@ pub(crate) fn finish_presentation_assets(
         .unwrap_or_default();
     // Phobos reads `[UISettings]` from the same uimd.ini at startup
     // (`src/Phobos.INI.cpp:246-251`), for the scenario-start briefing dialog.
-    #[cfg(feature = "phobos")]
     let briefing_dialog = uimd_bytes
         .map(crate::rules::phobos_briefing_ui::BriefingDialogUi::from_uimd_bytes)
         .unwrap_or_default();
-    #[cfg(feature = "phobos")]
     let sw_sidebar_art = sw_sidebar_ui
         .enabled
         .then(|| {
@@ -683,7 +677,6 @@ pub(crate) fn finish_presentation_assets(
     // Phobos `[BannerTypes]` art: every banner type's PCX/SHP decodes into
     // one atlas with the world, the way the native lazy surface resolves on
     // its first draw (`Utilities/Constructs.cpp`'s PhobosPCXFile).
-    #[cfg(feature = "phobos")]
     let banner_art = crate::app::presentation::banners::BannerArtSet::build(
         gpu,
         batch,
@@ -763,19 +756,13 @@ pub(crate) fn finish_presentation_assets(
         sidebar_cameo_atlas,
         sidebar_chrome,
         match_layout_ini,
-        #[cfg(feature = "phobos")]
         sw_sidebar_ui,
-        #[cfg(feature = "phobos")]
         center_pause_menu_background,
-        #[cfg(feature = "phobos")]
         sidebar_indicators,
-        #[cfg(feature = "phobos")]
         briefing_dialog,
-        #[cfg(feature = "phobos")]
         sw_sidebar_art,
         outcome_banner_side_art,
         end_game_banner,
-        #[cfg(feature = "phobos")]
         banner_art,
         software_cursor,
         overlay_names: overlays.overlay_names,
@@ -795,7 +782,6 @@ pub(crate) fn finish_presentation_assets(
 /// shows up as that text instead of silently keeping the glyph default. With no
 /// table loaded at all there is nothing to ask, and the caller's default stands,
 /// as for the other `csf.text` loaders here.
-#[cfg(feature = "phobos")]
 pub(crate) fn sidebar_label_lookup(
     table: Option<&crate::assets::csf_file::CsfFile>,
 ) -> impl Fn(&str) -> Option<String> {
@@ -843,7 +829,6 @@ mod tests {
     /// indicator reads use that loader, not `LoadStringUnlessMissing`, so a
     /// mis-authored `uimd.ini` label shows the marker instead of keeping its
     /// glyph default.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_missing_indicator_label_resolves_to_the_native_marker() {
         use super::sidebar_label_lookup;

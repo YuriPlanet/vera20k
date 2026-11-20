@@ -1637,7 +1637,6 @@ fn ares_clock_frame_counts_stages_over_the_image() {
 /// `Misc/Hooks.BugFixes.cpp:550-561`): `IvanBombAttachToCenter=yes` moves
 /// the detonation coordinate to the target's `GetCenterCoords()` — a 2x2
 /// building's foundation centre — while unset keeps the carrier's Location.
-#[cfg(feature = "phobos")]
 #[test]
 fn ivan_bomb_attach_to_center_moves_the_blast_off_the_buildings_location() {
     let rules_with = |extra: &str| {
@@ -1699,7 +1698,6 @@ fn ivan_bomb_attach_to_center_moves_the_blast_off_the_buildings_location() {
 /// frame, so the carrier's own fuse check — `IsTimerExpired` fires once
 /// `Frame > end` — sets it off at the next frame. Other carriers' bombs keep
 /// their fuse.
-#[cfg(feature = "phobos")]
 #[test]
 fn ivan_bomb_detonate_cuts_only_the_hit_targets_fuse() {
     let rules = rules();
@@ -1736,7 +1734,6 @@ fn ivan_bomb_detonate_cuts_only_the_hit_targets_fuse() {
 /// `IvanBomb.Detonate.AffectTypes=` keeps only bombs planted by a listed
 /// techno type, and `SameInvokerOnly=` only those planted by the detonation's
 /// own owner (`Detonate.cpp:948-956`).
-#[cfg(feature = "phobos")]
 #[test]
 fn ivan_bomb_detonate_filters_affect_types_and_the_invoker() {
     let rules = rules();

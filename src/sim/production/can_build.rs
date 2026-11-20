@@ -663,7 +663,6 @@ fn build_limit(
     // The native replacement only runs for a building type with
     // `PowersUp.Buildings`, and its tail lets a copy in production keep the
     // type buildable when `includeInProduction` is set.
-    #[cfg(feature = "phobos")]
     if build_limit_group_upgrade_check(sim, rules, owner, obj, count_in_production) {
         return CanBuild::AtLimit;
     }
@@ -793,7 +792,6 @@ fn stock_check_build_limit(
     // `HouseExt::ReachedBuildLimit @ Ext/House/Body.cpp:1036-1188`, reached
     // through `HouseClass_ShouldDisableCameo_GreyCameo @ 0x50B669`
     // (`Ext/House/Hooks.cpp:493-503`): grey the cameo / drop its queue.
-    #[cfg(feature = "phobos")]
     if build_limit_group_reached(sim, rules, owner, obj) {
         return true;
     }
@@ -861,7 +859,6 @@ fn stock_check_build_limit(
 /// prune runs from the queue-admission owner instead
 /// ([`phobos_trim_build_limit_group_queue`]); the `UpgradeCheck` arm's own
 /// prune (`Body.cpp:896-1008`) has no mutable caller yet.
-#[cfg(feature = "phobos")]
 struct BuildLimitGroupCensus {
     /// `Nums` after the ExtraLimit pass.
     limits: Vec<i32>,
@@ -885,7 +882,6 @@ struct BuildLimitGroupCensus {
     not_buildable: bool,
 }
 
-#[cfg(feature = "phobos")]
 fn build_limit_group_census(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1025,7 +1021,6 @@ fn build_limit_group_census(
 /// a non-negative entry means "drop that many queued copies of the queried
 /// type", `-1` means every copy (`RemoveProduction @ Ext/House/Body.cpp:
 /// 768-784` calling `FactoryClass::RemoveFromQueue @ 0x004CA620`).
-#[cfg(feature = "phobos")]
 struct BuildLimitGroupGate {
     reached: bool,
     removals: Vec<i32>,
@@ -1040,7 +1035,6 @@ struct BuildLimitGroupGate {
 /// `UpgradeCheck`'s `owned * Factor - limits[i]`; a Phobos defect kept here
 /// because it is what the grey-out sees). Every `reached` arm carries the
 /// trim native performs on the way out.
-#[cfg(feature = "phobos")]
 fn build_limit_group_gate(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1147,7 +1141,6 @@ fn build_limit_group_gate(
 }
 
 /// The boolean half, for the read-only gates (`GreyCameo`, `CanBuild`).
-#[cfg(feature = "phobos")]
 fn build_limit_group_reached(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1160,7 +1153,6 @@ fn build_limit_group_reached(
 /// `RemoveProduction @ Ext/House/Body.cpp:768-784`: resolve the queried type's
 /// own factory, then drop `num` queued copies (`-1` = all it holds). The held
 /// product stays; native's loop is a no-op once no queued copy is left.
-#[cfg(feature = "phobos")]
 fn phobos_remove_production(sim: &mut Simulation, owner: InternedId, obj: &ObjectType, num: i32) {
     let Some(type_id) = sim.interner.get(&obj.id) else {
         return;
@@ -1188,7 +1180,6 @@ fn phobos_remove_production(sim: &mut Simulation, owner: InternedId, obj: &Objec
 /// (`queue_production` in `factory_lifecycle.rs`), in the native hook order:
 /// `BuildLimitGroupUpgradeCheck` first, then `ReachedBuildLimit`. A gate that
 /// did not reach trims nothing.
-#[cfg(feature = "phobos")]
 pub(crate) fn phobos_trim_build_limit_group_queue(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1218,7 +1209,6 @@ pub(crate) fn phobos_trim_build_limit_group_queue(
 /// multi-limit AND (Phobos's `realReached` assignments there are
 /// unreachable), and the second pass treats any in-production copy as a
 /// reason to stay buildable when `include_queued` is set.
-#[cfg(feature = "phobos")]
 fn build_limit_group_upgrade_check(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1233,7 +1223,6 @@ fn build_limit_group_upgrade_check(
 /// returns `TemporarilyUnbuildable` also names its `RemoveProduction` calls
 /// (`Body.cpp:896,943,962,995,1008`), which is what the queue-admission owner
 /// applies. The second pass (`:949-1012`) trims nothing.
-#[cfg(feature = "phobos")]
 fn build_limit_group_upgrade_gate(
     sim: &Simulation,
     rules: &RuleSet,

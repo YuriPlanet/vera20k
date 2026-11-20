@@ -107,7 +107,6 @@ impl RocketHost for RocketProcessHost<'_> {
                 crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
             })
     }
-    #[cfg(feature = "phobos")]
     fn phobos_missile(&self) -> Option<crate::rules::phobos_missile::PhobosMissileRules> {
         let owner = self.owner();
         self.sim

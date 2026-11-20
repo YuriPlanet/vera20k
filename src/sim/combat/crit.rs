@@ -101,7 +101,6 @@ pub(crate) struct CritRoll {
 /// `DamageArea` without one takes the owner's (`0x489286`). `damage` is the
 /// firing bullet's Health for the PenetratesTransport arm, 0 without a
 /// bullet. Returns `Crit_Active`, which the damage-animation selection reads.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn detonate(
     world: &mut Simulation,
@@ -143,7 +142,6 @@ pub(crate) fn detonate(
     // `WarheadTypeExt::Detonate`'s CreateGap block (`Detonate.cpp:51-80`):
     // before Reveal, a positive radius conceals for enemies of the firing
     // house; a negative value reshrouds every non-allied house.
-    #[cfg(feature = "phobos")]
     if warhead.create_gap != 0
         && let Some(owner) = house
     {
@@ -161,7 +159,6 @@ pub(crate) fn detonate(
     // RevealArea gate admits, but only behind `Detonate.cpp:88`'s gate on the
     // current player; a negative value reveals the whole map for that house.
     // It runs before TransactMoney.
-    #[cfg(feature = "phobos")]
     if warhead.reveal != 0
         && let Some(owner) = house
     {
@@ -213,7 +210,6 @@ pub(crate) fn detonate(
     // `WarheadTypeExt::Detonate`'s SpawnsCrate block (`Detonate.cpp:113-118`):
     // after TransactMoney and before LaunchSW, one Scenario draw picks a
     // weighted crate and `PlacePowerupCrate` drops it at the impact cell.
-    #[cfg(feature = "phobos")]
     apply_spawns_crate(
         world,
         rules,
@@ -225,7 +221,6 @@ pub(crate) fn detonate(
     );
     // `WarheadTypeExt::Detonate`'s LaunchSW block (`Detonate.cpp:121-150`):
     // after the TransactMoney block and before the crit prefix.
-    #[cfg(feature = "phobos")]
     crate::sim::superweapon::launch_sw::apply_on_detonation(
         world,
         rules,
@@ -250,35 +245,23 @@ pub(crate) fn detonate(
     let attach = !warhead.attach_effect.is_empty();
     let penetrates = warhead.phobos_penetrates_transport.level > 0;
     let shield_modifiers = warhead.shield.has_per_target_modifier();
-    #[cfg(feature = "phobos")]
     let convert_pairs = !warhead.phobos_convert_pairs.is_empty();
-    #[cfg(not(feature = "phobos"))]
-    let convert_pairs = false;
-    #[cfg(feature = "phobos")]
     let return_warhead = warhead
         .phobos_return_warhead
         .warhead
         .as_deref()
         .is_some_and(|name| rules.warhead(name).is_some());
-    #[cfg(not(feature = "phobos"))]
-    let return_warhead = false;
-    #[cfg(feature = "phobos")]
     let change_owner = warhead.phobos_change_owner;
-    #[cfg(not(feature = "phobos"))]
-    let change_owner = false;
     // The remaining members. `IvanBomb.Detonate` is one: its fused bombs are
     // not ported, but the member still draws the two buffers native makes.
     // `CanKill` and the `Prevent*Escape` arms are not members — they run in
     // ReceiveDamage and the death arms, so they never force this loop.
-    #[cfg(feature = "phobos")]
     let warhead_extras = warhead.phobos_extras.has_per_target_effect()
         || warhead.ammo != 0
         || warhead.remove_disguise
         || warhead.reverse_engineer
         || warhead.taunt
         || warhead.phobos_ivan_bomb_detonate;
-    #[cfg(not(feature = "phobos"))]
-    let warhead_extras = false;
     if !(attach
         || penetrates
         || chance > 0.0
@@ -331,7 +314,6 @@ pub(crate) fn detonate(
         // (`Detonate.cpp:207-208,477-486`): first, because it changes the
         // target's House for every arm below. The freed target keeps the owner
         // `FreeUnit` restored, and that House replaces the detonation's own.
-        #[cfg(feature = "phobos")]
         if warhead.phobos_extras.remove_mind_control
             && let Some(controller) = world
                 .substrate
@@ -361,7 +343,6 @@ pub(crate) fn detonate(
         // before ApplyConvert, the firing House takes the target; a
         // `SetAsMindControl` capture respects psionic immunity, an existing
         // mind-control link, and may ring the new capture.
-        #[cfg(feature = "phobos")]
         if warhead.phobos_change_owner {
             apply_change_owner(
                 world,
@@ -376,7 +357,6 @@ pub(crate) fn detonate(
         // Phobos `WarheadTypeExt::ApplyConvert` (`Detonate.cpp:215,669-678`):
         // before the PenetratesTransport arm, a Foot target converts through
         // the first applicable pair.
-        #[cfg(feature = "phobos")]
         world.phobos_apply_type_convert_pairs(
             target_id,
             &warhead.phobos_convert_pairs,
@@ -388,7 +368,6 @@ pub(crate) fn detonate(
         // (`Detonate.cpp:213-214,266-352`): after `RemoveMindControl`,
         // `ChangeOwner` and `ApplyConvert`, a hit building is sold, else
         // packed up into its `UndeploysInto=` unit.
-        #[cfg(feature = "phobos")]
         if warhead.phobos_extras.building_sell || warhead.phobos_extras.building_undeploy {
             super::building_sell::apply(
                 world,
@@ -402,7 +381,6 @@ pub(crate) fn detonate(
         // `DetonateOnOneUnit`'s `ApplyAmmoModifier(pTarget)`
         // (`Detonate.cpp:221-222,923-932`): before RemoveDisguise, the delta
         // clamps into `0..type->Ammo`.
-        #[cfg(feature = "phobos")]
         if warhead.ammo != 0 {
             let max_ammo = world
                 .substrate
@@ -423,7 +401,6 @@ pub(crate) fn detonate(
         // (`Detonate.cpp:224-225,466-475`): after the one-time Ammo arm and
         // before ReverseEngineer/ReturnWarhead. Infantry clears the `Disguised`
         // flag only; a Unit also clears the recorded identity.
-        #[cfg(feature = "phobos")]
         if warhead.remove_disguise {
             let frame = world.session.binary_frame() as u32;
             if let Some(target) = world.substrate.entities.get_mut(target_id)
@@ -445,7 +422,6 @@ pub(crate) fn detonate(
         // not `MultiplayPassive` records the victim's type through Ares'
         // HouseExt::ExtData::ReverseEngineer (10022360), which only exists
         // with Ares.
-#[cfg(feature = "phobos")]
         if warhead.reverse_engineer
             && let Some(owner) = house
             && !world
@@ -464,7 +440,6 @@ pub(crate) fn detonate(
         // `DetonateOnOneUnit`'s `ApplyReturnWarhead(pHouse, pTarget, pOwner)`
         // (`Detonate.cpp:229-231`): after the displacement arms and before
         // `PenetratesTransport`.
-        #[cfg(feature = "phobos")]
         super::phobos_return_warhead::apply(
             world,
             run,
@@ -498,7 +473,6 @@ pub(crate) fn detonate(
         // `DetonateOnOneUnit`'s Taunt arm (`Detonate.cpp:236-237`): after the
         // penetrate/displacement effects and before the shield modifiers, a
         // hit target is ordered to `Mission::Attack` the firing techno.
-        #[cfg(feature = "phobos")]
         if warhead.taunt && source_id != 0 {
             let _ = world.override_mission_on_damage_response(
                 target_id,
@@ -512,7 +486,6 @@ pub(crate) fn detonate(
         // (`Detonate.cpp:239-240`): right after the Taunt arm and before the
         // shield modifiers, the bombs the target carries have their fuse cut
         // to the current frame.
-        #[cfg(feature = "phobos")]
         if warhead.phobos_ivan_bomb_detonate {
             world.phobos_ivan_bomb_detonate(
                 target_id,
@@ -637,7 +610,6 @@ fn apply_transact_money(
 /// `DetonateOnOneUnit`'s target gate (`Detonate.cpp:203..207`): a live,
 /// placed, non-sinking target not being warped out, then
 /// `WarheadTypeExt::CanTargetHouse` and `CanAffectTarget`.
-#[cfg(feature = "phobos")]
 fn can_detonate_on(
     world: &Simulation,
     rules: &RuleSet,
@@ -668,7 +640,6 @@ fn can_detonate_on(
 /// `EffectsRequireVerses` the `AffectsAir`/`AffectsGround` split on `IsInAir`
 /// (`0x005F6B90`) and a non-zero `GetWarheadVersusArmor`. Under Ares that is
 /// the raw Verses; without it `GetTotalDamage(100, WH, armor, 0) / 100`.
-#[cfg(feature = "phobos")]
 pub(crate) fn can_affect_target(
     world: &Simulation,
     rules: &RuleSet,
@@ -723,7 +694,6 @@ pub(crate) fn can_affect_target(
 /// `WarheadTypeExt::GetCritChance` (`Detonate.cpp:745..791`): zero for a
 /// warhead that cannot crit, else its `Crit.Chance`, the `CRITCHANCE` rank
 /// ability's `VeteranCritChance` and the AttachEffect fold.
-#[cfg(feature = "phobos")]
 fn get_crit_chance(
     world: &Simulation,
     rules: &RuleSet,
@@ -783,7 +753,6 @@ fn get_crit_chance(
     chance + extra_chance
 }
 
-#[cfg(feature = "phobos")]
 pub(crate) fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> bool {
     match rank {
         VeterancyRank::Rookie => false,
@@ -794,7 +763,6 @@ pub(crate) fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot:
 
 /// One `ApplyCrit`: dice, immunity/health/house/cell/techno gates in native
 /// order, then the crit's animations and damage.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn apply_one(
     world: &mut Simulation,
@@ -908,7 +876,6 @@ fn apply_one(
     applied
 }
 
-#[cfg(feature = "phobos")]
 fn apply_spawns_crate(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -951,7 +918,6 @@ fn apply_spawns_crate(
     }
 }
 
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn apply_change_owner(
     world: &mut Simulation,
@@ -993,7 +959,6 @@ fn apply_change_owner(
     }
 }
 
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn crit_effects(
     world: &mut Simulation,
@@ -1127,7 +1092,6 @@ fn crit_effects(
 /// `TechnoExt::GetCurrentFirepowerMultiplier`: `Techno+0x158`-adjacent
 /// `FirepowerMultiplier`, the house bias, the FIREPOWER rank stage and an
 /// occupiable building's `OccupyDamageMultiplier=`.
-#[cfg(feature = "phobos")]
 pub(crate) fn current_firepower_multiplier(
     world: &Simulation,
     rules: &RuleSet,
@@ -1163,7 +1127,6 @@ pub(crate) fn current_firepower_multiplier(
 /// `explicitEmptyCells = true`, `None` when it does not; `bridge_land` is
 /// `considerBridgesLand && ContainsBridge()`, which reads a bridged water cell
 /// as land.
-#[cfg(feature = "phobos")]
 pub(crate) fn cell_eligible(
     land: Option<LandType>,
     allowed: AffectedTarget,
@@ -1190,7 +1153,6 @@ pub(crate) fn cell_eligible(
 /// `EnumFunctions::IsTechnoEligible` with `considerAircraftSeparately =
 /// false`: the content flags split by class, aircraft under the Unit bit, and
 /// a 1x1-with-undeploy building (`IsStrange`) under the Unit bit too.
-#[cfg(feature = "phobos")]
 pub(crate) fn techno_eligible(
     category: EntityCategory,
     allowed: AffectedTarget,
@@ -1214,7 +1176,6 @@ pub(crate) fn techno_eligible(
 
 /// `AnimExt::CreateRandomAnim` (`Ext/Anim/Body.cpp:407..432`): one random
 /// entry constructed at the coordinates, owned by the firing house.
-#[cfg(feature = "phobos")]
 fn spawn_anim_at_world_coord(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1230,7 +1191,6 @@ fn spawn_anim_at_world_coord(
     spawn_anim_at_coord(world, rules, name, world_coord, owner_house);
 }
 
-#[cfg(feature = "phobos")]
 fn spawn_anim_at_coord(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1256,7 +1216,6 @@ fn spawn_anim_at_coord(
 /// Phobos' `getCellSpreadItemsExt` walk for a cell-spread warhead, else the
 /// intended target within 64 leptons of the impact (Ares' quarter-cell
 /// tolerance).
-#[cfg(feature = "phobos")]
 fn detonation_targets(
     world: &Simulation,
     rules: &RuleSet,

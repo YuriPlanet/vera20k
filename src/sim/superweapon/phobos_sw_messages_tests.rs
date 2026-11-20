@@ -201,7 +201,6 @@ fn a_sold_unit_uses_the_types_eva_sold_override() {
 /// Phobos `FootClass`'s `DisplayIncome` label (`Hooks.Selling.cpp:26-27`):
 /// a sold Foot prints its refund at its Location when the global is on. Unit
 /// selling is the Ares capability (`production::foot_on_sold`).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_sold_unit_prints_the_display_income_label() {
     use crate::sim::flying_text::BountyText;

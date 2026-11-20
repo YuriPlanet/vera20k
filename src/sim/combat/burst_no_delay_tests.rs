@@ -370,7 +370,6 @@ fn a_forced_full_rearm_reset_ends_the_repeat() {
 /// `INC [Techno+0x3B8]` (`0x6FF27C`, `0x6FE492`), each burst shot picks its
 /// own `ChargeTurret.Delays` item, so the saved `+0x2F8` charge denominator
 /// differs shot to shot.
-#[cfg(feature = "phobos")]
 #[test]
 fn each_burst_shot_picks_its_own_charge_turret_delay_item() {
     let (mut sim, rules, firer, target) = arena(

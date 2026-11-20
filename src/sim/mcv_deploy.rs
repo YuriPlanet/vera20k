@@ -316,7 +316,6 @@ pub(crate) fn guard_queues_unload(sim: &Simulation, id: u64, rules: &RuleSet) ->
     // `!AIAutoDeployMCV && pMCV->Owner->NumConYards > 0` skips the arm to
     // `0x00740A50`. The house's live BuildConst vector is NumConYards here
     // (`BuildingClass::Unlimbo`'s append/expire removal).
-    #[cfg(feature = "phobos")]
     if !rules.phobos_globals.ai_auto_deploy_mcv
         && sim
             .houses

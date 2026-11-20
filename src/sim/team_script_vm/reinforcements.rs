@@ -595,14 +595,11 @@ impl Simulation {
             .get(&team_type)
             .cloned()
             .unwrap_or_default();
-        #[cfg(feature = "phobos")]
         let authored_plane = metadata.para_drop_aircraft.as_deref().filter(|name| {
             rules
                 .object_in_category(ObjectCategory::Aircraft, name)
                 .is_some()
         });
-        #[cfg(not(feature = "phobos"))]
-        let authored_plane: Option<&str> = None;
         let plane_type = authored_plane.unwrap_or_else(|| {
             crate::sim::superweapon::paradrop::house_paradrop_plane(self, rules, owner)
         });

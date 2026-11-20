@@ -88,7 +88,6 @@ pub struct ParticleSystemType {
     /// `ParticleSystemClass_FireAI_TargetCoords`); false freezes the fire
     /// system's target coordinates and its aim-swing spawn cadence while the
     /// owner rotates.
-    #[cfg(feature = "phobos")]
     pub adjust_target_coords_on_rotation: bool,
 
     // ── Core spawn / lifetime ────────────────────────────────────────
@@ -186,7 +185,6 @@ impl ParticleSystemType {
             alpha_image: section.read_object_alpha_image(""),
             behaves_like,
             holds_what,
-            #[cfg(feature = "phobos")]
             adjust_target_coords_on_rotation: section
                 .read_bool("AdjustTargetCoordsOnRotation", true),
             spawns: section.read_bool("Spawns", false),

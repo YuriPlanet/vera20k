@@ -720,7 +720,6 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
             "{context}: auxiliary NavCom"
         );
         match actor.attack_target.target() {
-            #[cfg(feature = "phobos")]
             Some(TargetKind::Bullet(..)) => unreachable!("no bullet target"),
             None => assert_eq!(
                 state["target"], 0,

@@ -89,12 +89,9 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
     // `Ext/House/Hooks.cpp:874-903`): with every slot used and
     // `AutoRemoveEarliestBeacon`, select and delete the oldest own beacon
     // (the packet goes out because it is selected) and place over its slot.
-    #[cfg(feature = "phobos")]
     let auto_remove_earliest = state
         .rules()
         .is_some_and(|rules| rules.phobos_globals.auto_remove_earliest_beacon);
-    #[cfg(not(feature = "phobos"))]
-    let auto_remove_earliest = false;
     let mut can_place = can_place;
     if !can_place
         && matches!(request, BeaconModeRequest::Toggle)
@@ -136,12 +133,9 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
 /// (`Ext/Beacon/Hooks.cpp:3-9`) jumps over that refusal, so the command
 /// enters placement in every mode.
 pub(crate) fn execute_command(state: &mut AppState) {
-    #[cfg(feature = "phobos")]
     let single_player_hotkey = state
         .rules()
         .is_some_and(|rules| rules.phobos_globals.allow_beacon_hotkey_in_single_player);
-    #[cfg(not(feature = "phobos"))]
-    let single_player_hotkey = false;
     if beacons::feedback_mode(state.match_state.session_mode()) || single_player_hotkey {
         enter_placement_mode(state);
     }

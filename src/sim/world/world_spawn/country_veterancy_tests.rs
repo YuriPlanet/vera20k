@@ -222,7 +222,6 @@ fn ares_country_building_rank_matches_native_init_manager_hook() {
 /// `VeteranDefenses` (`Ext/HouseType/Body.cpp:28`) ranks a `BuildCat=Combat`
 /// building; the same membership on any other building is ignored because that
 /// arm reads `VeteranBuildings` instead.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_veteran_defenses_rank_combat_buildings_only() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

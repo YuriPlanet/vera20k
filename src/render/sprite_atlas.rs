@@ -2139,7 +2139,7 @@ fn insert_new_object_keys(
                         for frame in 0..frame_count {
                             needed.insert(ShpSpriteKey {
                                 palette_context: ShpPaletteContext::Legacy,
-                                type_id: turret_id.clone(),
+                                type_id: turret_id.clone().into(),
                                 facing: 0,
                                 frame,
                                 house_color: *color_idx,
@@ -2830,7 +2830,6 @@ pub(crate) fn prepare_sprite_atlas(
 
     // Rules and theater bindings are fixed for this atlas's lifetime; a
     // refresh retains its registered files and resident custom gather frames.
-    #[cfg(feature = "phobos")]
     if previous_atlas.is_none()
         && let Some(rules) = rules
     {
@@ -3918,7 +3917,6 @@ pub fn canonical_infantry_facing(facing: u8) -> u8 {
 /// palette rows and caller-context placement; no second image cache is needed.
 /// Source: Phobos b90ab4bc, src/Ext/TechnoType/Hooks.cpp
 /// (UnitClass_DrawIt_OreGath).
-#[cfg(feature = "phobos")]
 fn register_custom_harvest_frames(
     needed: &mut HashSet<ShpSpriteKey>,
     files: &mut ShpFiles,

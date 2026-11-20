@@ -997,7 +997,6 @@ mod tests {
     /// (`:236`), so the pass also lands on the target cell — and a shot whose
     /// source and target share a cell still takes one sample. The stock walk
     /// stays at `maxDelta`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_phobos_pass_walks_into_the_target_cell() {
         let walk = |target: (i64, i64, i64), water: Option<bool>, terrain: &mut _| {
@@ -1052,7 +1051,6 @@ mod tests {
     /// `isTargetingCheck = false`, `Ext/Bullet/Hooks.Obstacles.cpp:90-110,130-160`):
     /// `false` lets the bullet fly through the cell it matches, while
     /// `InRange`'s `isTargetingCheck = true` call never reads them.
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_flight_arm_reads_detonate_and_the_range_arm_does_not() {
         let mut terrain = crate::map::resolved_terrain::test_grid(
@@ -1094,7 +1092,6 @@ mod tests {
     /// `LandType` picks which of them applies. `TechnoClass::InRange` passes
     /// `isTargetingCheck = true`, so `.Detonate` cannot veto here, and the
     /// `Level` branch is guarded by `!isTargetingCheck`.
-    #[cfg(feature = "phobos")]
     #[test]
     fn subject_land_and_water_put_a_projectile_into_the_walk() {
         // The whole walked row carries one land type, so the first sample's

@@ -53,7 +53,6 @@ pub(super) fn marked_structure_movement_cells(
 /// (`Ext/Building/Hooks.cpp:568`, hook `0x483D8E` -> `0x483CD4`), and
 /// `BuildingClass::Unlimbo`/`Limbo` recompute their zones (`0x440D01`,
 /// `0x445D87`). Foundation cells, not the bib-relaxed movement set.
-#[cfg(feature = "phobos")]
 pub(super) fn destroyable_obstacle_cells(
     entities: &EntityStore,
     interner: &StringInterner,
@@ -82,14 +81,6 @@ pub(super) fn destroyable_obstacle_cells(
 }
 
 /// Without the `phobos` feature the building key is not read.
-#[cfg(not(feature = "phobos"))]
-pub(super) fn destroyable_obstacle_cells(
-    _entities: &EntityStore,
-    _interner: &StringInterner,
-    _rules: &RuleSet,
-) -> BTreeSet<(u16, u16)> {
-    BTreeSet::new()
-}
 
 /// Structure presence over every marked structure. Consumers are
 /// order-insensitive (cell blocks, sets and presence tests). The store's

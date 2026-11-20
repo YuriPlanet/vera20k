@@ -261,7 +261,6 @@ fn place_one_random_crate(
         // Phobos `MapClass_PlaceRandomCrate_Sampling` (`0x56BD8B`,
         // `Misc/Hooks.Crates.cpp:4-42`): `CrateOnlyOnLand` skips a water draw
         // before the nearby-cell search, so no retry draws follow.
-        #[cfg(feature = "phobos")]
         if matches!(movement_surface, CrateSurface::Water)
             && rules.phobos_globals.crate_only_on_land
         {
@@ -2957,7 +2956,6 @@ pub(crate) mod tests {
     /// `Misc/Hooks.Crates.cpp:4-42`): a drawn water cell skips the crate
     /// spawn without further draws; the stock path still snaps to the
     /// water-side destination.
-    #[cfg(feature = "phobos")]
     #[test]
     fn crate_only_on_land_skips_a_water_draw() {
         let registry = crate_registry();

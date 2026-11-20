@@ -63,16 +63,10 @@ pub(super) fn publish_fresh_track_target(
 /// native hooks replace the stock constant at `0x4B3DF0` (Drive) and
 /// `0x6A343F` (Ship).
 pub(super) fn damaged_speed_factor(object: &ObjectType, rules: &RuleSet) -> NativeF64Bits {
-    #[cfg(feature = "phobos")]
     {
         object
             .phobos_damaged_speed
             .unwrap_or(rules.phobos_globals.damaged_speed)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (object, rules);
-        crate::sim::pathfinding::terrain_speed::DAMAGED_MOVER_SPEED_FACTOR
     }
 }
 
@@ -205,15 +199,10 @@ pub(super) fn advance(
         sinking: entity.sinking.is_active(),
         crush_slowdown: entity.foot_speed.crush_slowdown(),
         crush_slowdown_cap: {
-            #[cfg(feature = "phobos")]
             {
                 object
                     .and_then(|object| object.phobos_crush_slowdown_multiplier)
                     .unwrap_or(rules.phobos_globals.crush_slowdown_multiplier)
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                super::drive_locomotion::CRUSH_SLOWDOWN_CAP
             }
         },
         skip_crush_slowdown: rules.skip_crush_slowdown_for(object),
@@ -313,7 +302,6 @@ mod tests {
     /// (`Ext/Unit/Hooks.Crushing.cpp:104-109`, hooks `0x4B1146`/`0x6A0809`):
     /// the skip jumps past the Foot+6B5 cap and its class+50 store, so the
     /// retained target keeps its pre-crush value and the flag stays set.
-    #[cfg(feature = "phobos")]
     #[test]
     fn skip_crush_slowdown_skips_the_flag_cap_and_its_setter() {
         use crate::util::native_x87::NativeF64Bits;
@@ -623,7 +611,6 @@ mod tests {
     /// `Ext/Rules/Body.cpp:414`): the UnitType nullable else `[General]`,
     /// whose constructor is the stock 0.75; the Drive/Ship hook
     /// (`0x4B3DF0`/`0x6A343F`) multiplies this value instead of the constant.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_damaged_speed_reads_the_type_then_the_general() {
         use crate::rules::ruleset::RuleSet;

@@ -180,7 +180,6 @@ impl JumpjetRuntime {
     /// Phobos `DepletedAmmoActions`' cancel arm (`Ext/Unit/Body.cpp:190-194`):
     /// a simple deployer whose ammo left the auto-deploy band and is airborne
     /// re-enters `State::Ascending`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_ascending(&mut self) {
         self.phase = STATE_ASCEND;
     }
@@ -290,7 +289,6 @@ impl JumpjetRuntime {
     /// at `+0x50`, the destination and the moving byte survive. The facing keeps
     /// its current and destination angle and takes only the new rate; the target
     /// height becomes the new `JumpjetHeight=`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_relink_for_type_change(
         &mut self,
         type_params: &crate::rules::jumpjet_params::JumpjetParams,
@@ -305,7 +303,6 @@ impl JumpjetRuntime {
     /// byte raised, so it neither descends nor asks for a destination again. A
     /// body that was not really moving takes its current location as the
     /// destination; native reads that answer before raising `IsMoving`.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_hover_in_place(&mut self, location: DriveCoord, was_moving: bool) {
         self.phase = STATE_HOLD;
         self.moving = true;
@@ -318,7 +315,6 @@ impl JumpjetRuntime {
     /// `IsMoving = true` and `DestinationCoords = GetCoords()` are written at
     /// the locomotor, without `Move_To`'s cell search, NavCom write or descent
     /// lift, so the owner only climbs.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_straight_ascend_hold(&mut self, location: DriveCoord) {
         self.moving = true;
         self.destination = location;
@@ -328,7 +324,6 @@ impl JumpjetRuntime {
     /// (`Ext/TechnoType/Body.cpp:686`): a spawn order snaps the locomotion
     /// facing to the unit's spawn facing without a turn. Native writes
     /// `SetCurrent`, which replaces the current and target bytes alike.
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_set_locomotion_facing(&mut self, facing: u8, binary_frame: u32) {
         self.flight
             .set_locomotion_facing(u16::from(facing), binary_frame);

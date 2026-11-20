@@ -18,7 +18,6 @@ use crate::rules::ini_value::parse_ares_int;
 use crate::rules::ini_value::truncate_native_bytes;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
-#[cfg(feature = "phobos")]
 const NAME_PAYLOAD_BYTES: usize = 0x1F;
 
 /// `Promotable<T>` rank order: Rookie, Veteran, Elite.
@@ -37,7 +36,6 @@ pub struct InsigniaType {
 }
 
 impl InsigniaType {
-    #[cfg(feature = "phobos")]
     fn named(name: &str) -> Self {
         Self {
             name: name.to_owned(),
@@ -66,7 +64,6 @@ impl InsigniaTypeCatalog {
 
     /// Read one reached Rules pass: the pass's `[InsigniaTypes]` list appends
     /// entries, then every retained entry re-reads its own section.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("InsigniaTypes") {
             // Phobos Enumerable::LoadFromINIList reads each physical key
@@ -197,7 +194,6 @@ impl Default for InsigniaVariant {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl InsigniaVariant {
     /// One Rules pass of the directly authored keys, in Phobos'
     /// `Promotable::Read` order: the common key appends to all three ranks,
@@ -255,7 +251,6 @@ impl PhobosInsignia {
     /// `TechnoTypeExt::LoadFromINIFile` sees it; `weapon_count` and `gunner`
     /// are the type's `WeaponCount=` and `Gunner=` after the native reads on
     /// this pass.
-    #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(
         &mut self,
         raw: &IniSection,
@@ -429,7 +424,6 @@ pub(crate) fn read_insignia_frames(
 
 /// Phobos' SHP name rule: append `.shp` unless the name already ends with it,
 /// case-insensitively (`TemplateDef.h`'s `read<SHPStruct*>`).
-#[cfg(feature = "phobos")]
 pub(crate) fn normalize_insignia_image(name: &str) -> String {
     if name.to_ascii_lowercase().ends_with(".shp") {
         name.to_owned()

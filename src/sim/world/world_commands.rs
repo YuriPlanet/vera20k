@@ -674,7 +674,6 @@ impl Simulation {
                     id: i32::try_from(id).ok()?,
                 },
                 // A bullet target is engine-internal and never encoded.
-                #[cfg(feature = "phobos")]
                 Some(combat::TargetKind::Bullet(..)) => return None,
             })
         };
@@ -1160,7 +1159,6 @@ impl Simulation {
                             target_ry,
                         }
                     }
-                    #[cfg(feature = "phobos")]
                     Some(combat::TargetKind::Bullet(..)) => return None,
                     None => return None,
                 },
@@ -2516,7 +2514,6 @@ impl Simulation {
                 // house flips its own flag; the next building visit stops each
                 // still-repairing building when it is off
                 // (`Ext/Event/Body.cpp:116-128`, `Ext/House/Hooks.cpp:813-824`).
-                #[cfg(feature = "phobos")]
                 {
                     if !rules.phobos_globals.extended_player_repair {
                         return false;
@@ -2529,11 +2526,6 @@ impl Simulation {
                     };
                     house.set_player_auto_repair(*enabled);
                     true
-                }
-                #[cfg(not(feature = "phobos"))]
-                {
-                    let _ = enabled;
-                    false
                 }
             }
             Command::UnloadPassengers { transport_id } => {
@@ -3021,7 +3013,6 @@ impl Simulation {
         // selection, so a limbo-launched firer is not re-selected when its
         // bullet lands. Native clears on every Unselect_All; VERA sees only
         // this input snapshot as one.
-        #[cfg(feature = "phobos")]
         if stable_ids.is_empty() {
             for &id in &keys {
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -3522,7 +3513,6 @@ impl Simulation {
                 token
             }
             // No event token names a Bullet.
-            #[cfg(feature = "phobos")]
             combat::TargetKind::Bullet(..) => None,
         }
     }
@@ -3643,7 +3633,6 @@ impl Simulation {
         // clears the latch for every Unit MegaMission that does not take its
         // keep arm (`Ext/Techno/Hooks.Misc.cpp:1071`); the keep branch below
         // sets it again.
-        #[cfg(feature = "phobos")]
         if self
             .substrate
             .entities
@@ -3731,7 +3720,6 @@ impl Simulation {
         // Move order: a unit whose live target is already close enough to
         // attack keeps it, stores the order destination itself and skips the
         // shared target clear and destination setter.
-        #[cfg(feature = "phobos")]
         if mission == MissionType::Move
             && target.is_none()
             && crate::sim::keep_target_on_move::move_order_keeps_target(
@@ -4665,7 +4653,6 @@ mod tests {
     /// `Ext/Techno/Hooks.Misc.cpp:913-929`): a `Bunkerable=` vehicle with no
     /// turret, no weapon and `SpeedType=Hover` is admitted only when the flag
     /// is set, and the same type without it is refused.
-    #[cfg(feature = "phobos")]
     #[test]
     fn bunkerable_anyway_admits_a_turretless_hover_vehicle() {
         let rules = |anyway: &str| {

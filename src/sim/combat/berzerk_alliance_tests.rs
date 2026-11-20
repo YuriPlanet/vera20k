@@ -70,7 +70,6 @@ fn paired(rules: &RuleSet) -> (Simulation, u64, u64) {
 /// Phobos' hook reads `Attacker->Owner` when an attacker is live, so an allied
 /// firer rejects the hit even though the call names the enemy SourceHouse —
 /// the priority the stock SourceHouse-only test does not have.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_allied_attacker_rejects_the_hit_whatever_the_source_house_names() {
     let mut rules = rules();
@@ -92,7 +91,6 @@ fn an_allied_attacker_rejects_the_hit_whatever_the_source_house_names() {
 
 /// Without a live attacker Phobos' hook falls back to the call's SourceHouse,
 /// so its allied value still rejects the hit.
-#[cfg(feature = "phobos")]
 #[test]
 fn without_an_attacker_the_source_house_still_governs() {
     let mut rules = rules();

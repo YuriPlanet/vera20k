@@ -422,7 +422,6 @@ pub(crate) fn should_retaliate(
     // (`0x7089E8`, `Ext/Techno/Hooks.Misc.cpp:621-629`): a freshly
     // mind-controlled source is shielded from the retaliation of houses
     // allied with its original owner.
-    #[cfg(feature = "phobos")]
     if !world.can_attack_mind_controlled(source_id, victim_id) {
         return false;
     }
@@ -494,7 +493,6 @@ pub(crate) fn should_retaliate(
     // Phobos `TechnoClass_ShouldRetaliate_IronCurtain` (`0x708AD0`,
     // `Ext/Techno/Hooks.Firing.cpp:1226-1264`): a human's weapon override,
     // else the global, can suppress retaliation at an iron-curtained source.
-    #[cfg(feature = "phobos")]
     if human
         && crate::sim::superweapon::invulnerability::is_invulnerable(
             source.invulnerability.as_ref(),
@@ -521,11 +519,8 @@ pub(crate) fn should_retaliate(
             // `Ext/Techno/Hooks.cpp:483`) replaces the source's armor load at
             // `0x00708AEB`; its shield answers while the victim's warhead
             // cannot penetrate it.
-            #[cfg(feature = "phobos")]
             let armor =
                 crate::sim::shield::warhead_versus_armor(source, rules, warhead, source_type);
-            #[cfg(not(feature = "phobos"))]
-            let armor = source_type.armor_id();
             warhead.interaction(armor).can_retaliate()
         })
 }

@@ -74,7 +74,6 @@ pub struct ArtEntry {
     pub image: Option<String>,
     /// Phobos `UnitTypeExt` multi-barrel / multi-turret block
     /// (`Ext/UnitType/Body.cpp:100-134`), read from this ART section.
-    #[cfg(feature = "phobos")]
     pub phobos_turret_barrel: crate::rules::phobos_turret_barrel::PhobosTurretBarrel,
     /// Sidebar cameo/image override from `Cameo=`.
     pub cameo: Option<String>,
@@ -118,7 +117,6 @@ pub struct ArtEntry {
     pub building_anims: Vec<BuildingAnimConfig>,
     /// Phobos `RoofProductionAnim*` ART overrides (`Ext/BuildingType/Body.cpp:325-335`):
     /// the roof-exit production animation and its placement/power values.
-    #[cfg(feature = "phobos")]
     pub roof_production_anim: crate::rules::phobos_roof_production_anim::PhobosRoofProductionAnim,
     /// Phobos `FireUp.ResetInRetarget=` (`Ext/UnitType/Body.cpp:94`,
     /// `Valueable<bool>` constructed true at `Ext/UnitType/Body.h:67,128`):
@@ -126,7 +124,6 @@ pub struct ArtEntry {
     /// target setter runs (`TechnoClass_SetTarget_After`, hook `0x6FCF3E`,
     /// `Ext/Techno/Hooks.cpp:1164-1184`), unless the key is false and the new
     /// target is already within the selected weapon's range.
-    #[cfg(feature = "phobos")]
     pub phobos_fire_up_reset_in_retarget: bool,
     /// Phobos `UnitTypeExt::FireUp=` (`Ext/UnitType/Body.cpp:93`,
     /// `Valueable<int>` declared at `Ext/UnitType/Body.h:66`, constructed -1
@@ -137,7 +134,6 @@ pub struct ArtEntry {
     ///
     /// This is not the InfantryType ART `FireUp=` discharge frame of
     /// [`read_infantry_discharge_frames`].
-    #[cfg(feature = "phobos")]
     pub phobos_fire_up: i32,
     /// All21 native records exist even when their selected names are empty.
     pub building_anim_power: [BuildingAnimPowerFlags; 21],
@@ -188,7 +184,6 @@ pub struct ArtEntry {
     /// immediately (`Ext/Building/Hooks.cpp:868-873`, hook `0x44B630`:
     /// `CurrentBurstIndex != 0 && !IsAnimDelayedBurst` jumps to `0x44B6C4`,
     /// the JustFire arm).
-    #[cfg(feature = "phobos")]
     pub is_anim_delayed_burst: bool,
     /// BuildingType+16A8, ART ReadBool461169, constructor45E0BA false.
     pub silo_damage: bool,
@@ -196,7 +191,6 @@ pub struct ArtEntry {
     /// `Ext/BuildingType/Body.h:106`, constructor false `:227`): a refinery
     /// skips the storage-fill ActiveAnim3..6 arms at `0x00445FE4` and
     /// `0x00450DAA` and resolves the normal opening anims instead.
-    #[cfg(feature = "phobos")]
     pub refinery_use_normal_active_anim: bool,
     /// Signed number of Building AI visits used by the delayed-fire latch.
     pub delayed_fire_delay: i32,
@@ -240,7 +234,6 @@ pub struct ArtEntry {
     /// `Ext/BuildingType/Body.cpp:307`, `Body.h:72`): a building's own
     /// override of the landing-direction global; projected onto
     /// `ObjectType::phobos_aircraft_docking_dir_default_to_pose_dir`.
-    #[cfg(feature = "phobos")]
     pub aircraft_docking_dir_default_to_pose_dir: Option<bool>,
     /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
     /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
@@ -377,62 +370,43 @@ pub struct AnimTypeRuntimeConfig {
     pub hide_if_no_ore: bool,
     /// Phobos `AnimTypeExt` keys (`Ext/AnimType/Body.cpp:93-118`) whose
     /// consumers are the anim-runtime fire-anim, wake and palette paths.
-    #[cfg(feature = "phobos")]
     pub phobos_attached_anim_position: crate::rules::phobos_anim_type_ext::AttachedAnimPosition,
-    #[cfg(feature = "phobos")]
     pub phobos_wake_anim: Vec<String>,
-    #[cfg(feature = "phobos")]
     pub phobos_visible_to: Option<crate::rules::phobos_shields::AffectedHouse>,
     /// Phobos `VisibleTo.ConsiderInvokerAsOwner=` (`Ext/AnimType/Body.cpp:110`,
     /// `Valueable<bool>` constructed false `Body.h:65,117`): the draw
     /// visibility gate uses the anim's invoker (or invoker house) instead of
     /// its owner object's house (`AnimClass_DrawIt_Visibility`, hook
     /// `0x423061`, `Ext/Anim/Hooks.cpp:556-564`).
-    #[cfg(feature = "phobos")]
     pub phobos_visible_to_consider_invoker_as_owner: bool,
-    #[cfg(feature = "phobos")]
     pub phobos_fire_anim_disallowed_land_types:
         Option<crate::rules::phobos_anim_type_ext::LandTypeFlags>,
-    #[cfg(feature = "phobos")]
     pub phobos_attach_fire_anims_to_parent: Option<bool>,
     /// Phobos fire-spawn keys (`Ext/AnimType/Body.cpp:115,118-125`) behind
     /// `AnimExt::SpawnFireAnims` (`Ext/Anim/Body.cpp:309-405`): the small and
     /// large fire loops a `Scorch=`/`Flamer=` anim runs when it completes.
-    #[cfg(feature = "phobos")]
     pub phobos_constrain_fire_anims_to_cell_spots: bool,
-    #[cfg(feature = "phobos")]
     pub phobos_small_fire_count: Option<i32>,
-    #[cfg(feature = "phobos")]
     pub phobos_small_fire_anims: Vec<String>,
-    #[cfg(feature = "phobos")]
     pub phobos_small_fire_chances: Vec<NativeF64Bits>,
-    #[cfg(feature = "phobos")]
     pub phobos_small_fire_distances: Vec<NativeF64Bits>,
-    #[cfg(feature = "phobos")]
     pub phobos_large_fire_count: i32,
-    #[cfg(feature = "phobos")]
     pub phobos_large_fire_anims: Vec<String>,
-    #[cfg(feature = "phobos")]
     pub phobos_large_fire_chances: Vec<NativeF64Bits>,
-    #[cfg(feature = "phobos")]
     pub phobos_large_fire_distances: Vec<NativeF64Bits>,
-    #[cfg(feature = "phobos")]
     pub phobos_theater_palette: Option<bool>,
     /// Phobos `DetachOnCloak=` (`Ext/AnimType/Body.cpp:112`, `Valueable<bool>`
     /// constructor `true`, `Ext/AnimType/Body.h:67`): the attached anim stays
     /// on a cloaking owner (`Ext/Anim/Hooks.cpp:663-684`, hook `0x425174`).
-    #[cfg(feature = "phobos")]
     pub phobos_detach_on_cloak: bool,
     /// Phobos `RestrictVisibilityIfCloaked=` (`Ext/AnimType/Body.cpp:111`,
     /// `Valueable<bool>` constructor `false`, `Ext/AnimType/Body.h:66`): an
     /// anim attached to a cloaked techno hides from an unallied, unsensing
     /// viewer (`Ext/Anim/Hooks.cpp:524-570`, `0x423061`).
-    #[cfg(feature = "phobos")]
     pub phobos_restrict_visibility_if_cloaked: bool,
     /// Phobos `AnimTypeExt::HideIfNoOre_Threshold` (`src/Ext/AnimType/Body.h`,
     /// read as a `Valueable<int>` with constructor default 0): the smallest
     /// contained tiberium value at which a `HideIfNoOre=` anim still draws.
-    #[cfg(feature = "phobos")]
     pub hide_if_no_ore_threshold: i32,
     /// Fixed ARTMD `IsAnimatedTiberium=`, AnimType+0x360: constructor427530
     /// defaults false; ReadINI427D00 retains the prior bool on absent input.
@@ -452,7 +426,6 @@ pub struct AnimTypeRuntimeConfig {
     pub make_infantry: i32,
     /// Phobos `AnimTypeExt::MakeInfantryOwner` (`OwnerHouseKind`, default
     /// `Victim`): the House a `MakeInfantry=` animation takes.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
     /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
     /// constructor Invoker; LoadFromINI 1000A4B0), the House
@@ -470,7 +443,6 @@ pub struct AnimTypeRuntimeConfig {
     /// Phobos `CreateUnit.*` (`Ext/AnimType/Body.cpp:130-149`): every key of
     /// the animation's `CreateUnitTypeClass`. `Some` only while the
     /// `Nullable<TechnoTypeClass*>` `CreateUnit=` is set.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_create_unit: Option<crate::rules::phobos_create_unit::CreateUnitSettings>,
     pub bouncer: bool,
     pub spawns: Option<String>,
@@ -534,18 +506,15 @@ pub struct AnimTypeRuntimeConfig {
     /// `false`, `Ext/AnimType/Body.cpp:100`): the landing explosion routes
     /// its warhead through `WarheadTypeExt::DetonateAt` instead of
     /// `DamageArea` + `FlashbangWarheadAt` (`Ext/Anim/Body.cpp:245-307`).
-    #[cfg(feature = "phobos")]
     pub phobos_warhead_detonate: bool,
     /// Phobos `SplashAnims=` (`Ext/AnimType/Body.cpp:102`,
     /// `Ext/AnimType/Body.h:57`, a `NullableVector<AnimTypeClass*>`): the
     /// entries replace the stock `[CombatDamage] SplashList=` on a water
     /// landing; `None` for an absent or `<default>` read.
-    #[cfg(feature = "phobos")]
     pub splash_anims: Option<Vec<String>>,
     /// Phobos `SplashAnims.PickRandom=` (`Ext/AnimType/Body.cpp:103`,
     /// `Body.h:58`, constructor false): the water landing draws
     /// `RandomRanged(0, last)` instead of the meteor/first default.
-    #[cfg(feature = "phobos")]
     pub splash_anims_pick_random: bool,
     /// Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`, `Body.h:54`,
     /// `Valueable<bool>` constructed **false** `Body.h:106`): a water impact
@@ -554,13 +523,11 @@ pub struct AnimTypeRuntimeConfig {
     /// The VoxelAnimType twin (`Ext/VoxelAnimType/Body.cpp:13`,
     /// `Ext/VoxelAnim/Hooks.cpp:42`) is not ported: that class has no Phobos
     /// extension in VERA yet.
-    #[cfg(feature = "phobos")]
     pub explode_on_water: bool,
     /// Phobos `Crater.DestroyTiberium=` (`Ext/AnimType/Body.cpp:126`,
     /// `Ext/AnimType/Body.h:81`, a `Nullable<bool>`): unset keeps the
     /// `[General] AnimCraterDestroyTiberium=` fallback; false makes
     /// `0x4250E1` skip the crater's `CellClass::Reduce_Tiberium(6)` call.
-    #[cfg(feature = "phobos")]
     pub crater_destroy_tiberium: Option<bool>,
     /// art.ini `Sticky=`, `AnimTypeClass+0x36F`.
     pub sticky: bool,
@@ -591,7 +558,6 @@ pub struct AnimTypeRuntimeConfig {
     /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
     /// Damage once every this many frames. Phobos's replaced anim damage
     /// body (`Ext/Anim/Hooks.cpp:48`) reads the same key.
-#[cfg(feature = "phobos")]
     /// Damage once every this many frames.
     pub(crate) ares_damage_delay: i32,
     /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
@@ -600,26 +566,22 @@ pub struct AnimTypeRuntimeConfig {
     /// resolves it with the ART body (`AnimTypeReferences`). Phobos's
     /// replaced anim damage body reads the same key
     /// (`Ext/Anim/Hooks.cpp:140`).
-#[cfg(feature = "phobos")]
     /// resolves it with the ART body (`AnimTypeReferences`).
     pub(crate) ares_weapon: Option<String>,
     /// Phobos `Damage.DealtByInvoker=` (`Ext/AnimType/Body.cpp:96`,
     /// `Nullable<bool>`, default unset with the `[CombatDamage]
     /// AnimDamage.DealtByInvoker` global defaulting `false`): the anim-loop
     /// damage's attacker becomes the stored invoker (`Ext/Anim/Hooks.cpp:102`).
-    #[cfg(feature = "phobos")]
     pub(crate) damage_dealt_by_invoker: Option<bool>,
     /// Phobos `Damage.ApplyFirepowerMult=` (`Ext/AnimType/Body.cpp:98`,
     /// `Nullable<bool>`; global `[CombatDamage] AnimDamage.ApplyFirepowerMult`
     /// defaults false): the anim-loop damage is scaled by the invoker's
     /// current firepower multiplier (`Ext/Anim/Hooks.cpp:119-128`).
-    #[cfg(feature = "phobos")]
     pub(crate) damage_apply_firepower_mult: Option<bool>,
     /// Phobos `Damage.ApplyOncePerLoop=` (`Ext/AnimType/Body.cpp:97`,
     /// `Valueable<bool>`, constructor `false`): damage lands only on the
     /// loop's first frame, `max(Damage.Delay-1, 1)`
     /// (`Ext/Anim/Hooks.cpp:56-66`).
-    #[cfg(feature = "phobos")]
     pub(crate) damage_apply_once_per_loop: bool,
     /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
     /// Constructor default **true**.
@@ -641,7 +603,6 @@ pub struct AnimTypeRuntimeConfig {
     /// `AnimClass_DrawIt_DrawOffset` (`0x423122`/`0x422CD8`). The plain
     /// `XDrawOffset` is included because the atlas bakes it into the frame
     /// offset that the bracket X assignment natively overwrites.
-    #[cfg(feature = "phobos")]
     pub phobos_draw_offset: crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset,
     pub z_adjust: i32,
     pub y_sort_adjust: i32,
@@ -651,7 +612,6 @@ pub struct AnimTypeRuntimeConfig {
     /// anim, true takes the owner object's `InWhichLayer`, false the type's
     /// own `Layer` (`AnimClass_InWhichLayer`, hook `0x424CB0`,
     /// `Ext/Anim/Hooks.cpp:354-375`). Unset keeps the stock attached Ground.
-    #[cfg(feature = "phobos")]
     pub phobos_layer_use_object_layer: Option<bool>,
     pub flat: bool,
     pub tiled: bool,
@@ -659,13 +619,11 @@ pub struct AnimTypeRuntimeConfig {
     /// `Valueable<int>` constructed 0 at `Ext/AnimType/Body.h:83,135`): the
     /// hook at `0x423654` replaces DrawIt's frame-height term for a Tiled
     /// anim when positive, driving both the row step and the Z fall.
-    #[cfg(feature = "phobos")]
     pub phobos_tiled_interval: i32,
     /// Phobos `Tiled.AlignToCenter=` (`Ext/AnimType/Body.cpp:129`,
     /// `Valueable<bool>` constructed false at `Ext/AnimType/Body.h:84,136`):
     /// the hook at `0x423660` zeroes the `height / 2` term, so the column
     /// starts on the draw point and falls by `height` per tile.
-    #[cfg(feature = "phobos")]
     pub phobos_tiled_align_to_center: bool,
     /// Raw art.ini `Translucency=` value; zero when omitted. The Phobos draw
     /// arm reads the keyframe track below; this stays the stock integer read
@@ -678,14 +636,12 @@ pub struct AnimTypeRuntimeConfig {
     /// carries at least the plain key's `0.0` entry, whose level is
     /// `BlitterFlags::None` when the key is absent or not one of
     /// `0/25/50/75`.
-    #[cfg(feature = "phobos")]
     pub phobos_translucency: crate::rules::phobos_translucency_track::TranslucencyTrack,
     /// Phobos `Translucency.Cloaked=` as `Animatable<TranslucencyLevel>`
     /// (`Ext/AnimType/Body.cpp:114`, read with `requireParsedFallback`): while
     /// the anim's Techno owner is Cloaking or Cloaked this track answers
     /// instead of `phobos_translucency`. An empty track means the key is
     /// absent or its value did not parse, and the plain track keeps answering.
-    #[cfg(feature = "phobos")]
     pub phobos_translucency_cloaked: crate::rules::phobos_translucency_track::TranslucencyTrack,
     /// Raw art.ini `TranslucencyDetailLevel=` value; zero when omitted.
     pub translucency_detail_level: i32,
@@ -744,7 +700,6 @@ pub struct AnimTypeRuntimeConfig {
     /// `ValueableIdx<VocClass>`): a one-shot positional report played at
     /// `AnimClass::Start` outside the attached audio handle (`0x424CF1`,
     /// `Ext/Anim/Hooks.cpp:269-276`).
-    #[cfg(feature = "phobos")]
     pub detached_report: Option<String>,
 }
 
@@ -772,17 +727,14 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
             tiberium_chain_reaction,
             is_tiberium,
             hide_if_no_ore,
-            #[cfg(feature = "phobos")]
             hide_if_no_ore_threshold,
             is_animated_tiberium,
             tiberium_spread_radius,
             tiberium_spawn_type,
             make_infantry,
-            #[cfg(feature = "phobos")]
             phobos_make_infantry_owner,
             ares_make_infantry_owner,
             ares_custom_palette,
-            #[cfg(feature = "phobos")]
             phobos_create_unit,
             bouncer,
             spawns,
@@ -855,15 +807,12 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
         tiberium_chain_reaction.hash(state);
         is_tiberium.hash(state);
         hide_if_no_ore.hash(state);
-        #[cfg(feature = "phobos")]
         hide_if_no_ore_threshold.hash(state);
         is_animated_tiberium.hash(state);
         tiberium_spread_radius.hash(state);
         tiberium_spawn_type.hash(state);
         make_infantry.hash(state);
-        #[cfg(feature = "phobos")]
         phobos_make_infantry_owner.hash(state);
-        #[cfg(feature = "phobos")]
         phobos_create_unit.hash(state);
         bouncer.hash(state);
         spawns.hash(state);
@@ -1178,7 +1127,6 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         tiberium_chain_reaction: section.read_bool("TiberiumChainReaction", false),
         is_tiberium: section.read_bool("IsTiberium", false),
         hide_if_no_ore: section.read_bool("HideIfNoOre", false),
-        #[cfg(feature = "phobos")]
         hide_if_no_ore_threshold: crate::rules::ares_switch::not_ares_read(|| {
             section.read_ares_int("HideIfNoOre.Threshold", 0)
         }),
@@ -1191,7 +1139,6 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         // [`ArtRegistry::apply_anim_type_references`].
         tiberium_spawn_type: None,
         make_infantry: section.read_int("MakeInfantry", -1),
-        #[cfg(feature = "phobos")]
         phobos_make_infantry_owner: crate::rules::ares_switch::not_ares_read(|| {
             crate::rules::ares_warhead::HouseSelector::Victim.read(section, "MakeInfantryOwner")
         }),
@@ -1239,15 +1186,10 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         scorch: section.read_bool("Scorch", false),
         crater: section.read_bool("Crater", false),
         force_big_craters: section.read_bool("ForceBigCraters", false),
-        #[cfg(feature = "phobos")]
         phobos_warhead_detonate: section.read_bool("Warhead.Detonate", false),
-        #[cfg(feature = "phobos")]
         splash_anims: section.read_phobos_nullable_type_list("SplashAnims"),
-        #[cfg(feature = "phobos")]
         splash_anims_pick_random: section.read_bool("SplashAnims.PickRandom", false),
-        #[cfg(feature = "phobos")]
         explode_on_water: section.read_bool("ExplodeOnWater", false),
-        #[cfg(feature = "phobos")]
         crater_destroy_tiberium: section.read_phobos_nullable_bool("Crater.DestroyTiberium", None),
         sticky: section.read_bool("Sticky", false),
         psi_warning: section.read_bool("PsiWarning", false),
@@ -1271,12 +1213,9 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
             0
         },
         ares_weapon: None,
-        #[cfg(feature = "phobos")]
         damage_dealt_by_invoker: section.read_phobos_nullable_bool("Damage.DealtByInvoker", None),
-        #[cfg(feature = "phobos")]
         damage_apply_firepower_mult: section
             .read_phobos_nullable_bool("Damage.ApplyFirepowerMult", None),
-        #[cfg(feature = "phobos")]
         damage_apply_once_per_loop: section.read_bool("Damage.ApplyOncePerLoop", false),
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
@@ -1295,75 +1234,56 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         }),
         random_rate_logic_frames: read_random_rate(section),
         y_draw_offset: section.read_int("YDrawOffset", 0),
-        #[cfg(feature = "phobos")]
         phobos_draw_offset:
             crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset::from_section(section),
-        #[cfg(feature = "phobos")]
         phobos_attached_anim_position:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::attached_anim_position(section),
-        #[cfg(feature = "phobos")]
         phobos_wake_anim: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::wake_anim(section),
-        #[cfg(feature = "phobos")]
         phobos_visible_to: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::visible_to(
             section,
         ),
-        #[cfg(feature = "phobos")]
         phobos_visible_to_consider_invoker_as_owner: section
             .read_bool("VisibleTo.ConsiderInvokerAsOwner", false),
-        #[cfg(feature = "phobos")]
         phobos_fire_anim_disallowed_land_types:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::fire_anim_disallowed_land_types(
                 section,
             ),
-        #[cfg(feature = "phobos")]
         phobos_attach_fire_anims_to_parent:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::attach_fire_anims_to_parent(
                 section,
             ),
-        #[cfg(feature = "phobos")]
         phobos_constrain_fire_anims_to_cell_spots:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::constrain_fire_anims_to_cell_spots(
                 section,
             ),
-        #[cfg(feature = "phobos")]
         phobos_small_fire_count:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_count(section),
-        #[cfg(feature = "phobos")]
         phobos_small_fire_anims:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_anims(section),
-        #[cfg(feature = "phobos")]
         phobos_small_fire_chances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_chances(section)
             .into_iter()
             .map(|value| NativeF64Bits::from_bits(value.to_bits()))
             .collect(),
-        #[cfg(feature = "phobos")]
         phobos_small_fire_distances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::small_fire_distances(section)
             .into_iter()
             .map(|value| NativeF64Bits::from_bits(value.to_bits()))
             .collect(),
-        #[cfg(feature = "phobos")]
         phobos_large_fire_count:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_count(section),
-        #[cfg(feature = "phobos")]
         phobos_large_fire_anims:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_anims(section),
-        #[cfg(feature = "phobos")]
         phobos_large_fire_chances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_chances(section)
             .into_iter()
             .map(|value| NativeF64Bits::from_bits(value.to_bits()))
             .collect(),
-        #[cfg(feature = "phobos")]
         phobos_large_fire_distances: crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::large_fire_distances(section)
             .into_iter()
             .map(|value| NativeF64Bits::from_bits(value.to_bits()))
             .collect(),
-        #[cfg(feature = "phobos")]
         phobos_theater_palette:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::theater_palette(section),
-        #[cfg(feature = "phobos")]
         phobos_detach_on_cloak:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::detach_on_cloak(section),
-        #[cfg(feature = "phobos")]
         phobos_restrict_visibility_if_cloaked:
             crate::rules::phobos_anim_type_ext::PhobosAnimTypeExt::restrict_visibility_if_cloaked(
                 section,
@@ -1372,24 +1292,19 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         // AnimType ctor42765B initializes0; ReadINI428147 uses ReadInt5276D0.
         y_sort_adjust: section.read_int("YSortAdjust", 0),
         layer: AnimLayer::from_ini(section),
-        #[cfg(feature = "phobos")]
         phobos_layer_use_object_layer: section
             .read_phobos_nullable_bool("Layer.UseObjectLayer", None),
         flat: section.read_bool("Flat", false),
         tiled: section.read_bool("Tiled", false),
-        #[cfg(feature = "phobos")]
         phobos_tiled_interval: section.read_int("Tiled.Interval", 0),
-        #[cfg(feature = "phobos")]
         phobos_tiled_align_to_center: section.read_bool("Tiled.AlignToCenter", false),
         translucency: section.read_int("Translucency", 0),
-        #[cfg(feature = "phobos")]
         phobos_translucency: crate::rules::phobos_translucency_track::TranslucencyTrack::read(
             section,
             "Translucency",
             anim_end,
             false,
         ),
-        #[cfg(feature = "phobos")]
         phobos_translucency_cloaked:
             crate::rules::phobos_translucency_track::TranslucencyTrack::read(
                 section,
@@ -1416,7 +1331,6 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         stop_sound: section
             .read_name("StopSound", 0x80)
             .map(str::to_ascii_uppercase),
-        #[cfg(feature = "phobos")]
         detached_report: section
             .read_name("DetachedReport", 0x80)
             .map(str::to_ascii_uppercase),
@@ -1513,7 +1427,6 @@ pub struct ArtRegistry {
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
     scheduler_anim_types: BTreeSet<String>,
     /// Phobos `[LaserTrailTypes]`, read from this ART layer at rules load.
-    #[cfg(feature = "phobos")]
     laser_trail_types: crate::rules::phobos_laser_trail::LaserTrailTypeRegistry,
     damage_fire_offsets_valid: bool,
 }
@@ -1820,7 +1733,6 @@ impl ArtRegistry {
                 section.read_bool("ZShapePointMove.OnBuildup", false);
             let normal_z_adjust: i32 = section.read_int("NormalZAdjust", 0);
 
-            #[cfg(feature = "phobos")]
             let phobos_turret_barrel =
                 crate::rules::phobos_turret_barrel::PhobosTurretBarrel::from_section(section);
 
@@ -1834,7 +1746,6 @@ impl ArtRegistry {
                 section_name.to_owned(),
                 ArtEntry {
                     image,
-                    #[cfg(feature = "phobos")]
                     phobos_turret_barrel,
                     cameo,
                     alt_cameo,
@@ -1853,16 +1764,13 @@ impl ArtRegistry {
                     y_draw_offset,
                     x_draw_offset,
                     building_anims,
-                    #[cfg(feature = "phobos")]
                     roof_production_anim:
                         crate::rules::phobos_roof_production_anim::PhobosRoofProductionAnim::from_section(
                             section,
                         ),
-                    #[cfg(feature = "phobos")]
                     phobos_fire_up_reset_in_retarget: section.read_bool("FireUp.ResetInRetarget", true),
                     // `Body.cpp:93` reads `FireUp` from the same ART section,
                     // one line before the reset key; the keys are independent.
-                    #[cfg(feature = "phobos")]
                     phobos_fire_up: section.read_int("FireUp", -1),
                     building_anim_power: {
                         let mut records = [BuildingAnimPowerFlags::default(); 21];
@@ -1884,10 +1792,8 @@ impl ArtRegistry {
                     secondary_fire_pixel_offset,
                     primary_fire_dual_offset,
                     is_anim_delayed_fire,
-                    #[cfg(feature = "phobos")]
                     is_anim_delayed_burst: section.read_bool("IsAnimDelayedBurst", true),
                     silo_damage: section.read_bool("SiloDamage", false),
-                    #[cfg(feature = "phobos")]
                     refinery_use_normal_active_anim: section
                         .read_bool("Refinery.UseNormalActiveAnim", false),
                     delayed_fire_delay,
@@ -1901,7 +1807,6 @@ impl ArtRegistry {
                     disable_voxel_cache: section.read_bool("DisableVoxelCache", false),
                     disable_shadow_cache: section.read_bool("DisableShadowCache", false),
                     can_be_hidden: section.read_bool("CanBeHidden", true),
-                    #[cfg(feature = "phobos")]
                     aircraft_docking_dir_default_to_pose_dir: section
                         .read_phobos_nullable_bool("AircraftDockingDir.DefaultToPoseDir", None),
                     queueing_cell,
@@ -1923,7 +1828,6 @@ impl ArtRegistry {
         }
 
         log::info!("ArtRegistry: {} entries loaded from art.ini", entries.len());
-        #[cfg(feature = "phobos")]
         let laser_trail_types = if ini.section("LaserTrailTypes").is_some() {
             crate::rules::phobos_laser_trail::LaserTrailTypeRegistry::from_ini(ini)
         } else {
@@ -1938,7 +1842,6 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
-            #[cfg(feature = "phobos")]
             laser_trail_types,
             damage_fire_offsets_valid: true,
         }
@@ -1955,14 +1858,12 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
-            #[cfg(feature = "phobos")]
             laser_trail_types: Default::default(),
             damage_fire_offsets_valid: true,
         }
     }
 
     /// Phobos `[LaserTrailTypes]` entry by name.
-    #[cfg(feature = "phobos")]
     pub fn laser_trail(
         &self,
         name: &str,
@@ -2024,10 +1925,7 @@ impl ArtRegistry {
         };
         seen.push(key);
         let damage = config.damage.bits() & !(1 << 63) != 0;
-        #[cfg(feature = "phobos")]
         let creates_unit = config.phobos_create_unit.is_some();
-        #[cfg(not(feature = "phobos"))]
-        let creates_unit = false;
         let affects_play = !config.art_body_read
             || damage
             || config.ares_damage_delay != 0

@@ -115,27 +115,17 @@ pub(super) fn emit_projectile_shrapnel(
     // to `no` (`Ext/Rules/Body.h:464-465`), so an unset key keeps the stock
     // refusal.
     let affects_ground = {
-        #[cfg(feature = "phobos")]
         {
             parent_projectile
                 .shrapnel_affects_ground
                 .unwrap_or(rules.phobos_globals.shrapnel_affects_ground)
         }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
-        }
     };
     let affects_buildings = {
-        #[cfg(feature = "phobos")]
         {
             parent_projectile
                 .shrapnel_affects_buildings
                 .unwrap_or(rules.phobos_globals.shrapnel_affects_buildings)
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
         }
     };
     // `Hooks.cpp:262-279`: a building head is admitted only under
@@ -160,26 +150,19 @@ pub(super) fn emit_projectile_shrapnel(
         return;
     }
     let ignore_hit_buildings = {
-        #[cfg(feature = "phobos")]
         {
             parent_projectile
                 .shrapnel_ignore_hit_buildings
                 .unwrap_or(rules.phobos_globals.shrapnel_ignore_hit_buildings)
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
         }
     };
     // `Hooks.cpp:260,348-349`: one emission's previously hit buildings.
     let mut targets_to_ignore: Vec<u64> = Vec::new();
     // `Hooks.cpp:309`: replaces the stock alliance test with the shrapnel
     // weapon's own targeting admission.
-    #[cfg(feature = "phobos")]
     let use_weapon_targeting = parent_projectile
         .shrapnel_use_weapon_targeting
         .unwrap_or(rules.phobos_globals.shrapnel_use_weapon_targeting);
-    #[cfg(feature = "phobos")]
     let child_warhead = rules.warhead(child_warhead_name);
 
     let construct = |world: &mut Simulation,
@@ -291,7 +274,6 @@ pub(super) fn emit_projectile_shrapnel(
                 explodes_airburst: Some(child_projectile.airburst_arm()),
                 inaccurate: child_projectile.inaccurate,
                 floater: child_projectile.floater,
-                #[cfg(feature = "phobos")]
                 gravity: child_projectile.gravity(),
                 elasticity_bits: child_projectile.elasticity.to_bits(),
                 arcing: child_projectile.arcing,
@@ -382,7 +364,6 @@ pub(super) fn emit_projectile_shrapnel(
                         continue;
                     }
                 }
-                #[cfg(feature = "phobos")]
                 let admitted = if use_weapon_targeting {
                     source_owner.is_some_and(|owner| {
                         child_warhead.is_some_and(|warhead| {
@@ -404,12 +385,6 @@ pub(super) fn emit_projectile_shrapnel(
                             .is_allied(&world.interner, owner, target.owner())
                     })
                 };
-                #[cfg(not(feature = "phobos"))]
-                let admitted = !source_owner.is_some_and(|owner| {
-                    world
-                        .house_alliances
-                        .is_allied(&world.interner, owner, target.owner())
-                });
                 if !admitted {
                     continue;
                 }

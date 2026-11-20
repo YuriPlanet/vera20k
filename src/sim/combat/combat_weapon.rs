@@ -196,7 +196,6 @@ impl TargetFlight<'_> {
     /// arms (`Ext/Techno/Hooks.Firing.cpp:151`, `:188`, `:223`). The cached
     /// locomotor layer is the only input, so this needs no terrain and stays
     /// lazy like the flight queries above.
-    #[cfg(feature = "phobos")]
     fn underground(self) -> bool {
         match self {
             Self::Live { entity, .. } | Self::InQuery { entity, .. } => {
@@ -363,7 +362,6 @@ pub(crate) fn controlled_transport_house(
     // `Passengers.SyncOwner`, every site skips the controller-house
     // substitution and the rider evaluates for its own house — which the
     // sync has already made the transport's.
-    #[cfg(feature = "phobos")]
     if object
         .phobos_passengers_sync
         .sync_owner(rules.phobos_globals.passengers_sync_owner)
@@ -537,19 +535,13 @@ pub(crate) fn aircraft_strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16
     // `Inviso=`, and no `Trajectory=` (`:102`; `Ext/Foot/Body.cpp:840` spells
     // the same test as `ROT<2`). The trajectory term needs Phobos' bullet
     // extension.
-    #[cfg(feature = "phobos")]
     if let Some(explicit) = weapon.phobos_strafing().strafing {
         return explicit;
     }
     rules.weapon_projectile(weapon).is_some_and(|projectile| {
         projectile.rot <= 1 && !projectile.inviso && {
-            #[cfg(feature = "phobos")]
             {
                 projectile.phobos_trajectory.flag.is_none()
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                true
             }
         }
     })
@@ -584,16 +576,10 @@ pub(crate) fn weapon_range(
     // reimplements the whole function and keeps `GetRangeWithModifiers(pWeapon,
     // pThis)` instead of clamping the result to the shortest passenger weapon
     // range. It is NOT an InRange branch: it drives threat/approach scanning.
-    #[cfg(feature = "phobos")]
     {
         if obj.open_topped && obj.phobos_open_topped().ignore_rangefinding(rules) {
             return range;
         }
-        open_topped_cargo_range(entity, obj, entities, rules, interner)
-            .map_or(range, |cargo| range.min(cargo))
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
         open_topped_cargo_range(entity, obj, entities, rules, interner)
             .map_or(range, |cargo| range.min(cargo))
     }
@@ -681,7 +667,6 @@ pub fn current_weapon<'r>(
 /// `SkipWeaponPicking` is not consulted: Phobos derives it false whenever an
 /// AE required list exists, and the AE gate can only refuse a firer when one
 /// does, so the term is dead in this expression.
-#[cfg(feature = "phobos")]
 pub(crate) fn weapon_index_against_wall(
     world: &Simulation,
     entity: &GameEntity,
@@ -817,7 +802,6 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
 /// Phobos `BulletTypeExt::AU` (`Ext/BulletType/Body.cpp:83`, declared
 /// `Body.h:88`): this projectile admits Underground targets. Read by the
 /// `0x6F37EB` selection arm, next to [`projectile_aa`].
-#[cfg(feature = "phobos")]
 fn projectile_au(rules: &RuleSet, weapon: &WeaponType) -> bool {
     rules
         .weapon_projectile(weapon)
@@ -989,7 +973,6 @@ fn airstrike_secondary_selected(
     target_obj: &ObjectType,
     kind: TechnoKind,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     {
         use crate::rules::airstrike_targets::AirstrikeKind;
         let target_kind = match kind {
@@ -1000,13 +983,6 @@ fn airstrike_secondary_selected(
         };
         warhead.airstrike_targets.allows(target_kind)
             && target_obj.allows_airstrike_weapon(kind == TechnoKind::Building)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = warhead;
-        kind == TechnoKind::Building
-            && target_obj.can_c4
-            && (!target_obj.resource_destination || !target_obj.resource_gatherer)
     }
 }
 
@@ -1030,11 +1006,8 @@ fn techno_what_weapon_should_i_use<'r>(
     // `Ext/Techno/Hooks.Firing.cpp:41-53`) skips this arm's return for a
     // `MultiWeapon` type unless it is a Unit with a Gunner, so the ladder
     // continues toward the `0x6F3428` hook.
-    #[cfg(feature = "phobos")]
     let multi_skips_turret_slot =
         obj.phobos_multi_weapon.enabled && !(attacker.kind == TechnoKind::Unit && obj.gunner);
-    #[cfg(not(feature = "phobos"))]
-    let multi_skips_turret_slot = false;
     if obj.turret_count > 0 && !obj.is_gattling && !multi_skips_turret_slot {
         return if attacker.current_weapon_number == -1 {
             0
@@ -1241,7 +1214,6 @@ fn techno_what_weapon_should_i_use<'r>(
     // `0x6F37E7` AA answer above: a burrowed target takes the secondary when
     // only the secondary projectile has `AU=yes`. The hook sits right after
     // `0x6F37E7`, so the arm keeps that slot.
-    #[cfg(feature = "phobos")]
     if flight.underground() && projectile_au(rules, secondary) && !projectile_au(rules, primary) {
         return 1;
     }
@@ -1494,7 +1466,6 @@ pub(crate) fn select_weapon_index_against_in_query(
     let target_facts = match target.copied() {
         // Phobos 0x6F3339: a Bullet target answers the interceptor weapon
         // slot before the stock ladder; another type keeps the normal path.
-        #[cfg(feature = "phobos")]
         Some(TargetKind::Bullet(_)) => {
             return attacker_obj
                 .phobos_interceptor
@@ -1540,7 +1511,6 @@ pub(crate) fn select_weapon_index_against_in_query(
         Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(rx, ry, terrain)),
         None => None,
     };
-    #[cfg(feature = "phobos")]
     let forced = phobos_force_weapon_index(
         rules,
         attacker_entity,
@@ -1551,11 +1521,8 @@ pub(crate) fn select_weapon_index_against_in_query(
         world,
         interner,
     );
-    #[cfg(not(feature = "phobos"))]
-    let forced = None;
     // Phobos `SelectMultiWeapon` at the same `0x6F3428` hook, after the forced
     // slot. Lazy: the ladder arms that return before the hook never ask it.
-    #[cfg(feature = "phobos")]
     let multi = || {
         phobos_multi_weapon_index(
             rules,
@@ -1568,12 +1535,9 @@ pub(crate) fn select_weapon_index_against_in_query(
             interner,
         )
     };
-    #[cfg(not(feature = "phobos"))]
-    let multi = || -> Option<i32> { None };
     // Phobos `PickWeaponIndex` at `0x6F36DB`, after the arms A–P that return
     // earlier; lazy like `multi`. The stock hook passes slots 0/1 and the
     // multi-weapon fallback keys.
-    #[cfg(feature = "phobos")]
     let pick = || {
         let settings = &attacker_obj.phobos_multi_weapon;
         let allow_fallback = !settings.no_secondary_weapon_fallback;
@@ -1593,11 +1557,8 @@ pub(crate) fn select_weapon_index_against_in_query(
             allow_aa_fallback,
         )
     };
-    #[cfg(not(feature = "phobos"))]
-    let pick = || -> Option<i32> { None };
     // The shield arm that follows the pick in the same `0x6F36DB` hook; lazy,
     // so only a pick that answered `-1` reaches it.
-    #[cfg(feature = "phobos")]
     let shield = || {
         phobos_shield_weapon_index(
             rules,
@@ -1610,11 +1571,8 @@ pub(crate) fn select_weapon_index_against_in_query(
             interner,
         )
     };
-    #[cfg(not(feature = "phobos"))]
-    let shield = || -> Option<i32> { None };
     // Phobos `TechnoClass_WhatWeaponShouldIUse_Gattling` at `0x6F3432`; lazy,
     // so only the gattling arm asks for it.
-    #[cfg(feature = "phobos")]
     let gattling = || {
         phobos_gattling_weapon_index(
             rules,
@@ -1627,8 +1585,6 @@ pub(crate) fn select_weapon_index_against_in_query(
             interner,
         )
     };
-    #[cfg(not(feature = "phobos"))]
-    let gattling = || -> Option<i32> { None };
     Some(what_weapon_should_i_use_with_force(
         rules,
         attacker_obj,
@@ -1659,7 +1615,6 @@ pub(crate) fn select_weapon_index_against_in_query(
 /// in-range lists, then the class arms; state and class arms need a live
 /// Techno target, and the in-range arm needs one only when `TechnoOnly` is
 /// yes.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_force_weapon_index(
     rules: &RuleSet,
@@ -1679,7 +1634,6 @@ fn phobos_force_weapon_index(
     let target_entity = match *target {
         TargetKind::Entity(id) => world.substrate.entities.get(id),
         TargetKind::Cell(..) => None,
-        #[cfg(feature = "phobos")]
         TargetKind::Bullet(..) => None,
     };
     let target_obj =
@@ -1840,7 +1794,6 @@ fn phobos_force_weapon_index(
 /// reaches Q, and by the gattling hook at `0x6F3432` for the current stage pair.
 /// `one`/`two` are native `weaponIndexOne`/`weaponIndexTwo`; the answer is one
 /// of them, or `None` for native `-1`.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_pick_weapon_index(
     rules: &RuleSet,
@@ -2008,7 +1961,6 @@ fn phobos_pick_weapon_index(
 /// native first asks `PickWeaponIndex` over that pair with both fallback gates
 /// on, then walks the `isWeaponValid` rows, the naval selector and
 /// `LandTargeting`. Always answers for a gattling type, like the hook.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_gattling_weapon_index(
     rules: &RuleSet,
@@ -2108,7 +2060,6 @@ fn phobos_gattling_weapon_index(
 /// in native row order: airborne needs an AA projectile, underground needs an
 /// `AU` one, an active target shield must admit the weapon, and the warhead's
 /// Verses against the target's **own** armor must not be exactly zero.
-#[cfg(feature = "phobos")]
 fn phobos_weapon_valid_against(
     rules: &RuleSet,
     target_entity: Option<&GameEntity>,
@@ -2142,7 +2093,6 @@ fn phobos_weapon_valid_against(
 /// reached only when `TechnoExt::PickWeaponIndex` answered `-1` for a Techno
 /// target whose shield is active. `Some(0)`/`Some(1)` are the native hook's
 /// `Primary`/`Secondary` returns; `None` keeps the stock `0x6F36E3` Verses arm.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_shield_weapon_index(
     rules: &RuleSet,
@@ -2227,7 +2177,6 @@ fn phobos_shield_weapon_index(
 /// asked by the `0x6F3428` hook after `SelectForceWeapon`
 /// (`Ext/Techno/Hooks.Firing.cpp:100-116`). `None` is the native `-1`: the
 /// caller keeps the rest of the ladder.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn phobos_multi_weapon_index(
     rules: &RuleSet,
@@ -2384,7 +2333,6 @@ fn phobos_multi_weapon_index(
 /// RESIDUAL: `WeaponTypeExt::SkipWeaponPicking` (default false) is not
 /// ported; `AllowAirstrike`, the warhead gates and the cell/overlay
 /// `Wall=`/`Armor=Wood` gate follow Phobos.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn multi_weapon_can_fire(
     rules: &RuleSet,
@@ -2694,7 +2642,6 @@ mod tests {
     /// `GetRangeWithModifiers(pWeapon, pThis)` instead of clamping the result
     /// to the shortest passenger weapon range. Boundary: carrier weapon
     /// `Range=10` (2560 lep) vs the passenger's `Range=3` (768 lep).
-    #[cfg(feature = "phobos")]
     #[test]
     fn open_topped_task_d_ignore_rangefinding() {
         use crate::sim::intern::test_interner;

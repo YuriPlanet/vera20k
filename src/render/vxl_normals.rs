@@ -415,7 +415,6 @@ impl VoxelLight {
     /// The draw settings the current rules ask for: the `[AudioVisual]` keys
     /// Phobos adds, or the startup world light with the stock secondary vector.
     pub fn for_rules(rules: Option<&crate::rules::ruleset::RuleSet>) -> Self {
-        #[cfg(feature = "phobos")]
         {
             let Some(rules) = rules else {
                 return Self::default();
@@ -429,11 +428,6 @@ impl VoxelLight {
                 world,
                 fixed: rules.phobos_globals.use_fixed_voxel_lighting,
             }
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            let _ = rules;
-            Self::default()
         }
     }
 }
@@ -546,7 +540,6 @@ mod tests {
     /// `[AudioVisual] VoxelLightSource=` reaches the draw settings through the
     /// rules reader; the retail-direction value reproduces the native light,
     /// and an absent key keeps the startup one.
-    #[cfg(feature = "phobos")]
     #[test]
     fn voxel_light_source_key_is_normalized_and_mapped() {
         use crate::rules::ini_parser::IniFile;
@@ -743,7 +736,6 @@ VoxelLightSource=-0.70710678,-0.70710678,0
         assert_eq!(VoxelLight::for_rules(None), VoxelLight::default());
 
         let set = read("[AudioVisual]\nUseFixedVoxelLighting=yes\n");
-        #[cfg(feature = "phobos")]
         assert!(VoxelLight::for_rules(Some(&set)).fixed);
         #[cfg(not(feature = "phobos"))]
         assert!(!VoxelLight::for_rules(Some(&set)).fixed);

@@ -67,7 +67,6 @@ impl StorageAmounts {
 
     /// `StorageClass::RemoveAmount @ 0x006C96B0`: the slot gives at most what
     /// it holds; returns what left.
-#[cfg(feature = "phobos")]
     pub(crate) fn remove_amount(&mut self, amount: NativeF32Bits, slot: usize) -> NativeF32Bits {
         let Some(held) = self.amounts.get(slot).copied() else {
             return NativeF32Bits::POSITIVE_ZERO;

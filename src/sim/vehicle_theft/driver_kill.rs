@@ -421,7 +421,6 @@ impl Simulation {
         // attempt (Ext/Techno/Body.cpp:930-1017). The type keys are
         // Nullable<bool> (Ext/TechnoType/Body.cpp:969-970) falling back to
         // the [CombatDamage] globals (Ext/Rules/Body.cpp:533-534).
-        #[cfg(feature = "phobos")]
         let (kept_passengers, kill_passengers) = self
             .substrate
             .entities
@@ -434,8 +433,6 @@ impl Simulation {
                     settings.kill_passengers(rules.phobos_globals.driver_killed_kill_passengers),
                 )
             });
-        #[cfg(not(feature = "phobos"))]
-        let (kept_passengers, kill_passengers) = (false, false);
         if passive && kept_passengers {
             // Every passenger stays aboard: no ejection, kill or
             // ExitedOpenTopped for this driver change.
@@ -860,7 +857,6 @@ mod tests {
     /// infantry (the head is removed as the operator), a passive `Special`
     /// takeover through the production receiver, and the caller's
     /// `DriverKilled.*` keys. Returns (sim, rules, host, rider, operator).
-    #[cfg(feature = "phobos")]
     fn driver_killed_passenger_fixture(
         host_extra: &str,
         combat_damage: &str,
@@ -927,7 +923,6 @@ mod tests {
     /// TechnoExt::ApplyKillDriver100458F3..10045953: with the type key set,
     /// a passive takeover keeps the remaining passenger aboard (`yes`) or
     /// still ejects it (`no`); the operator removal runs in both cases.
-    #[cfg(feature = "phobos")]
     #[test]
     fn driver_killed_kept_passengers_decides_whether_the_rider_stays_aboard() {
         for (host_extra, kept) in [
@@ -970,7 +965,6 @@ mod tests {
     /// TechnoExt::ApplyKillDriver10045953: `KillPassengers` makes the
     /// departing passenger a `RegisterDestruction(nullptr)` without an
     /// `EjectRandomly` attempt, even where the ejection would succeed.
-    #[cfg(feature = "phobos")]
     #[test]
     fn driver_killed_kill_passengers_destroys_the_rider_instead_of_ejecting() {
         for (host_extra, killed) in [
@@ -1001,7 +995,6 @@ mod tests {
 
     /// The `[CombatDamage]` globals apply only to a type with no own key
     /// (`Nullable<T>::Get`, `Ext/TechnoType/Body.h:212-213`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn driver_killed_globals_apply_when_the_type_keys_are_unset() {
         for (combat_damage, killed) in [

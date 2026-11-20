@@ -32,19 +32,12 @@ pub(super) struct AreaRockerInput {
 // `Rocker.AmplitudeOverride.Get(damage) * (0.01 * Rocker.AmplitudeMultiplier)`
 // in C++ double arithmetic before the native cap.
 fn force(warhead: &WarheadType, damage: i32) -> NativeF64Bits {
-    #[cfg(feature = "phobos")]
     let scaled = {
         let base = f64::from(warhead.phobos_rocker_amplitude_override.unwrap_or(damage));
         NativeF64Bits::from_bits(
             (base * (0.01_f64 * warhead.phobos_rocker_amplitude_multiplier)).to_bits(),
         )
     };
-    #[cfg(not(feature = "phobos"))]
-    let scaled = X::store_f64(X::mul(
-        X::load_i32(damage),
-        X::load_f64(NativeF64Bits::from_bits(0x3f84_7ae1_47ae_147b)).unwrap(),
-    ))
-    .expect("finite area rocker force");
     let scaled = X::load_f64(scaled).unwrap();
     let cap = NativeF64Bits::from_bits(0x4010_0000_0000_0000);
     if X::compare(scaled, X::load_f64(cap).unwrap()) == X87Ordering::Less {
@@ -703,7 +696,6 @@ mod tests {
     }
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn rocker_amplitude_keys_scale_the_area_force() {
     use crate::rules::ini_parser::IniFile;

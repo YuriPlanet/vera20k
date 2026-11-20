@@ -24,7 +24,6 @@ pub(crate) struct ObjectFallState {
     /// `Ext/Techno/Body.cpp:1200`): the hover locomotor's shutdown dropped
     /// this object as a bomb (`Ext/Techno/Hooks.cpp:997-1006`). The landing arm
     /// reads and clears it once (`:1026-1027`), so it never outlives that arm.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     hover_shutdown: bool,
     /// Phobos `TechnoExt::OnParachuted` (`Ext/Techno/Body.h:80`, saved at
@@ -36,7 +35,6 @@ pub(crate) struct ObjectFallState {
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`) and by the two
     /// in-air branches Phobos rewrites (`Ext/Foot/Body.cpp:784`,
     /// `Ext/TechnoType/Body.cpp:705`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     on_parachuted: bool,
 }
@@ -74,21 +72,18 @@ impl ObjectFallState {
     }
 
     /// Phobos `TechnoExt::HoverShutdown`, part of the saved fall words.
-    #[cfg(feature = "phobos")]
     pub(crate) fn hover_shutdown(&self) -> bool {
         self.hover_shutdown
     }
 
     /// `0x514C07` marks the shutdown drop once it has happened
     /// (`Ext/Techno/Hooks.cpp:1002-1005`: `DropAsBomb()` then the flag).
-    #[cfg(feature = "phobos")]
     pub(crate) fn mark_hover_shutdown(&mut self) {
         self.hover_shutdown = true;
     }
 
     /// `Ext/Techno/Hooks.cpp:1026-1027`: the landing arm copies the flag out
     /// and clears it before it picks the damage.
-    #[cfg(feature = "phobos")]
     pub(crate) fn take_hover_shutdown(&mut self) -> bool {
         std::mem::take(&mut self.hover_shutdown)
     }
@@ -96,19 +91,16 @@ impl ObjectFallState {
     /// Phobos `TechnoExt::OnParachuted`, set by the paradrop spawn
     /// (`Ext/Techno/Hooks.cpp:1907`) and by the airborne reappear
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:607-610`).
-    #[cfg(feature = "phobos")]
     pub(crate) fn on_parachuted(&self) -> bool {
         self.on_parachuted
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn mark_on_parachuted(&mut self) {
         self.on_parachuted = true;
     }
 
     /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads the flag and
     /// clears it on every falling-down Techno, before the `IsABomb` gate.
-    #[cfg(feature = "phobos")]
     pub(crate) fn take_on_parachuted(&mut self) -> bool {
         std::mem::take(&mut self.on_parachuted)
     }

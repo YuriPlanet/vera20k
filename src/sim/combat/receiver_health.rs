@@ -27,7 +27,6 @@ pub(super) struct ReceiverHealthCommit {
     pub(super) psychedelic: bool,
     /// `*pDamage` after Object's body (`0x00701DF8`), when Techno reached it:
     /// what Phobos' `0x701E18` hook reflects and counts.
-    #[cfg(feature = "phobos")]
     pub(super) object_packet: Option<i32>,
 }
 
@@ -190,7 +189,6 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
 /// `Psychedelic.StackingMode`, else `[CombatDamage] Psychedelic.StackingMode`,
 /// combines the incoming damage with the target's current
 /// `BerzerkDurationLeft`.
-#[cfg(feature = "phobos")]
 pub(super) fn psychedelic_berserk_time(
     world: &Simulation,
     rules: &RuleSet,
@@ -227,14 +225,8 @@ pub(super) fn psychedelic_starts_berserk(
     {
         return false;
     }
-    #[cfg(feature = "phobos")]
     {
         psychedelic_berserk_time(world, rules, event, value) > 0
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, event, value);
-        true
     }
 }
 
@@ -278,12 +270,8 @@ pub(super) fn commit_receiver_health(
         //The caller owns team removal before, then target-clear/Hunt after.
         //Phobos' 0x701D6B hook replaces the stock time write; a non-positive
         //combined time jumps to StopBerzerk (0x701DBA), before the flag write.
-        #[cfg(feature = "phobos")]
         let time = psychedelic_berserk_time(world, rules, event, value);
-        #[cfg(not(feature = "phobos"))]
-        let time = value;
         let target = world.substrate.entities.get_mut(target_id)?;
-        #[cfg(feature = "phobos")]
         target.berserk.psychedelic_stack(time);
         #[cfg(not(feature = "phobos"))]
         target.berserk.start(time);
@@ -312,7 +300,6 @@ pub(super) fn commit_receiver_health(
             uncloak_after_damage: false,
             house_threat_delta: None,
             psychedelic: true,
-            #[cfg(feature = "phobos")]
             object_packet: None,
         });
     }
@@ -327,10 +314,7 @@ pub(super) fn commit_receiver_health(
                 world.object_tech_level(ty),
             ));
         }
-        #[cfg(feature = "phobos")]
         let allow_zero_damage = ty.phobos_can_c4_allow_zero_damage;
-        #[cfg(not(feature = "phobos"))]
-        let allow_zero_damage = false;
         (
             ty.strength,
             target.category() == EntityCategory::Structure && !ty.can_c4,
@@ -507,7 +491,6 @@ pub(super) fn commit_receiver_health(
         uncloak_after_damage,
         house_threat_delta,
         psychedelic: false,
-        #[cfg(feature = "phobos")]
         object_packet: reached_survivor_postlude.then_some(final_packet),
     })
 }
@@ -535,7 +518,6 @@ impl BerserkState {
 
     /// The time left. The Psychedelic arm and the countdown use the field;
     /// tests read it through this.
-    #[cfg(any(test, feature = "test-support", feature = "phobos"))]
     pub(crate) const fn timer(self) -> i32 {
         self.timer
     }
@@ -573,7 +555,6 @@ impl BerserkState {
     /// (`0x701DBA`) before `0x701D7D`'s flag write, so an object that was not
     /// berserk stays that way, while an already-berserk object keeps its flag
     /// (and its next `AI_Update` tick clears the non-positive time).
-    #[cfg(feature = "phobos")]
     pub fn psychedelic_stack(&mut self, time: i32) {
         self.timer = time;
         if time > 0 {

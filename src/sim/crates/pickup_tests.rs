@@ -1503,7 +1503,6 @@ fn random_unit_crate_still_allows_a_human_mcv_with_bases() {
 /// `Misc/Hooks.Crates.cpp:80-92`): the value is the probability that a drawn
 /// `CrateGoodie=` type rerolls. The type passes only when
 /// `chance < RandomDouble()`; the rejected draw is spent and the pick retries.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_crate_goodie_reroll_chance_rejects_a_drawn_goodie() {
     let (mut sim, _, _, owner, _) = arena();
@@ -2635,7 +2634,6 @@ fn ares_random_crate_money_bounds_the_top_up() {
 /// `0x481C27`, `Misc/Hooks.Crates.cpp:63-73`): the Unit slot's
 /// tracked-vehicle ceiling; a negative value never caps, and the Squad slot
 /// keeps its own constant.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_unit_crate_vehicle_cap_global_gates_the_unit_slot() {
     let scene = |cap_line: &str| {
@@ -2680,7 +2678,6 @@ fn the_unit_crate_vehicle_cap_global_gates_the_unit_slot() {
 /// Phobos `[CrateRules] FreeMCV.CreditsThreshold` (`Ext/Rules/Body.cpp:283`,
 /// default 1500 `Body.h:735`, hook `0x481BB8`): the MCV pre-empt's credit
 /// floor.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_free_mcv_credit_threshold_gates_the_preempt() {
     let (mut sim, mut rules, registry, _owner, actor) = arena();

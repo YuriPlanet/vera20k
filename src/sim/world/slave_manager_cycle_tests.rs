@@ -941,7 +941,6 @@ fn area_guard_starts_an_idle_slave_miners_hunt_at_once() {
 }
 
 /// A two-slave scene whose `[SLAV]` section carries the Phobos slave keys.
-#[cfg(feature = "phobos")]
 fn freed_scene(slave_keys: &str) -> SlaveScene {
     use crate::sim::world::slave_manager_oracle_tests::row_scene_edited;
     row_scene_edited(
@@ -965,7 +964,6 @@ fn freed_scene(slave_keys: &str) -> SlaveScene {
     )
 }
 
-#[cfg(feature = "phobos")]
 fn phobos_kill(s: &mut SlaveScene) -> u64 {
     let russians = s.scene.sim.interner.intern("Russians");
     s.scene
@@ -988,7 +986,6 @@ fn phobos_kill(s: &mut SlaveScene) -> u64 {
 /// Phobos `Slaved.OwnerWhenMasterKilled=suicide`
 /// (`Ext/Techno/Hooks.Misc.cpp:31-48`): the freed slave is damaged to death
 /// with `C4Warhead` instead of changing owner.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_suicide_slave_dies_when_its_master_is_killed() {
     let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=suicide\n");
@@ -1010,7 +1007,6 @@ fn a_suicide_slave_dies_when_its_master_is_killed() {
 }
 
 /// `Master` keeps the slave's current owner even when a killer exists.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_master_slave_keeps_its_house() {
     let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\n");
@@ -1031,7 +1027,6 @@ fn a_master_slave_keeps_its_house() {
 
 /// `FreeSlaves`' sound hook reads the first freed slave's type
 /// `SlavesFreeSound=` over `[AudioVisual] SlavesFreeSound=`.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_first_freed_slaves_type_sound_wins_over_the_global() {
     let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\nSlavesFreeSound=SLAVSHOUT\n");
@@ -1052,7 +1047,6 @@ fn the_first_freed_slaves_type_sound_wins_over_the_global() {
 
 /// `SlavesFreeSound=none` is `NullableIdx`' explicit silence: the global
 /// sound must not play.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_explicit_none_slave_sound_stays_silent() {
     let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\nSlavesFreeSound=none\n");
@@ -1068,7 +1062,6 @@ fn an_explicit_none_slave_sound_stays_silent() {
 }
 
 /// An unset type key falls back to `[AudioVisual] SlavesFreeSound=`.
-#[cfg(feature = "phobos")]
 #[test]
 fn an_unset_slave_sound_plays_the_global() {
     let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=master\n");
@@ -1089,7 +1082,6 @@ fn an_unset_slave_sound_plays_the_global() {
 
 /// The hook's `0x6B0BA4` origin (no killer) ignores an explicit House
 /// argument: without a Neutral House the slaves die.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_killerless_release_ignores_an_explicit_house() {
     let mut s = freed_scene("");
@@ -1120,7 +1112,6 @@ fn a_killerless_release_ignores_an_explicit_house() {
 }
 
 /// `Neutral` hands the slave to the `Neutral` country's House.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_neutral_slave_joins_the_neutral_country_house() {
     let mut s = freed_scene("Slaved.OwnerWhenMasterKilled=neutral\n");
@@ -1158,7 +1149,6 @@ fn a_neutral_slave_joins_the_neutral_country_house() {
 /// (`Ext/Building/Hooks.Refinery.cpp:40-61`): a non-Building Slave Miner unit
 /// whose `DeploysInto=` building has `DisplayIncome=yes` prints the deposit's
 /// balance delta immediately at its `Location`.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_unit_slave_miner_prints_the_deposit_delta() {
     use super::slave_manager_oracle_tests::row_scene_edited;

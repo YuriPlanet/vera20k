@@ -50,7 +50,6 @@ pub(crate) fn open(state: &mut AppState) {
     state.match_state.match_presentation.restate_text = text;
     // The F2 / sidebar-gadget path is the stock restate dialog, not the
     // scenario-start one; the scenario-start caller re-arms the flag below.
-    #[cfg(feature = "phobos")]
     {
         state.match_state.match_presentation.briefing_at_start = false;
     }

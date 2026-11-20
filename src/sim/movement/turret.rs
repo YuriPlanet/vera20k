@@ -258,13 +258,10 @@ pub(crate) fn facing_update(
             // Phobos `0x736B60` (`Ext/Unit/Hooks.DisallowMoving.cpp:69-75`):
             // an unset `TurretResponse` falls back to `UnitExt::CannotMove`;
             // `yes` keeps the idle return, `no` always skips it.
-            #[cfg(feature = "phobos")]
             let skip_idle_return = match obj.and_then(|obj| obj.phobos_turret_response) {
                 Some(response) => !response,
                 None => cannot_move(entity, obj, world),
             };
-            #[cfg(not(feature = "phobos"))]
-            let skip_idle_return = false;
             if dwell_elapsed
                 && !bunkered
                 && !deployed_simple_deployer
@@ -306,7 +303,6 @@ const NATIVE_IDLE_TURRET_DWELL_BIAS: i64 = 5;
 /// differs from its cell's (Tunnel is exempt, and a bridge's Water/Beach
 /// answers Road). A sourced locomotor answers false natively; VERA has no
 /// `LocomotorSource` state, and no path sets one.
-#[cfg(feature = "phobos")]
 fn cannot_move(
     entity: &GameEntity,
     obj: Option<&crate::rules::object_type::ObjectType>,
@@ -414,7 +410,6 @@ mod tests {
     /// (`0x00736B60`): the tank stands on cell `(5, 5)`, whose land type `land`
     /// replaces the Clear default, and `on_bridge` is `UnitClass+0x140`'s deck
     /// flag. `None` answers "the idle return was skipped".
-    #[cfg(feature = "phobos")]
     fn turret_idle(
         type_keys: &str,
         land: crate::rules::terrain_rules::LandType,
@@ -449,7 +444,6 @@ mod tests {
     /// answers `!TurretResponse` on its own, so on a hull that `CannotMove`
     /// reports as movable `no` still holds the last aim while `yes` and the
     /// unset key both take the idle return.
-    #[cfg(feature = "phobos")]
     #[test]
     fn turret_response_overrides_the_class_answer() {
         use crate::rules::terrain_rules::LandType;
@@ -475,7 +469,6 @@ mod tests {
     /// `Speed == 0`, or a `MovementRestrictedTo` land different from the
     /// occupied cell's — `Tunnel` exempts, and on a bridge a `Water` deck reads
     /// as `Road` (`:210-217`).
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_unset_key_falls_back_to_cannot_move() {
         use crate::rules::terrain_rules::LandType;

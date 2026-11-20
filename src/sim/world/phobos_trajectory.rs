@@ -19,13 +19,10 @@
 //! ## Dependency rules
 //! - Part of sim/; no render/ui/audio/net. Uses the world's collision owner.
 
-#[cfg(feature = "phobos")]
 #[path = "phobos_trajectory_ai.rs"]
 mod ai;
-#[cfg(feature = "phobos")]
 #[path = "phobos_trajectory_bombard.rs"]
 mod bombard;
-#[cfg(feature = "phobos")]
 #[path = "phobos_trajectory_parabola.rs"]
 mod parabola;
 
@@ -47,7 +44,6 @@ use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 /// One bullet's `StraightTrajectory` instance (`StraightTrajectory.h:83-135`).
 /// `Type` is read from the BulletType at use; every mutable field mirrors the
 /// native instance so save, hash and replay stay exact.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosTrajectoryState {
     pub kind: TrajectoryFlag,
@@ -122,24 +118,20 @@ pub(crate) struct PhobosTrajectoryState {
     pub last_velocity: [NativeF64Bits; 3],
 }
 
-#[cfg(feature = "phobos")]
 fn zero_bits() -> NativeF64Bits {
     NativeF64Bits::from_bits(0)
 }
 
-#[cfg(feature = "phobos")]
 fn zero_coord() -> ProjectileCoord {
     ProjectileCoord::new(0, 0, 0)
 }
 
-#[cfg(feature = "phobos")]
 fn zero_velocity() -> [NativeF64Bits; 3] {
     [NativeF64Bits::from_bits(0); 3]
 }
 
 /// Deterministic fold of the per-bullet trajectory instance; only a bullet
 /// that carries one contributes.
-#[cfg(feature = "phobos")]
 impl PhobosTrajectoryState {
     /// The instance fields a class constructor leaves at zero before
     /// `OnUnlimbo` fills them ([`crate::sim::world::phobos_trajectory`]).
@@ -214,7 +206,6 @@ impl PhobosTrajectoryState {
 }
 
 /// What one trajectory visit produced for the world to commit.
-#[cfg(feature = "phobos")]
 #[derive(Default)]
 pub(super) struct TrajectoryStep {
     /// Detonations that end the bullet's flight (the stock detonation arm).
@@ -228,7 +219,6 @@ pub(super) struct TrajectoryStep {
     pub expired: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// `TrajectoryTypePointer::CreateInstance` + `OnUnlimbo`
     /// (`PhobosTrajectory.cpp:7-22,436-608`), dispatched by the `Trajectory`
@@ -657,7 +647,6 @@ fn ballistic_scatter_bounds(
 // StraightTrajectory per-frame AI
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// One `BulletClass::AI` visit for a bullet carrying a Phobos trajectory.
     /// Replaces the stock advance; the caller commits the returned detonations

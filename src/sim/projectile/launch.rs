@@ -187,10 +187,8 @@ pub struct FireAtLaunch {
     pub building_pitch_height: Option<i32>,
     /// Phobos `0x6FF008`: fold `BulletExt::ApplyArcingFix` into the finished
     /// arcing velocity (the `Arcing.AllowElevationInaccuracy` refusal).
-    #[cfg(feature = "phobos")]
     pub arcing_fix: bool,
     /// The weapon's native `Lobber=` for the fix's own branch.
-    #[cfg(feature = "phobos")]
     pub lobber: bool,
 }
 
@@ -888,7 +886,6 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
         round(X::mul(trig.cos_from_table(d(pitch_radians)), vy)),
         round(X::mul(trig.sin_from_table(d(pitch_radians)), magnitude)),
     ];
-    #[cfg(feature = "phobos")]
     let velocity = {
         let as_bits = velocity.map(|v| {
             crate::util::native_x87::NativeF64Bits::from_bits(
@@ -909,15 +906,9 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     };
     // Under `phobos` the fold above already stored the vector as binary64
     // bits, so `from_native` takes them directly.
-    #[cfg(all(any(test, feature = "test-support"), not(feature = "phobos")))]
-    let before_fire = ProjectileVelocity::from_native(velocity.map(store));
-    #[cfg(all(any(test, feature = "test-support"), feature = "phobos"))]
     let before_fire = ProjectileVelocity::from_native(velocity);
     // Bullet::Fire 468AAC..468B57 renormalizes ROT>0 after the six DWORDs
     // have been copied, with (z*z + y*y) + x*x and another Sqrt_Approx.
-    #[cfg(not(feature = "phobos"))]
-    let velocity = ProjectileVelocity::from_native(velocity.map(store));
-    #[cfg(feature = "phobos")]
     let velocity = ProjectileVelocity::from_native(velocity);
     let velocity = if input.homing {
         bullet_fire_homing_velocity(velocity)
@@ -937,7 +928,6 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
 /// `Arcing.AllowElevationInaccuracy` refuses: the finished launch velocity is
 /// recomputed from the scattered target delta so the shot lands on it. Plain
 /// binary64 math, as compiled.
-#[cfg(feature = "phobos")]
 pub(crate) fn apply_arcing_fix(
     mut velocity: [f64; 3],
     delta: [i32; 3],
@@ -1005,9 +995,7 @@ mod tests {
                 high_root: false,
                 voxel_downward: None,
                 building_pitch_height: None,
-                #[cfg(feature = "phobos")]
                 arcing_fix: false,
-                #[cfg(feature = "phobos")]
                 lobber: false,
             });
             assert_eq!(
@@ -1148,9 +1136,7 @@ mod tests {
                             .wrapping_mul(200)
                             .wrapping_sub(row["source_z"].as_i64().unwrap() as i32)
                     }),
-                    #[cfg(feature = "phobos")]
                     arcing_fix: false,
-                    #[cfg(feature = "phobos")]
                     lobber: row["lobber"].as_bool().unwrap_or(false),
                 };
                 let result = fireat_launch(input);
@@ -1192,7 +1178,6 @@ mod tests {
     /// Phobos `WeaponTypeClass_GetSpeed_ApplyGravity` 0x773087: a type
     /// `Gravity` feeds the same square-root arm, while the type value equal to
     /// the Rules value reproduces the stock result.
-    #[cfg(feature = "phobos")]
     #[test]
     fn phobos_type_gravity_changes_the_derived_launch_speed() {
         let projectile = |gravity| LaunchSpeedProjectile {

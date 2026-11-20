@@ -70,7 +70,6 @@ fn stock_disc_reads_battle_map_weapon_art_and_charge_reference() {
 /// Phobos `DiskLaser.Radius=` (`Ext/WeaponType/Body.cpp:86`) is a
 /// `Valueable<double>` whose constructor value is `DiskLaserClass::Radius`
 /// (240); an unset key keeps it and a reached key replaces it.
-#[cfg(feature = "phobos")]
 #[test]
 fn disk_laser_radius_reads_the_weapon_key_over_the_constructor_240() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

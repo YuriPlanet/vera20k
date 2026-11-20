@@ -716,7 +716,6 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
 /// (`Ext/Rules/Body.cpp:543-546`, ctor no/yes/yes/yes): `no` skips the wake
 /// entirely, an authored `yes` re-enables a global-disabled locomotor, and a
 /// Drive/Hover boat still wakes on the 10th frame and a Ship on the 8th.
-#[cfg(feature = "phobos")]
 #[test]
 fn makes_wake_gates_each_locomotor_wake() {
     #[derive(Clone, Copy, PartialEq)]
@@ -865,7 +864,6 @@ Rate=120
 /// The resolver behind [`super::spawn_wakes_for_frame`]: each locomotor kind
 /// takes its own `[AudioVisual]` global, a type value wins over it, and a
 /// kind with no native wake hook stays true.
-#[cfg(feature = "phobos")]
 #[test]
 fn makes_wake_resolves_each_locomotor_global_and_type_override() {
     use crate::rules::locomotor_type::LocomotorKind;
@@ -3676,7 +3674,6 @@ fn sonic_fire_event(
     )
     .coord;
     SimFireEvent {
-        #[cfg(feature = "phobos")]
         firing_anim: None,
         attacker_id,
         weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
@@ -7486,7 +7483,6 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
 /// counts fold their type `Power=` after the building roster
 /// (`Ext/House/Hooks.cpp:34-58`), and the cameo readout reports the same
 /// value for the local player (`Misc/PhobosToolTip.cpp:70-80`).
-#[cfg(feature = "phobos")]
 #[test]
 fn unit_power_drain_folds_active_counts_into_the_house_totals() {
     use crate::sim::combat::Health;
@@ -10197,7 +10193,6 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
 /// (`0x75F415`) on the blast wave: the override warhead's Verses scales the
 /// ambient hit, and the wave's Target object can be skipped; the `[General]`
 /// fallback is the per-weapon default.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_wave_ambient_damage_reads_the_warhead_and_ignore_target() {
     fn wave_rules(weapon_keys: &str) -> RuleSet {
@@ -10269,7 +10264,6 @@ fn phobos_wave_ambient_damage_reads_the_warhead_and_ignore_target() {
 
 /// Phobos `AmbientDamage.IgnoreTarget` (`0x75F415`) compares the same
 /// ObjectClass pointer, so a Terrain target is skipped like a Techno one.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_wave_ambient_damage_ignore_target_skips_a_terrain_target() {
     fn wave_terrain_rules(ignore: bool) -> RuleSet {
@@ -10343,7 +10337,6 @@ fn phobos_wave_ambient_damage_ignore_target_skips_a_terrain_target() {
 /// Ares `WaveClass_DamageCell_Wall` (1005D7A0, hook `0x75F46E`) gates the
 /// wall hit on the weapon's own `Warhead=`, which the Phobos ambient override
 /// (`0x75F39D`) must not replace.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_wave_wall_damage_gate_reads_the_weapon_warhead() {
     fn wall_rules(weapon_warhead: &str) -> RuleSet {

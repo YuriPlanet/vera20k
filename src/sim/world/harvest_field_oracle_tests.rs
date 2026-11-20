@@ -658,7 +658,6 @@ fn campaign_player_scan_rejects_unexplored_ore() {
 /// `0x73E730`, `Ext/Unit/Hooks.Harvester.cpp:145-170`): an enabled harvester
 /// replaces its archive focus with a nearer `TiberiumLongScan` ore cell; with
 /// the key off the focus stays the destination.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_scan_after_unload_prefers_a_nearer_ore_cell_over_the_archive() {
     let dispatch = |scan_after_unload: bool| {

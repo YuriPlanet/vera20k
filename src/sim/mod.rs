@@ -29,7 +29,6 @@ pub(crate) mod ai_base_defense;
 pub(crate) mod ai_base_site;
 pub mod ammo;
 pub mod anim_class;
-#[cfg(feature = "phobos")]
 pub mod anim_create_unit;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;
@@ -45,9 +44,7 @@ pub(crate) mod ares_transports; // Ares InitialPayload (10043C10), Hospital evic
 pub(crate) mod ares_tunnel; // Ares building tunnels (TunnelTypes.cpp, 100097D0)
 pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
 pub mod attach_effect;
-#[cfg(feature = "phobos")]
 pub(crate) mod auto_death;
-#[cfg(feature = "phobos")]
 pub mod banner;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
@@ -82,7 +79,6 @@ pub mod entity_store;
 pub(crate) mod estimated_health;
 pub(crate) mod factory_owners;
 pub(crate) mod flashing;
-#[cfg(feature = "phobos")]
 pub mod flying_text;
 pub mod frame_profile;
 pub mod game_entity;
@@ -92,7 +88,6 @@ pub(crate) mod house_threat;
 pub(crate) mod hunter_seeker;
 pub mod intern;
 pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8)
-#[cfg(feature = "phobos")]
 pub(crate) mod laser_trail; // Phobos LaserTrailClass::Update for bullets, voxel debris and attach effects
 pub(crate) mod lifecycle_request;
 pub mod light_sources;
@@ -100,11 +95,8 @@ pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomo
 pub mod multiplayer_checksum;
 pub mod native_identity;
 pub(crate) mod object_fall;
-#[cfg(feature = "phobos")]
 pub(crate) mod phobos_drop_crate;
-#[cfg(feature = "phobos")]
 pub(crate) mod phobos_no_rearm;
-#[cfg(feature = "phobos")]
 pub(crate) mod phobos_start_facing;
 pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
 pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= building (Deactivate 0x0070FC90)
@@ -112,18 +104,14 @@ pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 100685
 pub(crate) mod reverse_engineering; // Ares grinder reverse engineering (10022360)
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
-#[cfg(feature = "phobos")]
 pub(crate) mod tiberium_eater;
 #[cfg(all(test, tests_sim_t_z, feature = "phobos"))]
 mod tiberium_eater_tests;
 pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
 // unless the browser package opts into its Web Worker pool.
-#[cfg(feature = "phobos")]
 pub(crate) mod building_display_income; // Phobos BuildingExt::DisplayIncomeString
-#[cfg(feature = "phobos")]
 pub(crate) mod grinding; // Phobos BuildingExt CanGrindTechno / DoGrindingExtras (Grinding.*)
-#[cfg(feature = "phobos")]
 pub(crate) mod kill_weapon; // Phobos TechnoExt::ApplyKillWeapon (KillWeapon.*, 0x702672)
 #[cfg_attr(
     all(target_arch = "wasm32", not(feature = "wasm-threads")),
@@ -133,7 +121,6 @@ pub mod parallel; // order-preserving work over scoped threads
 #[cfg(all(test, tests_sim_p_s, feature = "wasm", not(target_arch = "wasm32")))]
 #[path = "parallel_web.rs"]
 mod parallel_web_tests;
-#[cfg(feature = "phobos")]
 pub(crate) mod passenger_deletion; // Phobos TechnoExt::EatPassengers (PassengerDeletion.*)
 pub mod rng;
 pub mod scenario_bootstrap;
@@ -199,7 +186,6 @@ pub mod house_eva; // HouseClass::Update EVA advice timers (funds nag, low power
 pub mod power_system;
 pub mod superweapon;
 pub mod vision;
-#[cfg(feature = "phobos")]
 pub mod warhead_anim;
 
 // --- Animation, building overlays, bridge state ---
@@ -238,15 +224,11 @@ pub mod smudge_grid;
 pub mod radiation;
 
 // --- Phobos Shields: per-object shield points, absorption and recovery ---
-#[cfg(feature = "phobos")]
 pub mod digital_display;
-#[cfg(feature = "phobos")]
 pub mod self_heal;
-#[cfg(feature = "phobos")]
 pub mod shield;
 
 // --- Passengers, transport, slaves ---
-#[cfg(feature = "phobos")]
 pub mod keep_target_on_move;
 pub mod parity_digest;
 pub mod passenger;

@@ -188,7 +188,6 @@ fn prepare_save<'a>(
         .map(|order| order.with_active_tab(active_tab));
     // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
     // the local presentation envelope rather than the simulation hash.
-    #[cfg(feature = "phobos")]
     let sidebar_order = sidebar_order.map(|mut order| {
         order.set_sw_sidebar_expanded(state.match_state.match_presentation.sw_sidebar.expanded);
         order

@@ -278,7 +278,6 @@ pub(in crate::sim) fn exit_produced_object(
     // `Cloning=` producer writes both Health and EstimatedHealth from the
     // clone infantry type's Strength, scaled by the producer type's
     // `InitialStrength.Cloning`.
-    #[cfg(feature = "phobos")]
     if product_category == EntityCategory::Infantry && producer_type.cloning {
         let percentage =
             initial_cloning_percentage(producer_type.phobos_initial_cloning, &mut sim.scenario_rng);
@@ -431,7 +430,6 @@ pub(in crate::sim) fn exit_produced_object(
 /// `max = (int)(Y * 100)`; return `X` when `X >= Y || ValueCount < 2`, else
 /// the inclusive integer percentage draw divided by 100. One Scenario RNG
 /// draw per call when a real range is authored, none otherwise.
-#[cfg(feature = "phobos")]
 fn initial_cloning_percentage(
     settings: crate::rules::ini_value::PartialDoublePair,
     scenario_rng: &mut crate::sim::rng::SimRng,
@@ -1002,7 +1000,6 @@ fn exit_cloning_vat_copies(
         // powered-down one. The vanilla loop this call stands in for has no
         // checks; the Ares clone path gates its sources through
         // `building_operational_state`, which already folds the power latch.
-        #[cfg(feature = "phobos")]
         if let Some(vat) = sim.substrate.entities.get(vat_id) {
             let powered = sim
                 .entity_object_type(vat, rules)
@@ -1097,7 +1094,6 @@ fn infantry_exit_tail(
     // destroys Idle and plays the roof or stock Production anim. A roof-exit
     // unit always takes the roof helper, which also owns the powered gate and
     // the plain ProductionAnim fallback; every other unit keeps the stock play.
-    #[cfg(feature = "phobos")]
     let producer_anim = {
         let producer = sim.substrate.entities.get(producer_id);
         producer
@@ -1118,7 +1114,6 @@ fn infantry_exit_tail(
                 ))
             })
     };
-    #[cfg(feature = "phobos")]
     if let Some((damaged, garrisoned)) = producer_anim {
         sim.clear_building_anim_slot(producer_id, 18);
         if product_type.exits_through_roof() {

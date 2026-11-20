@@ -818,7 +818,6 @@ impl Simulation {
         self.session.binary_frame().hash(hasher);
         self.planning.hash_state(hasher);
         self.hash_ion_blasts(hasher);
-        #[cfg(feature = "phobos")]
         self.warhead_anim_runtime.hash_state(hasher);
         // ScenarioClass's RNG; Main is a process global.
         self.scenario_rng.hash_state(hasher);
@@ -874,7 +873,6 @@ impl Simulation {
         // Phobos `ScenarioExt::AutoDeathObjects`: registered limboed AutoDeath
         // objects, in registration order. Native saves the collection with the
         // scenario; an empty one keeps earlier matches' hashes.
-        #[cfg(feature = "phobos")]
         if !self.auto_death_objects.is_empty() {
             b"phobos-auto-death-objects-v1".hash(hasher);
             self.auto_death_objects.hash(hasher);
@@ -937,7 +935,6 @@ impl Simulation {
         self.hash_projectiles(hasher);
         // Phobos `ScenarioExt::TransportReloaders` is saved scenario state;
         // its order decides the reload pass's visits.
-        #[cfg(feature = "phobos")]
         self.transport_reloaders.hash(hasher);
     }
 
@@ -1166,7 +1163,6 @@ impl Simulation {
                 b"prism-damage-multiplier-v1".hash(hasher);
                 projectile.payload().damage_multiplier().hash(hasher);
             }
-            #[cfg(feature = "phobos")]
             {
                 b"phobos-interceptor-state-v1".hash(hasher);
                 projectile.current_strength().hash(hasher);
@@ -1229,12 +1225,10 @@ impl Simulation {
                 b"bullet-firer-scheme-v1".hash(hasher);
                 house.index().hash(hasher);
             }
-            #[cfg(feature = "phobos")]
             if let Some(house) = projectile.phobos_firer_house() {
                 b"phobos-bullet-firer-house-v1".hash(hasher);
                 house.index().hash(hasher);
             }
-            #[cfg(feature = "phobos")]
             if let Some(state) = projectile.phobos_trajectory() {
                 b"phobos-trajectory-state-v1".hash(hasher);
                 state.hash_state(hasher);
@@ -1243,7 +1237,6 @@ impl Simulation {
                 b"ares-bullet-nuke-sw-v1".hash(hasher);
                 self.interner.resolve(sw_type).hash(hasher);
             }
-            #[cfg(feature = "phobos")]
             if projectile.payload().firepower_multiplier()
                 != crate::util::native_x87::NativeF64Bits::ONE
             {
@@ -1514,7 +1507,6 @@ impl Simulation {
             // real House field in the extension's save block. Tagged and
             // folded only once started, so a House that never alerted keeps
             // the native-only stream.
-            #[cfg(feature = "phobos")]
             if *house.combat_alert_timer() != crate::sim::timer::CdTimer::default() {
                 b"phobos-house-combat-alert-timer-v1".hash(hasher);
                 house.combat_alert_timer().hash(hasher);
@@ -1545,7 +1537,6 @@ impl Simulation {
             // Phobos' excluded part of those counters changes the
             // `0x00500910` speed count, so two worlds that differ only there
             // are not the same state.
-            #[cfg(feature = "phobos")]
             {
                 let excluded = house.tracking().non_mfb_factories();
                 if excluded != [0; 5] {
@@ -1889,9 +1880,7 @@ impl Simulation {
             debris.marked_for_deletion().hash(hasher);
             debris.owner_house().hash(hasher);
             debris.bounce().hash_bits(hasher);
-            #[cfg(feature = "phobos")]
             debris.trailer_spawn_timer_hash(hasher);
-            #[cfg(feature = "phobos")]
             if !debris.phobos_laser_trails().is_empty() {
                 b"phobos-laser-trails-v1".hash(hasher);
                 for trail in debris.phobos_laser_trails() {
@@ -1952,7 +1941,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     }
     // Phobos BuildingExt grinding-weapon accumulators gate the next
     // `Grinding.Weapon=` shot; only nonzero state affects the future.
-    #[cfg(feature = "phobos")]
     if entity.phobos_grinding_weapon_accumulated_credits() != 0
         || entity.phobos_grinding_weapon_last_fired_frame() != 0
     {
@@ -1967,7 +1955,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     // Phobos `BuildingExt::CurrentEMPulseSW` (`Ext/Building/Hooks.cpp:132-189`)
     // survives ticks until Mission_Missile selects and clears it; a different
     // latch changes the weapon slot and the resumed Super set.
-    #[cfg(feature = "phobos")]
     if let Some(sw) = entity.phobos_current_empulse_sw() {
         b"phobos-empulse-sw-v1".hash(hasher);
         sw.hash(hasher);
@@ -1976,7 +1963,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     // Only an entity with non-default state contributes, so an untouched save
     // keeps its old hash. The RNG draw that picked a ranged Duration is already
     // in `scenario_rng.hash_state` above.
-    #[cfg(feature = "phobos")]
     if entity.phobos_delayed_fire_start_frame() != -1
         || entity.phobos_delayed_fire_weapon_index() != -1
         || entity.phobos_delayed_fire_anim().is_some()
@@ -1994,7 +1980,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     }
     // Phobos `HasUndeployConverted`/`HasDeployConverted` gate the next
     // Deploy/Undeploy conversion.
-    #[cfg(feature = "phobos")]
     if entity.phobos_infantry_undeploy_converted() || entity.phobos_infantry_deploy_converted() {
         b"phobos-undeploy-convert-v1".hash(hasher);
         entity.phobos_infantry_undeploy_converted().hash(hasher);
@@ -2002,7 +1987,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     }
     // Phobos `BuildingExt::ConstructionStartFacing`: the cached random facing
     // decides later construction/selling turns, so it is simulation state.
-    #[cfg(feature = "phobos")]
     if entity.phobos_construction_start_facing() != -1 {
         b"phobos-construction-start-facing-v1".hash(hasher);
         entity.phobos_construction_start_facing().hash(hasher);
@@ -2010,7 +1994,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     // Phobos `TechnoExt::LastTargetCrd` and its clear timer feed
     // `ExtraThreatCoefficient.DistanceToLastTarget`; only non-default state
     // affects a future score, so an untouched object keeps its old hash.
-    #[cfg(feature = "phobos")]
     if entity.phobos_extra_threat_last_target_crd() != [0, 0, 0]
         || entity
             .phobos_extra_threat_last_target_clear_timer()
@@ -2142,7 +2125,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         entity.building_entry.hash(hasher);
     }
     let latches = entity.house_tracking_latches();
-    #[cfg(feature = "phobos")]
     {
         b"phobos-techno-placement-v1".hash(hasher);
         entity.phobos_placement.hash(hasher);
@@ -2369,7 +2351,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         entity.ares.ares_self_heal_combat.hash(hasher);
     }
     entity.hash_attach_effects(hasher);
-    #[cfg(feature = "phobos")]
     entity.hash_phobos_attach_effects(hasher);
     // Infantry gameplay reads its class-owned Doing/Stage fields.
     // A restored presentation component is not a second state owner.
@@ -2982,7 +2963,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         || entity.was_dropped_as_bomb();
     // Phobos `TechnoExt::HoverShutdown` gates the landing damage, so it is
     // live state; hashed only while set, like the canopy identity above.
-    #[cfg(feature = "phobos")]
     let fall_live = fall_live || entity.hover_shutdown();
     if fall_live {
         1u8.hash(hasher);
@@ -2990,7 +2970,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         entity.fall_rate().hash(hasher);
         entity.is_parachuted().hash(hasher);
         entity.was_dropped_as_bomb().hash(hasher);
-        #[cfg(feature = "phobos")]
         if entity.hover_shutdown() {
             entity.hover_shutdown().hash(hasher);
         }

@@ -35,8 +35,6 @@ impl Simulation {
         rules: &RuleSet,
         cells: Option<&NativeCellQuery<'_>>,
     ) -> Option<([i32; 3], (u16, u16))> {
-        #[cfg(not(feature = "phobos"))]
-        let _ = rules;
         let owner = self.session.current_house()?;
         let entities = &self.substrate.entities;
         let (mut sum_x, mut sum_y, mut count) = (0i32, 0i32, 0i32);
@@ -50,12 +48,9 @@ impl Simulation {
             if entity.lifecycle.in_limbo() || !entity.discovery.owned_by_current_house() {
                 continue;
             }
-            #[cfg(feature = "phobos")]
             let ignored = self
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.phobos_ignore_for_base_center);
-            #[cfg(not(feature = "phobos"))]
-            let ignored = false;
             if ignored {
                 continue;
             }

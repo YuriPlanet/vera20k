@@ -302,7 +302,6 @@ fn spawn_ares_child(
     // read the Ares way.
     let payload = if rules.ares_form() {
         let range = weapon.ares_projectile_range;
-        #[cfg(feature = "phobos")]
         let range = match world.substrate.entities.get(firer) {
             Some(firer_entity) => crate::sim::attach_effect::initial_projectile_range(
                 rules,

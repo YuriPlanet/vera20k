@@ -38,7 +38,6 @@ impl Simulation {
         // `Misc/Hooks.BugFixes.cpp:3655-3664`): a building being temporally
         // warped skips the powered-anim update while
         // `[General] Temporal.KillPoweredAnim=no` (constructor yes).
-        #[cfg(feature = "phobos")]
         if !rules.phobos_globals.temporal_kill_powered_anim
             && self
                 .substrate
@@ -114,7 +113,6 @@ impl Simulation {
     /// at `Ext/Building/Hooks.cpp:1179`): a powered slot is blocked while the
     /// building is offline, unless it is under Construction/Selling.
     /// RESIDUAL: Ares' `HasPowerFromMapFile` exception is not modeled.
-    #[cfg(feature = "phobos")]
     pub(crate) fn powered_anim_blocked(
         &self,
         id: u64,
@@ -858,7 +856,6 @@ mod tests {
     /// warped skips the powered-anim update under
     /// `[General] Temporal.KillPoweredAnim=no`; the constructor default
     /// `yes` keeps the update running.
-    #[cfg(feature = "phobos")]
     #[test]
     fn a_temporal_warp_skips_the_powered_anim_update_when_disabled() {
         use crate::sim::temporal::TemporalState;

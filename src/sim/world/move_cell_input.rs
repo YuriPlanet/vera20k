@@ -554,7 +554,6 @@ impl Simulation {
                 // (`Ext/Techno/WeaponHelpers.cpp:196-228`), so a secondary
                 // wall-breaker can admit the ATTACK rung the current weapon
                 // would refuse.
-                #[cfg(feature = "phobos")]
                 let wall_warhead = {
                     let index = crate::sim::combat::combat_weapon::weapon_index_against_wall(
                         self, entity, object, rules, overlay,
@@ -569,8 +568,6 @@ impl Simulation {
                     )
                     .and_then(|weapon| rules.weapon_warhead(weapon))
                 };
-                #[cfg(not(feature = "phobos"))]
-                let wall_warhead = warhead;
                 enemy_owned
                     && overlay.wall
                     && wall_warhead.is_some_and(|warhead| {
@@ -641,7 +638,6 @@ impl Simulation {
         };
         let terrain_fire = weapon.terrain_fire;
         match *target {
-            #[cfg(feature = "phobos")]
             TargetKind::Bullet(..) => false,
             TargetKind::Entity(target_id) if self.terrain_objects().get(target_id).is_some() => {
                 rules.general.tree_targeting || terrain_fire

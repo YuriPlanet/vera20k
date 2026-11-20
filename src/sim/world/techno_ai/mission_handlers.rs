@@ -1648,7 +1648,6 @@ fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super:
             .get(target)
             .is_some_and(|target| target.category() == EntityCategory::Structure),
         crate::sim::combat::TargetKind::Cell(..) => false,
-        #[cfg(feature = "phobos")]
         crate::sim::combat::TargetKind::Bullet(..) => false,
     };
     let mission = if object.engineer && !c4 {
@@ -2186,7 +2185,6 @@ pub(super) fn evaluate_foot_area_guard(
     // whose type sets `Harvester.CanGuardArea` jumps past the stock Harvest
     // switch; `RequireTarget` asks `TargetAndEstimateDamage(Location,
     // ThreatType::Area)`, the Area Guard threat scan, first.
-    #[cfg(feature = "phobos")]
     let keep_area_guard = {
         let key = sim.substrate.entities.get(id).is_some_and(|entity| {
             // The hook sits inside the stock harvester arm: only a Unit whose
@@ -2219,8 +2217,6 @@ pub(super) fn evaluate_foot_area_guard(
                 location,
             ))
     };
-    #[cfg(not(feature = "phobos"))]
-    let keep_area_guard = false;
     if !keep_area_guard
         && sim.substrate.entities.get(id).is_some_and(|entity| {
             entity.category() == EntityCategory::Unit && entity.is_harvester()

@@ -728,7 +728,6 @@ fn retail_room_bans_refuse_the_spy_and_stolen_tech_units() {
 /// BuildingType (an upgrade when `powers_up` is set); `Q` a plain
 /// VehicleType; `GT` a group member and `EX` an ExtraLimit type. `q_keys`
 /// (newline-terminated) is appended to `[UPG]`.
-#[cfg(feature = "phobos")]
 fn build_limit_group_rules(q_keys: &str, powers_up: bool) -> RuleSet {
     let mut ini = String::from(
         "[Countries]\n0=C0\n[VehicleTypes]\n0=Q\n1=GT\n2=EX\n\
@@ -751,7 +750,6 @@ fn build_limit_group_rules(q_keys: &str, powers_up: bool) -> RuleSet {
 /// owners, and only a `PowersUp.Buildings` item takes the CanBuild gate
 /// (`Hooks.Upgrade.cpp:104-108`).
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_reached_refuses_one_more() {
     let rules = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
     let upgrade = rules
@@ -789,7 +787,6 @@ fn build_limit_group_reached_refuses_one_more() {
 
 /// Boundary 2: `ExtraLimit` appends a quota to every limit (MaxNum caps it).
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_extra_limit_adds_quota_and_maxnum_caps_it() {
     let base = "BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n\
                 BuildLimitGroup.ExtraLimit.Types=EX\nBuildLimitGroup.ExtraLimit.Nums=1\n";
@@ -830,7 +827,6 @@ fn build_limit_group_extra_limit_adds_quota_and_maxnum_caps_it() {
 /// while `CanBuild` releases it in both settings (`UpgradeCheck`'s own queue
 /// pass never returns unbuildable for a queued reach).
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_queue_only_reach_greys_but_stays_buildable() {
     let base = "BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n";
     // owned(GT)=1 (<2) plus one queued GT -> reached only by the queue.
@@ -860,7 +856,6 @@ fn build_limit_group_queue_only_reach_greys_but_stays_buildable() {
 /// non-item slots on the first pass, then the second pass releases when any
 /// slot is below its threshold.
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_paired_nums_ands_and_releases() {
     let rules = build_limit_group_rules(
         "BuildLimitGroup.Types=GT,EX\nBuildLimitGroup.Nums=1,1\n",
@@ -898,7 +893,6 @@ fn build_limit_group_paired_nums_ands_and_releases() {
 /// building prerequisite. The legacy `PowersUpBuilding` string is not the
 /// whole set: here it names `HOST_A`, which the list puts second.
 #[test]
-#[cfg(feature = "phobos")]
 fn powers_up_buildings_prerequisite_accepts_any_declared_host() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
@@ -937,7 +931,6 @@ fn powers_up_buildings_prerequisite_accepts_any_declared_host() {
 /// host, so Ares' `CountOwned10020AF0` build-limit census sees an upgrade
 /// installed on the second host too.
 #[test]
-#[cfg(feature = "phobos")]
 fn powers_up_buildings_build_limit_counts_every_host() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
@@ -970,7 +963,6 @@ fn powers_up_buildings_build_limit_counts_every_host() {
     );
 }
 
-#[cfg(feature = "phobos")]
 fn queued_of(sim: &Simulation, owner: InternedId, category: ProductionCategory, name: &str) -> i32 {
     let type_id = sim.interner.get(name).unwrap();
     sim.production
@@ -982,7 +974,6 @@ fn queued_of(sim: &Simulation, owner: InternedId, category: ProductionCategory, 
 /// excess copies of the **queried** type from its factory and leaves the held
 /// product. Outside arm (the queried type is not a member) removes every copy.
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_reach_prunes_the_excess_queue() {
     let rules = build_limit_group_rules("BuildLimitGroup.Types=GT\nBuildLimitGroup.Nums=2\n", true);
     let row = json!({
@@ -1015,7 +1006,6 @@ fn build_limit_group_reach_prunes_the_excess_queue() {
 /// The tail prune of the multi-limit arm (`Body.cpp:1179`) only fires when
 /// `realReached || NotBuildableIfQueueMatch`; the flag is the difference.
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_tail_prune_follows_not_buildable_if_queue_match() {
     let base = "BuildLimitGroup.Types=GT,EX\nBuildLimitGroup.Nums=2,1\n";
     let row = json!({
@@ -1050,7 +1040,6 @@ fn build_limit_group_tail_prune_follows_not_buildable_if_queue_match() {
 /// copy when `num >= 1 - factor`, and a group that never reaches leaves the
 /// queue alone.
 #[test]
-#[cfg(feature = "phobos")]
 fn build_limit_group_upgrade_check_prunes_the_queue() {
     let row = json!({
         "owned": [["unit", "GT", 3]],

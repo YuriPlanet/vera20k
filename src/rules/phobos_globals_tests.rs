@@ -51,7 +51,6 @@ ApplyModifiersOnNegativeDamage=yes
         )
         .apply_modifiers_on_negative_damage
     );
-    #[cfg(feature = "phobos")]
     {
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[Warheads]
@@ -84,7 +83,6 @@ ApplyModifiersOnNegativeDamage=yes
 /// the native `FootClass::Scatter` call site (`Misc/Hooks.Ares.cpp:273-281`,
 /// returns `0x702D11`). An authored `no`, like a `<default>` reset, is a read
 /// value and therefore outranks a `yes` global.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_warhead_prevent_scatter_fallback() {
     let global_yes = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
@@ -144,7 +142,6 @@ fn the_warhead_prevent_scatter_fallback() {
 /// `[General] UnitPowerDrain=` (`Phobos.INI.cpp:263`, constructor `no`):
 /// owned Infantry/Unit/Aircraft types join the House power totals and the
 /// cameo readout.
-#[cfg(feature = "phobos")]
 #[test]
 fn unit_power_drain_constructs_false_and_reads_general() {
     assert!(!PhobosGlobals::default().unit_power_drain);
@@ -156,7 +153,6 @@ fn unit_power_drain_constructs_false_and_reads_general() {
 /// constructor `Body.h:339,847` no): the switch on Phobos' re-added Psychedelic
 /// ally test (`0x701D2E`, `Ext/Techno/Hooks.ReceiveDamage.cpp:535`). It sits
 /// next to `BerzerkTargeting` in the same section.
-#[cfg(feature = "phobos")]
 #[test]
 fn allow_berzerk_on_allies_constructs_false_and_reads_from_combat_damage() {
     assert!(!PhobosGlobals::default().allow_berzerk_on_allies);
@@ -171,7 +167,6 @@ fn allow_berzerk_on_allies_constructs_false_and_reads_from_combat_damage() {
 /// `[General] ReadyToNextMission.MovingCheck=` (`Ext/Rules/Body.cpp:646`,
 /// constructor `no` `Body.h:538,1040`): restores the stock always-ask
 /// `Is_Moving_Now` for a human owner (`0x7442D6`/`0x521BA7`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_ready_to_next_mission_moving_check_defaults_false() {
     assert!(!PhobosGlobals::default().ready_to_next_mission_moving_check);
@@ -207,7 +202,6 @@ ReadyToNextMission.MovingCheck=yes
 /// `Ext/Rules/Body.cpp:122-123`, `Body.h:41-42,581-582`): the supers
 /// `HouseExt::GetAIChronoshiftSupers` (`Ext/House/Body.cpp:333-368`) uses for
 /// the computer's Chronoshift actions.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_ai_chronoshift_supers_default_and_read_from_general() {
     let defaults = PhobosGlobals::default();
@@ -235,7 +229,6 @@ fn the_ai_chronoshift_supers_default_and_read_from_general() {
 /// `FindIndex` cannot find is an `INIParseFailed`, so the earlier index stays
 /// live. `INI_EX::ReadString` returning zero and `none`/`<none>` are the two
 /// ways the field does change.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_later_pass_with_an_unknown_ai_chrono_name_keeps_the_resolved_index() {
     fn layered(extra: &str) -> crate::rules::ruleset::RuleSet {
@@ -284,7 +277,6 @@ fn the_anim_crater_destroy_tiberium_fallback() {
         read("[CombatDamage]\nAnimCraterDestroyTiberium=no\n").anim_crater_destroy_tiberium,
         "a [General] read, not CombatDamage"
     );
-    #[cfg(feature = "phobos")]
     {
         // Phobos reads under the AnimType's own section (pID), so an ART
         // `Image=` redirect never supplies the key.
@@ -586,7 +578,6 @@ fn the_mind_control_silent_and_merge_building_damage_globals() {
 /// (`Ext/Rules/Body.cpp:598`, constructor `no` `Body.h:503,999`): the fallback
 /// of the warhead silent flag only where an Ares permanent capture replaces an
 /// already-controlled victim (`Misc/Hooks.Ares.cpp:120-124`).
-#[cfg(feature = "phobos")]
 #[test]
 fn the_permanent_replace_silent_defaults_false_and_reads_from_audio_visual() {
     assert!(!PhobosGlobals::default().mind_control_permanent_replace_silent);
@@ -746,7 +737,6 @@ fn art_image_swap_defaults_off_and_reads_from_general() {
 /// `BulletExt::ApplyArcingFix`), while both `Temporal.Apply*` globals
 /// construct **no**. The three share the CombatDamage section with the
 /// other Phobos combat gates, not `[General]`.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_g1_combat_damage_gates_construct_and_read_from_their_own_section() {
     let defaults = PhobosGlobals::default();
@@ -777,7 +767,6 @@ fn the_g1_combat_damage_gates_construct_and_read_from_their_own_section() {
 /// constructed false at `Body.h:1042`): the global fallback Phobos' re-hook of
 /// the native scatter call site (`Misc/Hooks.Ares.cpp:278`) uses for a warhead
 /// that does not author `PreventScatter=`.
-#[cfg(feature = "phobos")]
 #[test]
 fn warhead_prevent_scatter_constructs_false_and_reads_from_combat_damage() {
     assert!(!PhobosGlobals::default().warhead_prevent_scatter);
@@ -1049,7 +1038,6 @@ fn the_chrono_sphere_pre_delay_defaults_to_sixty() {
 /// `[AudioVisual] UseFixedVoxelLighting=` (`Ext/Rules/Body.cpp:368`,
 /// constructor **no** `Body.h:273,793`): the voxel initializer's secondary
 /// light vector becomes `{0,0,0}` (hook `0x753D86`) instead of `{0,0,1}`.
-#[cfg(feature = "phobos")]
 #[test]
 fn the_fixed_voxel_lighting_defaults_false_and_reads_from_audio_visual() {
     assert!(!PhobosGlobals::default().use_fixed_voxel_lighting);

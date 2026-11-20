@@ -62,7 +62,6 @@ pub use self::production_repair::{buildings_wanting_repair, can_repair_building}
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 // The AutoDeath `Sell` arm (`auto_death::sell_self`, phobos-gated) and the
 // test fixtures share this owner.
-#[cfg(any(test, feature = "test-support", feature = "phobos"))]
 pub(crate) use self::production_sell::begin_selling;
 pub use self::production_sell::foot_can_be_sold;
 pub(crate) use self::production_sell::foot_on_sold;

@@ -331,7 +331,6 @@ fn overlay_recoil_adds_the_type_extra_forward_tilt() {
 /// Phobos `UnitClass_OverrunSquare_TiltWhenCrushes` (`0x741941`,
 /// `Ext/Unit/Hooks.Crushing.cpp:23-38`) replaces the stock FCOMP and stores
 /// its rate even over a nonzero pre-crush forward rate.
-#[cfg(feature = "phobos")]
 #[test]
 fn unit_crush_tilt_overwrites_a_nonzero_pre_crush_rate() {
     let mut value = state([0, 0, 0, 0x3e80_0000]);

@@ -97,7 +97,13 @@ pub(crate) fn update_is_on_screen(
         update.coord.y,
         update.coord.z,
     );
-    super::instances::projection_admitted([x, y], camera, viewport)
+    super::instances::projection_admitted(
+        [x, y],
+        super::instances::TacticalAdmission {
+            corner: camera,
+            size: viewport,
+        },
+    )
 }
 
 /// The native branches preserve sign alternation while reducing magnitude:
