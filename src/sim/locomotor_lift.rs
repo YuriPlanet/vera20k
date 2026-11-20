@@ -546,7 +546,7 @@ impl Simulation {
             return;
         };
         entity.lift.swap_active = true;
-        let building_contact = entity.radio_contacts.slot(0).is_some_and(|contact| {
+        let building_contact = entity.seldom.radio_contacts.slot(0).is_some_and(|contact| {
             self.substrate
                 .entities
                 .get(contact)
@@ -630,9 +630,9 @@ impl Simulation {
             Some(height) if height > 0 => {
                 if let Some(entity) = self.substrate.entities.get_mut(held) {
                     entity.crash.raise();
-                    entity.drop_credit.being_manipulated = true;
-                    entity.drop_credit.manipulated_by = Some(firer);
-                    entity.drop_credit.warped_by_house = Some(firer_house);
+                    entity.seldom.drop_credit.being_manipulated = true;
+                    entity.seldom.drop_credit.manipulated_by = Some(firer);
+                    entity.seldom.drop_credit.warped_by_house = Some(firer_house);
                 }
                 self.stun(held, UninitContext::new(rules).with_effects(effects));
                 self.assign_null_destination(held, rules, registry, effects);
@@ -678,11 +678,12 @@ impl Simulation {
             return;
         };
         let holds = entity.lift.target() == Some(expired);
-        if entity.drop_credit.manipulated_by() == Some(expired) {
+        if entity.seldom.drop_credit.manipulated_by() == Some(expired) {
             self.substrate
                 .entities
                 .get_mut(listener)
                 .expect("same listener")
+                .seldom
                 .drop_credit
                 .manipulated_by = None;
         }
@@ -744,8 +745,8 @@ impl Simulation {
             return false;
         };
         match (
-            entity.drop_credit.manipulated_by(),
-            entity.drop_credit.warped_by_house(),
+            entity.seldom.drop_credit.manipulated_by(),
+            entity.seldom.drop_credit.warped_by_house(),
         ) {
             (Some(killer), _) => {
                 self.record_the_kill(
@@ -909,9 +910,9 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get(id) else {
             return false;
         };
-        let (attacker, house) = match owner.drop_credit.manipulated_by() {
+        let (attacker, house) = match owner.seldom.drop_credit.manipulated_by() {
             Some(magnetron) => (magnetron, None),
-            None => (id, owner.drop_credit.warped_by_house()),
+            None => (id, owner.seldom.drop_credit.warped_by_house()),
         };
         let warhead = self.interner.intern(&rules.bridge_warheads.crush_name);
         let receiver = match target {
@@ -980,7 +981,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|entity| entity.drop_credit.manipulated_by());
+            .and_then(|entity| entity.seldom.drop_credit.manipulated_by());
         self.free_slaves(id, killer, None, rules, registry, effects);
         self.record_manipulated_kill(id, id, UninitContext::new(rules).with_effects(effects));
     }

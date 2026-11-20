@@ -255,7 +255,7 @@ fn latch_unloading_image(sim: &mut Simulation, id: u64, image: &str) {
     let image = sim.intern(image);
     sim.entity_mut_for_test(id)
         .expect("the object was just built")
-        .display_type_override
+        .seldom.display_type_override
         .set_for_test(Some(image));
 }
 
@@ -896,7 +896,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
             .slots_mut_for_test()
             .clear();
         entity
-            .disguise
+            .seldom.disguise
             .get_or_insert_with(Default::default)
             .acquire(0, Some(disguise), None);
     }
@@ -926,7 +926,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     assert_eq!(model(&sim, id), "GUNNED");
     sim.entity_mut_for_test(id)
         .unwrap()
-        .disguise
+        .seldom.disguise
         .as_mut()
         .unwrap()
         .clear_unit();
@@ -938,7 +938,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
 
     let entity = sim.entity_mut_for_test(no_model).unwrap();
     entity
-        .disguise
+        .seldom.disguise
         .get_or_insert_with(Default::default)
         .acquire(0, Some(disguise), None);
     entity.set_unit_simple_deploy_for_test(true, false, false);
@@ -1104,7 +1104,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
             continue;
         }
         let actor = sim.entity_mut_for_test(id).unwrap();
-        let disguise = actor.disguise.as_mut().unwrap();
+        let disguise = actor.seldom.disguise.as_mut().unwrap();
         if input["raw_disguised"].as_bool().unwrap() {
             disguise.acquire(
                 input["creation"].as_i64().unwrap() as u32,

@@ -94,7 +94,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         attacker
             .attack_target
             .set_for_test(Some(TargetKind::Entity(10)));
-        attacker.radio_contacts.insert(10);
+        attacker.seldom.radio_contacts.insert(10);
         attacker
             .mission
             .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
@@ -152,7 +152,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         let health = if id == 11 { 100 } else { 0 };
         assert_eq!(entity.health.current(), health, "object {id}");
         assert!(!entity.lifecycle.object_alive());
-        assert!(!entity.in_logic_vector.is_member());
+        assert!(!entity.seldom.in_logic_vector.is_member());
     }
     let listener = fatal.substrate.entities.get(30).unwrap();
     assert_eq!(
@@ -164,7 +164,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     assert_eq!(
         fatal
             .interner
-            .resolve(nested_fatal.kill_record.killer().unwrap()),
+            .resolve(nested_fatal.seldom.kill_record.killer().unwrap()),
         "Soviet"
     );
     // Only the surviving listener (30) pings. The nested-fatal building (31)
@@ -191,7 +191,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     );
     assert!(!fatal.substrate.occupancy.contains_entity(8, 5, 10));
     let attacker = fatal.substrate.entities.get(20).unwrap();
-    assert!(!attacker.radio_contacts.contains(10));
+    assert!(!attacker.seldom.radio_contacts.contains(10));
     assert!(attacker.attack_target.target().is_none());
     assert!(
         result
@@ -264,6 +264,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             .entities
             .get(20)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(10)
     );
@@ -491,7 +492,8 @@ fn insert_revealed_structure(sim: &mut Simulation, id: u64, rx: u16, ry: u16) {
     );
     s.set_owner_for_test(sim.interner.intern("Americans"));
     s.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
-    s.type_facts
+    s.seldom
+        .type_facts
         .set_foundation_for_test("2x2".to_string().into());
     sim.substrate.entities.insert(s);
     sim.reveal(id);
@@ -594,7 +596,8 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
             ry,
             EntityCategory::Structure,
         );
-        bld.type_facts
+        bld.seldom
+            .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         bld.health = Health::new(750);
         sim.substrate.entities.insert(bld);
@@ -685,7 +688,8 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     // object pass.
     let mut bld =
         GameEntity::test_default_of_category(2, "TARGB", "Russia", 7, 5, EntityCategory::Structure);
-    bld.type_facts
+    bld.seldom
+        .type_facts
         .set_foundation_for_test("1x1".to_string().into());
     bld.health = Health::new(50);
     bld.building.repairing.set_for_test(true);

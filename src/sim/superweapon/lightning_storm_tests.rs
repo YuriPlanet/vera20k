@@ -1353,7 +1353,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
     assert!(fatal.substrate.entities.get(10).is_some_and(|entity| {
         entity.health.current() == 0
             && entity.death.is_dying()
-            && !entity.in_logic_vector.is_member()
+            && !entity.seldom.in_logic_vector.is_member()
     }));
     assert_eq!(
         fatal.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,

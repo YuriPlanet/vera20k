@@ -510,7 +510,8 @@ impl Simulation {
                     // Installed Ares dispatcher1003A110 sets Ext+B0 for67,
                     // clears it for64, then calls the same Foot vt+34C.
                     if ares && let Some(foot) = self.substrate.entities.get_mut(current) {
-                        foot.ares
+                        foot.seldom
+                            .ares
                             .vehicle_driver
                             .set_vehicle_seek(action.action_id != 64);
                     }
@@ -1608,7 +1609,7 @@ impl Simulation {
             .substrate
             .entities
             .get(transport)
-            .is_some_and(|entity| !entity.radio_contacts.is_empty())
+            .is_some_and(|entity| !entity.seldom.radio_contacts.is_empty())
         {
             return;
         }
@@ -2154,7 +2155,7 @@ impl Simulation {
             .iter()
             .filter_map(|&id| {
                 let building = self.substrate.entities.get(id)?;
-                (building.type_facts.base_plan_type_index() == index)
+                (building.seldom.type_facts.base_plan_type_index() == index)
                     .then(|| (id, location_xyz(building, terrain)))
             })
             .collect();
@@ -2357,7 +2358,10 @@ impl Simulation {
         for member in members {
             self.team_member_clear_target(member, rules);
             if let Some(entity) = self.substrate.entities.get_mut(member) {
-                entity.foot_retarget_after_stop.mark_stopped_cannot_fire();
+                entity
+                    .seldom
+                    .foot_retarget_after_stop
+                    .mark_stopped_cannot_fire();
             }
         }
     }
@@ -2495,7 +2499,7 @@ impl Simulation {
                 }
             } else {
                 if aggressive && entity.attack_target.target().is_some() {
-                    if !entity.tesla_charger.is_active() {
+                    if !entity.seldom.tesla_charger.is_active() {
                         continue;
                     }
                     //6EBDF3..6EBE0D recalls an automatic coil charger: the
@@ -2991,7 +2995,7 @@ impl Simulation {
             .iter_sorted()
             .filter(|(_, building)| {
                 building.category() == EntityCategory::Structure
-                    && building.type_facts.base_plan_type_index() == index
+                    && building.seldom.type_facts.base_plan_type_index() == index
             })
             .map(|(id, building)| TargetBuilding {
                 id,

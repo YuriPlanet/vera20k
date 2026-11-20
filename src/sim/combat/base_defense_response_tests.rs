@@ -138,6 +138,7 @@ fn armed_victim_can_skip_base_defense_without_writing_the_attacker_cooldown() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .base_defense_response
             .cooldown();
         respond(&mut sim, &rules);
@@ -146,6 +147,7 @@ fn armed_victim_can_skip_base_defense_without_writing_the_attacker_cooldown() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .base_defense_response
             .cooldown();
         assert_eq!(
@@ -375,6 +377,7 @@ fn gsi_04_05_zero_budget_still_suspends_low_priority_teams_before_scan_exit() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .base_defense_response
             .cooldown,
         CdTimer::from_raw(-1, 0)
@@ -434,7 +437,7 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
     );
     let attacker = sim.substrate.entities.get(2).unwrap();
     assert_eq!(
-        attacker.base_defense_response.cooldown,
+        attacker.seldom.base_defense_response.cooldown,
         CdTimer::started(41, 225)
     );
 }
@@ -477,7 +480,12 @@ fn gsi_04_05_a_negative_budget_starts_the_cooldown_without_an_assignment() {
         let entities = &sim.substrate.entities;
         assert_eq!(entities.get(3).unwrap().archive_target(), None);
         assert_eq!(
-            entities.get(2).unwrap().base_defense_response.cooldown,
+            entities
+                .get(2)
+                .unwrap()
+                .seldom
+                .base_defense_response
+                .cooldown,
             expected_cooldown,
             "response {response}, defender ThreatPosed {defender_threat}"
         );
@@ -760,7 +768,7 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
             .entities
             .insert(native::candidate(&row["victim"], 1, "VICTIM"));
         if victim_is_slave {
-            sim.substrate.entities.get_mut(1).unwrap().slave =
+            sim.substrate.entities.get_mut(1).unwrap().seldom.slave =
                 crate::sim::slave_manager::SlaveLink::for_test(Some(99), Vec::new());
         }
         sim.substrate

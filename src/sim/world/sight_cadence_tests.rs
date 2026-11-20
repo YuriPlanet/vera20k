@@ -67,7 +67,7 @@ fn retail_harrier_flight_refreshes_sight_edges_and_retains_height_across_save() 
     let mut repaired_ground_edge = false;
     for _ in 0..1200 {
         let entity = sim.entities().get(plane).expect("the Harrier stays alive");
-        let timer = entity.sight_refresh_timers.timer(owner);
+        let timer = entity.seldom.sight_refresh_timers.timer(owner);
         let height = crate::sim::movement::air_movement::current_fly_height(
             entity,
             sim.resolved_terrain.as_ref(),
@@ -89,6 +89,7 @@ fn retail_harrier_flight_refreshes_sight_edges_and_retains_height_across_save() 
             .entities()
             .get(plane)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(owner)
             == timer
@@ -126,6 +127,7 @@ fn retail_harrier_flight_refreshes_sight_edges_and_retains_height_across_save() 
                 .entities()
                 .get(plane)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers
                 .clone();
             let bytes =
@@ -135,7 +137,11 @@ fn retail_harrier_flight_refreshes_sight_edges_and_retains_height_across_save() 
                 .sim;
             sim.restore_after_snapshot_load().unwrap();
             assert_eq!(
-                sim.entities().get(plane).unwrap().sight_refresh_timers,
+                sim.entities()
+                    .get(plane)
+                    .unwrap()
+                    .seldom
+                    .sight_refresh_timers,
                 retained
             );
             saved_at_cruise = true;
@@ -182,7 +188,7 @@ fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_sou
             ),
             0
         );
-        assert!(entity.discovery.discovered_by_current_house());
+        assert!(entity.seldom.discovery.discovered_by_current_house());
         assert!(
             sim.substrate
                 .display
@@ -311,7 +317,7 @@ fn aircraft_uncached_sight_rereads_its_location_between_map_passes() {
                 let entity = sim.substrate.entities.get_mut(id).unwrap();
                 entity.position.set_rx_for_test(20);
                 entity.position.put_z(416);
-                entity.sight.set_vision_range_for_test(10);
+                entity.seldom.sight.set_vision_range_for_test(10);
             },
             || sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(&rules)),
         )
@@ -776,9 +782,9 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
     assert!(source.in_playfield());
     assert_eq!(
         json!([
-            u8::from(source.discovery.owned_by_current_house()),
-            u8::from(source.discovery.discovered_by_current_house()),
-            u8::from(source.discovery.discovered_by_other_house()),
+            u8::from(source.seldom.discovery.owned_by_current_house()),
+            u8::from(source.seldom.discovery.discovered_by_current_house()),
+            u8::from(source.seldom.discovery.discovered_by_other_house()),
         ]),
         history["source_states"]["discovery_bytes_41a_41c"]["after_unlimbo"],
         "the source's native discovery consumers complete before return",
@@ -1461,6 +1467,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             z: i32::try_from(xyz[2].as_i64().unwrap()).unwrap(),
         });
         entity
+            .seldom
             .sight
             .stamp_type_sight(i32::try_from(input["type_sight"].as_i64().unwrap()).unwrap());
         // Declared native owner-field control, kept consistent with the store
@@ -2348,6 +2355,7 @@ fn make_ally_refreshes_own_sight_after_admission_and_skips_a_refused_repeat() {
         sim.entities()
             .get(id)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     );

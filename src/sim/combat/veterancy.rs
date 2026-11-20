@@ -703,7 +703,7 @@ pub fn ares_self_heal_amount(
     repair_rate_minutes: f64,
 ) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X;
-    let combat = entity.ares.ares_self_heal_combat;
+    let combat = entity.seldom.ares.ares_self_heal_combat;
     if combat.start_frame() != crate::sim::timer::PAUSED_START_FRAME && combat.remaining(frame) > 0
     {
         return 0;

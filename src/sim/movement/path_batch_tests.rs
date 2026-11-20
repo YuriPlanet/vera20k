@@ -1926,6 +1926,7 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
         .entities
         .get_mut(tank)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     // The plain A* does not read the zones, and this ridge is only theirs.

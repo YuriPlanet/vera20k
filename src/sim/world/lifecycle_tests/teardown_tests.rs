@@ -297,6 +297,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building

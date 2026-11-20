@@ -486,7 +486,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(Arrival::Return);
         };
-        let contact_cell = match entity.radio_contacts.slot(0) {
+        let contact_cell = match entity.seldom.radio_contacts.slot(0) {
             Some(contact) => {
                 let coord = super::super::navcom::nav_target_coordinate(
                     NavTargetRef::Object { id: contact },
@@ -1021,7 +1021,9 @@ impl Simulation {
             location.y.wrapping_sub(destination.y),
             location.z.wrapping_sub(destination.z),
         ) < rules.general.close_enough;
-        if close && entity.radio_contacts.is_empty() && self.track_stop_band(location, destination)
+        if close
+            && entity.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(location, destination)
         {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);

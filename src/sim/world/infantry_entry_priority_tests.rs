@@ -272,7 +272,7 @@ fn a_tethered_enter_mover_may_take_its_warped_out_navcom() {
     };
     assert_eq!(entry(&mut sim), 7);
     let mover = sim.substrate.entities.get_mut(90).unwrap();
-    mover.tether.set_for_test(Some(91));
+    mover.seldom.tether.set_for_test(Some(91));
     assert_eq!(entry(&mut sim), 0);
 }
 

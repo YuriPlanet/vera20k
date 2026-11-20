@@ -551,7 +551,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
         .unwrap();
         let expected = &row["after"]["contacts"];
         let check = |entity: &GameEntity| {
-            let contacts = &entity.radio_contacts;
+            let contacts = &entity.seldom.radio_contacts;
             assert_eq!(
                 serde_json::json!(contacts.capacity()),
                 expected["count"],
@@ -670,14 +670,18 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                 crate::sim::radio::RadioResponse::Roger
             );
             let base = authored.substrate.entities.get(base_id).unwrap();
-            assert_eq!(base.radio_contacts.capacity(), pads as usize);
-            assert_eq!(base.radio_contacts.slot(pad as usize), Some(aircraft));
+            assert_eq!(base.seldom.radio_contacts.capacity(), pads as usize);
+            assert_eq!(
+                base.seldom.radio_contacts.slot(pad as usize),
+                Some(aircraft)
+            );
             assert_eq!(
                 authored
                     .substrate
                     .entities
                     .get(aircraft)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .slot(0),
                 Some(base_id)
@@ -836,7 +840,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
             .unwrap();
         let row = if sight == 0 { &native[2] } else { &native[1] };
         assert_eq!(
-            serde_json::json!(bytes(entity.discovery)),
+            serde_json::json!(bytes(entity.seldom.discovery)),
             row["output"]["constructor"]["object"]
         );
         let (id, outcome) = sim.unlimbo_after_constructor_managers(
@@ -848,7 +852,9 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         assert!(sim.substrate.occupancy.contains_entity(6, 5, id));
         assert_eq!(
-            serde_json::json!(bytes(sim.substrate.entities.get(id).unwrap().discovery)),
+            serde_json::json!(bytes(
+                sim.substrate.entities.get(id).unwrap().seldom.discovery
+            )),
             row["output"]["sight"]["object"]
         );
         if sight == 0 {
@@ -861,6 +867,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house(),
             "human Conceal retains the actual observation"
@@ -879,7 +886,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
             .is_some()
         );
         sim.change_owner(id, other);
-        let transferred = sim.substrate.entities.get(id).unwrap().discovery;
+        let transferred = sim.substrate.entities.get(id).unwrap().seldom.discovery;
         assert_eq!(bytes(transferred), [0, 1, 0]);
         // Match the admitted Scenario Seed0 and lost active-planner state
         // before comparing this discovery-state roundtrip's whole hash.
@@ -890,13 +897,27 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
-            restored.substrate.entities.get(id).unwrap().discovery,
+            restored
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .discovery,
             transferred
         );
         assert_eq!(restored.state_hash(), hash);
         restored.object_conceal(id);
         assert_eq!(
-            bytes(restored.substrate.entities.get(id).unwrap().discovery),
+            bytes(
+                restored
+                    .substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
+            ),
             [0, 0, 0]
         );
         assert!(
@@ -915,7 +936,13 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         );
         assert_eq!(
             serde_json::json!(bytes(
-                restored.substrate.entities.get(id).unwrap().discovery
+                restored
+                    .substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
             )),
             foreign["output"]["put"]["object"],
             "full reentry includes CellPUT47E8A0 -> Discovered6F4960(PlayerPtr); the original entry/sight boundary alone has [0,0,1]"
@@ -963,6 +990,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -973,6 +1001,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house(),
             "other human Conceal retains historical B"
@@ -1003,9 +1032,15 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
             entity.in_playfield(),
             placement == PlacementEvidence::MarkFailed
         );
-        assert!(!entity.discovery.owned_by_current_house());
-        assert_eq!(entity.discovery.discovered_by_current_house(), expected_b);
-        assert_eq!(entity.discovery.discovered_by_other_house(), expected_c);
+        assert!(!entity.seldom.discovery.owned_by_current_house());
+        assert_eq!(
+            entity.seldom.discovery.discovered_by_current_house(),
+            expected_b
+        );
+        assert_eq!(
+            entity.seldom.discovery.discovered_by_other_house(),
+            expected_c
+        );
         assert_eq!(
             sim.substrate.occupancy.contains_entity(5, 5, id),
             placement != PlacementEvidence::MarkFailed
@@ -1071,7 +1106,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
         .is_some()
     );
     let entity = sim.substrate.entities.get(id).unwrap();
-    assert!(entity.discovery.discovered_by_other_house());
+    assert!(entity.seldom.discovery.discovered_by_other_house());
     assert_eq!(entity.mission.current(), guard);
     assert_eq!(entity.mission.queued(), MissionId::NONE);
     // The discovery arm itself (`TechnoClass 0x006F4960`, reached again when
@@ -1080,6 +1115,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     for first in [true, false] {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity
+            .seldom
             .discovery
             .set_discovered_by_other_house_for_test(!first);
         entity
@@ -1098,7 +1134,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
         assert_eq!(entity.mission.effective(), ambush);
         sim.discover_techno(id, other, crate::sim::world::UninitContext::default());
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert!(entity.discovery.discovered_by_other_house());
+        assert!(entity.seldom.discovery.discovered_by_other_house());
         assert_eq!(entity.mission.queued(), if first { hunt } else { ambush });
         assert_eq!(
             entity.mission.current(),
@@ -1140,11 +1176,11 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             .unwrap()
             .unwrap();
         assert_eq!(
-            entity.sight.range(),
+            entity.seldom.sight.range(),
             sight,
             "the native signed Type Sight survives construction"
         );
-        assert_eq!(entity.sight.is_zero(), sight == 0);
+        assert_eq!(entity.seldom.sight.is_zero(), sight == 0);
         let (id, outcome) = sim.unlimbo_after_constructor_managers(
             entity,
             &rules,
@@ -1157,7 +1193,14 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
-            restored.substrate.entities.get(id).unwrap().sight.is_zero(),
+            restored
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .sight
+                .is_zero(),
             sight == 0
         );
         let hash = restored.state_hash();
@@ -1170,6 +1213,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .sight
             .stamp_type_sight(if sight == 0 { 1 } else { 0 });
         assert_ne!(
@@ -1189,6 +1233,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house(),
             sight != 0,
@@ -1236,6 +1281,7 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
             .entities
             .get(id)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     );
@@ -1387,7 +1433,7 @@ fn campaign_unlimbo_discovers_a_building_on_open_ground_instead_of_lighting_it()
         .expect("the opening lights the lamp");
     assert!(light.active);
     let lamp = sim.substrate.entities.get(id).unwrap();
-    assert!(lamp.discovery.discovered_by_current_house());
+    assert!(lamp.seldom.discovery.discovered_by_current_house());
     assert!(lamp.building_art.actually_placed());
 }
 
@@ -1453,6 +1499,7 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
             .entities
             .get_mut(held)
             .unwrap()
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(true);
         sim.reveal_constructed_object_at_height(
@@ -2004,7 +2051,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         for (index, child_id) in child_ids.iter().copied().enumerate() {
             let child = sim.substrate.entities.get(child_id).expect("spawn child");
             assert_eq!(child.techno_ctor_random_word(), words[index + 1]);
-            assert_eq!(child.spawn_owner_id.owner(), Some(parent_id));
+            assert_eq!(child.seldom.spawn_owner_id.owner(), Some(parent_id));
             assert!(child.lifecycle.in_limbo() && !child.lifecycle.cell_marked());
         }
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -2060,7 +2107,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         for (index, slave_id) in slave_ids.iter().copied().enumerate() {
             let slave = sim.substrate.entities.get(slave_id).expect("slave child");
             assert_eq!(slave.techno_ctor_random_word(), words[index + 1]);
-            assert_eq!(slave.slave.owner(), Some(parent_id));
+            assert_eq!(slave.seldom.slave.owner(), Some(parent_id));
             assert!(slave.lifecycle.in_limbo() && !slave.lifecycle.cell_marked());
         }
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -2645,7 +2692,7 @@ fn authored_retail_upgrade_lends_its_weapon_and_fire_offset() {
         let host = sim.substrate.entities.get(1).unwrap();
         entered_attack |=
             host.mission.current().known() == Some(crate::sim::mission::MissionType::Attack);
-        assert_eq!(host.rearm_timer.remaining(frame as i32), 0);
+        assert_eq!(host.seldom.rearm_timer.remaining(frame as i32), 0);
     }
     assert!(
         entered_attack,
@@ -2790,6 +2837,7 @@ fn authored_upgrade_attack_uses_fixed_slots_and_live_target() {
                     .entities
                     .get(1)
                     .unwrap()
+                    .seldom
                     .rearm_timer
                     .remaining(frame as i32)
                     > 0
@@ -2965,7 +3013,7 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
         assert!(!upgrade.lifecycle.object_alive());
         assert!(upgrade.lifecycle.in_limbo());
         assert!(!upgrade.lifecycle.cell_marked());
-        assert!(!upgrade.in_logic_vector.is_member());
+        assert!(!upgrade.seldom.in_logic_vector.is_member());
     }
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     assert_eq!(
@@ -3261,6 +3309,7 @@ fn a_building_s_ai_sale_byte_follows_its_buildup_or_its_map_line() {
             .entities
             .get(id)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .ai_sellable()
     };
@@ -3333,7 +3382,7 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
         assert_eq!(sim.spawn_from_map(&[line], Some(&rules)), 1);
         let building = sim.substrate.entities.values().next().unwrap();
         assert_eq!(
-            building.ai_sell_repair.ai_repairable(),
+            building.seldom.ai_sell_repair.ai_repairable(),
             expected,
             "game mode {game_mode_nonzero}, {owner}, field {field}"
         );

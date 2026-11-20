@@ -246,7 +246,7 @@ fn failed_pad_nudge_still_assigns_the_zero_cell() {
         FrameEffects::default(),
     );
     let unit = sim.substrate.entities.get(miner).unwrap();
-    assert!(unit.radio_contacts.is_empty());
+    assert!(unit.seldom.radio_contacts.is_empty());
     assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(0, 0)));
     assert_eq!(unit.mission.effective().known(), Some(MissionType::Move));
 }

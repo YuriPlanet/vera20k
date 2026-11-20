@@ -184,6 +184,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     sim.with_object_placement_scope(|sim| {
@@ -844,7 +845,7 @@ fn drop_payload_matches_native() {
             .set_current_for_test(int(&row["ammo"]));
         let passes = i8::try_from(int(&row["passes"])).unwrap();
         entity.mission_leaf.set_paradrop_passes_for_test(passes);
-        let rearm = entity.rearm_timer.timer();
+        let rearm = entity.seldom.rearm_timer.timer();
         if flag(row, "team") {
             crate::sim::team_script_vm::join_team_for_test(&mut sim, &[plane], false, false);
         }
@@ -973,7 +974,7 @@ fn drop_payload_matches_native() {
         } else {
             rearm
         };
-        assert_eq!(entity.rearm_timer.timer(), rearm, "{row}");
+        assert_eq!(entity.seldom.rearm_timer.timer(), rearm, "{row}");
         let chain: Vec<u64> = row["cargo"][1]
             .as_array()
             .unwrap()

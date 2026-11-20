@@ -216,7 +216,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(foot)
-                    .is_some_and(|entity| entity.selection.is_selected());
+                    .is_some_and(|entity| entity.seldom.selection.is_selected());
                 if self.techno_limbo_with_context(foot, context) == ConcealOutcome::Concealed {
                     removed.push((foot, selected));
                 }
@@ -271,7 +271,7 @@ impl Simulation {
             .substrate
             .entities
             .get(engineer_id)
-            .is_some_and(|entity| entity.selection.is_selected());
+            .is_some_and(|entity| entity.seldom.selection.is_selected());
         let _ = self.techno_limbo_with_context(engineer_id, context);
         // GetMapCoords after Remove: the cell of his retained Location.
         let Some(cell) = self

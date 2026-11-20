@@ -81,7 +81,7 @@ impl Simulation {
             return None;
         }
         let object = self.interner.object_type(entity.type_ref(), rules)?;
-        let voices = if entity.slave.owner().is_some() {
+        let voices = if entity.seldom.slave.owner().is_some() {
             &object.voice_select_enslaved
         } else if entity.deactivated.is_offline() {
             &object.voice_select_deactivated
@@ -304,6 +304,7 @@ impl Simulation {
         self.substrate
             .entities
             .get_mut(entity_id)?
+            .seldom
             .suppress_deploy_voice
             .clear();
         request

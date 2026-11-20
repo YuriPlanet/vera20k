@@ -33,6 +33,7 @@ fn registered(sim: &Simulation, building: u64) -> Vec<u64> {
         .entities
         .get(building)
         .unwrap()
+        .seldom
         .ares
         .radar_jam
         .registered_jammers()

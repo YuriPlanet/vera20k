@@ -146,6 +146,7 @@ fn a_ground_hijacked_vehicle_refunds_its_hijacker() {
             .entities
             .get_mut(tank)
             .unwrap()
+            .seldom
             .capture_infantry_type_index
             .record(captor);
         let before = sim.houses[&owner].economy().credits();

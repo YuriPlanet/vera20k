@@ -191,7 +191,7 @@ impl Simulation {
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.building_entry.clear_occupy_seeks();
+            entity.seldom.building_entry.clear_occupy_seeks();
         }
         if selected {
             self.techno_select(id, UninitContext::new(rules).with_effects(effects));
@@ -246,7 +246,8 @@ impl Simulation {
             .entities
             .get_mut(unit_id)
             .is_some_and(|unit| {
-                unit.ares
+                unit.seldom
+                    .ares
                     .vehicle_driver
                     .begin_survivor_release(dying.ignore_defenses)
             });
@@ -254,8 +255,8 @@ impl Simulation {
             let mut count = crew_rules.pilot_count(i32::from(crewed));
             let captor = self.substrate.entities.get(unit_id).map(|unit| {
                 (
-                    unit.capture_infantry_type_index.get(),
-                    unit.ares.vehicle_driver.captured(),
+                    unit.seldom.capture_infantry_type_index.get(),
+                    unit.seldom.ares.vehicle_driver.captured(),
                 )
             });
             if let Some((index, saved)) = captor.filter(|(index, _)| *index >= 0) {
@@ -264,6 +265,7 @@ impl Simulation {
                     .entities
                     .get_mut(unit_id)
                     .unwrap()
+                    .seldom
                     .capture_infantry_type_index
                     .record(-1);
                 if let Some(kind) =
@@ -301,7 +303,7 @@ impl Simulation {
                                 .substrate
                                 .entities
                                 .get(unit_id)
-                                .and_then(|unit| unit.mind_control.controller())
+                                .and_then(|unit| unit.seldom.mind_control.controller())
                             {
                                 self.with_object_placement_scope(|sim| {
                                     sim.free_unit(controller, unit_id, rules, registry, effects);

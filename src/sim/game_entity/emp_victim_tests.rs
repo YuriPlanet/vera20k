@@ -241,7 +241,7 @@ fn ares_emp_keeps_a_mind_controlled_tank_with_its_controller() {
         .entities()
         .get(tank)
         .is_some_and(
-            |tank| tank.mind_control.controller() == Some(yuri)
+            |tank| tank.seldom.mind_control.controller() == Some(yuri)
         )));
     assert!(
         fire(&mut sim, &rules, &grid, gun, tank, tank),
@@ -250,7 +250,7 @@ fn ares_emp_keeps_a_mind_controlled_tank_with_its_controller() {
     assert!(offline(&sim, tank));
     assert!(run(&mut sim, &rules, &grid, 200, |sim| emp(sim, tank) == 0));
     let captive = sim.entities().get(tank).unwrap();
-    assert_eq!(captive.mind_control.controller(), Some(yuri));
+    assert_eq!(captive.seldom.mind_control.controller(), Some(yuri));
     assert_eq!(sim.interner.resolve(captive.owner()), "Russians");
     assert!(!captive.deactivated.is_offline());
     let (current, queued) = missions(&sim, tank);

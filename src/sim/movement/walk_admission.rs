@@ -88,6 +88,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .ok_or("retired Walk admission owner")?
+                .seldom
                 .runtime_bridge_transition
                 .latch();
         }
@@ -393,7 +394,10 @@ impl Simulation {
             physical.y.wrapping_sub(destination.y),
             physical.z.wrapping_sub(destination.z),
         ) < rules.general.close_enough;
-        if close && actor.radio_contacts.is_empty() && self.track_stop_band(physical, destination) {
+        if close
+            && actor.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(physical, destination)
+        {
             //75B7E1..75B828: headNULL, Stop, speed0, classNULL setter, then
             //clearFoot+5E0 even when the class setter refuses the request.
             let actor = self

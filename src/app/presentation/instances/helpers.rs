@@ -116,6 +116,7 @@ pub(crate) fn observer_draw_context(
     });
     let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
+        .seldom
         .disguise
         .as_ref()
         .filter(|disguise| disguise.is_disguised())

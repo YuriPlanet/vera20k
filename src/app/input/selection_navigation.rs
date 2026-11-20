@@ -780,6 +780,7 @@ mod tests {
             // Deselect and its normal app reconciliation have no expiry fact.
             sim.entity_mut_for_test(20)
                 .unwrap()
+                .seldom
                 .selection
                 .set_selected_for_test(false);
             super::super::reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);

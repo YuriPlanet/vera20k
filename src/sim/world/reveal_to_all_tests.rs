@@ -559,7 +559,7 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
         );
         let site = sim.substrate.entities.get(id).unwrap();
         assert!(site.building_up());
-        assert!(!site.discovery.discovered_by_current_house());
+        assert!(!site.seldom.discovery.discovered_by_current_house());
         assert!(!sim.fog.holds_alternate_sight(id, americans));
         sim.attach_object_trigger_tag(id, Some("SEEN_TAG"));
         sites.push(id);

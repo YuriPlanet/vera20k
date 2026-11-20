@@ -701,7 +701,7 @@ fn enhanced_power(
 #[cfg(feature = "phobos")]
 fn power_plant_enhancer_distance(enhancer: &GameEntity, plant: &GameEntity) -> i32 {
     use crate::sim::movement::ground_pose::object_center_xy;
-    let (width, height) = plant.type_facts.foundation().dimensions();
+    let (width, height) = plant.seldom.type_facts.foundation().dimensions();
     crate::util::native_x87::object_planar_distance(
         object_center_xy(enhancer),
         object_center_xy(plant),
@@ -798,7 +798,7 @@ fn recalculate_power_for_owner(
         };
         if entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
-            || (require_discovery && !entity.discovery.discovered_by_current_house())
+            || (require_discovery && !entity.seldom.discovery.discovered_by_current_house())
         {
             continue;
         }
@@ -1112,7 +1112,7 @@ fn radar_provider_available(
             // already puts a dead building in limbo.
             || entity.death.is_dying()
             || !entity.building_online()
-            || (require_discovery && !entity.discovery.discovered_by_current_house())
+            || (require_discovery && !entity.seldom.discovery.discovered_by_current_house())
             || entity.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
             || entity.mission.queued().known() == Some(crate::sim::mission::MissionType::Selling)
             || !interner
@@ -1125,7 +1125,7 @@ fn radar_provider_available(
         // jammed or EMPed (+504 > 0) radar to the next one; a remaining
         // nonzero counter still ends the scan as508F12 does.
         if ares {
-            if entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+            if entity.seldom.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
                 continue;
             }
             if entity.emp_remaining() != 0 {

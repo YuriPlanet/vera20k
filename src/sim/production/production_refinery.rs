@@ -65,7 +65,7 @@ pub(crate) fn spawn_building_free_unit(
             {
                 return None;
             }
-            let (width, height) = entity.type_facts.foundation().dimensions();
+            let (width, height) = entity.seldom.type_facts.foundation().dimensions();
             Some((
                 entity.owner(),
                 entity.type_ref(),

@@ -77,7 +77,7 @@ fn a_network_game_builds_no_behind_anim_for_the_local_players_lamp() {
         hide(&mut sim, true, (10, 10));
         behind_indicator_step(&mut sim, lamp, &rules);
         let lamp = sim.substrate.entities.get(lamp).unwrap();
-        assert!(lamp.discovery.owned_by_current_house());
+        assert!(lamp.seldom.discovery.owned_by_current_house());
         assert_eq!(lamp.behind_anim().is_some(), takes_anim, "{mode:?}");
     }
 }
@@ -2318,7 +2318,7 @@ fn guard_heads_run_the_bio_reactor_seek_while_its_latch_holds() {
         );
         assert_eq!(sim.scenario_rng.logical_state(), before_rng, "{mission:?}");
         assert!(
-            !infantry.building_entry.should_enter_absorber(),
+            !infantry.seldom.building_entry.should_enter_absorber(),
             "{mission:?}"
         );
         assert_eq!(infantry.mission.current(), MissionId::from_known(mission));
@@ -2375,6 +2375,7 @@ fn guard_handler_waits_out_the_rearm_without_a_draw() {
             let rules = representative_foot_handler_rules();
             let mut object = entity_of(1, category);
             object
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::started(armed_at, 30));
             commit_due_mission(&mut object.mission, mission, 0);
@@ -2682,7 +2683,7 @@ fn move_arrival_drops_the_vehicle_target_and_queues_guard() {
     unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));
     unit.passive_scan
         .set_passively_acquired_target_for_test(true);
-    unit.weapon_burst.complete_shot(2);
+    unit.seldom.weapon_burst.complete_shot(2);
     commit_due_mission(&mut unit.mission, MissionType::Move, 0);
     register_entity(&mut sim, unit);
     let before_rng = sim.scenario_rng.logical_state();
@@ -2701,7 +2702,7 @@ fn move_arrival_drops_the_vehicle_target_and_queues_guard() {
     assert!(!entity.passive_scan.acquired());
     // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps
     // the burst word through Assign_Target(NULL).
-    assert_eq!(entity.weapon_burst.index(), i32::from(rules.ares()));
+    assert_eq!(entity.seldom.weapon_burst.index(), i32::from(rules.ares()));
     assert_eq!(
         entity.mission.dispatch_timer(),
         MissionDispatchTimer::from_raw(0, 1),
@@ -2838,6 +2839,7 @@ fn register_in_logic(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("fixture entity")
+        .seldom
         .in_logic_vector
         .set_for_test(true);
 }
@@ -3001,6 +3003,7 @@ fn host_promotion_holds_on_weapons_factory_contact() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(2);
 
@@ -3244,6 +3247,7 @@ fn spark_system(sim: &Simulation, id: u64) -> Option<u64> {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .spark_particle_system
         .system()
 }

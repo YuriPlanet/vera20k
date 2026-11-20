@@ -400,6 +400,7 @@ pub(crate) fn bullet_effects(
         && let Some(source) = world.substrate.entities.get_mut(source_id)
     {
         source
+            .seldom
             .wh_anim_remaining_creation_interval
             .interval_allows(interval)
     } else {
@@ -1579,6 +1580,7 @@ CreateUnit.Owner=special
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .wh_anim_remaining_creation_interval
                 .remaining(),
             2

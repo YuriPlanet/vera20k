@@ -1453,7 +1453,7 @@ impl crate::sim::world::ObjectSubstrate {
     /// the hashed `RuntimeBridgeTransitionState::pending_mismatch`.
     pub(super) fn latch_foot_68b(&mut self, id: u64) {
         if let Some(actor) = self.entities.get_mut(id) {
-            actor.runtime_bridge_transition.latch();
+            actor.seldom.runtime_bridge_transition.latch();
         }
     }
     /// Foot+5E0 = -1 on the live path word.

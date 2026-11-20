@@ -45,7 +45,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(10, 10)));
         }
         if input["suppression"] == true {
-            entity.suppress_deploy_voice.suppress();
+            entity.seldom.suppress_deploy_voice.suppress();
         }
         let archive_before = entity.archive_target();
         let mission_before = save_codec::serialize(&entity.mission).unwrap();

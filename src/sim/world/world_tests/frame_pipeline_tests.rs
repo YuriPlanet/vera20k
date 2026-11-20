@@ -29,7 +29,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     infantry.set_category_for_test(EntityCategory::Infantry);
     infantry.lifecycle.set_object_alive_for_test(true);
     infantry.lifecycle.set_in_limbo_for_test(false);
-    infantry.selection.set_selected_for_test(false);
+    infantry.seldom.selection.set_selected_for_test(false);
     sim.substrate.entities.insert(infantry);
     let commands = [CommandEnvelope::new(
         owner,
@@ -46,7 +46,13 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         1,
         crate::sim::world::FrameEffects::default(),
     );
-    let selected_before_logic = sim.entities().get(1).unwrap().selection.is_selected();
+    let selected_before_logic = sim
+        .entities()
+        .get(1)
+        .unwrap()
+        .seldom
+        .selection
+        .is_selected();
     sim.substrate
         .entities
         .get_mut(1)
@@ -54,7 +60,14 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         .health
         .set_for_test(0);
     sim.detach_all(1, true, UninitContext::default());
-    assert!(!sim.entities().get(1).unwrap().selection.is_selected());
+    assert!(
+        !sim.entities()
+            .get(1)
+            .unwrap()
+            .seldom
+            .selection
+            .is_selected()
+    );
     let (tail_count, spawned) = sim.apply_due_commands(
         &commands,
         crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -63,7 +76,12 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     );
 
     assert!(
-        !sim.entities().get(1).unwrap().selection.is_selected(),
+        !sim.entities()
+            .get(1)
+            .unwrap()
+            .seldom
+            .selection
+            .is_selected(),
         "an earlier selection must not undo same-frame Destroy/Deselect"
     );
     assert!(selected_before_logic, "local Select commits before Logic");
@@ -76,7 +94,14 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         1,
         UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
     ));
-    assert!(sim.entities().get(1).unwrap().selection.is_selected());
+    assert!(
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .seldom
+            .selection
+            .is_selected()
+    );
 }
 
 #[test]
@@ -1039,7 +1064,7 @@ fn runtime_frame_call_order_matches_the_app_seam() {
             .substrate
             .entities
             .get(1)
-            .is_some_and(|e| e.selection.is_selected()),
+            .is_some_and(|e| e.seldom.selection.is_selected()),
         "a due command executes in the runtime frame that drained it"
     );
     assert!(runtime.simulation.take_due_commands().is_empty());

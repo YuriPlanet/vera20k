@@ -422,7 +422,7 @@ impl Simulation {
         if houses.get(&owner).is_some_and(|house| house.is_human())
             && let Some(passenger) = substrate.entities.get_mut(stable_id)
         {
-            passenger.building_entry.clear_absorber_seek();
+            passenger.seldom.building_entry.clear_absorber_seek();
         }
     }
 
@@ -476,10 +476,10 @@ impl Simulation {
         };
         let (best, reissue) = pick_bio_reactor(
             candidates,
-            foot.radio_contacts.slot(0),
+            foot.seldom.radio_contacts.slot(0),
             foot.pending_entry(),
         );
-        foot.building_entry.should_enter_absorber = best.is_some();
+        foot.seldom.building_entry.should_enter_absorber = best.is_some();
         let Some(best) = best else {
             return false;
         };
@@ -529,7 +529,7 @@ impl Simulation {
         let Some(foot) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        foot.building_entry.should_enter_occupiable = best.is_some();
+        foot.seldom.building_entry.should_enter_occupiable = best.is_some();
         let Some(best) = best else {
             return false;
         };
@@ -570,7 +570,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|foot| foot.ares.vehicle_driver.vehicle_seek())
+                .is_some_and(|foot| foot.seldom.ares.vehicle_driver.vehicle_seek())
         {
             return self.ares_enter_nearest_vehicle(id, rules, effects);
         }
@@ -599,7 +599,7 @@ impl Simulation {
         let Some(foot) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        foot.building_entry.should_enter_nearest_occupiable = best.is_some();
+        foot.seldom.building_entry.should_enter_nearest_occupiable = best.is_some();
         let Some(best) = best else {
             return false;
         };
@@ -648,7 +648,7 @@ impl Simulation {
         let walk = self.walk_from_last(foot, self.house_bunkers(foot.owner(), rules));
         let best = pick_nearest_admitted(walk, |bunker| {
             self.substrate.entities.get(bunker).is_some_and(|bunker| {
-                bunker.radio_contacts.slot(0).is_none() && bunker.bunker.occupant().is_none()
+                bunker.seldom.radio_contacts.slot(0).is_none() && bunker.bunker.occupant().is_none()
             })
         });
         let Some(best) = best else {
@@ -708,18 +708,18 @@ impl Simulation {
 /// Sets `+0x68F` as a seek that found an absorber would.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_absorber_for_test(entity: &mut GameEntity, value: bool) {
-    entity.building_entry.should_enter_absorber = value;
+    entity.seldom.building_entry.should_enter_absorber = value;
 }
 
 /// Sets `+0x690` as a seek that found an occupiable building would.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_occupiable_for_test(entity: &mut GameEntity, value: bool) {
-    entity.building_entry.should_enter_occupiable = value;
+    entity.seldom.building_entry.should_enter_occupiable = value;
 }
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn set_should_enter_nearest_occupiable_for_test(entity: &mut GameEntity, value: bool) {
-    entity.building_entry.should_enter_nearest_occupiable = value;
+    entity.seldom.building_entry.should_enter_nearest_occupiable = value;
 }
 
 #[cfg(all(test, tests_sim_a_b))]

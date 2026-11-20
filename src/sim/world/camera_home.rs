@@ -38,7 +38,7 @@ impl Simulation {
             else {
                 continue;
             };
-            if entity.lifecycle.in_limbo() || !entity.discovery.owned_by_current_house() {
+            if entity.lifecycle.in_limbo() || !entity.seldom.discovery.owned_by_current_house() {
                 continue;
             }
             let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);

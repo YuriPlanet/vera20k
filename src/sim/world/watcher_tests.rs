@@ -58,7 +58,7 @@ fn watched_world(
         true,
     );
     // Bob is the second human: bit 1.
-    tank.discovery.network_human_discovery = 0b10;
+    tank.seldom.discovery.network_human_discovery = 0b10;
     sim.substrate.entities.insert(tank);
     (sim, ann, bob, computer)
 }
@@ -79,7 +79,7 @@ fn following_another_player_moves_only_this_games_view() {
         "Bob's EVA and score lines"
     );
     assert!(!sim.houses.get(&ann).unwrap().player_control());
-    let tank = sim.substrate.entities.get(1).unwrap().discovery;
+    let tank = sim.substrate.entities.get(1).unwrap().seldom.discovery;
     assert!(tank.owned_by_current_house());
     assert!(tank.discovered_by_current_house(), "Bob saw his own tank");
     assert!(!tank.discovered_by_other_house, "nobody else has seen it");
@@ -89,7 +89,7 @@ fn following_another_player_moves_only_this_games_view() {
         "every player's world is unchanged"
     );
     assert!(sim.follow_house(ann));
-    let tank = sim.substrate.entities.get(1).unwrap().discovery;
+    let tank = sim.substrate.entities.get(1).unwrap().seldom.discovery;
     assert!(!tank.owned_by_current_house() && !tank.discovered_by_current_house());
     assert!(
         tank.discovered_by_other_house,

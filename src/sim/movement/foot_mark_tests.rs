@@ -123,8 +123,8 @@ fn a_tethered_foot_marks_before_radio13_and_changes_its_list_after_the_receiver(
     }));
     for (id, contact) in [(1, 2), (2, 1)] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.radio_contacts.slot(0), Some(contact));
-        assert_eq!(entity.tether.partner(), Some(contact));
+        assert_eq!(entity.seldom.radio_contacts.slot(0), Some(contact));
+        assert_eq!(entity.seldom.tether.partner(), Some(contact));
     }
     assert_eq!(sim.rng_state(), rng_before);
 }
@@ -196,9 +196,9 @@ fn a_refused_mark_and_a_null_first_contact_do_not_emit_radio13() {
 
     let actor = sim.substrate.entities.get_mut(1).unwrap();
     actor.lifecycle.set_in_limbo_for_test(false);
-    actor.radio_contacts.set_capacity(2);
-    assert_eq!(actor.radio_contacts.remove(2), Some(0));
-    actor.radio_contacts.set_slot(1, 2);
+    actor.seldom.radio_contacts.set_capacity(2);
+    assert_eq!(actor.seldom.radio_contacts.remove(2), Some(0));
+    actor.seldom.radio_contacts.set_slot(1, 2);
     assert!(sim.foot_mark_put(
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -212,6 +212,7 @@ fn a_refused_mark_and_a_null_first_contact_do_not_emit_radio13() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(1),
         Some(2)

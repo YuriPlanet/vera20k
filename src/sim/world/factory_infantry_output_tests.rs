@@ -381,6 +381,7 @@ fn ground_command_fixture(
             state["deploy_bytes"][2] != 0,
         );
         actor
+            .seldom
             .setter_force_reassign
             .set_for_test(state["force_reassign"] != 0);
         assert_eq!(
@@ -552,7 +553,7 @@ fn ground_command_fixture(
         assert_eq!(target_actor.lifecycle.cell_marked(), ambient["marked"] != 0);
         assert_eq!(target_actor.on_bridge(), ambient["on_bridge"] != 0);
         assert_eq!(
-            target_actor.in_logic_vector.is_member(),
+            target_actor.seldom.in_logic_vector.is_member(),
             ambient["logic_registered"] != 0
         );
         assert_eq!(
@@ -704,7 +705,7 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
             "{context}: Unit deploy bytes"
         );
         assert_eq!(
-            actor.setter_force_reassign.is_raised(),
+            actor.seldom.setter_force_reassign.is_raised(),
             state["force_reassign"] != 0,
             "{context}: force reassign"
         );
@@ -1798,8 +1799,8 @@ fn local_state(sim: &Simulation, id: u64) -> Value {
         "queued": entity.mission.queued().raw(),
         "nav_is_set": entity.navigation.nav_com().is_some(),
         "archive_is_set": entity.archive_target().is_some(),
-        "tether": entity.tether.partner().is_some(),
-        "contact_count": entity.radio_contacts.len(),
+        "tether": entity.seldom.tether.partner().is_some(),
+        "contact_count": entity.seldom.radio_contacts.len(),
         "doing": entity.mission_leaf.as_infantry().unwrap().doing(),
         "idle_entry_latch": entity.mission_leaf.foot_idle_entry_latch(),
         "paid_head_is_set": walk.step_head().is_some(),
@@ -2117,7 +2118,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             if view.complete_object().is_some() && progress.completed_frame.is_none() {
                 progress.completed_frame = Some(frame);
                 let entity = sim.substrate.entities.get(held).unwrap();
-                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+                assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
                 assert!(
                     !sim.pending_command_snapshot().iter().any(|command| {
                         matches!(&command.payload, Command::SynchronizedRecord { record } if crate::sim::command::PlaceRecord::decode(record).is_some())
@@ -2129,13 +2130,15 @@ fn joined_two_paid_gi(route: OutputRoute) {
         for (index, progress) in products.iter_mut().enumerate() {
             let entity = sim.substrate.entities.get(progress.id).unwrap();
             if entity.lifecycle.in_limbo() {
-                assert!(!entity.in_logic_vector.is_member() && !entity.lifecycle.cell_marked());
+                assert!(
+                    !entity.seldom.in_logic_vector.is_member() && !entity.lifecycle.cell_marked()
+                );
                 continue;
             }
             let golden = &native_products[index];
             let state = local_state(&sim, progress.id);
             let context = format!("{route:?} GI[{index}]={} frame={frame}", progress.id);
-            assert!(entity.lifecycle.cell_marked() && entity.in_logic_vector.is_member());
+            assert!(entity.lifecycle.cell_marked() && entity.seldom.in_logic_vector.is_member());
             assert!(sim.substrate.occupancy.contains_entity(
                 entity.position.rx(),
                 entity.position.ry(),
@@ -2155,11 +2158,12 @@ fn joined_two_paid_gi(route: OutputRoute) {
                         .entities
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .slot(0),
                     Some(progress.id)
                 );
-                assert_eq!(entity.radio_contacts.slot(0), Some(producer));
+                assert_eq!(entity.seldom.radio_contacts.slot(0), Some(producer));
                 if let Some((rx, ry)) = rally_cell {
                     // Exit443C60 copies the producer's Archive at44499C.
                     // Unlimbo Idle consumes it; Exit restores that Nav to
@@ -2224,12 +2228,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 );
                 assert!(frame > progress.first_live_frame.unwrap());
                 assert_eq!(json!(&transmissions[start..]), golden["arrival_radio"]);
-                assert!(entity.radio_contacts.is_empty() && entity.tether.partner().is_none());
+                assert!(
+                    entity.seldom.radio_contacts.is_empty()
+                        && entity.seldom.tether.partner().is_none()
+                );
                 assert!(
                     sim.substrate
                         .entities
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .is_empty()
                 );

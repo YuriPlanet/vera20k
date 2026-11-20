@@ -663,7 +663,9 @@ impl ParticleSystem {
         let held = self
             .owner_entity
             .and_then(|owner| entities.get(owner))
-            .is_some_and(|owner| owner.fire_particle_system.system() == Some(self.stable_id));
+            .is_some_and(|owner| {
+                owner.seldom.fire_particle_system.system() == Some(self.stable_id)
+            });
         if !held {
             self.owner_fire_link = false;
             self.done_spawning = true;

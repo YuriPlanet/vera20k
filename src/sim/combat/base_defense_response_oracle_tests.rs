@@ -189,6 +189,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
                 .entities
                 .get(ids["attacker"])
                 .unwrap()
+                .seldom
                 .base_defense_response
                 .cooldown,
             CdTimer::from_raw(signed(&cooldown[0]), signed(&cooldown[2])),

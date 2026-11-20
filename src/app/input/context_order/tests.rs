@@ -277,6 +277,7 @@ fn an_all_berserk_click_follows_the_best_objects_class() {
     // 0 over an object already selected does nothing (`0x004ABE0B`).
     sim.entity_mut_for_test(friend)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     assert_eq!(
@@ -834,6 +835,7 @@ fn an_unarmed_receiver_selects_another_houses_object() {
 
     sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     assert_eq!(action(&sim, mcv), AttackAction::NoMove);
@@ -864,12 +866,16 @@ fn an_unarmed_receiver_selects_another_houses_object() {
     );
     sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(false);
 
     let loaner = sim.entity_mut_for_test(mcv).unwrap();
-    loaner.mission_only.mark();
-    loaner.discovery.set_owned_by_current_house_for_test(true);
+    loaner.seldom.mission_only.mark();
+    loaner
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
     assert_eq!(action(&sim, mcv), AttackAction::NoMove);
 
     assert_eq!(
@@ -910,6 +916,7 @@ fn a_harrier_moves_to_an_object_it_may_not_attack() {
     let wingman = sim.spawn_object("ORCA", "Local", 6, 5, 0, &rules).unwrap();
     sim.entity_mut_for_test(wingman)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     for flier in [kirov, rocketeer] {
@@ -1454,6 +1461,7 @@ fn a_self_click_in_a_larger_selection_dispatches_no_move() {
     for id in selected {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -2620,6 +2628,7 @@ fn retail_nonprimary_war_factory_self_click_queues_its_primary_selection() {
     for id in [first, second] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -3396,7 +3405,7 @@ fn represented_infantry_controllability_gates_match_native_hut_clicks() {
                 ));
         }
         if gates["slave_owner"] == true {
-            sim.entity_mut_for_test(engineer).unwrap().slave =
+            sim.entity_mut_for_test(engineer).unwrap().seldom.slave =
                 crate::sim::slave_manager::SlaveLink::for_test(Some(hover.stable_id), vec![]);
         }
         if let Some(native_slots) = gates["spawn_slots"].as_array() {

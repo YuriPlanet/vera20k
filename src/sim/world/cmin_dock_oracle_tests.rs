@@ -221,6 +221,7 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
         .navigation
         .set_nav_com_for_test(nav.map(|(x, y)| NavTargetRef::cell(x, y)));
     entity
+        .seldom
         .setter_force_reassign
         .set_for_test(input["force_reassign"] == true);
     entity
@@ -243,7 +244,10 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
         // Techno+0x27C, which only the Chronosphere's warp writes in VERA:
         // its payload on the active Teleport.
         let owner = entity.owner();
-        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
+        entity
+            .seldom
+            .drop_credit
+            .set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()
@@ -282,7 +286,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
     };
     assert_eq!(nav, state["nav"], "{context}: NavCom");
     assert_eq!(
-        u64::from(entity.setter_force_reassign.is_raised()),
+        u64::from(entity.seldom.setter_force_reassign.is_raised()),
         state["force_reassign"].as_u64().unwrap(),
         "{context}: +0x1F8"
     );
@@ -346,6 +350,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
     }
     assert_eq!(
         entity
+            .seldom
             .radio_contacts
             .slot(0)
             .map_or(Value::Null, |id| s.name(id)),
@@ -353,7 +358,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
         "{context}: miner contact"
     );
     assert_eq!(
-        u64::from(entity.tether.partner().is_some()),
+        u64::from(entity.seldom.tether.partner().is_some()),
         state["miner_tether"].as_u64().unwrap(),
         "{context}: miner tether"
     );

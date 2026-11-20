@@ -777,7 +777,7 @@ fn stock_squid_third_party_victim_death_uninits_suppressed_owner_and_owned_anim(
     let host = scene.sim.substrate.entities.get(scene.ship).unwrap();
     // The fatal receiver records the loss before Unit737E43..737E58
     // restores Health1/Alive and retains the hull for sinking, not UnInit.
-    assert!(host.kill_record.is_recorded());
+    assert!(host.seldom.kill_record.is_recorded());
     assert!(host.sinking.is_active());
     assert!(host.lifecycle.object_alive());
     assert_eq!(

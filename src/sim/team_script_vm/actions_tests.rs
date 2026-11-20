@@ -364,7 +364,7 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
         let actor = sim.substrate.entities.get(source).unwrap();
         if automatic {
             assert_eq!(actor.attack_target.target(), None);
-            assert!(!actor.tesla_charger.is_active());
+            assert!(!actor.seldom.tesla_charger.is_active());
             assert_eq!(
                 actor.mission.effective(),
                 MissionId::from_known(MissionType::Move)

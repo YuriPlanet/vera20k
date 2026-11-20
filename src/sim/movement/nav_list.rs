@@ -67,6 +67,7 @@ impl Simulation {
             return;
         }
         let factory_contact = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .is_some_and(|contact| self.is_weapons_factory(contact, rules));

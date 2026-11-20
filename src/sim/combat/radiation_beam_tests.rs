@@ -452,7 +452,10 @@ fn assert_native_births(
         source_entity
             .body_facing
             .snap(u16::try_from(integer(&input["heading"])).unwrap(), 200);
-        assert_eq!(source_entity.weapon_burst.index(), integer(&input["burst"]));
+        assert_eq!(
+            source_entity.seldom.weapon_burst.index(),
+            integer(&input["burst"])
+        );
         assert_eq!(source_entity.veterancy.rank(), 0, "{name} rookie input");
         let facing_before = source_entity.body_facing;
         let rng_before = &native["birth_rng_before"];
@@ -550,7 +553,7 @@ fn assert_native_births(
             "{name} facing timer unchanged"
         );
         assert_eq!(
-            source_entity.weapon_burst.index(),
+            source_entity.seldom.weapon_burst.index(),
             integer(&input["burst"]),
             "{name} burst unchanged"
         );

@@ -134,7 +134,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(id)
-            .map(|entity| entity.mega_mission)
+            .map(|entity| entity.seldom.mega_mission)
             .unwrap_or_default()
     }
 
@@ -199,7 +199,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return mission;
         };
-        let mega = &mut entity.mega_mission;
+        let mega = &mut entity.seldom.mega_mission;
         mega.have_attack_move_target = false;
         mega.attack_move = true;
         if destination.is_some() {
@@ -228,12 +228,12 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        entity.mega_mission.have_attack_move_target = false;
+        entity.seldom.mega_mission.have_attack_move_target = false;
         let MegaMission {
             destination,
             target,
             ..
-        } = entity.mega_mission;
+        } = entity.seldom.mega_mission;
         if let Some(destination) = destination {
             self.foot_queue_mission_now(id, MissionType::Move, rules);
             if let Err(cause) =
@@ -269,11 +269,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if !entity.mega_mission.attack_move {
+        if !entity.seldom.mega_mission.attack_move {
             return false;
         }
-        if entity.mega_mission.have_attack_move_target {
-            entity.mega_mission.have_attack_move_target = false;
+        if entity.seldom.mega_mission.have_attack_move_target {
+            entity.seldom.mega_mission.have_attack_move_target = false;
         } else if entity.mission.effective().known() != Some(MissionType::Guard) {
             self.substrate.foot_clear_all_tarcom(id);
             return false;
@@ -333,7 +333,7 @@ impl Simulation {
         }
         self.foot_queue_mission_now(id, MissionType::Attack, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.mega_mission.have_attack_move_target = true;
+            entity.seldom.mega_mission.have_attack_move_target = true;
         }
     }
 
@@ -346,7 +346,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<ArrivalStep> {
         let entity = self.substrate.entities.get(id)?;
-        let mega = entity.mega_mission;
+        let mega = entity.seldom.mega_mission;
         let tarcom = entity.attack_target.target();
         let in_reach = |target| self.foot_in_auxiliary_search_range(id, target, rules, registry);
         Some(if mega.destination.is_some() {
@@ -411,7 +411,7 @@ impl crate::sim::world::ObjectSubstrate {
     /// NONE, no MegaDestination or MegaTarget, HaveAttackMoveTarget clear.
     pub(crate) fn foot_clear_all_tarcom(&mut self, id: u64) {
         if let Some(entity) = self.entities.get_mut(id) {
-            entity.mega_mission = MegaMission::default();
+            entity.seldom.mega_mission = MegaMission::default();
         }
     }
 }

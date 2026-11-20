@@ -1423,6 +1423,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
             .entities
             .get(hostile_target)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .was_attacked_by_enemy(),
         "surviving hostile source sets the persistent Techno tail byte"
@@ -1432,6 +1433,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
             .entities
             .get(allied_target)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .was_attacked_by_enemy(),
         "target-owner alliance suppresses the hostile latch"
@@ -1441,6 +1443,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
             .entities
             .get(null_target)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .was_attacked_by_enemy(),
         "null radiation/environment source cannot set it"
@@ -1450,6 +1453,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         .entities
         .get_mut(hostile_target)
         .unwrap()
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(false);
     assert_ne!(
@@ -1461,6 +1465,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         .entities
         .get_mut(hostile_target)
         .unwrap()
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(true);
 

@@ -184,7 +184,7 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
             "first={first_change}, second={second_change}"
         );
         assert_eq!(
-            target.capture_infantry_type_index.get(),
+            target.seldom.capture_infantry_type_index.get(),
             rules
                 .type_array_index(
                     crate::rules::object_type::ObjectCategory::Infantry,
@@ -934,6 +934,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             .entities
             .get(infantry)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(reactor)

@@ -617,6 +617,7 @@ pub(super) fn stamp_type_foundation(sim: &mut Simulation, rules: &RuleSet, sid: 
         .entities
         .get_mut(sid)
         .expect("a spawned structure")
+        .seldom
         .type_facts
         .set_foundation_for_test(foundation.into());
 }
@@ -728,6 +729,7 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
             .entities
             .get(produced)
             .unwrap()
+            .seldom
             .tether
             .partner(),
         Some(10),
@@ -738,6 +740,7 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
             .entities
             .get(unrelated)
             .unwrap()
+            .seldom
             .tether
             .partner(),
         None,
@@ -780,6 +783,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_capacity(2);
         // Stock GAYARD has one slot. This supplied two-slot array tests the
@@ -793,11 +797,12 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 .entities
                 .get_mut(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(slot, contact);
         }
         let yard = sim.substrate.entities.get(1).unwrap();
-        let contacts_before = yard.radio_contacts.clone();
+        let contacts_before = yard.seldom.radio_contacts.clone();
         let mission_before = yard.mission.clone();
         let produced = sim
             .construct_object_limbo_at_height(
@@ -831,7 +836,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
             "FNPC from the 4x4 yard's centre finds its sole unoccupied exit"
         );
         let yard = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(yard.radio_contacts, contacts_before);
+        assert_eq!(yard.seldom.radio_contacts, contacts_before);
         if occupied_slots.is_empty() {
             assert_eq!(
                 yard.mission.queued(),
@@ -1358,7 +1363,8 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.type_facts
+        yard.seldom
+            .type_facts
             .set_foundation_for_test("4x4".to_string().into());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(20, 10)));
     }
@@ -1576,7 +1582,8 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.type_facts
+        yard.seldom
+            .type_facts
             .set_foundation_for_test("4x4".to_string().into());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(39, 39)));
     }

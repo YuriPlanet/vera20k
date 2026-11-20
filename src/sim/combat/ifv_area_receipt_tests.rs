@@ -195,6 +195,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                     .entities
                     .get(receiver)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system(),
                 Some(*id)
@@ -206,6 +207,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                     .entities
                     .get(receiver)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system()
                     .is_none()

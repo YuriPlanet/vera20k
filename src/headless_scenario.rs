@@ -2606,9 +2606,9 @@ mod retail_construction_tests {
                 seeking = members
                     .iter()
                     .find(|&&id| {
-                        sim.entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(bunker))
+                        sim.entities().get(id).is_some_and(|entity| {
+                            entity.seldom.radio_contacts.slot(0) == Some(bunker)
+                        })
                     })
                     .map(|&id| (frame, id));
             }
@@ -2680,7 +2680,8 @@ mod retail_construction_tests {
                 on_61 = Some((frame, members));
             } else if line.cursor() >= 2 && on_61.is_some() {
                 let held = sim.entities().get(free).is_none_or(|bunker| {
-                    bunker.bunker.occupant().is_some() || bunker.radio_contacts.slot(0).is_some()
+                    bunker.bunker.occupant().is_some()
+                        || bunker.seldom.radio_contacts.slot(0).is_some()
                 });
                 past = Some((frame, members, held));
                 break;
@@ -3555,7 +3556,7 @@ mod retail_construction_tests {
                 if capturing.is_none()
                     && entity.mission.current().known() == Some(MissionType::Capture)
                 {
-                    let worn = entity.disguise.as_ref().filter(|d| d.is_disguised());
+                    let worn = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised());
                     capturing = Some((frame, worn.map(|d| (d.type_id(), d.house()))));
                 }
             }
@@ -3730,7 +3731,7 @@ mod retail_construction_tests {
                     entity.owner() == soviet
                         && !entity.death.is_dying()
                         && sim.interner.resolve(entity.type_ref()) == "HARV"
-                        && entity.radio_contacts.is_empty()
+                        && entity.seldom.radio_contacts.is_empty()
                         && entity.mission.current() == harvest
                         && entity
                             .miner
@@ -3774,7 +3775,7 @@ mod retail_construction_tests {
             tick_with_due_commands(&mut scenario);
             let sim = scenario.sim();
             let entity = sim.entities().get(miner).expect("the miner lives");
-            let refinery = entity.radio_contacts.slot(0).filter(|&dock| {
+            let refinery = entity.seldom.radio_contacts.slot(0).filter(|&dock| {
                 sim.entities().get(dock).is_some_and(|dock| {
                     dock.owner() == soviet && sim.interner.resolve(dock.type_ref()) == "NAREFN"
                 })
@@ -3785,7 +3786,7 @@ mod retail_construction_tests {
             {
                 entered = Some(frame);
             }
-            if entered.is_some() && entity.tether.partner().is_some() {
+            if entered.is_some() && entity.seldom.tether.partner().is_some() {
                 docked = Some(frame);
                 break;
             }

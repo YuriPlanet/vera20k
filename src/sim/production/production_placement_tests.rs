@@ -723,6 +723,7 @@ fn a_prime_acquires_a_placed_pillbox_before_construction_commences() {
         sim.entities()
             .get(pillbox)
             .unwrap()
+            .seldom
             .mind_control
             .controller(),
         Some(prime)
@@ -4030,11 +4031,11 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     let position = ground_pose::position_world_coord(&product.position);
     assert_eq!([position.x, position.y, position.z], [3712, 3968, 0]);
     assert_eq!((product.position.rx(), product.position.ry()), (14, 15));
-    assert_eq!(product.radio_contacts.slot(0), Some(producer));
-    assert_eq!(product.tether.partner(), Some(producer));
+    assert_eq!(product.seldom.radio_contacts.slot(0), Some(producer));
+    assert_eq!(product.seldom.tether.partner(), Some(producer));
     let producer_entity = sim.substrate.entities.get(producer).unwrap();
-    assert_eq!(producer_entity.radio_contacts.slot(0), Some(held));
-    assert_eq!(producer_entity.tether.partner(), Some(held));
+    assert_eq!(producer_entity.seldom.radio_contacts.slot(0), Some(held));
+    assert_eq!(producer_entity.seldom.tether.partner(), Some(held));
     let notifications: Vec<_> = sim.sound_events[event_start..]
         .iter()
         .filter_map(|event| match event {
@@ -4298,6 +4299,7 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         .entities
         .get_mut(vat)
         .unwrap()
+        .seldom
         .radio_contacts
         .set_slot(0, barracks);
 
@@ -4623,8 +4625,8 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
             [centre.x + dx, centre.y + dy],
             "slot {slot}: on its pad"
         );
-        assert_eq!(plane.radio_contacts.slot(0), Some(airfield));
-        assert_eq!(plane.tether.partner(), None, "TETHER");
+        assert_eq!(plane.seldom.radio_contacts.slot(0), Some(airfield));
+        assert_eq!(plane.seldom.tether.partner(), None, "TETHER");
         assert_eq!(
             plane.ammo().and_then(|ammo| ammo.dock()),
             Some(airfield),
@@ -4632,7 +4634,7 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
         );
         assert_eq!(plane.mission.current().known(), Some(MissionType::Guard));
         let pad = sim.substrate.entities.get(airfield).unwrap();
-        assert_eq!(pad.radio_contacts.slot(slot), Some(built));
+        assert_eq!(pad.seldom.radio_contacts.slot(slot), Some(built));
     }
 }
 
@@ -4681,6 +4683,7 @@ fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
                 .entities
                 .get_mut(vat)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(0, barracks);
         }

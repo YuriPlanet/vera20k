@@ -226,7 +226,7 @@ impl GuardHost for WorldGuard<'_> {
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     fn find_dock(&mut self) -> Option<u64> {
@@ -257,7 +257,7 @@ impl GuardHost for WorldGuard<'_> {
     /// `Mission_Guard @ 0x0041A5C0`'s contact 0: a Building whose type is
     /// `UnitReload=` (`+0x16AA`, `0x0041A73F`).
     fn contact_reloads(&mut self) -> bool {
-        let Some(contact) = self.entity().radio_contacts.slot(0) else {
+        let Some(contact) = self.entity().seldom.radio_contacts.slot(0) else {
             return false;
         };
         self.sim

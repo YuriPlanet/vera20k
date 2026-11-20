@@ -491,7 +491,7 @@ impl Simulation {
                         actor.category().is_foot()
                             && actor.lifecycle.object_alive()
                             && !actor.lifecycle.in_limbo()
-                            && actor.tether.partner().is_none()
+                            && actor.seldom.tether.partner().is_none()
                     });
                 if !admitted {
                     return false;
@@ -581,7 +581,7 @@ impl Simulation {
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| {
-                        entity.tether.partner().is_some()
+                        entity.seldom.tether.partner().is_some()
                             || matches!(entity.mission.current().raw(), 0x12 | 0x13)
                     })
                 {
@@ -1785,7 +1785,7 @@ impl Simulation {
         if !destination_is_building {
             return false;
         }
-        receiver.radio_contacts.slot(0) == Some(destination_id)
+        receiver.seldom.radio_contacts.slot(0) == Some(destination_id)
     }
 
     /// TargetClass `0x006E6FF0`: the object an event token names, while it

@@ -104,7 +104,7 @@ impl Scene {
             &native()["lifecycle_priors"]["source_report_selector"],
         ) as u16);
         assert!(!input["on_bridge"].as_bool().unwrap());
-        assert_eq!(entity.weapon_burst.index(), int(&input["burst"]));
+        assert_eq!(entity.seldom.weapon_burst.index(), int(&input["burst"]));
         sim.resolve_type_handles(rules);
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);

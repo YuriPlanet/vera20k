@@ -405,7 +405,7 @@ impl Simulation {
             ) == Some(false)
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
-            entity.discovery.clear_current_discovery();
+            entity.seldom.discovery.clear_current_discovery();
         }
         // Techno6F6ED2/6F6EDE publishes its current threat before the Foot
         // tail. Failed Mark and the dead successful Reveal arm publish none.
@@ -613,9 +613,9 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && entity.category() == EntityCategory::Infantry
-            && entity.sight.is_zero()
+            && entity.seldom.sight.is_zero()
         {
-            entity.discovery.clear_current_discovery();
+            entity.seldom.discovery.clear_current_discovery();
         }
         // Then `InfantryClass::Unlimbo` marks the man's sub-cell through his
         // vt+0xF0 (`0x005217C0`) unless he was placed more than a deck above
@@ -850,7 +850,7 @@ impl Simulation {
             })
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
-            entity.ai_sell_repair.make_repairable();
+            entity.seldom.ai_sell_repair.make_repairable();
         }
     }
 
@@ -873,7 +873,7 @@ impl Simulation {
         };
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
         let lit = self.session.uses_local_player_shroud()
-            && (entity.discovery.discovered_by_current_house()
+            && (entity.seldom.discovery.discovered_by_current_house()
                 || !self
                     .session
                     .current_house()

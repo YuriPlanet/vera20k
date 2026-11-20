@@ -33,7 +33,7 @@ fn scene(rules: &RuleSet) -> (Simulation, u64) {
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(true);
     let shield = rules.shield_type("TestShield").expect("fixture type");
-    entity.shield = Some(ShieldState::new(
+    entity.seldom.shield = Some(ShieldState::new(
         "TestShield".to_owned(),
         shield.initial_strength(),
         shield.strength(),
@@ -64,6 +64,7 @@ fn shield(sim: &Simulation) -> &ShieldState {
         .entities
         .get(1)
         .unwrap()
+        .seldom
         .shield
         .as_ref()
         .unwrap()
@@ -202,6 +203,7 @@ fn self_healing_restores_points_on_its_rate() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -260,6 +262,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
             .entities
             .get(target)
             .unwrap()
+            .seldom
             .shield
             .as_ref()
             .unwrap()
@@ -269,6 +272,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -309,6 +313,7 @@ fn chronosphere_launch_latch_suppresses_due_recovery_before_warp_out() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -332,6 +337,7 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -374,7 +380,7 @@ fn construction_binds_the_shield_type() {
     let shield = sim
         .entities()
         .get(id)
-        .and_then(|entity| entity.shield.as_ref())
+        .and_then(|entity| entity.seldom.shield.as_ref())
         .expect("ShieldType= allocated the shield");
     assert_eq!(shield.hp(), 100);
 }
@@ -387,6 +393,7 @@ fn an_offline_shield_absorbs_nothing() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -427,7 +434,7 @@ fn ignore_defenses_skips_the_shield_stage() {
 fn control_hit_reaches_health_without_a_shield() {
     let rules = rules("", "");
     let (mut sim, _) = scene(&rules);
-    sim.substrate.entities.get_mut(1).unwrap().shield = None;
+    sim.substrate.entities.get_mut(1).unwrap().seldom.shield = None;
     hit(&mut sim, &rules, 40);
     assert_eq!(health(&sim), 160);
 }

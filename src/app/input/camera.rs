@@ -2302,7 +2302,9 @@ pub(crate) fn update_follow_camera(
         .and_then(|sim| {
             sim.entities()
                 .get(id)
-                .filter(|entity| entity.lifecycle.object_alive() && entity.selection.is_selected())
+                .filter(|entity| {
+                    entity.lifecycle.object_alive() && entity.seldom.selection.is_selected()
+                })
                 .map(|entity| entity_lepton_coord(sim, entity))
         });
     let Some((x, y, z)) = coord else {

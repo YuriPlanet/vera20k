@@ -160,6 +160,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .has_been_captured
         .set_for_test(input["captured"] == true);
     building
+        .seldom
         .selection
         .set_selected_for_test(input["selected"] == true);
     let mut passengers = Vec::new();
@@ -613,9 +614,11 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         building.lifecycle.set_in_limbo_for_test(false);
         building.set_in_playfield(true);
         building
+            .seldom
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(input["attacked"] == true);
         building
+            .seldom
             .ai_sell_repair
             .set_ai_sellable_for_test(input["ai_sellable"] == true);
         if input["mission"] == "construction" || input["queued"] == "construction" {

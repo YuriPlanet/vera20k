@@ -1046,6 +1046,7 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         // not run the map's Cell PUT/discovery transaction.
         sim.entity_mut_for_test(factory)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
         sim.entity_mut_for_test(factory)

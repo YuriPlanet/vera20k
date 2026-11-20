@@ -437,7 +437,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
             serde_json::to_value(b.building.bunker_runtime).unwrap()["state"],
             "Occupied"
         );
-        assert!(!t.in_limbo() && t.in_playfield() && !t.selection.is_selected());
+        assert!(!t.in_limbo() && t.in_playfield() && !t.seldom.selection.is_selected());
     }
     let hover = point_select(&mut scene, bunker, &local);
     let before = query_snapshot(&scene, bunker, tank);

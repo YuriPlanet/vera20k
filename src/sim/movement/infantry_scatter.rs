@@ -711,7 +711,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .map(|target| (!target.radio_contacts.is_empty(), target.category()));
+            .map(|target| (!target.seldom.radio_contacts.is_empty(), target.category()));
         if let Some((true, category)) = busy {
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return EnterRadioArm::Continue;

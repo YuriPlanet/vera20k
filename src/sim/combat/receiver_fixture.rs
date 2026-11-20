@@ -119,6 +119,7 @@ pub(crate) fn substitute_building_fire(
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .start(session.binary_frame() as i32, rof);
         }

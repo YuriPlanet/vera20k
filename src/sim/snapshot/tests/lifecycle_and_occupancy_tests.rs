@@ -392,10 +392,16 @@ fn lifecycle_authority_pending_boundary_roundtrips_queue_and_state() {
     entity.lifecycle.set_object_alive_for_test(false);
     entity.lifecycle.set_in_limbo_for_test(true);
     entity.lifecycle.set_cell_marked_for_test(false);
-    entity.in_logic_vector.set_for_test(false);
+    entity.seldom.in_logic_vector.set_for_test(false);
     entity.death.set_dying_for_test(true);
-    entity.removal_facts.set_dirty_rect_eligible_for_test(true);
-    entity.kill_record.set_destruction_recorded_for_test(true);
+    entity
+        .seldom
+        .removal_facts
+        .set_dirty_rect_eligible_for_test(true);
+    entity
+        .seldom
+        .kill_record
+        .set_destruction_recorded_for_test(true);
     sim.substrate.entities.insert(entity);
     for id in [7, 3, 7] {
         sim.substrate.pending_delete.queue_object(id);
@@ -412,10 +418,10 @@ fn lifecycle_authority_pending_boundary_roundtrips_queue_and_state() {
     assert!(!restored_entity.lifecycle.object_alive());
     assert!(restored_entity.lifecycle.in_limbo());
     assert!(!restored_entity.lifecycle.cell_marked());
-    assert!(!restored_entity.in_logic_vector.is_member());
+    assert!(!restored_entity.seldom.in_logic_vector.is_member());
     assert!(restored_entity.death.is_dying());
-    assert!(restored_entity.removal_facts.dirty_rect_eligible());
-    assert!(restored_entity.kill_record.is_recorded());
+    assert!(restored_entity.seldom.removal_facts.dirty_rect_eligible());
+    assert!(restored_entity.seldom.kill_record.is_recorded());
     assert_eq!(
         restored.substrate.pending_delete.object_ids(),
         vec![7, 3, 7]
@@ -447,7 +453,7 @@ fn lifecycle_authority_logic_rebuild_does_not_rederive_limbo_or_mark() {
     restored.rebuild_logic_membership();
 
     let member = restored.substrate.entities.get(1).expect("member restored");
-    assert!(member.in_logic_vector.is_member());
+    assert!(member.seldom.in_logic_vector.is_member());
     assert!(!member.lifecycle.in_limbo());
     assert!(!member.lifecycle.cell_marked());
 
@@ -456,7 +462,7 @@ fn lifecycle_authority_logic_rebuild_does_not_rederive_limbo_or_mark() {
         .entities
         .get(2)
         .expect("non-member restored");
-    assert!(!non_member.in_logic_vector.is_member());
+    assert!(!non_member.seldom.in_logic_vector.is_member());
     assert!(!non_member.lifecycle.in_limbo());
     assert!(non_member.lifecycle.cell_marked());
 }
@@ -475,16 +481,22 @@ fn lifecycle_authority_bookkeeping_facts_roundtrip_and_change_state_hash() {
     let default_hash = sim.state_hash();
 
     let entity = sim.substrate.entities.get_mut(1).expect("fixture entity");
-    entity.removal_facts.set_dirty_rect_eligible_for_test(true);
-    entity.kill_record.set_destruction_recorded_for_test(true);
+    entity
+        .seldom
+        .removal_facts
+        .set_dirty_rect_eligible_for_test(true);
+    entity
+        .seldom
+        .kill_record
+        .set_destruction_recorded_for_test(true);
     let changed_hash = sim.state_hash();
     assert_ne!(default_hash, changed_hash);
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
     let restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
     let restored_entity = restored.substrate.entities.get(1).expect("entity restored");
-    assert!(restored_entity.removal_facts.dirty_rect_eligible());
-    assert!(restored_entity.kill_record.is_recorded());
+    assert!(restored_entity.seldom.removal_facts.dirty_rect_eligible());
+    assert!(restored_entity.seldom.kill_record.is_recorded());
     assert_eq!(restored.state_hash(), changed_hash);
 }
 
@@ -533,7 +545,10 @@ fn unlimbo_ge_places_into_logic_and_occupancy_atomically() {
     assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
 
     let e = sim.substrate.entities.get(id).expect("entity in store");
-    assert!(e.in_logic_vector.is_member(), "must be in the active order");
+    assert!(
+        e.seldom.in_logic_vector.is_member(),
+        "must be in the active order"
+    );
     assert!(!e.lifecycle.in_limbo());
     assert!(e.lifecycle.cell_marked());
     assert_eq!(sim.live_object_order_snapshot(), vec![id]);
@@ -559,7 +574,7 @@ fn create_limbo_leaves_entity_out_of_logic_and_occupancy() {
 
     let e = sim.substrate.entities.get(id).expect("entity in store");
     assert!(
-        !e.in_logic_vector.is_member(),
+        !e.seldom.in_logic_vector.is_member(),
         "limbo object is not an active member"
     );
     assert!(e.lifecycle.in_limbo());

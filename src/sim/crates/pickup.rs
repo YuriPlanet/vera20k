@@ -292,7 +292,7 @@ pub(crate) fn multiplayer_eligible_slot(
         }
         // Stock 481C69; Ares Armor1@1005F840 instead reads the permanent
         // Ext+88, so an attached armor bonus does not consume the crate.
-        POWERUP_ARMOR => actor.crate_multipliers.crate_armor() == NativeF64Bits::ONE,
+        POWERUP_ARMOR => actor.seldom.crate_multipliers.crate_armor() == NativeF64Bits::ONE,
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
         POWERUP_SPEED => {
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
@@ -302,7 +302,7 @@ pub(crate) fn multiplayer_eligible_slot(
         }
         // `0x00481D0B`: an actor already boosted, or unarmed (`Is_Armed`).
         POWERUP_FIREPOWER => {
-            actor.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
+            actor.seldom.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
                 // Installed Firepower1@1005F940 returns481D52 directly,
                 //bypassing stock Is_Armed just as Speed1 bypasses Aircraft.
                 && (rules.ares() || object.is_some_and(|object| {

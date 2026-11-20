@@ -383,7 +383,7 @@ impl Simulation {
                 if let Some(index) = captor_type
                     && let Some(target) = self.substrate.entities.get_mut(target_id)
                 {
-                    target.capture_infantry_type_index.record(index);
+                    target.seldom.capture_infantry_type_index.record(index);
                 }
                 self.uninit_with_context(actor_id, context);
                 return Ok(VehicleCaptureOutcome {
@@ -1030,7 +1030,7 @@ impl Simulation {
                                     .any(|dock| dock.eq_ignore_ascii_case(&target_obj.id))
                             });
                     docks.then(|| {
-                        if target.radio_contacts.has_free_or(actor_id)
+                        if target.seldom.radio_contacts.has_free_or(actor_id)
                             && target.passenger_role().passenger_count() == 0
                             && crate::sim::radio::receive::can_load_query(
                                 self, target_id, actor_id, rules,
@@ -1413,7 +1413,7 @@ impl Simulation {
             || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
-            || actor.slave.owner().is_some()
+            || actor.seldom.slave.owner().is_some()
             || actor.deactivated.is_offline()
             || actor.is_under_emp()
         {
@@ -2287,6 +2287,7 @@ impl Simulation {
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {
                     // Techno+0x338 (`0x00519F94`).
                     building
+                        .seldom
                         .capture_infantry_type_index
                         .record(native_type_index);
                 }

@@ -43,7 +43,7 @@ fn mixed_selection_fixture() -> (Simulation, RuleSet) {
         let mut entity = GameEntity::test_default(id, type_name, "Americans", 10, 20);
         entity.set_type_ref_for_test(sim.intern(type_name));
         entity.set_owner_for_test(sim.intern("Americans"));
-        entity.selection.set_selected_for_test(selected);
+        entity.seldom.selection.set_selected_for_test(selected);
         sim.entities_mut_for_test().insert(entity);
     }
     (sim, rules)
@@ -393,6 +393,7 @@ fn two_house_fixture(discovered: &[u64]) -> (Simulation, RuleSet) {
         );
         entity.lifecycle.set_in_limbo_for_test(false);
         entity
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(discovered.contains(&id));
         sim.entities_mut_for_test().insert(entity);
@@ -619,7 +620,12 @@ fn undeployable_building_band_commits_and_tracks_bunker_occupancy() {
             Some(rules),
         );
         assert_eq!(
-            sim.entities().get(pill).unwrap().selection.is_selected(),
+            sim.entities()
+                .get(pill)
+                .unwrap()
+                .seldom
+                .selection
+                .is_selected(),
             admitted
         );
     }

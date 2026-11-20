@@ -578,6 +578,7 @@ fn team_assign_and_command_bar_clear_match_original_assignment_controls() {
             let is_selected = actor["selected"].as_bool().unwrap();
             sim.entity_mut_for_test(id)
                 .unwrap()
+                .seldom
                 .selection
                 .set_selected_for_test(is_selected);
             if is_selected {
@@ -809,7 +810,7 @@ fn registered_group_assignment_projects_a_selected_building_status_badge() {
         5,
         false,
     );
-    building.selection.set_selected_for_test(true);
+    building.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(building);
     assert!(matches!(
         sim.reveal(27),
@@ -871,7 +872,7 @@ fn registered_aircraft_group_badge_uses_shared_screen_height_and_visibility() {
         true,
     );
     aircraft.position.set_exact_z_leptons_for_test(Some(0));
-    aircraft.selection.set_selected_for_test(true);
+    aircraft.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(aircraft);
     assert!(matches!(
         sim.reveal(27),
@@ -932,7 +933,7 @@ fn registered_aircraft_group_badge_uses_shared_screen_height_and_visibility() {
 
     {
         let aircraft = sim.entity_mut_for_test(27).expect("retained ORCA");
-        aircraft.selection.set_selected_for_test(false);
+        aircraft.seldom.selection.set_selected_for_test(false);
         aircraft.position.set_exact_z_leptons_for_test(Some(1500));
     }
     let airborne_anchor = crate::render::locomotor_visual::screen_position(
@@ -971,12 +972,14 @@ fn registered_aircraft_group_badge_uses_shared_screen_height_and_visibility() {
 
     sim.entity_mut_for_test(27)
         .expect("retained ORCA")
+        .seldom
         .selection
         .set_selected_for_test(false);
     assert!(render(&sim, &groups, None).is_empty());
     groups[registered_slot("TeamCreate_10")].clear();
     sim.entity_mut_for_test(27)
         .expect("retained ORCA")
+        .seldom
         .selection
         .set_selected_for_test(true);
     assert!(render(&sim, &groups, None).is_empty());
@@ -1024,9 +1027,10 @@ fn building_group_badges_follow_registered_slots_visibility_and_removal() {
         false,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("2x2".to_owned().into());
-    building.selection.set_selected_for_test(true);
+    building.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(building);
     assert!(matches!(
         sim.reveal(27),
@@ -1074,6 +1078,7 @@ fn building_group_badges_follow_registered_slots_visibility_and_removal() {
 
     sim.entity_mut_for_test(27)
         .expect("retained building")
+        .seldom
         .selection
         .set_selected_for_test(false);
     assert!(labels(&sim, &groups, current_house, None, false).is_empty());
@@ -1098,6 +1103,7 @@ fn building_group_badges_follow_registered_slots_visibility_and_removal() {
 
     sim.entity_mut_for_test(27)
         .expect("retained building")
+        .seldom
         .selection
         .set_selected_for_test(true);
     groups[1].clear();
@@ -1139,7 +1145,7 @@ fn status_group_projection_follows_group_changes_and_removal() {
         5,
         false,
     );
-    unit.selection.set_selected_for_test(true);
+    unit.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(unit);
     assert!(matches!(
         sim.reveal(17),
@@ -1178,7 +1184,7 @@ fn status_group_projection_follows_group_changes_and_removal() {
         5,
         false,
     );
-    enemy.selection.set_selected_for_test(true);
+    enemy.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(enemy);
     assert!(matches!(
         sim.reveal(19),
@@ -1426,7 +1432,7 @@ fn allied_control_group_labels_follow_body_admission_without_raw_anchor_gate() {
         0,
         false,
     );
-    unit.selection.set_selected_for_test(true);
+    unit.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(unit);
     assert!(matches!(
         sim.reveal(80),
@@ -1628,10 +1634,11 @@ fn native_tail_corpus_matches_control_group_production_text_builder() {
         );
         if let Some(foundation) = case["foundation"].as_str() {
             entity
+                .seldom
                 .type_facts
                 .set_foundation_for_test(foundation.to_owned().into());
         }
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(entity);
         assert!(matches!(
             sim.reveal(1),

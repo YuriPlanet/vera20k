@@ -93,6 +93,7 @@ fn a_queued_post_sends_an_idle_guard_there_at_once() {
                 .entities
                 .get_mut(e1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(factory);
         }
@@ -348,6 +349,7 @@ fn a_war_factory_null_destination_empties_the_list() {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(factory);
         }
@@ -392,7 +394,7 @@ fn an_order_during_a_war_factory_exit_waits_on_the_list() {
         unit.navigation.set_nav_com_for_test(Some(ELSEWHERE));
         unit.navigation.set_nav_list_for_test(vec![B], false);
         if case != "no_contact" {
-            unit.radio_contacts.insert(factory);
+            unit.seldom.radio_contacts.insert(factory);
         }
         if case == "magnetron" {
             unit.lift.set_source_for_test(Some(factory + 1));
@@ -442,7 +444,7 @@ fn an_order_before_the_factory_door_opens_goes_at_once_or_is_dropped() {
             .unwrap();
         set_mission(&mut sim, tank, MissionType::Guard);
         let unit = sim.substrate.entities.get_mut(tank).unwrap();
-        unit.radio_contacts.insert(factory);
+        unit.seldom.radio_contacts.insert(factory);
         if !at_centre {
             unit.position
                 .put_location(crate::sim::components::DriveCoord {
@@ -463,6 +465,7 @@ fn an_order_before_the_factory_door_opens_goes_at_once_or_is_dropped() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(factory);
         if at_centre {

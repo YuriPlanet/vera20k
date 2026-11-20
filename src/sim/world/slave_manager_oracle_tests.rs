@@ -235,6 +235,7 @@ pub(super) fn row_scene_edited(
             .unwrap_or_else(|| panic!("slave miner for {}", input["name"]));
         let entity = sim.substrate.entities.get_mut(smin).unwrap();
         entity
+            .seldom
             .mcv_deploy_pending
             .set_for_test(input["deploy_pending"] == true);
         if let Some((nx, ny)) = input.get("owner_nav").map(cell) {
@@ -414,7 +415,7 @@ fn place_slave(
             });
         }
     }
-    entity.slave = SlaveLink::for_test(Some(master), cargo);
+    entity.seldom.slave = SlaveLink::for_test(Some(master), cargo);
     id
 }
 
@@ -525,7 +526,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         };
         assert_eq!(nav, expected["nav"], "{context}: owner NavCom");
         assert_eq!(
-            u64::from(owner.mcv_deploy_pending.is_pending()),
+            u64::from(owner.seldom.mcv_deploy_pending.is_pending()),
             expected["deploy_pending"].as_u64().unwrap(),
             "{context}: owner deploy pending"
         );
@@ -609,6 +610,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         );
         let count = |kind| {
             entity
+                .seldom
                 .slave
                 .cargo()
                 .iter()
@@ -632,7 +634,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: EstimatedHealth"
         );
         assert_eq!(
-            entity.slave.owner() == Some(holder),
+            entity.seldom.slave.owner() == Some(holder),
             expected["owner"].as_bool().unwrap(),
             "{context}: SlaveOwner"
         );

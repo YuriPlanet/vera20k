@@ -184,6 +184,7 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
             assert_eq!(
                 serde_json::json!(
                     victim
+                        .seldom
                         .ares
                         .attach_effects
                         .entries
@@ -227,6 +228,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]
@@ -296,6 +298,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
                         .entities()
                         .get(id)
                         .unwrap()
+                        .seldom
                         .ares
                         .attach_effects
                         .entries[0]
@@ -322,6 +325,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]

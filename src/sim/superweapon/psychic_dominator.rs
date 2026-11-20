@@ -779,7 +779,7 @@ fn ares_fire(
             || object
                 .promotion_abilities()
                 .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw()));
-        let controlled = entity.mind_control.controller().is_some();
+        let controlled = entity.seldom.mind_control.controller().is_some();
         if crate::sim::superweapon::invulnerability::is_invulnerable(
             entity.invulnerability.as_ref(),
             frame,
@@ -795,7 +795,7 @@ fn ares_fire(
                 .intersects(sim.ares_house_relation(owner, entity.owner()))
             || !super::protect::techno_affected(sim, entity, targeting.affects_target())
             || controlled && !dominator.capture_mind_controlled
-            || entity.mind_control.permanent()
+            || entity.seldom.mind_control.permanent()
                 && !controlled
                 && !dominator.capture_perma_mind_controlled
             || immune && !dominator.capture_immune_to_psionics

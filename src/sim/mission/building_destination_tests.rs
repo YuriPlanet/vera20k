@@ -78,6 +78,7 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
         .lifecycle
         .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
     actor
+        .seldom
         .tether
         .set_for_test(input["tethered"].as_bool().unwrap_or(false).then_some(4));
     actor.set_archive_target(target("old", shape).map(TargetKind::from));

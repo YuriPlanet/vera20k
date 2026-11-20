@@ -482,7 +482,7 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(entity) = slave.and_then(|slave| self.substrate.entities.get_mut(slave)) {
-                entity.slave.owner = Some(master);
+                entity.seldom.slave.owner = Some(master);
             }
             slaves.push(slave);
         }
@@ -747,7 +747,7 @@ impl Simulation {
         let building = owner.category() == EntityCategory::Structure;
         let unit = owner.category() == EntityCategory::Unit;
         let driving = owner.navigation.nav_com().is_some();
-        let deploy_pending = owner.mcv_deploy_pending.is_pending();
+        let deploy_pending = owner.seldom.mcv_deploy_pending.is_pending();
         let guarding = owner.mission.current().known() == Some(MissionType::Guard);
         let constructing_or_selling = owner.constructing_or_selling();
         let built = !owner.in_construction_bstate();
@@ -980,7 +980,7 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get_mut(master) else {
             return;
         };
-        owner.suppress_deploy_voice.suppress();
+        owner.seldom.suppress_deploy_voice.suppress();
         let (x, y) = owner_cell(owner);
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
@@ -1369,7 +1369,7 @@ impl Simulation {
         let storage = self
             .object_type(entity.type_ref(), rules)
             .map_or(0, |object| object.storage);
-        storage > 0 && entity.slave.cargo.len() as i64 == i64::from(storage)
+        storage > 0 && entity.seldom.slave.cargo.len() as i64 == i64::from(storage)
     }
 
     /// DeploySlaves (`0x006B04C0`): every node in state 0, last first. The
@@ -1552,7 +1552,7 @@ impl Simulation {
         };
         self.limbo_slave(slave, rules, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(slave) {
-            entity.slave.owner = Some(master);
+            entity.seldom.slave.owner = Some(master);
         }
         node.state = SlaveState::Ready;
         node.timer.start(Self::now_frame(&self.session), 0);
@@ -1605,7 +1605,7 @@ impl Simulation {
                 cell,
             )? && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.add_bales(bale, 1);
+                entity.seldom.slave.add_bales(bale, 1);
             }
             return Ok((harvest_rate, false));
         }
@@ -1637,7 +1637,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(slave)
-            .map(|entity| std::mem::take(&mut entity.slave.cargo))
+            .map(|entity| std::mem::take(&mut entity.seldom.slave.cargo))
         else {
             return;
         };
@@ -1668,7 +1668,7 @@ impl Simulation {
         let Some(master) = substrate
             .entities
             .get(slave)
-            .and_then(|entity| entity.slave.owner)
+            .and_then(|entity| entity.seldom.slave.owner)
         else {
             return;
         };
@@ -1685,7 +1685,7 @@ impl Simulation {
             node.timer.start(now, manager.regen_rate);
         }
         if let Some(entity) = substrate.entities.get_mut(slave) {
-            entity.slave.owner = None;
+            entity.seldom.slave.owner = None;
         }
     }
 
@@ -1754,7 +1754,7 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
-            entity.slave.owner = None;
+            entity.seldom.slave.owner = None;
             if entity.lifecycle.in_limbo() {
                 self.slave_dies_inside(slave, killer, rules, frame_effects);
                 continue;
@@ -1804,7 +1804,7 @@ impl Simulation {
             if let Some(slave) = node.slave.take()
                 && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.owner = None;
+                entity.seldom.slave.owner = None;
             }
             node.state = SlaveState::Dead;
             node.timer.start(now, manager.regen_rate);
@@ -1923,7 +1923,7 @@ impl Simulation {
         self.free_slaves(to, None, None, rules, registry, frame_effects);
         for slave in manager.slaves() {
             if let Some(entity) = self.substrate.entities.get_mut(slave) {
-                entity.slave.owner = Some(to);
+                entity.seldom.slave.owner = Some(to);
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(to) {

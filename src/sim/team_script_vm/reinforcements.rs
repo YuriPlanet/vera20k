@@ -512,6 +512,7 @@ impl Simulation {
                 .expect("begin_piggyback installed the Teleport locomotor")
                 .arm_chrono(ChronoWarp::reinforcement(coord, frame));
             entity
+                .seldom
                 .chrono_warp_delay
                 .store(rules.general.chrono_reinf_delay);
             successes.push(member);
@@ -619,6 +620,7 @@ impl Simulation {
             .entities
             .get_mut(plane)
             .expect("constructed carrier plane")
+            .seldom
             .mission_only
             .mark();
         let metadata = self
@@ -931,6 +933,7 @@ impl Simulation {
                         .entities
                         .get_mut(transport)
                         .expect("constructed transport")
+                        .seldom
                         .mission_only
                         .mark();
                 }

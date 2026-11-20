@@ -102,7 +102,7 @@ impl Simulation {
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         let retain_continuation = self.retains_snapshot_continuation();
         for (_, entity) in self.substrate.entities.iter_sorted() {
-            if !entity.type_facts.foundation().valid() {
+            if !entity.seldom.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
                     object_id: entity.stable_id(),
                 });

@@ -73,7 +73,7 @@ impl Simulation {
             if delay > 0
                 && let Some(target) = self.substrate.entities.get_mut(event.target_id)
             {
-                target.ares.ares_self_heal_combat.start(frame, delay);
+                target.seldom.ares.ares_self_heal_combat.start(frame, delay);
             }
         }
         let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
@@ -120,15 +120,16 @@ impl Simulation {
         let frame = self.session.binary_frame() as i32;
         if sonar > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
-            && target.ares.sonar_timer.remaining(frame) < sonar
+            && target.seldom.ares.sonar_timer.remaining(frame) < sonar
         {
-            target.ares.sonar_timer.start(frame, sonar);
+            target.seldom.ares.sonar_timer.start(frame, sonar);
         }
         if disable_weapons > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
-            && target.ares.ares_disable_weapons.remaining(frame) < disable_weapons
+            && target.seldom.ares.ares_disable_weapons.remaining(frame) < disable_weapons
         {
             target
+                .seldom
                 .ares
                 .ares_disable_weapons
                 .start(frame, disable_weapons);
@@ -294,7 +295,7 @@ impl Simulation {
                     })
             });
             if let Some(building) =
-                building.filter(|building| actor.radio_contacts.slot(0) == Some(*building))
+                building.filter(|building| actor.seldom.radio_contacts.slot(0) == Some(*building))
                 && self
                     .substrate
                     .entities
@@ -353,7 +354,11 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(target) else {
             return false;
         };
-        actor.ares.vehicle_driver.set_killed_from_owner(passive);
+        actor
+            .seldom
+            .ares
+            .vehicle_driver
+            .set_killed_from_owner(passive);
         if actor.owner() == owner {
             return false;
         }
@@ -444,7 +449,7 @@ impl Simulation {
             }
         }
         if let Some(actor) = self.substrate.entities.get_mut(target) {
-            actor.capture_infantry_type_index.record(-1);
+            actor.seldom.capture_infantry_type_index.record(-1);
             if remove_veterancy {
                 actor.veterancy.inherit_raw(NativeF32Bits::from_bits(0));
             }
@@ -453,13 +458,13 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .and_then(|actor| actor.mind_control.controller())
+            .and_then(|actor| actor.seldom.mind_control.controller())
         {
             self.free_unit(controller, target, rules, registry, effects);
         }
         self.clear_permanent_control_and_ring(target, rules);
         if let Some(actor) = self.substrate.entities.get_mut(target) {
-            actor.mind_control.clear_house_controller();
+            actor.seldom.mind_control.clear_house_controller();
         }
         self.free_all_captures(target, rules, registry, effects);
         self.leave_team(target, false, rules, effects);

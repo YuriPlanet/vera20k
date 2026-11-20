@@ -147,9 +147,9 @@ fn stock_cloak_tick_facts(
     };
     // CloakDisallowed10043A40 also refuses while the SonarTimer runs.
     let sonar_active = rules.ares()
-        && entity.ares.sonar_timer.start_frame() != -1
+        && entity.seldom.ares.sonar_timer.start_frame() != -1
         && entity
-            .ares
+            .seldom.ares
             .sonar_timer
             .remaining(sim.session.binary_frame() as i32)
             > 0;
@@ -170,7 +170,7 @@ fn stock_cloak_tick_facts(
     // resolving to a WeaponsFactory building (naval-yard repair contact), not
     // an arbitrary movement destination.
     let destination_is_weapons_factory = entity
-        .radio_contacts
+        .seldom.radio_contacts
         .slot(0)
         .is_some_and(|contact| sim.is_weapons_factory(contact, rules));
     let current_frame = sim.session.binary_frame() as i32;
@@ -215,7 +215,7 @@ fn stock_cloak_tick_facts(
         // it rejects before the retained-target weapon/range query.
         // Ares CloakAllowed10043990 asks recloak before weapon rearm.
         && (!rules.ares() || entity.cloak.as_ref().is_some_and(|cloak| cloak.recloak_delay().expired(current_frame)))
-        && entity.rearm_timer.timer().expired(current_frame)
+        && entity.seldom.rearm_timer.timer().expired(current_frame)
         // 4. `Target(+0x2B4) != 0 && CanFireAtTarget(vt+0x3AC)`.
         //    6FBEF4..6FBF01 calls the canonical selected-weapon/InRange owner
         //    (6F7780), not GetFireError. An ordinary Attack retains a distant

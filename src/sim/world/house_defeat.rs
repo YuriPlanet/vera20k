@@ -1140,7 +1140,7 @@ impl Simulation {
             };
         }
         let owner = entity.owner();
-        let Some(controller) = entity.mind_control.controller() else {
+        let Some(controller) = entity.seldom.mind_control.controller() else {
             //4FC715 jumps to4FC727 when +2C0 is null. Trigger House control
             //uses +2CC/+2E0, so the current Owner can differ from `house`.
             return true;
@@ -1159,15 +1159,15 @@ impl Simulation {
     /// clears +2E0 without clearing +2CC, so this can legitimately return None.
     pub(crate) fn techno_original_owner(&self, id: u64) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
-        if let Some(controller) = entity.mind_control.controller() {
+        if let Some(controller) = entity.seldom.mind_control.controller() {
             self.substrate
                 .entities
                 .get(controller)?
                 .capture_manager
                 .as_ref()?
                 .original_owner(id)
-        } else if entity.mind_control.house_controller().is_some() {
-            entity.mind_control.house_original_owner()
+        } else if entity.seldom.mind_control.house_controller().is_some() {
+            entity.seldom.mind_control.house_original_owner()
         } else {
             Some(entity.owner())
         }

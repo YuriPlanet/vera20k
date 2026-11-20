@@ -953,7 +953,7 @@ impl crate::sim::world::Simulation {
             .substrate
             .entities
             .get(id)
-            .filter(|entity| entity.fire_particle_system.system().is_some())
+            .filter(|entity| entity.seldom.fire_particle_system.system().is_some())
             .and_then(|entity| entity.attack_target.target())
         else {
             return;
@@ -1398,7 +1398,7 @@ mod tests {
             let mut actor =
                 GameEntity::test_default(1, "ATKR", "Test", (x / 256) as u16, (y / 256) as u16);
             let category = if let Some(building) = input.get("building") {
-                actor.type_facts.set_foundation_for_test(
+                actor.seldom.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
                 actor

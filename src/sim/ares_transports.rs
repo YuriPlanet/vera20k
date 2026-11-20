@@ -104,7 +104,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(id)
-            .is_some_and(|entity| entity.ares.ares_initial_payload.take())
+            .is_some_and(|entity| entity.seldom.ares.ares_initial_payload.take())
         {
             return;
         }

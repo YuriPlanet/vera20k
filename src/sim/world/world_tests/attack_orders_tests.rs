@@ -53,7 +53,7 @@ fn test_attack_move_command_chrono_miner_uses_ground_path() {
     // No `Primary=` refuses the attack-move (`0x00711E90`), so
     // Assign_Target_Command answers Move and stores nothing.
     let miner = sim.substrate.entities.get(entity).unwrap();
-    assert!(!miner.mega_mission.is_attack_move());
+    assert!(!miner.seldom.mega_mission.is_attack_move());
     assert_eq!(
         miner.mission.queued(),
         MissionId::from_known(MissionType::Move),
@@ -187,11 +187,11 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
         "ObjectClass::ReceiveDamage's exact-zero Destroy (0x005F57AF) expires the target at the kill"
     );
     assert_eq!(
-        attacker.mega_mission.destination(),
+        attacker.seldom.mega_mission.destination(),
         Some(crate::sim::combat::TargetKind::Cell(30, 20)),
         "the attack-move order outlives its target"
     );
-    assert!(attacker.mega_mission.is_attack_move());
+    assert!(attacker.seldom.mega_mission.is_attack_move());
     // Mission_Attack, finding no target, enters idle mode, whose
     // RefreshMegaMission resumes the order: Move to the MegaDestination.
     let mut resumed = false;
@@ -203,7 +203,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
                 attacker.navigation.nav_com(),
                 Some(crate::sim::components::NavTargetRef::cell(30, 20))
             );
-            assert!(attacker.mega_mission.is_attack_move());
+            assert!(attacker.seldom.mega_mission.is_attack_move());
             resumed = true;
             break;
         }
@@ -230,9 +230,9 @@ fn an_attack_move_click_on_an_enemy_attacks_it_as_the_mega_target() {
         Some(&rules),
     ));
     let attacker = sim.substrate.entities.get(1).unwrap();
-    assert!(attacker.mega_mission.is_attack_move());
-    assert!(attacker.mega_mission.targets(2));
-    assert_eq!(attacker.mega_mission.destination(), None);
+    assert!(attacker.seldom.mega_mission.is_attack_move());
+    assert!(attacker.seldom.mega_mission.targets(2));
+    assert_eq!(attacker.seldom.mega_mission.destination(), None);
     assert_eq!(
         attacker.mission.queued(),
         MissionId::from_known(MissionType::Attack)
@@ -260,8 +260,8 @@ fn an_attack_move_click_on_an_enemy_attacks_it_as_the_mega_target() {
         attacker.mission.queued(),
         MissionId::from_known(MissionType::Move)
     );
-    assert_eq!(attacker.mega_mission.destination(), None);
-    assert!(attacker.mega_mission.targets(2));
+    assert_eq!(attacker.seldom.mega_mission.destination(), None);
+    assert!(attacker.seldom.mega_mission.targets(2));
 }
 
 /// An attack-move click over an object sends it as the event destination,
@@ -292,9 +292,9 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
 
     assert!(attack_move_onto(&mut sim, mcv));
     let attacker = sim.substrate.entities.get(1).unwrap();
-    assert!(attacker.mega_mission.is_attack_move());
+    assert!(attacker.seldom.mega_mission.is_attack_move());
     assert_eq!(
-        attacker.mega_mission.destination(),
+        attacker.seldom.mega_mission.destination(),
         Some(crate::sim::combat::TargetKind::Entity(mcv))
     );
     assert_eq!(
@@ -308,9 +308,9 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
 
     sim.detach_all_pointer_expired(mcv, &rules, crate::sim::world::FrameEffects::default());
     let attacker = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(attacker.mega_mission.destination(), None);
+    assert_eq!(attacker.seldom.mega_mission.destination(), None);
     assert_eq!(attacker.navigation.nav_com(), None);
-    assert!(attacker.mega_mission.is_attack_move());
+    assert!(attacker.seldom.mega_mission.is_attack_move());
 
     sim.substrate
         .entities
@@ -324,6 +324,7 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .mega_mission
             .destination(),
         None,
@@ -346,7 +347,7 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
         attacker.mission.queued(),
         MissionId::from_known(MissionType::Attack)
     );
-    assert!(attacker.mega_mission.is_attack_move());
+    assert!(attacker.seldom.mega_mission.is_attack_move());
     assert!(attacker.attack_target.target().is_none());
 }
 
@@ -428,7 +429,7 @@ fn test_infantry_attack_move_kills_on_the_way_and_walks_on() {
         if victim_dead
             && (attacker.position.rx(), attacker.position.ry()) == (30, 20)
             && attacker.navigation.nav_com().is_none()
-            && !attacker.mega_mission.is_attack_move()
+            && !attacker.seldom.mega_mission.is_attack_move()
         {
             arrived = true;
             break;
@@ -477,7 +478,8 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
     {
         let tank = sim.substrate.entities.get_mut(1).unwrap();
         tank.attack_target.set_for_test(Some(TargetKind::Entity(2)));
-        tank.suspended_attack_target
+        tank.seldom
+            .suspended_attack_target
             .set_for_test(Some(crate::sim::combat::TargetKind::Entity(2)));
         tank.mission
             .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
@@ -517,7 +519,7 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
         "Assign_Target refuses the dying archived target the Restore names"
     );
     assert_eq!(tank.mission.current().known(), Some(MissionType::Guard));
-    assert_eq!(tank.suspended_attack_target.target(), None);
+    assert_eq!(tank.seldom.suspended_attack_target.target(), None);
 }
 
 /// The death arm's Stun (`0x00702210`: FootClass::Stun `0x004D5660`, then
@@ -671,7 +673,7 @@ fn test_area_guard_keeps_its_post_when_displaced_inside_the_native_leash() {
         .entities
         .get(1)
         .expect("entity 1 should exist");
-    assert!(!ge.mega_mission.is_attack_move());
+    assert!(!ge.seldom.mega_mission.is_attack_move());
     assert_eq!(
         ge.archive_target(),
         Some(crate::sim::combat::TargetKind::Cell(2, 2))

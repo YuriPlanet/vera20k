@@ -292,7 +292,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             y: y * 256 + 128,
             z: 312,
         });
-        entity.radio_contacts.set_slot(0, 2);
+        entity.seldom.radio_contacts.set_slot(0, 2);
         let current = match selector {
             67 => 0x2000,
             68 => 0x6000,
@@ -318,7 +318,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             runtime.set_state_for_test(BunkerState::TurnToBuilding);
             runtime
         });
-        building.radio_contacts.set_slot(0, UNIT);
+        building.seldom.radio_contacts.set_slot(0, UNIT);
         sim.substrate.entities.insert(building);
         update_bunker(
             &mut sim,

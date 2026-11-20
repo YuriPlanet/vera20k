@@ -287,7 +287,7 @@ impl ResponseSelection {
         if accumulated > budget
             && let Some(attacker) = world.substrate.entities.get_mut(attacker_id)
         {
-            attacker.base_defense_response.cooldown.start(
+            attacker.seldom.base_defense_response.cooldown.start(
                 current_frame,
                 response_delay_frames(rules.general.base_defense_delay_minutes),
             );
@@ -467,7 +467,7 @@ pub(crate) fn respond_to_base_attack(
         )
         || victim_object.insignificant
         || !attacker
-            .base_defense_response
+            .seldom.base_defense_response
             .cooldown
             .expired(current_frame)
     {
@@ -636,7 +636,7 @@ pub(crate) fn respond_to_base_attack(
             // Original7085A4/7085A9 evaluate threat first;7085AD then
             // refuses a Unit for a slave victim. Earlier rejection would
             // lose this candidate's shared-Dummy coordinate/layer/zone writes.
-            if class == ResponderClass::Unit && victim.slave.owner().is_some() {
+            if class == ResponderClass::Unit && victim.seldom.slave.owner().is_some() {
                 continue;
             }
             selection.consider(candidate_id, raw_score, class, victim_is_self_anchor);

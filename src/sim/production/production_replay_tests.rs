@@ -328,7 +328,7 @@ fn retail_builds_step_at_the_native_frames() {
                     .entities
                     .get(held.unwrap())
                     .expect("held head");
-                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+                assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
                 break;
             }
         }

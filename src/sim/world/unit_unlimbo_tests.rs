@@ -157,7 +157,7 @@ fn assert_actor(sim: &Simulation, id: u64, native: &Value, name: &str) {
         ("marked", u8::from(actor.lifecycle.cell_marked())),
         (
             "logic_registered",
-            u8::from(actor.in_logic_vector.is_member()),
+            u8::from(actor.seldom.in_logic_vector.is_member()),
         ),
     ] {
         assert_eq!(json!(actual), native[label], "{name}: {label}");
@@ -302,13 +302,13 @@ fn assert_radio_pair(sim: &Simulation, ids: (u64, u64), native: &Value, name: &s
             "{name}: {role} Location"
         );
         assert_eq!(
-            json!(endpoint.radio_contacts.capacity()),
+            json!(endpoint.seldom.radio_contacts.capacity()),
             expected["contact_capacity"],
             "{name}: {role} sparse contact capacity"
         );
-        let actual_contacts: Vec<_> = (0..endpoint.radio_contacts.capacity())
+        let actual_contacts: Vec<_> = (0..endpoint.seldom.radio_contacts.capacity())
             .map(|slot| {
-                endpoint.radio_contacts.slot(slot).map(|target| {
+                endpoint.seldom.radio_contacts.slot(slot).map(|target| {
                     if target == ids.0 {
                         "unit"
                     } else {
@@ -329,7 +329,7 @@ fn assert_radio_pair(sim: &Simulation, ids: (u64, u64), native: &Value, name: &s
             "{name}: {role} Contacts"
         );
         assert_eq!(
-            endpoint.tether.partner(),
+            endpoint.seldom.tether.partner(),
             (expected["tether"] == 1).then_some(peer),
             "{name}: {role} tether owner"
         );
@@ -1258,8 +1258,8 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         );
         assert_eq!(
             json!([
-                actor.rearm_timer.start_frame(),
-                actor.rearm_timer.duration()
+                actor.seldom.rearm_timer.start_frame(),
+                actor.seldom.rearm_timer.duration()
             ]),
             row["after"]["rearm"],
             "{name}: original ExitObject rearm timer"
@@ -1279,7 +1279,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             "{name}: Radio HELLO contact"
         );
         assert_eq!(
-            actor.tether.partner(),
+            actor.seldom.tether.partner(),
             Some(producer_id),
             "{name}: Radio TETHER receiver"
         );
@@ -1480,6 +1480,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 .entities
                 .get_mut(unit)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .remove(producer);
         }

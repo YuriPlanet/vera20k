@@ -308,7 +308,7 @@ mod tests {
         sim.reveal_entity_with_rules(id, rules);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.finish_building_construction_for_test();
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         id
     }
 
@@ -385,6 +385,7 @@ mod tests {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .selection
                 .is_selected()
         );

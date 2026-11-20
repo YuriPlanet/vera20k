@@ -83,6 +83,7 @@ fn attached_force_decloak_new_hit_and_refresh_preserve_the_transition_clock() {
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries
@@ -129,6 +130,7 @@ fn attached_force_decloak_reverses_cloaking_but_not_visible_or_flag_off_targets(
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries

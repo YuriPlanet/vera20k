@@ -119,7 +119,8 @@ impl Simulation {
         );
         // OccupancyGrid is a list projection, not an independent subcell
         // reservation chooser. The current coordinate supplies its slot.
-        e.sub_cell
+        e.seldom
+            .sub_cell
             .hold(crate::sim::cell_kernel::infantry_preferred_spot(
                 crate::sim::cell_kernel::CellQueryPoint {
                     x: coord.x,
@@ -179,7 +180,7 @@ impl Simulation {
         //75BE11 clears only the paid-step latch before head retirement/PerCell.
         e.navigation.path_runtime_mut().clear_blockage();
         let (sub_x, sub_y) = (e.position.sub_x(), e.position.sub_y());
-        e.sub_cell.hold_offset(sub_x, sub_y);
+        e.seldom.sub_cell.hold_offset(sub_x, sub_y);
         //75BE18: FindSubCellDest(null) retires the head, clearing its raw
         //bits and marking the Foot's own.
         self.walk_find_sub_cell_dest(id, None, rules, registry, effects)

@@ -809,9 +809,10 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 continue;
             };
-            let remaining = entity.rearm_timer.remaining(frame);
+            let remaining = entity.seldom.rearm_timer.remaining(frame);
             if remaining > 0 {
                 entity
+                    .seldom
                     .rearm_timer
                     .start(frame, scale_i32(remaining, effect.rof_multiplier));
             }

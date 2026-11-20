@@ -48,8 +48,8 @@ fn frame(s: &mut Scene) -> Sample {
     Sample {
         cell: (miner.position.rx(), miner.position.ry()),
         mission: miner.mission.current(),
-        contact: miner.radio_contacts.slot(0),
-        tethered: miner.tether.partner().is_some(),
+        contact: miner.seldom.radio_contacts.slot(0),
+        tethered: miner.seldom.tether.partner().is_some(),
         unloading: state.unload_active(),
         facing: miner.body_facing_current(s.sim.session.binary_frame()),
         ore: state
@@ -170,8 +170,11 @@ fn assert_whole_visit(s: &mut Scene, drives: bool) -> Vec<Sample> {
     assert_eq!(end.contact, None);
     assert_ne!(end.mission, MissionId::from_known(MissionType::Unload));
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert!(refinery.radio_contacts.is_empty(), "the slot is free again");
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(
+        refinery.seldom.radio_contacts.is_empty(),
+        "the slot is free again"
+    );
+    assert_eq!(refinery.seldom.tether.partner(), None);
     samples
 }
 
@@ -226,6 +229,7 @@ fn tethered(s: &Scene, id: u64) -> bool {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .tether
         .partner()
         .is_some()
@@ -415,9 +419,9 @@ fn selling_the_refinery_mid_unload_hands_the_chrono_miner_to_harvest() {
     let miner = s.sim.substrate.entities.get(s.miner).unwrap();
     let state = miner.miner.as_ref().unwrap();
     assert!(!state.unload_active(), "RUN_AWAY dropped the latch");
-    assert!(miner.tether.partner().is_some());
+    assert!(miner.seldom.tether.partner().is_some());
     assert_eq!(
-        miner.radio_contacts.slot(0),
+        miner.seldom.radio_contacts.slot(0),
         Some(refinery),
         "RUN_AWAY keeps the contact"
     );
@@ -433,7 +437,11 @@ fn selling_the_refinery_mid_unload_hands_the_chrono_miner_to_harvest() {
     );
     step(&mut s);
     let miner = s.sim.substrate.entities.get(s.miner).unwrap();
-    assert_eq!(miner.tether.partner(), None, "OVER_OUT released the miner");
-    assert_eq!(miner.radio_contacts.slot(0), None);
+    assert_eq!(
+        miner.seldom.tether.partner(),
+        None,
+        "OVER_OUT released the miner"
+    );
+    assert_eq!(miner.seldom.radio_contacts.slot(0), None);
     assert_eq!(miner.miner.as_ref().unwrap().cargo().len(), before);
 }

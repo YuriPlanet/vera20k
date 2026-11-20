@@ -163,8 +163,8 @@ pub(crate) fn apply_multiplier_crate(
             continue;
         };
         let slot = match which {
-            Multiplier::Armor => &mut entity.crate_multipliers.armor,
-            Multiplier::Firepower => &mut entity.crate_multipliers.firepower,
+            Multiplier::Armor => &mut entity.seldom.crate_multipliers.armor,
+            Multiplier::Firepower => &mut entity.seldom.crate_multipliers.firepower,
         };
         if *slot != NativeF64Bits::ONE {
             continue;

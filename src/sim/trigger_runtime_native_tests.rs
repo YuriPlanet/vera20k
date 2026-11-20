@@ -2282,6 +2282,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     );
     entity.set_native_unique_id_for_test(integer(&native["reactor_native_unique_id"]));
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(object.foundation.clone().into());
     entity.begin_building_body(BuildingBodyMode::Idle, 0);
@@ -2427,6 +2428,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(*id)
@@ -4155,7 +4157,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                                     false,
                                 );
                             object.lifecycle.set_in_limbo_for_test(true);
-                            object.in_logic_vector.set_for_test(false);
+                            object.seldom.in_logic_vector.set_for_test(false);
                             sim.substrate.entities.insert(object);
                             objects.push(id);
                         } else {

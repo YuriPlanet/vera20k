@@ -436,7 +436,7 @@ fn a_computer_defence_drops_its_out_of_range_target_when_hit_by_it() {
     let entity = sim.substrate.entities.get(building).unwrap();
     assert!(entity.attack_target.target().is_none());
     assert_eq!(
-        entity.suspended_attack_target.target(),
+        entity.seldom.suspended_attack_target.target(),
         Some(TargetKind::Entity(source)),
         "the Override archived it"
     );

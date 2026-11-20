@@ -143,7 +143,7 @@ impl HudFacts {
                     rules.ares(),
                 )
             }),
-            foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
+            foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
             toggled_off: entity.ares_toggled_off(),
             shows_production_to_observer: at
                 .observer_id
@@ -151,7 +151,7 @@ impl HudFacts {
         });
         let more = HudMore {
             scale_pips: scale_pip_rows(sim, entity, rules),
-            controller: entity.mind_control.controller(),
+            controller: entity.seldom.mind_control.controller(),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
             } else {
@@ -3305,7 +3305,7 @@ mod tests {
             false,
         );
         actor.lifecycle.set_in_limbo_for_test(false);
-        actor.selection.set_selected_for_test(true);
+        actor.seldom.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(actor);
         sim.resubmit_entity_display_for_test(1);
         sim.session_mut_for_test()
@@ -3349,6 +3349,7 @@ mod tests {
         );
         sim.entity_mut_for_test(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(false);
         assert!(!admitted(&sim, None));
@@ -3421,14 +3422,18 @@ mod tests {
                 if disguised {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                     disguise.acquire(0, None, None);
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(input["selected"].as_bool().unwrap());
-                entity.discovery.set_discovered_by_current_house_for_test(
-                    input["discovered"].as_bool().unwrap(),
-                );
+                entity
+                    .seldom
+                    .discovery
+                    .set_discovered_by_current_house_for_test(
+                        input["discovered"].as_bool().unwrap(),
+                    );
                 sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(1);
                 sim.session_mut_for_test()
@@ -3509,10 +3514,10 @@ mod tests {
                 false,
             );
             entity.lifecycle.set_in_limbo_for_test(false);
-            entity.selection.set_selected_for_test(selected);
+            entity.seldom.selection.set_selected_for_test(selected);
             let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
             disguise.acquire(0, None, None);
-            entity.disguise = Some(disguise);
+            entity.seldom.disguise = Some(disguise);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             health_bar_drawable(
@@ -3672,7 +3677,7 @@ mod tests {
             if disguised {
                 let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                 disguise.acquire(0, None, None);
-                entity.disguise = Some(disguise);
+                entity.seldom.disguise = Some(disguise);
             }
             sim.entities_mut_for_test().insert(entity);
             sim.session_mut_for_test()
@@ -3743,7 +3748,7 @@ mod tests {
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);
-        assert!(!target.selection.is_selected());
+        assert!(!target.seldom.selection.is_selected());
         println!(
             "CATIME01 raw_anchor_mapped={} hover={hover:?}",
             sim.fog()
