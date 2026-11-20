@@ -1500,7 +1500,9 @@ const ONE_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3F80_0000);
 /// `remaining / recharge` is not above `1.0f - percent` (`FCOMPP`,
 /// `TEST AH,0x1`, which also fails an unordered compare). A zero recharge
 /// gives +inf or NaN, which fail, or -inf, which passes; an infinite
-/// `AIMinorSuperReadyPercent=` (`1e39` and up) loads as infinity too.
+/// `AIMinorSuperReadyPercent=` (ReadDouble overflows from about `1.8e308`,
+/// e.g. `1e309`, and the chop store to float keeps it; `1e39` stores the
+/// largest finite float) loads as infinity too.
 pub(crate) fn charge_nearly_full(remaining: i32, recharge: i32, percent: NativeF32Bits) -> bool {
     type X = MaskedX87Chop53;
     let ratio = X::div(X::load_i32(remaining), X::load_i32(recharge));

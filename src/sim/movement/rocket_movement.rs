@@ -19,7 +19,9 @@
 //!
 //! Arithmetic runs under the process x87 control word `0x0E7F` (53-bit,
 //! toward zero) with exceptions masked, as [`MaskedX87Chop53`]: a pitch or
-//! acceleration key of `1e39` and up reads as infinity, and the pitch and
+//! acceleration key is read as a double and stored to its binary32 field with
+//! chop, so it is infinite only when the double is (about `1.8e308` and up,
+//! e.g. `1e309`; `1e39` stores the largest finite float), and the pitch and
 //! speed carry it, or the NaN it makes, as the FPU does. The trig and
 //! arctangent are the retail tables. Native comparisons: `tools/rocket_oracle/` (see its README).
 //!

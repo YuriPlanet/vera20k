@@ -355,9 +355,10 @@ impl AiTriggerTrackRecord {
     /// `min`; the stored weight above `max` (`TEST AH,0x41`, so an unordered
     /// compare keeps it) becomes `max`.
     ///
-    /// Exceptions are masked: an infinite weight or Rules double (`1e39` and
-    /// up in the INI) and the NaN an infinity times zero gives flow through
-    /// the same instructions instead of trapping.
+    /// Exceptions are masked: an infinite Rules double (the three keys are
+    /// ReadDouble into binary64, so about `1.8e308` and up, e.g. `1e309`, in
+    /// the INI), the infinite weight it gives and the NaN an infinity times
+    /// zero gives flow through the same instructions instead of trapping.
     fn record(
         &mut self,
         succeeded: bool,

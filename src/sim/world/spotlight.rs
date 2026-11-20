@@ -101,7 +101,8 @@ fn save(value: X87Value) -> NativeF64Bits {
 }
 /// The light's angle and rate and the Rules doubles that drive them
 /// (`SpotlightSpeed=`, `SpotlightAcceleration=`, `SpotlightAngle=`), under
-/// masked exceptions: an INI value of `1e39` and up loads as infinity, and
+/// masked exceptions: each is ReadDouble into binary64, so an INI value of
+/// about `1.8e308` and up (e.g. `1e309`) loads as infinity, and
 /// the sums and compares carry it as the FPU does.
 fn state(value: NativeF64Bits) -> MaskedX87Value {
     M::load_f64(value)

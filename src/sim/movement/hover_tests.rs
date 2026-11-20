@@ -332,6 +332,21 @@ fn infinite_hover_dampen_drives_the_spring_to_negative_infinity() {
     assert_eq!(hover.bob_offset.bits(), f64::NEG_INFINITY.to_bits());
 }
 
+/// `HoverBob=1e999` reads as infinity, so the bob period's ftol gives the
+/// integer indefinite's low dword, 0, where gamemd's `IDIV` at 0x00513E35
+/// faults. VERA takes a zero remainder instead: no bob, the Foot rests at its
+/// height.
+#[test]
+fn infinite_hover_bob_leaves_the_foot_without_a_bob() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nHoverBob=1e999\n")).unwrap();
+    let mut hover = HoverRuntime::default();
+    let height = rules.general.hover_height;
+    assert_eq!(
+        hover.altitude_step(height, false, 1, 7, false, &rules),
+        height
+    );
+}
+
 /// The altitude controller: SetHeight's argument and the spring offset. The
 /// climbing test's answer is the original run's (0x00513DC8 compare); the
 /// ground-ahead lookup that feeds it (`hover_altitude`) is not compared.

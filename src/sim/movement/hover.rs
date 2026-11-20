@@ -13,8 +13,10 @@
 //! process's 53-bit chop x87 arithmetic under masked exceptions
 //! ([`MaskedX87Chop53`]), so the ramp and the altitude spring reproduce the
 //! executable's values, not an approximation, also when a Hover key is
-//! infinite (`1e39` and up in the INI) and the arithmetic reaches infinity or
-//! NaN.
+//! infinite (ReadDouble into binary64: about `1.8e308` and up, e.g. `1e309`,
+//! in the INI) and the arithmetic reaches infinity or NaN. The one integer
+//! step that faults in gamemd, the bob period's `IDIV` by zero, is a
+//! recorded residual in the altitude controller instead.
 
 use super::facing_class::FacingClass;
 use crate::rules::ruleset::RuleSet;
@@ -315,13 +317,19 @@ impl HoverRuntime {
             load(FRAMES_PER_MINUTE),
         );
         let counter = frame.wrapping_add(id.wrapping_mul(2));
-        let phase = X::div(
-            X::mul(
-                X::load_i32(counter.wrapping_rem(X::ftol_i32_low_masked(period))),
-                load(TWO_PI),
-            ),
-            period,
-        );
+        // 0x00513E2B..0x00513E35: `CALL ftol`, `CDQ`, `IDIV ECX`, the
+        // remainder in EDX. Residual: a HoverBob whose period ftol gives 0
+        // (0, below about 1/900 minutes, infinite, or a product whose low
+        // dword is 0), or a period of -1 with the counter at `i32::MIN`,
+        // faults the IDIV and ends gamemd. Outside data must not stop the
+        // game, so VERA takes a remainder of 0 there: the phase is 0 (or NaN
+        // for a zero period, which SinFromTable's ftol also sends to entry
+        // 0), so the bob adds nothing. Retail HoverBob gives a finite,
+        // nonzero period and never reaches this.
+        let remainder = counter
+            .checked_rem(X::ftol_i32_low_masked(period))
+            .unwrap_or(0);
+        let phase = X::div(X::mul(X::load_i32(remainder), load(TWO_PI)), period);
         let sine = MaskedX87Value::from(
             crate::util::retail_trig::TrigTable::embedded().sin_from_table(phase),
         );
