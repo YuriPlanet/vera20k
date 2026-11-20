@@ -73,6 +73,17 @@ pub(crate) fn bounded_loop_module(
     unsafe { device.create_shader_module_trusted(desc, checks) }
 }
 
+/// Whether a 2D texture of `size` fits the device's limit, which is what
+/// [`requested_texture_dim`] asked for: 16384 on most desktop cards, 8192 on
+/// shared-memory chips, 4096 or less on old and WebGL devices. wgpu fails
+/// validation on a larger one, and this game treats that as fatal, so an
+/// atlas sized from a map's, mod's or theater's data asks here first and
+/// refuses, clamps or leaves pieces out with a word in the log.
+pub(crate) fn texture_fits(device: &wgpu::Device, size: [u32; 2]) -> bool {
+    let limit = device.limits().max_texture_dimension_2d;
+    size[0] <= limit && size[1] <= limit
+}
+
 /// A GPU that draws from the system's memory outside Metal: a Windows or
 /// Linux integrated chip, or the processor itself. Its texture pages are
 /// smaller ([`requested_texture_dim`]), its command buffers shorter
