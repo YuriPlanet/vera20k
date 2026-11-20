@@ -1503,22 +1503,25 @@ pub(crate) fn prepare_saved_order(
     let Some(saved) = saved else {
         return Ok(None);
     };
-    #[cfg(feature = "phobos")]
-    let sw_sidebar_expanded = saved.sw_sidebar_expanded();
-    let (flash_deadlines, redraw_until) = {
-        let (deadlines, redraw_until) = saved.flash();
-        (deadlines.clone(), redraw_until)
-    };
-    let request_states = saved.requests().clone();
-    let saved_factory_links = saved.factory_links().clone();
+    let crate::sim::snapshot::SavedSidebarOrderParts {
+        owner,
+        strips: saved_strips,
+        flash_deadlines,
+        redraw_until,
+        request_states,
+        factory_links: saved_factory_links,
+        prediction_categories: saved_categories,
+        active_tab,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_expanded,
+    } = saved.into_parts();
     let active_tab = *SidebarTab::all()
-        .get(usize::from(saved.active_tab()))
+        .get(usize::from(active_tab))
         .ok_or("saved sidebar has an invalid active tab")?;
-    let prediction_categories: HashSet<_> = saved.prediction_categories().iter().copied().collect();
-    if prediction_categories.len() != saved.prediction_categories().len() {
+    let prediction_categories: HashSet<_> = saved_categories.iter().copied().collect();
+    if prediction_categories.len() != saved_categories.len() {
         return Err("saved sidebar has duplicate prediction categories".into());
     }
-    let (owner, saved_strips) = saved.into_parts();
     if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
