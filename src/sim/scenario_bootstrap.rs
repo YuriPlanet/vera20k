@@ -1226,6 +1226,7 @@ impl NormalizedSkirmishSlot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchLaunchDescriptor {
     session: SkirmishLaunchSession,
+    control_grants: Vec<crate::sim::control_authority::ControlGrant>,
     /// WOL Quick Co-op (`[0xA8B244] == 2`) at scenario load: the start
     /// callback is AssignStartingPoints `0x005EE9D0`.
     quick_coop_starts: bool,
@@ -1283,8 +1284,23 @@ impl MatchLaunchDescriptor {
         }
         Ok(Self {
             session,
+            control_grants: Vec::new(),
             quick_coop_starts: false,
         })
+    }
+
+    /// Supply grants in resolved source and House order. The constructed
+    /// scenario validates these indices before admitting the initial world.
+    pub fn with_control_grants(
+        mut self,
+        grants: Vec<crate::sim::control_authority::ControlGrant>,
+    ) -> Self {
+        self.control_grants = grants;
+        self
+    }
+
+    pub(crate) fn control_grants(&self) -> &[crate::sim::control_authority::ControlGrant] {
+        &self.control_grants
     }
 
     /// Assign starts as WOL Quick Co-op does (`0x0068755E`).
@@ -5344,6 +5360,8 @@ mod tests {
     /// led by the lowest row, and each sends as its own source.
     #[test]
     fn humans_on_one_start_share_a_house_as_separate_senders() {
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel, ControlScope};
+
         let mut session = one_player_battle_launch("shared.map").session().clone();
         let template = session.humans[0].clone();
         // CreateHouses687F66 color order: Ally, Rival, Host.
@@ -5373,16 +5391,27 @@ mod tests {
             "Cooperative shares nothing"
         );
 
-        let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let grants = [
+            ControlGrant {
+                source: 0,
+                house: 0,
+                level: ControlGrantLevel::FullControl,
+            },
+            ControlGrant {
+                source: 2,
+                house: 0,
+                level: ControlGrantLevel::UnitsOnly,
+            },
+        ];
+        let descriptor = MatchLaunchDescriptor::from_resolved(session)
+            .unwrap()
+            .with_control_grants(grants.to_vec());
+        let roster = HouseRoster::default();
+        let rules = techno_constructor_start_rules();
         let mut sim = Simulation::new();
         sim.session
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
-        initialize_skirmish_launch_houses(
-            &mut sim,
-            &HouseRoster::default(),
-            &techno_constructor_start_rules(),
-            &descriptor,
-        );
+        initialize_skirmish_launch_houses(&mut sim, &roster, &rules, &descriptor);
         let host = sim.interner.get("Host").unwrap();
         let rival = sim.interner.get("Rival").unwrap();
         assert_eq!(sim.houses.len(), 4, "two player Houses, Neutral, Special");
@@ -5395,6 +5424,29 @@ mod tests {
             [(0, 1), (1, 0), (2, 1)]
         );
         assert_eq!(sim.session.local_shared_house_source(), Some(0));
+
+        let construction_rules = sim.session.rule_policy();
+        crate::sim::runtime::finalize_constructed_scenario(
+            &mut sim,
+            &prefix_map_with_starts(&[]),
+            &rules,
+            &roster,
+            construction_rules,
+            Some(&descriptor),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.control_scope_for_source(0, rival),
+            ControlScope::FullControl
+        );
+        assert_eq!(
+            sim.control_scope_for_source(2, rival),
+            ControlScope::UnitsOnly
+        );
+        assert_eq!(
+            sim.control_scope_for_source(1, rival),
+            ControlScope::OwnFull
+        );
     }
 
     /// `[0xAC1198]` holds the last observer; a VERA room's every observer

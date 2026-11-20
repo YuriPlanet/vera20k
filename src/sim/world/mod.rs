@@ -1856,12 +1856,6 @@ pub struct Simulation {
     /// (`0x0064C9B1`) and drains them. A sender is the record's header byte.
     #[serde(skip)]
     departed_senders: Vec<i8>,
-    /// The header byte of the native record whose command is executing;
-    /// `None` while a semantic envelope executes. The DoList host sets it
-    /// around each record. VERA shared control: EXIT reads it to tell apart
-    /// players sharing a House.
-    #[serde(skip)]
-    executing_record_sender: Option<i8>,
     #[serde(skip)]
     connection_lost: bool,
     /// Checksum computed by this frame's multiplayer tail, handed to the
@@ -4829,7 +4823,6 @@ impl Simulation {
             quit_requested: false,
             executed_exit_owner: None,
             departed_senders: Vec::new(),
-            executing_record_sender: None,
             connection_lost: false,
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),

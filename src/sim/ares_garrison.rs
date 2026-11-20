@@ -187,32 +187,51 @@ impl Simulation {
     /// `100136C0`, inlined). Nothing is announced or refreshed: native
     /// leaves the cell threat (`0x0070F6E0`) and the target's raid state as
     /// they were.
-    pub(crate) fn ares_do_traverse_to(
+    fn ares_do_traverse_to(
         &mut self,
+        sender: Option<i8>,
         source_id: u64,
         target_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
+    ) -> bool {
+        let Some(source) = self.substrate.entities.get(source_id) else {
+            return false;
+        };
         let Some(target) = self.substrate.entities.get(target_id) else {
-            return;
+            return false;
         };
         let Some(max) = self
             .object_type(target.type_ref(), rules)
             .map(|object| i64::from(object.max_number_occupants))
         else {
-            return;
+            return false;
         };
         let free = max - i64::from(target.passenger_role().occupants().count());
-        let held = self.substrate.entities.get(source_id).map_or(0, |source| {
-            i64::from(source.passenger_role().occupants().count())
-        });
-        if free >= 0 {
-            for _ in 0..free.min(held) {
-                if !self.substrate.transfer_garrison_head(source_id, target_id) {
-                    break;
-                }
+        let occupants = source.passenger_role().occupants().ids();
+        let moved = usize::try_from(free).unwrap_or(0).min(occupants.len());
+        if self.session.has_custom_control_grants() {
+            use crate::sim::control_authority::CommandCapability;
+
+            let Some(sender) = sender else {
+                return false;
+            };
+            // VERA grant admission uses the same head prefix as doTraverseTo.
+            // A retained pointer awaiting expiry has no live actor to authorize.
+            if occupants.iter().take(moved).any(|&id| {
+                self.substrate.entities.get(id).is_some_and(|occupant| {
+                    !self
+                        .control_scope_for_source(sender, occupant.owner())
+                        .permits(CommandCapability::Tactical)
+                })
+            }) {
+                return false;
+            }
+        }
+        for _ in 0..moved {
+            if !self.substrate.transfer_garrison_head(source_id, target_id) {
+                break;
             }
         }
         if let Some(source) = self.substrate.entities.get_mut(source_id) {
@@ -222,6 +241,7 @@ impl Simulation {
                 .repair_fire_index();
         }
         self.ares_eval_raid_status(source_id, rules, registry, effects);
+        true
     }
 
     /// The TrenchRedirectClick (0x60) arm of Networking_RespondToEvent
@@ -232,6 +252,7 @@ impl Simulation {
     /// the occupants moved.
     pub(crate) fn ares_respond_to_trench_redirect(
         &mut self,
+        sender: Option<i8>,
         event: &crate::sim::command::AresTrenchRedirectRecord,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -258,8 +279,7 @@ impl Simulation {
         if !self.ares_can_traverse_to(source_id, target_id, rules) {
             return false;
         }
-        self.ares_do_traverse_to(source_id, target_id, rules, registry, effects);
-        true
+        self.ares_do_traverse_to(sender, source_id, target_id, rules, registry, effects)
     }
 }
 

@@ -370,6 +370,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
         assert_eq!(sim.state_hash(), before, "object-action query is read-only");
         assert!(
             sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::CaptureBuilding {
                     engineer_id: engineer,
@@ -462,6 +463,7 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
         );
         assert!(
             sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &due[0].payload,
                 &rules,

@@ -85,6 +85,33 @@ pub enum ControlScope {
     UnitsOnly,
 }
 
+/// The authority a synchronized command needs on each of its subjects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandCapability {
+    PrimaryHouse,
+    FullControl,
+    Tactical,
+}
+
+impl ControlScope {
+    pub(crate) const fn permits(self, capability: CommandCapability) -> bool {
+        use CommandCapability::{FullControl, PrimaryHouse, Tactical};
+
+        match self {
+            Self::None => false,
+            Self::OwnFull => true,
+            Self::FullControl => match capability {
+                PrimaryHouse => false,
+                FullControl | Tactical => true,
+            },
+            Self::UnitsOnly => match capability {
+                PrimaryHouse | FullControl => false,
+                Tactical => true,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ControlAuthority {
     delegated: Option<Box<ControlGrantTable>>,
