@@ -126,10 +126,11 @@ fn emit_leave_transport_sound(sim: &mut Simulation, rules: &RuleSet, transport_i
     else {
         return;
     };
-    let sound_id = sim.interner.intern(&sound);
-    sim.sound_events.emit(SimSoundEvent::LeaveTransport {
-        sound_id,
-        world: world.into(),
+    // The same PlayAtCoord750E20 shape the per-passenger arm emits.
+    sim.sound_events.emit(SimSoundEvent::VocAtCoord {
+        sound_id: sound,
+        coordinate: world,
+        flags: 0,
     });
 }
 
@@ -770,8 +771,11 @@ fn eject_head_passenger(
 
             // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`, flags 0):
             // a retained request at the transport's Location, after the
-            // passenger's Unlimbo, once per placed passenger.
-            if let Some(sound_id) = leave_sound {
+            // passenger's Unlimbo, once per placed passenger; the Phobos
+            // one-frame arm passes `false` and rings it at the end instead.
+            if play_leave_sound
+                && let Some(sound_id) = leave_sound
+            {
                 let coordinate = crate::sim::movement::ground_pose::object_location(
                     sim.substrate
                         .entities
@@ -1372,10 +1376,103 @@ pub(crate) fn unit_mission_unload(
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_EJECT => {
-            if entity.passenger_role().passenger_count()
-                > entity.transport_unload_keep_count.count()
-            {
-                let _ = eject_head_passenger(sim, rules, id, overlay_registry, effects, true);
+            let keep = entity.transport_unload_keep_count.count();
+            let count = entity.passenger_role.passenger_count();
+            // Phobos `NoQueueUpToUnload` (`0x73DC1E`,
+            // `Ext/Techno/Hooks.Transport.cpp:427-466`): the transport
+            // type's nullable, else `[General] NoQueueUpToUnload`.
+            let no_queue_up_to_unload = sim
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| {
+                    object
+                        .phobos_techno_extras
+                        .no_queue_up_to_unload(rules.phobos_globals.no_queue_up_to_unload)
+                });
+
+            if count > keep {
+                // Stock plays its LeaveTransportSound inside a placed
+                // passenger; the Phobos one-frame arm holds it for the end.
+                let outcome = eject_head_passenger(
+                    sim,
+                    rules,
+                    id,
+                    overlay_registry,
+                    effects,
+                    !no_queue_up_to_unload,
+                );
+                // Phobos `NoQueueUpToUnloadBreak` (`0x73DC9C`): a failed
+                // placement scatters the allied neighbours.
+                if outcome == EjectOutcome::Failed {
+                    scatter_unload_neighbours(sim, rules, id, overlay_registry, effects);
+                }
+                if no_queue_up_to_unload {
+                    if outcome == EjectOutcome::Placed {
+                        // Within a single frame: eject until the keep count
+                        // remains or a placement fails (`R->EBX(0)` ->
+                        // `0x73D8CB`).
+                        loop {
+                            let count =
+                                sim.substrate.entities.get(id).map_or(0, |transport| {
+                                    transport.passenger_role.passenger_count()
+                                });
+                            if count <= keep {
+                                emit_leave_transport_sound(sim, rules, id);
+                                break;
+                            }
+                            let can_unload =
+                                sim.substrate.entities.get(id).is_some_and(|transport| {
+                                    transport_can_unload_now(sim, rules, transport)
+                                });
+                            if !can_unload {
+                                emit_leave_transport_sound(sim, rules, id);
+                                if let Some(transport) = sim.substrate.entities.get_mut(id) {
+                                    transport.mission.clear_movement_bypass_latch();
+                                }
+                                // `MissionStatus = 0` retry: no epilogue draw.
+                                return 1;
+                            }
+                            match eject_head_passenger(
+                                sim,
+                                rules,
+                                id,
+                                overlay_registry,
+                                effects,
+                                false,
+                            ) {
+                                EjectOutcome::Placed => {}
+                                EjectOutcome::Failed => {
+                                    scatter_unload_neighbours(
+                                        sim,
+                                        rules,
+                                        id,
+                                        overlay_registry,
+                                        effects,
+                                    );
+                                    emit_leave_transport_sound(sim, rules, id);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // The stock key-off tail (`0x73DC1E`) retries while a
+                    // passenger remains and the cell cannot unload.
+                    let count = sim
+                        .substrate
+                        .entities
+                        .get(id)
+                        .map_or(0, |transport| transport.passenger_role.passenger_count());
+                    let can_unload =
+                        sim.substrate.entities.get(id).is_some_and(|transport| {
+                            transport_can_unload_now(sim, rules, transport)
+                        });
+                    if count > keep && !can_unload {
+                        if let Some(transport) = sim.substrate.entities.get_mut(id) {
+                            transport.mission.clear_movement_bypass_latch();
+                        }
+                        return 1;
+                    }
+                }
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(STATE_DONE);
             }

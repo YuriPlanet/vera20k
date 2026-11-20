@@ -3065,7 +3065,10 @@ fn phobos_no_queue_up_to_unload_empties_the_cargo_in_one_dispatch() {
             .sim
             .sound_events
             .iter()
-            .filter(|event| matches!(event, SimSoundEvent::LeaveTransport { .. }))
+            .filter(|event| {
+                matches!(event, SimSoundEvent::VocAtCoord { sound_id, flags: 0, .. }
+                    if sound_id == "ExitTransport")
+            })
             .count();
         (revealed, delay, sounds)
     };

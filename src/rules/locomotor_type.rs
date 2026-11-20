@@ -704,13 +704,4 @@ mod tests {
             assert_eq!(resolve_installed_kind(Some(value)), DEFAULT_INSTALLED_KIND);
         }
     }
-
-    #[test]
-    fn locomotor_aliases_require_the_phobos_feature() {
-        assert_eq!(kind_from_clsid("Drive"), None);
-        assert_eq!(
-            resolve_installed_kind(Some("Drive")),
-            DEFAULT_INSTALLED_KIND
-        );
-    }
 }

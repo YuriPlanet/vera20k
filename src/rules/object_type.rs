@@ -5032,6 +5032,27 @@ impl ObjectType {
             "VoiceSecondaryEliteWeaponAttack",
         ]
         .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
+        // Phobos `TechnoTypeExt::LoadFromINIFile`'s voice block
+        // (`Ext/TechnoType/Body.cpp:1448-1450`): the type repair voice and the
+        // per-slot attack voices, the latter gated by the MultiWeapon latch.
+        {
+            let (turret_count, weapon_count) = (self.turret_count, self.weapon_count);
+            self.phobos_multi_weapon.bind_voice_references(
+                section,
+                sounds,
+                turret_count,
+                weapon_count,
+            );
+            // `AircraftTypeExt::LoadFromINIFile` (`Ext/AircraftType/Body.cpp:23`)
+            // reads the key in the AircraftType pass only, so the same reader
+            // bound against every family leaves a non-aircraft section unset.
+            self.phobos_voice_pickup = if self.category == ObjectCategory::Aircraft {
+                section
+                    .and_then(|section| sounds.read_rules_reference(section, "VoicePickup", None))
+            } else {
+                None
+            };
+        }
         if crate::rules::ares_switch::ares_way() {
             self.ares_voice_repair = section
                 .and_then(|section| sounds.read_rules_reference(section, "VoiceRepair", None));
@@ -5929,8 +5950,9 @@ impl ObjectType {
             phobos_parasite_allow_water_exit: (category == ObjectCategory::Vehicle)
                 .then(|| section.read_phobos_nullable_bool("Parasite.AllowWaterExit", None))
                 .flatten(),
-            phobos_cloak_kick_out_parasite: section
-                .read_phobos_nullable_bool("Cloak.KickOutParasite", None),
+            phobos_cloak_kick_out_parasite: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_bool("Cloak.KickOutParasite", None)
+            }),
             phobos_cloak_anims: section
                 .read_list("CloakAnims", 0x800)
                 .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
@@ -6011,10 +6033,12 @@ impl ObjectType {
             phobos_wake_sinking: (category != ObjectCategory::Building)
                 .then(|| section.read_name("Wake.Sinking", 0x31).map(str::to_owned))
                 .flatten(),
-            phobos_warp_away: section
-                .read_list("WarpAway", 0x800)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            phobos_warp_away: crate::rules::phobos_switch::phobos_read(|| {
+                section
+                    .read_list("WarpAway", 0x800)
+                    .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+                    .unwrap_or_default()
+            }),
             phobos_adjacent: crate::rules::phobos_adjacent::PhobosAdjacent::from_section(section),
             phobos_drain_money_display:
                 crate::rules::phobos_drain_money_display::DrainMoneyDisplaySettings::from_section(
@@ -7045,7 +7069,9 @@ impl ObjectType {
             silo_damage: false,
             custom_palette: None,
             reveal_to_all: section.read_bool("RevealToAll", false),
-            reveal_to_all_radius: section.read_phobos_nullable_int("RevealToAll.Radius", None),
+            reveal_to_all_radius: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_int("RevealToAll.Radius", None)
+            }),
 
             // Naval flags
             water_bound: {

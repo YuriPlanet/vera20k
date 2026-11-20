@@ -197,6 +197,8 @@ fn fire_error_reads_the_targets_shield_armor() {
 /// `CanFire` admits (1% and up) also clears the widened `0.01f` threshold.
 #[test]
 fn retaliation_reads_the_sources_shield_armor() {
+    // The two gates only separate under the Ares Verses reader.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = shield_rules("Reach");
     let (mut sim, victim, source) = arena(&rules, "SHIELDED", 35);
     let retaliates =

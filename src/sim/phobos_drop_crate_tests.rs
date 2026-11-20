@@ -31,8 +31,25 @@ fn rules(gift_keys: &str) -> RuleSet {
     .expect("drop-crate rules")
 }
 
+/// The `[CrateRules]` images the fixture names; the shared crate registry has
+/// only the dense OV*/STEEPCRATE index space.
 fn registry() -> OverlayTypeRegistry {
-    crate::sim::crates::tests::crate_registry()
+    OverlayTypeRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[OverlayTypes]
+0=SILVER
+1=WOOD
+2=WATER
+             [SILVER]
+Crate=yes
+[WOOD]
+Crate=yes
+[WATER]
+Crate=yes
+",
+        ),
+        None,
+    )
 }
 
 fn sim(rules: &RuleSet) -> Simulation {

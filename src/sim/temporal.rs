@@ -978,15 +978,46 @@ impl Simulation {
         } else {
             None
         };
-        let warp_away = match warp_combat {
-            Some(combat) => combat.temporal_warp_away(&rules.general.warp_away.name),
-            None => Some(rules.general.warp_away.name.as_str()),
+        let warp_away: Option<String> = match warp_combat {
+            Some(combat) => combat
+                .temporal_warp_away(&rules.general.warp_away.name)
+                .map(str::to_owned),
+            None => Some(rules.general.warp_away.name.clone()),
+        };
+        // Phobos TechnoType `WarpAway=` (hook `0x71A8BD`,
+        // `Ext/Techno/Hooks.cpp:1476-1490`): a non-empty list replaces the
+        // native single anim with
+        // `AnimExt::CreateRandomAnim(list, location, nullptr, pTarget->Owner)`,
+        // so the erase anim carries the target's house.
+        let phobos_warp_away = if rules.phobos() {
+            self.substrate
+                .entities
+                .get(target)
+                .and_then(|entity| {
+                    self.entity_object_type(entity, rules)
+                        .map(|object| (entity.owner(), object.phobos_warp_away.clone()))
+                })
+                .filter(|(_, list)| !list.is_empty())
+                .and_then(|(owner, list)| {
+                    let name = self.resolve_random_anim_name(rules, &list)?.to_owned();
+                    let location = self.substrate.entities.get(target).map(location_coord)?;
+                    let type_name = self.interner.intern(&name);
+                    self.spawn_owned_anim(rules, type_name, location, owner, None, None);
+                    Some(())
+                })
+        } else {
+            None
+        };
+        let warp_away = if phobos_warp_away.is_some() {
+            None
+        } else {
+            warp_away
         };
         if let Some(entity) = self.substrate.entities.get(target)
             && let Some(warp_away) = warp_away
         {
             let location = location_coord(entity);
-            self.spawn_once_anim(warp_away, location, None, rules);
+            self.spawn_once_anim(&warp_away, location, None, rules);
         }
         // 0x0071A917..0x0071A978: a Trainable attacker gains
         // `VeterancyStruct::Add(ownerCost, targetCost)` here, and again in

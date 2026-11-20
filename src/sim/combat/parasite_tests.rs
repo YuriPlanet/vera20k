@@ -1443,7 +1443,13 @@ fn ares_a_cloaking_host_keeps_its_drone() {
 #[test]
 fn phobos_cloak_kick_out_parasite_ejects_only_when_configured() {
     let eject = |extra: &str| {
-        let ini = IniFile::from_str(&RULES.replace("[MTNK]\n", &format!("[MTNK]\n{extra}")));
+        // `Cloak.KickOutParasite=no` at its default marks this as a game
+        // where Phobos installs the hook.
+        let ini = IniFile::from_str(
+            &RULES
+                .replace("[General]\n", "[General]\nCloak.KickOutParasite=no\n")
+                .replace("[MTNK]\n", &format!("[MTNK]\n{extra}")),
+        );
         let rules = rules_with_ini(&ini);
         let mut arena = Arena::new(&rules);
         let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));

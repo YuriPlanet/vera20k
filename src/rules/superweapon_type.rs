@@ -2780,6 +2780,8 @@ mod tests {
     #[test]
     fn phobos_sw_range_defaults_to_minus_one_and_reads() {
         use crate::rules::ini_parser::IniFile;
+        // `Money.Amount` is an Ares key: the fixture reads its Rules the Ares way.
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[SuperWeaponTypes]\n0=A\n1=B\n[A]\nType=IronCurtain\n\
              [B]\nType=IronCurtain\nSW.RangeMinimum=2.5\nSW.RangeMaximum=9.25\n\

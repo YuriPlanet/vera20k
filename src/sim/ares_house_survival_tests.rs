@@ -134,6 +134,8 @@ fn keep_alive_tracking_matches_executed_defaults_overrides_and_wrapping() {
 fn phobos_keep_alive_globals_pick_the_category_default() {
     use crate::map::entities::EntityCategory;
 
+    // The type's own `KeepAlive=` is an Ares key; the globals are Phobos.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[General]\nKeepAlive.Infantry=yes\nKeepAlive.Units=yes\n\
          KeepAlive.Aircraft=yes\nKeepAlive.Buildings=no\nKeepAlive.Defenses=yes\n\

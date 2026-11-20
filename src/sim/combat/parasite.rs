@@ -1387,7 +1387,9 @@ impl Simulation {
                 .and_then(|object| object.phobos_cloak_kick_out_parasite)
                 .unwrap_or(rules.phobos_globals.cloak_kick_out_parasite)
         };
-        let removed = !rules.ares() || removed;
+        // The stock control removes; the Ares/Phobos hook forwards the real
+        // control and falls back to the type key, then the global.
+        let removed = !(rules.ares() || rules.phobos()) || removed;
         let Some(eater) = self
             .substrate
             .entities

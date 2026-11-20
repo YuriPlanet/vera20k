@@ -3263,7 +3263,7 @@ impl Simulation {
             .interner
             .try_resolve(entity.type_ref())
             .and_then(|name| rules.object(name))
-            .map(|_object| 4);
+            .map(|object| object.reveal_to_all_radius.unwrap_or(object.sight));
         let ability = config.sight_ability(entity, &self.interner, rules);
         vision::entity_sight_admission(
             &self.fog,

@@ -2953,15 +2953,21 @@ impl PhobosGlobals {
             general.read_bool("ReloadInTransport", globals.reload_in_transport);
         // `Ext/Rules/Body.cpp:652-656`: the Ares house keep-alive category
         // defaults; a `BuildCat=Combat` building takes the Defenses key.
-        globals.keep_alive_infantry =
-            general.read_bool("KeepAlive.Infantry", globals.keep_alive_infantry);
-        globals.keep_alive_units = general.read_bool("KeepAlive.Units", globals.keep_alive_units);
-        globals.keep_alive_aircraft =
-            general.read_bool("KeepAlive.Aircraft", globals.keep_alive_aircraft);
-        globals.keep_alive_buildings =
-            general.read_bool("KeepAlive.Buildings", globals.keep_alive_buildings);
-        globals.keep_alive_defenses =
-            general.read_bool("KeepAlive.Defenses", globals.keep_alive_defenses);
+        globals.keep_alive_infantry = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("KeepAlive.Infantry", globals.keep_alive_infantry)
+        });
+        globals.keep_alive_units = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("KeepAlive.Units", globals.keep_alive_units)
+        });
+        globals.keep_alive_aircraft = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("KeepAlive.Aircraft", globals.keep_alive_aircraft)
+        });
+        globals.keep_alive_buildings = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("KeepAlive.Buildings", globals.keep_alive_buildings)
+        });
+        globals.keep_alive_defenses = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("KeepAlive.Defenses", globals.keep_alive_defenses)
+        });
         // `Ext/Rules/Body.cpp:111-115`: the gained-self-heal caps and gates.
         // Each key stays literal on its reader line: the v3 scanner attributes
         // a read by the literal argument of the call on that line.
@@ -3046,8 +3052,9 @@ impl PhobosGlobals {
             "NotHuman.RandomDeathSequence",
             globals.not_human_random_death_sequence,
         );
-        globals.cloak_kick_out_parasite =
-            general.read_bool("Cloak.KickOutParasite", globals.cloak_kick_out_parasite);
+        globals.cloak_kick_out_parasite = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("Cloak.KickOutParasite", globals.cloak_kick_out_parasite)
+        });
         globals.cloak_anims = audio_visual
             .read_list("CloakAnims", 0x800)
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())

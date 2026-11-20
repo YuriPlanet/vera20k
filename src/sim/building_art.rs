@@ -411,7 +411,9 @@ impl Simulation {
         let first_opening = !entity.building_art.actually_placed;
         let owner = entity.owner();
         let cell = (entity.position.rx(), entity.position.ry());
-        let refinery = object.refinery;
+        // 0x00445FE4: a `Refinery.UseNormalActiveAnim` refinery takes the
+        // normal opening path, not the storage-fill arm.
+        let refinery = object.refinery && !self.refinery_uses_normal_active_anim(id, rules);
         let powered = Self::anim_power_policy(object, entity, rules);
         let damaged = requested_damage_state(
             entity.health,
