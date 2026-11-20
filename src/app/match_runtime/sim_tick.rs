@@ -358,7 +358,7 @@ fn local_end_game_entry(
 ) -> Option<crate::rules::end_game::EndGamePresentation<'_>> {
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     // A mission owns its own result screens; the match card is a match's.
-    if !sim.session().game_mode_nonzero() {
+    if sim.session().uses_campaign_world() {
         return None;
     }
     let house = sim
@@ -415,11 +415,11 @@ pub(crate) fn play_outcome_eva(
     state: &mut AppState,
     outcome: crate::sim::house_state::HouseOutcomeKind,
 ) {
-    let campaign = !state
+    let campaign = state
         .match_state
         .sim_runtime
         .runtime()
-        .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
+        .is_none_or(|runtime| runtime.simulation.session().uses_campaign_world());
     let event = crate::app::match_runtime::sound_dispatch::outcome_eva_event(outcome, campaign);
     let (Some(sfx), Some(catalog), Some(assets)) = (
         state.audio.sfx_player.as_mut(),
@@ -1907,7 +1907,7 @@ fn house_laser_rgb(
     // CreateHouses gives the two literal special houses InitColor
     // (0x688320/0x688373, which writes +56F9 only) but no ComputeRemap, so
     // the constructor's white +56FC..+56FE (0x4F5C2E..0x4F5C54) stays.
-    if runtime.simulation.session().game_mode_nonzero()
+    if !runtime.simulation.session().uses_campaign_world()
         && (name.eq_ignore_ascii_case("Neutral") || name.eq_ignore_ascii_case("Special"))
     {
         return [0xFF; 3];
@@ -3968,12 +3968,73 @@ mod modal_pump_tests {
         should_record_replay_tick, wall_clock_service_admission,
     };
 
+    fn lend_plain_frame(host: &mut crate::app::match_runtime::sim_host::SimHost) {
+        use super::{FrameEffects, FrameFinish, SIM_TICK_MS, ThreadedTick, TickLane};
+
+        assert!(host.lend(Box::new(|runtime| {
+            let native_frame = runtime.simulation.session().binary_frame();
+            Box::new(ThreadedTick {
+                finish: FrameFinish {
+                    native_frame,
+                    local_owner_for_fog: None,
+                    local_owner_name: None,
+                    defer_verdict_to_clip: false,
+                    detailed_eva_text: false,
+                    prefix_eva_text: Default::default(),
+                    deferred: None,
+                },
+                output: runtime.advance_frame(
+                    &[],
+                    SIM_TICK_MS,
+                    TickLane::Ordinary,
+                    FrameEffects::empty(),
+                ),
+                tick_cost: Default::default(),
+                logic_ms: (0, 0),
+            })
+        })));
+        assert!(host.is_lent());
+        assert!(host.home_runtime().is_none());
+    }
+
+    #[test]
+    fn replay_flush_drains_and_records_a_lent_frame() {
+        use super::{ReplayFlush, replay_flush_facts};
+        use crate::app::match_diagnostics::MatchDiagnosticsState;
+        use crate::app::match_runtime::sim_host::SimHost;
+        use crate::sim::{runtime::SimRuntime, world::Simulation};
+
+        let mut sim = Simulation::new();
+        sim.hash_state_every(std::num::NonZeroU64::MIN);
+        let runtime = SimRuntime::from_simulation(sim);
+        let mut diagnostics = MatchDiagnosticsState::default();
+        let replay = diagnostics.get_or_begin_replay(&runtime).unwrap();
+        let mut host = SimHost::default();
+        host.install(Some(runtime));
+        lend_plain_frame(&mut host);
+
+        let ReplayFlush::Sealed(tick) = replay_flush_facts(&mut host, Some(replay), false, false)
+        else {
+            panic!("an offline frame does not hand off to the network queue");
+        };
+        assert!(!host.is_lent());
+        let runtime = host.home_runtime().unwrap();
+        assert_eq!(tick, 1);
+        assert_eq!(runtime.simulation.session().tick(), tick);
+        assert_eq!(replay.ticks.len(), 1);
+        assert_eq!(replay.ticks[0].tick, tick);
+        assert_eq!(
+            replay.ticks[0].state_hash,
+            Some(runtime.simulation.state_hash())
+        );
+    }
+
     #[test]
     #[ignore = "slow; verifies a lent frame's flushed replay against retail assets"]
     fn flushing_lent_frame_verifies_its_completed_replay() {
         use super::{
-            FrameEffects, FrameFinish, ReplayFlush, SIM_TICK_MS, ThreadedTick, TickLane,
-            record_replay_frame, replay_flush_facts,
+            FrameEffects, ReplayFlush, SIM_TICK_MS, TickLane, record_replay_frame,
+            replay_flush_facts,
         };
         use crate::app::match_diagnostics::MatchDiagnosticsState;
         use crate::app::match_runtime::sim_host::SimHost;
@@ -4025,30 +4086,7 @@ mod modal_pump_tests {
         record_replay_frame(diagnostics.replay_log.as_mut(), &mut first);
         let mut host = SimHost::default();
         host.install(Some(scene.runtime));
-        assert!(host.lend(Box::new(|runtime| {
-            let native_frame = runtime.simulation.session().binary_frame();
-            Box::new(ThreadedTick {
-                finish: FrameFinish {
-                    native_frame,
-                    local_owner_for_fog: None,
-                    local_owner_name: None,
-                    defer_verdict_to_clip: false,
-                    detailed_eva_text: false,
-                    prefix_eva_text: Default::default(),
-                    deferred: None,
-                },
-                output: runtime.advance_frame(
-                    &[],
-                    SIM_TICK_MS,
-                    TickLane::Ordinary,
-                    FrameEffects::empty(),
-                ),
-                tick_cost: Default::default(),
-                logic_ms: (0, 0),
-            })
-        })));
-        assert!(host.is_lent());
-        assert!(host.home_runtime().is_none());
+        lend_plain_frame(&mut host);
 
         let ReplayFlush::Sealed(tick) =
             replay_flush_facts(&mut host, diagnostics.replay_log.as_mut(), false, false)

@@ -2370,13 +2370,16 @@ impl Simulation {
             // RadSiteClass::Load65B3D0 restarts its level/light clocks;
             // the saved field and source stay intact until ordinary RadSite AI.
             self.radiation.restart_timers_after_load(frame);
-        }
-        for id in self.substrate.entities.keys_sorted() {
-            self.substrate.restore_move_sound_state_after_load(id);
-            // ParasiteClass Load6295DB..6295F3 leaves a bite due and drops
-            // suppression on a stock player load.
-            if !retain_continuation && let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.parasite.restart_timers_after_load(frame);
+            for id in self.substrate.entities.keys_sorted() {
+                // FootClass::Load 0x004DB60D..0x004DB624 clears load-time
+                // audio. An exact continuation keeps the logical latch and
+                // countdown because they control the next Main RNG draw.
+                self.substrate.restore_move_sound_state_after_load(id);
+                // ParasiteClass Load6295DB..6295F3 leaves a bite due and
+                // drops suppression on a stock player load.
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.parasite.restart_timers_after_load(frame);
+                }
             }
         }
         self.rebuild_logic_membership();

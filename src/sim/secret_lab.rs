@@ -322,6 +322,7 @@ mod tests {
                             house_roster: &roster,
                             skirmish_session: None,
                             campaign_map: None,
+                            stage_home_global: None,
                         },
                     )
                     .unwrap();

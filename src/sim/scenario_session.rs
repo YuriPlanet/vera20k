@@ -1457,6 +1457,14 @@ impl ScenarioSession {
     pub const fn rule_policy(&self) -> RulePolicy {
         self.rule_policy
     }
+
+    /// Map House construction and campaign presentation survive a lockstep
+    /// admission. A stock slot launch can independently use campaign rules.
+    pub const fn uses_campaign_world(&self) -> bool {
+        self.campaign.is_some()
+            || (self.multiplayer_mode_class.is_none()
+                && !self.rule_policy.bootstrap().uses_multiplayer_rules())
+    }
     pub(crate) const fn local_view_identity(&self) -> &LocalViewIdentity {
         &self.view
     }
@@ -1974,7 +1982,7 @@ impl ScenarioSession {
         restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver,
         authored_fog_of_war: Option<bool>,
     ) -> Result<(), CampaignScenarioStartupError> {
-        if self.game_mode_nonzero() {
+        if self.rule_policy.bootstrap().uses_multiplayer_rules() {
             return Err(CampaignScenarioStartupError::NonCampaignMode);
         }
         if self.campaign.is_some() {

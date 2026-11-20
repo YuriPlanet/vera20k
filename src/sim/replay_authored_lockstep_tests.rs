@@ -15,6 +15,203 @@ const TICK_MS: u32 = 22;
 const SEED: u32 = 19;
 const BATTLE_MAP: &str = "XMP03T4.MAP";
 
+#[test]
+#[ignore = "slow; real campaign maps, player-save restoration and independent replay construction"]
+fn map_house_campaign_manifest_loads_carry_and_replays_each_frame() {
+    use crate::headless_scenario::{check_campaign_stage, load_campaign_stage};
+    use crate::map::campaign_manifest::{CampaignManifest, ManifestError};
+    use crate::sim::control_authority::ControlScope;
+    use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
+    use crate::sim::snapshot::{GameSnapshot, PlayerSaveCells};
+    use crate::sim::world::SnapshotProcessState;
+
+    let (retail, assets) =
+        crate::rules::retail_ini_fixture::retail_assets().expect("retail RA2_DIR");
+    let directory = TestDirectory::new("authored-map-house-campaign");
+    let map_name = "ALL01UMD.MAP";
+    let map = assets.resolve_ref(map_name).unwrap().bytes;
+    let map = set_ini_values(
+        map,
+        "Basic",
+        &[("CarryOverMoney", "100%"), ("CarryOverCap", "-1")],
+    );
+    directory.write(map_name, &map);
+    let map_path = directory.path().join(map_name);
+    let map_path = map_path.to_str().unwrap();
+    let map_digest = crate::util::sha256::sha256_hex(&map);
+    let manifest = format!(
+        r#"
+[Stage Opening]
+Map={map_name}
+MapSha256={map_digest}
+[Roles Opening]
+Lead=Americans
+Wing=Americans
+[Grants Opening]
+Lead.Russians=FullControl
+Wing.Russians=UnitsOnly
+Lead.YuriCountry=UnitsOnly
+[Rules Opening]
+AllowsManualAlliances=Yes
+[CarryOver Opening]
+House.Americans=Credits,Difficulty
+House.Russians=Credits,Difficulty
+[Routes Opening]
+Win=Finale
+[Stage Finale]
+Map={map_name}
+"#
+    );
+    directory.write("campaign.ini", manifest.as_bytes());
+    let manifest_path = directory.path().join("campaign.ini");
+    let invalid_manifest = manifest.replace("House.Russians=Credits", "House.Missing=Credits");
+    let invalid_path = directory.path().join("invalid.ini");
+    directory.write("invalid.ini", invalid_manifest.as_bytes());
+    let error = check_campaign_stage(&retail, &invalid_path, "Opening", 3)
+        .unwrap_err()
+        .downcast::<ManifestError>()
+        .unwrap();
+    assert_eq!(error.file, invalid_path);
+    assert_eq!(error.section, "CarryOver Opening");
+    assert_eq!(error.key, "House.Missing");
+    assert_eq!(
+        error.line,
+        invalid_manifest
+            .lines()
+            .position(|line| line.starts_with("House.Missing="))
+            .unwrap()
+            + 1
+    );
+    assert!(!error.hint.is_empty());
+    let duplicate = set_ini_values(&map, "Houses", &[("999", "americans")]);
+    directory.write("Duplicate.map", &duplicate);
+    let duplicate_path = directory.path().join("duplicate.ini");
+    directory.write("duplicate.ini", b"[Stage Opening]\nMap=Duplicate.map");
+    let error = check_campaign_stage(&retail, &duplicate_path, "Opening", 1)
+        .unwrap_err()
+        .downcast::<ManifestError>()
+        .unwrap();
+    assert_eq!((error.key.as_str(), error.line), ("Map", 2));
+    assert!(error.problem.contains("repeats the name"));
+
+    let manifest = CampaignManifest::load(&manifest_path).unwrap();
+    let report = check_campaign_stage(&retail, &manifest_path, "opening", 3).unwrap();
+    assert_eq!(report.checked_frames, 3);
+    assert_eq!(report.map_sha256, map_digest);
+    assert_eq!(report.manifest_sha256, manifest.digest);
+
+    let stage = manifest.stage("Opening").unwrap();
+    let opening = AuthoredCampaignStart::from_stage(stage, 0, Default::default()).unwrap();
+    let mut previous = load_campaign_stage(&retail, map_path, SEED, &opening, None).unwrap();
+    let american = previous.sim().interner().get("Americans").unwrap();
+    let soviet = previous.sim().interner().get("Russians").unwrap();
+    let yuri = previous.sim().interner().get("YuriCountry").unwrap();
+    let mut balances = Vec::new();
+    for (id, credit) in [(american, 123), (soviet, 456)] {
+        let economy = previous
+            .runtime
+            .simulation
+            .houses
+            .get_mut(&id)
+            .unwrap()
+            .economy_mut();
+        let before = economy.available_money();
+        economy.add_credits(credit);
+        balances.push((id, before + economy.available_money()));
+    }
+    let carry = previous
+        .sim()
+        .save_stage_carry_over(&stage.carry_over)
+        .unwrap();
+    assert!(!carry.is_empty());
+    let launch = AuthoredCampaignStart::from_stage(stage, 0, carry).unwrap();
+    let mut scene = load_campaign_stage(&retail, map_path, SEED, &launch, None).unwrap();
+    let sim = scene.sim();
+    assert!(
+        sim.session().uses_campaign_world() && sim.session().execution_topology().is_lockstep()
+    );
+    assert!(sim.session().rule_policy().allows_manual_alliances());
+    let primary = sim.houses().index_of(american).unwrap();
+    assert_eq!(
+        sim.session()
+            .network_sources(sim.houses().len())
+            .collect::<Vec<_>>(),
+        [(0, primary), (1, primary)]
+    );
+    assert_eq!(
+        sim.control_scope_for_source(0, soviet),
+        ControlScope::FullControl
+    );
+    assert_eq!(
+        sim.control_scope_for_source(1, soviet),
+        ControlScope::UnitsOnly
+    );
+    assert_eq!(
+        sim.control_scope_for_source(0, yuri),
+        ControlScope::UnitsOnly
+    );
+    assert_eq!(sim.control_scope_for_source(1, yuri), ControlScope::None);
+    for (id, credits) in balances {
+        assert_eq!(sim.houses()[&id].economy().available_money(), credits);
+    }
+    let terrain_template = sim.resolved_terrain().unwrap().clone();
+
+    let log = ReplayRunner::record_campaign_stage(&mut scene, &launch, 8).unwrap();
+    let mut encoded = Vec::new();
+    log.write_json(&mut encoded).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    let blueprint = &json["startup"]["blueprint"];
+    assert_eq!(blueprint["kind"], "campaign");
+    assert_eq!(blueprint["map_houses"]["roles"][1]["name"], "Wing");
+    for field in ["endpoints", "socket", "token", "nonce", "queue"] {
+        assert!(blueprint.get(field).is_none());
+    }
+    let replay = ReplayLog::decode_json(&encoded).unwrap();
+    let verified = ReplayRunner::verify(&retail, &replay, Some(map_path)).unwrap();
+    assert_eq!(verified.checked_hashes, 8);
+    assert_eq!(verified.final_state_hash, scene.sim().state_hash());
+
+    let sim = scene.sim();
+    assert!(
+        sim.entities()
+            .values()
+            .any(|entity| entity.move_sound.countdown() != 0),
+        "snapshot exercises live Foot move-sound state"
+    );
+    let rules = &scene.runtime.resources.rules;
+    let rules_hash = rules.simulation_config_hash();
+    let map_hash = scene.map.ini.content_hash();
+    let bytes = GameSnapshot::save_validated(sim, map_hash, rules_hash, "lockstep stage", 0);
+    let snap = GameSnapshot::load_validated(&bytes, map_hash, rules_hash, map_name).unwrap();
+    let land = terrain_template
+        .capture_user_saved_template(sim.resolved_terrain().unwrap())
+        .unwrap()
+        .user_load_land_values()
+        .unwrap();
+    let (restored, _) = snap
+        .restore_player_world(
+            SnapshotProcessState::Live(sim),
+            rules,
+            terrain_template,
+            sim.terrain_speed_config().clone(),
+            PlayerSaveCells::Saved {
+                land,
+                prepare_assets: &mut |_, _, _| Ok(()),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        restored.state_hash(),
+        sim.state_hash(),
+        "changed hash owners: {:?}",
+        sim.state_hash_owners()
+            .into_iter()
+            .zip(restored.state_hash_owners())
+            .filter(|(live, loaded)| live != loaded)
+            .collect::<Vec<_>>(),
+    );
+}
+
 struct AuthoredReplay {
     scene: HeadlessScenario,
     log: ReplayLog,
@@ -68,7 +265,7 @@ impl AuthoredReplay {
         options.every_frame_network = lockstep;
         let startup = ReplayStartup::capture(
             &scene.runtime,
-            &launch,
+            ReplayLaunchInput::Slots(&launch),
             &scene.source,
             scene.map.ini.content_hash(),
             TICK_MS,

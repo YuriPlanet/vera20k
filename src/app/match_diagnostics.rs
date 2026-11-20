@@ -538,7 +538,7 @@ impl MatchDiagnosticsState {
         };
         match crate::sim::replay::ReplayStartup::capture(
             runtime,
-            launch,
+            crate::sim::replay::ReplayLaunchInput::Slots(launch),
             source,
             map_hash,
             crate::app::types::SIM_TICK_MS,

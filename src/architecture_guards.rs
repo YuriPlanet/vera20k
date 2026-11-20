@@ -28,7 +28,7 @@ const LAYER_RULES: &[(&str, &[&str])] = &[
     ("assets", &["sim", "rules", "map", "render", "ui", "app"]),
     ("util", &["sim", "rules", "map", "render", "ui", "app"]),
     ("rules", &["sim", "map"]),
-    ("map", &["sim", "render", "app"]),
+    ("map", &["sim", "render", "app", "net", "ui"]),
     ("render", &["app"]),
     // render draws ui view models; ui stays render-agnostic.
     ("ui", &["app", "render", "skirmish_scenarios"]),
@@ -110,7 +110,7 @@ fn production_scenario_mode_reads_stay_behind_admission() {
         "sim/world/shroud_refresh.rs",
         "sim/world/world_spawn.rs",
     ];
-    const LEGACY_READ_COUNT: usize = 29;
+    const LEGACY_READ_COUNT: usize = 17;
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut forbidden = Vec::new();

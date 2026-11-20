@@ -554,7 +554,11 @@ impl LoadingRequest {
             map_additions,
             progress,
         )?;
-        initial.retain_process_state(mapgen_retention, resident, self.startup().session_mode());
+        initial.retain_process_state(
+            mapgen_retention,
+            resident,
+            self.startup().match_spec().topology(),
+        );
         self.prepare_initial(initial)
     }
 

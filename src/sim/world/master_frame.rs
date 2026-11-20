@@ -1335,7 +1335,7 @@ impl Simulation {
         // ScoreDialog__FillEntries `0x5C9700` and `ScoreDialog__Run `0x5C9720`.
         // Keep their survivor bonus and Scenario RNG draws out of campaigns;
         // Campaign's standalone result dialog reads its own House statistics.
-        let terminal_score_finalized = self.session.game_mode_nonzero()
+        let terminal_score_finalized = !self.session.uses_campaign_world()
             && self.natural_outcome_exit_ready()
             && Self::finalize_terminal_score_snapshot(
                 &self.session,

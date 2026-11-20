@@ -26,7 +26,9 @@
 //! lobby as Quit does, and the pair goes on through Use Saved Campaign.
 
 use crate::app::frontend::skirmish_session::cooperative::CooperativeMissionRow;
-use crate::app::match_runtime::session::{CooperativeRoundEvent, CooperativeRoundStep};
+use crate::app::match_runtime::session::{
+    CooperativeRoundEvent, CooperativeRoundStep, MatchSession, SessionMode,
+};
 use crate::app::{App, AppState, GameScreen};
 use crate::ui::coop_score_shell::{CoopScoreAction, CoopScoreModel, CoopScorePage};
 use crate::ui::lan_shell::LanChatLine;
@@ -34,13 +36,25 @@ use crate::ui::lan_shell::LanChatLine;
 /// A network Cooperative match: the router calls the mode's `+0xA0`
 /// before GameExit (`0x0055D0C5..0x0055D0E2`, GameMode 3 or 4).
 pub(crate) fn applies(state: &AppState) -> bool {
-    state.match_state.session_mode().is_network()
-        && state
+    runs_cooperative_progress(
+        &state.match_state.session,
+        state.match_state.session_mode(),
+        state
             .match_state
             .sim_runtime
             .runtime()
-            .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class())
-            == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+            .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class()),
+    )
+}
+
+fn runs_cooperative_progress(
+    session: &MatchSession,
+    mode: SessionMode,
+    class: Option<crate::skirmish_modes::MpModeClass>,
+) -> bool {
+    !session.local_connection_watches()
+        && mode.is_network()
+        && class == Some(crate::skirmish_modes::MpModeClass::Cooperative)
 }
 
 /// Cooperative `+0xA0` (`0x005C3710`) at the terminal edge, with the
@@ -560,12 +574,15 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::Assign => {
             // Native cannot fail here. A refused assignment has sent no
             // begin; leaving with `0x24` returns every peer's Quit.
-            if let Err(error) = assign(state) {
-                log::error!("co-op round assignment failed: {error:#}");
-                if let Err(error) = state.match_state.session.quit_cooperative_round() {
-                    log::warn!("co-op round quit refused: {error:#}");
+            match assign(state) {
+                Ok(next) => run_step(state, next),
+                Err(error) => {
+                    log::error!("co-op round assignment failed: {error:#}");
+                    if let Err(error) = state.match_state.session.quit_cooperative_round() {
+                        log::warn!("co-op round quit refused: {error:#}");
+                    }
+                    finish(state);
                 }
-                finish(state);
             }
         }
         CooperativeRoundStep::OptionsApplied { difficulty, .. } => state
@@ -612,7 +629,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
 /// The master's all-ready (`0x0046FD47`): mode `+0x68` and
 /// `SessionClass::ProcessRandomAssignments` (`0x0069B8C0`) on the gameplay
 /// Scenario stream the match returned, then its own ack and `0x32`.
-fn assign(state: &mut AppState) -> anyhow::Result<()> {
+fn assign(state: &mut AppState) -> anyhow::Result<CooperativeRoundStep> {
     let launch = state
         .match_state
         .session
@@ -815,4 +832,36 @@ fn append_line(state: &mut AppState, text: String, color: u32) {
         visible,
         |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
     );
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+    use crate::app::match_runtime::session::NetworkReturnContext;
+    use crate::skirmish_modes::MpModeClass;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+
+    #[test]
+    fn cooperative_result_progress_only_runs_for_a_playing_connection() {
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(
+                crate::headless_scenario::battle_session("test.map", &[]),
+                false,
+                None,
+                false,
+            )
+            .unwrap();
+        let class = Some(MpModeClass::Cooperative);
+        assert!(runs_cooperative_progress(&session, SessionMode::Wol, class));
+        session
+            .admit_local_network_watcher(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30_010))
+            .unwrap();
+        assert!(!runs_cooperative_progress(
+            &session,
+            SessionMode::Wol,
+            class
+        ));
+    }
 }
