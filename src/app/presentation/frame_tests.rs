@@ -5,7 +5,7 @@ use super::*;
 /// it past the ceiling copies more than drawing needs.
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "phobos", feature = "debug-tools"))
+    not(feature = "debug-tools")
 ))]
 #[test]
 fn the_draw_record_stays_under_its_ceiling() {
@@ -15,7 +15,7 @@ fn the_draw_record_stays_under_its_ceiling() {
 
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "phobos", feature = "debug-tools"))
+    not(feature = "debug-tools")
 ))]
 const CEILING: usize = 816;
 
@@ -154,7 +154,6 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
     let origin = crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 };
     designating.place.airstrike_designation = Some(AirstrikeDesignation {
         coords: [origin; 2],
-        #[cfg(feature = "phobos")]
         color: [0; 3],
     });
     assert!(designating.may_draw_a_line());

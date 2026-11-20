@@ -159,9 +159,7 @@ impl Simulation {
         // Optional extension preflight precedes paired-Super writes, effects,
         // defense alerts and charge consumption. Stock-only commands retain
         // their native behavior, including native refused-click side effects.
-        if (ares || cfg!(feature = "phobos"))
-            && !super::super_weapon_available(self, rules, owner, &sw.id)
-        {
+        if (ares || rules.phobos()) && !super::super_weapon_available(self, rules, owner, &sw.id) {
             return false;
         }
         if ares
@@ -319,7 +317,7 @@ impl Simulation {
             // `0x004FAEA6..0x004FAEC1`.
             super_instance(self, owner, pre_type)
                 .expect("retained paired Super")
-                .is_ready = false;
+                .set_readiness(false);
             Self::release_super_anim(
                 &mut self.substrate,
                 &mut self.super_weapons,
@@ -683,7 +681,15 @@ fn launch(
             _ => false,
         };
         if activated {
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         true
@@ -728,7 +734,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -744,7 +758,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -760,7 +782,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -855,7 +885,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -870,17 +908,41 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         SuperWeaponKind::SonarPulse => {
             super::sonar_pulse::launch(sim, rules, owner, sw, (rx, ry));
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         SuperWeaponKind::Battery => {
             super::battery::activate(sim, rules, owner, sw);
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         SuperWeaponKind::Firestorm => {
@@ -898,7 +960,15 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         SuperWeaponKind::EMPulse => {
@@ -912,14 +982,181 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
     }
     if redirect_refused {
         return false;
     }
+    // Phobos `SWTypeExt::FireSuperWeaponExt`'s tail (`Ext/SWType/FireSuperWeapon.cpp:32`):
+    // `SW.Next` chained launches, the type's Convert pairs, then `SW.Link`.
+    super::chaining::apply_phobos_launch_tail(
+        sim,
+        rules,
+        owner,
+        sw,
+        (rx, ry),
+        overlay_registry,
+        frame_effects,
+    );
+    // `sw_ext.ShotCount++` (`Ext/SWType/FireSuperWeapon.cpp:45`) runs at the
+    // shared Launch tail for stock-handled types; the Ares handler kinds
+    // already counted through `finish_ares_launch`.
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type_id) {
+        instance.record_launch(sim.session.binary_frame() as i32);
+    }
     true
+}
+
+/// Phobos `SWTypeExt::ApplyTypeConversion` (`Ext/SWType/FireSuperWeapon.cpp:350-354`):
+/// every Foot in the global array converts through the SW's pairs with the
+/// launching house as the source.
+pub(super) fn apply_sw_type_conversion(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    effects: FrameEffects<'_>,
+) {
+    if sw.phobos_convert_pairs.is_empty() {
+        return;
+    }
+    let ids: Vec<u64> = sim
+        .substrate
+        .entities
+        .values_sorted()
+        .map(|entity| entity.stable_id())
+        .collect();
+    for id in ids {
+        sim.phobos_apply_type_convert_pairs(
+            id,
+            &sw.phobos_convert_pairs,
+            Some(owner),
+            rules,
+            effects,
+        );
+    }
+}
+
+/// Phobos `BuildingExt::HandleInfiltrate`'s `launchTheSWHere`
+/// (`Ext/Building/Body.cpp:333-346`): save the Super's charge timer
+/// (`StartTime`/`TimeLeft`, `+0x30`/`+0x38`), force it ready
+/// (`SuperClass::SetReadiness @ 0x006CB820`), Launch the type's action at
+/// `cell` (`SuperClass::Launch @ 0x006CC390`), Reset the Super
+/// (`SuperClass::Reset @ 0x006CE0B0`), then write the saved timer back. The
+/// launch does not consume the recharge.
+///
+/// RESIDUAL: native Launch also receives `pHouse->IsCurrentPlayer()`; the
+/// shared launch owner here takes no such flag (no stock arm reads one), so
+/// the launch effects are the same for both audiences.
+pub(crate) fn launch_super_preserving_charge(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type_id: InternedId,
+    cell: (u16, u16),
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    let Some(sw) = rules.super_weapon(sim.interner.resolve(sw_type_id)) else {
+        return;
+    };
+    let Some(instance) = super_instance(sim, owner, sw_type_id) else {
+        return;
+    };
+    let saved = (instance.charge_start_tick(), instance.charge_duration());
+    instance.set_readiness(true);
+    launch(
+        sim,
+        rules,
+        owner,
+        sw_type_id,
+        sw,
+        cell,
+        overlay_registry,
+        frame_effects,
+    );
+    // `pSuper->Reset()` runs whatever the launch case did.
+    let name = sim.interner.resolve(sw_type_id).to_owned();
+    super::reset_super(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &mut sim.super_weapons,
+        rules,
+        owner,
+        &name,
+    );
+    if let Some(instance) = super_instance(sim, owner, sw_type_id) {
+        instance.store_charge_timer(crate::sim::timer::CdTimer::from_raw(saved.0, saved.1));
+    }
+}
+
+/// One Phobos chained launch — `SW.Next` (`Ext/SWType/FireSuperWeapon.cpp:307-335`)
+/// and warhead `LaunchSW` (`Ext/WarheadType/Detonate.cpp:121-150`):
+/// `pSuper->SetReadiness(true); pSuper->Launch(cell, isPlayer); pSuper->Reset()`.
+/// With `RealLaunch=no` the arm runs through
+/// [`launch_super_preserving_charge`] instead, which writes the saved timer
+/// back after the Reset.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn launch_chained_super(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type_id: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    cell: (u16, u16),
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+    real_launch: bool,
+) {
+    if !real_launch {
+        launch_super_preserving_charge(
+            sim,
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+        );
+        return;
+    }
+    let Some(instance) = super_instance(sim, owner, sw_type_id) else {
+        return;
+    };
+    instance.set_readiness(true);
+    launch(
+        sim,
+        rules,
+        owner,
+        sw_type_id,
+        sw,
+        cell,
+        overlay_registry,
+        frame_effects,
+    );
+    let name = sim.interner.resolve(sw_type_id).to_owned();
+    super::reset_super(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &mut sim.super_weapons,
+        rules,
+        owner,
+        &name,
+    );
 }
 
 /// The retained Super constructed by the scenario House owner. Native valid

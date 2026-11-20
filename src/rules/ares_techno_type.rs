@@ -11,6 +11,7 @@
 
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::missile_spawn::MissileSpawnParams;
+use crate::rules::promotable::read_promotable;
 use crate::util::native_x87::NativeF64Bits;
 
 /// The registry a Find-only pointer read looks in.
@@ -743,6 +744,15 @@ impl AmmoTypeRules {
     pub(crate) fn no_ammo_weapon(&self, ammo: i32) -> Option<i32> {
         (self.no_ammo_weapon >= 0 && ammo <= self.no_ammo_amount).then_some(self.no_ammo_weapon)
     }
+
+    /// Phobos `TechnoExt::CanFireNoAmmoWeapon` (`Ext/Techno/WeaponHelpers.cpp:107-123`):
+    /// the count is at or below `NoAmmoAmount` and `NoAmmoWeapon` names this
+    /// slot or the `-1` constructor default (any slot). The caller gates on
+    /// the type's `Ammo= > 0`.
+    pub(crate) fn can_fire_no_ammo_weapon(&self, ammo: i32, weapon_index: i32) -> bool {
+        ammo <= self.no_ammo_amount
+            && (self.no_ammo_weapon == weapon_index || self.no_ammo_weapon == -1)
+    }
 }
 
 /// TechnoTypeExt+0x470..+0x4A8, the self-heal pulse that
@@ -1379,27 +1389,6 @@ fn non_empty(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
-/// Ares `Promotable<T>::Read` (TemplateDef.h): `format` with "" and a
-/// trailing dot stripped is the common key, which sets all three ranks when
-/// it parses; then the `Rookie`, `Veteran` and `Elite` keys each override
-/// one. `read` is the field's Valueable read (`None` in: no current value);
-/// failures retain.
-fn read_promotable<T: Copy>(
-    format: &str,
-    current: [T; 3],
-    read: impl Fn(&str, Option<T>) -> Option<T>,
-) -> [T; 3] {
-    let common = format.replace("%s", "");
-    let common = common.strip_suffix('.').unwrap_or(&common);
-    let mut value = read(common, None).map_or(current, |all| [all; 3]);
-    for (slot, rank) in ["Rookie", "Veteran", "Elite"].into_iter().enumerate() {
-        let key = format.replace("%s", rank);
-        if let Some(read) = read(&key, Some(value[slot])) {
-            value[slot] = read;
-        }
-    }
-    value
-}
 
 #[cfg(all(test, tests_rules_a_n))]
 mod tests {

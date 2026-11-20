@@ -103,6 +103,10 @@ pub struct WaveDamageRequest {
     pub firer_id: u64,
     pub recorded_cells: Vec<WaveRecordedCell>,
     pub wave_z: i32,
+    /// `WaveClass+0xAC` Target: Phobos `AmbientDamage.IgnoreTarget`
+    /// (`0x75F415`, `Ext/Techno/Hooks.WeaponEffects.cpp:175-186`) skips this
+    /// object in the ambient-damage walk.
+    pub target: Option<TargetKind>,
     /// Ares WaveClass_DamageCell (Ares.dll 10056FA0, hook 0x75F38F): the
     /// wave's own weapon replaces the owner's GetWeapon(0). `None` unless
     /// Ares plays.
@@ -849,6 +853,7 @@ impl WaveStore {
             recorded_cells: wave.recorded_cells.clone(),
             // DamageArea75F3C6 reads B4.Z, here still the previous update's.
             wave_z: wave.source.z,
+            target: wave.target_ref,
             ares_weapon: wave.ares_weapon,
         })
     }
@@ -868,6 +873,7 @@ impl WaveStore {
                 recorded_cells: wave.recorded_cells.clone(),
                 // DamageArea75F3C6 reads B4.Z, not the C0+50 endpoint.
                 wave_z: wave.source.z,
+                target: wave.target_ref,
                 ares_weapon: None,
             })
         } else {

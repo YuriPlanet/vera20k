@@ -45,6 +45,18 @@ pub(crate) fn render_restate_shell(
     };
 
     let pressed = interaction.button.is_pressed(RestateButton::Return);
+    // Phobos `BriefingDialog_ShowBriefing @ 0x65F764` replaces dialog item
+    // 1059 (0x423)'s CSF key only while `BriefingTemp::ShowBriefing` is set.
+    // The F2 restate path keeps the stock `GUI:Return` caption.
+    let at_start = state.match_state.match_presentation.briefing_at_start;
+    // Owned keys keep the text closure's `state` borrow short: the frame
+    // renderer below takes the state again after the last text push.
+    let button_key = state
+        .match_state
+        .match_presentation
+        .briefing_dialog
+        .button_label_key(at_start, RETURN_LABEL.0)
+        .to_owned();
     let frame = button_frame(PauseMenuButtonState {
         pressed,
         ..Default::default()
@@ -54,7 +66,7 @@ pub(crate) fn render_restate_shell(
     }
     text(
         &mut texts,
-        &localized_label(state, RETURN_LABEL.0, RETURN_LABEL.1),
+        &localized_label(state, &button_key, RETURN_LABEL.1),
         button_text_rect(layout.return_button, pressed),
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
     );
@@ -68,9 +80,22 @@ pub(crate) fn render_restate_shell(
     let briefing = state.match_state.match_presentation.restate_text.clone();
     text(&mut texts, &briefing, layout.content, ShellAlign::NONE);
     if let Some(key) = interaction.hovered.and_then(|control| control.help_key()) {
+        // `GetDialogUIStatusLabels_ShowBriefing @ 0x604985` returns the
+        // authored status label for the resume button on the start path.
+        let key = if interaction.hovered == Some(crate::ui::shell::restate::RestateControl::Return)
+        {
+            state
+                .match_state
+                .match_presentation
+                .briefing_dialog
+                .status_label_key(at_start, key)
+                .to_owned()
+        } else {
+            key.to_owned()
+        };
         text(
             &mut texts,
-            &localized_label(state, key, ""),
+            &localized_label(state, &key, ""),
             layout.status_line,
             ShellAlign::NONE,
         );

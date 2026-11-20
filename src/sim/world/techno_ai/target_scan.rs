@@ -119,6 +119,8 @@ impl PassiveScan {
 
     /// Ares TechnoClass_Fire_FSW (`10024C00`) stores the same byte (YRpp's
     /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
+    /// so its next passive scan may drop the target. Phobos stores it from
+    /// the owner-change mission fix too.
     /// so its next passive scan may drop the target.
     pub(crate) fn ares_lose_target_now(&mut self) {
         self.acquired = true;
@@ -168,10 +170,22 @@ pub(super) trait ScanHost {
     /// Scenario `RandomRanged(min, max)`.
     fn random_ranged(&mut self, min: i32, max: i32) -> i32;
     /// `[General] GuardAreaTargetingDelay=` (`Rules+0xE04`) or
-    /// `NormalTargetingDelay=` (`Rules+0xE08`).
-    fn targeting_delay(&self, area_guard: bool) -> i32;
+    /// `NormalTargetingDelay=` (`Rules+0xE08`) with Phobos's per-mission
+    /// override on top (`0x70982C`).
+    fn targeting_delay(&self, mission: TargetingMission) -> i32;
+    /// `MegaMissionIsAttackMove` (vt+0x4C4), which the Phobos hook tests before
+    /// the committed mission.
+    fn mega_attack_move(&self) -> bool {
+        false
+    }
     /// The targeting timer (`+0x180` start, `+0x188` duration).
     fn arm_targeting_timer(&mut self, start: i32, duration: i32);
+    /// Phobos `TechnoClass_TargetSomethingNearby_AutoFire` (`0x7098B9`,
+    /// `Ext/Techno/Hooks.TargetEvaluation.cpp:8-22`): the type's auto-target
+    /// position as `SetTarget(self or its cell)`, or `None` to keep scanning.
+    fn phobos_auto_target(&self) -> Option<TargetKind> {
+        None
+    }
     /// `+0x2B4`.
     fn target(&self) -> Option<TargetKind>;
     /// `+0x50C`: the current target came from this object's passive scan.
@@ -221,9 +235,26 @@ pub(super) fn retaliate_and_scan<H: ScanHost>(host: &mut H, mask: ScanMission) -
     let frame = host.frame();
     host.set_last_scan_frame(frame);
     let area_guard = host.committed_area_guard();
+    // The stock scan picks the Area Guard delay for a `+0xAC == 0xB` mission
+    // (`0x0070983A`, then `0x0070985B`); Phobos only adds the Attack-Move arm
+    // in front of it (`Ext/Techno/Hooks.Targeting.cpp:12-45`, `0x70982C`).
+    let mission = if host.mega_attack_move() {
+        TargetingMission::AttackMove
+    } else if area_guard {
+        TargetingMission::AreaGuard
+    } else {
+        TargetingMission::Normal
+    };
     let draw = host.random_ranged(0, 2);
-    let duration = host.targeting_delay(area_guard).wrapping_add(draw);
+    let duration = host.targeting_delay(mission).wrapping_add(draw);
     host.arm_targeting_timer(frame, duration);
+
+    // Phobos replaces the first instructions of the held-target step: a type
+    // with `AutoTargetOwnPosition` sets itself or its cell and returns.
+    if let Some(target) = host.phobos_auto_target() {
+        host.assign_target(Some(target));
+        return host.target().is_some();
+    }
 
     if host.target().is_some() && host.passively_acquired() {
         let weapon = host.select_weapon(host.target());
@@ -702,6 +733,58 @@ impl Simulation {
     }
 }
 
+/// The three mission arms of Phobos
+/// `TechnoClass_TargetAndEstimateDamage_TargetingDelay` (`0x70982C`,
+/// `Ext/Techno/Hooks.Targeting.cpp:12-45`): `MegaMissionIsAttackMove` first,
+/// then `CurrentMission == Area_Guard`, else the ordinary arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TargetingMission {
+    AttackMove,
+    AreaGuard,
+    Normal,
+}
+
+/// Phobos `TechnoClass_TargetAndEstimateDamage_TargetingDelay`
+/// (`Ext/Techno/Hooks.Targeting.cpp:12-45`, `0x70982C`): each mission arm takes
+/// the human/AI type key, then its `[General]` twin; unset keeps the stock
+/// `RulesClass::NormalTargetingDelay`/`GuardAreaTargetingDelay` the caller
+/// already holds, so the resolver answers `None`.
+pub(crate) fn phobos_targeting_delay(
+    rules: &RuleSet,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    human: bool,
+    mission: TargetingMission,
+) -> Option<i32> {
+    let globals = &rules.phobos_globals;
+    let (typed, global) = match (mission, human) {
+        (TargetingMission::AttackMove, true) => (
+            object.and_then(|object| object.phobos_player_attack_move_targeting_delay),
+            globals.player_attack_move_targeting_delay,
+        ),
+        (TargetingMission::AttackMove, false) => (
+            object.and_then(|object| object.phobos_ai_attack_move_targeting_delay),
+            globals.ai_attack_move_targeting_delay,
+        ),
+        (TargetingMission::AreaGuard, true) => (
+            object.and_then(|object| object.phobos_player_guard_area_targeting_delay),
+            globals.player_guard_area_targeting_delay,
+        ),
+        (TargetingMission::AreaGuard, false) => (
+            object.and_then(|object| object.phobos_ai_guard_area_targeting_delay),
+            globals.ai_guard_area_targeting_delay,
+        ),
+        (TargetingMission::Normal, true) => (
+            object.and_then(|object| object.phobos_player_normal_targeting_delay),
+            globals.player_normal_targeting_delay,
+        ),
+        (TargetingMission::Normal, false) => (
+            object.and_then(|object| object.phobos_ai_normal_targeting_delay),
+            globals.ai_normal_targeting_delay,
+        ),
+    };
+    typed.or(global)
+}
+
 /// The production scan host.
 struct WorldScan<'s, 'r> {
     sim: &'s mut Simulation,
@@ -743,19 +826,71 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         self.sim.scenario_rng.next_range_i32_inclusive(min, max)
     }
 
-    fn targeting_delay(&self, area_guard: bool) -> i32 {
+    fn targeting_delay(&self, mission: TargetingMission) -> i32 {
         let general = &self.rules.general;
-        if area_guard {
+        if mission == TargetingMission::AreaGuard {
+            {
+                let object = self
+                    .sim
+                    .interner
+                    .object_type(self.entity().type_ref(), self.rules);
+                if let Some(delay) = phobos_targeting_delay(
+                    self.rules,
+                    object,
+                    self.sim.owner_is_human(self.entity().owner()),
+                    mission,
+                ) {
+                    return delay;
+                }
+            }
             general.guard_area_targeting_delay
         } else {
+            {
+                let object = self
+                    .sim
+                    .interner
+                    .object_type(self.entity().type_ref(), self.rules);
+                if let Some(delay) = phobos_targeting_delay(
+                    self.rules,
+                    object,
+                    self.sim.owner_is_human(self.entity().owner()),
+                    mission,
+                ) {
+                    return delay;
+                }
+            }
             general.normal_targeting_delay
         }
+    }
+
+    fn mega_attack_move(&self) -> bool {
+        self.entity().mega_mission.is_attack_move()
     }
 
     fn arm_targeting_timer(&mut self, start: i32, duration: i32) {
         if let Some(entity) = self.sim.substrate.entities.get_mut(self.id) {
             entity.passive_scan.arm_timer(start as u32, duration as u32);
         }
+    }
+
+    fn phobos_auto_target(&self) -> Option<TargetKind> {
+        let object = self
+            .sim
+            .interner
+            .object_type(self.entity().type_ref(), self.rules)?;
+        if !object.phobos_auto_target_own_position {
+            return None;
+        }
+        if object.phobos_auto_target_own_position_self {
+            return Some(TargetKind::Entity(self.id));
+        }
+        // `GetCell()` is ObjectClass::GetCell, `MapClass::GetCellAt @
+        // 0x005657A0` on Location; it needs no locomotor, so a zero-Speed or
+        // Structure receiver still answers its real or Dummy cell.
+        let location =
+            crate::sim::movement::ground_pose::position_world_coord(&self.entity().position);
+        let (rx, ry) = self.sim.packed_map_cell(location.x, location.y)?;
+        Some(TargetKind::Cell(rx, ry))
     }
 
     /// TarCom `+0x2B4`, as `Retaliate_And_Scan @ 0x00709820` reads it.
@@ -1272,8 +1407,12 @@ mod tests {
             self.call("random", vec![min.into(), max.into()]);
             self.input("jitter") as i32
         }
-        fn targeting_delay(&self, area_guard: bool) -> i32 {
-            if area_guard { 41 } else { 23 }
+        fn targeting_delay(&self, mission: TargetingMission) -> i32 {
+            if mission == TargetingMission::AreaGuard {
+                41
+            } else {
+                23
+            }
         }
         fn arm_targeting_timer(&mut self, start: i32, duration: i32) {
             self.timer = (start, duration);
@@ -1596,5 +1735,151 @@ mod tests {
             compared.push(name);
         }
         assert_eq!(compared.len(), 35, "{compared:?}");
+    }
+
+    /// Phobos `TechnoClass_TargetSomethingNearby_AutoFire` (`0x7098B9`): a
+    /// type with `AutoTargetOwnPosition` sets itself or its cell after the
+    /// timer arming and its one `RandomRanged(0, 2)` draw, and the deprecated
+    /// `AutoFire` aliases follow the canonical keys.
+    #[test]
+    fn phobos_auto_target_own_position_sets_self_or_cell() {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=SELFUNIT\n1=CELLUNIT\n2=OFFUNIT\n3=ALIASUNIT\n4=OVERRIDE\n5=SLOWUNIT\n\
+             [SELFUNIT]\nStrength=200\nArmor=heavy\nSpeed=4\nPrimary=GUN\n\
+             AutoTargetOwnPosition=yes\nAutoTargetOwnPosition.Self=yes\n\
+             [CELLUNIT]\nStrength=200\nArmor=heavy\nSpeed=4\nPrimary=GUN\n\
+             AutoTargetOwnPosition=yes\n\
+             [OFFUNIT]\nStrength=200\nArmor=heavy\nSpeed=4\nPrimary=GUN\n\
+             [ALIASUNIT]\nStrength=200\nArmor=heavy\nSpeed=4\nPrimary=GUN\n\
+             AutoFire=yes\nAutoFire.TargetSelf=yes\n\
+             [OVERRIDE]\nStrength=200\nArmor=heavy\nSpeed=4\nPrimary=GUN\n\
+             AutoFire=yes\nAutoTargetOwnPosition=no\n\
+             [SLOWUNIT]\nStrength=200\nArmor=heavy\nPrimary=GUN\n\
+             AutoTargetOwnPosition=yes\n\
+             [GUN]\nDamage=10\nROF=100\nRange=8\nSpeed=100\nProjectile=INVIS\nWarhead=WH\n\
+             [INVIS]\nInviso=yes\nAG=yes\nAA=no\n\
+             [WH]\nCellSpread=0\nPercentAtMax=1\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("auto-target rules");
+        let self_type = rules.object("SELFUNIT").unwrap();
+        assert!(self_type.phobos_auto_target_own_position);
+        assert!(self_type.phobos_auto_target_own_position_self);
+        let alias_type = rules.object("ALIASUNIT").unwrap();
+        assert!(alias_type.phobos_auto_target_own_position);
+        assert!(alias_type.phobos_auto_target_own_position_self);
+        // The canonical key overrides the deprecated alias in both orders.
+        assert!(
+            !rules
+                .object("OVERRIDE")
+                .unwrap()
+                .phobos_auto_target_own_position
+        );
+        for (kind, expected) in [
+            // `SetTarget(self)` at `0x006FCEB8` converts the receiver itself
+            // into the cell under its location, so both Self arms store a
+            // cell; only `AutoTargetOwnPosition` decides whether one is set.
+            ("SELFUNIT", Some(TargetKind::Cell(10, 10))),
+            ("CELLUNIT", Some(TargetKind::Cell(10, 10))),
+            ("ALIASUNIT", Some(TargetKind::Cell(10, 10))),
+            // A zero-Speed receiver constructs no locomotor; GetCell still
+            // answers its Location's cell.
+            ("SLOWUNIT", Some(TargetKind::Cell(10, 10))),
+            ("OFFUNIT", None),
+            ("OVERRIDE", None),
+        ] {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA0F1);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let id = sim
+                .spawn_object(kind, "Russians", 10, 10, 0, &rules)
+                .expect("auto-target unit spawns");
+            let mut replay = sim.scenario_rng.clone();
+            let held = crate::sim::world::retaliate_and_scan(
+                &mut sim,
+                id,
+                &rules,
+                ScanMission::Guard,
+                ObjectAiCtx::default(),
+                None,
+            );
+            replay.next_range_i32_inclusive(0, 2);
+            assert_eq!(
+                sim.scenario_rng.state(),
+                replay.state(),
+                "{kind}: the arming draw precedes the hook"
+            );
+            assert_eq!(
+                sim.entities().get(id).unwrap().attack_target.target(),
+                expected,
+                "{kind}"
+            );
+            assert_eq!(held, expected.is_some(), "{kind}: held target");
+        }
+    }
+
+    /// Phobos `TechnoClass_TargetAndEstimateDamage_TargetingDelay`
+    /// (`Ext/Techno/Hooks.Targeting.cpp:12-45`, `0x70982C`): each mission's
+    /// human/AI type key wins over its `[General]` twin, and an unset pair
+    /// leaves the stock delay to the caller.
+    #[test]
+    fn targeting_delays_fall_back_from_type_to_global_per_mission() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+                "[Countries]
+0=Americans
+                 [General]
+AIGuardAreaTargetingDelay=30
+AINormalTargetingDelay=31
+PlayerNormalTargetingDelay=32
+PlayerGuardAreaTargetingDelay=33
+AIAttackMoveTargetingDelay=34
+PlayerAttackMoveTargetingDelay=35
+                 [VehicleTypes]
+0=UNIT
+1=PLAIN
+                 [UNIT]
+Strength=100
+AIGuardAreaTargetingDelay=45
+PlayerNormalTargetingDelay=46
+PlayerAttackMoveTargetingDelay=47
+                 [PLAIN]
+Strength=100
+",
+            ))
+            .unwrap();
+        let at = |object: Option<&crate::rules::object_type::ObjectType>, human, mission| {
+            phobos_targeting_delay(&rules, object, human, mission)
+        };
+        assert_eq!(
+            at(rules.object("UNIT"), false, TargetingMission::AreaGuard),
+            Some(45),
+            "the type key wins in the Area Guard arm"
+        );
+        assert_eq!(
+            at(rules.object("PLAIN"), false, TargetingMission::AreaGuard),
+            Some(30)
+        );
+        assert_eq!(
+            at(rules.object("PLAIN"), false, TargetingMission::Normal),
+            Some(31)
+        );
+        assert_eq!(
+            at(rules.object("UNIT"), true, TargetingMission::Normal),
+            Some(46)
+        );
+        assert_eq!(
+            at(rules.object("PLAIN"), true, TargetingMission::AreaGuard),
+            Some(33),
+            "a human's Area Guard takes the player global"
+        );
+        assert_eq!(
+            at(rules.object("UNIT"), true, TargetingMission::AttackMove),
+            Some(47)
+        );
+        assert_eq!(
+            at(rules.object("PLAIN"), false, TargetingMission::AttackMove),
+            Some(34)
+        );
     }
 }

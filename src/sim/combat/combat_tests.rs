@@ -309,6 +309,7 @@ fn align_attackers_to_targets(store: &mut EntityStore) {
                     .get(target)
                     .map(crate::sim::combat::attack_target::target_coords),
                 TargetKind::Cell(rx, ry) => Some(cell_center_coords(rx, ry)),
+                TargetKind::Bullet(..) => None,
             };
             let Some((rx, ry, sub_x, sub_y)) = coords else {
                 continue;
@@ -759,7 +760,6 @@ fn gsi_04_05_building_attack_frame_prelude_obeys_object_and_type_gates() {
 
     // Phobos `BuildingClass_ReceiveDamage_DamageSelf @ 0x0044224F` skips the
     // `0x00442262` self return when the warhead admits the firer.
-    #[cfg(feature = "phobos")]
     {
         let allow_wh = interner.intern("SELFWH");
         let allow_self = EntityDamageEvent::area(5, 10, 0, 5, Some(victim_owner), allow_wh);
@@ -1610,6 +1610,97 @@ fn retail_gassed_infantry_drops_its_fire_and_path() {
     );
 }
 
+/// Phobos' `StopBerzerk` (`0x701DBA`) versus the stock arm's team removal
+/// (`0x00701D96`): a positive combined time liberates the victim from its
+/// team through the receiver's starts-berserk gate; a non-positive one
+/// leaves membership untouched.
+#[test]
+fn stop_berzerk_leaves_a_team_member_where_a_positive_stack_liberates_it() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+    use crate::sim::team_script_vm::TeamScriptVm;
+
+    let ini = IniFile::from_str(
+        "[CombatDamage]\nPsychedelic.StackingMode=add\n\
+         [VehicleTypes]\n0=CAOS\n1=TARGET\n\
+         [Warheads]\n0=PsychGas\n1=PsychGasSub\n\
+         [CAOS]\nStrength=100\nArmor=heavy\n\
+         [TARGET]\nStrength=1000\nArmor=heavy\nImmuneToPsionics=no\n\
+         [PsychGas]\nCellSpread=0\nPercentAtMax=1\nPsychedelic=yes\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [PsychGasSub]\nCellSpread=0\nPercentAtMax=1\nPsychedelic=yes\n\
+         Psychedelic.StackingMode=subtract\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("Psychedelic team fixture");
+    let member_after = |warhead: &str, damage: i32| {
+        let mut sim = Simulation::with_seed(0x5CA7);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let soviet = sim.interner.intern("SovietHouse");
+        let yuri = sim.interner.intern("YuriHouse");
+        for house in [soviet, yuri] {
+            sim.houses
+                .get_or_register_for_test(house, || HouseState::new(house, 0, None, false, 0, 10));
+        }
+        let victim = sim
+            .spawn_object("TARGET", "SovietHouse", 10, 10, 0, &rules)
+            .expect("victim");
+        let source = sim
+            .spawn_object("CAOS", "YuriHouse", 14, 10, 0, &rules)
+            .expect("source");
+        let aimd = IniFile::from_str(
+            "[TeamTypes]\n0=TEAM\n[TEAM]\nScript=GUARD\nTaskForce=TANK\n\
+             [ScriptTypes]\n0=GUARD\n[GUARD]\n0=0,0\n\
+             [TaskForces]\n0=TANK\n[TANK]\n0=1,TARGET\n",
+        );
+        let team_registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        );
+        let (vm, diagnostics) =
+            TeamScriptVm::from_ini_registry(&team_registry, &mut sim.interner, &rules);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        sim.team_script_vm = vm;
+        let team_type = sim.interner.get("TEAM").expect("team type");
+        let team = sim
+            .create_team(team_type, Some(soviet), &rules)
+            .expect("team");
+        assert!(sim.team_add_member(
+            team,
+            victim,
+            false,
+            &rules,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let warhead_ref = sim.interner.intern(warhead);
+        crate::sim::combat::world_receiver::commit_entities(
+            &mut sim,
+            &mut crate::sim::combat::world_receiver::ReceiverRun::default(),
+            &[EntityDamageEvent::area(
+                victim,
+                damage,
+                0,
+                source,
+                Some(yuri),
+                warhead_ref,
+            )],
+            None,
+            &rules,
+            None,
+        );
+        sim.team_script_vm.team_for_member(victim).is_some()
+    };
+    assert!(
+        !member_after("PsychGas", 100),
+        "a positive stack liberates the target"
+    );
+    assert!(
+        member_after("PsychGasSub", 300),
+        "StopBerzerk leaves it in its team"
+    );
+}
+
 /// Through the frame's object AI: a berserk computer GI's time runs down one
 /// per frame (`0x006F9F0D`), and in the frame it ends the GI calms down and
 /// queues Hunt.
@@ -1755,12 +1846,8 @@ fn retail_berserk_gi_shoots_its_own_house() {
         .spawn_object("E1", "Russians", 12, 10, 0, &rules)
         .unwrap();
     let strength = rules.object("E1").unwrap().strength;
-    sim.substrate
-        .entities
-        .get_mut(gi)
-        .unwrap()
-        .berserk
-        .start(900);
+    sim.substrate.entities.get_mut(gi).unwrap().berserk =
+        crate::sim::combat::BerserkState::for_test(true, 900);
     let _ = sim.mission_queue_exact(
         gi,
         MissionId::from_known(MissionType::Hunt),
@@ -2397,7 +2484,6 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
     let ini = IniFile::from_str(
@@ -2503,7 +2589,6 @@ fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
     fn run(victim_hp: i32, explodes: bool) -> (CombatTickResult, OverlayGrid, EntityStore, u64) {
@@ -2784,7 +2869,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         }
         sim.overlay_grid = Some(overlays);
         assert!(
-            combat_targeting::should_retaliate(&sim, rules, victim, source),
+            combat_targeting::should_retaliate(&sim, rules, victim, source, None),
             "the non-range refusal gates must admit this source"
         );
         let actor = sim.substrate.entities.get(victim).unwrap();
@@ -3104,7 +3189,27 @@ fn retaliation_gate_world(
     source_category: EntityCategory,
     human: bool,
 ) -> (crate::sim::world::Simulation, RuleSet) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    retaliation_gate_world_with(
+        victim_type,
+        victim_category,
+        source_type,
+        source_category,
+        human,
+        "",
+    )
+}
+
+/// [`retaliation_gate_world`] with extra INI text placed after the ReturnGun
+/// keys (weapon overrides, then a `[CombatDamage]` block).
+fn retaliation_gate_world_with(
+    victim_type: &str,
+    victim_category: EntityCategory,
+    source_type: &str,
+    source_category: EntityCategory,
+    human: bool,
+    extra: &str,
+) -> (crate::sim::world::Simulation, RuleSet) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[InfantryTypes]\n0=C4GUY\n1=E1\n\
          [VehicleTypes]\n0=SOURCE\n1=VICTIM\n\
          [AircraftTypes]\n\
@@ -3118,9 +3223,9 @@ fn retaliation_gate_world(
          [E1]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=ReturnGun\nOccupyWeapon=ReturnGun\n\
          [EMPBLDG]\nStrength=100\nArmor=concrete\nPrimary=ReturnGun\nEMPulseCannon=yes\n\
          [CAGAS]\nStrength=800\nArmor=wood\nCanBeOccupied=yes\nCanOccupyFire=yes\nMaxNumberOccupants=5\n\
-         [ReturnGun]\nDamage=1\nROF=50\nRange=8\nWarhead=ReturnWH\n\
+         [ReturnGun]\nDamage=1\nROF=50\nRange=8\nWarhead=ReturnWH\n{extra}\
          [ReturnWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    ))
+    )))
     .expect("retaliation gate fixture");
     let mut sim = crate::sim::world::Simulation::new();
     let victim_owner = sim.interner.intern("Victim");
@@ -3164,7 +3269,17 @@ fn retaliation_gate_world(
 /// changes one fact of a world whose baseline retaliates.
 #[test]
 fn gsi_04_07_should_retaliate_world_refusals() {
-    use combat_targeting::should_retaliate;
+    // These gates precede the Phobos `ExtraThreat` InRange walk, which is the
+    // only consumer of the overlay registry here; a world-only call answers
+    // the same refusals.
+    fn should_retaliate(
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        victim: u64,
+        source: u64,
+    ) -> bool {
+        combat_targeting::should_retaliate(sim, rules, victim, source, None)
+    }
     let tank = |human| {
         retaliation_gate_world(
             "VICTIM",
@@ -3253,6 +3368,199 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
 }
 
+/// Phobos `TechnoClass_ShouldRetaliate_IronCurtain` (`0x708AD0`,
+/// `Ext/Techno/Hooks.Firing.cpp:1226-1264`): a human's weapon override, else
+/// `[CombatDamage] AutoTarget.IronCurtained=`, can refuse retaliation at an
+/// iron-curtained source; a computer house keeps the stock answer.
+#[test]
+fn an_iron_curtained_source_gates_human_retaliation_by_weapon_and_global() {
+    use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
+    use crate::sim::timer::CdTimer;
+    let retaliates = |human, extra: &str| {
+        let (mut sim, rules) = retaliation_gate_world_with(
+            "VICTIM",
+            EntityCategory::Unit,
+            "SOURCE",
+            EntityCategory::Unit,
+            human,
+            extra,
+        );
+        sim.substrate
+            .entities
+            .get_mut(GATE_SOURCE)
+            .unwrap()
+            .invulnerability = Some(InvulnerabilityState::new(
+            CdTimer::started(0, 100),
+            InvulnKind::IronCurtain,
+        ));
+        combat_targeting::should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None)
+    };
+    assert!(
+        retaliates(true, ""),
+        "the default global and an unset weapon retaliate"
+    );
+    assert!(!retaliates(
+        true,
+        "[CombatDamage]\nAutoTarget.IronCurtained=no\n"
+    ));
+    assert!(
+        retaliates(
+            true,
+            "AutoTarget.IronCurtained=yes\n[CombatDamage]\nAutoTarget.IronCurtained=no\n"
+        ),
+        "the weapon override beats the global"
+    );
+    assert!(!retaliates(true, "AutoTarget.IronCurtained=no\n"));
+    assert!(
+        retaliates(
+            false,
+            "[CombatDamage]\nCanTargetAI.IronCurtained=yes\nAutoTarget.IronCurtained=no\n"
+        ),
+        "the hook reads only human owners; the AI fire gate also passes here"
+    );
+}
+
+/// Phobos `TechnoClass_AllowedToRetaliate_AttackMindControlledDelay`
+/// (`0x7089E8`, `Ext/Techno/Hooks.Misc.cpp:606-629`): a freshly
+/// mind-controlled source is shielded from the retaliation of houses allied
+/// with its original owner until `BeControlledThreatFrame` passes. The
+/// boundary frame, a berserk retaliator, a controller without a manager and
+/// a non-allied house all retaliate.
+#[test]
+fn a_freshly_mind_controlled_source_is_shielded_from_its_former_allies_retaliation() {
+    use crate::sim::capture_manager::{CaptureManagerState, MindControlLink};
+    const CONTROLLER: u64 = 3;
+    let build = |human: bool| {
+        let (mut sim, rules) = retaliation_gate_world(
+            "VICTIM",
+            EntityCategory::Unit,
+            "SOURCE",
+            EntityCategory::Unit,
+            human,
+        );
+        let original_owner = sim.substrate.entities.get(GATE_VICTIM).unwrap().owner();
+        let mut controller = GameEntity::test_default(CONTROLLER, "SOURCE", "Test", 16, 5);
+        controller.set_owner_for_test(sim.interner.intern("Source"));
+        controller.set_type_ref_for_test(sim.interner.intern("SOURCE"));
+        controller.set_category_for_test(EntityCategory::Unit);
+        controller.capture_manager = Some(Box::new(CaptureManagerState::with_nodes_for_test(&[(
+            GATE_SOURCE,
+            original_owner,
+        )])));
+        sim.substrate.entities.insert(controller);
+        sim.substrate
+            .entities
+            .get_mut(GATE_SOURCE)
+            .unwrap()
+            .mind_control = MindControlLink::controlled_by_for_test(CONTROLLER);
+        (sim, rules)
+    };
+    let retaliates = |sim: &crate::sim::world::Simulation,
+                      rules: &crate::rules::ruleset::RuleSet| {
+        combat_targeting::should_retaliate(sim, rules, GATE_VICTIM, GATE_SOURCE, None)
+    };
+
+    let (mut sim, rules) = build(false);
+    assert!(
+        retaliates(&sim, &rules),
+        "frame 0 with an unarmed shield retaliates"
+    );
+    sim.substrate
+        .entities
+        .get_mut(GATE_SOURCE)
+        .unwrap()
+        .phobos_be_controlled_threat_frame = 5;
+    assert!(!retaliates(&sim, &rules), "frame 0 is inside the shield");
+    sim.session.set_binary_frame_for_test(4);
+    assert!(!retaliates(&sim, &rules));
+    sim.session.set_binary_frame_for_test(5);
+    assert!(
+        retaliates(&sim, &rules),
+        "the shield ends on its boundary frame"
+    );
+
+    // `pRetaliator->Berzerk` ignores the shield.
+    sim.session.set_binary_frame_for_test(0);
+    sim.substrate
+        .entities
+        .get_mut(GATE_VICTIM)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    assert!(retaliates(&sim, &rules));
+
+    // The gate runs on the human path too, ahead of the PlayerReturnFire
+    // mission arm.
+    let (mut sim, rules) = build(true);
+    sim.substrate
+        .entities
+        .get_mut(GATE_SOURCE)
+        .unwrap()
+        .phobos_be_controlled_threat_frame = 5;
+    assert!(
+        !retaliates(&sim, &rules),
+        "a human retaliator is shielded too"
+    );
+    sim.session.set_binary_frame_for_test(5);
+    assert!(retaliates(&sim, &rules));
+
+    // A distinct original owner allied with the retaliator arms the shield
+    // even though the controlled object's current owner is not allied.
+    let (mut sim, rules) = build(false);
+    let origin = sim.interner.intern("Origin");
+    sim.houses
+        .register(HouseState::new(origin, 2, None, false, 0, 10));
+    sim.substrate
+        .entities
+        .get_mut(CONTROLLER)
+        .unwrap()
+        .capture_manager = Some(Box::new(CaptureManagerState::with_nodes_for_test(&[(
+        GATE_SOURCE,
+        origin,
+    )])));
+    sim.house_alliances_mut_for_test()
+        .insert("VICTIM".to_string(), ["ORIGIN".to_string()].into());
+    sim.substrate
+        .entities
+        .get_mut(GATE_SOURCE)
+        .unwrap()
+        .phobos_be_controlled_threat_frame = 5;
+    assert!(!retaliates(&sim, &rules));
+
+    // `!pManager` ignores the shield.
+    let (mut sim, rules) = build(false);
+    sim.substrate
+        .entities
+        .get_mut(GATE_SOURCE)
+        .unwrap()
+        .phobos_be_controlled_threat_frame = 5;
+    sim.substrate
+        .entities
+        .get_mut(CONTROLLER)
+        .unwrap()
+        .capture_manager = None;
+    assert!(retaliates(&sim, &rules));
+
+    // A retaliator allied with neither the original owner nor the
+    // controller ignores the shield.
+    let (mut sim, rules) = build(false);
+    let source_owner = sim.substrate.entities.get(GATE_SOURCE).unwrap().owner();
+    sim.substrate
+        .entities
+        .get_mut(CONTROLLER)
+        .unwrap()
+        .capture_manager = Some(Box::new(CaptureManagerState::with_nodes_for_test(&[(
+        GATE_SOURCE,
+        source_owner,
+    )])));
+    sim.substrate
+        .entities
+        .get_mut(GATE_SOURCE)
+        .unwrap()
+        .phobos_be_controlled_threat_frame = 5;
+    assert!(retaliates(&sim, &rules));
+}
+
 /// A garrisoned building fights back with its occupant's weapon: GetWeapon
 /// (`BuildingClass::GetWeapon @ 0x004526F0`) answers the occupant's
 /// `OccupyWeapon=` for every slot, so `GetWeaponDamageValue(-1)`, SelectWeapon,
@@ -3271,7 +3579,8 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
         &sim,
         &rules,
         GATE_VICTIM,
-        GATE_SOURCE
+        GATE_SOURCE,
+        None
     ));
     let occupant_id = 3;
     let mut occupant = GameEntity::test_default(occupant_id, "E1", "Test", 20, 5);
@@ -3294,7 +3603,8 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
         &sim,
         &rules,
         GATE_VICTIM,
-        GATE_SOURCE
+        GATE_SOURCE,
+        None
     ));
 }
 
@@ -3967,7 +4277,7 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
         entities.insert(gi);
 
         let current_score = crate::sim::combat::combat_targeting::calculate_ai_threat_score(
-            &entities, 10, current_id, &rules, &interner, None, None, None,
+            &entities, 10, current_id, &rules, &interner, None, None, None, None, None,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))
@@ -3979,6 +4289,8 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             attacker_id,
             &rules,
             &interner,
+            None,
+            None,
             None,
             None,
             None,
@@ -5319,6 +5631,154 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
     }
 }
 
+/// Rules shared by the building damage-cue tests. `CADIS`/`CADMG` are the
+/// Phobos `DisableDamageSound` rows; the stock rows keep each cue owner
+/// reachable.
+fn building_damage_sound_rules() -> RuleSet {
+    let ini = IniFile::from_str(
+        "\
+[General]\nFlightLevel=500\n\n\
+[AudioVisual]\nBuildingDamageSound=BuildingDamaged\nConditionRed=25%\n\n\
+[InfantryTypes]\n0=E1\n\n\
+[VehicleTypes]\n0=MTNK\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n0=GAPOWR\n1=GAWEAP\n2=CABAD\n3=CADIS\n4=CADMG\n\n\
+[E1]\nStrength=100\nArmor=none\n\n\
+[MTNK]\nStrength=300\nArmor=none\nSpeed=6\nPrimary=Plain\n\n\
+[GAPOWR]\nStrength=100\nArmor=none\n\n\
+[GAWEAP]\nStrength=100\nArmor=none\nDamageSound=BuildingMetalDamaged\n\n\
+[CABAD]\nStrength=100\nArmor=none\nDamageSound=UnknownDamage\n\n\
+[CADIS]\nStrength=100\nArmor=none\nDisableDamageSound=yes\n\n\
+[CADMG]\nStrength=100\nArmor=none\nDamageSound=BuildingMetalDamaged\n\
+DisableDamageSound=yes\n\n\
+[Plain]\nDamage=10\nROF=20\nRange=6\nWarhead=PlainWH\n\n\
+[PlainWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).expect("building damage-sound rules parse");
+    rules.bind_type_sound_references(
+        &ini,
+        &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=BuildingDamaged\n1=BuildingMetalDamaged\n",
+        )),
+    );
+    rules
+}
+
+/// `hit` covers the integration receiver inputs with authored health values
+/// and coordinates; these are not claimed as executed native receiver goldens.
+const BUILDING_DAMAGE_CUE_COORD: crate::sim::components::DriveCoord =
+    crate::sim::components::DriveCoord {
+        x: 1057,
+        y: 1859,
+        z: 42,
+    };
+
+/// One `commit_damage_events` transaction: entity 1 (MTNK) hits entity 2 for
+/// `damage`. `victim_type`/`victim_category` shape the receiver.
+fn building_damage_sound_hit(
+    rules: &RuleSet,
+    victim_type: &str,
+    victim_category: EntityCategory,
+    damage: i32,
+    ignore_defenses: bool,
+) -> (Vec<SimSoundEvent>, i32) {
+    // `GameEntity::test_default` interns through the thread-local test
+    // interner, and `test_interner()` snapshots it — so the entities must
+    // exist before the snapshot or their type ids resolve to whatever the
+    // clone happens to hold at that index.
+    let mut entities = EntityStore::new();
+    let mut attacker = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
+    attacker.lifecycle.set_in_limbo_for_test(false);
+    attacker.set_in_playfield(true);
+    entities.insert(attacker);
+    let mut victim = GameEntity::test_default(2, victim_type, "Soviet", 4, 7);
+    victim.set_category_for_test(victim_category);
+    victim.health = Health::new(100);
+    victim.position.put_location(BUILDING_DAMAGE_CUE_COORD);
+    victim.lifecycle.set_in_limbo_for_test(false);
+    victim.set_in_playfield(true);
+    entities.insert(victim);
+
+    let mut interner = test_interner();
+    let allies = interner.intern("Americans");
+    let soviet = interner.intern("Soviet");
+    let warhead_ref = interner.intern("PlainWH");
+
+    let mut houses = computer_houses(&[soviet, allies]);
+    let mut occupancy = OccupancyGrid::new();
+    let mut main_rng = SimRng::new(11);
+    let mut scenario_rng = SimRng::new(13);
+    let mut handled_deaths = Vec::new();
+    let mut hooks = None;
+    let mut collected: Vec<SimSoundEvent> = Vec::new();
+    let mut sound_sink: Option<&mut Vec<SimSoundEvent>> = Some(&mut collected);
+
+    let records = [EntityDamageEvent::direct_receiver(
+        2,
+        damage,
+        0,
+        1,
+        Some(allies),
+        warhead_ref,
+        ReceiverCallFlags {
+            ignore_defenses,
+            arg6: false,
+        },
+    )];
+    let _ = commit_damage_events(
+        &records,
+        &mut entities,
+        &mut occupancy,
+        rules,
+        &mut interner,
+        &mut houses,
+        &HouseAllianceMap::new(),
+        &mut main_rng,
+        &mut scenario_rng,
+        &mut handled_deaths,
+        None,
+        None,
+        None,
+        100,
+        &mut hooks,
+        &mut sound_sink,
+    );
+    let hp = entities.get(2).map_or(0, |victim| victim.health.current());
+    (collected, hp)
+}
+
+/// `[AudioVisual] BuildingDamageSound` requests in `sounds`.
+fn global_building_damage_cues(
+    sounds: &[SimSoundEvent],
+) -> Vec<crate::sim::components::DriveCoord> {
+    sounds
+        .iter()
+        .filter_map(|sound| match sound {
+            SimSoundEvent::VocAtCoord {
+                sound_id,
+                coordinate,
+                flags: 0,
+            } if sound_id == "BuildingDamaged" => Some(*coordinate),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A building type's own `DamageSound=` requests in `sounds`.
+fn type_building_damage_cues(sounds: &[SimSoundEvent]) -> Vec<crate::sim::components::DriveCoord> {
+    sounds
+        .iter()
+        .filter_map(|sound| match sound {
+            SimSoundEvent::VocAtCoord {
+                sound_id,
+                coordinate,
+                flags: 0,
+            } if sound_id == "BuildingMetalDamaged" => Some(*coordinate),
+            _ => None,
+        })
+        .collect()
+}
+
 /// `BuildingClass::ReceiveDamage @ 0x00442230`: the global
 /// `[AudioVisual] BuildingDamageSound` (`Rules+0x714`) is a **damage-state**
 /// cue, not a per-hit one.
@@ -5333,135 +5793,20 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
 /// (`ObjectClass::IsAlive`) skips the whole dispatch for a corpse.
 #[test]
 fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
-    let ini = IniFile::from_str(
-        "\
-[General]\nFlightLevel=500\n\n\
-[AudioVisual]\nBuildingDamageSound=BuildingDamaged\nConditionRed=25%\n\n\
-[InfantryTypes]\n0=E1\n\n\
-[VehicleTypes]\n0=MTNK\n\n\
-[AircraftTypes]\n\n\
-[BuildingTypes]\n0=GAPOWR\n1=GAWEAP\n2=CABAD\n\n\
-[E1]\nStrength=100\nArmor=none\n\n\
-[MTNK]\nStrength=300\nArmor=none\nSpeed=6\nPrimary=Plain\n\n\
-[GAPOWR]\nStrength=100\nArmor=none\n\n\
-[GAWEAP]\nStrength=100\nArmor=none\nDamageSound=BuildingMetalDamaged\n\n\
-[CABAD]\nStrength=100\nArmor=none\nDamageSound=UnknownDamage\n\n\
-[Plain]\nDamage=10\nROF=20\nRange=6\nWarhead=PlainWH\n\n\
-[PlainWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    );
-    let mut rules = RuleSet::from_ini(&ini).expect("building damage-sound rules parse");
-    rules.bind_type_sound_references(
-        &ini,
-        &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
-            "[SoundList]\n0=BuildingDamaged\n1=BuildingMetalDamaged\n",
-        )),
-    );
-    // Authored receiver inputs exercise the integration; these health values
-    // and coordinates are not claimed as executed native receiver goldens.
-    let coordinate = crate::sim::components::DriveCoord {
-        x: 1057,
-        y: 1859,
-        z: 42,
-    };
-
-    // One `commit_damage_events` transaction: entity 1 (MTNK) hits entity 2
-    // for `damage`. `victim_type`/`victim_category` shape the receiver.
-    let hit = |victim_type: &str,
-               victim_category: EntityCategory,
-               damage: i32,
-               ignore_defenses: bool|
-     -> (Vec<SimSoundEvent>, i32) {
-        // `GameEntity::test_default` interns through the thread-local test
-        // interner, and `test_interner()` snapshots it — so the entities must
-        // exist before the snapshot or their type ids resolve to whatever the
-        // clone happens to hold at that index.
-        let mut entities = EntityStore::new();
-        let mut attacker = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
-        attacker.lifecycle.set_in_limbo_for_test(false);
-        attacker.set_in_playfield(true);
-        entities.insert(attacker);
-        let mut victim = GameEntity::test_default(2, victim_type, "Soviet", 4, 7);
-        victim.set_category_for_test(victim_category);
-        victim.health = Health::new(100);
-        victim.position.put_location(coordinate);
-        victim.lifecycle.set_in_limbo_for_test(false);
-        victim.set_in_playfield(true);
-        entities.insert(victim);
-
-        let mut interner = test_interner();
-        let allies = interner.intern("Americans");
-        let soviet = interner.intern("Soviet");
-        let warhead_ref = interner.intern("PlainWH");
-
-        let mut houses = computer_houses(&[soviet, allies]);
-        let mut occupancy = OccupancyGrid::new();
-        let mut main_rng = SimRng::new(11);
-        let mut scenario_rng = SimRng::new(13);
-        let mut handled_deaths = Vec::new();
-        let mut hooks = None;
-        let mut collected: Vec<SimSoundEvent> = Vec::new();
-        let mut sound_sink: Option<&mut Vec<SimSoundEvent>> = Some(&mut collected);
-
-        let records = [EntityDamageEvent::direct_receiver(
-            2,
-            damage,
-            0,
-            1,
-            Some(allies),
-            warhead_ref,
-            ReceiverCallFlags {
+    let rules = building_damage_sound_rules();
+    let coordinate = BUILDING_DAMAGE_CUE_COORD;
+    let hit =
+        |victim_type: &str, victim_category: EntityCategory, damage: i32, ignore_defenses: bool| {
+            building_damage_sound_hit(
+                &rules,
+                victim_type,
+                victim_category,
+                damage,
                 ignore_defenses,
-                arg6: false,
-            },
-        )];
-        let _ = commit_damage_events(
-            &records,
-            &mut entities,
-            &mut occupancy,
-            &rules,
-            &mut interner,
-            &mut houses,
-            &HouseAllianceMap::new(),
-            &mut main_rng,
-            &mut scenario_rng,
-            &mut handled_deaths,
-            None,
-            None,
-            None,
-            100,
-            &mut hooks,
-            &mut sound_sink,
-        );
-        let hp = entities.get(2).map_or(0, |victim| victim.health.current());
-        (collected, hp)
-    };
-
-    let damage_cues = |sounds: &[SimSoundEvent]| -> Vec<crate::sim::components::DriveCoord> {
-        sounds
-            .iter()
-            .filter_map(|sound| match sound {
-                SimSoundEvent::VocAtCoord {
-                    sound_id,
-                    coordinate,
-                    flags: 0,
-                } if sound_id == "BuildingDamaged" => Some(*coordinate),
-                _ => None,
-            })
-            .collect()
-    };
-    let type_cues = |sounds: &[SimSoundEvent]| -> Vec<crate::sim::components::DriveCoord> {
-        sounds
-            .iter()
-            .filter_map(|sound| match sound {
-                SimSoundEvent::VocAtCoord {
-                    sound_id,
-                    coordinate,
-                    flags: 0,
-                } if sound_id == "BuildingMetalDamaged" => Some(*coordinate),
-                _ => None,
-            })
-            .collect()
-    };
+            )
+        };
+    let damage_cues = global_building_damage_cues;
+    let type_cues = type_building_damage_cues;
 
     // 100 -> 40 crosses `Strength >> 1` = 50: result 2, entry 0 of the table,
     // and the cue retains direct Location+9C, including subcell X/Y and Z.
@@ -5525,6 +5870,52 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
     let (sounds, hp) = hit("E1", EntityCategory::Infantry, 60, false);
     assert_eq!(hp, 40);
     assert!(damage_cues(&sounds).is_empty());
+}
+
+/// Phobos `BuildingTypeExt::DisableDamageSound`
+/// (`Ext/BuildingType/Body.cpp:245`, `Valueable<bool>` seeded false; hooks
+/// `Ext/BuildingType/Hooks.cpp:389-411`, `0x4426DB`, `0x70272E`, `0x702777`):
+/// a struck building with the key skips both of the building damage-cue
+/// owners, while a stock type still requests each one.
+#[test]
+fn phobos_disable_damage_sound_mutes_the_building_damage_cues() {
+    let rules = building_damage_sound_rules();
+    assert!(rules.object("CADIS").unwrap().disable_damage_sound());
+    assert!(
+        !rules.object("GAPOWR").unwrap().disable_damage_sound(),
+        "unset stays false"
+    );
+
+    // Result 2 (`Strength >> 1` crossing): the global
+    // `[AudioVisual] BuildingDamageSound` request is skipped.
+    let (sounds, hp) =
+        building_damage_sound_hit(&rules, "CADIS", EntityCategory::Structure, 60, false);
+    assert_eq!(hp, 40);
+    assert!(global_building_damage_cues(&sounds).is_empty());
+    let (sounds, hp) =
+        building_damage_sound_hit(&rules, "GAPOWR", EntityCategory::Structure, 60, false);
+    assert_eq!(hp, 40);
+    assert_eq!(
+        global_building_damage_cues(&sounds),
+        [BUILDING_DAMAGE_CUE_COORD],
+        "the stock building still requests the global cue"
+    );
+
+    // Result 1 (no crossing): the type's own two `DamageSound=` requests are
+    // skipped, and the global arm never runs on this result anyway.
+    let (sounds, hp) =
+        building_damage_sound_hit(&rules, "CADMG", EntityCategory::Structure, 20, false);
+    assert_eq!(hp, 80);
+    assert!(type_building_damage_cues(&sounds).is_empty());
+    assert!(global_building_damage_cues(&sounds).is_empty());
+    let (sounds, hp) =
+        building_damage_sound_hit(&rules, "GAWEAP", EntityCategory::Structure, 20, false);
+    assert_eq!(hp, 80);
+    assert_eq!(
+        type_building_damage_cues(&sounds),
+        [BUILDING_DAMAGE_CUE_COORD, BUILDING_DAMAGE_CUE_COORD],
+        "the stock type still requests its own cue twice"
+    );
 }
 
 /// `TechnoClass::ReceiveDamage @ 0x00701900` arm `0x00702695` — index 2 of the
@@ -5710,7 +6101,6 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -6041,6 +6431,58 @@ fn infantry_standing_fire_waits_for_fire_frame() {
             .foot_firing_sequence_latch(),
         0
     );
+}
+
+/// Phobos `FireOnce.ResetSequence=no` (`0x6FF905` -> `0x51B20E`,
+/// `Ext/Techno/Hooks.Misc.cpp:845-866`): the infantryman's own `FireOnce=`
+/// shot clears his target, but the class target-change block is skipped, so
+/// the firing latch reset and the unforced idle `Do_Action` do not run and he
+/// keeps his firing action.
+#[test]
+fn phobos_fire_once_reset_sequence_keeps_the_firing_action() {
+    for (key, keeps) in [
+        ("", false),
+        (
+            "FireOnce.ResetSequence=no
+",
+            true,
+        ),
+    ] {
+        let rules = infantry_fire_frame_rules_with(&format!(
+            "[M60]
+FireOnce=yes
+{key}"
+        ));
+        let mut store = EntityStore::new();
+        store.insert(make_infantry_entity(1, "E1", 5, 5, 125));
+        store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
+        let mut interner = test_interner();
+        install_entity_attack_target_for_test(&mut store, 1, 2);
+        let mut main_rng = SimRng::new(1);
+        for stage in 0..3 {
+            set_infantry_stage(&mut store, 1, stage);
+            let _ = tick(
+                &mut store,
+                &rules,
+                &mut interner,
+                u64::from(stage as u32),
+                &mut main_rng,
+            );
+        }
+        assert_eq!(
+            store.get(2).unwrap().health.current(),
+            100,
+            "{key:?}: the shot fired"
+        );
+        let attacker = store.get(1).unwrap();
+        assert_eq!(
+            attacker.attack_target.target(),
+            None,
+            "{key:?}: FireOnce clears the target"
+        );
+        let doing = attacker.mission_leaf.as_infantry().unwrap().doing();
+        assert_eq!(doing != 0, keeps, "{key:?}: firing action at {doing}");
+    }
 }
 
 /// `InfantryClass::Fire_At_Target`'s tail (`0x00520A57..0x00520AC7`): on the
@@ -6715,7 +7157,12 @@ fn wall_warhead_damages_and_destroys_wall_overlay() {
     assert_eq!(initial_wall_entities, 0, "wall state is cell-owned");
 
     // Forced destruction (literal -1 bypasses the probabilistic gate).
-    sim.apply_wall_damage(WallPointerTarget::Real(5, 5), -1, &registry);
+    sim.apply_wall_damage(
+        WallPointerTarget::Real(5, 5),
+        -1,
+        &registry,
+        crate::sim::overlay_grid::adjacent_wall_damage_for(&rules),
+    );
     // Overlay cleared.
     let grid = sim
         .overlay_grid
@@ -7036,7 +7483,12 @@ fn wall_damage_deterministic_across_replays() {
     let snapshot_a: (Option<u8>, u8) = {
         let (mut sim, _rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
         for _ in 0..5 {
-            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry);
+            sim.apply_wall_damage(
+                WallPointerTarget::Real(5, 5),
+                100,
+                &registry,
+                crate::sim::overlay_grid::adjacent_wall_damage_for(&_rules),
+            );
         }
         let cell = sim.overlay_grid.as_ref().unwrap().cell(5, 5);
         (cell.overlay_id, cell.overlay_data)
@@ -7044,7 +7496,12 @@ fn wall_damage_deterministic_across_replays() {
     let snapshot_b: (Option<u8>, u8) = {
         let (mut sim, _rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
         for _ in 0..5 {
-            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry);
+            sim.apply_wall_damage(
+                WallPointerTarget::Real(5, 5),
+                100,
+                &registry,
+                crate::sim::overlay_grid::adjacent_wall_damage_for(&_rules),
+            );
         }
         let cell = sim.overlay_grid.as_ref().unwrap().cell(5, 5);
         (cell.overlay_id, cell.overlay_data)
@@ -7081,6 +7538,564 @@ fn selected_weapon_range(
     )
     .and_then(|(_, selected)| selected)
     .map(|selected| selected.weapon.range_leptons)
+}
+
+/// Phobos `TechnoTypeExt::SelectForceWeapon` under the hook at `0x6F3428`
+/// (`Ext/Techno/Hooks.Firing.cpp:94-118`): a configured class arm answers the
+/// slot before the native ladder, and `ForceAAWeapon.Aircraft` takes over from
+/// `ForceWeapon.Aircraft` once the target is airborne.
+#[test]
+fn phobos_force_weapon_replaces_the_native_selection() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=TANK\n1=HTNK\n2=SIEGE\n3=TURRET\n\
+         [AircraftTypes]\n0=PLANE\n\
+         [TANK]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=Gun\nSecondary=AA\n\
+         ForceWeapon.Units=1\nForceAAWeapon.Aircraft=1\nForceWeapon.Aircraft=0\n\
+         [SIEGE]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=Gun\nSecondary=AA\n\
+         ForceWeapon.InRange=1\nForceWeapon.InRange.Overrides=4\nForceWeapon.Units=0\n\
+         [TURRET]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\nTurretCount=1\n\
+         Primary=Gun\nSecondary=AA\nForceWeapon.Units=1\n\
+         [HTNK]\nStrength=400\nArmor=heavy\n\
+         [PLANE]\nStrength=200\nArmor=light\nSpeed=10\nSight=8\n\
+         [Gun]\nDamage=10\nROF=50\nRange=6\nProjectile=Invisible\nWarhead=WH\nAA=yes\n\
+         [AA]\nDamage=10\nROF=50\nRange=8\nProjectile=Invisible\nWarhead=WH\nAA=yes\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("force weapon rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let tank = sim
+        .spawn_object("TANK", "Americans", 10, 10, 0, &rules)
+        .expect("tank spawns");
+    let target = sim
+        .spawn_object("HTNK", "Russians", 12, 10, 0, &rules)
+        .expect("target spawns");
+    let plane = sim
+        .spawn_object("PLANE", "Russians", 12, 12, 0, &rules)
+        .expect("plane spawns");
+    let select = |sim: &crate::sim::world::Simulation, target_id: u64| {
+        let entity = sim.entities().get(tank).unwrap();
+        let object = rules.object("TANK").unwrap();
+        combat_weapon::select_weapon_against(
+            &rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&TargetKind::Entity(target_id)),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    };
+    assert_eq!(select(&sim, target), 1, "ForceWeapon.Units answers slot 1");
+    assert_eq!(
+        select(&sim, plane),
+        0,
+        "a grounded aircraft takes ForceWeapon.Aircraft, not the AA arm"
+    );
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1024));
+    assert_eq!(
+        select(&sim, plane),
+        1,
+        "an airborne aircraft takes ForceAAWeapon.Aircraft"
+    );
+
+    // `ForceWeapon.InRange` walks the list and forces slot 1 inside four
+    // cells; outside it falls through to ForceWeapon.Units=0.
+    let siege = sim
+        .spawn_object("SIEGE", "Americans", 10, 14, 0, &rules)
+        .expect("siege spawns");
+    let near = sim
+        .spawn_object("HTNK", "Russians", 12, 14, 0, &rules)
+        .expect("near target spawns");
+    let far = sim
+        .spawn_object("HTNK", "Russians", 18, 14, 0, &rules)
+        .expect("far target spawns");
+    let select_siege = |sim: &crate::sim::world::Simulation, target_id: u64| {
+        let entity = sim.entities().get(siege).unwrap();
+        let object = rules.object("SIEGE").unwrap();
+        combat_weapon::select_weapon_against(
+            &rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&TargetKind::Entity(target_id)),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    };
+    assert_eq!(select_siege(&sim, near), 1, "inside the override range");
+    assert_eq!(
+        select_siege(&sim, far),
+        0,
+        "outside the override range the class arm answers"
+    );
+
+    // Native arm A (`0x6F333B`) returns the gunner slot for a turreted
+    // non-gattling type before the 0x6F3428 hook, so the force never runs.
+    let turret = sim
+        .spawn_object("TURRET", "Americans", 10, 18, 0, &rules)
+        .expect("turret tank spawns");
+    let turret_target = sim
+        .spawn_object("HTNK", "Russians", 12, 18, 0, &rules)
+        .expect("turret target spawns");
+    let entity = sim.entities().get(turret).unwrap();
+    let object = rules.object("TURRET").unwrap();
+    let (index, _) = combat_weapon::select_weapon_against(
+        &rules,
+        entity,
+        object,
+        &combat_weapon::attacker_facts(entity, object),
+        Some(&TargetKind::Entity(turret_target)),
+        &sim,
+        &sim.interner,
+        sim.resolved_terrain.as_ref(),
+        Some(&sim.house_alliances),
+    )
+    .unwrap();
+    assert_eq!(
+        index, 0,
+        "the turreted arm answers before the forced-weapon hook"
+    );
+}
+
+/// Phobos `MultiWeapon.*` under the `0x7128B2` reader and the `0x6F3428`
+/// hook (`Ext/TechnoType/Body.cpp:175-291`,
+/// `Ext/Techno/Hooks.Firing.cpp:100-116`): `SelectCount=2` never leaves the
+/// stock two slots, `SelectCount` above `WeaponCount` clamps, and the switch
+/// off keeps the stock answer even with the other keys authored.
+#[test]
+fn phobos_multi_weapon_cycles_only_the_admitted_slots() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=MULTI\n1=MULTI2\n2=MULTI99\n3=NOMULTI\n4=HTNK\n5=MULTITURRET\n6=GUNNERMULTI\n\
+         [AircraftTypes]\n0=PLANE\n\
+         [MULTI]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\n\
+         [MULTI2]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=2\n\
+         [MULTI99]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=99\n\
+         [NOMULTI]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nPrimary=Gun\nSecondary=Gun\nWeapon3=AA\n\
+         MultiWeapon=no\nMultiWeapon.SelectCount=99\nMultiWeapon.IsSecondary=2\n\
+         [HTNK]\nStrength=400\nArmor=heavy\n\
+         [MULTITURRET]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\nTurretCount=1\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\n\
+         [GUNNERMULTI]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\nTurretCount=1\n\
+         Gunner=yes\nWeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\n\
+         [PLANE]\nStrength=200\nArmor=light\nSpeed=10\nSight=8\n\
+         [Gun]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\nWarhead=WH\n\
+         [AA]\nDamage=10\nROF=50\nRange=8\nProjectile=AirShot\nWarhead=WH\n\
+         [GroundShot]\nAA=no\nAG=yes\n\
+         [AirShot]\nAA=yes\nAG=no\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("multi weapon rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+    let plane = sim
+        .spawn_object("PLANE", "Russians", 12, 10, 0, &rules)
+        .expect("plane spawns");
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1024));
+    let multi = sim
+        .spawn_object("MULTI", "Americans", 8, 10, 0, &rules)
+        .expect("multi weapon attacker spawns");
+    let two_slots = sim
+        .spawn_object("MULTI2", "Americans", 10, 10, 0, &rules)
+        .expect("two-slot attacker spawns");
+    let clamped = sim
+        .spawn_object("MULTI99", "Americans", 14, 10, 0, &rules)
+        .expect("clamped attacker spawns");
+    let stock = sim
+        .spawn_object("NOMULTI", "Americans", 16, 10, 0, &rules)
+        .expect("stock attacker spawns");
+    let turreted = sim
+        .spawn_object("MULTITURRET", "Americans", 18, 12, 0, &rules)
+        .expect("turreted attacker spawns");
+    let gunner = sim
+        .spawn_object("GUNNERMULTI", "Americans", 20, 12, 0, &rules)
+        .expect("gunner attacker spawns");
+    fn select(
+        sim: &crate::sim::world::Simulation,
+        rules: &RuleSet,
+        attacker: u64,
+        target: u64,
+        type_id: &str,
+    ) -> i32 {
+        let entity = sim.entities().get(attacker).unwrap();
+        let object = rules.object(type_id).unwrap();
+        combat_weapon::select_weapon_against(
+            rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&TargetKind::Entity(target)),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    }
+    assert_eq!(
+        select(&sim, &rules, multi, plane, "MULTI"),
+        2,
+        "SelectCount=3 admits the AA third slot before the stock ladder returns 0"
+    );
+    assert_eq!(
+        select(&sim, &rules, two_slots, plane, "MULTI2"),
+        0,
+        "SelectCount=2 keeps the stock two-slot answer"
+    );
+    assert_eq!(
+        select(&sim, &rules, clamped, plane, "MULTI99"),
+        2,
+        "SelectCount above WeaponCount clamps to the three authored slots"
+    );
+    assert_eq!(
+        select(&sim, &rules, stock, plane, "NOMULTI"),
+        0,
+        "MultiWeapon=no keeps the stock two-slot answer despite the other keys"
+    );
+    assert_eq!(
+        select(&sim, &rules, turreted, plane, "MULTITURRET"),
+        2,
+        "0x6F3360 skips the turreted slot arm so SelectMultiWeapon answers"
+    );
+    assert_eq!(
+        select(&sim, &rules, gunner, plane, "GUNNERMULTI"),
+        0,
+        "a Unit with Gunner keeps the 0x6F333B turreted slot arm"
+    );
+    assert_eq!(
+        rules
+            .object("NOMULTI")
+            .unwrap()
+            .phobos_multi_weapon
+            .is_secondary
+            .len(),
+        0,
+        "the IsSecondary list is cleared while the switch is off"
+    );
+}
+
+/// `TechnoExt::MultiWeaponCanFire`'s cell arm
+/// (`Ext/Techno/WeaponHelpers.cpp:486-495`): a `Wall=` overlay under the
+/// force-fired cell admits only a `Wall=` warhead, or a `Wood=` warhead when
+/// the overlay's `Armor=` is wood. The slot walk therefore skips a plain
+/// weapon the wall refuses and answers the first slot the wall admits.
+#[test]
+fn phobos_multi_weapon_cell_wall_gate_reads_the_overlay_armor() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [OverlayTypes]\n0=NOWALLT\n1=WOODWALL\n2=STEELWALL\n\
+         [NOWALLT]\nWall=no\n\
+         [WOODWALL]\nWall=yes\nArmor=wood\n\
+         [STEELWALL]\nWall=yes\nArmor=steel\n\
+         [VehicleTypes]\n0=WALLER\n\
+         [WALLER]\nStrength=200\nCost=200\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=PlainGun\nWeapon2=WoodGun\nWeapon3=WallGun\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\n\
+         [PlainGun]\nDamage=10\nROF=50\nRange=6\nWarhead=PlainWH\n\
+         [WoodGun]\nDamage=10\nROF=50\nRange=6\nWarhead=WoodWH\n\
+         [WallGun]\nDamage=10\nROF=50\nRange=6\nWarhead=WallWH\n\
+         [PlainWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [WoodWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [WallWH]\nWall=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("wall gate rules");
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+    let wood_wall = registry.id_for_name("WOODWALL").expect("[WOODWALL]");
+    let steel_wall = registry.id_for_name("STEELWALL").expect("[STEELWALL]");
+    assert!(registry.flags(wood_wall).unwrap().armor_is_wood);
+    assert!(!registry.flags(steel_wall).unwrap().armor_is_wood);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 13);
+    sim.resolved_terrain_mut_for_test()
+        .as_mut()
+        .expect("arena terrain")
+        .set_overlay_types_for_test(&registry);
+    let waller = sim
+        .spawn_object("WALLER", "Americans", 12, 15, 0, &rules)
+        .expect("wall breaker spawns");
+    // A wood wall admits `Wood=` and `Wall=`, not the plain primary.
+    sim.place_overlay_for_test((14, 15), wood_wall, 0, &registry);
+    sim.overlay_cell_mut_for_test(14, 15).overlay_id = Some(wood_wall);
+    // A steel wall admits only `Wall=`, so the `Wood=` slot is refused too.
+    sim.place_overlay_for_test((13, 16), steel_wall, 0, &registry);
+    sim.overlay_cell_mut_for_test(13, 16).overlay_id = Some(steel_wall);
+    let select = |sim: &crate::sim::world::Simulation, target: TargetKind| {
+        let entity = sim.entities().get(waller).unwrap();
+        let object = rules.object("WALLER").unwrap();
+        combat_weapon::select_weapon_against(
+            &rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&target),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    };
+    assert_eq!(
+        select(&sim, TargetKind::Cell(12, 16)),
+        0,
+        "without an overlay the plain primary is admitted first"
+    );
+    assert_eq!(
+        select(&sim, TargetKind::Cell(14, 15)),
+        1,
+        "an Armor=Wood wall admits the Wood= slot"
+    );
+    assert_eq!(
+        select(&sim, TargetKind::Cell(13, 16)),
+        2,
+        "a non-wood wall refuses Wood= and answers the Wall= slot"
+    );
+}
+
+/// `NoSecondaryWeaponFallback` (`Ext/TechnoType/Body.cpp:186,223-238`): with
+/// the key on, a two-weapon `SelectMultiWeapon` continues instead of falling
+/// through, and the drain priority is disabled, so the primary answers. The
+/// same type without the key keeps the stock drain arm's secondary.
+#[test]
+fn phobos_no_secondary_weapon_fallback_disables_the_drain_priority() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=FALLBACK\n1=STOCK\n2=DRAIN\n\
+         [FALLBACK]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=2\nWeapon1=Gun\nWeapon2=Drain\n\
+         MultiWeapon=yes\nNoSecondaryWeaponFallback=yes\n\
+         [STOCK]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=2\nPrimary=Gun\nSecondary=Drain\nMultiWeapon=no\n\
+         [DRAIN]\nStrength=400\nArmor=heavy\nDrainable=yes\n\
+         [Gun]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\nWarhead=WH\n\
+         [Drain]\nDamage=0\nROF=50\nRange=6\nDrainWeapon=yes\n\
+         Projectile=GroundShot\nWarhead=WH\n\
+         [GroundShot]\nAA=no\nAG=yes\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("fallback rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 13);
+    let fallback = sim
+        .spawn_object("FALLBACK", "Americans", 8, 10, 0, &rules)
+        .expect("fallback spawns");
+    let stock = sim
+        .spawn_object("STOCK", "Americans", 10, 10, 0, &rules)
+        .expect("stock spawns");
+    let target = sim
+        .spawn_object("DRAIN", "Russians", 12, 10, 0, &rules)
+        .expect("drainable target spawns");
+    fn select(
+        sim: &crate::sim::world::Simulation,
+        rules: &RuleSet,
+        attacker: u64,
+        target: u64,
+        type_id: &str,
+    ) -> i32 {
+        let entity = sim.entities().get(attacker).unwrap();
+        let object = rules.object(type_id).unwrap();
+        combat_weapon::select_weapon_against(
+            rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&TargetKind::Entity(target)),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    }
+    assert_eq!(
+        select(&sim, &rules, fallback, target, "FALLBACK"),
+        0,
+        "the fallback key runs SelectMultiWeapon and drops the drain priority"
+    );
+    assert_eq!(
+        select(&sim, &rules, stock, target, "STOCK"),
+        1,
+        "without the key the stock ladder takes the drain secondary"
+    );
+}
+
+/// `MultiWeaponCanFire` does not read `LegalTarget`
+/// (`Ext/Techno/WeaponHelpers.cpp:419-434`), unlike shrapnel's
+/// `IsAllowedSplitsTarget` (`Ext/Bullet/Hooks.cpp:314`): a `LegalTarget=no`
+/// airborne target still admits the AA third slot.
+#[test]
+fn phobos_multi_weapon_can_fire_ignores_legal_target() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=MULTI\n1=HTNK\n\
+         [AircraftTypes]\n0=PLANE\n\
+         [MULTI]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\n\
+         [HTNK]\nStrength=400\nArmor=heavy\n\
+         [PLANE]\nStrength=200\nArmor=light\nSpeed=10\nSight=8\nLegalTarget=no\n\
+         [Gun]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\nWarhead=WH\n\
+         [AA]\nDamage=10\nROF=50\nRange=8\nProjectile=AirShot\nWarhead=WH\n\
+         [GroundShot]\nAA=no\nAG=yes\n[AirShot]\nAA=yes\nAG=no\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("legal-target rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    let attacker = sim
+        .spawn_object("MULTI", "Americans", 8, 10, 0, &rules)
+        .expect("attacker spawns");
+    let plane = sim
+        .spawn_object("PLANE", "Russians", 12, 10, 0, &rules)
+        .expect("plane spawns");
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1024));
+    let entity = sim.entities().get(attacker).unwrap();
+    let object = rules.object("MULTI").unwrap();
+    let index = combat_weapon::select_weapon_against(
+        &rules,
+        entity,
+        object,
+        &combat_weapon::attacker_facts(entity, object),
+        Some(&TargetKind::Entity(plane)),
+        &sim,
+        &sim.interner,
+        sim.resolved_terrain.as_ref(),
+        Some(&sim.house_alliances),
+    )
+    .unwrap()
+    .0;
+    assert_eq!(
+        index, 2,
+        "the AA slot admits a LegalTarget=no target in SelectMultiWeapon"
+    );
+}
+
+/// Phobos' stock-ladder hook `0x6F36DB` (`Ext/Techno/Hooks.Firing.cpp:121-165`)
+/// asks `PickWeaponIndex` (`Ext/Techno/WeaponHelpers.cpp:7-100`) before the
+/// native Verses arm at `0x6F36E3`. A primary whose `CanTarget` excludes the
+/// airborne target hands the shot to an otherwise ordinary secondary, which
+/// the stock ladder does not do because neither projectile is AA.
+/// `NoSecondaryWeaponFallback` suppresses the pick; `.AllowAA` restores the
+/// airborne-secondary arm through `secondIsAA`.
+#[test]
+fn phobos_stock_weapon_pick_honours_can_target_and_the_fallback_keys() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=PICKER\n1=NOFALL\n2=AAALLOW\n\
+         [AircraftTypes]\n0=PLANE\n\
+         [PICKER]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=GroundOnly\nSecondary=AnyGun\n\
+         [NOFALL]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=GroundOnly\nSecondary=AnyGun\n\
+         NoSecondaryWeaponFallback=yes\n\
+         [AAALLOW]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=GroundOnly\nSecondary=AnyAA\n\
+         NoSecondaryWeaponFallback=yes\nNoSecondaryWeaponFallback.AllowAA=yes\n\
+         [PLANE]\nStrength=200\nArmor=light\nSpeed=10\nSight=8\n\
+         [GroundOnly]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\n\
+         Warhead=WH\nCanTarget=infantry\n\
+         [AnyGun]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\nWarhead=WH\n\
+         [AnyAA]\nDamage=10\nROF=50\nRange=8\nProjectile=AirShot\nWarhead=WH\n\
+         [GroundShot]\nAA=no\nAG=yes\n[AirShot]\nAA=yes\nAG=no\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("stock-pick rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 19);
+    let picker = sim
+        .spawn_object("PICKER", "Americans", 8, 10, 0, &rules)
+        .expect("picker spawns");
+    let nofall = sim
+        .spawn_object("NOFALL", "Americans", 6, 10, 0, &rules)
+        .expect("nofall spawns");
+    let aaallow = sim
+        .spawn_object("AAALLOW", "Americans", 10, 10, 0, &rules)
+        .expect("aaallow spawns");
+    let plane = sim
+        .spawn_object("PLANE", "Russians", 12, 10, 0, &rules)
+        .expect("plane spawns");
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1024));
+    fn select(
+        sim: &crate::sim::world::Simulation,
+        rules: &RuleSet,
+        attacker: u64,
+        target: u64,
+        type_id: &str,
+    ) -> i32 {
+        let entity = sim.entities().get(attacker).unwrap();
+        let object = rules.object(type_id).unwrap();
+        combat_weapon::select_weapon_against(
+            rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&TargetKind::Entity(target)),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    }
+    assert_eq!(
+        select(&sim, &rules, picker, plane, "PICKER"),
+        1,
+        "the secondary CanTarget admits an airborne target the primary excludes"
+    );
+    assert_eq!(
+        select(&sim, &rules, nofall, plane, "NOFALL"),
+        0,
+        "NoSecondaryWeaponFallback=yes suppresses the pick"
+    );
+    assert_eq!(
+        select(&sim, &rules, aaallow, plane, "AAALLOW"),
+        1,
+        "NoSecondaryWeaponFallback.AllowAA keeps the airborne secondary arm"
+    );
 }
 
 /// `TechnoClass::CanFireAtTarget @ 0x006F7780` is `CanFireAt(target,
@@ -7248,7 +8263,6 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
 /// draws no cluster successor (`0x0070D782` calls DetonateAtCoord directly).
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn an_inviso_death_weapon_scatters_its_anim_inside_the_receiver() {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
@@ -7709,12 +8723,13 @@ fn inviso_detonation_draws(
     let _ = crate::sim::projectile::projectile_next_cluster_coord(
         crate::map::cell_index::CellGrid::Retail,
         ProjectileCoord::new(0, 0, 0),
+        0x100,
+        0x200,
         rng,
     );
     effect
 }
 
-#[cfg(not(feature = "phobos"))]
 fn constructed_anim_coord(
     anim: &super::receiver_fixture::ConstructedAnimObservation,
 ) -> (u16, u16, SimFixed, SimFixed) {
@@ -7729,7 +8744,6 @@ fn constructed_anim_coord(
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
     let mut rules = inviso_weapon_rules(true, true);
@@ -7785,7 +8799,6 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
 /// fire. The shooter fires from its centre.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn a_flak_burst_goes_off_where_fire_moved_it() {
     let mut rules = shooter_rules(
@@ -7878,7 +8891,6 @@ fn inviso_empty_animlist_still_consumes_one_draw() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() {
     let rules = inviso_weapon_rules(false, true);
@@ -7926,7 +8938,6 @@ fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() 
 /// detonates next frame.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn two_inviso_attackers_fire_in_live_order_and_the_second_bullet_waits_a_frame() {
     let mut rules = inviso_weapon_rules(true, true);
@@ -7998,7 +9009,6 @@ fn inviso_special_rules(special_key: &str) -> RuleSet {
 /// Magnetron's `[MagneticBeam]` dealt 5000 to the vehicle it should lift.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
     // DirectRocker is the chain's one conditional arm; TARGET is a UnitClass.
@@ -8303,7 +9313,6 @@ fn irradiate_bound(
 
 /// [`irradiate_bound`] with Phobos `RadHasOwner`/`RadHasInvoker` attribution:
 /// the detonation names a firing house and an invoker object.
-#[cfg(feature = "phobos")]
 fn irradiate_attributed(
     sim: &mut crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -8732,7 +9741,6 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
 /// same cell is also exempt.
 /// Retail has no building radiation path; Phobos adds one, so this retail
 /// guarantee only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn buildings_take_no_rad_damage() {
     let rules = radiation_rules();
@@ -8765,9 +9773,8 @@ fn buildings_take_no_rad_damage() {
 
 /// Phobos custom radiation: the stock scene plus a `[RadiationTypes]` entry
 /// with its own level cap, factor and warhead, bound by `RadType=`.
-#[cfg(feature = "phobos")]
-fn phobos_radiation_rules() -> RuleSet {
-    let ini = crate::sim::arena_fixture::clear_ground_ini(
+fn phobos_radiation_ini() -> crate::rules::ini_parser::IniFile {
+    crate::sim::arena_fixture::clear_ground_ini(
         "\
 [InfantryTypes]\n0=DESO\n1=E2\n\n\
 [DESO]\nStrength=200\nArmor=plate\nSpeed=4\nPrimary=RadBeamWeapon\nSecondary=RadEruptionWeapon\nDeployer=yes\nDeployFire=yes\nImmuneToRadiation=yes\n\n\
@@ -8791,14 +9798,15 @@ fn phobos_radiation_rules() -> RuleSet {
 [BlastRad]\nRadLevelFactor=1.0\nRadLevelMax=250\nRadSiteWarhead=RadSiteBlast\nRadSiteWarhead.Detonate=yes\nRadSiteWarhead.Detonate.Full=no\n\n\
 [RadSiteBlast]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\nCellSpread=3\n\n\
 [RadSiteToxic]\nVerses=100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%\nInfDeath=7\nRadiation=yes\n",
-    );
-    RuleSet::from_ini(&ini).expect("phobos radiation rules should parse")
+    )
 }
 
+fn phobos_radiation_rules() -> RuleSet {
+    RuleSet::from_ini(&phobos_radiation_ini()).expect("phobos radiation rules should parse")
+}
 /// A bound radiation type drives the site's level clamp, its damage factor
 /// and its own warhead; the default-type path on the same scene keeps the
 /// globals.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_custom_radiation_type_damage_uses_the_bound_types_parameters() {
     let rules = phobos_radiation_rules();
@@ -8837,7 +9845,6 @@ fn phobos_custom_radiation_type_damage_uses_the_bound_types_parameters() {
 
 /// A bound type's `RadColor`, `RadLightFactor` and `RadTintFactor` shape the
 /// site's published light, so two types on the same scene light differently.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_a_bound_types_color_drives_the_site_light() {
     let rules = phobos_radiation_rules();
@@ -8857,7 +9864,6 @@ fn phobos_a_bound_types_color_drives_the_site_light() {
 
 /// `UseGlobalRadApplicationDelay=false` moves the admission gate to each
 /// bound type's own `RadApplicationDelay`.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_per_type_application_delay_gates_damage_when_the_global_gate_is_off() {
     let mut rules = phobos_radiation_rules();
@@ -8907,7 +9913,6 @@ fn phobos_per_type_application_delay_gates_damage_when_the_global_gate_is_off() 
 
 /// Native keeps concurrent sites of different types at one center; this
 /// model's one-site-per-center merges and retains the existing binding.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_merge_at_one_center_keeps_the_existing_bound_type() {
     let rules = phobos_radiation_rules();
@@ -8966,9 +9971,11 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
         sim.session.set_binary_frame_for_test(frame);
         let mission = &mut sim.substrate.entities.get_mut(deso).unwrap().mission;
         mission.apply_test_fixture(MissionTestFixture {
-            current: MissionId::from_known(MissionType::Guard),
+            current: crate::sim::mission::MissionId::from_known(
+                crate::sim::mission::MissionType::Guard,
+            ),
             suspended: mission.suspended(),
-            queued: MissionId::NONE,
+            queued: crate::sim::mission::MissionId::NONE,
             movement_bypass_latch: mission.movement_bypass_latch(),
             handler_state: mission.handler_state(),
             mission_start_frame: mission.mission_start_frame(),
@@ -9035,6 +10042,196 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
     assert_eq!(events.len(), 1, "gate reopens below one third");
     let site = sim.radiation.site_at((10, 10)).expect("merged site");
     assert!(site.level() > 500, "re-detonation merged effective + added");
+}
+
+/// Phobos `AreaFire.Target=` (`Ext/WeaponType/Body.cpp:123`, consumer
+/// `Ext/Techno/Hooks.Firing.cpp:743-798`, hook `0x6FE19A`): `self` replaces
+/// the stock cell under the firer with the firer object, `random` draws one
+/// `RandomRanged(0, last)` candidate per try around the firer's cell, and
+/// `base` keeps the stock cell.
+#[test]
+fn phobos_area_fire_target_self_and_random_replace_the_stock_cell() {
+    use crate::sim::rng::SimRng;
+
+    fn area_fire_rules(target_key: &str) -> (RuleSet, IniFile) {
+        let art = IniFile::from_str(
+            "[DESO]
+Sequence=DesoFixture
+[DesoFixture]
+Deployed=100,1,0
+DeployedFire=100,3,0
+",
+        );
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]
+VeteranArmor=1.5
+
+[InfantryTypes]
+0=DESO
+1=E2
+
+[VehicleTypes]
+[MTNK]
+
+[AircraftTypes]
+
+[BuildingTypes]
+
+[DESO]
+Strength=200
+Armor=plate
+Speed=4
+Primary=RadBeamWeapon
+Secondary=RadEruptionWeapon
+Deployer=yes
+DeployFire=yes
+ImmuneToRadiation=yes
+
+[E2]
+Strength=300
+Armor=none
+Speed=4
+
+[RadBeamWeapon]
+Damage=25
+ROF=70
+Range=6
+Warhead=RadSite
+
+[RadEruptionWeapon]
+Damage=1
+ROF=60
+Range=4
+AreaFire=yes
+{target_key}Warhead=RadEruptionWarhead
+RadLevel=500
+Report=DesolatorDeploy
+
+[RadEruptionWarhead]
+Verses=100%,100%,100%,20%,10%,10%,0%,0%,0%,100%,100%
+InfDeath=7
+Radiation=yes
+CellSpread=10
+
+[RadSite]
+Verses=100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%
+InfDeath=7
+Radiation=yes
+
+[Radiation]
+RadDurationMultiple=1
+RadApplicationDelay=16
+RadLevelMax=500
+RadLevelDelay=90
+RadLevelFactor=.2
+RadSiteWarhead=RadSite
+"
+        ));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+            .expect("area-fire target rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        (rules, art)
+    }
+
+    fn fired_target(rules: &RuleSet, seed_rng: &mut SimRng) -> (Vec<TargetKind>, u64) {
+        use crate::sim::mission::state::MissionTestFixture;
+
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_flat_ground_grid(16),
+        );
+        let deso = sim
+            .spawn_object("DESO", "Americans", 10, 10, 0, rules)
+            .expect("desolator spawns");
+        sim.substrate
+            .entities
+            .get_mut(deso)
+            .unwrap()
+            .mission_leaf
+            .set_infantry_doing_verified(28)
+            .unwrap();
+        // The area-fire pick reads the live Scenario stream; the fixture's
+        // spawn already consumed constructor draws, so predict from a clone.
+        *seed_rng = sim.scenario_rng.clone();
+        sim.session.set_binary_frame_for_test(1);
+        let mission = &mut sim.substrate.entities.get_mut(deso).unwrap().mission;
+        mission.apply_test_fixture(MissionTestFixture {
+            current: crate::sim::mission::MissionId::from_known(
+                crate::sim::mission::MissionType::Guard,
+            ),
+            suspended: mission.suspended(),
+            queued: crate::sim::mission::MissionId::NONE,
+            movement_bypass_latch: mission.movement_bypass_latch(),
+            handler_state: mission.handler_state(),
+            mission_start_frame: mission.mission_start_frame(),
+            ai_counter: mission.ai_counter(),
+            dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(1),
+        });
+        sim.fire_events.clear_for_test();
+        let first_tail = sim.next_stable_object_id();
+        sim.object_ai_visit_one(deso, Some(rules), crate::sim::world::ObjectAiCtx::default());
+        sim.visit_combat_tail(
+            first_tail,
+            rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let events = sim.fire_events.clone();
+        (
+            events.iter().map(|event| event.target).collect::<Vec<_>>(),
+            deso,
+        )
+    }
+
+    // `base`: the stock cell under the firer.
+    let (rules, _) = area_fire_rules("");
+    let mut unused = SimRng::new(0);
+    let (targets, _) = fired_target(&rules, &mut unused);
+    assert_eq!(
+        targets,
+        vec![TargetKind::Cell(10, 10)],
+        "base keeps the stock cell"
+    );
+
+    // `self`: the firer object replaces the cell.
+    let (rules, _) = area_fire_rules(
+        "AreaFire.Target=self
+",
+    );
+    let (targets, deso) = fired_target(&rules, &mut unused);
+    assert_eq!(
+        targets,
+        vec![TargetKind::Entity(deso)],
+        "self aims at the firer"
+    );
+
+    // The cell gate runs on the base/self arms too: `CanTarget=units` refuses
+    // this infantry firer's own cell, so the shot never fires.
+    let (rules, _) = area_fire_rules("CanTarget=units\n");
+    let (targets, _) = fired_target(&rules, &mut unused);
+    assert!(targets.is_empty(), "the cell gate refuses the firer's cell");
+
+    // `random`: the first candidate drawn from the Scenario stream with
+    // the default (gate-free) weapon is admitted, so the cell is
+    // `cell + offsets[RandomRanged(0, last)]` and exactly one draw is spent
+    // on the pick.
+    let (rules, _) = area_fire_rules(
+        "AreaFire.Target=random
+",
+    );
+    let mut probe = SimRng::new(0);
+    let (targets, _) = fired_target(&rules, &mut probe);
+    let offsets = crate::sim::cell_rect::cell_spread_offsets(4);
+    let drawn = probe.next_range_i32_inclusive(0, offsets.len() as i32 - 1) as usize;
+    let (dx, dy) = offsets[drawn];
+    assert_eq!(
+        targets,
+        vec![TargetKind::Cell(
+            (10i32 + i32::from(dx)) as u16,
+            (10i32 + i32::from(dy)) as u16
+        )],
+        "random takes the drawn candidate"
+    );
 }
 
 #[test]
@@ -9478,6 +10675,304 @@ fn campaign_reverse_only_alliance_keeps_shrapnel_hostile_head_before_random_cell
         crate::sim::projectile::ProjectileTarget::Cell { .. }
     ));
     assert_eq!(scenario_rng.logical_state(), expected_rng.logical_state());
+}
+
+/// Phobos `BulletClass_Shrapnel_Forced @ 0x46A3D6`
+/// (`Ext/Bullet/Hooks.cpp:252-282`): stock refuses shrapnel when the impact
+/// cell holds no ground object; `Shrapnel.AffectsGround` admits it. The key is
+/// a `Nullable` falling back to the `[CombatDamage]` global, whose value
+/// default is `no`, so the unset case must stay at the stock refusal.
+#[test]
+fn ground_shrapnel_needs_the_phobos_affects_ground_key() {
+    const BODY: &str = "[VehicleTypes]\n0=MTNK\n\n[MTNK]\nStrength=100\nArmor=heavy\nPrimary=PARENT\nSecondary=CHILD\n\n[PARENT]\nDamage=20\nROF=10\nRange=6\nSpeed=30\nProjectile=PARENTPROJ\nWarhead=WH\n\n[PARENTPROJ]\nAirburst=yes\nShrapnelWeapon=CHILD\nShrapnelCount=2\n{AFFECTS}\n\n[CHILD]\nDamage=5\nROF=10\nRange=3\nSpeed=40\nProjectile=CHILDPROJ\nWarhead=WH\n\n[CHILDPROJ]\nSubjectToWalls=yes\n\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{GLOBAL}";
+    let spawns = |affects: &str, global: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            &BODY
+                .replace("{AFFECTS}", affects)
+                .replace("{GLOBAL}", global),
+        ))
+        .expect("shrapnel rules");
+        let mut entities = EntityStore::new();
+        // The firer sits beside the impact cell, which holds no ground object.
+        let mut source = make_entity_owned(1, "MTNK", 4, 4, 100, "Soviet");
+        source.lifecycle.set_cell_marked_for_test(true);
+        entities.insert(source);
+        let mut target = make_entity_owned(2, "MTNK", 5, 6, 100, "Americans");
+        target.lifecycle.set_cell_marked_for_test(true);
+        entities.insert(target);
+        let mut occupancy = OccupancyGrid::rebuild(&entities);
+        let mut interner = test_interner();
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: 7,
+            source_id: 1,
+            target: crate::sim::projectile::ProjectileTarget::Cell { rx: 5, ry: 5 },
+            impact: crate::sim::projectile::ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0),
+            payload: payload_from_weapon(
+                20,
+                interner.intern("WH"),
+                interner.intern("PARENT"),
+                &rules,
+                &mut interner,
+            ),
+            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+        };
+        align_attackers_to_targets(&mut entities);
+        let alliances = HouseAllianceMap::from([(
+            "AMERICANS".to_owned(),
+            std::collections::BTreeSet::from(["SOVIET".to_owned()]),
+        )]);
+        tick_detonations(
+            &mut entities,
+            &mut occupancy,
+            &rules,
+            &mut interner,
+            &mut crate::sim::houses::Houses::default(),
+            &alliances,
+            1,
+            &[1, 2],
+            &[detonation],
+            &mut SimRng::new(0x46_a310),
+            &mut SimRng::new(1),
+        )
+        .projectile_spawns
+        .len()
+    };
+
+    assert_eq!(
+        spawns("", ""),
+        0,
+        "an empty impact cell refuses shrapnel without the key"
+    );
+    assert!(
+        spawns("Shrapnel.AffectsGround=yes", "") > 0,
+        "the type key admits ground shrapnel"
+    );
+    assert!(
+        spawns("", "[CombatDamage]\nShrapnel.AffectsGround=yes\n") > 0,
+        "the [CombatDamage] global admits it when the type is unset"
+    );
+    assert_eq!(
+        spawns(
+            "Shrapnel.AffectsGround=no",
+            "[CombatDamage]\nShrapnel.AffectsGround=yes\n"
+        ),
+        0,
+        "an explicit no on the type overrides the global"
+    );
+}
+
+/// Phobos `BulletClass_Shrapnel_Forced`/`_Targeting`
+/// (`Ext/Bullet/Hooks.cpp:262-305,348-349`). A building head is admitted only
+/// under `Shrapnel.AffectsBuildings`; that building becomes the emission's
+/// `InitialTargetBuilding`, which the ring skips by identity, so it is never a
+/// child's target. `Shrapnel.IgnoreHitBuildings` then keeps every other
+/// building to one child per emission.
+#[test]
+fn shrapnel_building_targets_need_affects_buildings_and_hit_buildings_once() {
+    const BODY: &str = "[VehicleTypes]\n0=MTNK\n\n[BuildingTypes]\n0=HQ\n\n[HQ]\nStrength=100\n\n[MTNK]\nStrength=100\nArmor=heavy\nPrimary=PARENT\nSecondary=CHILD\n\n[PARENT]\nDamage=20\nROF=10\nRange=6\nSpeed=30\nProjectile=PARENTPROJ\nWarhead=WH\n\n[PARENTPROJ]\nAirburst=yes\nShrapnelWeapon=CHILD\nShrapnelCount=12\n{AFFECTS}\n{IGNORE}\n\n[CHILD]\nDamage=5\nROF=10\nRange=3\nSpeed=40\nProjectile=CHILDPROJ\nWarhead=WH\n\n[CHILDPROJ]\nSubjectToWalls=yes\n\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    // Returns (children, hits on the impact building, hits on the second).
+    let run = |affects: &str, ignore: &str, with_second: bool, head: bool| {
+        let ini = IniFile::from_str(
+            &BODY
+                .replace("{AFFECTS}", affects)
+                .replace("{IGNORE}", ignore),
+        );
+        let art = IniFile::from_str("[HQ]\nFoundation=3x3\n");
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("shrapnel rules");
+        let mut entities = EntityStore::new();
+        let mut source = make_entity_owned(1, "MTNK", 2, 2, 100, "Soviet");
+        source.lifecycle.set_cell_marked_for_test(true);
+        entities.insert(source);
+        // The impact building: a 3x3 at (6,6) covering the impact cell.
+        if head {
+            let mut target = make_entity_owned(2, "HQ", 6, 6, 100, "Americans");
+            target.set_category_for_test(EntityCategory::Structure);
+            target
+                .type_facts
+                .set_foundation_for_test("3x3".to_string().into());
+            target.lifecycle.set_cell_marked_for_test(true);
+            entities.insert(target);
+        }
+        if with_second {
+            // A second building on the first ring, three cells away.
+            let mut second = make_entity_owned(3, "HQ", 3, 5, 100, "Americans");
+            second.set_category_for_test(EntityCategory::Structure);
+            second
+                .type_facts
+                .set_foundation_for_test("3x3".to_string().into());
+            second.lifecycle.set_cell_marked_for_test(true);
+            entities.insert(second);
+        }
+        let mut occupancy = OccupancyGrid::rebuild(&entities);
+        let mut interner = test_interner();
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: 7,
+            source_id: 1,
+            target: crate::sim::projectile::ProjectileTarget::Cell { rx: 7, ry: 7 },
+            impact: crate::sim::projectile::ProjectileCoord::new(7 * 256 + 128, 7 * 256 + 128, 0),
+            payload: payload_from_weapon(
+                20,
+                interner.intern("WH"),
+                interner.intern("PARENT"),
+                &rules,
+                &mut interner,
+            ),
+            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+        };
+        align_attackers_to_targets(&mut entities);
+        let result = tick_detonations(
+            &mut entities,
+            &mut occupancy,
+            &rules,
+            &mut interner,
+            &mut crate::sim::houses::Houses::default(),
+            &HouseAllianceMap::new(),
+            1,
+            &[1, 2, 3],
+            &[detonation],
+            &mut SimRng::new(0x46_a310),
+            &mut SimRng::new(1),
+        );
+        let hits = |id: u64| {
+            result
+                .projectile_spawns
+                .iter()
+                .filter(|spawn| {
+                    spawn.target == crate::sim::projectile::ProjectileTarget::Entity(id)
+                })
+                .count()
+        };
+        (result.projectile_spawns.len(), hits(2), hits(3))
+    };
+
+    assert_eq!(
+        run("", "", false, true).0,
+        0,
+        "a building head refuses shrapnel without Shrapnel.AffectsBuildings"
+    );
+    assert_eq!(
+        run("Shrapnel.AffectsGround=yes", "", false, true).0,
+        0,
+        "AffectsGround cannot admit a building head"
+    );
+    assert_eq!(
+        run("Shrapnel.AffectsBuildings=yes", "", false, false).0,
+        0,
+        "AffectsBuildings cannot admit an empty cell"
+    );
+    assert!(
+        run("Shrapnel.AffectsGround=yes", "", false, false).0 > 0,
+        "AffectsGround admits an empty cell"
+    );
+    assert!(
+        run("Shrapnel.AffectsBuildings=yes", "", false, true).0 > 0,
+        "the admitted building head still spawns its children"
+    );
+    assert_eq!(
+        run("Shrapnel.AffectsBuildings=yes", "", false, true).1,
+        0,
+        "the initial target building is never a child's target"
+    );
+    assert!(
+        run(
+            "Shrapnel.AffectsBuildings=yes",
+            "Shrapnel.IgnoreHitBuildings=no",
+            true,
+            true
+        )
+        .2 >= 2,
+        "without the key the ring can target one building repeatedly"
+    );
+    assert_eq!(
+        run(
+            "Shrapnel.AffectsBuildings=yes",
+            "Shrapnel.IgnoreHitBuildings=yes",
+            true,
+            true
+        )
+        .2,
+        1,
+        "with the key a building is hit at most once per emission"
+    );
+}
+
+/// Phobos `BulletClass_Shrapnel_Targeting` `UseWeaponTargeting`
+/// (`Ext/Bullet/Hooks.cpp:309-345`): with the key the shrapnel weapon's own
+/// targeting replaces the stock alliance test, so an allied unit becomes a
+/// legal child target while a `LegalTarget=no` type stops being one. The
+/// `[CombatDamage]` global supplies the same switch to a type that omits it.
+#[test]
+fn shrapnel_use_weapon_targeting_replaces_the_alliance_test() {
+    const BODY: &str = "\
+[VehicleTypes]\n0=MTNK\n1=ALLY\n2=NOLEGAL\n\n\
+[MTNK]\nStrength=100\nArmor=heavy\nPrimary=PARENT\nSecondary=CHILD\n\n\
+[ALLY]\nStrength=100\nSpeed=5\nArmor=heavy\n\n\
+[NOLEGAL]\nStrength=100\nSpeed=5\nArmor=heavy\nLegalTarget=no\n\n\
+[PARENT]\nDamage=20\nROF=10\nRange=6\nSpeed=30\nProjectile=PARENTPROJ\nWarhead=WH\n\n\
+[PARENTPROJ]\nAirburst=yes\nShrapnelWeapon=CHILD\nShrapnelCount=12\n\
+Shrapnel.AffectsGround=yes\n{TYPE}\n\n\
+[CHILD]\nDamage=5\nROF=10\nRange=3\nSpeed=40\nProjectile=CHILDPROJ\nWarhead=WH\n\n\
+[CHILDPROJ]\nSubjectToWalls=yes\n\n\
+[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{GLOBAL}";
+    // Returns (hits on the allied unit, hits on the LegalTarget=no unit).
+    let run = |type_key: bool, global: bool| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            &BODY
+                .replace(
+                    "{TYPE}",
+                    if type_key {
+                        "Shrapnel.UseWeaponTargeting=yes"
+                    } else {
+                        ""
+                    },
+                )
+                .replace(
+                    "{GLOBAL}",
+                    if global {
+                        "[CombatDamage]\nShrapnel.UseWeaponTargeting=yes\n"
+                    } else {
+                        ""
+                    },
+                ),
+        ))
+        .expect("shrapnel rules");
+        let mut sim = shrapnel_world(
+            &rules,
+            vec![
+                make_entity_owned(1, "MTNK", 2, 2, 100, "Soviet"),
+                // Two opposite first-ring heads: an ally and an enemy whose
+                // type refuses weapon targeting.
+                make_entity_owned(2, "ALLY", 6, 4, 100, "Americans"),
+                make_entity_owned(3, "NOLEGAL", 8, 5, 100, "Africans"),
+            ],
+        );
+        sim.house_alliances_mut_for_test()
+            .entry("SOVIET".into())
+            .or_default()
+            .insert("AMERICANS".into());
+        let targets: Vec<_> = commit_shrapnel_at_5_5(&mut sim, &rules)
+            .into_iter()
+            .map(|fragment| fragment.target())
+            .collect();
+        (
+            targets.contains(&crate::sim::projectile::ProjectileTarget::Entity(2)),
+            targets.contains(&crate::sim::projectile::ProjectileTarget::Entity(3)),
+        )
+    };
+
+    let stock = run(false, false);
+    assert!(!stock.0, "the stock ring skips an allied head");
+    assert!(stock.1, "the stock ring has no LegalTarget test");
+    for targeted in [run(true, false), run(false, true)] {
+        assert!(
+            targeted.0,
+            "UseWeaponTargeting admits the allied head the weapon can target"
+        );
+        assert!(
+            !targeted.1,
+            "UseWeaponTargeting skips a LegalTarget=no head"
+        );
+    }
 }
 
 /// SpawnShrapnel lessens a negative ShrapnelCount by the cells from the
@@ -11459,9 +12954,11 @@ fn gsi_05_14_a_dying_building_uses_its_own_debris_anims() {
         .map(|effect| interner.resolve(effect.shp_name))
         .collect();
     let own: usize = names.iter().filter(|n| n.starts_with("DBRI-WM")).count();
-    // `MinDebris=3`, `MaxDebris=4` pins the budget at 3 with no draw.
-    assert_eq!(
-        own, 3,
+    // Vanilla pins the budget at `MaxDebris - 1` = 3; Phobos's Techno hook
+    // draws `RandomRanged(3, 4)`.
+    let budget = 3..=4;
+    assert!(
+        budget.contains(&own),
         "the whole budget comes from DebrisAnims=: {names:?}"
     );
     assert!(
@@ -11512,10 +13009,17 @@ fn a_dying_buildings_debris_leaves_from_its_centre() {
         .filter(|effect| effect.shp_name == debris)
         .map(|effect| effect.death.expect("an exact construction").coord)
         .collect();
-    assert_eq!(spawns.len(), 1, "MinDebris=1, MaxDebris=2 pins one piece");
-    assert_eq!(
-        (spawns[0].x, spawns[0].y),
-        (location.0 + 256, location.1 + 256),
+    // Vanilla pins the budget at `MaxDebris - 1` = 1; Phobos's Techno hook
+    // draws `RandomRanged(1, 2)`.
+    let budget = 1..=2;
+    assert!(
+        budget.contains(&spawns.len()),
+        "MinDebris=1, MaxDebris=2 pins one or two pieces"
+    );
+    assert!(
+        spawns
+            .iter()
+            .all(|spawn| (spawn.x, spawn.y) == (location.0 + 256, location.1 + 256)),
         "one cell in from the top-left for a 3x3"
     );
 }
@@ -11782,6 +13286,70 @@ fn clusters_scatter_around_the_impact() {
     }
 }
 
+/// Phobos `BulletClass_Explode_Cluster` (`0x46902C`,
+/// `Ext/Bullet/Hooks.cpp:352-378`): the firing type's
+/// `ClusterScatter.Min=`/`Max=` replace the stock 256..512 lepton bounds of
+/// each cluster successor's distance from the impact.
+#[test]
+fn phobos_cluster_scatter_overrides_the_successor_distance() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n\
+         [VehicleTypes]\n0=LAUNCHER\n\
+         [AircraftTypes]\n\
+         [BuildingTypes]\n\
+         [LAUNCHER]\nStrength=100\nPrimary=ClusterGun\n\
+         [ClusterGun]\nDamage=10\nProjectile=ClusterP\nWarhead=Blast\n\
+         [ClusterP]\nCluster=5\nClusterScatter.Min=0.5\nClusterScatter.Max=0.5\n\
+         [Warheads]\n0=Blast\n[Animations]\n0=EXPLOSML\n\
+         [Blast]\nAnimList=EXPLOSML\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("cluster rules");
+    initialize_fixture_anim_types(&mut rules);
+    let mut interner = test_interner();
+    let mut entities = EntityStore::new();
+    let impact = ProjectileCoord::new(40 * 256 + 64, 50 * 256 + 200, 0);
+    let detonation = ProjectileDetonation {
+        projectile_id: 1,
+        source_id: 77,
+        target: ProjectileTarget::Cell { rx: 40, ry: 50 },
+        impact,
+        payload: payload_from_weapon(
+            10,
+            interner.intern("Blast"),
+            interner.intern("ClusterGun"),
+            &rules,
+            &mut interner,
+        ),
+        reason: ProjectileDetonationReason::ReachedTarget,
+    };
+    let mut trace = FixtureTrace::default();
+    emit_detonations(
+        &[detonation],
+        &mut entities,
+        &rules,
+        &mut interner,
+        false,
+        &mut SimRng::new(11),
+        Some(&mut trace),
+    );
+    let points: Vec<(i32, i32)> = trace
+        .constructed_anims
+        .iter()
+        .map(|effect| (effect.world_coord.x, effect.world_coord.y))
+        .collect();
+    assert_eq!(points.len(), 5, "one anim per cluster");
+    assert_eq!(points[0], (impact.x, impact.y), "the first at the impact");
+    for &(x, y) in &points[1..] {
+        let (dx, dy) = (f64::from(x - impact.x), f64::from(y - impact.y));
+        let distance = dx.hypot(dy);
+        assert!(
+            (127.0..=129.0).contains(&distance),
+            "ClusterScatter.Min=Max=0.5 puts every later cluster 128 leptons from the impact, got {distance}"
+        );
+    }
+}
+
 /// GSI-08.33 — `DirectRocker` is the chain's only conditional arm.
 ///
 /// `BulletClass::DetonateAtCoord @ 0x0046978e` tests the flag, then
@@ -11931,7 +13499,6 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
 
 /// The demo mod's own values: `RadColor=255,0,255`, `RadLightFactor=0.6`,
 /// `RadTintFactor=2.0`, duration x6 and a 400 level cap.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_demo_purple_values_reach_the_light() {
     let rules = phobos_radiation_rules();
@@ -11957,7 +13524,6 @@ fn phobos_demo_purple_values_reach_the_light() {
 /// replaces the retail activation with `RadSiteExt::CreateLight`, which tints
 /// from the bound type's `RadColor` with no theater test, so a purple field
 /// stays purple on a SNOW scenario.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_radiation_color_ignores_the_theater() {
     let rules = phobos_radiation_rules();
@@ -11986,7 +13552,6 @@ fn phobos_radiation_color_ignores_the_theater() {
 /// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
 /// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
 /// covers a game where Ares plays.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {
     let rules = radiation_rules();
@@ -12009,7 +13574,6 @@ fn retail_snow_theater_substitutes_red_and_blue() {
 
 /// Phobos `RadHasOwner`/`RadHasInvoker`: the site keeps the round's house and
 /// firer, and its damage call carries them.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_rad_has_owner_and_invoker_reach_the_site_and_its_damage() {
     let rules = phobos_radiation_rules();
@@ -12074,7 +13638,6 @@ fn phobos_rad_has_owner_and_invoker_reach_the_site_and_its_damage() {
 /// foundation's radiation on `RadApplicationDelay.Building` boundaries, and
 /// each type clamps its level at `RadLevelMax` and scales it by its own
 /// `RadLevelFactor` through its own warhead.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_buildings_take_radiation_on_the_building_delay() {
     let rules = phobos_radiation_rules();
@@ -12111,7 +13674,6 @@ fn phobos_buildings_take_radiation_on_the_building_delay() {
 /// The branch is opt-in: with no `RadApplicationDelay.Building` the shared
 /// gate's building delay is 0, which native treats as "skip". Immune
 /// buildings and a warhead that verses the armor at 0% stay untouched.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
     let mut rules = phobos_radiation_rules();
@@ -12151,11 +13713,76 @@ fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
     );
 }
 
+/// `RadBuildingDamageMaxCount` is read at both layers and projected into the
+/// effective type, but it caps nothing: Phobos' `BuildingClass_AI_Radiation`
+/// hook (`0x0043FB23`, `Ext/RadSite/Hooks.cpp:108-147`) declares its per-site
+/// `damageCounts` map at `:124` and reads it at `:147`, and nothing increments
+/// it, so `maxDamageCount > 0 && damageCounts[site] >= max` is `0 >= n` and
+/// never fires. This row pins that dormancy: with `1` on the global row and on
+/// the bound type, a building takes exactly the damage it takes without the
+/// key, so wiring a real cap has to come with a native body that increments.
+#[test]
+fn dormant_building_damage_max_count_leaves_damage_unchanged() {
+    let mut ini = phobos_radiation_ini();
+    ini.merge(&crate::rules::ini_parser::IniFile::from_str(
+        "[Radiation]\nRadBuildingDamageMaxCount=1\n\
+         [ToxicField]\nRadBuildingDamageMaxCount=1\n",
+    ));
+    let capped = RuleSet::from_ini(&ini).expect("capped radiation rules should parse");
+    assert_eq!(
+        crate::rules::phobos_radiation::effective_radiation(&capped, Some("ToxicField"))
+            .building_damage_max_count,
+        1,
+        "the bound type's read resolves through the effective projection"
+    );
+
+    let mut capped_sim = radiation_scene(&capped);
+    let capped_building = capped_sim
+        .spawn_object("RADBLDG", "Americans", 5, 5, 0, &capped)
+        .expect("building spawns");
+    irradiate_bound(&mut capped_sim, &capped, (5, 5), 500, 2, Some("ToxicField"));
+    for frame in [16, 32] {
+        rad_frame(&mut capped_sim, &capped, frame);
+    }
+    let capped_health = capped_sim
+        .substrate
+        .entities
+        .get(capped_building)
+        .unwrap()
+        .health
+        .current();
+
+    let rules = phobos_radiation_rules();
+    let mut stock_sim = radiation_scene(&rules);
+    let stock_building = stock_sim
+        .spawn_object("RADBLDG", "Americans", 5, 5, 0, &rules)
+        .expect("building spawns");
+    irradiate_bound(&mut stock_sim, &rules, (5, 5), 500, 2, Some("ToxicField"));
+    for frame in [16, 32] {
+        rad_frame(&mut stock_sim, &rules, frame);
+    }
+    let stock_health = stock_sim
+        .substrate
+        .entities
+        .get(stock_building)
+        .unwrap()
+        .health
+        .current();
+
+    assert_eq!(
+        stock_health, 250,
+        "two building-delay boundaries deal 250 each from 750"
+    );
+    assert_eq!(
+        capped_health, stock_health,
+        "a positive RadBuildingDamageMaxCount must not change building damage"
+    );
+}
+
 /// Phobos `RadSiteWarhead.Detonate`: with the key set, a site's damage is a
 /// warhead detonation at the target, so the warhead's `CellSpread` reaches
 /// neighbours the field itself never covered. The direct-receiver form stays
 /// on the target alone.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_rad_site_warhead_detonate_splashes_around_the_target() {
     let rules = phobos_radiation_rules();
@@ -12198,5 +13825,277 @@ fn phobos_rad_site_warhead_detonate_splashes_around_the_target() {
         plain.substrate.entities.get(far).unwrap().health.current(),
         300,
         "the direct receiver leaves the neighbour alone"
+    );
+}
+
+/// Phobos `CanC4.AllowZeroDamage` (`Ext/BuildingType/Hooks.cpp:182-195`)
+/// replaces the `ObjectClass::ReceiveDamage` building minimum at `0x5F5416`:
+/// a zero packet is floored to 1 only while the key is off, and the vanilla
+/// `< 1` floor (which also covers healing packets) no longer runs.
+#[test]
+fn phobos_can_c4_allow_zero_damage_replaces_the_building_minimum() {
+    fn rules(allow: bool) -> RuleSet {
+        let allow = if allow {
+            "CanC4.AllowZeroDamage=yes\n"
+        } else {
+            ""
+        };
+        let ini = IniFile::from_str(&format!(
+            "[Clear]\nBuildable=yes\n\
+             [VehicleTypes]\n0=SOURCE\n\
+             [BuildingTypes]\n0=BRKS\n1=SAFE\n\
+             [SOURCE]\nStrength=100\nArmor=heavy\n\
+             [BRKS]\nStrength=500\nArmor=wood\nCanC4=no\n{allow}\
+             [SAFE]\nStrength=500\nArmor=wood\nCanC4=yes\n{allow}\
+             [Warheads]\n0=HITWH\n1=ZEROWH\n\
+             [HITWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [ZEROWH]\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+             [VoxelAnims]\n0=BOUNCE\n[BOUNCE]\nDamage=7\n",
+        ));
+        let art = IniFile::from_str("[BRKS]\nFoundation=1x1\n[SAFE]\nFoundation=1x1\n");
+        RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("CanC4 zero-damage rules")
+    }
+    let hit = |sim: &mut crate::sim::world::Simulation,
+               rules: &RuleSet,
+               source: u64,
+               target: u64,
+               warhead: &str,
+               damage: i32,
+               writeback: bool| {
+        let mut event = EntityDamageEvent::direct_receiver(
+            target,
+            damage,
+            0,
+            source,
+            None,
+            sim.interner.intern(warhead),
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        if writeback {
+            event = event.with_damage_writeback(Some(DamageWriteback::VoxelType(
+                crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
+            )));
+        }
+        let _ = sim.commit_direct_damage_receiver(
+            rules,
+            None,
+            event,
+            crate::sim::world::FrameEffects::default(),
+        );
+    };
+    for (allow, brks_health) in [(false, 499), (true, 500)] {
+        let rules = rules(allow);
+        for (type_name, expected) in [("BRKS", brks_health), ("SAFE", 500)] {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xCA0C_4000);
+            let source = sim
+                .spawn_object("SOURCE", "Americans", 10, 10, 0, &rules)
+                .expect("source spawns");
+            let target = sim
+                .spawn_object(type_name, "Russians", 12, 10, 0, &rules)
+                .expect("building spawns");
+            // Raw damage 10 is non-zero, but Verses lowers it to 0, the
+            // packet the Object minimum actually sees.
+            hit(&mut sim, &rules, source, target, "ZEROWH", 10, true);
+            assert_eq!(
+                sim.substrate.entities.get(target).unwrap().health.current(),
+                expected,
+                "allow_zero={allow} {type_name}: a Verses-zeroed packet"
+            );
+            let floored = type_name == "BRKS" && !allow;
+            let written: Vec<_> = sim.voxel_type_damage_entries().collect();
+            assert_eq!(
+                written,
+                vec![(
+                    crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
+                    i32::from(floored)
+                )],
+                "allow_zero={allow} {type_name}: the caller-owned packet field"
+            );
+        }
+    }
+    // The hook skips the entire vanilla floor, so a healing packet survives
+    // even with the key off, where vanilla would turn it into 1 damage.
+    let rules = rules(false);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xCA0C_4001);
+    let source = sim
+        .spawn_object("SOURCE", "Americans", 10, 10, 0, &rules)
+        .expect("source spawns");
+    let target = sim
+        .spawn_object("BRKS", "Russians", 12, 10, 0, &rules)
+        .expect("building spawns");
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .health
+        .set_for_test(400);
+    hit(&mut sim, &rules, source, target, "HITWH", -50, false);
+    assert_eq!(
+        sim.substrate.entities.get(target).unwrap().health.current(),
+        450,
+        "the replaced body does not floor negative packets"
+    );
+}
+
+/// `[WarheadType] CanKill` through the production receiver
+/// (`Ext/Techno/Hooks.ReceiveDamage.cpp:178-188`): `NOKILL` carries
+/// `CanKill=no`, `HIT` leaves it unset and therefore keeps the native `true`
+/// default (`Ext/WarheadType/Body.cpp:369`).
+fn can_kill_scene() -> (crate::sim::world::Simulation, RuleSet, u64, u64) {
+    const VERSES: &str = "Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    let ini = IniFile::from_str(&format!(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=MTNK\n\
+         [Warheads]\n0=HIT\n1=NOKILL\n\
+         [MTNK]\nStrength=100\nSpeed=6\nArmor=heavy\n\
+         [HIT]\n{VERSES}\
+         [NOKILL]\nCanKill=no\n{VERSES}"
+    ));
+    let rules = RuleSet::from_ini(&ini).expect("the CanKill fixture parses");
+    let mut sim = crate::sim::world::Simulation::with_seed(0x88CA_0057);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let victim = sim
+        .spawn_object("MTNK", "Americans", 4, 4, 0, &rules)
+        .expect("the victim spawns");
+    let attacker = sim
+        .spawn_object("MTNK", "Russians", 5, 4, 0, &rules)
+        .expect("the attacker spawns");
+    (sim, rules, victim, attacker)
+}
+
+/// One 100-damage hit on the victim through `commit_entities`; `forced` sets
+/// `args->IgnoreDefenses`, the branch that skips the whole shield block.
+fn can_kill_hit(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &RuleSet,
+    victim: u64,
+    attacker: u64,
+    warhead: &str,
+    forced: bool,
+) {
+    let source_house = sim
+        .substrate
+        .entities
+        .get(attacker)
+        .map(|attacker| attacker.owner());
+    let warhead = sim.interner.intern(warhead);
+    let event = if forced {
+        EntityDamageEvent::direct_receiver(
+            victim,
+            100,
+            0,
+            attacker,
+            source_house,
+            warhead,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        )
+    } else {
+        EntityDamageEvent::area(victim, 100, 0, attacker, source_house, warhead)
+    };
+    crate::sim::combat::world_receiver::commit_entities(
+        sim,
+        &mut crate::sim::combat::world_receiver::ReceiverRun::default(),
+        &[event],
+        None,
+        rules,
+        None,
+    );
+}
+
+fn can_kill_victim_alive(sim: &crate::sim::world::Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.lifecycle.object_alive())
+}
+
+/// `:184-187` with the warhead half of `:178`: a lethal packet from a
+/// `CanKill=no` warhead leaves `Health` and `EstimatedHealth` at 1 and the
+/// receiver packet at 0, which the replaced `SkipLowDamageCheck` lets through
+/// untouched, so the victim keeps living. The same packet from the default
+/// warhead kills.
+#[test]
+fn can_kill_no_leaves_one_health_and_skips_the_low_damage_check() {
+    for (warhead, survives) in [("NOKILL", true), ("HIT", false)] {
+        let (mut sim, rules, victim, attacker) = can_kill_scene();
+        sim.substrate
+            .entities
+            .get_mut(victim)
+            .unwrap()
+            .health
+            .set(50);
+        can_kill_hit(&mut sim, &rules, victim, attacker, warhead, false);
+        if survives {
+            let entity = sim
+                .substrate
+                .entities
+                .get(victim)
+                .expect("the clamped victim stays in the world");
+            assert_eq!(entity.health.current(), 1, "{warhead}: 1 HP, not 0");
+            assert_eq!(
+                entity.estimated_health.get(),
+                1,
+                "{warhead}: the estimate is written with the health"
+            );
+            assert!(
+                entity.lifecycle.object_alive(),
+                "{warhead}: no kill is consumed"
+            );
+        } else {
+            assert!(
+                !can_kill_victim_alive(&sim, victim),
+                "{warhead}: the unset key keeps the lethal hit"
+            );
+        }
+    }
+}
+
+/// `:181`: the clamp needs the warhead's total damage to reach the target's
+/// health, so a packet that would not kill applies in full.
+#[test]
+fn can_kill_no_still_lets_a_nonlethal_hit_through() {
+    let (mut sim, rules, victim, attacker) = can_kill_scene();
+    sim.substrate
+        .entities
+        .get_mut(victim)
+        .unwrap()
+        .health
+        .set(300);
+    can_kill_hit(&mut sim, &rules, victim, attacker, "NOKILL", false);
+    let entity = sim
+        .substrate
+        .entities
+        .get(victim)
+        .expect("the nonlethal victim stays");
+    assert_eq!(
+        entity.health.current(),
+        200,
+        "100 damage against 300 health lands in full"
+    );
+    assert!(entity.lifecycle.object_alive());
+}
+
+/// `:141`: the shield block this arm lives in is skipped when
+/// `args->IgnoreDefenses` is set, so a forced hit is never clamped — C4
+/// damage still kills an `Unkillable` carrier.
+#[test]
+fn an_ignore_defenses_hit_bypasses_the_can_kill_clamp() {
+    let (mut sim, rules, victim, attacker) = can_kill_scene();
+    sim.substrate
+        .entities
+        .get_mut(victim)
+        .unwrap()
+        .health
+        .set(50);
+    can_kill_hit(&mut sim, &rules, victim, attacker, "NOKILL", true);
+    assert!(
+        !can_kill_victim_alive(&sim, victim),
+        "a forced hit bypasses the clamp"
     );
 }

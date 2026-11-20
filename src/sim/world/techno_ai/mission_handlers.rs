@@ -51,6 +51,10 @@ mod campaign_hunt_oracle_tests;
 #[path = "area_guard_post_tests.rs"]
 mod area_guard_post_tests;
 
+#[cfg(all(test, tests_sim_world_techno))]
+#[path = "phobos_harvester_guard_tests.rs"]
+mod phobos_harvester_guard_tests;
+
 /// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: a Unit or
 /// Infantry that passes `MissionClass::AI`'s gate
 /// ([`GameEntity::mission_handler_due`]; harvest_attack_return.json
@@ -626,6 +630,7 @@ pub(crate) fn dispatch_foot_mission(
             if !bunker_unload
                 && sim.substrate.entities.get(id).is_some_and(|entity| {
                     crate::sim::transport_unload::is_vehicle_transport_type(sim, entity, rules)
+                        && !crate::sim::deploy::phobos_unload_skips_passengers(sim, entity, rules)
                 }) =>
         {
             MissionHandlerEvaluation::cadence(crate::sim::transport_unload::unit_mission_unload(
@@ -659,6 +664,17 @@ pub(crate) fn dispatch_foot_mission(
                 return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
+        }
+        // Phobos `SkipPassengers` (`0x73DCD3`, hook `0x73D63B`,
+        // `Ext/Unit/Hooks.Unload.cpp:53-58`): a transport that skips its
+        // passenger unload but has no deploy-fire/DeploysInto/IsSimpleDeployer
+        // arm ends at the FootClass Mission_Unload stub (`0x4DA2B0`).
+        (EntityCategory::Unit, Some(MissionType::Unload))
+            if sim.substrate.entities.get(id).is_some_and(|entity| {
+                crate::sim::deploy::phobos_unload_skips_passengers(sim, entity, rules)
+            }) =>
+        {
+            MissionHandlerEvaluation::cadence(crate::sim::mission::MISSION_STUB_FRAMES)
         }
         // The harvester branch of `UnitClass::Mission_Unload @ 0x0073D630`
         // (`0x0073D672` → `0x0073DEE0`) for a harvester on its refinery pad.
@@ -1610,6 +1626,7 @@ fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super:
             .get(target)
             .is_some_and(|target| target.category() == EntityCategory::Structure),
         crate::sim::combat::TargetKind::Cell(..) => false,
+        crate::sim::combat::TargetKind::Bullet(..) => false,
     };
     let mission = if object.engineer && !c4 {
         MissionType::Capture
@@ -1864,7 +1881,9 @@ fn foot_threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
     } else {
         [0, 0]
     };
-    crate::sim::combat::threat_range::threat_range_leptons(object, 1, ranges)
+    let area_guard =
+        actor.mission.effective().known() == Some(crate::sim::mission::MissionType::AreaGuard);
+    crate::sim::combat::threat_range::threat_range_leptons(object, 1, ranges, area_guard)
 }
 
 fn scaled_area_guard_leash(range: i32) -> i32 {
@@ -2119,11 +2138,47 @@ pub(super) fn evaluate_foot_area_guard(
     }
     sim.area_guard_navigation_head(id, rules, ctx.effects);
     area_guard_post_off_building(sim, id);
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.category() == EntityCategory::Unit && entity.is_harvester())
+    // Phobos `FootClass_MissionAreaGuard_Miner @ 0x4D6D34`
+    // (`Ext/Unit/Hooks.Harvester.cpp:71-90`): a human-owned Unit harvester
+    // whose type sets `Harvester.CanGuardArea` jumps past the stock Harvest
+    // switch; `RequireTarget` asks `TargetAndEstimateDamage(Location,
+    // ThreatType::Area)`, the Area Guard threat scan, first.
+    let keep_area_guard = {
+        let key = sim.substrate.entities.get(id).is_some_and(|entity| {
+            // The hook sits inside the stock harvester arm: only a Unit whose
+            // type is `Harvester=` reaches it (`0x4D6D24`, `0x4D6D2C`).
+            entity.category() == EntityCategory::Unit
+                && entity.is_harvester()
+                && sim.owner_is_human(entity.owner())
+                && sim
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.phobos_harvester_guard.can_guard_area)
+        });
+        let require_target = sim.substrate.entities.get(id).is_some_and(|entity| {
+            sim.object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.phobos_harvester_guard.require_target)
+        });
+        let location = sim.substrate.entities.get(id).map(|entity| {
+            let coord = crate::sim::movement::ground_pose::object_location(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            );
+            [coord.x, coord.y, coord.z]
+        });
+        key && (!require_target
+            || super::target_scan::scan(
+                sim,
+                id,
+                rules,
+                crate::sim::combat::ScanMission::AreaGuard,
+                ctx,
+                location,
+            ))
+    };
+    if !keep_area_guard
+        && sim.substrate.entities.get(id).is_some_and(|entity| {
+            entity.category() == EntityCategory::Unit && entity.is_harvester()
+        })
     {
         // Foot4D6D34..4D6D68: Queue(Harvest,0), unconditional Commence,
         // then Scenario RandomRanged(1,10)+1. Commence is deliberately not

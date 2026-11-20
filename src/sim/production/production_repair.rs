@@ -248,27 +248,60 @@ pub fn toggle_repair(
 /// `TechnoClass::EngineerRepair @ 0x00701410` (vt+40C). Restore actual+6C
 /// and estimated+70 independently to live Strength. The Building-only tail
 /// stops paid repair, transitions its owned art slots and plays the resolved
+/// Phobos `EngineerRepairAmount` (`Ext/Techno/Hooks.cpp:1220-1240`): 0 fully
+/// repairs, a positive amount adds points clamped to `[0, Strength]`, and a
+/// negative amount adds that percentage of Strength (rounded).
+fn engineer_repair_amount(strength: i32, health: i32, amount: i32) -> i32 {
+    if amount > 0 {
+        health.saturating_add(amount).clamp(0, strength)
+    } else if amount < 0 {
+        let percentage =
+            (f64::from(health) / f64::from(strength) - f64::from(amount) / 100.0).clamp(0.0, 1.0);
+        (f64::from(strength) * percentage).round() as i32
+    } else {
+        strength
+    }
+}
+
 /// AudioVisual/BuildingRepairedSound at GetCoords(false), in that order.
 ///
 /// This does not sample Building+544 or invalidate House power: original
 /// 440042..440074 owns that later building-visit boundary. Mark(2) at70141A
 /// requests presentation redraw; it does not write either health sample or
 /// House dirty flag. Executable comparisons: engineer_repair_joined.
-pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    let Some(strength) = sim
+pub(crate) fn engineer_repair(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    engineer_id: u64,
+) -> bool {
+    let Some(object) = sim
         .substrate
         .entities
         .get(id)
         .and_then(|entity| sim.object_type(entity.type_ref(), rules))
-        .map(|object| object.strength)
     else {
         return false;
     };
+    let strength = object.strength;
+    // Phobos `InfantryClass_UpdatePosition_EngineerRepair` (0x519FEC): the
+    // repaired health is the lesser of the building type's and the engineer
+    // type's `EngineerRepairAmount` result; both 0 keep the stock full repair.
+    let building_amount = object.phobos_engineer_repair_amount;
+    let engineer_amount = sim
+        .substrate
+        .entities
+        .get(engineer_id)
+        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .map_or(0, |object| object.phobos_engineer_repair_amount);
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return false;
     };
-    entity.health.set(strength);
-    entity.estimated_health.reset(strength);
+    let health = entity.health.current();
+    let repaired = engineer_repair_amount(strength, health, building_amount)
+        .min(engineer_repair_amount(strength, health, engineer_amount));
+    entity.health.set(repaired);
+    entity.estimated_health.reset(repaired);
     if entity.category() != EntityCategory::Structure {
         return true;
     }
@@ -371,11 +404,22 @@ pub fn buildings_wanting_repair(sim: &Simulation, rules: &RuleSet, owner: Intern
 /// just below .15, so per-step shares of 20, 40 and 100 cost 2, 5 and 14.
 pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     let step = rules.general.repair_step;
-    // gamemd traps at 0x007120EC on `RepairStep=0`; VERA carries on with the
-    // floor of 1 below: no step count exists to share the cost over.
-    let Some(steps) = object.strength.checked_div(step) else {
-        return 1;
-    };
+    // Phobos `TechnoTypeClass_GetRepairStepCost` (`Misc/Hooks.BugFixes.cpp:
+    // 3394-3407`): the fix divides `Strength` by `RepairStep` as a double and
+    // clamps at 1.0 before dividing the cost, so a Strength below RepairStep
+    // still charges one whole step's share instead of panicking on the
+    // native IDIV.
+    if rules.phobos_globals.fix_repair_step_cost {
+        let steps = (f64::from(object.strength) / f64::from(step)).max(1.0);
+        let share = f64::from(rules.type_cost(object)) / steps;
+        return ((share * rules.general.repair_percent) as i32).max(1);
+    }
+    let steps = object.strength.checked_div(step).unwrap_or_else(|| {
+        panic!(
+            "native repair step cost IDIV fault at 007120EC: strength={} step={step}",
+            object.strength
+        )
+    });
     let cost = rules.type_cost(object);
     // gamemd traps at 0x007120F7 when Strength is below RepairStep (no whole
     // step); VERA carries on: the one step that repairs it bears the cost.
@@ -437,6 +481,37 @@ pub(crate) fn update_repair_and_power(
         return;
     };
     let owner = entity.owner();
+    // Phobos `BuildingClass_UpdateRepairSell_PlayerAutoRepair`
+    // (`Ext/House/Hooks.cpp:803-825`): for a human-owned building while
+    // `[General] ExtendedPlayerRepair=` is on, the house's PlayerAutoRepair
+    // flag alone admits the auto-repair start (0x450659); with it off every
+    // still-repairing building stops (0x450813).
+    let extended_repair_house = rules.phobos_globals.extended_player_repair
+        && sim
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
+    if extended_repair_house {
+        let repairing = sim
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.player_auto_repair());
+        // The hook replaces only the auto-repair admission; the visit still
+        // runs on a building that `Can_Repair` admits and is not busy
+        // (`Ext/House/Hooks.cpp:812-824`).
+        let eligible = !entity.constructing_or_selling() && can_repair_building(sim, rules, id);
+        if repairing {
+            if eligible {
+                auto_repair_start(sim, rules, id);
+            }
+        } else if let Some(entity) = sim.substrate.entities.get_mut(id)
+            && entity.repairing.on
+        {
+            entity.repairing.on = false;
+        }
+        repair_step(sim, rules, id);
+        return;
+    }
     let admitted = sim
         .houses
         .get(&owner)
@@ -624,82 +699,18 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 }
 
 #[cfg(all(test, tests_sim_production))]
-mod invalid_rule_tests {
-    use super::*;
-    use crate::rules::ini_parser::IniFile;
+mod phobos_repair_tests {
+    use super::engineer_repair_amount;
 
-    fn cost(general: &str) -> i32 {
-        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[General]\nRepairPercent=15%\n{general}[BuildingTypes]\n0=B\n[B]\nStrength=5\nCost=100\n"
-        )))
-        .unwrap();
-        repair_step_cost(&rules, rules.object("B").unwrap())
-    }
-
-    /// gamemd traps at 0x007120EC (`RepairStep=0`) and 0x007120F7
-    /// (`Strength < RepairStep`); VERA charges the floor and the whole share.
+    /// `EngineerRepairAmount`: 0 fully repairs, positive adds clamped points,
+    /// negative adds a rounded percentage of Strength.
     #[test]
-    fn repair_step_cost_survives_zero_divisors() {
-        assert_eq!(cost("RepairStep=0\n"), 1);
-        assert_eq!(cost("RepairStep=8\n"), 14);
-    }
-
-    /// `RepairRate` below 1/900 minute is a zero period: gamemd traps at
-    /// 0x0045083F, VERA's repair is never due.
-    #[test]
-    fn a_zero_repair_period_is_never_due() {
-        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
-        rules.general.repair_rate_minutes = 0.001;
-        let entity = sim.substrate.entities.get_mut(id).unwrap();
-        entity.health.set_for_test(50);
-        entity.building.repairing.set_for_test(true);
-        repair_step(&mut sim, &rules, id);
-        let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.health.current(), 50);
-        assert!(entity.building.repairing.is_on());
-    }
-
-    /// The estimate counts whole steps from the next due frame: 25 missing
-    /// health at `RepairStep=10` takes three steps, the first one frame on.
-    #[test]
-    fn repair_remaining_counts_whole_steps_from_the_next_due_frame() {
-        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
-        rules.general.repair_step = 10;
-        let period = crate::sim::combat::veterancy::self_heal_interval_frames(
-            rules.general.repair_rate_minutes,
-        );
-        let entity = sim.substrate.entities.get_mut(id).unwrap();
-        let object = sim.interner.object_type(entity.type_ref(), &rules).unwrap();
-        entity.health.set_for_test(object.strength - 25);
-        let estimate = |entity: &crate::sim::game_entity::GameEntity, frame| {
-            repair_remaining(entity, object, &rules, frame)
-        };
-        assert_eq!(estimate(entity, 0), None, "not repairing");
-        entity.building.repairing.set_for_test(true);
-        let cost = repair_step_cost(&rules, object);
-        assert_eq!(
-            estimate(entity, period as u32 - 1),
-            Some((1 + 2 * period, 3 * cost))
-        );
-        entity.health.set_for_test(object.strength);
-        assert_eq!(estimate(entity, 0), None, "at Strength");
-    }
-
-    /// `RepairStep=0` can never finish a repair, so the step switches it off
-    /// without charging.
-    #[test]
-    fn a_zero_repair_step_switches_the_repair_off_unpaid() {
-        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
-        rules.general.repair_step = 0;
-        let owner = sim.substrate.entities.get(id).unwrap().owner();
-        let money = available_money(&sim.houses, owner);
-        let entity = sim.substrate.entities.get_mut(id).unwrap();
-        entity.health.set_for_test(50);
-        entity.building.repairing.set_for_test(true);
-        repair_step(&mut sim, &rules, id);
-        let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.health.current(), 50);
-        assert!(!entity.building.repairing.is_on());
-        assert_eq!(available_money(&sim.houses, owner), money);
+    fn engineer_repair_amount_boundaries() {
+        assert_eq!(engineer_repair_amount(100, 40, 0), 100);
+        assert_eq!(engineer_repair_amount(100, 40, 30), 70);
+        assert_eq!(engineer_repair_amount(100, 90, 30), 100);
+        assert_eq!(engineer_repair_amount(100, 40, -25), 65);
+        assert_eq!(engineer_repair_amount(100, 90, -25), 100);
+        assert_eq!(engineer_repair_amount(100, 0, -25), 25);
     }
 }

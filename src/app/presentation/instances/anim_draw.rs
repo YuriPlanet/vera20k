@@ -25,6 +25,44 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::TerrainPiece;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 
+/// Phobos `DeployingAnim.UseUnitDrawer` (`Ext/Unit/Hooks.SimpleDeployer.cpp:89-93`):
+/// when `anim` is the owner Unit's retained deploy animation, its light
+/// follows that Unit's drawer arm: flash/curtain intensity plus the shield and
+/// AttachEffect colour word. The `IsBuildingAnim` half is the instance
+/// `use_cell_drawer` flag written at construction.
+///
+/// RESIDUAL: the owner's class colour words (berserk, shield/curtain word and
+/// the `TintColorAirstrike` word) are not applied here; only the shared
+/// custom tint and the effect intensity are.
+pub(crate) fn deploy_unit_drawer_light(
+    anim: &crate::sim::anim_class::AnimObject,
+    stable_id: u64,
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    tint: [f32; 3],
+    light: PaletteLight,
+) -> Option<([f32; 3], PaletteLight)> {
+    if !anim.use_cell_drawer() {
+        return None;
+    }
+    let owner = anim.owner_entity()?;
+    let entity = sim.entities().get(owner)?;
+    if entity.deploy_anim() != Some(stable_id) {
+        return None;
+    }
+    let word = crate::app::presentation::lighting::custom_tint(entity, sim, rules).0;
+    let (tint, light) = crate::app::presentation::lighting::techno_effect_light(
+        entity,
+        tint,
+        light,
+        sim,
+        Some(rules),
+        sim.airstrike_tint_active(entity.stable_id()),
+        crate::app::presentation::lighting::TechnoDraw::Shape,
+    );
+    Some((tint, light.with_colour_word(light.colour_word() | word)))
+}
+
 pub(super) struct AnimDrawInput<'a> {
     pub key: &'a ShpSpriteKey,
     /// A zero-size body frame has no atlas entry but can have a visible shadow.
@@ -149,9 +187,17 @@ pub(super) fn anim_draw_pieces(
     if tiled {
         if let Some(entry) = entry {
             let frame_zero = tiled_anim_key(&input.key.type_id, 0);
-            let height = atlas
+            let mut height = atlas
                 .get(&frame_zero)
                 .map_or(0, |frame| frame.pixel_size[1] as i32);
+            // Phobos `AnimClass_DrawIt_Tiled_Interval` (`0x423654`,
+            // `Ext/Anim/Hooks.cpp:431-446`): a positive `Tiled.Interval`
+            // replaces the frame-height term before the halving and row step.
+            if let Some(config) = input.config
+                && config.phobos_tiled_interval > 0
+            {
+                height = config.phobos_tiled_interval;
+            }
             pieces.extend(
                 tiled_column(&input, entry, body, height)
                     .into_iter()
@@ -257,6 +303,12 @@ fn bounce_ground_shadow(
     entry: Option<&ShpSpriteEntry>,
     body: SpriteInstance,
 ) -> Option<ObjectPieceInstance> {
+    // Phobos `ExtraShadow=false` skips this pass (hook `0x423365`,
+    // `Ext/Anim/Hooks.cpp:463-480`), which the 4233EE target reaches after the
+    // HasExtras test; the body and its `Shadow=` pass stay.
+    if input.config.is_some_and(|config| !config.extra_shadow) {
+        return None;
+    }
     let (drop, entry) = (input.bounce_drop_px?, entry?);
     let y_draw_offset = input.config.map_or(0, |config| config.y_draw_offset);
     let row = input.point[1] + drop as f32;
@@ -292,15 +344,17 @@ fn bounce_ground_shadow(
 
 /// DrawIt's Tiled arm (`0x00423644..0x0042371B`): the body frame again and
 /// again up the screen. `height` is frame 0's stored height h
-/// (`SHPStruct::GetFrameBounds @ 0x0069E7E0`). The first tile's row is the
-/// draw point less h/2, and its Z term `YDrawOffset + ZAdjust -
-/// AdjustForZ - 50`, 48 below the ordinary body's; each next tile rises h
-/// rows and its Z term falls h/2 + h. The loop stops after the tile whose
-/// row, before YDrawOffset, is above the view. Every tile draws through the
-/// literal ANIM.PAL Convert (`[0x0087F6C0]`) with no remap, the selected
-/// flags plus Z read (`0x004236A4`), gradient 2 and the shared intensity and
-/// colour word: neither the cell, ColorScheme nor AltPalette Convert DrawIt
-/// selected reaches it. No Shadow= pass follows.
+/// (`SHPStruct::GetFrameBounds @ 0x0069E7E0`), unless Phobos' `Tiled.Interval`
+/// replaced it. The first tile's row is the draw point less h/2
+/// (`0x423660`'s halving, which Phobos' `Tiled.AlignToCenter` zeroes), and its
+/// Z term `YDrawOffset + ZAdjust - AdjustForZ - 50`, 48 below the ordinary
+/// body's; each next tile rises h rows and its Z term falls h/2 + h. The loop
+/// stops after the tile whose row, before YDrawOffset, is above the view.
+/// Every tile draws through the literal ANIM.PAL Convert (`[0x0087F6C0]`)
+/// with no remap, the selected flags plus Z read (`0x004236A4`), gradient 2
+/// and the shared intensity and colour word: neither the cell, ColorScheme
+/// nor AltPalette Convert DrawIt selected reaches it. No Shadow= pass
+/// follows.
 ///
 /// RESIDUAL: an empty frame 0 (h = 0) never moves the row, so gamemd loops
 /// forever unless the first row is already above the view; VERA draws the
@@ -311,7 +365,10 @@ fn tiled_column(
     body: SpriteInstance,
     height: i32,
 ) -> Vec<ObjectPieceInstance> {
-    let half = height / 2;
+    let align_to_center = input
+        .config
+        .is_some_and(|config| config.phobos_tiled_align_to_center);
+    let half = if align_to_center { 0 } else { height / 2 };
     let mut tile = body;
     tile.palette_light = PaletteLight::plain(53, body.palette_light.brightness())
         .with_colour_word(body.palette_light.colour_word());
@@ -341,6 +398,115 @@ fn tiled_column(
     tiles
 }
 
+/// `Unsorted::CellWidthInPixels`: the native 60-pixel cell width the Phobos
+/// building bracket X shift multiplies (`Ext/Anim/Hooks.cpp:313`).
+const CELL_WIDTH_IN_PIXELS: i32 = 60;
+
+/// Which native class arm the Phobos draw-offset hook takes. A Building uses
+/// `GetBuildingSelectBracketPosition(Top)` and the `Height`/foundation gates;
+/// every other Techno uses the `GetFootSelectBracketPosition` rect.
+#[derive(Clone, Copy)]
+pub(super) enum PhobosBracketOwner {
+    Building {
+        /// `BuildingTypeClass::Height` (ART `Height=`, signed): the Y gate.
+        art_height: i32,
+        /// `GetFoundationWidth()`: the X shift's cell count.
+        foundation_width: i32,
+    },
+    Foot {
+        /// `PixelSelectionBracketDelta`: the Y gate and shift.
+        pixel_selection_bracket_delta: i32,
+    },
+}
+
+/// Phobos `AnimClass_DrawIt_DrawOffset` (`0x423122`, alternate `0x422CD8`)
+/// selection-bracket arms: `pLocation->X/Y =` the owner's bracket anchor plus
+/// the type's adjusts, replacing the DrawIt location.
+///
+/// `anchor` is `GetBuildingSelectBracketPosition(..., Top)` for a building and
+/// `Anchor(invertX ? Left : Right, Top)` for a foot. The X arm subtracts the
+/// plain `XDrawOffset` because the atlas already baked it into the frame
+/// offset that the native assignment discards. `shield_bracket_delta` is the
+/// owner shield type's `BracketDelta` when the shield bar would draw; either
+/// arm then adds `BracketDelta - 3` (`SHIELD_HEALTHBAR_OFFSET`).
+pub(super) fn phobos_bracket_draw_point(
+    point: [f32; 2],
+    anchor: [f32; 2],
+    settings: &crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset,
+    owner: PhobosBracketOwner,
+    shield_bracket_delta: Option<i32>,
+) -> [f32; 2] {
+    let invert_x = settings.x_invert_bracket_shift;
+    let invert_y = settings.y_invert_bracket_shift;
+    let mut point = point;
+    match owner {
+        PhobosBracketOwner::Building {
+            art_height,
+            foundation_width,
+        } => {
+            // `(Height >= 0 && !invertY) || (Height < 0 && invertY)`.
+            if settings.y_apply_bracket_height && ((art_height >= 0) != invert_y) {
+                point[1] = anchor[1] + settings.y_adjust(true) as f32;
+            }
+            if settings.x_apply_bracket_width {
+                // `(int)(CellWidthInPixels * (width / 2.0) * (invert ? -1 : 1))`;
+                // exact in integers for every foundation width.
+                let shift = foundation_width * (CELL_WIDTH_IN_PIXELS / 2);
+                point[0] = anchor[0]
+                    + (if invert_x { -shift } else { shift }) as f32
+                    + settings.x_adjust(true) as f32
+                    - settings.x_draw_offset as f32;
+            }
+        }
+        PhobosBracketOwner::Foot {
+            pixel_selection_bracket_delta,
+        } => {
+            // `(Delta <= 0 && !invertY) || (Delta > 0 && invertY)`.
+            if settings.y_apply_bracket_height && ((pixel_selection_bracket_delta <= 0) != invert_y)
+            {
+                point[1] = anchor[1]
+                    + pixel_selection_bracket_delta as f32
+                    + settings.y_adjust(false) as f32;
+            }
+            if settings.x_apply_bracket_width {
+                point[0] =
+                    anchor[0] + settings.x_adjust(false) as f32 - settings.x_draw_offset as f32;
+            }
+        }
+    }
+    // `TechnoExt::GetShield`'s bracket delta plus the hardcoded shield
+    // health-bar offset, after either owner arm.
+    const SHIELD_HEALTHBAR_OFFSET: i32 = -3;
+    if settings.y_apply_bracket_height
+        && let Some(delta) = shield_bracket_delta
+        && ((delta <= 0) != invert_y)
+    {
+        point[1] += (delta + SHIELD_HEALTHBAR_OFFSET) as f32;
+    }
+    point
+}
+
+/// Resolve one DrawIt location through the Phobos draw-offset hook: the
+/// bracket overwrite, before the caller adds `AEDrawOffset`. The hook reads
+/// `pThis->OwnerObject`; a building slot animation has none, so only attached
+/// animations reach these arms.
+
+/// The owner shield type's `BracketDelta` while the shared shield-bar
+/// admission draws it: `!IsBrokenAndNonRespawning && (HealthRatio > 0 ||
+/// !Pips.HideIfNoStrength)`.
+fn shield_type_bracket_delta(
+    owner: &crate::sim::game_entity::GameEntity,
+    rules: &crate::rules::ruleset::RuleSet,
+    frame: i32,
+) -> Option<i32> {
+    let shield = owner.shield()?;
+    let ty = rules.shield_type(shield.type_name())?;
+    (!shield.broken_non_respawning(ty, frame)
+        && (shield.hp() > 0 || !ty.pips_hide_if_no_strength()))
+    .then(|| ty.bracket_delta())
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "anim_draw_tests.rs"]
 mod tests;

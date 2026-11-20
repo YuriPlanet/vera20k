@@ -85,7 +85,7 @@ Ares, Phobos and NPatch are orthogonal and mixable. Ares is in every build and a
 switches it on ([Ares](ares.md)); the other two are build features:
 
 ```sh
-cargo run --release --bin vera20k --features phobos,npatch
+cargo run --release --bin vera20k --features npatch
 ```
 
 Every implemented feature must keep working when Ares plays or the other capabilities are

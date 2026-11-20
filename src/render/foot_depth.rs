@@ -357,6 +357,57 @@ pub(crate) fn foot_z_adjust(
     foot_depth_terms(context, coefficients, lookup).z_adjust
 }
 
+/// Tunnel's `Z_Adjust @ 0x00729E50`, the only locomotion override of the
+/// `+0x38` slot (`0x55ABA0` for Walk/Hover/Fly/Jumpjet/Teleport and
+/// `0x4B4870` for Drive both return zero). `0x004DAFC0` calls it before
+/// `0x00704350` and keeps the answer in a third additive term, so the numbers
+/// below sit on top of `additional_z` and the fudge maximum.
+///
+/// `height` is the native `edi` (`0x729EB3`): the screen-Y gap between the
+/// object's `Location` and the ground point `0x578080` returns for its cell,
+/// both pushed through `0x6D2140` and differing only in Z. `fraction` is
+/// `(DigTimer.total - remaining) / total` from `0x729EDA`, one of the four
+/// `DigTimer` words counted here as elapsed/duration.
+pub(crate) fn tunnel_z_adjust(
+    state: u8,
+    facing_u16: u16,
+    elapsed_frames: u32,
+    duration_frames: u32,
+    height: i32,
+) -> i32 {
+    let fraction = if duration_frames == 0 {
+        1.0
+    } else {
+        f64::from(elapsed_frames.min(duration_frames)) / f64::from(duration_frames)
+    };
+    match state {
+        // DiggingIn `0x729F74`. The facing bucket is `((Current >> 7) + 1) >> 1`
+        // of the animated PrimaryFacing from `0x4C93D0`, masked to a byte; 71..=139
+        // snaps to the full 45 instead of interpolating the elapsed fraction.
+        // The `+0x34` latch at `0x729F8C` (set past 0.4) has no other reader,
+        // so only its threshold survives here.
+        2 => {
+            let bucket = ((u32::from(facing_u16) >> 7).wrapping_add(1) >> 1) & 0xff;
+            if (71..140).contains(&bucket) {
+                height.wrapping_add(TUNNEL_DIG_Z_PIXELS)
+            } else {
+                (f64::from(height) + f64::from(TUNNEL_DIG_Z_PIXELS) * fraction) as i32
+            }
+        }
+        // DugIn `0x729FCC`, Digging `0x729F40` and PreDigOut `0x729FDE` add the
+        // 844A9C/844A98 word (45) unconditionally.
+        3 | 4 | 5 => height.wrapping_add(TUNNEL_DIG_Z_PIXELS),
+        // DiggingOut `0x729F52` resorbs 45 over the remaining fraction.
+        6 => (f64::from(height) + f64::from(TUNNEL_DIG_Z_PIXELS) * (1.0 - fraction)) as i32,
+        // `0x729FEE` defers to the `0x55ABA0` base stub, so Idle, PreDigIn and
+        // DugOut contribute nothing.
+        _ => 0,
+    }
+}
+
+/// 844A98/844A9C, the depth of the tunnel burrow above its ground plane.
+const TUNNEL_DIG_Z_PIXELS: i32 = 45;
+
 /// Unit's final composite draw at 0x73B140, before its height > 16 test.
 /// The bridge arm consumes raw 0x703B10 / 0x703E70 results, independently of
 /// ZFudge coefficients. The other arm is NavCom plus radio slot zero's
@@ -705,5 +756,44 @@ mod tests {
                 "{name}: Foot total"
             );
         }
+    }
+
+    #[test]
+    fn tunnel_z_adjust_reproduces_the_native_state_table() {
+        // 0x729F40/0x729FCC/0x729FDE add the 844A9C/844A98 word unconditionally.
+        for state in [3, 4, 5] {
+            assert_eq!(tunnel_z_adjust(state, 0x4000, 7, 10, 12), 57);
+        }
+        // 0x729FEE defers to the 0x55ABA0 stub: no term for Idle, PreDigIn, DugOut.
+        for state in [0, 1, 7, 8] {
+            assert_eq!(tunnel_z_adjust(state, 0x4000, 5, 10, 12), 0);
+        }
+    }
+
+    #[test]
+    fn tunnel_digging_in_snaps_inside_its_facing_band() {
+        // Bucket 71..=139 is ((facing >> 7) + 1) >> 1, i.e. facing 0x4680..=0x8B7F.
+        for facing in [0x4680, 0x8000, 0x8b7f] {
+            assert_eq!(tunnel_z_adjust(2, facing, 0, 10, 12), 57);
+        }
+        // Just outside the band the elapsed fraction scales the 45 instead.
+        for facing in [0x467f, 0x8b80] {
+            assert_eq!(tunnel_z_adjust(2, facing, 5, 10, 12), 34);
+        }
+        // 0x729FB4 truncates the sum of height and 45*fraction, not 45*fraction alone.
+        assert_eq!(tunnel_z_adjust(2, 0, 1, 4, -17), -5);
+        // A zero total short-circuits to fraction 1.0 at 0x729ED0.
+        assert_eq!(tunnel_z_adjust(2, 0x4000, 0, 0, 12), 57);
+    }
+
+    #[test]
+    fn tunnel_digging_out_keeps_the_unelapsed_share() {
+        // 0x729F52: 45*(1 - fraction) + height.
+        assert_eq!(tunnel_z_adjust(6, 0, 0, 10, 12), 57);
+        assert_eq!(tunnel_z_adjust(6, 0, 5, 10, 12), 34);
+        assert_eq!(tunnel_z_adjust(6, 0, 10, 10, 12), 12);
+        // Elapsed past the duration clamps at fraction 1.0 instead of going negative.
+        assert_eq!(tunnel_z_adjust(6, 0, 30, 10, 12), 12);
+        assert_eq!(tunnel_z_adjust(2, 0, 30, 10, 12), 57);
     }
 }

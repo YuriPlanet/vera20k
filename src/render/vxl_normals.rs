@@ -224,6 +224,48 @@ const YR_WORLD_LIGHT: Vec3 = Vec3::new(
     f32::from_bits(0x3eff_ffed),
 );
 
+/// `Matrix3D::VoxelDefaultMatrix`, the 3x4 the startup
+/// `VXL_LightDirection_Setup @ 0x00754C00` build leaves (`0x0052BDF5` calls it
+/// with the retail float at `0x007E1E68`). Native-executed bits:
+/// `tools/voxel_oracle/lighting.json` `voxel_default_matrix_bits`.
+const VOXEL_DEFAULT_MATRIX: [[f32; 3]; 3] = [
+    [
+        f32::from_bits(0x3f35_04f3),
+        0.0,
+        f32::from_bits(0x3f35_04f3),
+    ],
+    [0.0, 1.0, 0.0],
+    [
+        f32::from_bits(0xbf35_04f3),
+        0.0,
+        f32::from_bits(0x3f35_04f3),
+    ],
+];
+
+/// Phobos `ReplaceVoxelLightSources` (`Ext/Rules/Body.cpp:1189-1207`):
+/// `Matrix3D::VoxelDefaultMatrix * Vector3D(source).Normalized()`. A zero
+/// source keeps the startup light (VERA-internal guard; native's
+/// `Normalized` would divide by zero).
+fn voxel_world_light(source: [f32; 3]) -> Vec3 {
+    let squared = source[0] * source[0] + source[1] * source[1] + source[2] * source[2];
+    if !(squared > 0.0) {
+        return YR_WORLD_LIGHT;
+    }
+    let length = squared.sqrt();
+    let unit = [source[0] / length, source[1] / length, source[2] / length];
+    Vec3::new(
+        VOXEL_DEFAULT_MATRIX[0][0] * unit[0]
+            + VOXEL_DEFAULT_MATRIX[0][1] * unit[1]
+            + VOXEL_DEFAULT_MATRIX[0][2] * unit[2],
+        VOXEL_DEFAULT_MATRIX[1][0] * unit[0]
+            + VOXEL_DEFAULT_MATRIX[1][1] * unit[1]
+            + VOXEL_DEFAULT_MATRIX[1][2] * unit[2],
+        VOXEL_DEFAULT_MATRIX[2][0] * unit[0]
+            + VOXEL_DEFAULT_MATRIX[2][1] * unit[1]
+            + VOXEL_DEFAULT_MATRIX[2][2] * unit[2],
+    )
+}
+
 fn fp(value: f32) -> X87Value {
     Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits()))
         .expect("voxel lighting uses finite normal floats")
@@ -255,12 +297,15 @@ fn positive(value: X87Value) -> X87Value {
 /// and 0x007586F0, including `Sqrt_Approx @ 0x004CAC40`. Native vectors
 /// exercise every flat facing in both normal modes, not every rocking pose
 /// or the final rasterized image. See `tools/voxel_oracle/lighting.py`.
-pub fn blinn_phong_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
+pub fn blinn_phong_pages(normals_mode: u8, draw_rotation: Mat3, light: VoxelLight) -> [u8; 256] {
     // Native leaves the gap between the mode's table and slot 253 stale.
     // Retail model indices only use the valid table and fixed ambient tail.
     let mut result = [0u8; 256];
-    let light = model_light(draw_rotation);
-    let half_z = Fpu::add(light[2], Fpu::load_i32(1));
+    let fixed_lighting = light.fixed;
+    let light = model_light(draw_rotation, light.world);
+    // Phobos `VoxelCalcNormals_NullAdditionalVector` (`0x753D86`) replaces the
+    // stock `{0,0,1}` secondary vector with `{0,0,0}` before the halfway sum.
+    let half_z = Fpu::add(light[2], Fpu::load_i32(if fixed_lighting { 0 } else { 1 }));
     let half = [light[0], light[1], fp_store(half_z)];
     // Z's sum remains on the x87 stack after FST float; X and Y are reloaded.
     let squared = Fpu::add(
@@ -319,9 +364,9 @@ pub fn blinn_phong_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
 /// `ftol(16 * ((n.x * l.x + n.z * l.z) + l.y * n.y))` for each normal whose
 /// sum is not negative, zero for the rest, then the ambient tail. Native
 /// execution: `tools/voxel_oracle/lighting.py` `diffuse_cases`.
-pub fn diffuse_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
+pub fn diffuse_pages(normals_mode: u8, draw_rotation: Mat3, light: VoxelLight) -> [u8; 256] {
     let mut result = [0u8; 256];
-    let light = model_light(draw_rotation);
+    let light = model_light(draw_rotation, light.world);
     let scale = Fpu::load_i32(16); // the float 16.0 at 0x007F6960
     for (index, normal) in normal_table(normals_mode).iter().enumerate() {
         let normal = normal.map(fp);
@@ -341,12 +386,58 @@ pub fn diffuse_pages(normals_mode: u8, draw_rotation: Mat3) -> [u8; 256] {
     result
 }
 
+/// The two lighting inputs a voxel draw carries: `Game::VoxelLightSource`
+/// (`0x00887470`, the world light) and whether the Blinn-Phong initializer's
+/// secondary light vector is the stock `{0,0,1}` or Phobos' fixed `{0,0,0}`
+/// (`[AudioVisual] UseFixedVoxelLighting=`, hook `0x753D86`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VoxelLight {
+    /// The world light in world space. Stock: the startup result at
+    /// `0x754C00`. Phobos `VoxelLightSource=` would replace it with
+    /// `Matrix3D::VoxelDefaultMatrix * normalized(authored)`.
+    pub world: Vec3,
+    /// `UseFixedVoxelLighting=`: zero the secondary light vector. The
+    /// initializer's `{0,0,1}` is its viewer term; with this on the halfway
+    /// vector is the light alone.
+    pub fixed: bool,
+}
+
+impl Default for VoxelLight {
+    fn default() -> Self {
+        Self {
+            world: YR_WORLD_LIGHT,
+            fixed: false,
+        }
+    }
+}
+
+impl VoxelLight {
+    /// The draw settings the current rules ask for: the `[AudioVisual]` keys
+    /// Phobos adds, or the startup world light with the stock secondary vector.
+    pub fn for_rules(rules: Option<&crate::rules::ruleset::RuleSet>) -> Self {
+        {
+            let Some(rules) = rules else {
+                return Self::default();
+            };
+            let world = rules
+                .phobos_globals
+                .voxel_light_source
+                .map(|values| voxel_world_light(values.map(|value| f32::from_bits(value.bits()))))
+                .unwrap_or(YR_WORLD_LIGHT);
+            Self {
+                world,
+                fixed: rules.phobos_globals.use_fixed_voxel_lighting,
+            }
+        }
+    }
+}
+
 /// The world light in the draw's model space, as both initializers compute
 /// it: the rigid inverse (`0x005AFC20`) transposes the basis, and
 /// `MatrixVectorMultiply @ 0x005AF4D0` evaluates row 0 as `(y + z) + x` and
 /// rows 1 and 2 as `(y + x) + z`, storing each as a float.
-fn model_light(draw_rotation: Mat3) -> [X87Value; 3] {
-    let world = YR_WORLD_LIGHT.to_array().map(fp);
+fn model_light(draw_rotation: Mat3, world: Vec3) -> [X87Value; 3] {
+    let world = world.to_array().map(fp);
     std::array::from_fn(|axis| {
         let column = draw_rotation.col(axis).to_array().map(fp);
         let products: [X87Value; 3] = std::array::from_fn(|i| Fpu::mul(column[i], world[i]));
@@ -381,11 +472,111 @@ mod tests {
         assert_eq!(get_normal(4, 244), final_native);
         assert_eq!(get_normal(4, 245), Vec3::Z);
 
-        let pages = blinn_phong_pages(4, Mat3::IDENTITY);
+        let pages = blinn_phong_pages(4, Mat3::IDENTITY, VoxelLight::default());
         assert_eq!(pages[244], pages[240]);
         assert_ne!(pages[244], 0, "the final native entry must be processed");
         assert_eq!(&pages[245..253], &[0; 8]);
         assert_eq!(&pages[253..=255], &[AMBIENT_PAGE; 3]);
+    }
+
+    /// `Matrix3D::VoxelDefaultMatrix` and the stock source land on the
+    /// captured `Game::VoxelLightSource` (`tools/voxel_oracle/lighting.json`,
+    /// both native-executed): the matrix maps the retail source to the startup
+    /// light.
+    #[test]
+    fn voxel_default_matrix_maps_the_retail_source_to_the_world_light() {
+        let oracle = crate::test_fixture::json("tools/voxel_oracle/lighting.json");
+        let bits = |key: &str| {
+            oracle[key]
+                .as_array()
+                .expect("oracle array")
+                .iter()
+                .map(|value| value.as_u64().expect("bits") as u32)
+                .collect::<Vec<_>>()
+        };
+        let matrix = bits("voxel_default_matrix_bits");
+        assert_eq!(
+            matrix,
+            [
+                0x3f35_04f3,
+                0,
+                0x3f35_04f3,
+                0,
+                0,
+                0x3f80_0000,
+                0,
+                0,
+                0xbf35_04f3,
+                0,
+                0x3f35_04f3,
+                0
+            ],
+            "native VoxelDefaultMatrix bits"
+        );
+        let source = bits("voxel_default_source_bits")
+            .into_iter()
+            .map(f32::from_bits)
+            .collect::<Vec<_>>();
+        let world = voxel_world_light([source[0], source[1], source[2]]);
+        let expected = bits("light_bits")
+            .into_iter()
+            .map(f32::from_bits)
+            .collect::<Vec<_>>();
+        for (axis, (actual, expected)) in world.to_array().into_iter().zip(expected).enumerate() {
+            assert!(
+                (actual - expected).abs() < 1e-5,
+                "axis {axis}: {actual} vs the native {expected}"
+            );
+        }
+        // A scaled source normalizes to the same direction.
+        let scaled = voxel_world_light([source[0] * 3.0, source[1] * 3.0, source[2] * 3.0]);
+        assert!((scaled.x - world.x).abs() < 1e-6);
+        assert!((scaled.y - world.y).abs() < 1e-6);
+        assert!((scaled.z - world.z).abs() < 1e-6);
+        // A zero source keeps the startup light.
+        assert_eq!(voxel_world_light([0.0, 0.0, 0.0]), YR_WORLD_LIGHT);
+    }
+
+    /// `[AudioVisual] VoxelLightSource=` reaches the draw settings through the
+    /// rules reader; the retail-direction value reproduces the native light,
+    /// and an absent key keeps the startup one.
+    #[test]
+    fn voxel_light_source_key_is_normalized_and_mapped() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let oracle = crate::test_fixture::json("tools/voxel_oracle/lighting.json");
+        let expected = oracle["light_bits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| f32::from_bits(value.as_u64().unwrap() as u32))
+            .collect::<Vec<_>>();
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AudioVisual]
+VoxelLightSource=-0.70710678,-0.70710678,0
+",
+        ))
+        .unwrap();
+        let light = VoxelLight::for_rules(Some(&rules));
+        for (axis, (actual, expected)) in light
+            .world
+            .to_array()
+            .into_iter()
+            .zip(&expected)
+            .enumerate()
+        {
+            assert!(
+                (actual - expected).abs() < 1e-5,
+                "axis {axis}: {actual} vs the native {expected}"
+            );
+        }
+        assert!(!light.fixed);
+        let bare = RuleSet::from_ini(&IniFile::from_str(
+            "[AudioVisual]
+",
+        ))
+        .unwrap();
+        assert_eq!(VoxelLight::for_rules(Some(&bare)).world, YR_WORLD_LIGHT);
     }
 
     #[test]
@@ -395,7 +586,8 @@ mod tests {
         // page regardless of mode or facing.
         for facing in [0.0_f32, 1.3, 4.2] {
             for mode in [2u8, 4u8] {
-                let pages = blinn_phong_pages(mode, Mat3::from_rotation_z(facing));
+                let pages =
+                    blinn_phong_pages(mode, Mat3::from_rotation_z(facing), VoxelLight::default());
                 assert_eq!(pages[253], AMBIENT_PAGE, "mode {mode} facing {facing}");
                 assert_eq!(pages[254], AMBIENT_PAGE, "mode {mode} facing {facing}");
                 assert_eq!(pages[255], AMBIENT_PAGE, "mode {mode} facing {facing}");
@@ -451,7 +643,7 @@ mod tests {
                 Vec3::new(raw[2], raw[6], raw[10]),
             );
             let expected = case["pages"].as_str().unwrap();
-            let actual = diffuse_pages(mode, matrix);
+            let actual = diffuse_pages(mode, matrix, VoxelLight::default());
             for normal in 0..256 {
                 let page = u8::from_str_radix(&expected[normal * 2..normal * 2 + 2], 16).unwrap();
                 assert_eq!(actual[normal], page, "{raw:?} mode {mode} normal {normal}");
@@ -490,7 +682,7 @@ mod tests {
                 Vec3::new(raw[2], raw[6], raw[10]),
             );
             let expected = case["pages"].as_str().unwrap();
-            let actual = blinn_phong_pages(mode, matrix);
+            let actual = blinn_phong_pages(mode, matrix, VoxelLight::default());
             for normal in 0..256 {
                 let page = u8::from_str_radix(&expected[normal * 2..normal * 2 + 2], 16).unwrap();
                 assert_eq!(
@@ -501,5 +693,54 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Phobos `VoxelCalcNormals_NullAdditionalVector` (`0x753D86`): with
+    /// `UseFixedVoxelLighting=` the initializer's `{0,0,1}` is zeroed, so the
+    /// halfway vector is the model-space light alone and the specular term
+    /// moves. The stock path must stay bit-identical to the native goldens.
+    #[test]
+    fn the_fixed_lighting_flag_drops_the_secondary_vector() {
+        let stock = VoxelLight::default();
+        assert_eq!(stock.world, YR_WORLD_LIGHT);
+        assert!(!stock.fixed);
+
+        let rotation = Mat3::from_rotation_z(40.0_f32.to_radians());
+        let fixed = VoxelLight {
+            fixed: true,
+            ..stock
+        };
+        let stock_pages = blinn_phong_pages(4, rotation, stock);
+        let fixed_pages = blinn_phong_pages(4, rotation, fixed);
+        assert_ne!(
+            stock_pages, fixed_pages,
+            "the secondary vector reaches the specular term"
+        );
+        // The diffuse path carries no viewer term, so the flag must not move it.
+        assert_eq!(
+            diffuse_pages(4, rotation, stock),
+            diffuse_pages(4, rotation, fixed)
+        );
+    }
+
+    /// `[AudioVisual] UseFixedVoxelLighting=` reaches the draw settings; the
+    /// stock build always asks for the default light.
+    #[test]
+    fn the_rules_select_the_voxel_light() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let read = |text: &str| RuleSet::from_ini(&IniFile::from_str(text)).expect("rules");
+        let unset = read("[General]\nFixture=1\n");
+        assert_eq!(VoxelLight::for_rules(Some(&unset)), VoxelLight::default());
+        assert_eq!(VoxelLight::for_rules(None), VoxelLight::default());
+
+        let set = read("[AudioVisual]\nUseFixedVoxelLighting=yes\n");
+        assert!(VoxelLight::for_rules(Some(&set)).fixed);
+        assert!(!VoxelLight::for_rules(Some(&set)).fixed);
+
+        // The key lives in `[AudioVisual]`, not `[General]`.
+        let wrong = read("[General]\nUseFixedVoxelLighting=yes\n");
+        assert!(!VoxelLight::for_rules(Some(&wrong)).fixed);
     }
 }

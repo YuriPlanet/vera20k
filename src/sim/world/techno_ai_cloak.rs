@@ -618,6 +618,7 @@ pub(super) fn cloak_field_ai_step(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) {
+    sim.drain_cloak_anim(id, rules);
     // An object with no cloak runtime is in state 0 and cannot pass
     // CanAutoCloak (`stock_cloak_tick_facts`), so the callback would do
     // nothing for it; skipping it keeps the field lookup out of the AI loop.
@@ -686,6 +687,9 @@ fn start_cloaking_detach(
     effects: FrameEffects<'_>,
 ) {
     sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
+    // Detach_All's anim arm, gated per anim type by Phobos `DetachOnCloak=`
+    // (`Ext/AnimType/Body.cpp:112`, hook `0x425174`).
+    sim.detach_attached_anims_for_cloak(id, rules);
     let player = sim.session.current_house();
     if sim
         .substrate

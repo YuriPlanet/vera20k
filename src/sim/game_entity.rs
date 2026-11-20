@@ -73,6 +73,12 @@ pub struct GeneratedTechnoInit {
     pub native_unique_id: i32,
 }
 
+/// `CDTimerClass`'s not-started sentinel and the delayed-fire weapon index's
+/// unset value (`Ext/Techno/Body.h:121`), for saves that predate the fields.
+fn minus_one_i32() -> i32 {
+    -1
+}
+
 /// The two evidence-backed ways a live Techno obtains its persistent
 /// constructor word. Only `FreshScenario` is allowed to advance Scenario RNG.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -406,7 +412,7 @@ pub struct GameEntity {
     /// The passenger relation and cargo hold (`TechnoClass+0x114` CargoClass,
     /// `+0x11C` Transporter, `+0x82` InOpenToppedTransport), a
     /// [`PassengerRole`] that `sim::passenger` owns.
-    passenger_role: PassengerRole,
+    pub passenger_role: PassengerRole,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -464,6 +470,92 @@ pub struct GameEntity {
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
     /// The state this object's turn does not read each step, stored apart.
     seldom: Box<Seldom>,
+    /// Phobos `BuildingExt::GrindingWeapon_AccumulatedCredits` (`+0x04`):
+    /// refunds ground since the last `Grinding.Weapon=` shot.
+    #[serde(default)]
+    grinding_weapon_accumulated_credits: i32,
+    /// Phobos `BuildingExt::GrindingWeapon_LastFiredFrame` (`+0x08`).
+    #[serde(default)]
+    grinding_weapon_last_fired_frame: i32,
+    /// Phobos `BuildingExt::AccumulatedIncome` (`Ext/Building/Body.h:23`,
+    /// serialized at `Body.cpp:598`): credits gained since the last periodic
+    /// `DisplayIncome` label.
+    #[serde(default)]
+    phobos_accumulated_income: i32,
+    /// Phobos `TechnoExt` delayed-fire state (`src/Ext/Techno/Body.h:60-63`,
+    /// serialized at `src/Ext/Techno/Body.cpp:1183-1186`). `DelayedFireTimer`
+    /// is a frame-based `CDTimerClass`: VERA keeps the absolute start frame
+    /// (`-1` = not started, matching `StartTime=-1`) and the duration. The
+    /// weapon index defaults to `-1` (`Body.h:121`), the anim pointer to null.
+    #[serde(default = "minus_one_i32")]
+    phobos_delayed_fire_start_frame: i32,
+    #[serde(default)]
+    phobos_delayed_fire_duration: i32,
+    #[serde(default = "minus_one_i32")]
+    phobos_delayed_fire_weapon_index: i32,
+    #[serde(default)]
+    phobos_delayed_fire_sequence_paused: bool,
+    #[serde(default)]
+    phobos_delayed_fire_anim: Option<u64>,
+    #[serde(default)]
+    phobos_delayed_fire_remove_anim_on_no_delay: bool,
+    /// Phobos `InfantryExt::SkipTargetChangeResetSequence`
+    /// (`Ext/Infantry/Body.h:15`, serialized `Body.cpp:50`): set by the
+    /// `0x6FF905` `FireAt` hook when the fired weapon keeps
+    /// `FireOnce.ResetSequence=no`; the next null target consumes it and
+    /// skips the class target-change latch reset and idle `Do_Action`.
+    #[serde(default)]
+    phobos_skip_target_change_reset_sequence: bool,
+    /// Phobos `UnitExt::KeepTargetOnMove` (`Ext/Unit/Body.h`): a Move order
+    /// kept this unit's in-range target, so the Unit AI re-checks the range
+    /// until it gives up.
+    #[serde(default)]
+    phobos_keep_target_on_move: bool,
+    /// Phobos `TechnoExt::RandomFactor` (`Ext/Techno/Body.h:33`): the
+    /// per-object `RandomRanged(0, 15)` drawn once at `TechnoClass::Init`
+    /// (`Ext/Techno/Hooks.cpp:292`); feeds the `DistributeTargetingFrame`
+    /// timer re-arm (`:323-326`) and the interceptor phase (`Body.Update.cpp:37`).
+    #[serde(default)]
+    phobos_random_factor: i32,
+    /// Phobos `TechnoExt::DropCrate`: the per-object override written only by
+    /// the trigger action 600 (`TActionExt::SetDropCrate`,
+    /// `Ext/TAction/Body.cpp:690-720`). `-1` unset, `0` disables, `1` uses
+    /// `DropCrateType` (`Ext/Techno/Body.Internal.cpp:275-299`).
+    #[serde(default = "minus_one_i32")]
+    phobos_drop_crate: i32,
+    /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot the action's
+    /// `Param3` names; read only while `DropCrate == 1`.
+    #[serde(default = "minus_one_i32")]
+    phobos_drop_crate_type: i32,
+    /// Phobos `BuildingExt::IsCreatedFromMapFile`: the map's `[Structures]`
+    /// reader built this building. `BuildingClass_Unlimbo_SetShouldRebuild`
+    /// (`Ext/Building/Hooks.cpp:321-323`) skips the AI-repairable grant for
+    /// one — preplaced structures keep the map line's own AI Repairable.
+    #[serde(default)]
+    created_from_map_file: bool,
+    /// Phobos `InfantryExt::HasUndeployConverted` (`Ext/Infantry/Body.h`):
+    /// this Undeploy sequence already converted the infantryman; the DoingAI
+    /// reset clears it outside the Deploy/Undeploy sequences (`0x520E75`).
+    #[serde(default)]
+    phobos_infantry_undeploy_converted: bool,
+    /// Phobos `InfantryExt::HasDeployConverted`: this Deploy sequence already
+    /// converted the infantryman; the DoingAI reset clears it outside the
+    /// Deploy/Undeploy sequences (`0x520E75`).
+    #[serde(default)]
+    phobos_infantry_deploy_converted: bool,
+    /// Phobos `FootExt::AttackMoveFollowerTempCount` (`src/Ext/Foot/Body.h:26`,
+    /// constructed `0` at `:44`, serialized at `src/Ext/Foot/Body.cpp:951`).
+    /// A per-frame transient: `FootClass_AI`'s tail decrements it
+    /// (`src/Ext/Techno/Hooks.cpp:50-51`, hook `0x4DA54E`) and the follow
+    /// search adds 1 (infantry) or 3 (anything else) to the chosen leader and
+    /// refuses a leader already at 6 (`:1317`, `:1338`).
+    #[serde(default)]
+    phobos_attack_move_follower_temp_count: i32,
+    /// Phobos `BuildingExt::ConstructionStartFacing`
+    /// (`Ext/Building/Body.h:31`, constructed -1 at `:50`): the one random
+    /// `StartFacing.Random` draw, kept for the building's lifetime.
+    #[serde(default = "minus_one_i32")]
+    phobos_construction_start_facing: i32,
 }
 
 /// The `BuildingClass` state. A [`Sparse`] in [`GameEntity::building`] holds
@@ -640,15 +732,12 @@ pub struct Seldom {
     /// it independently of remaining debt and later House discounts (gamemd).
     production_start_price: i32,
     /// Phobos AttachEffect instances, owned by `sim::attach_effect`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_attach_effects: crate::sim::attach_effect::AttachEffectList,
     /// Derived from those instances each AI frame; never hashed.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_stat_multipliers: crate::sim::attach_effect::PhobosStatMultipliers,
     /// Phobos ShieldClass state: shield points and their recovery timers.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(super) shield: Option<crate::sim::shield::ShieldState>,
     /// Low word of the one raw Scenario RNG draw performed by the active-retail
@@ -725,15 +814,21 @@ pub struct Seldom {
     #[serde(default)]
     house_tracking_latches: crate::sim::house_tracking::InfantryTrackingLatches,
     /// Phobos placement history, written only by the house-tracking owner.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) phobos_placement: crate::sim::house_tracking::PhobosPlacement,
     /// Phobos `TechnoExt::WHAnimRemainingCreationInterval`: shared by every
     /// interval-bearing warhead this Techno fires.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) wh_anim_remaining_creation_interval:
         crate::sim::warhead_anim::TechnoWarheadAnimInterval,
+    /// Phobos `TechnoExt::IsSelected`, the remembered selection a
+    /// `LimboLaunch=` firer had when it fired an `UnlimboDetonate=` warhead
+    /// (`Ext/WarheadType/Hooks.cpp:613-651`, consumed at
+    /// `Ext/Bullet/Hooks.DetonateLogics.cpp:572-578`). Client-local like
+    /// `limbo_reselect`; not hashed.
+    #[serde(default)]
+    pub(crate) unlimbo_detonate:
+        crate::sim::combat::phobos_unlimbo_detonate::UnlimboDetonateSelection,
     /// The raw signed type `Sight=`, a [`SightFacts`] that
     /// `sim::vision` owns.
     ///
@@ -849,10 +944,85 @@ pub struct Seldom {
     /// radar reads it, so the world hash leaves it out.
     #[serde(default)]
     pub radar_combat_flash: crate::sim::timer::CdTimer,
+    /// Gattling stage, value and report latch (`TechnoClass+0x140`,
+    /// `+0x144`, `+0x4B8`), owned by `combat::gattling`.
+    #[serde(default)]
+    pub gattling: crate::sim::combat::gattling::GattlingState,
+    /// The voxel turret's animation counter (`TechnoClass+0x148`), a
+    /// [`TurretAnimCounter`] that `combat::gattling` owns.
+    ///
+    /// [`TurretAnimCounter`]: crate::sim::combat::gattling::TurretAnimCounter
+    #[serde(default)]
+    pub turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
+    /// Phobos `BuildingExt` TurretAnim instance state
+    /// (`Ext/Building/Body.h:28-30,47-49`), owned by
+    /// [`crate::rules::phobos_turret_anim`]. Idle and firing share one rate
+    /// tick. Not folded into `world_hash`: its only reader is presentation
+    /// (cf. [`TurretAnimCounter`], `sim/combat/gattling.rs:528`).
+    #[serde(default)]
+    pub(crate) phobos_turret_anim: crate::rules::phobos_turret_anim::TurretAnimState,
+    /// Optional presentation-only native recoil, owned by voxel_recoil.
+    voxel_recoil: Option<Box<voxel_recoil::VoxelRecoil>>,
     /// Techno+3B8 burst and +43C radial launch indices, owned by
     /// `combat::burst`. Only the burst index resets on a null target.
     #[serde(default)]
     pub(crate) weapon_burst: crate::sim::combat::burst::WeaponBurst,
+    /// Sole native Building+534/+538 body state; construction/sale use the
+    /// existing private StageClass and MissionLeaf ready byte.
+    building_body: Option<crate::sim::building_construction::BuildingBody>,
+    /// Building `+0x544`, a [`PowerHealthSample`] that `sim::power_system`
+    /// owns; a Building's alone is live.
+    ///
+    /// [`PowerHealthSample`]: crate::sim::power_system::PowerHealthSample
+    building_power_health_sample: crate::sim::power_system::PowerHealthSample,
+    /// Sale route metadata, never a second mission, ready byte or timer.
+    building_sale: Option<crate::sim::building_construction::BuildingDown>,
+    /// The wait before the building's computer factory tries its finished
+    /// object again, an [`AiPlacementTimer`] that `production::factory_ai`
+    /// owns.
+    ///
+    /// [`AiPlacementTimer`]: crate::sim::production::AiPlacementTimer
+    #[serde(default)]
+    pub(crate) ai_placement_timer: crate::sim::production::AiPlacementTimer,
+    /// The Building's animation art: its AnimClass slots, their replay
+    /// marks, the damaged-art flag, its StorageClass art, the Stuff flag and
+    /// the Grand_Opening guard. `sim::building_art` owns it.
+    #[serde(default)]
+    pub building_art: crate::sim::building_art::BuildingArt,
+    /// Independent Building+660, owned by sim::building_power.
+    #[serde(default)]
+    pub(crate) building_online: crate::sim::building_power::BuildingOnline,
+    /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
+    #[serde(default)]
+    unit_delivery_no_base: bool,
+    /// An Ares chronoshifted building (BeingWarpedOut `+0x270` with
+    /// BuildingExt `AboutToChronoshift`), from the ChronoWarp's arm until
+    /// ChronoWarpStateMachine puts it back (`superweapon::chronosphere`).
+    #[serde(default)]
+    ares_chronoshifting: bool,
+    /// The DropPod locomotor an Ares DropPod launch gives a Foot
+    /// (TechnoExt::CreateWithDroppod `10044030`), piggybacking the Foot's
+    /// own locomotor until it lands (`superweapon::drop_pod`).
+    #[serde(default)]
+    ares_drop_pod: Option<crate::sim::superweapon::drop_pod::DropPodFlight>,
+    /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
+    /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
+    /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
+    /// its lifetime and save state.
+    #[serde(default)]
+    ares_super_weapon: Option<crate::sim::hunter_seeker::AttachedSuper>,
+    /// Ares TechnoExt::SuperTarget (+0xA4): the cell SW_EMPulse::Activate
+    /// (10071200) aims its cannon at, `TryGetCellAt`'s null for a cell off
+    /// the grid. Only written with [`Self::ares_super_weapon`].
+    #[serde(default)]
+    ares_super_target: Option<(u16, u16)>,
+    /// Phobos `BuildingExt::CurrentEMPulseSW`
+    /// (`Ext/SWType/FireSuperWeapon.cpp:365`, `Ext/Building/Hooks.cpp:132-189`):
+    /// the firing EMPulse SW type this cannon's Mission_Missile must use when
+    /// choosing its weapon and resuming suspended superweapons. A separate
+    /// latch from Ares's TechnoExt::SuperWeapon, which other owners read.
+    #[serde(default)]
+    phobos_current_empulse_sw: Option<crate::sim::intern::InternedId>,
     /// Foot+68E automatic charging-target intent, owned by `sim::tesla_charging`.
     #[serde(default)]
     pub(crate) tesla_charger: crate::sim::tesla_charging::TeslaCharger,
@@ -879,6 +1049,24 @@ pub struct Seldom {
     /// [`SpawnOwner`]: crate::sim::spawn_manager::SpawnOwner
     #[serde(default)]
     pub spawn_owner_id: crate::sim::spawn_manager::SpawnOwner,
+    /// Object-level fall state, shared by Paradrop and DropAsBomb.
+    #[serde(default)]
+    fall: ObjectFallState,
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`): a
+    /// BalloonHover spawn asks for a straight vertical ascent, so the jumpjet
+    /// locomotion skips its horizontal speed, its turn and its location write
+    /// while the owner stays in state 0/1.
+    #[serde(default)]
+    jumpjet_straight_ascend: bool,
+    /// The IronCurtain or ForceShield state: the curtain's timer and its tint
+    /// stage. `None` until the first curtain; `Some` after it, nullifying all
+    /// damage (except healing) while the timer runs ([`is_invulnerable`]).
+    /// Applied by superweapon launch handlers; `superweapon::invulnerability`
+    /// owns it.
+    ///
+    /// [`is_invulnerable`]: crate::sim::superweapon::invulnerability::is_invulnerable
+    #[serde(default)]
+    pub invulnerability: Option<InvulnerabilityState>,
     /// Techno+294 owned manager or borrowed plane/building link; Airstrike
     /// owns both the relationship and its cancellation/removal lifecycle.
     #[serde(default)]
@@ -887,6 +1075,31 @@ pub struct Seldom {
     /// `+0x2C8` the ring anim), written only by `capture_manager`.
     #[serde(default)]
     pub mind_control: crate::sim::capture_manager::MindControlLink,
+    /// Phobos `TechnoExt::BeControlledThreatFrame` (`Ext/Techno/Body.h:54`):
+    /// the first frame its former allies may retaliate against or auto-target
+    /// this freshly mind-controlled object (`Ext/Techno/Hooks.Misc.cpp:606-641`).
+    /// A `MindControl.ThreatDelay=` capture sets it, `FreeUnit` clears it.
+    #[serde(default)]
+    pub(crate) phobos_be_controlled_threat_frame: i32,
+    /// TemporalClass state (`TechnoClass+0x274` TemporalImUsing and `+0x278`
+    /// TemporalTargetingMe), written only by `temporal`.
+    #[serde(default)]
+    pub temporal: crate::sim::temporal::TemporalState,
+    /// The Crazy Ivan bomb it carries (`ObjectClass+0x38` and its
+    /// `BombClass`), written only by `bomb`.
+    #[serde(default)]
+    pub bomb: Option<crate::sim::bomb::Bomb>,
+    /// Psychedelic/chaos runtime, separate from reversible mind control: a
+    /// [`BerserkState`] that `combat::receiver_health` owns.
+    ///
+    /// [`BerserkState`]: crate::sim::combat::BerserkState
+    #[serde(default)]
+    pub berserk: crate::sim::combat::BerserkState,
+    /// The pending entry (`Unit+0x500`), a [`PendingEntry`] that
+    /// `docking::building_dock` owns.
+    ///
+    /// [`PendingEntry`]: crate::sim::docking::building_dock::PendingEntry
+    pub(crate) pending_entry: crate::sim::docking::building_dock::PendingEntry,
     /// Foot `+0x68F..+0x691`, cleared by the Foot constructor
     /// (`0x004D33D2..0x004D33DE`) and written only by `sim::building_entry`.
     #[serde(default)]
@@ -922,8 +1135,93 @@ pub struct Seldom {
     ///
     /// [`CapturedInfantryType`]: crate::sim::world::CapturedInfantryType
     pub(crate) capture_infantry_type_index: crate::sim::world::CapturedInfantryType,
-    /// A Unit's `IdleWanderDirection` (`+0x6D4`), an [`IdleWander`] that
-    /// `sim::visceroid` owns.
+    #[serde(default)]
+    pub(crate) vehicle_driver: crate::sim::vehicle_theft::VehicleDriverState,
+    /// Ares TechnoExt+A8/AC, owned by sim::bounty; presentation only.
+    #[serde(default)]
+    pub(crate) bounty_display: crate::sim::bounty::BountyDisplayState,
+    /// Ares TechnoExt+50 DisableWeaponTimer (allocator 10042CA0: StartTime
+    /// -1, TimeLeft 0). The ReceiveDamage aftermath starts it with
+    /// `DisableWeapons.Duration` (`vehicle_theft::driver_kill`); GetFireError
+    /// answers Rearm while it runs (`combat::fire_error_world`).
+    #[serde(default)]
+    pub(crate) ares_disable_weapons: crate::sim::timer::CdTimer,
+    /// Ares TechnoExt+0x5C SelfHealingCombatTimer (StartTime -1, TimeLeft
+    /// 0). The ReceiveDamage aftermath starts it with the type's
+    /// `SelfHealing.CombatDelay` (`vehicle_theft::driver_kill`); while it
+    /// runs, GetSelfHealAmount (10044E80, `combat::veterancy`) heals nothing.
+    #[serde(default)]
+    pub(crate) ares_self_heal_combat: crate::sim::timer::CdTimer,
+    /// Phobos `TechnoExt::AutoDeathTimer` (`Ext/Techno/Body.h:43`), a
+    /// `CDTimerClass` whose constructor leaves StartTime -1 / TimeLeft 0.
+    /// `sim::auto_death` starts it with `AutoDeath.AfterDelay=`;
+    /// `FootExt::UpdateTypeData` stops it when the new type has no timed
+    /// AutoDeath. `start_frame() == PAUSED_START_FRAME` is `HasStarted() ==
+    /// false`.
+    #[serde(default)]
+    pub(crate) auto_death_timer: crate::sim::timer::CdTimer,
+    /// Phobos `TechnoExt::ShouldBeDead` (`Ext/Techno/Body.h`): set by the
+    /// owner-change hook (`0x7015C9`) and consumed by
+    /// `CheckDeathConditions`, which kills on it first
+    /// (`Ext/Techno/Body.Update.cpp:159-163`).
+    #[serde(default)]
+    pub(crate) should_be_dead: bool,
+    /// Phobos `FootExt::OriginalPassengerOwner` (`Ext/Foot/Body.h:18`), the
+    /// house a passenger held when it boarded a transport whose type has
+    /// `Passengers.SyncOwner` + `.RevertOnExit`. Set by the AddPassenger hook
+    /// (`Ext/Techno/Hooks.Transport.cpp:66-89`), consumed uncleared by the
+    /// leave hook (`:91-122`) and the dying-unit cargo arm (`:125-149`),
+    /// serialized by FootExt (`Ext/Foot/Body.cpp:943`).
+    #[serde(default)]
+    pub(crate) phobos_original_passenger_owner: Option<crate::sim::intern::InternedId>,
+    /// Phobos `FootExt::IsOwnerChangeFromRevertOnExit`
+    /// (`Ext/Foot/Body.h:27`), held `true` only across the exit revert's own
+    /// owner change; FootExt does not serialize it
+    /// (`Ext/Foot/Body.cpp:952`). The AutoDeath owner-change hook reads it
+    /// (`Ext/House/Hooks.cpp:225`); the AttachEffect discard chain's read
+    /// stays a residual of [`crate::sim::auto_death`].
+    pub(crate) phobos_revert_on_exit_latch: bool,
+    /// Phobos `TechnoExt::PreventCrewEscape` (`Ext/Techno/Body.h:90`),
+    /// latched by a `PreventCrewEscape=yes` warhead on the killing blow; the
+    /// crew-count queries then answer 0 (`Ext/Techno/Hooks.cpp:2470-2491`).
+    #[serde(default)]
+    pub(crate) phobos_prevent_crew_escape: bool,
+    /// Phobos `TechnoExt::LastWeaponType` (`Ext/Techno/Body.h:51`): the
+    /// weapon section the last `FireAt` used, compared by identity for
+    /// `RecountBurst` (`Ext/Techno/Hooks.Firing.cpp:611-632`).
+    #[serde(default)]
+    pub(crate) phobos_last_weapon_type: Option<crate::sim::intern::InternedId>,
+    /// Phobos `TechnoExt::LastTargetCrd` (`Ext/Techno/Body.h:82`): the retained
+    /// `GetCoords` of the object's last live target, `[0, 0, 0]`
+    /// (`CoordStruct::Empty`) while unset. Written by
+    /// [`crate::sim::combat::extra_threat::Simulation::update_phobos_extra_threat_last_target`].
+    #[serde(default)]
+    pub(crate) phobos_extra_threat_last_target_crd: [i32; 3],
+    /// Phobos `TechnoExt::LastTargetCrdClearTimer` (`Ext/Techno/Body.h:83`,
+    /// `UpdateLastTargetCrd @ Ext/Techno/Body.Update.cpp:1286-1309`): starts a
+    /// 45-frame countdown when the object has no target and empties the
+    /// coordinate when it expires.
+    #[serde(default)]
+    pub(crate) phobos_extra_threat_last_target_clear_timer: crate::sim::timer::CdTimer,
+    /// Phobos `TechnoExt::PassengerDeletionTimer` (`Ext/Techno/Body.h:40`),
+    /// started by `TechnoExt::EatPassengers` (`Ext/Techno/Body.Update.cpp:261`)
+    /// and stopped by `FootExt::UpdateTypeData` when the new type configures no
+    /// positive rate.
+    #[serde(default)]
+    pub(crate) passenger_deletion_timer: crate::sim::timer::CdTimer,
+    /// Phobos `FootExt::TiberiumEater_Timer` (`Ext/Foot/Body.h:23`): armed
+    /// with the type's `TiberiumEater.TransDelay` after a cell was eaten;
+    /// `StartTime++` holds it while the object is limbo'd or EMP'd.
+    #[serde(default)]
+    pub(crate) phobos_tiberium_eater_timer: crate::sim::timer::CdTimer,
+    /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
+    /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
+    /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
+    /// results own the other. The Building LogicVector visit consumes expiry
+    /// synchronously (`Simulation::tick_pending_building_detonation`) and
+    /// keeps the marker, except a bridge repair hut's, which clears it.
+    /// IronCurtain/ForceShield entry cancels it. A [`C4Detonation`] that
+    /// `sim::c4_plant` owns.
     ///
     /// [`IdleWander`]: crate::sim::visceroid::IdleWander
     #[serde(default)]
@@ -989,6 +1287,16 @@ pub struct Seldom {
     /// of line and only once Ares code writes it.
     #[serde(default)]
     pub(crate) ares: Sparse<AresPart>,
+    /// A building's repair byte (`BuildingClass+0x6E8`), a [`RepairByte`]
+    /// that `production::production_repair` owns.
+    ///
+    /// [`RepairByte`]: crate::sim::production::RepairByte
+    pub repairing: crate::sim::production::RepairByte,
+    /// Tank-bunker install state machine. `Some` on `Bunker=yes` buildings from
+    /// spawn (state `Idle` when empty); its presence marks the entity as a tank
+    /// bunker. Drives entry admission → install.
+    #[serde(default)]
+    pub bunker_runtime: Option<crate::sim::docking::bunker_install::BunkerRuntime>,
 }
 
 /// The Ares 3.0 extension state of an object (its TechnoExt and BuildingExt
@@ -1182,7 +1490,6 @@ fn a_stock_game_rejects_saved_delivery_base_override_and_keeps_base_space() {
 impl GameEntity {
     /// Read-only Phobos shield state for presentation. Construction and the
     /// shield owner retain simulation-side mutation authority.
-    #[cfg(feature = "phobos")]
     pub fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.shield.as_ref()
     }
@@ -1276,6 +1583,26 @@ impl GameEntity {
 
     pub(crate) fn ares_super_target(&self) -> Option<(u16, u16)> {
         self.ares_super_target
+    }
+
+    /// `HandleEMPulseLaunch`'s `pExt->CurrentEMPulseSW = pSW`
+    /// (`Ext/SWType/FireSuperWeapon.cpp:365`).
+    pub(crate) fn set_phobos_current_empulse_sw(&mut self, sw: crate::sim::intern::InternedId) {
+        self.phobos_current_empulse_sw = Some(sw);
+    }
+
+    /// Mission_Missile consumes and clears the latch
+    /// (`Ext/Building/Hooks.cpp:182`, the hook's `CurrentEMPulseSW = nullptr`).
+    pub(crate) fn take_phobos_current_empulse_sw(
+        &mut self,
+    ) -> Option<crate::sim::intern::InternedId> {
+        self.phobos_current_empulse_sw.take()
+    }
+
+    /// The latch read for the state hash; a cannon holding it will later take
+    /// a different weapon slot and resume a different held set.
+    pub(crate) fn phobos_current_empulse_sw(&self) -> Option<crate::sim::intern::InternedId> {
+        self.phobos_current_empulse_sw
     }
 
     /// SW_EMPulse::Activate's two stores (10071245..1007126C).
@@ -1390,6 +1717,96 @@ impl GameEntity {
         self.ammo_reload_timer
     }
 
+    /// Phobos `TechnoExt::UpdateRearmInEMPState` (`Ext/Techno/Body.Update.cpp:
+    /// 878-879`) and `UpdateRearmInTemporal` (`:890-891`): hold a running
+    /// Techno `ReloadTimer` (this clock, `Techno+1FC`) with `StartTime++`.
+    pub(crate) fn delay_ammo_reload_one_frame(&mut self) {
+        self.ammo_reload_timer.delay_one_frame();
+    }
+
+    /// Install a fixture's reload countdown.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ammo_reload_timer_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
+        self.ammo_reload_timer = timer;
+    }
+
+    /// Phobos `TechnoExt::AutoDeathTimer`; an unstarted clock reads as
+    /// `start_frame() == PAUSED_START_FRAME`, which is `HasStarted() == false`.
+    pub fn auto_death_timer(&self) -> crate::sim::timer::CdTimer {
+        self.auto_death_timer
+    }
+
+    pub(crate) fn auto_death_timer_mut(&mut self) -> &mut crate::sim::timer::CdTimer {
+        &mut self.auto_death_timer
+    }
+
+    pub(crate) fn passenger_deletion_timer(&self) -> crate::sim::timer::CdTimer {
+        self.passenger_deletion_timer
+    }
+
+    pub(crate) fn passenger_deletion_timer_mut(&mut self) -> &mut crate::sim::timer::CdTimer {
+        &mut self.passenger_deletion_timer
+    }
+
+    pub(crate) fn phobos_tiberium_eater_timer(&self) -> crate::sim::timer::CdTimer {
+        self.phobos_tiberium_eater_timer
+    }
+
+    pub(crate) fn phobos_tiberium_eater_timer_mut(&mut self) -> &mut crate::sim::timer::CdTimer {
+        &mut self.phobos_tiberium_eater_timer
+    }
+
+    pub(crate) fn should_be_dead(&self) -> bool {
+        self.should_be_dead
+    }
+
+    pub(crate) fn set_should_be_dead(&mut self, value: bool) {
+        self.should_be_dead = value;
+    }
+
+    /// `FootExt::OriginalPassengerOwner`, set when the passenger boards a
+    /// `Passengers.SyncOwner` + `.RevertOnExit` transport.
+    pub(crate) fn phobos_original_passenger_owner(&self) -> Option<crate::sim::intern::InternedId> {
+        self.phobos_original_passenger_owner
+    }
+
+    pub(crate) fn set_phobos_original_passenger_owner(
+        &mut self,
+        owner: Option<crate::sim::intern::InternedId>,
+    ) {
+        self.phobos_original_passenger_owner = owner;
+    }
+
+    /// `FootExt::IsOwnerChangeFromRevertOnExit`, held across the exit
+    /// revert's own owner change.
+    pub(crate) fn phobos_revert_on_exit_latch(&self) -> bool {
+        self.phobos_revert_on_exit_latch
+    }
+
+    pub(crate) fn set_phobos_revert_on_exit_latch(&mut self, value: bool) {
+        self.phobos_revert_on_exit_latch = value;
+    }
+
+    /// `TechnoExt::LastTargetCrd` (`Ext/Techno/Body.h:82`).
+    pub(crate) fn phobos_extra_threat_last_target_crd(&self) -> [i32; 3] {
+        self.phobos_extra_threat_last_target_crd
+    }
+
+    pub(crate) fn set_phobos_extra_threat_last_target_crd(&mut self, crd: [i32; 3]) {
+        self.phobos_extra_threat_last_target_crd = crd;
+    }
+
+    /// `TechnoExt::LastTargetCrdClearTimer` (`Ext/Techno/Body.h:83`).
+    pub(crate) fn phobos_extra_threat_last_target_clear_timer(&self) -> crate::sim::timer::CdTimer {
+        self.phobos_extra_threat_last_target_clear_timer
+    }
+
+    pub(crate) fn phobos_extra_threat_last_target_clear_timer_mut(
+        &mut self,
+    ) -> &mut crate::sim::timer::CdTimer {
+        &mut self.phobos_extra_threat_last_target_clear_timer
+    }
+
     /// Ares BuildingClass_FireLaser (10016490) starts this clock (YRpp's
     /// `ReloadTimer`, Techno+1FC) with a Prism support beam's downtime.
     pub(crate) fn start_prism_support_downtime(&mut self, now: i32, duration: i32) {
@@ -1397,26 +1814,27 @@ impl GameEntity {
     }
 
     /// Techno ReceiveDamage701ADB..701B62, after the early immunity gates
-    /// and before the bunker/warhead gates. StartReloading is unconditional
-    /// after the count write; its own full-count check decides the timer.
+    /// and before the bunker/warhead gates. The caller then runs
+    /// StartReloading, unconditional after the count write; its own
+    /// full-count check decides the timer.
     pub(crate) fn reduce_ammo_for_damage(
         &mut self,
         object: &crate::rules::object_type::ObjectType,
         damage: i32,
-        now: i32,
-    ) {
+    ) -> bool {
         if !object.damage_reduces_readiness {
-            return;
+            return false;
         }
-        if let Some(ammo) = self.ammo_mut() {
-            ammo.reduce_readiness(
-                damage,
-                object.strength,
-                object.ammo,
-                object.readiness_reduction_multiplier,
-            );
-            self.start_reloading_ammo(object, now);
-        }
+        let Some(ammo) = self.ammo_mut() else {
+            return false;
+        };
+        ammo.reduce_readiness(
+            damage,
+            object.strength,
+            object.ammo,
+            object.readiness_reduction_multiplier,
+        );
+        true
     }
 
     /// TechnoClass::StartReloading6FB080: current type/count, signed raw
@@ -1472,6 +1890,8 @@ impl GameEntity {
                 self.ammo_reload_timer.start(now, remaining.wrapping_add(1));
             }
         }
+
+
         self.reload_techno_ammo(object, now, ares);
         Ok(())
     }
@@ -1512,7 +1932,7 @@ impl GameEntity {
         object: &crate::rules::object_type::ObjectType,
         now: i32,
         ares: bool,
-    ) {
+    ) -> bool {
         if self.techno_ammo_reloads(object, now) {
             let ammo = self.ammo_mut().unwrap();
             if ares {
@@ -1526,7 +1946,11 @@ impl GameEntity {
             // Foot/Unit Mark(2)4D3780 returns immediately, before any
             // callback or spatial write. No redraw event is synthesized.
             self.start_reloading_ammo(object, now);
+            return true;
         }
+
+
+        false
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1873,6 +2297,14 @@ impl GameEntity {
         else {
             return;
         };
+        // Phobos `AircraftClass_UnLimbo_CargoPlane` (`0x4143A8`,
+        // `Ext/Aircraft/Hooks.cpp:1313-1326`): a set `IsALoaner` assigns the
+        // native `+0x3D4` byte itself (yes and no) and skips the stock
+        // Selectable/Landable/Camera computation (SkipGameCode 0x4143F2).
+        if let Some(is_loaner) = object.phobos_is_aloaner {
+            self.mission_only.set(is_loaner);
+            return;
+        }
         let camera =
             crate::sim::combat::combat_weapon::primary_for_tier(object, self.veterancy.rank())
                 .and_then(|id| rules.weapon(id))
@@ -2120,6 +2552,190 @@ impl GameEntity {
     /// product. Hold/resume, placement and owner changes retain it (gamemd).
     pub(crate) fn record_production_start_price(&mut self, price: i32) {
         self.production_start_price = price;
+    }
+
+    pub(crate) const fn phobos_grinding_weapon_accumulated_credits(&self) -> i32 {
+        self.grinding_weapon_accumulated_credits
+    }
+
+    pub(crate) fn set_phobos_grinding_weapon_accumulated_credits(&mut self, credits: i32) {
+        self.grinding_weapon_accumulated_credits = credits;
+    }
+
+    pub(crate) const fn phobos_grinding_weapon_last_fired_frame(&self) -> i32 {
+        self.grinding_weapon_last_fired_frame
+    }
+
+    pub(crate) fn set_phobos_grinding_weapon_last_fired_frame(&mut self, frame: i32) {
+        self.grinding_weapon_last_fired_frame = frame;
+    }
+
+    pub(crate) const fn phobos_accumulated_income(&self) -> i32 {
+        self.phobos_accumulated_income
+    }
+
+    pub(crate) fn set_phobos_accumulated_income(&mut self, income: i32) {
+        self.phobos_accumulated_income = income;
+    }
+
+    pub(crate) const fn phobos_delayed_fire_start_frame(&self) -> i32 {
+        self.phobos_delayed_fire_start_frame
+    }
+
+    pub(crate) const fn phobos_delayed_fire_duration(&self) -> i32 {
+        self.phobos_delayed_fire_duration
+    }
+
+    pub(crate) const fn phobos_delayed_fire_weapon_index(&self) -> i32 {
+        self.phobos_delayed_fire_weapon_index
+    }
+
+    pub(crate) const fn phobos_delayed_fire_sequence_paused(&self) -> bool {
+        self.phobos_delayed_fire_sequence_paused
+    }
+
+    pub(crate) const fn phobos_delayed_fire_anim(&self) -> Option<u64> {
+        self.phobos_delayed_fire_anim
+    }
+
+    pub(crate) const fn phobos_delayed_fire_remove_anim_on_no_delay(&self) -> bool {
+        self.phobos_delayed_fire_remove_anim_on_no_delay
+    }
+
+    pub(crate) const fn phobos_skip_target_change_reset_sequence(&self) -> bool {
+        self.phobos_skip_target_change_reset_sequence
+    }
+
+    pub(crate) fn set_phobos_skip_target_change_reset_sequence(&mut self, skip: bool) {
+        self.phobos_skip_target_change_reset_sequence = skip;
+    }
+
+    /// `timer.Start(...)` plus `DelayedFireWeaponIndex = weaponIndex`
+    /// (`src/Ext/Techno/Hooks.Firing.cpp:671-672`, `Body.cpp:719-721`).
+    pub(crate) fn start_phobos_delayed_fire(
+        &mut self,
+        frame: i32,
+        duration: i32,
+        weapon_index: i32,
+        paused: bool,
+    ) {
+        self.phobos_delayed_fire_start_frame = frame;
+        self.phobos_delayed_fire_duration = duration;
+        self.phobos_delayed_fire_weapon_index = weapon_index;
+        self.phobos_delayed_fire_sequence_paused = paused;
+    }
+
+    pub(crate) fn set_phobos_delayed_fire_sequence_paused(&mut self, paused: bool) {
+        self.phobos_delayed_fire_sequence_paused = paused;
+    }
+
+    /// Phobos `UnitExt::KeepTargetOnMove`: the Move-order latch.
+    pub(crate) const fn phobos_keep_target_on_move(&self) -> bool {
+        self.phobos_keep_target_on_move
+    }
+
+    pub(crate) fn set_phobos_keep_target_on_move(&mut self, keep: bool) {
+        self.phobos_keep_target_on_move = keep;
+    }
+
+    /// Phobos `TechnoExt::RandomFactor`: the per-object `RandomRanged(0, 15)`
+    /// drawn once at init (`Ext/Techno/Hooks.cpp:292`).
+    pub(crate) const fn phobos_random_factor(&self) -> i32 {
+        self.phobos_random_factor
+    }
+
+    pub(crate) fn set_phobos_random_factor(&mut self, factor: i32) {
+        self.phobos_random_factor = factor;
+    }
+
+    /// Phobos `TechnoExt::DropCrate`: `-1` unset, `0` disables, `1`
+    /// `DropCrateType`.
+    pub(crate) const fn phobos_drop_crate(&self) -> i32 {
+        self.phobos_drop_crate
+    }
+
+    pub(crate) fn set_phobos_drop_crate(&mut self, value: i32) {
+        self.phobos_drop_crate = value;
+    }
+
+    /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot.
+    pub(crate) const fn phobos_drop_crate_type(&self) -> i32 {
+        self.phobos_drop_crate_type
+    }
+
+    pub(crate) fn set_phobos_drop_crate_type(&mut self, crate_type: i32) {
+        self.phobos_drop_crate_type = crate_type;
+    }
+
+    /// Phobos `BuildingExt::IsCreatedFromMapFile`: set by the map's
+    /// `[Structures]` spawn (`CreateBuildingFromINIFile`).
+    pub(crate) const fn created_from_map_file(&self) -> bool {
+        self.created_from_map_file
+    }
+
+    pub(crate) fn set_created_from_map_file(&mut self, value: bool) {
+        self.created_from_map_file = value;
+    }
+
+    pub(crate) const fn phobos_infantry_undeploy_converted(&self) -> bool {
+        self.phobos_infantry_undeploy_converted
+    }
+
+    pub(crate) fn set_phobos_infantry_undeploy_converted(&mut self, converted: bool) {
+        self.phobos_infantry_undeploy_converted = converted;
+    }
+
+    pub(crate) const fn phobos_infantry_deploy_converted(&self) -> bool {
+        self.phobos_infantry_deploy_converted
+    }
+
+    pub(crate) fn set_phobos_infantry_deploy_converted(&mut self, converted: bool) {
+        self.phobos_infantry_deploy_converted = converted;
+    }
+
+    /// `CurrentDelayedFireAnim` registration (`Body.cpp:691-695`): only an
+    /// attached anim is tracked, together with its stored removal flag.
+    pub(crate) fn set_phobos_delayed_fire_anim(&mut self, id: Option<u64>, remove: bool) {
+        self.phobos_delayed_fire_anim = id;
+        self.phobos_delayed_fire_remove_anim_on_no_delay = remove;
+    }
+
+    /// `TechnoExt::ResetDelayedFireTimer` (`Body.cpp:658-669`): stop the timer,
+    /// clear the index/flag, and return the anim the caller force-destroys (only
+    /// when `DelayedFireRemoveOnNoDelay` was stored on it).
+    pub(crate) fn reset_phobos_delayed_fire(&mut self) -> Option<u64> {
+        let anim = self
+            .phobos_delayed_fire_remove_anim_on_no_delay
+            .then_some(self.phobos_delayed_fire_anim)
+            .flatten();
+        self.phobos_delayed_fire_start_frame = -1;
+        self.phobos_delayed_fire_duration = 0;
+        self.phobos_delayed_fire_weapon_index = -1;
+        self.phobos_delayed_fire_sequence_paused = false;
+        self.phobos_delayed_fire_anim = None;
+        self.phobos_delayed_fire_remove_anim_on_no_delay = false;
+        anim
+    }
+
+    /// `FootExt::AttackMoveFollowerTempCount` (`src/Ext/Foot/Body.h:26`).
+    pub(crate) const fn phobos_attack_move_follower_temp_count(&self) -> i32 {
+        self.phobos_attack_move_follower_temp_count
+    }
+
+    /// The `FootClass_AI` tail decrement (`src/Ext/Techno/Hooks.cpp:50-51`)
+    /// and the follow search's refusals/additions (`:1317`, `:1338`).
+    pub(crate) fn set_phobos_attack_move_follower_temp_count(&mut self, count: i32) {
+        self.phobos_attack_move_follower_temp_count = count;
+    }
+
+    /// `BuildingExt::ConstructionStartFacing` (`Ext/Building/Body.h:31`).
+    pub(crate) const fn phobos_construction_start_facing(&self) -> i32 {
+        self.phobos_construction_start_facing
+    }
+
+    /// Stores the one random start facing drawn for this building.
+    pub(crate) fn set_phobos_construction_start_facing(&mut self, facing: i32) {
+        self.phobos_construction_start_facing = facing;
     }
 }
 
@@ -2463,9 +3079,7 @@ impl GameEntity {
             seldom: Box::new(Seldom {
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
-                #[cfg(feature = "phobos")]
                 phobos_placement: Default::default(),
-                #[cfg(feature = "phobos")]
                 wh_anim_remaining_creation_interval: Default::default(),
                 #[cfg(feature = "debug-tools")]
                 debug_log: None,
@@ -2473,9 +3087,7 @@ impl GameEntity {
                 useless: false,
                 production_start_price: 0,
                 ares: Sparse::default(),
-                #[cfg(feature = "phobos")]
                 phobos_attach_effects: Default::default(),
-                #[cfg(feature = "phobos")]
                 phobos_stat_multipliers: Default::default(),
                 techno_ctor_random_word,
                 object_group: -1,
@@ -2554,9 +3166,68 @@ impl GameEntity {
                 railgun_particle_system: Default::default(),
                 damage_smoke_system_id: Default::default(),
                 transport_unload_keep_count: Default::default(),
-                #[cfg(feature = "phobos")]
                 shield: None,
+            unlimbo_detonate: Default::default(),
+            gattling: Default::default(),
+            turret_anim_frame: Default::default(),
+            phobos_turret_anim: Default::default(),
+            voxel_recoil: None,
+            building_body: (category == EntityCategory::Structure).then(Default::default),
+            building_power_health_sample: Default::default(),
+            building_sale: None,
+            ai_placement_timer: Default::default(),
+            building_art: Default::default(),
+            building_online: Default::default(),
+            unit_delivery_no_base: false,
+            ares_chronoshifting: false,
+            ares_drop_pod: None,
+            ares_super_weapon: None,
+            ares_super_target: None,
+            phobos_current_empulse_sw: None,
+            fall: ObjectFallState::default(),
+            jumpjet_straight_ascend: false,
+            invulnerability: None,
+            phobos_be_controlled_threat_frame: 0,
+            temporal: Default::default(),
+            bomb: None,
+            berserk: Default::default(),
+            pending_entry: Default::default(),
+            vehicle_driver: Default::default(),
+            bounty_display: Default::default(),
+            ares_disable_weapons: Default::default(),
+            ares_self_heal_combat: Default::default(),
+            auto_death_timer: Default::default(),
+            should_be_dead: false,
+            phobos_original_passenger_owner: None,
+            phobos_revert_on_exit_latch: false,
+            phobos_prevent_crew_escape: false,
+            phobos_last_weapon_type: None,
+            phobos_extra_threat_last_target_crd: [0; 3],
+            phobos_extra_threat_last_target_clear_timer: Default::default(),
+            passenger_deletion_timer: Default::default(),
+            phobos_tiberium_eater_timer: Default::default(),
+                repairing: Default::default(),
+                bunker_runtime: None,
             }),
+            grinding_weapon_accumulated_credits: 0,
+            grinding_weapon_last_fired_frame: 0,
+            phobos_accumulated_income: 0,
+            phobos_delayed_fire_start_frame: -1,
+            phobos_delayed_fire_duration: 0,
+            phobos_delayed_fire_weapon_index: -1,
+            phobos_delayed_fire_sequence_paused: false,
+            phobos_delayed_fire_anim: None,
+            phobos_delayed_fire_remove_anim_on_no_delay: false,
+            phobos_skip_target_change_reset_sequence: false,
+            phobos_keep_target_on_move: false,
+            phobos_random_factor: 0,
+            phobos_drop_crate: -1,
+            phobos_drop_crate_type: -1,
+            created_from_map_file: false,
+            phobos_infantry_undeploy_converted: false,
+            phobos_infantry_deploy_converted: false,
+            phobos_attack_move_follower_temp_count: 0,
+            phobos_construction_start_facing: -1,
         }
     }
 
@@ -2642,6 +3313,55 @@ impl GameEntity {
         self.fall.dropped_as_bomb()
     }
 
+    /// Phobos `TechnoExt::HoverShutdown` (`Ext/Techno/Body.h:81`).
+    pub(crate) fn hover_shutdown(&self) -> bool {
+        self.fall.hover_shutdown()
+    }
+
+    /// The hover locomotor's shutdown dropped this object as a bomb (Phobos
+    /// hook `0x514C07`, `Ext/Techno/Hooks.cpp:997-1006`).
+    pub(crate) fn mark_hover_shutdown(&mut self) {
+        self.fall.mark_hover_shutdown();
+    }
+
+    /// Read and clear the hover-shutdown provenance, as the Phobos landing arm
+    /// does once (`Ext/Techno/Hooks.cpp:1026-1027`).
+    pub(crate) fn take_hover_shutdown(&mut self) -> bool {
+        self.fall.take_hover_shutdown()
+    }
+
+    /// Phobos `TechnoExt::OnParachuted`: this object was just issued as a
+    /// parachute fall, so its landing takes no `FallingDownDamage`
+    /// (`Ext/Techno/Hooks.cpp:1067`).
+    pub(crate) fn on_parachuted(&self) -> bool {
+        self.fall.on_parachuted()
+    }
+
+    pub(crate) fn mark_on_parachuted(&mut self) {
+        self.fall.mark_on_parachuted();
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears the
+    /// flag on every falling-down Techno.
+    pub(crate) fn take_on_parachuted(&mut self) -> bool {
+        self.fall.take_on_parachuted()
+    }
+
+    /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`).
+    pub(crate) fn jumpjet_straight_ascend(&self) -> bool {
+        self.jumpjet_straight_ascend
+    }
+
+    pub(crate) fn mark_jumpjet_straight_ascend(&mut self) {
+        self.jumpjet_straight_ascend = true;
+    }
+
+    /// The MovementAI hook (`Ext/Unit/Hooks.Jumpjet.cpp:413-437`) clears the
+    /// flag on a crash, a dead owner, or any state past the ascend.
+    pub(crate) fn clear_jumpjet_straight_ascend(&mut self) {
+        self.jumpjet_straight_ascend = false;
+    }
+
     pub(crate) fn fall_rate(&self) -> i32 {
         self.fall.rate()
     }
@@ -2702,6 +3422,14 @@ impl GameEntity {
     /// ObjectClass::DetachParachute5F6DA0: owner+60 clears only matching
     /// retained Anim identities, before the child's owner reference clears.
     pub(crate) fn attached_anim_expired(&mut self, animation: u64) {
+        // Phobos `TechnoClass_DetachAnim @ 0x710415`
+        // (`Ext/Techno/Body.cpp:1256-1267`): an AnimClass leaving this owner
+        // clears `CurrentDelayedFireAnim` when it is the tracked wind-up. The
+        // pointer is non-owning, so this only clears it; the shared anim owner
+        // finishes the one destroy.
+        if self.phobos_delayed_fire_anim == Some(animation) {
+            self.phobos_delayed_fire_anim = None;
+        }
         self.expire_behind_anim(animation);
         self.drain.expire_anim(animation);
         self.mind_control.anim_pointer_expired(animation);
@@ -2713,6 +3441,15 @@ impl GameEntity {
     /// preserves the rate retained from any preceding fall.
     pub(crate) fn begin_parachute_fall(&mut self, z: i32) {
         self.position.put_z(z);
+        self.fall.begin_fall();
+    }
+
+    /// Phobos `BulletClass_Logics_Extras`'s airborne reappear
+    /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:556-560`): after `Unlimbo` placed
+    /// the firer, raise `IsFallingDown` (`Object+0x8D`) alone. The packet it
+    /// leads to is the ported `FallingDownDamage` model
+    /// (`Simulation::phobos_falling_damage`, `parachute_descent.rs:154`).
+    pub(crate) fn raise_falling_down(&mut self) {
         self.fall.begin_fall();
     }
 
@@ -2859,6 +3596,13 @@ impl GameEntity {
     /// `Object+0x6C`, Health, above 0.
     pub fn is_alive(&self) -> bool {
         self.health.current() > 0
+    }
+
+    /// `FootClass+0x6AD` `IsAttackedByLocomotor`: a Magnetron's lift currently
+    /// displaces this object's locomotor. The Jumpjet draw's Phobos
+    /// JumpjetTilt arm excludes such a body and draws its PrimaryFacing.
+    pub fn is_attacked_by_locomotor(&self) -> bool {
+        self.lift.swap_active()
     }
 
     /// The particle systems GetROF and FireAt test (`+0x304`, `+0x308`,
@@ -3147,6 +3891,39 @@ mod tests {
         contacted.clear_live_contact_with(100);
         assert!(!contacted.has_live_contact_with(100));
     }
+
+    /// Phobos `AircraftClass_UnLimbo_CargoPlane` (`0x4143A8`,
+    /// `Ext/Aircraft/Hooks.cpp:1313-1326`): a set AircraftType `IsALoaner`
+    /// writes native `+0x3D4` itself, replacing the stock
+    /// Selectable/Landable/Camera computation; unset keeps the stock flag.
+    #[test]
+    fn phobos_is_aloaner_overrides_the_aircraft_unlimbo_flag() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[AircraftTypes]\n0=LOAN\n1=PLAIN\n2=STOCK\n3=STOCKSAFE\n\
+                 [LOAN]\nStrength=100\nSelectable=yes\nLandable=yes\nIsALoaner=yes\n\
+                 [PLAIN]\nStrength=100\nSelectable=yes\nLandable=no\nIsALoaner=no\n\
+                 [STOCK]\nStrength=100\nSelectable=yes\nLandable=no\n\
+                 [STOCKSAFE]\nStrength=100\nSelectable=yes\nLandable=yes\n",
+            ))
+            .unwrap();
+        let mission_only = |name: &str| {
+            let mut entity = GameEntity::test_default_of_category(
+                1,
+                name,
+                "Americans",
+                10,
+                20,
+                EntityCategory::Aircraft,
+            );
+            entity.retain_aircraft_unlimbo_control(&rules, name);
+            entity.is_mission_only()
+        };
+        assert!(mission_only("LOAN"), "yes marks a controllable plane");
+        assert!(!mission_only("PLAIN"), "no clears a stock-marked plane");
+        assert!(mission_only("STOCK"), "unset keeps the stock gate");
+        assert!(!mission_only("STOCKSAFE"), "unset stays unmarked");
+    }
 }
 
 #[cfg(all(test, tests_sim_c_g))]
@@ -3225,7 +4002,6 @@ mod mission_shadow_tests {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl GameEntity {
     /// Phobos AttachEffect instances, in attach order. Presentation reads the
     /// list for animation draw offsets and tint; only `sim::attach_effect`
@@ -3274,73 +4050,104 @@ impl GameEntity {
 impl GameEntity {
     /// The cached AttachEffect speed factor; identity without the feature.
     pub(crate) fn phobos_speed_multiplier(&self) -> f64 {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_stat_multipliers.speed
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            1.0
         }
     }
 
     /// The cached AttachEffect armor factor for the unrestricted effects.
     pub(crate) fn phobos_armor_multiplier(&self) -> f64 {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_stat_multipliers.armor
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            1.0
         }
     }
 
     /// The cached AttachEffect ROF factor; identity without the feature.
     pub(crate) fn phobos_rof_multiplier(&self) -> f64 {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_stat_multipliers.rof
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            1.0
         }
     }
 
     /// `Cloakable` from the active AttachEffects; false without the feature.
     pub(crate) fn phobos_cloakable(&self) -> bool {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_stat_multipliers.cloakable
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
         }
     }
 
     /// `ForceDecloak` from the active AttachEffects; false without the feature.
     pub(crate) fn phobos_force_decloak(&self) -> bool {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_stat_multipliers.force_decloak
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
         }
     }
 
     /// `Unkillable` from the active AttachEffects; false without the feature.
     pub(crate) fn phobos_unkillable(&self) -> bool {
-        #[cfg(feature = "phobos")]
         {
             self.phobos_stat_multipliers.unkillable
         }
-        #[cfg(not(feature = "phobos"))]
-        {
-            false
-        }
     }
+}
+
+/// Phobos `ScaleReloadDurationForVeterancy`
+/// (`Ext/Techno/Hooks.Firing.cpp:1180-1193`): a non-positive duration and a
+/// rank without the matching additional ability both leave it untouched, and
+/// an accepted scale is `max(1, SafeMultiply(duration, multiplier))` with the
+/// product clamped into `i32` before the truncating conversion.
+///
+/// The multiplier is the type's own key falling back to `[General]`; the
+/// empty-clip arm falls back one step further, from `VeteranEmptyReload=` to
+/// `VeteranReload=` (`:1188-1191`).
+fn scale_reload_for_veterancy(
+    entity: &GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    duration: i32,
+    empty: bool,
+) -> i32 {
+    use crate::rules::phobos_crit::PhobosAbilityFlags;
+    use crate::sim::combat::veterancy::VeterancyRank;
+
+    if duration <= 0 {
+        return duration;
+    }
+    let rank = entity.veterancy.rank_kind();
+    let elite = matches!(rank, VeterancyRank::Elite);
+    if matches!(rank, VeterancyRank::Rookie) {
+        return duration;
+    }
+    let slot = if empty {
+        PhobosAbilityFlags::EMPTY_RELOAD
+    } else {
+        PhobosAbilityFlags::RELOAD
+    };
+    if !object.phobos_abilities.has(slot, elite) {
+        return duration;
+    }
+    let globals = &rules.phobos_globals;
+    let multiplier = if empty {
+        object.phobos_techno_extras.veteran_empty_reload.unwrap_or(
+            globals
+                .veteran_empty_reload()
+                .unwrap_or(globals.veteran_reload()),
+        )
+    } else {
+        object
+            .phobos_techno_extras
+            .veteran_reload
+            .unwrap_or(globals.veteran_reload())
+    };
+    // `GeneralUtils::SafeMultiply(int, double)`: the double product clamped to
+    // the `i32` range, then `static_cast<int>` (truncation toward zero).
+    let product = f64::from(duration) * multiplier;
+    let clamped = if product > f64::from(i32::MAX) {
+        i32::MAX
+    } else if product < f64::from(i32::MIN) {
+        i32::MIN
+    } else {
+        product as i32
+    };
+    clamped.max(1)
 }

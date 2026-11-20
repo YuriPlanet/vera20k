@@ -123,6 +123,13 @@ impl TiberiumImageState {
         Ok(())
     }
 
+    /// Phobos `AllowRamps=` load: `NumSlopes` rises to the eight overlay
+    /// slots (`Ext/Tiberium/Body.cpp:26`).
+    pub(crate) fn force_ramp_slopes(&mut self) {
+        if self.slope_count < 8 {
+            self.slope_count = 8;
+        }
+    }
     /// What every runtime read of the type needs: a bound Image
     /// (`TiberiumClass+0xE0`), which `OverlayToTiberiumIndex @ 0x005FDD20`
     /// dereferences unchecked at `+0x294`, and the nonzero primary and
@@ -171,6 +178,11 @@ pub struct TiberiumType {
     /// `Power=` (`TiberiumClass+0xBC`): constructor 0, ReadInt over the
     /// current value (`0x00721AE1` block). Only Ares reads it in play.
     pub power: i32,
+    /// Phobos `AllowRamps=` (`Ext/Tiberium/Body.cpp:24`,
+    /// `Ext/Tiberium/Body.h:26`, default false): cardinal ramp cells may
+    /// germinate when the type's ramp art exists; the load also raises
+    /// `NumSlopes` to eight (`Body.cpp:26`).
+    pub allow_ramps: bool,
     /// Signed `Growth=` timer reload input (`TiberiumClass+0xA8`).
     pub growth: i32,
     /// `GrowthPercentage=` as the native `TiberiumClass+0xB0` double (IEEE
@@ -222,6 +234,9 @@ impl TiberiumTypeRegistry {
             ty.color_scheme = color;
             ty.debris = debris.to_vec();
             ty.image = image;
+            if ty.allow_ramps {
+                ty.image.force_ramp_slopes();
+            }
             // `TiberiumClass::ReadINI @ 0x00721C3F..0x00721C55` reads `Image=`
             // with default -1 and then leaves `+0xE0..+0xEC` at the
             // constructor's zeros (`0x0072173A..0x0072174C`). gamemd faults on
@@ -317,6 +332,7 @@ impl TiberiumType {
             inert: true,
             value: section.read_int("Value", 0),
             power: section.read_int("Power", 0),
+            allow_ramps: section.read_bool("AllowRamps", false),
             // ReadInt stores its signed result directly, without a clamp
             // (`0x00721AE1`); original execution: spatial_oracle/ore_queue.md.
             growth: section.read_int("Growth", 0),

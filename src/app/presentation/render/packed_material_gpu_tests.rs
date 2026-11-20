@@ -560,6 +560,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 light,
                 &sim,
                 None,
+                false,
                 crate::app::presentation::lighting::TechnoDraw::Voxel,
             );
             let (tint, light) = unit_voxel_effect_light(

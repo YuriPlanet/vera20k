@@ -327,3 +327,27 @@ fn ares_side_score_themes_follow_the_two_native_branch_sites() {
         None
     );
 }
+
+/// Phobos `[Side] ToolTip.Background.Color/Opacity/BlurSize=`
+/// (`Ext/Side/Body.cpp:48-50`, `Nullable` defaults unset): each field reads
+/// from the side's section and stays `None` on a side that leaves it unset.
+#[test]
+fn phobos_side_tooltip_background_reads_explicit_overrides() {
+    let rules = processed(&format!(
+        "{TYPES}{GENERAL}{AI}\
+         [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
+         [Fourth]\n\
+         ToolTip.Background.Color=1,2,3\n\
+         ToolTip.Background.Opacity=40\n\
+         ToolTip.Background.BlurSize=2.5\n\
+         [Nod]\nToolTip.Background.Opacity=<none>\n"
+    ));
+
+    assert_eq!(
+        rules.side_tooltip_background(3),
+        (Some([1, 2, 3]), Some(40), Some(2.5))
+    );
+    assert_eq!(rules.side_tooltip_background(0), (None, None, None));
+    // `<none>` clears a nullable override; the other fields stay unset.
+    assert_eq!(rules.side_tooltip_background(1), (None, None, None));
+}

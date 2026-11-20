@@ -67,6 +67,8 @@ fn signed_empty_smudge_footprints_still_construct_on_an_occupied_cell() {
                     force_big_craters: false,
                     width: 30,
                     height: 30,
+                      // Crater.DestroyTiberium= defaults to no ore reduction.
+                      destroy_tiberium: false,
                 },
             },
         );

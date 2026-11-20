@@ -146,7 +146,7 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
         );
         let (mut sim, scorer, target) = scene(&rules);
         assert_eq!(
-            combat_targeting::should_retaliate(&sim, &rules, scorer, target),
+            combat_targeting::should_retaliate(&sim, &rules, scorer, target, None),
             retaliate,
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
@@ -219,6 +219,7 @@ fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
                 target_distance: 0.0,
             },
             greatest_threat::ThreatReference::NullCoord,
+            None,
             None,
         )
         .unwrap();

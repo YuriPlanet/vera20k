@@ -104,6 +104,99 @@ pub(crate) fn update_strategy(
     }
 }
 
+/// Phobos `HouseClass_AI_Superweapons` (`0x4F9038`,
+/// `Ext/House/Hooks.cpp:518-541`): with `[General] AISuperWeaponDelay=`, an
+/// AI house's per-frame `AI_TryFireSW` runs behind a per-house timer; a
+/// non-positive delay tries every frame. The campaign/`IQ` gate matches the
+/// vanilla call the hook returns to. An unset key, a human house or a
+/// neutral one leaves the existing owners untouched.
+pub(crate) fn update_ai_superweapon_delay(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    {
+        let Some(delay) = rules.phobos_globals.ai_superweapon_delay else {
+            return;
+        };
+        let frame = sim.session.binary_frame() as i32;
+        let Some(house) = sim.houses.get(&owner) else {
+            return;
+        };
+        if house.is_controlled_by_human(sim.session.rule_policy()) || house.multiplay_passive() {
+            return;
+        }
+        if delay > 0 {
+            if house.ai_superweapon_delay_remaining(frame) > 0 {
+                return;
+            }
+            if let Some(house) = sim.houses.get_mut(&owner) {
+                house.start_ai_superweapon_delay(frame, delay);
+            }
+        }
+        if !sim.session.uses_campaign_world()
+            || sim
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.current_iq() >= rules.general.iq_super_weapons)
+        {
+            crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, registry, frame_effects);
+        }
+    }
+}
+
+/// `HouseClass_AIHouseUpdate_CheckAIBaseCenter @ 0x004FD538`
+/// (`Ext/BuildingType/Hooks.Placing.cpp:25-69`): with `AIBiasSpawnCell` on
+/// outside a campaign, a house with more than one `ConstructionYard=` moves
+/// its retained waypoint center to the nearest live, healthy, out-of-limbo
+/// conyard by cell squared distance. VERA has one published `base_center`
+/// (the launch waypoint owner), so both native center writes collapse to it.
+fn bias_base_center_to_nearest_conyard(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    if !rules.phobos_globals.ai_bias_spawn_cell || sim.session.uses_campaign_world() {
+        return;
+    }
+    let Some(center) = sim
+        .houses
+        .get(&owner)
+        .and_then(crate::sim::house_state::HouseState::base_center)
+    else {
+        return;
+    };
+    let mut yards = 0;
+    let mut new_center = center;
+    let mut nearest = 131_072.0_f64;
+    for entity in sim.substrate.entities.values() {
+        let Some(ty) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        if entity.owner() != owner || !ty.construction_yard {
+            continue;
+        }
+        yards += 1;
+        if !entity.lifecycle.object_alive()
+            || entity.health.current() <= 0
+            || entity.lifecycle.in_limbo()
+        {
+            continue;
+        }
+        let cell = (entity.position.rx(), entity.position.ry());
+        let dx = i32::from(cell.0) - i32::from(center.0);
+        let dy = i32::from(cell.1) - i32::from(center.1);
+        let distance = f64::from(dx * dx + dy * dy);
+        if distance < nearest {
+            nearest = distance;
+            new_center = cell;
+        }
+    }
+    if yards > 1 && new_center != center {
+        if let Some(house) = sim.houses.get_mut(&owner) {
+            house.set_base_center(new_center);
+        }
+    }
+}
+
 /// `HouseClass::AI_Building_Strategy @ 0x004FD500` for an existing house:
 /// the module doc's steps; returns the timer's next delay.
 fn building_strategy(
@@ -113,6 +206,9 @@ fn building_strategy(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> i32 {
+    // `0x004FD538`: Phobos biases the retained start center toward the nearest
+    // live construction yard when `AIBiasSpawnCell` is on in a non-campaign.
+    bias_base_center_to_nearest_conyard(sim, rules, owner);
     let policy = sim.session.rule_policy();
     pick_enemy(
         &sim.interner,
@@ -132,12 +228,18 @@ fn building_strategy(
         rules.ares_form(),
         rules.general.ai_nearest_enemy,
     );
-    // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
-    if policy.runs_ai_strategy()
-        || sim
-            .houses
-            .get(&owner)
-            .is_some_and(|house| house.current_iq() >= rules.general.iq_super_weapons)
+    // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare. Phobos
+    // `HouseClass_ExpertAI_Superweapons` (`0x4FD77C`,
+    // `Ext/House/Hooks.cpp:508-516`) skips this strategy-side call when
+    // `[General] AISuperWeaponDelay=` is set; the per-frame owner below then
+    // gates the same `AI_TryFireSW` behind its timer.
+    let strategy_side_sw = rules.phobos_globals.ai_superweapon_delay.is_none();
+    if strategy_side_sw
+        && (policy.runs_ai_strategy()
+            || sim
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.current_iq() >= rules.general.iq_super_weapons))
     {
         crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, registry, frame_effects);
     }

@@ -231,3 +231,61 @@ fn fire_system_matches_native_sweep_spawns_particles_and_damage_to_retirement() 
         );
     }
 }
+
+/// Phobos `AdjustTargetCoordsOnRotation=` (`Ext/ParticleSystemType/Body.cpp:22`,
+/// default yes; hook `0x62FA41`
+/// `ParticleSystemClass_FireAI_TargetCoords`): `no` freezes the FireAI sweep —
+/// the scripted owner still answers a sweep, but the system keeps its frozen
+/// target coordinates and FLH anchor; the default sweeps it in.
+#[test]
+fn adjust_target_coords_on_rotation_gates_the_fire_sweep() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::particles::ParticleSystem;
+
+    struct ScriptedSweep;
+    impl FireWorld for ScriptedSweep {
+        fn owner(&mut self, _: &Simulation, _: &RuleSet, _: Option<u64>) -> Option<OwnerFacts> {
+            Some(OwnerFacts {
+                alive: true,
+                sweep: Some(OwnerSweep {
+                    target: IVec3::new(0x800, 0x900, 0),
+                    location: IVec3::new(0x100, 0x200, 0),
+                    facing: 0x4000,
+                    flh: IVec3::new(7, 9, 11),
+                }),
+            })
+        }
+        fn receive_damage(&mut self, _: &mut Simulation, _: &RuleSet, _: FireHit) {}
+    }
+    fn rules(adjust: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nFixtureOnly=1\n[ParticleSystems]\n1=Sys\n\
+             [Sys]\nBehavesLike=Fire\nHoldsWhat=<none>\n{adjust}"
+        )))
+        .expect("fire sweep fixture rules parse")
+    }
+    fn live_system(sim: &mut Simulation, rules: &RuleSet) -> u64 {
+        let type_id = rules.ps_type_id_by_name("Sys").unwrap();
+        let system = ParticleSystem::test_fixture(0, type_id, IVec3::ZERO);
+        let stable_id = sim.substrate.allocate_stable_id();
+        let mut system = system;
+        system.stable_id = stable_id;
+        sim.substrate.particle_systems.insert(system);
+        assert!(sim.reveal_particle_system(stable_id));
+        stable_id
+    }
+
+    let default_rules = rules("");
+    let mut sim = Simulation::new();
+    let id = live_system(&mut sim, &default_rules);
+    super::fire::tick_system_with(&mut sim, &default_rules, id, &mut ScriptedSweep);
+    let sys = sim.particle_systems().get(id).unwrap();
+    assert_eq!(sys.coords, IVec3::new(7, 9, 11), "the default sweeps");
+
+    let muted_rules = rules("AdjustTargetCoordsOnRotation=no\n");
+    let mut sim = Simulation::new();
+    let id = live_system(&mut sim, &muted_rules);
+    super::fire::tick_system_with(&mut sim, &muted_rules, id, &mut ScriptedSweep);
+    let sys = sim.particle_systems().get(id).unwrap();
+    assert_eq!(sys.coords, IVec3::ZERO, "no freezes the coordinates");
+}

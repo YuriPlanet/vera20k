@@ -93,10 +93,15 @@ const DEFAULT_ROW: &str = "0,NONE";
 /// zero — `Money` — rather than a failure, which is what the `[CrateRules]`
 /// solo-play mappings rely on.
 pub fn powerup_from_name(name: &str) -> usize {
+    powerup_index_from_name(name).unwrap_or(POWERUP_MONEY)
+}
+
+/// Phobos `Parser<Powerup>` (`Utilities/TemplateDef.h:648-671`): a name
+/// outside the fixed table fails the read instead of falling back to `Money`.
+pub(crate) fn powerup_index_from_name(name: &str) -> Option<usize> {
     POWERUP_NAMES
         .iter()
         .position(|candidate| candidate.eq_ignore_ascii_case(name))
-        .unwrap_or(POWERUP_MONEY)
 }
 
 /// The four parallel `[Powerups]` globals.

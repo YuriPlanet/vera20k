@@ -200,6 +200,16 @@ impl MainRng {
             .next_range_i32_inclusive(low, high)
     }
 
+    /// `Randomizer::RandomDouble` on the process Main886B88 stream: the same
+    /// `RandomRanged(1, INT_MAX) / 2^31` kernel [`SimRng::random_double`]
+    /// gives the per-scenario stream.
+    pub(crate) fn random_double(&self) -> f64 {
+        self.state
+            .lock()
+            .expect("Main RNG poisoned")
+            .random_double()
+    }
+
     /// Observe one coherent boundary while callback draws can run elsewhere.
     pub fn logical_state(&self) -> SimRngLogicalState {
         self.state

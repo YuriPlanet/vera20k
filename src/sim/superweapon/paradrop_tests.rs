@@ -11,6 +11,7 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::drop_payload::{OBSERVED, Observed, drop_payload};
+use crate::sim::aircraft::paradrop_mission::paradrop_end_delay;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
@@ -26,6 +27,7 @@ use crate::sim::superweapon::spy_plane_tests::{
 };
 use crate::sim::timer::CdTimer;
 use crate::sim::world::edge_cell::Edge;
+use crate::sim::world::edge_cell::edge_for_mode;
 use crate::sim::world::{PlacementEvidence, RevealOutcome, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton;
@@ -1081,6 +1083,155 @@ fn spawn_parachuted_matches_native() {
     }
 }
 
+/// Phobos `FootClass_Paradrop` (`Ext/Techno/Hooks.cpp:1907`) marks the
+/// passenger `OnParachuted` right after `SpawnParachuted` returns true, so the
+/// passenger's landing skips the `FallingDownDamage` ratio
+/// (`:1067`, consumed in `sim/movement/parachute_descent.rs`).
+#[test]
+fn a_paradropped_passenger_is_marked_on_parachuted() {
+    let (rules, mut sim, _) = paradrop_world(retail_list_rules(1024));
+    let plane = plane_at(&mut sim, &rules, TARGET, 1);
+    let [passenger] = cargo(&sim, plane)[..] else {
+        panic!("one passenger");
+    };
+    drop_payload(
+        &mut sim,
+        plane,
+        &rules,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let entity = sim
+        .substrate
+        .entities
+        .get(passenger)
+        .expect("the dropped passenger is on the map");
+    assert!(
+        entity.on_parachuted(),
+        "the paradrop spawn marks the passenger"
+    );
+}
+
+/// Phobos `AIParadropMission` (`Ext/TechnoType/Body.cpp:1172`, fallback
+/// `[General] AIParadropMission` `Ext/Rules/Body.cpp:521`, consumer
+/// `FootClass_Paradrop` `Ext/Techno/Hooks.cpp:1880-1889`): a passenger of a
+/// house not controlled by a human queues its type's mission, else the
+/// global, and the arm reaches units as well as infantry. A human passenger
+/// keeps stock: Guard for infantry, no mission for a unit.
+#[test]
+fn ai_paradrop_mission_replaces_the_ai_passengers_mission() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nAIParadropMission=Sticky\nFlightLevel=1500\n\
+         [InfantryTypes]\n0=E1\n1=E2\n[VehicleTypes]\n0=MTNK\n\
+         [AircraftTypes]\n0=PDPLANE\n[BuildingTypes]\n\
+         [E1]\nStrength=125\nAIParadropMission=Guard\n\
+         [E2]\nStrength=125\n\
+         [MTNK]\nStrength=100\nSpeed=6\nAIParadropMission=Ambush\n\
+         [PDPLANE]\nStrength=400\nSpeed=15\nROT=2\nAmmo=100\nLandable=no\n\
+         Selectable=no\nSpawned=yes\nSight=0\nLocomotor={FLY}\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        rules.phobos_globals.ai_paradrop_mission,
+        MissionType::Sticky
+    );
+    let type_mission = |name: &str| rules.object(name).unwrap().phobos_ai_paradrop_mission;
+    assert_eq!(type_mission("E1"), Some(MissionType::Guard));
+    assert_eq!(type_mission("E2"), None, "an unset type key");
+    assert_eq!(type_mission("MTNK"), Some(MissionType::Ambush));
+
+    let (rules, mut sim, americans) = paradrop_world(rules);
+    let decide = |sim: &mut Simulation, type_id: &str, human: bool| {
+        let house = sim.houses.get_mut(&americans).unwrap();
+        house.set_is_human_for_test(human);
+        house.set_player_control_for_test(human);
+        let passenger = sim
+            .construct_object_limbo_at_height(
+                type_id,
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("passenger constructed");
+        let rider = sim.substrate.entities.get(passenger).unwrap();
+        let rider_human = sim.owner_is_human(rider.owner());
+        crate::sim::aircraft::drop_payload::phobos_paradrop_mission(sim, &rules, rider, rider_human)
+    };
+    assert_eq!(
+        decide(&mut sim, "E1", false),
+        MissionId::from_known(MissionType::Guard),
+        "the type's own mission"
+    );
+    assert_eq!(
+        decide(&mut sim, "E2", false),
+        MissionId::from_known(MissionType::Sticky),
+        "the [General] fallback"
+    );
+    assert_eq!(
+        decide(&mut sim, "MTNK", false),
+        MissionId::from_known(MissionType::Ambush),
+        "a unit passenger is re-tasked too"
+    );
+    assert_eq!(
+        decide(&mut sim, "E1", true),
+        MissionId::from_known(MissionType::Guard),
+        "stock human infantry Guard"
+    );
+    assert_eq!(
+        decide(&mut sim, "MTNK", true),
+        MissionId::from_known(MissionType::Guard),
+        "a human unit queues the [General] ParadropMission too"
+    );
+}
+
+/// Phobos `ParadropEndDelay` (`Ext/AircraftType/Body.cpp:38` over
+/// `[General] ParadropEndDelay` `Ext/Rules/Body.cpp:523`, constructor default
+/// 5; consumer `Ext/Aircraft/Hooks.cpp:1266-1285`): the AircraftType section's
+/// key wins, an aircraft without it takes the global, and a negative value
+/// answers the native `INT32_MAX` (the straight-line off-map arm).
+#[test]
+fn paradrop_end_delay_reads_the_aircraft_key_and_caps_negatives() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nParadropEndDelay=7\nFlightLevel=1500\n\
+         [InfantryTypes]\n[VehicleTypes]\n\
+         [AircraftTypes]\n0=PDPLANE\n1=ORCA\n2=SPYP\n[BuildingTypes]\n\
+         [PDPLANE]\nStrength=400\nSpeed=15\nROT=2\nAmmo=100\nLandable=no\n\
+         Selectable=no\nSpawned=yes\nSight=0\nLocomotor={FLY}\nParadropEndDelay=12\n\
+         [ORCA]\nStrength=200\nSpeed=15\nLocomotor={FLY}\nParadropEndDelay=-1\n\
+         [SPYP]\nStrength=200\nSpeed=15\nLocomotor={FLY}\n",
+    ))
+    .unwrap();
+    assert_eq!(rules.phobos_globals.paradrop_end_delay, 7);
+    let type_delay = |name: &str| rules.object(name).unwrap().phobos_paradrop_end_delay();
+    assert_eq!(type_delay("PDPLANE"), Some(12));
+    assert_eq!(type_delay("ORCA"), Some(-1));
+    assert_eq!(type_delay("SPYP"), None, "an aircraft without the key");
+
+    let (rules, mut sim, _) = paradrop_world(rules);
+    let plane = |sim: &mut Simulation, type_id: &str| {
+        sim.construct_object_limbo_at_height(
+            type_id,
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("aircraft constructed")
+    };
+    let overflying = plane(&mut sim, "PDPLANE");
+    assert_eq!(paradrop_end_delay(&sim, overflying, &rules), 12);
+    let unset = plane(&mut sim, "SPYP");
+    assert_eq!(paradrop_end_delay(&sim, unset, &rules), 7);
+    let negative = plane(&mut sim, "ORCA");
+    assert_eq!(paradrop_end_delay(&sim, negative, &rules), i32::MAX);
+}
+
 /// Retail rules (the lib suite loads no SHP; the canopy draws nothing).
 fn retail_rules() -> Option<RuleSet> {
     retail_rules_binding(&[])
@@ -1454,5 +1605,39 @@ fn ares_country_types_without_counts_send_nothing() {
     assert!(
         planes(&sim).is_empty(),
         "no side fallback after a false resolver"
+    );
+}
+
+/// Phobos `SpawnFromEdge=` / `[General] AircraftSpawnFromEdge=` edge modes
+/// (`Ext/Aircraft/Body.cpp:88-118`): `Owner` keeps the caller's edge and
+/// spends no draw; `Random` spends exactly one `RandomRanged(0, 3)` draw and
+/// is deterministic for the same stream.
+#[test]
+fn phobos_spawn_from_edge_modes_keep_the_house_edge_or_spend_one_random_draw() {
+    use crate::rules::phobos_aircraft_edge::PhobosEdgeType;
+    use crate::sim::rng::SimRng;
+
+    let mut owner_rng = SimRng::new(7);
+    let owner_before = owner_rng.state();
+    assert_eq!(
+        edge_for_mode(PhobosEdgeType::Owner, Edge::East, &mut owner_rng),
+        Edge::East
+    );
+    assert_eq!(owner_rng.state(), owner_before, "Owner spends no draw");
+
+    let mut random_rng = SimRng::new(7);
+    let expected = {
+        let mut reference = SimRng::new(7);
+        reference.next_range_i32_inclusive(0, 3);
+        reference.state()
+    };
+    let edge = edge_for_mode(PhobosEdgeType::Random, Edge::North, &mut random_rng);
+    assert_eq!(random_rng.state(), expected, "one RandomRanged(0, 3) draw");
+
+    // Same stream, same edge: the mode reads only that draw.
+    let mut replay = SimRng::new(7);
+    assert_eq!(
+        edge_for_mode(PhobosEdgeType::Random, Edge::North, &mut replay),
+        edge
     );
 }

@@ -109,7 +109,6 @@ pub struct SavedSidebarOrder {
     active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
-    #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
 }
 
@@ -128,19 +127,16 @@ impl SavedSidebarOrder {
             prediction_categories: Vec::new(),
             active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
-            #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
         }
     }
 
     /// Phobos stores `SWSidebar_Enable` in the scenario extension, outside the
     /// strips; this envelope carries it beside them for the same save.
-    #[cfg(feature = "phobos")]
     pub fn sw_sidebar_expanded(&self) -> bool {
         self.sw_sidebar_expanded
     }
 
-    #[cfg(feature = "phobos")]
     pub fn set_sw_sidebar_expanded(&mut self, expanded: bool) {
         self.sw_sidebar_expanded = expanded;
     }
@@ -1911,6 +1907,16 @@ fn restore_object_references(
                 "awaited_anim",
                 "AnimStore",
                 anim_id,
+            )?;
+        }
+        if let Some(target_id) = projectile.interceptor_target() {
+            require_resolved_reference(
+                sim.projectiles.get(target_id).is_some(),
+                "ProjectileStore",
+                projectile_id,
+                "interceptor_target",
+                "ProjectileStore",
+                target_id,
             )?;
         }
         if projectile.source_id() != crate::sim::combat::RAD_NO_ATTACKER {
@@ -9786,7 +9792,7 @@ mod tests {
         // `place_spawned` resolves the owner against `sim.interner`; re-intern so
         // the id is valid there (test_default uses the thread-local test interner).
         ge.set_owner_for_test(sim.interner.intern("Americans"));
-        let id = Simulation::create_limbo(&mut sim.substrate, &mut sim.houses, ge);
+        let id = Simulation::create_limbo(&mut sim.substrate, &mut sim.houses, ge, false);
 
         let e = sim.substrate.entities.get(id).expect("entity in store");
         assert!(

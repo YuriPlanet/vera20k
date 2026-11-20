@@ -47,6 +47,8 @@ const ACTION_JUMP_CAMERA: i32 = 112;
 const ACTION_SET_SUPER_CHARGE_PERCENTAGE: i32 = 129;
 const ACTION_SET_ALTERNATE_BASE: i32 = 137;
 const ACTION_CLEAR_ALTERNATE_BASE: i32 = 138;
+/// Phobos `PhobosTriggerAction::SetTeamDelay` (`Ext/TAction/Body.h:30`).
+const ACTION_SET_TEAM_DELAY: i32 = 610;
 
 const EVENT_ATTACKED: i32 = 6;
 const EVENT_ANY: i32 = 8;
@@ -146,6 +148,12 @@ pub enum TriggerEffect {
     /// announcer owns, which applies the voice-count bound.
     EvaVoice {
         index: i32,
+    },
+    /// Phobos `TActionExt::PrintVariableValue` (`Ext/TAction/Body.cpp:212-223`,
+    /// action 503): the extended variable's `Value` printed `L"%d"` through
+    /// `MessageListClass::Instance.PrintMessage`.
+    VariableValuePrinted {
+        text: String,
     },
 }
 
@@ -779,6 +787,18 @@ enum TagAttachment {
 pub struct TriggerRuntime {
     globals_set: BTreeSet<u32>,
     locals_set: BTreeSet<u32>,
+    /// Phobos `ScenarioExt::Variables[1]`'s extended `Value` ints
+    /// (`Ext/Scenario/Body.h:31`): authored in rules `[VariableNames]`
+    /// (`Ext/Scenario/Hooks.Variables.cpp:82-88`, hook `0x6876C2`), carried
+    /// across campaigns as `(index, Value)` pairs
+    /// (`Hooks.Variables.cpp:90-98`) and mutated by the 501/502/504 actions.
+    #[serde(default)]
+    globals_values: BTreeMap<u32, i32>,
+    /// Phobos `ScenarioExt::Variables[0]`: the map's `[VariableNames]`
+    /// locals, one entry per authored slot with `Value = atoi(state token)`
+    /// else 0 (`Ext/Scenario/Body.cpp:47-61`).
+    #[serde(default)]
+    locals_values: BTreeMap<u32, i32>,
     definitions: RuntimeDefinitions,
     tags: Vec<Option<LiveTag>>,
     triggers: Vec<Option<LiveTrigger>>,
@@ -1023,6 +1043,139 @@ impl PartialEq for TriggerRuntime {
 impl Eq for TriggerRuntime {}
 
 impl TriggerRuntime {
+    /// The scenario variable's presence (`ScenarioExt::Global()->Variables`
+    /// find, `BannerClass.cpp:139-143`).
+    pub fn variable_set(&self, global: bool, index: i32) -> bool {
+        let set = if global {
+            &self.globals_set
+        } else {
+            &self.locals_set
+        };
+        set.contains(&(index as u32))
+    }
+
+    /// Phobos `TActionExt::EditVariable` (`Ext/TAction/Body.cpp:135-194`,
+    /// action 501): `Param3` selects the op over `Value` — 0 set, 1 `+`, 2
+    /// `-`, 3 `*`, 4 `/`, 5 `%`, 6 `<<`, 7 `>>` (counts masked to five bits,
+    /// arithmetic right), 8 `~`, 9 `^`, 10 `|`, 11 `&` — with `Param4` the
+    /// operand. The entry must exist (`variables.find`, `:165-166`); an
+    /// unknown op returns false without a notify (`:188-190`). Native's
+    /// division or modulo by zero raises IDIV; VERA leaves the value
+    /// unchanged.
+    pub fn phobos_edit_variable(
+        &mut self,
+        global: bool,
+        index: i32,
+        op: i32,
+        operand: i32,
+    ) -> bool {
+        let values = if global {
+            &mut self.globals_values
+        } else {
+            &mut self.locals_values
+        };
+        let Some(value) = values.get_mut(&(index as u32)) else {
+            return false;
+        };
+        match op {
+            0 => *value = operand,
+            1 => *value = value.wrapping_add(operand),
+            2 => *value = value.wrapping_sub(operand),
+            3 => *value = value.wrapping_mul(operand),
+            4 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_div(operand);
+            }
+            5 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_rem(operand);
+            }
+            6 => *value = value.wrapping_shl((operand & 31) as u32),
+            7 => *value = value.wrapping_shr((operand & 31) as u32),
+            8 => *value = !*value,
+            9 => *value ^= operand,
+            10 => *value |= operand,
+            11 => *value &= operand,
+            _ => return false,
+        }
+        true
+    }
+
+    /// Write an existing extended entry: `PhobosSetVariableValue`-shaped
+    /// gate for the 502 random roll. `false` when no slot authored the index.
+    pub fn phobos_set_variable_value(&mut self, global: bool, index: i32, value: i32) -> bool {
+        let values = if global {
+            &mut self.globals_values
+        } else {
+            &mut self.locals_values
+        };
+        values
+            .get_mut(&(index as u32))
+            .map(|slot| {
+                *slot = value;
+            })
+            .is_some()
+    }
+
+    /// Phobos `TActionExt::BinaryOperation` (`Ext/TAction/Body.cpp:225-256`,
+    /// action 504): the target entry takes the source entry's `Value` through
+    /// `Param3`'s op — 0 assignment (its case 8), 1 `+` .. 7 `>>`, 9 `^`,
+    /// 10 `|`, 11 `&`; there is no unary arm. Both entries must exist.
+    pub fn phobos_binary_operation(
+        &mut self,
+        target_global: bool,
+        target_index: i32,
+        source_global: bool,
+        source_index: i32,
+        op: i32,
+    ) -> bool {
+        let source_values = if source_global {
+            &self.globals_values
+        } else {
+            &self.locals_values
+        };
+        let source = source_values.get(&(source_index as u32)).copied();
+        let Some(operand) = source else {
+            return false;
+        };
+        let values = if target_global {
+            &mut self.globals_values
+        } else {
+            &mut self.locals_values
+        };
+        let Some(value) = values.get_mut(&(target_index as u32)) else {
+            return false;
+        };
+        match op {
+            0 | 8 => *value = operand,
+            1 => *value = value.wrapping_add(operand),
+            2 => *value = value.wrapping_sub(operand),
+            3 => *value = value.wrapping_mul(operand),
+            4 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_div(operand);
+            }
+            5 => {
+                if operand == 0 {
+                    return false;
+                }
+                *value = value.wrapping_rem(operand);
+            }
+            6 => *value = value.wrapping_shl((operand & 31) as u32),
+            7 => *value = value.wrapping_shr((operand & 31) as u32),
+            9 => *value ^= operand,
+            10 => *value |= operand,
+            11 => *value &= operand,
+            _ => return false,
+        }
+        true
+    }
     /// `TeamTypeClass::Array[index]` (`0x00A8ECA4`) by ID, in constructor
     /// order. None past its end, where native reads out of bounds.
     pub(crate) fn team_type_at(&self, index: usize) -> Option<&str> {
@@ -1179,6 +1332,23 @@ impl TriggerRuntime {
     }
     fn trigger(&self, index: usize) -> Option<&LiveTrigger> {
         self.triggers.get(index)?.as_ref()
+    }
+    /// `pTechno->AttachedTag`: the live Tag an object carries, if any.
+    pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .copied()
+    }
+    /// The Tag's `FirstTrigger` chain, compared by `Type->ID` the way TAction
+    /// 600 does (`_stricmp`, `Ext/TAction/Body.cpp:698-712`).
+    pub(crate) fn tag_carries_trigger_type(&self, tag: usize, type_id: &str) -> bool {
+        self.tag(tag).is_some_and(|live| {
+            live.triggers.iter().any(|&live| {
+                self.trigger(live)
+                    .and_then(|trigger| self.definitions.trigger_types.get(trigger.type_index))
+                    .is_some_and(|typ| typ.id.eq_ignore_ascii_case(type_id))
+            })
+        })
     }
     fn evaluate_event(
         &self,
@@ -1624,12 +1794,34 @@ impl Simulation {
                 }
             }
         }
+        // Phobos `ReadVariables(false, pINI)` (`Ext/Scenario/Body.cpp:37-69`,
+        // hook `0x689B20`): the locals' extended map clears and re-reads, one
+        // entry per authored slot with `Value = atoi(state token)` else 0.
+        let locals_values = map
+            .local_variables
+            .values()
+            .map(|variable| (variable.index, variable.initial_value.unwrap_or(0)))
+            .collect();
         self.trigger_runtime = TriggerRuntime {
             definitions,
             definitions_prepared: true,
             locals_set,
+            locals_values,
             ..TriggerRuntime::default()
         };
+    }
+
+    /// Phobos `ReadVariables(true, INI_Rules)` (`Ext/Scenario/
+    /// Hooks.Variables.cpp:82-88`, hook `0x6876C2`): the rules-authored
+    /// globals' extended values, read once at scenario start — native refuses
+    /// a re-read while the global map holds entries
+    /// (`Ext/Scenario/Body.cpp:40-43`).
+    pub fn initialize_phobos_global_values(&mut self, rules: &crate::rules::ruleset::RuleSet) {
+        debug_assert!(
+            self.trigger_runtime.globals_values.is_empty(),
+            "the rules-authored globals read once, like native's loaded guard"
+        );
+        self.trigger_runtime.globals_values = rules.variable_names.clone();
     }
 
     fn trigger_difficulty(&self) -> i32 {
@@ -3687,30 +3879,67 @@ impl Simulation {
         } else {
             values.remove(&(index as u32));
         }
-        if previous != set {
-            trigger_runtime.dirty[0] = true;
-            let events = if global { [27, 28] } else { [36, 37] };
-            //689670/689910 -> Tag6E57F0/6E5820 ->7263A0/7263D0:
-            // Tag registry order, then each reversed live chain, including
-            // disabled instances. This differs from Enable53's global array.
-            let mut tag_ordinal = 0;
-            while tag_ordinal < trigger_runtime.tag_order.len() {
-                let tag = trigger_runtime.tag_order[tag_ordinal];
-                let chain = trigger_runtime.tag(tag).unwrap().triggers.clone();
-                for live in chain {
-                    let typ = trigger_runtime.trigger(live).unwrap().type_index;
-                    if trigger_runtime.definitions.trigger_types[typ]
-                        .events
-                        .iter()
-                        .any(|e| events.contains(&e.kind) && e.value == index)
-                    {
-                        Self::reset_trigger_timers(session, scenario_rng, trigger_runtime, live);
-                    }
-                }
-                tag_ordinal += 1;
+        // Phobos `SetVariableToByID` (`Ext/Scenario/Body.cpp:11-26`, hooked
+        // over 0x689910/0x689670): an existing extended entry stores the
+        // state byte as its `Value`.
+        {
+            let extended = if global {
+                &mut trigger_runtime.globals_values
+            } else {
+                &mut trigger_runtime.locals_values
+            };
+            if let Some(value) = extended.get_mut(&(index as u32)) {
+                *value = i32::from(set);
             }
         }
+        if previous != set {
+            Self::notify_variable_changed(session, scenario_rng, trigger_runtime, global, index);
+        }
         previous
+    }
+
+    /// The variable-changed walk `Tag6E57F0/6E5820 ->7263A0/7263D0` runs:
+    /// Tag registry order, then each reversed live chain, including disabled
+    /// instances, resetting the timers of every Tag whose events watch the
+    /// index. `SetVariableToByID`'s value-changed arm and the Phobos
+    /// 501/502/504 actions share it.
+    fn notify_variable_changed(
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        trigger_runtime: &mut TriggerRuntime,
+        global: bool,
+        index: i32,
+    ) {
+        trigger_runtime.dirty[0] = true;
+        let events = if global { [27, 28] } else { [36, 37] };
+        let mut tag_ordinal = 0;
+        while tag_ordinal < trigger_runtime.tag_order.len() {
+            let tag = trigger_runtime.tag_order[tag_ordinal];
+            let chain = trigger_runtime.tag(tag).unwrap().triggers.clone();
+            for live in chain {
+                let typ = trigger_runtime.trigger(live).unwrap().type_index;
+                if trigger_runtime.definitions.trigger_types[typ]
+                    .events
+                    .iter()
+                    .any(|e| events.contains(&e.kind) && e.value == index)
+                {
+                    Self::reset_trigger_timers(session, scenario_rng, trigger_runtime, live);
+                }
+            }
+            tag_ordinal += 1;
+        }
+    }
+
+    /// Phobos `ScenarioExt::Variables[global]`'s extended `Value`
+    /// (`BannerClass.cpp:139-146`): `None` when no map/rules slot authored
+    /// the index.
+    pub fn variable_value(&self, global: bool, index: i32) -> Option<i32> {
+        let values = if global {
+            &self.trigger_runtime.globals_values
+        } else {
+            &self.trigger_runtime.locals_values
+        };
+        values.get(&(index as u32)).copied()
     }
 
     /// Logic55AFB0 reads the mutable list length and dirty bytes afresh for
@@ -3908,7 +4137,7 @@ impl Simulation {
         found
     }
 
-    ///Tag6E5380: identity membership of a live Trigger in the Tag's chain.
+    /// `Tag6E5380`: identity membership of a live Trigger in the Tag's chain.
     fn tag_contains_live_trigger(&self, attachment: TagAttachment, live: usize) -> bool {
         self.trigger_runtime
             .attachments
@@ -4081,6 +4310,13 @@ impl Simulation {
         let reference = action.reference;
         let value = action.value;
         let sound = action.sound.as_ref();
+        // Native `TActionClass+0x90` is `Value`; `Param3` is the third token
+        // after the action kind (`Ext/TAction/Body.cpp:761`).
+        let param3 = action
+            .entry
+            .params
+            .get(2)
+            .map_or(0, |param| crt_atoi(param));
         let action = &action.entry;
         match action.kind {
             6 => {
@@ -4206,6 +4442,159 @@ impl Simulation {
                 });
             }
             103 => self.session.set_scenario_timer_caption(action.csf_label()),
+            800 | 801 => {
+                // Phobos `TActionExt::CreateBannerLocal`/`CreateBannerGlobal`
+                // (`Ext/TAction/Body.cpp:845-852`) ->
+                // `CreateOrReplaceBanner` (`:813-843`): the action's Text
+                // finds the `[BannerTypes]` entry, Param3 ids the banner,
+                // Param4/Param5 position it as view percents and Param6
+                // names the scenario variable. A missing type is a no-op.
+                let type_name = action.csf_label();
+                if rules.banner_types().entry(type_name).is_some() {
+                    self.session
+                        .banner_create_or_replace(crate::sim::banner::RuntimeBanner {
+                            id: action.params.get(2).map_or(0, |v| crt_atoi(v)),
+                            type_name: type_name.to_owned(),
+                            position_percent: [
+                                action.params.get(3).map_or(0, |v| crt_atoi(v)),
+                                action.params.get(4).map_or(0, |v| crt_atoi(v)),
+                            ],
+                            variable: action.params.get(5).map_or(0, |v| crt_atoi(v)),
+                            global_variable: action.kind == 801,
+                        });
+                }
+            }
+            802 => {
+                // Phobos `TActionExt::DeleteBanner` (`Ext/TAction/Body.cpp:858-875`):
+                // the first banner whose ID equals the action's +90 value goes.
+                if let Some(id) = value {
+                    self.session.banner_delete(id);
+                }
+            }
+            600 => {
+                // Phobos `TActionExt::SetDropCrate` (`Ext/TAction/Body.cpp:690-720`):
+                // Value is the override flag (`0` disables, `1` names Param3's
+                // `[Powerups]` slot) and lands on every techno whose tag chain
+                // lists a trigger typed like the firing one.
+                let Some(live) = context.live_index else {
+                    return true;
+                };
+                let Some(firing_type) = self
+                    .trigger_runtime
+                    .trigger(live)
+                    .map(|trigger| trigger.type_index)
+                else {
+                    return true;
+                };
+                let Some(firing_id) = self
+                    .trigger_runtime
+                    .definitions
+                    .trigger_types
+                    .get(firing_type)
+                    .map(|typ| typ.id.clone())
+                else {
+                    return true;
+                };
+                self.phobos_set_drop_crate(&firing_id, value.unwrap_or(0), param3);
+            }
+            501 => {
+                // Phobos `TActionExt::EditVariable` (`Ext/TAction/Body.cpp:135-194`):
+                // the +90 index, `Param3` the op, `Param4` the operand and
+                // `Param5` the global/local table; the entry must exist. The
+                // notify fires whenever an op matched (`:192-193`).
+                let Some(index) = value else {
+                    return true;
+                };
+                let global = action.params.get(4).map_or(0, |v| crt_atoi(v)) != 0;
+                let matched = self.trigger_runtime.phobos_edit_variable(
+                    global,
+                    index,
+                    action.params.get(2).map_or(0, |v| crt_atoi(v)),
+                    action.params.get(3).map_or(0, |v| crt_atoi(v)),
+                );
+                if matched {
+                    Self::notify_variable_changed(
+                        &self.session,
+                        &mut self.scenario_rng,
+                        &mut self.trigger_runtime,
+                        global,
+                        index,
+                    );
+                }
+            }
+            502 => {
+                // Phobos `TActionExt::GenerateRandomNumber`
+                // (`Ext/TAction/Body.cpp:196-210`): the +90 index takes
+                // `RandomRanged(Param3, Param4)` from the table `Param5`
+                // picks, then the notify.
+                let Some(index) = value else {
+                    return true;
+                };
+                let global = action.params.get(4).map_or(0, |v| crt_atoi(v)) != 0;
+                // The roll happens inside the find gate (`:200-202`): a
+                // missing entry spends no Scenario draw.
+                if self.variable_value(global, index).is_none() {
+                    return true;
+                }
+                let drawn = self.scenario_rng.next_range_i32_inclusive(
+                    action.params.get(2).map_or(0, |v| crt_atoi(v)),
+                    action.params.get(3).map_or(0, |v| crt_atoi(v)),
+                );
+                if self
+                    .trigger_runtime
+                    .phobos_set_variable_value(global, index, drawn)
+                {
+                    Self::notify_variable_changed(
+                        &self.session,
+                        &mut self.scenario_rng,
+                        &mut self.trigger_runtime,
+                        global,
+                        index,
+                    );
+                }
+            }
+            503 => {
+                // Phobos `TActionExt::PrintVariableValue`
+                // (`Ext/TAction/Body.cpp:212-223`): the +90 index's `Value`
+                // printed `L"%d"` into the message list, from the table
+                // `Param3` picks.
+                let Some(index) = value else {
+                    return true;
+                };
+                let global = action.params.get(2).map_or(0, |v| crt_atoi(v)) != 0;
+                if let Some(text) = self.variable_value(global, index) {
+                    effects.push(TriggerEffect::VariableValuePrinted {
+                        text: text.to_string(),
+                    });
+                }
+            }
+            504 => {
+                // Phobos `TActionExt::BinaryOperation`
+                // (`Ext/TAction/Body.cpp:225-256`): the +90 target entry takes
+                // `Param4`'s entry through `Param3`'s op; `Param5`/`Param6`
+                // pick each side's table. Both entries must exist and the
+                // notify fires whenever an op matched (`:258-260`).
+                let Some(target_index) = value else {
+                    return true;
+                };
+                let target_global = action.params.get(4).map_or(0, |v| crt_atoi(v)) != 0;
+                let matched = self.trigger_runtime.phobos_binary_operation(
+                    target_global,
+                    target_index,
+                    action.params.get(5).map_or(0, |v| crt_atoi(v)) != 0,
+                    action.params.get(3).map_or(0, |v| crt_atoi(v)),
+                    action.params.get(2).map_or(0, |v| crt_atoi(v)),
+                );
+                if matched {
+                    Self::notify_variable_changed(
+                        &self.session,
+                        &mut self.scenario_rng,
+                        &mut self.trigger_runtime,
+                        target_global,
+                        target_index,
+                    );
+                }
+            }
             20 => {
                 // Steam gamemd: Execute6DE8E4..6DE903 passes +90
                 // to Theme720B20 and returns AL1, even when audio is gated.
@@ -5196,6 +5585,29 @@ impl Simulation {
                 };
                 house.set_preferred_super_weapon_target_kind(value);
             }
+            ACTION_SET_TEAM_DELAY => {
+                // Phobos `TActionExt::SetTeamDelay` (`Ext/TAction/Body.cpp:759`):
+                // `pHouse` is the trigger's incoming House; the signed
+                // `Param3` (`params[2]`) is stored on the House extension and
+                // caps the existing team timer.
+                let Some(owner) = context.incoming_house else {
+                    return false;
+                };
+                let Some(stock_delay) = self
+                    .houses
+                    .get(&owner)
+                    .map(|house| house.difficulty_value(&rules.general.team_delays))
+                else {
+                    return false;
+                };
+                let frame = self.session.binary_frame() as i32;
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                house
+                    .team_creation_mut()
+                    .set_team_delay_action(frame, param3, stock_delay);
+            }
             76..=79 => {
                 // Active76..79 at6DF34F/379/3A3/3CD: a null incoming House
                 // succeeds without reading +90. Each stores that signed dword
@@ -5403,19 +5815,22 @@ impl Simulation {
                     return false;
                 };
                 let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
-                self.combat_light_requests
-                    .emit(crate::sim::combat::CombatLightRequest::Impact {
-                        target_id: None,
-                        damage: match action.kind {
-                            64 => 50,
-                            65 => 100,
-                            _ => 300,
+                if crate::sim::combat::combat_light_chance_admits(self, rules, warhead_ref) {
+                    self.combat_light_requests.emit(
+                        crate::sim::combat::CombatLightRequest::Impact {
+                            target_id: None,
+                            damage: match action.kind {
+                                64 => 50,
+                                65 => 100,
+                                _ => 300,
+                            },
+                            warhead_ref,
+                            coord: crate::sim::projectile::ProjectileCoord::new(x, y, z),
+                            force_create: false,
+                            flags: 0,
                         },
-                        warhead_ref,
-                        coord: crate::sim::projectile::ProjectileCoord::new(x, y, z),
-                        force_create: false,
-                        flags: 0,
-                    });
+                    );
+                }
             }
             71 | 72 => {
                 let Some(bits) = value else {
@@ -6480,6 +6895,10 @@ mod talk_tests;
 mod cargo_tests;
 
 #[cfg(all(test, tests_sim_trigger))]
+#[path = "trigger_runtime_drop_crate_tests.rs"]
+mod drop_crate_tests;
+
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_restore_tests.rs"]
 mod restore_tests;
 
@@ -6506,3 +6925,7 @@ mod building_sale_native_tests;
 #[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_skirmish_map_tests.rs"]
 mod skirmish_map_tests;
+
+#[cfg(all(test, tests_sim_trigger))]
+#[path = "trigger_runtime_banner_tests.rs"]
+mod banner_tests;

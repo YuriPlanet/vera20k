@@ -807,3 +807,48 @@ fn make_enemy_alternate_reveal_restores_the_released_client_cache() {
     assert!(!sim.fog.sight_is_latched(id, player));
     assert_eq!(counter(&sim, player, SITE), before);
 }
+
+/// Phobos `RevealToAll.Radius=` (`Ext/BuildingType/Body.cpp:284`,
+/// `0x446816`/`0x4ADE55`): the alternate sight circle uses the key, else the
+/// type's raw `Sight`.
+fn world_with_reveal_radius(patch: &str) -> Option<(RuleSet, Simulation, InternedId)> {
+    let (mut rules_ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
+    rules_ini.merge(&crate::rules::ini_parser::IniFile::from_str(patch));
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art).ok()?;
+    Some(world_on(rules))
+}
+
+#[test]
+fn phobos_reveal_to_all_radius_overrides_the_alternate_sight_circle() {
+    for (patch, expected) in [
+        (
+            "[NAIRON]
+RevealToAll.Radius=2
+",
+            2,
+        ),
+        (
+            "[NAIRON]
+RevealToAll.Radius=<default>
+",
+            4,
+        ),
+        ("", 4),
+    ] {
+        let Some((rules, mut sim, americans)) = world_with_reveal_radius(patch) else {
+            return;
+        };
+        let id = sim
+            .spawn_object("NAIRON", "Russians", SITE.0, SITE.1, 0, &rules)
+            .unwrap();
+        let admission = &sim.fog.alternate_sight_admissions_for_test()[&(id, americans)];
+        assert_eq!(admission.radius, expected, "patch {patch:?}");
+        let cells = alternate_cells(&sim, id, americans);
+        assert!(cells.contains(&(SITE.0 + 2, SITE.1)), "radius {expected}");
+        assert_eq!(
+            cells.contains(&(SITE.0 + 3, SITE.1)),
+            expected > 2,
+            "radius {expected} at distance 3"
+        );
+    }
+}

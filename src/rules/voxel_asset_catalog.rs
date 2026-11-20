@@ -36,6 +36,19 @@ impl VoxelPart {
     pub fn vxl(&self) -> &VxlFile {
         &self.vxl
     }
+
+    /// A part built from parsed bytes, for stencil tests that cannot reach
+    /// the match's `AssetManager`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_parts(vxl: VxlFile, hva: Option<HvaFile>) -> Self {
+        Self {
+            vxl: Arc::new(vxl),
+            hva: hva.map(Arc::new),
+            // No image name reached this part, so its identity stays empty.
+            identity: (String::new(), None),
+        }
+    }
+
     pub fn hva(&self) -> Option<&HvaFile> {
         self.hva.as_deref()
     }

@@ -77,6 +77,32 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
     );
 }
 
+/// Phobos `TActionExt::PrintVariableValue` (`Ext/TAction/Body.cpp:212-223`,
+/// action 503): the extended variable's `Value` printed `L"%d"` through
+/// `MessageListClass::Instance.PrintMessage` — the shared message list's
+/// plain add, with the trigger lines' colour and delay.
+pub(crate) fn post_variable_value_message(state: &mut AppState, text: &str) {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        return;
+    };
+    let rules = &runtime.resources.rules;
+    let side = runtime.simulation.session().scenario_side();
+    let rgb = ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+        trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
+    });
+    let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    post_localized_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
 fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
     use crate::util::native_x87::{NativeF64Bits, X87Chop53};
     X87Chop53::load_f64(delay)
@@ -280,6 +306,19 @@ pub(crate) enum HudMessage {
         label: &'static str,
         type_id: crate::sim::intern::InternedId,
     },
+    /// Phobos `SWTypeExt::ApplyActivatedMessage`'s selected column
+    /// (`Ext/SWType/FireSuperWeapon.cpp:495-509`): the label lives on the
+    /// `[SuperWeaponTypes]` entry, prints in the launching House's colour
+    /// (`:507`) with `MessageDelay`, style/silent 0.
+    PhobosSuperWeaponMessage {
+        sw_type: crate::sim::intern::InternedId,
+        audience: crate::rules::phobos_sw_messages::PhobosActivatedAudience,
+        firer: crate::sim::intern::InternedId,
+    },
+    /// Phobos `SWTypeExt::ApplyLinkedSW`'s `Message.LinkedSWAcquired`
+    /// (`Ext/SWType/FireSuperWeapon.cpp:487`): printed in the *current
+    /// player's* colour, with `MessageDelay`.
+    PhobosSuperWeaponLinkedAcquired(crate::sim::intern::InternedId),
     /// VERA's optional detailed EVA text for an alert with no single subject
     /// object (base/harvester under attack, infiltration, new construction).
     /// Unlike [`Self::EvaObjectLine`] it names no type, so the sim event need
@@ -295,6 +334,9 @@ impl HudMessage {
             Self::AresSuperWeaponRefused(_)
             | Self::AresSuperWeaponMessage { .. }
             | Self::AresTechCaptureLabel(_) => return None,
+            Self::PhobosSuperWeaponMessage { .. } | Self::PhobosSuperWeaponLinkedAcquired(_) => {
+                return None;
+            }
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) | Self::BeaconHelp(key) => key,
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
@@ -316,6 +358,11 @@ impl HudMessage {
             | Self::AresSuperWeaponMessage { .. }
             | Self::AresTechCaptureLabel(_) => {
                 ares_message_delay_timeout_ms(rules.general.message_delay_minutes)
+            }
+            // `MessageListClass::PrintMessage` with `RulesClass::MessageDelay`,
+            // the same stock conversion as the low-power line.
+            Self::PhobosSuperWeaponMessage { .. } | Self::PhobosSuperWeaponLinkedAcquired(_) => {
+                message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::BeaconHelp(_) => Some(BEACON_HELP_TIMEOUT_MS),
             // `post_hud_message` posts these through `post_eva_text`.
@@ -450,6 +497,50 @@ pub(crate) fn post_ares_superweapon_message(
     post_localized_message(state, &post);
 }
 
+/// Phobos `SWTypeExt::ApplyActivatedMessage` (`Ext/SWType/FireSuperWeapon.cpp:491-510`):
+/// `MessageListClass::PrintMessage(label, RulesClass::MessageDelay,
+/// pHouse->ColorSchemeIndex, true)` of the column the launching House selects.
+/// An empty label was filtered by the caller.
+pub(crate) fn post_phobos_superweapon_message(
+    state: &mut AppState,
+    section: &str,
+    audience: crate::rules::phobos_sw_messages::PhobosActivatedAudience,
+    firer: Option<&str>,
+) {
+    let text = state
+        .rules()
+        .and_then(|rules| rules.phobos_super_weapon_messages(section))
+        .map(|messages| messages.activated_message(audience).to_owned());
+    if let Some(text) = text {
+        post_phobos_superweapon_line(state, text, firer);
+    }
+}
+
+/// The `MessageListClass::PrintMessage` transport shared by the two Phobos
+/// superweapon labels: `color_owner` supplies the scheme the row draws with,
+/// `MessageDelay` supplies its wall-clock life, style/silent 0.
+fn post_phobos_superweapon_line(state: &mut AppState, text: String, color_owner: Option<&str>) {
+    if text.is_empty() {
+        return;
+    }
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let rgb = house_message_rgb(
+        color_owner,
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    let post = crate::ui::messages::MessagePost {
+        prefix: None,
+        text: &text,
+        rgb,
+        timeout_ms: message_delay_timeout_ms(rules.general.message_delay_minutes),
+        silent: false,
+    };
+    post_localized_message(state, &post);
+}
+
 /// House4F8D5C and the Super print callers use MessageList5D3BA0 with
 /// PlayerPtr's color, no sender, and silent0. Keep the existing list/clock,
 /// localization and IncomingMessage owners; no warning timer/guard lives here.
@@ -488,6 +579,45 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         });
         if let Some((section, firer)) = names {
             post_ares_superweapon_message(state, &section, message, firer.as_deref());
+        }
+        return;
+    }
+    if let HudMessage::PhobosSuperWeaponMessage {
+        sw_type,
+        audience,
+        firer,
+    } = message
+    {
+        let names = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+            let interner = runtime.simulation.interner();
+            Some((
+                interner.try_resolve(sw_type)?.to_owned(),
+                interner.try_resolve(firer)?.to_owned(),
+            ))
+        });
+        if let Some((section, firer)) = names {
+            post_phobos_superweapon_message(state, &section, audience, Some(&firer));
+        }
+        return;
+    }
+    if let HudMessage::PhobosSuperWeaponLinkedAcquired(sw_type) = message {
+        let section = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+            runtime
+                .simulation
+                .interner()
+                .try_resolve(sw_type)
+                .map(str::to_owned)
+        });
+        if let Some(section) = section {
+            let text = state
+                .rules()
+                .and_then(|rules| rules.phobos_super_weapon_messages(&section))
+                .map(|messages| messages.linked_acquired_message().to_owned());
+            if let Some(text) = text {
+                // `HouseClass::CurrentPlayer->ColorSchemeIndex` (`:487`).
+                let player = crate::app::input::commands::preferred_local_owner_name(state);
+                post_phobos_superweapon_line(state, text, player.as_deref());
+            }
         }
         return;
     }
@@ -1208,12 +1338,44 @@ pub(crate) fn update(state: &mut AppState, main_tick_admitted: bool) -> Option<u
     }
     sync_view(state);
     let now = message_now_ms(state);
-    state
+    // Phobos `MainLoop_FrameStep_NewMessageListManage` (`0x55DDA0`,
+    // `Misc/MessageColumn.cpp:1078-1085`): `OnOldMessages` holds
+    // `MessageListClass::Manage`, so the label stack stops expiring while
+    // the pointer rests on it.
+    let on_old_messages = mouse_over_message_lists(state);
+    if !on_old_messages {
+        state
+            .match_state
+            .match_presentation
+            .message_list
+            .manage(now);
+    }
+    Some(now)
+}
+
+/// Phobos `MouseOverMessageLists` through `0x4F43BE
+/// GScreenClass_GetInputAndUpdate_CheckHoverState`
+/// (`Misc/MessageColumn.cpp:1057-1060, 1043-1056`): with
+/// `MessageApplyHoverState` on, the pointer above the label stack's bottom
+/// (list top + a line per label, the open edit included, +2) holds
+/// `OnOldMessages`; the switch off keeps it false. The cursor is already in
+/// the match frame's pixels, the space the stack's geometry uses. The
+/// MessageColumn scroll-board arms (`:291`, `:1106`) are its only other
+/// consumers and have no VERA owner; see the settings residual.
+fn mouse_over_message_lists(state: &AppState) -> bool {
+    if !state
         .match_state
         .match_presentation
-        .message_list
-        .manage(now);
-    Some(now)
+        .message_apply_hover_state
+    {
+        return false;
+    }
+    let list = &state.match_state.match_presentation.message_list;
+    if list.messages().is_empty() && list.edit_line().is_none() {
+        return false;
+    }
+    let (_, cursor_y) = state.cursor_position();
+    (cursor_y as i32) < list.hover_bottom_frame_y() + 2
 }
 
 /// A hold created by an already-admitted Logic cannot revoke this pass's
@@ -1242,6 +1404,24 @@ fn sync_view(state: &mut AppState) {
     );
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     let top = state.renderer.performance_overlay.message_top();
+    // `MessageColumnClass::Init` (Misc/MessageColumn.cpp:455-465) clamps the
+    // authored label/record counts to the panel's line budget. VERA's list
+    // has no toggle-button column; its 14-slot pool is that budget.
+    {
+        let boards = state.match_state.match_presentation.hud_boards;
+        if boards.message_display_in_center {
+            let (labels, records) = crate::app::presentation::hud_boards::column_capacities(
+                boards.message_labels,
+                boards.message_records,
+                crate::ui::messages::MESSAGE_SLOTS,
+            );
+            state
+                .match_state
+                .match_presentation
+                .message_list
+                .configure_column(labels, records);
+        }
+    }
     state.match_state.match_presentation.message_list.set_view(
         x,
         y.max(tactical_y as i32 + top),
@@ -1272,6 +1452,18 @@ pub(crate) fn build_message_instances(
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
     }
+    // `0x623A9F DSurface_sub_623880_DrawBitFontStrings`
+    // (`Misc/MessageColumn.cpp:1106-1112`) fills each message row's board with
+    // `FillRectTrans(..., MessageDisplayInCenter.BoardOpacity)` while the
+    // centre column is drawing. The stock list keeps its opaque black board.
+    let board_alpha = {
+        let boards = state.match_state.match_presentation.hud_boards;
+        if boards.message_display_in_center {
+            crate::app::presentation::hud_boards::board_alpha(boards.message_board_opacity)
+        } else {
+            1.0
+        }
+    };
     // A layout that leaves the messages out only takes them off the screen.
     if !crate::app::presentation::field_parts::shows(
         state,
@@ -1291,6 +1483,7 @@ pub(crate) fn build_message_instances(
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        board_alpha,
     )
 }
 
@@ -1322,6 +1515,7 @@ fn message_instances(
     list: &crate::ui::messages::MessageList,
     composition: Option<&[u16]>,
     camera_offset: [f32; 2],
+    board_alpha: f32,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let x = list.x() as f32;
     let mut fills = Vec::new();
@@ -1376,7 +1570,7 @@ fn message_instances(
             // (fill 0.00021 > border 0.000205 > text).
             depth: 0.00023,
             tint: [0.0; 3],
-            alpha: 1.0,
+            alpha: board_alpha,
             ..Default::default()
         });
         texts.extend(text);
@@ -1387,6 +1581,33 @@ fn message_instances(
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
+
+    /// `0x623A9F`: the centre column fills each row board with
+    /// `FillRectTrans(..., BoardOpacity)`, while the stock list stays opaque.
+    #[test]
+    fn the_message_row_board_takes_the_phobos_board_opacity() {
+        let font = crate::render::bit_font::tests::make_test_font(
+            &[(b'L' as u16, 6), (b'o' as u16, 6)],
+            4,
+        );
+        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 600);
+        let p = crate::ui::messages::MessagePost {
+            prefix: None,
+            text: "Lo",
+            rgb: [1.0, 1.0, 1.0],
+            timeout_ms: None,
+            silent: true,
+        };
+        list.add_message(&p, 0, &|s| s.chars().count() as i32 * 10);
+        let stock = message_instances(&font, &list, None, [0.0; 2], 1.0);
+        assert_eq!(stock.0.len(), 1);
+        assert_eq!(stock.0[0].alpha, 1.0);
+
+        let alpha = crate::app::presentation::hud_boards::board_alpha(40);
+        let phobos = message_instances(&font, &list, None, [0.0; 2], alpha);
+        assert_eq!(phobos.0[0].alpha, 0.4);
+        assert_eq!(phobos.1.len(), stock.1.len(), "only the board changes");
+    }
 
     #[test]
     fn movie_subtitle_rows_keep_native_duration_and_literal_text() {
@@ -1814,9 +2035,15 @@ mod tests {
             4,
         );
         assert_eq!(list.advance_reveal(now as u32), 1);
-        assert_eq!(message_instances(&font, &list, None, [0.0; 2]).1.len(), 1);
+        assert_eq!(
+            message_instances(&font, &list, None, [0.0; 2], 1.0).1.len(),
+            1
+        );
         assert_eq!(list.advance_reveal(now as u32 + 16), 1);
-        assert_eq!(message_instances(&font, &list, None, [0.0; 2]).1.len(), 2);
+        assert_eq!(
+            message_instances(&font, &list, None, [0.0; 2], 1.0).1.len(),
+            2
+        );
         // Offline menus skip Manage. Equality still retains the row; a
         // first resumed poll past the deadline removes it immediately.
         assert!(!list.manage(deadline));
@@ -1883,7 +2110,7 @@ mod tests {
         let font = make_test_font(&[(b'a' as u16, 6), (0x4E2D, 15)], 4);
         let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 1_000);
         assert!(list.add_edit("a", [1.0, 1.0, 1.0], true));
-        let (fills, texts) = message_instances(&font, &list, Some(&[0x4E2D]), [0.0; 2]);
+        let (fills, texts) = message_instances(&font, &list, Some(&[0x4E2D]), [0.0; 2], 1.0);
         let expected = font.build_text_label(
             "\u{4E2D}",
             3.0 + font.text_width("a") as f32,
@@ -1917,9 +2144,9 @@ mod tests {
             &|text| font.text_width(text) as i32,
         );
 
-        let at_origin = message_instances(&font, &list, None, [0.0, 0.0]).1;
+        let at_origin = message_instances(&font, &list, None, [0.0, 0.0], 1.0).1;
         let ui_camera = [640.0_f32, 480.0_f32];
-        let panned = message_instances(&font, &list, None, ui_camera).1;
+        let panned = message_instances(&font, &list, None, ui_camera, 1.0).1;
 
         assert_eq!(at_origin.len(), 3);
         assert_eq!(panned.len(), at_origin.len());

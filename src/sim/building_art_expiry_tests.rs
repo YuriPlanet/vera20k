@@ -454,7 +454,7 @@ fn original_stock_idle_body_publishes_ready_without_waiting_for_slot_completion(
             .set_building_ready_latch(integer(&row["before"]["building"]["done"]) as u8);
         entity.advance_building_body(
             200,
-            false,
+            None,
             rules
                 .object(row["building"].as_str().unwrap())
                 .unwrap()

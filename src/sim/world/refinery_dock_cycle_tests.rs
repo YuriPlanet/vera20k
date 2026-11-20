@@ -545,12 +545,12 @@ fn a_busy_refinery_leaves_a_second_miners_click_on_select() {
         .set_current_house_for_test(Some(s.sim.substrate.entities.get(s.miner).unwrap().owner()));
     assert_eq!(
         s.sim
-            .unit_building_click_action(second, s.refinery, &s.rules),
+            .unit_building_click_action(second, s.refinery, false, &s.rules),
         None
     );
     assert_eq!(
         s.sim
-            .unit_building_click_action(s.miner, s.refinery, &s.rules),
+            .unit_building_click_action(s.miner, s.refinery, false, &s.rules),
         Some(crate::sim::world::EntryClickAction::Enter)
     );
 }

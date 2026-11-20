@@ -48,6 +48,12 @@ struct AlphaShape {
     image: String,
     /// fDisabled (+0x3C).
     disabled: bool,
+    /// The `0x48A444..0x48A47E` light-flash window this shape was created in
+    /// (`LightEffectsTemp::AlphaIsLightFlash`): the renderer drops it when
+    /// `LightFlashAlphaImageDetailLevel` exceeds the detail level or
+    /// `[Phobos] HideLightFlashEffects=` is on (`0x005F5053`).
+    #[serde(default)]
+    light_flash: bool,
 }
 
 /// The shape vector, in construction order.
@@ -94,17 +100,59 @@ impl Simulation {
             origin: [x as i32 - width / 2, y as i32 - height / 2],
             image: object.alpha_image.clone(),
             disabled: false,
+            light_flash: false,
         });
     }
 
-    /// Each shape's origin and AlphaImage name, in vector order.
-    /// `DrawAll_NoMask @ 0x00421350` draws disabled shapes too, until the
-    /// purge.
-    pub fn alpha_shapes(&self) -> impl Iterator<Item = ([i32; 2], &str)> + '_ {
+    /// The same `ObjectClass::Unlimbo @ 0x005F4EC0` AlphaShape block
+    /// (`0x005F5045..0x005F5100`) for a spawned particle: `ParticleClass` is an
+    /// object too, and `ParticleTypeClass::ReadINI @ 0x00644F50` reaches
+    /// `ObjectTypeClass::ReadINI @ 0x005F92D0`, so a loaded `AlphaImage=` makes
+    /// the same glow at the particle's own coords.
+    /// The `0x48A444..0x48A47E` window a `WH.Particle` system runs in, read by
+    /// `construct_particle_alpha_shape` so each spawned particle keeps the mark.
+    pub(crate) fn set_particle_light_flash(&mut self, light_flash: bool) {
+        self.particle_light_flash = light_flash;
+    }
+
+    pub(crate) fn particle_light_flash(&self) -> bool {
+        self.particle_light_flash
+    }
+
+    pub(super) fn construct_particle_alpha_shape(
+        &mut self,
+        stable_id: u64,
+        coords: [i32; 3],
+        alpha_image: &str,
+        rules: &RuleSet,
+    ) {
+        if alpha_image.is_empty() {
+            return;
+        }
+        let Some(image) = rules.alpha_image(alpha_image) else {
+            return;
+        };
+        let (x, y) =
+            crate::util::lepton::absolute_leptons_to_screen(coords[0], coords[1], coords[2]);
+        let [width, height] = image.canvas();
+        let light_flash = self.particle_light_flash;
+        self.alpha_shapes.shapes.push(AlphaShape {
+            object: stable_id,
+            origin: [x as i32 - width / 2, y as i32 - height / 2],
+            image: alpha_image.to_string(),
+            disabled: false,
+            light_flash,
+        });
+    }
+
+    /// Each shape's origin, AlphaImage name and light-flash mark, in vector
+    /// order. `DrawAll_NoMask @ 0x00421350` draws disabled shapes too, until
+    /// the purge.
+    pub fn alpha_shapes(&self) -> impl Iterator<Item = ([i32; 2], &str, bool)> + '_ {
         self.alpha_shapes
             .shapes
             .iter()
-            .map(|shape| (shape.origin, shape.image.as_str()))
+            .map(|shape| (shape.origin, shape.image.as_str(), shape.light_flash))
     }
 
     /// Ares 3.0 `AlphaShapeExt::UpdateAlphaShape` (`Ares.dll 10009F40`,

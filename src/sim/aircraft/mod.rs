@@ -40,6 +40,9 @@ mod release_tests;
 #[cfg(all(test, tests_sim_a_b))]
 mod team_strike_tests;
 #[cfg(all(test, tests_sim_a_b))]
+#[path = "unland_damage_tests.rs"]
+mod unland_damage_tests;
+#[cfg(all(test, tests_sim_a_b))]
 mod trailer_tests;
 
 use crate::map::entities::EntityCategory;
@@ -79,6 +82,12 @@ impl MissionOnly {
     /// Mark the object mission-only, for the rest of its life.
     pub fn mark(&mut self) {
         self.0 = true;
+    }
+
+    /// Write the native `+0x3D4` byte. Phobos' `IsALoaner` UnLimbo override
+    /// assigns both values (`Ext/Aircraft/Hooks.cpp:1320`).
+    pub(crate) fn set(&mut self, value: bool) {
+        self.0 = value;
     }
 }
 
@@ -165,6 +174,23 @@ pub(crate) fn restart_patrol_after_restore(entity: &mut GameEntity) {
         && entity.mission.current() == MissionId::from_known(MissionType::Patrol)
     {
         restart_patrol(entity);
+    }
+}
+
+/// Phobos `GetTurningRadius` (`Ext/Aircraft/Hooks.cpp:485-492`): the
+/// `Aircraft`'s turn radius in leptons, `Speed / |ROT.Raw * 2pi / 65536|`
+/// truncated, or 0 for a rotation too small to divide by. `ROT.Raw` is the
+/// raw `DirStruct` word, so a negative rate appears as its unsigned
+/// complement (Phobos casts the `unsigned short` straight to `double`). Both
+/// callers are Phobos hooks: `AircraftClass_Mission_Move_SmoothMoving`
+/// (`:520`) and `FlyLocomotionClass_FlightUpdate_SetPrimaryFacing` (`:617`).
+pub(crate) fn turning_radius(entity: &GameEntity, speed: i32) -> i32 {
+    let rot = i32::from(entity.body_facing.rot_per_frame());
+    let radians = (f64::from(rot) * (std::f64::consts::TAU / 65536.0)).abs();
+    if radians > 1e-10 {
+        (f64::from(speed) / radians) as i32
+    } else {
+        0
     }
 }
 
@@ -265,10 +291,7 @@ pub(crate) fn dispatch_mission(
             spyplane_mission::overfly(sim, id, rules, ctx.effects)
         }
         Some(
-            MissionType::Capture
-            | MissionType::Sabotage
-            | MissionType::Eaten
-            | MissionType::Rescue,
+            MissionType::Capture | MissionType::Sabotage | MissionType::Eaten | MissionType::Rescue,
         ) => return None,
         _ => MISSION_STUB_FRAMES,
     };
@@ -331,6 +354,22 @@ fn write_state(substrate: &mut crate::sim::world::ObjectSubstrate, id: u64, read
     }
 }
 
+/// Weapon 0's `Strafing.Shots.Get(5)` for the entry hook; the key only exists
+/// under `phobos`.
+fn strafe_shots(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return 5;
+    };
+    sim.interner
+        .object_type(entity.type_ref(), rules)
+        .and_then(|obj| {
+            crate::sim::combat::combat_weapon::primary_for_tier(obj, entity.veterancy.rank())
+        })
+        .and_then(|name| rules.weapon(name))
+        .map_or(5, |weapon| weapon.phobos_strafing().shots())
+}
+
+
 /// One Mission_Attack visit in the aircraft's dispatch: its state and delay,
 /// or `None` for a strike visit (states 4..9), which fires through the
 /// receiver, where VERA's FireAt lives (`combat::aircraft_release`).
@@ -341,6 +380,30 @@ fn attack_visit(
     rules: &RuleSet,
     frame_effects: FrameEffects<'_>,
 ) -> Option<(u8, i32)> {
+    // Phobos `AircraftClass_Mission_Attack_StrafeShots` (`0x417FF1`,
+    // `Ext/Aircraft/Hooks.cpp:25-50`) runs at the handler entry, before the
+    // state body: it resets the round counter outside the strafe states and
+    // sends FireAtTarget3_Strafe back to FireAtTarget2_Strafe.
+    let mut state = state;
+    let strafe_shots = strafe_shots(sim, id, rules);
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        let (next, counter) = attack_mission::strafe_entry(
+            state,
+            entity
+                .mission_leaf
+                .aircraft_strafe_bombs_dropped_this_round(),
+            strafe_shots,
+        );
+        if entity.mission_leaf.as_aircraft().is_some() {
+            entity
+                .mission_leaf
+                .set_aircraft_strafe_bombs_dropped_this_round(counter);
+        }
+        if next != state {
+            entity.mission.set_handler_state(u32::from(next));
+            state = next;
+        }
+    }
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         attack_mission::enter_attack_state(entity, state);
     }

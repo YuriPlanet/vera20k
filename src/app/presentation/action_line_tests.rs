@@ -555,7 +555,10 @@ fn retail_tank_attack_inputs_match_original_readers() {
         object.primary().unwrap(),
         input["primary_name"].as_str().unwrap()
     );
-    assert_eq!(serde_json::json!(art.turret_offset), input["turret_offset"]);
+    assert_eq!(
+        serde_json::json!(art.turret_offset[0]),
+        input["turret_offset"]
+    );
     assert_eq!(
         [
             object.weapon_flh(0, false).forward,

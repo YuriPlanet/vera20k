@@ -153,6 +153,7 @@ fn losing_one_of_three_hospitals_releases_one_share() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         man,
         &rules,
@@ -203,6 +204,7 @@ fn losing_one_of_three_hospitals_releases_one_share() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         man,
         &rules,
@@ -241,6 +243,7 @@ fn only_infantry_and_units_reach_a_house_heal_arm() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         plant,
         &rules,
@@ -250,6 +253,7 @@ fn only_infantry_and_units_reach_a_house_heal_arm() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         aircraft,
         &rules,
@@ -298,6 +302,7 @@ fn an_organic_no_infantry_takes_the_hospital_arm() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         man,
         &rules,
@@ -324,6 +329,7 @@ fn an_organic_no_infantry_takes_the_hospital_arm() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         man,
         &rules,
@@ -358,6 +364,7 @@ fn an_over_strength_or_dead_object_never_heals() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         tank,
         &rules,
@@ -381,6 +388,7 @@ fn an_over_strength_or_dead_object_never_heals() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         tank,
         &rules,
@@ -411,6 +419,7 @@ fn the_heal_stops_at_full_strength() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         tank,
         &rules,
@@ -427,6 +436,7 @@ fn the_heal_stops_at_full_strength() {
         &sim.session,
         &mut sim.substrate,
         &sim.houses,
+        &sim.house_alliances,
         &sim.resolved_terrain,
         tank,
         &rules,
@@ -534,6 +544,7 @@ fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_buildi
                 &sim.session,
                 &mut sim.substrate,
                 &sim.houses,
+                &sim.house_alliances,
                 &sim.resolved_terrain,
                 actor,
                 &rules,
@@ -562,6 +573,7 @@ fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_buildi
             &sim.session,
             &mut sim.substrate,
             &sim.houses,
+            &sim.house_alliances,
             &sim.resolved_terrain,
             actor,
             &rules,
@@ -608,6 +620,7 @@ fn authored_house_self_heal_divide_faults_carry_on_without_a_heal() {
                 &sim.session,
                 &mut sim.substrate,
                 &sim.houses,
+                &sim.house_alliances,
                 &sim.resolved_terrain,
                 actor,
                 &rules,
@@ -849,5 +862,149 @@ fn the_mechanism_runs_on_a_real_map() {
             *delta, amount,
             "each step adds SelfHealInfantryAmount at one hospital (frame {runs_on})"
         );
+    }
+}
+
+/// Phobos `SelfHealGainType` (`0x6FA793`, `Ext/Techno/Body.Update.cpp:591`):
+/// the type's key picks which house capacity and cadence the techno draws
+/// on; unset keeps the stock classification.
+mod phobos_gain_type {
+    use super::*;
+
+    fn rules(general: &str, mtnk: &str, e1: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nSelfHealInfantryFrames=50\nSelfHealInfantryAmount=20\n\
+             SelfHealUnitFrames=75\nSelfHealUnitAmount=5\n{general}\
+             [InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n\
+             [E1]\nStrength=125\nSpeed=4\nCost=100\n{e1}\
+             [MTNK]\nStrength=300\nSpeed=7\nCost=700\nROT=5\n{mtnk}\
+             [BuildingTypes]\n\
+             [Warheads]\n0=AP\n\
+             [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        )))
+        .expect("phobos self-heal rules")
+    }
+
+    fn scene(rules: RuleSet) -> (Simulation, RuleSet, InternedId) {
+        let mut sim = Simulation::with_seed(0x5E1F_4EA1);
+        sim.fog.set_width_for_test(64);
+        sim.fog.set_height_for_test(64);
+        sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+            64, 2, 2, 56, 52,
+        ));
+        sim.intern_rule_type_ids(&rules);
+        let owner = sim.interner.intern("Soviet");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
+        (sim, rules, owner)
+    }
+
+    fn damage(sim: &mut Simulation, id: u64, health: i32) {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(health);
+    }
+
+    #[test]
+    fn the_type_key_moves_a_unit_onto_the_infantry_capacity() {
+        let (mut sim, rules, owner) = scene(rules("", "SelfHealGainType=Infantry\n", ""));
+        let tank = spawn(&mut sim, &rules, "MTNK");
+        damage(&mut sim, tank, 10);
+        // Only a machine-shop (units) share is present: the infantry kind
+        // finds no capacity and heals nothing.
+        sim.houses.get_mut(&owner).unwrap().grant_self_heal(0, 1);
+        sim.session.set_binary_frame_for_test(50);
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.house_alliances,
+            &sim.resolved_terrain,
+            tank,
+            &rules,
+        );
+        assert_eq!(sim.entities().get(tank).unwrap().health.current(), 10);
+
+        // A hospital share heals x20 on the infantry cadence.
+        sim.houses.get_mut(&owner).unwrap().grant_self_heal(1, 0);
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.house_alliances,
+            &sim.resolved_terrain,
+            tank,
+            &rules,
+        );
+        assert_eq!(sim.entities().get(tank).unwrap().health.current(), 30);
+    }
+
+    #[test]
+    fn an_unset_key_keeps_the_stock_classification() {
+        let (mut sim, rules, owner) = scene(rules("", "", ""));
+        let tank = spawn(&mut sim, &rules, "MTNK");
+        damage(&mut sim, tank, 10);
+        sim.houses.get_mut(&owner).unwrap().grant_self_heal(0, 1);
+        sim.session.set_binary_frame_for_test(75);
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.house_alliances,
+            &sim.resolved_terrain,
+            tank,
+            &rules,
+        );
+        assert_eq!(sim.entities().get(tank).unwrap().health.current(), 15);
+    }
+
+    #[test]
+    fn noheal_and_the_cap_stop_the_share() {
+        let (mut sim, rules, owner) = scene(rules(
+            "UnitsGainSelfHealCap=1\n",
+            "",
+            "SelfHealGainType=noheal\n",
+        ));
+        let infantry = spawn(&mut sim, &rules, "E1");
+        damage(&mut sim, infantry, 10);
+        sim.houses.get_mut(&owner).unwrap().grant_self_heal(1, 2);
+        sim.session.set_binary_frame_for_test(50);
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.house_alliances,
+            &sim.resolved_terrain,
+            infantry,
+            &rules,
+        );
+        assert_eq!(
+            sim.entities().get(infantry).unwrap().health.current(),
+            10,
+            "noheal keeps the infantryman out of the hospital arm"
+        );
+
+        // A stock vehicle with two unit shares is capped to one (x5, not x10).
+        let tank = spawn(&mut sim, &rules, "MTNK");
+        damage(&mut sim, tank, 10);
+        sim.session.set_binary_frame_for_test(75);
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.house_alliances,
+            &sim.resolved_terrain,
+            tank,
+            &rules,
+        );
+        assert_eq!(sim.entities().get(tank).unwrap().health.current(), 15);
     }
 }

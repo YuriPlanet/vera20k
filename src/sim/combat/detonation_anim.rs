@@ -106,7 +106,6 @@ fn damage_band<'a>(list: &'a [impl AsRef<str>], damage: i32, step: i32) -> Optio
 pub(crate) struct SelectedAnim {
     pub name: InternedId,
     /// Only the Phobos Bullet tail reads this.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     pub splashed: bool,
 }
 
@@ -135,12 +134,9 @@ pub(crate) fn select_with_context(
     // Phobos `WarheadTypeExt::CreateAnimsOnZeroDamage` (`0x48A4F3`): a zero
     // packet normally returns no animation; the key (or its `[General]`
     // fallback) lets selection continue with damage 0.
-    #[cfg(feature = "phobos")]
     let create_zero_damage = warhead
         .phobos_anim
         .create_anims_on_zero_damage(&rules.phobos_warhead_anim);
-    #[cfg(not(feature = "phobos"))]
-    let create_zero_damage = false;
     if damage == 0 && !create_zero_damage {
         return None;
     }
@@ -169,19 +165,8 @@ pub(crate) fn select_with_context(
             // Phobos `WarheadTypeClass_AnimList_SplashList` (`0x48A551`): a
             // present per-warhead list replaces the global list; a present
             // empty list stays empty and selects nothing.
-            #[cfg(feature = "phobos")]
             let splash_names = warhead.phobos_anim.splash_list_names(rules);
-            #[cfg(not(feature = "phobos"))]
-            let splash_names: Vec<&str> = rules
-                .combat_damage
-                .splash_list
-                .iter()
-                .map(String::as_str)
-                .collect();
-            #[cfg(feature = "phobos")]
             let pick_random = warhead.phobos_anim.splash_list_pick_random;
-            #[cfg(not(feature = "phobos"))]
-            let pick_random = false;
             // Phobos evaluates the PickRandom range before its `size() > 0`
             // check, so an empty list still consumes the native
             // `RandomRanged(0, -1)` (one swapped-bounds draw).
@@ -233,7 +218,6 @@ pub(crate) fn select_with_context(
     // AnimList count load and empty test at `0x48A5BB`): an active crit
     // replaces the damage animation with a `Crit.AnimList` entry while that
     // list stays off the affected targets, even when `AnimList=` is empty.
-    #[cfg(feature = "phobos")]
     if crit_active
         && !warhead.crit.anim_list().is_empty()
         && !warhead.crit.anim_on_affected_targets(rules.crit_globals())
@@ -259,15 +243,10 @@ pub(crate) fn select_with_context(
             splashed: false,
         });
     }
-    #[cfg(not(feature = "phobos"))]
-    let _ = crit_active;
     if warhead.anim_list.is_empty() {
         return None;
     }
-    #[cfg(feature = "phobos")]
     let pick_random = warhead.em_effect || warhead.phobos_anim.anim_list_pick_random;
-    #[cfg(not(feature = "phobos"))]
-    let pick_random = warhead.em_effect;
     let name = if pick_random {
         let index = world.scenario_rng.next_range_i32_inclusive(
             0,
@@ -311,7 +290,6 @@ pub(crate) fn effect(
 /// this tail: a `MakeInfantry=` type uses `MakeInfantryOwner`, a
 /// `CreateUnit=` type overrides it with `CreateUnit.Owner`, and anything else
 /// keeps the invoker House. `Random` draws one House in native array order.
-#[cfg(feature = "phobos")]
 fn anim_owner_house(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -327,28 +305,17 @@ fn anim_owner_house(
             .map_or((None, None), |config| {
                 (
                     (config.make_infantry > -1).then_some(config.phobos_make_infantry_owner),
-                    config.phobos_create_unit,
+                    config
+                        .phobos_create_unit
+                        .as_ref()
+                        .map(|settings| settings.owner),
                 )
             })
     };
-    let kind = create_unit
-        .map(|(owner, _)| owner)
-        .or(make_owner)
-        .unwrap_or(HouseSelector::Default);
-    let random_house = if kind == HouseSelector::Random {
-        let order = world.houses.order();
-        if order.is_empty() {
-            None
-        } else {
-            let index = world
-                .scenario_rng
-                .next_range_i32_inclusive(0, order.len() as i32 - 1)
-                as usize;
-            order.get(index).copied()
-        }
-    } else {
-        None
-    };
+    let kind = create_unit.or(make_owner).unwrap_or(HouseSelector::Default);
+    let random_house = (kind == HouseSelector::Random)
+        .then(|| world.random_house())
+        .flatten();
     world.house_kind(kind, invoker, invoker, invoker, None, rules, random_house)
 }
 
@@ -356,7 +323,6 @@ fn anim_owner_house(
 /// place the animation against the cell floor, expand CreateAll lists, gate
 /// on the shared creation interval, and scatter each constructed animation
 /// independently.
-#[cfg(feature = "phobos")]
 pub(crate) fn bullet_effects(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -882,7 +848,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod phobos_enhancement_tests {
     use super::*;
     use crate::map::entities::EntityCategory;

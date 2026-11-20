@@ -41,7 +41,7 @@ mod actions;
 mod follow_friendlies;
 #[cfg(all(test, tests_sim_t_z))]
 mod follow_friendlies_tests;
-mod membership;
+pub(crate) mod membership;
 mod orders;
 mod registry_install;
 mod reinforcements;
@@ -225,6 +225,14 @@ pub struct TeamTypeIniMetadata {
     /// (`0x0051EDD8..0x0051EDED`). No retail TeamType sets it.
     #[serde(default)]
     loadable: bool,
+    /// Phobos `ParaDropAircraft=` (`Ext/TeamType/Body.cpp:15`, declared
+    /// `Ext/TeamType/Body.h:26`, constructed nullptr): the aircraft type
+    /// `TeamTypeClass::CreateInstance` builds for a paradrop reinforcement in
+    /// place of the house's plane (hook `0x65DBD0`,
+    /// `Ext/TeamType/Hooks.cpp:9`). An unresolvable name keeps the vanilla
+    /// choice, as `read<AircraftType*>` leaves nullptr.
+    #[serde(default)]
+    pub para_drop_aircraft: Option<String>,
     pub source: TeamAiDefinitionSource,
 }
 
@@ -267,6 +275,7 @@ impl Default for TeamTypeIniMetadata {
             droppod: false,
             only_target_house_enemy: false,
             loadable: false,
+            para_drop_aircraft: None,
             source: TeamAiDefinitionSource::FixedAimd,
         }
     }
@@ -530,6 +539,9 @@ impl From<crate::sim::combat::TargetKind> for TeamTarget {
                 y: y as i16,
             },
             crate::sim::combat::TargetKind::Entity(id) => Self::Object(id),
+            // A bullet target has no team-object identity; the id names no
+            // entity for any team consumer.
+            crate::sim::combat::TargetKind::Bullet(id) => Self::Object(id),
         }
     }
 }
@@ -1043,11 +1055,14 @@ impl TeamScriptVm {
     /// `TeamClass::Get_Needed_Types @ 0x006EF4D0`: the team's TaskForce
     /// entries in order, each type `count` times, less the first remaining
     /// one of each member's type (`vt+0x84`, read live by `member_type`), in
-    /// member-list order.
+    /// member-list order. `member_fills` is the same entry test the other
+    /// TeamClass matches use, including a member's `TeamMember.ConsideredAs`
+    /// list (the `0x6EF57F` hook).
     pub(crate) fn needed_types(
         &self,
         team: &TeamScriptState,
         mut member_type: impl FnMut(u64) -> Option<TeamMemberTypeIdentity>,
+        mut member_fills: impl FnMut(u64, TeamMemberTypeIdentity) -> bool,
     ) -> Vec<TeamMemberTypeIdentity> {
         let Some(task_force) = team
             .task_force_id
@@ -1063,10 +1078,13 @@ impl TeamScriptVm {
             })
             .collect();
         for member in &team.members {
-            let Some(member_type) = member_type(member.id) else {
+            if member_type(member.id).is_none() {
                 continue;
-            };
-            if let Some(position) = needed.iter().position(|&needed| needed == member_type) {
+            }
+            if let Some(position) = needed
+                .iter()
+                .position(|&entry_type| member_fills(member.id, entry_type))
+            {
                 needed.remove(position);
             }
         }
@@ -1719,6 +1737,9 @@ pub(crate) fn join_team_for_test(
     teams.create_team_from_type(owner, team_type_id, &candidates, 0)
 }
 
+#[cfg(all(test, tests_sim_t_z))]
+mod considered_as_tests;
+#[cfg(all(test, tests_sim_t_z))]
 #[cfg(all(test, tests_sim_t_z))]
 mod firesale_retail_tests;
 #[cfg(all(test, tests_sim_t_z))]

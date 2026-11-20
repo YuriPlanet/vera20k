@@ -59,7 +59,14 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<u64> {
         let system = self.initialize_gas_cloud_system(rules)?;
-        let particle = Particle::new(kind, coords, IVec3::ZERO, rules.particle_type(kind), self);
+        let particle = Particle::new(
+            kind,
+            coords,
+            IVec3::ZERO,
+            rules.particle_type(kind),
+            self,
+            rules,
+        );
         let id = particle.stable_id();
         self.substrate
             .particle_systems
@@ -120,8 +127,14 @@ pub(super) fn tick_system(
             let pt = rules.particle_type(p.type_id);
             if let Some(next) = pt.next_particle {
                 let coords = offset(p.coords, pt.next_particle_offset);
-                let mut child =
-                    Particle::new(next, coords, IVec3::ZERO, rules.particle_type(next), sim);
+                let mut child = Particle::new(
+                    next,
+                    coords,
+                    IVec3::ZERO,
+                    rules.particle_type(next),
+                    sim,
+                    rules,
+                );
                 //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
                 //or CC/D0/D4. The constructor still takes its lifetime draw.
                 child.velocity = p.velocity;
@@ -175,8 +188,27 @@ pub(super) fn tick_particle(
             } else {
                 p.drift_y = p.drift_y.wrapping_add(delta);
             }
-            p.drift_x = p.drift_x.clamp(-2, 2);
-            p.drift_y = p.drift_y.clamp(-2, 2);
+            // `0x62BD9D` (`test al,7; jne 0x62BE60`) skips the whole block
+            // unless this draw is zero, so the stock clamp at
+            // `0x62BE30..0x62BE5F` - replaced by Phobos
+            // `ParticleClass_Gas_AI_DriftSpeed` (`0x62BE30`,
+            // `Ext/ParticleType/Hooks.cpp:4-30`) with the type's
+            // `Gas.MaxDriftSpeed` - runs only at mutation events. The explicit
+            // if/else keeps the native order for a negative bound.
+            {
+                let max = rules.particle_type(p.type_id).phobos_gas_max_drift_speed;
+                let min = max.wrapping_neg();
+                if p.drift_x > max {
+                    p.drift_x = max;
+                } else if p.drift_x < min {
+                    p.drift_x = min;
+                }
+                if p.drift_y > max {
+                    p.drift_y = max;
+                } else if p.drift_y < min {
+                    p.drift_y = min;
+                }
+            }
         }
         p.motion = [
             NativeF32Bits::POSITIVE_ZERO,

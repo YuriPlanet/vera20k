@@ -94,6 +94,8 @@ fn scrolling_fixture() -> (Simulation, RuleSet, InternedId, Vec<Cameo>) {
                             own_side: true,
                             considered_aircraft: false,
                             naval: false,
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             tech_level: kind.tech_level,
                             cost: sim.cost_of(owner, kind, &rules),
                             name: kind.ui_name.clone().unwrap(),
@@ -131,6 +133,8 @@ fn candidates(types: [InternedId; 2], first_cost: i32) -> Vec<Cameo> {
                 own_side: true,
                 considered_aircraft: false,
                 naval: false,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 tech_level: 1,
                 cost,
                 name: String::new(),
@@ -191,7 +195,6 @@ fn prepare(
     )
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn sw_sidebar_expanded_flag_survives_the_snapshot_envelope() {
     let (sim, rules, owner, types) = fixture();

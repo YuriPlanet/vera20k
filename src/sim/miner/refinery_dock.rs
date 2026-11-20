@@ -105,6 +105,14 @@ pub(crate) fn mission_unload(
     };
     // A 0x0073DEE0: without any radio contact the unload is abandoned.
     if entity.radio_contacts.is_empty() {
+        // Phobos `UnitClass_Mi_Unload_SkipHarvester` (hook 0x73DEEB,
+        // `Ext/Unit/Hooks.Unload.cpp:61-75`): a non-unloading harvester with
+        // `Deploy.NoTiberium` unset or an empty hold skips the dump for the
+        // deploy path (`0x73D694`); a harvester has no deploy-fire/DeploysInto/
+        // IsSimpleDeployer arm, so that path ends at the FootUnload stub.
+        if sim.phobos_harvester_skips_tiberium_dump(id, rules) {
+            return crate::sim::mission::MISSION_STUB_FRAMES;
+        }
         sim.unit_enter_idle_mode(id, rules, false, effects);
         set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
         stop_if_moving(&mut sim.substrate, id);
@@ -185,14 +193,55 @@ fn unload_dumping(
     // integer stage crosses at ceil(rate × 900) (`GeneralRules`).
     if stage >= i32::from(rules.general.harvester_dump_frames) {
         crate::sim::world::building_anim::begin_refinery_unload_gate(sim, rules, building);
+        // Phobos `UnitClass_Mission_Unload_DumpAmount` (hook `0x73E411`,
+        // `Ext/Unit/Hooks.Harvester.cpp:115-131`): the type's
+        // `HarvesterDumpAmount` else `[General] HarvesterDumpAmount` caps one
+        // tick's removal; a non-positive cap keeps the whole-slot dump.
+        let dump_cap = Some(
+            sim.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .and_then(|object| object.phobos_harvester_dump_amount)
+                .unwrap_or(f32::from_bits(
+                    rules.phobos_globals.harvester_dump_amount.bits(),
+                )),
+        );
         let drained = sim
             .substrate
             .entities
             .get_mut(id)
             .and_then(|entity| entity.miner.as_mut())
-            .and_then(|miner| drain_first_slot(&mut miner.cargo));
+            .and_then(|miner| drain_first_slot(&mut miner.cargo, dump_cap));
         if let Some((slot, bales)) = drained {
-            pay_refinery_owner(sim, rules, building, slot, bales);
+            // `UnitClass::Mission_Unload @ 0x0073E46D..0x0073E493`: when the
+            // unloader's type has `Weeder=` (`Type+0xE0F`), native passes
+            // `ftol(removed amount)` and the drained slot index to
+            // `HouseClass::GiveWeed @ 0x004F9700`, with ECX = Unit+0x21C —
+            // the unloader's OWN House, not the refinery owner that the
+            // tiberium arm below pays. VERA's cargo keeps whole bales where
+            // native keeps float StorageClass amounts, so `bales` is already
+            // the integer that native `ftol` produced.
+            let weeder = sim
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.weeder);
+            if weeder {
+                let owner = sim.substrate.entities.get(id).map(|entity| entity.owner());
+                if let Some(owner) = owner
+                    && let Some(house) = sim.houses.get_mut(&owner)
+                {
+                    house.economy_mut().give_weed(
+                        bales,
+                        slot.0 as usize,
+                        rules.general.weed_capacity,
+                    );
+                }
+            } else {
+                pay_refinery_owner(sim, rules, building, slot, bales);
+            }
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 // `Unit+0xF8 = 0` (`0x0073E493`).
                 entity.set_native_stage_value(0);
@@ -471,13 +520,30 @@ fn epilogue(
 /// StorageClass FindFirstUsedSlot6C9820 scans native type slots in ascending
 /// order; RemoveAmount6C96B0 removes that slot only. Both vehicle Unload and
 /// slave deposit use this owner. Native controls: refinery_dock.json.
+///
+/// `dump_cap` is Phobos `0x73E411`'s per-tick amount: positive limits the
+/// drained bales, zero or negative dumps the whole slot.
+///
+/// RESIDUAL: native keeps float StorageClass amounts, so a cap may remove a
+/// fraction of one level and carry the remainder into the next tick. VERA
+/// keeps whole bales, so the cap truncates to whole bales and a positive
+/// sub-bale cap removes one.
 pub(crate) fn drain_first_slot(
     cargo: &mut Vec<super::CargoBale>,
+    dump_cap: Option<f32>,
 ) -> Option<(crate::rules::tiberium_type::TiberiumTypeId, i32)> {
     let slot = cargo.iter().map(|bale| bale.tiberium_type).min()?;
+    let total = cargo
+        .iter()
+        .filter(|bale| bale.tiberium_type == slot)
+        .count() as i32;
+    let limit = match dump_cap {
+        Some(cap) if cap > 0.0 && (total as f32) >= cap => (cap.trunc() as i32).clamp(1, total),
+        _ => total,
+    };
     let mut bales: i32 = 0;
     cargo.retain(|bale| {
-        if bale.tiberium_type == slot {
+        if bale.tiberium_type == slot && bales < limit {
             bales += 1;
             false
         } else {
@@ -495,7 +561,9 @@ pub(crate) fn drain_first_slot(
 /// owner's purifiers plus `AIVirtualPurifiers[difficulty]` for a computer
 /// house outside the campaign (`0x0073E3D5..0x0073E408`). A slave's deposit
 /// pays its master the same way (`0x00522D71..0x00522E36`). The unloader's
-/// `Weeder=` arm (`0x0073E474`) is not ported; no retail unit sets it.
+/// `Weeder=` arm (`0x0073E474`) takes a different owner: the dispatcher in
+/// `unload_dumping` calls `Economy::give_weed` on the unloader's own House
+/// instead of this function. No retail unit sets `Weeder=`.
 ///
 /// In a game read the Ares way (`RuleSet::ares_form`) both payments are
 /// replaced with `TechnoExt::DepositTiberium` (`10044230`; hooks `0x73E4A2`
@@ -513,6 +581,10 @@ pub(crate) fn pay_refinery_owner(
         return;
     };
     let owner_name = sim.interner.resolve(owner).to_string();
+    // Phobos `BuildingClass_InfiltratedBy`-style balance sampling for the
+    // `DisplayIncome` label: the unload hook records the dock's House balance
+    // before the mission's deposits (`Hooks.Refinery.cpp:20-38`).
+    let money_before = crate::sim::credit_income::available_money(&sim.houses, owner);
     let purifiers = super::miner_system::effective_purifier_count(sim, rules, &owner_name);
     let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
     //73E42B..73E441 /522DCD..522DE3: count * bonus * amount,
@@ -526,6 +598,18 @@ pub(crate) fn pay_refinery_owner(
         sim.give_tiberium(owner, amount, slot, rules);
         if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
             sim.give_tiberium(owner, bonus, slot, rules);
+        }
+    }
+    // The dock accumulates the cash the deposit actually credited; the
+    // periodic `DisplayIncome` label reads it (`Ext/Building/Body.cpp:12-36`).
+    {
+        let credited = crate::sim::credit_income::available_money(&sim.houses, owner)
+            .wrapping_sub(money_before);
+        if credited != 0
+            && let Some(dock) = sim.substrate.entities.get_mut(building)
+        {
+            let income = dock.phobos_accumulated_income().wrapping_add(credited);
+            dock.set_phobos_accumulated_income(income);
         }
     }
 }
@@ -542,6 +626,63 @@ fn purifier_bonus_amount(
     ))
 }
 
+#[cfg(all(test, tests_sim_h_o))]
+mod drain_tests {
+    use super::super::{CargoBale, ResourceType};
+    use super::drain_first_slot;
+    use crate::rules::tiberium_type::TiberiumTypeId;
+
+    fn bale(tiberium_type: u8) -> CargoBale {
+        CargoBale {
+            tiberium_type: TiberiumTypeId(tiberium_type),
+            resource_type: ResourceType::Ore,
+            value: 25,
+        }
+    }
+
+    /// `0x73E411`: a positive cap drains only that many whole levels of the
+    /// first slot each call; once the slot is short the rest goes.
+    #[test]
+    fn a_positive_dump_cap_limits_each_slot_drain() {
+        let mut cargo = vec![bale(0), bale(0), bale(0), bale(0), bale(0), bale(1)];
+        assert_eq!(
+            drain_first_slot(&mut cargo, Some(2.5)),
+            Some((TiberiumTypeId(0), 2))
+        );
+        assert_eq!(
+            drain_first_slot(&mut cargo, Some(2.5)),
+            Some((TiberiumTypeId(0), 2))
+        );
+        assert_eq!(
+            drain_first_slot(&mut cargo, Some(2.5)),
+            Some((TiberiumTypeId(0), 1))
+        );
+        // A positive sub-bale cap still removes one whole bale.
+        assert_eq!(
+            drain_first_slot(&mut cargo, Some(0.5)),
+            Some((TiberiumTypeId(1), 1))
+        );
+        assert_eq!(drain_first_slot(&mut cargo, Some(2.5)), None);
+    }
+
+    /// A zero cap (the `Valueable<float>` default) keeps the stock whole-slot
+    /// dump, and an empty hold drains nothing.
+    #[test]
+    fn a_zero_dump_cap_drains_the_whole_first_slot() {
+        let mut cargo = vec![bale(1), bale(0), bale(1)];
+        assert_eq!(
+            drain_first_slot(&mut cargo, Some(0.0)),
+            Some((TiberiumTypeId(0), 1))
+        );
+        assert_eq!(
+            drain_first_slot(&mut cargo, Some(0.0)),
+            Some((TiberiumTypeId(1), 2))
+        );
+        assert_eq!(drain_first_slot(&mut cargo, Some(0.0)), None);
+    }
+}
+
+#[cfg(all(test, tests_sim_h_o))]
 #[cfg(all(test, tests_sim_h_o))]
 mod income_tests {
     use super::purifier_bonus_amount;

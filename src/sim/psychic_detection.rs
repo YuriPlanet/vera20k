@@ -70,10 +70,21 @@ impl Simulation {
         viewer: InternedId,
         sites: &[(DriveCoord, i32)],
         cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+        rules: &RuleSet,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
+        // Phobos `0x0043B150` (`Ext/Techno/Hooks.Misc.cpp:1107-1118`): a type
+        // with `PsychicDetectable=false` answers 0 and returns early, before
+        // any site, alliance or distance test.
+        if self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| !object.phobos_psychic_detectable)
+        {
+            return false;
+        }
         if sites.is_empty()
             || crate::sim::combat::combat_weapon::is_ally_by_object(
                 Some(&self.house_alliances),

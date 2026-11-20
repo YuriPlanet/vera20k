@@ -1,6 +1,6 @@
 # Optional Phobos warhead decloaking
 
-Build with `--features phobos` to choose per warhead whether a cloaked object
+Phobos is in every build; turn it on from a game's data to choose per warhead whether a cloaked object
 it damages starts to uncloak.
 
 ```ini
@@ -32,6 +32,11 @@ global, while an empty, `none` or invalid value leaves it to `[General]`.
 Source: `src/Ext/Techno/Hooks.ReceiveDamage.cpp`,
 `src/New/Entity/ShieldClass.cpp`, `src/Ext/WarheadType/Body.cpp` and
 `src/Ext/Rules/Body.cpp`, by Starkku.
+
+## Residuals
+
+None recorded. Both damage paths reach the single `start_uncloaking_for_damage` owner, so a weapon
+cannot decloak through one path and not the other.
 
 ## Where VERA20K owns it
 

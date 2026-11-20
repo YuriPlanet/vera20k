@@ -109,6 +109,137 @@ fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
     }
 }
 
+/// Phobos `TerrainClass_FireOut_Crumbling` (`0x71C6EE`,
+/// `Ext/TerrainType/Hooks.cpp:239-257`): `TerrainClass::Finish_Fire_Death`
+/// (`0x0071C6B0`) clears IsOnFire and its zero-Health tail
+/// (`0x0071C6CD..0x0071C72B`) returns into `Start_To_Crumble` (`0x71C6F8`) for
+/// a `HasCrumblingFrames=` type, instead of the ordinary vanish a type without
+/// the key takes. The tree is left at zero Health but still represented, so the
+/// crumble keeps it alive and `TerrainClass_AI_Crumbling` (`0x71C812`) runs it
+/// out afterwards; the Stage restarts at rate 2 / value 0.
+#[test]
+fn a_burning_tree_with_crumbling_frames_crumbles_instead_of_vanishing() {
+    use crate::sim::terrain_spawn::tick_terrain_object_ai;
+    use crate::sim::world::{FrameEffects, SimSoundEvent};
+
+    let mut rules = fire_rules(true);
+    let mut tree = rules
+        .terrain_object_type_case_insensitive("TREE01")
+        .expect("tree type")
+        .clone();
+    tree.has_crumbling_frames = true;
+    tree.crumbling_sound = Some("TreeCrumble".to_string());
+    tree.animation_length = Some(4);
+    rules.install_map_terrain_type(tree);
+    // The sibling burns on the same warhead but carries no crumbling keys;
+    // `fire_rules`' stock TREE02 is not flammable.
+    let mut sibling = rules
+        .terrain_object_type_case_insensitive("TREE02")
+        .expect("sibling type")
+        .clone();
+    sibling.is_flammable = true;
+    rules.install_map_terrain_type(sibling);
+    // 8 SHP frames: the resting crumble cannot reach the removal midpoint.
+    rules.set_terrain_spawner_frame_count_for_test("TREE01", 8);
+
+    let mut sim = Simulation::new();
+    sim.resolve_type_handles(&rules);
+    plant(&mut sim, 700, "TREE01", (5, 5));
+    plant(&mut sim, 701, "TREE02", (8, 8));
+    let warhead_ref = sim.interner.intern("SPARKWH");
+    let hit = |stable_id, (rx, ry)| {
+        AreaDamageReceiver::Terrain(TerrainDamageEvent {
+            damage_writeback: None,
+            stable_id,
+            rx,
+            ry,
+            damage: 10,
+            distance_leptons: 0,
+            warhead_ref,
+            near_center_ic_isolation_eligible: false,
+        })
+    };
+    sim.commit_noncombat_aoe_receivers(
+        &rules,
+        None,
+        &[hit(700, (5, 5)), hit(701, (8, 8))],
+        FrameEffects::default(),
+    );
+    assert!(
+        on_fire(&sim, 700) && on_fire(&sim, 701),
+        "both trees burn before the fire-out"
+    );
+    // The fire-out tail only runs on an object already at zero Health, and
+    // VERA's on-fire lethal arm (`0x71BADC`) retires such a tree, so this
+    // installs the state the native callback sees.
+    for id in [700, 701] {
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&id)
+            .expect("tree")
+            .set_health_for_test(0);
+    }
+    for id in [700, 701] {
+        let fire = sim.substrate.anims.owned_by_terrain(id)[0];
+        sim.destroy_anim_with_context(fire, &rules);
+    }
+
+    assert!(
+        sim.terrain_objects
+            .get(700)
+            .is_some_and(TerrainObjectState::is_live),
+        "the crumbling tree stays for its crumble sequence"
+    );
+    assert!(sim.terrain_objects.is_crumbling(700));
+    assert!(
+        sim.terrain_objects.get(700).unwrap().in_logic_vector(),
+        "the fire-out crumble joins Logic"
+    );
+    assert_eq!(
+        sim.terrain_objects.animation_current_frame(700),
+        Some(0),
+        "Start_To_Crumble restarts the Stage at value 0"
+    );
+    assert_eq!(
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                SimSoundEvent::VocAt { sound_id, .. } if sound_id == "TreeCrumble"
+            ))
+            .count(),
+        1,
+        "CrumblingSound plays once, for the tree with the key"
+    );
+
+    // Rate 2: the Stage holds through frame 1 and steps once at frame 2.
+    sim.session.set_binary_frame_for_test(1);
+    tick_terrain_object_ai(&mut sim, 700, &rules, None, FrameEffects::default())
+        .expect("terrain AI");
+    assert_eq!(sim.terrain_objects.animation_current_frame(700), Some(0));
+    sim.session.set_binary_frame_for_test(2);
+    tick_terrain_object_ai(&mut sim, 700, &rules, None, FrameEffects::default())
+        .expect("terrain AI");
+    assert_eq!(
+        sim.terrain_objects.animation_current_frame(700),
+        Some(1),
+        "the crumble Stage advances one frame later"
+    );
+
+    assert!(
+        sim.terrain_objects
+            .get(701)
+            .is_some_and(TerrainObjectState::is_live)
+            && !sim.terrain_objects.is_crumbling(701),
+        "a type without HasCrumblingFrames never starts a crumble at fire-out"
+    );
+    assert_eq!(
+        sim.terrain_objects.animation_current_frame(701),
+        None,
+        "no crumble Stage is seeded for the sibling"
+    );
+}
+
 /// Ares TerrainClass_Update_ForestFire (1004F530, hook 0x71C7C2): a burning
 /// tree spreads on a 1-in-100 draw to each unburnt neighbour that may burn
 /// (with `TreeFlammability=1.0` every roll passes); a `SpawnsTiberium=`

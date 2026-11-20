@@ -657,6 +657,7 @@ fn load_with_assets(
         Some(audio_definitions.sounds().as_ref()),
         Some(&themes),
     );
+    sim.initialize_phobos_global_values(&rules);
     let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
     let mut scenario_fill_ranged =
         |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);

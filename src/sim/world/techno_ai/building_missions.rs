@@ -252,7 +252,7 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let has_turret = entity
         .building_upgrades()
         .has_turret(object, rules, &sim.interner);
-    let archive_less_sale =
+    let undeploy_stage =
         crate::sim::production::archive_less_sale(rules.into(), &object.id, entity);
     let now = sim.session.binary_frame() as i32;
     let options = sim.session.game_options();
@@ -261,8 +261,12 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         .entities
         .get_mut_if(id, |entity| entity.building_body_advances(now, has_turret))
     {
-        entity.advance_building_body(now, archive_less_sale, has_turret, options);
+        entity.advance_building_body(now, undeploy_stage, has_turret, options);
     }
+    // Phobos BuildingClass_AnimationAI_TurretAnim (0x451242): AnimationAI
+    // runs once per frame, so GetTurretFrame is called exactly once here.
+    update_turret_anim_frame(sim, id, rules);
+    update_native_turret_anim_frame(sim, id, rules);
     // 450F9E..451145, between the step and the ready admission, which it
     // does not touch.
     sim.update_super_weapon_anims(id, rules);
@@ -409,13 +413,22 @@ fn mission_construction(
             entity.begin_building_body(BuildingBodyMode::Idle, now as i32);
         }
         sim.grand_opening(id, false, false, rules, ctx.overlay_registry, ctx.effects);
-        let facing = sim
+        let wants_facing = sim
             .substrate
             .entities
             .get(id)
             .and_then(|entity| sim.object_type(entity.type_ref(), rules))
-            .filter(|object| !object.laser_fence)
-            .map(|_| crate::rules::object_type::ObjectType::BUILDING_FACING);
+            .is_some_and(|object| !object.laser_fence);
+        // `0x449AFE` (`mov ch, [type+0xED8]`): the construction turn uses the
+        // building's start facing. Phobos `BuildingClass_Mission_Construction_
+        // StartFacing` (`Ext/Building/Hooks.cpp:1506-1513`) replaces the stock
+        // zero with `GetBuildingStartFacing`.
+        let facing = wants_facing.then(|| {
+            sim.phobos_building_start_facing(id, rules).map_or(
+                crate::rules::object_type::ObjectType::BUILDING_FACING,
+                |facing| facing as u8,
+            )
+        });
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 entity,
@@ -558,7 +571,26 @@ fn mission_factory_unload(
             //44DDBF/44DE16: use the existing animation lifetime owner. The
             //original ART readers leave both names empty for stock GAWEAP.
             sim.clear_building_anim_slot(id, 18);
-            let _ = sim.set_building_anim_slot(id, 8, damaged, false, 0, rules);
+            // Phobos `BuildingClass_Unload_RoofProductionAnim` (`0x44DDF0`/
+            // `0x44DDDE`, `Ext/Building/Hooks.cpp:1188-1205`): a roof-exit
+            // docked unit plays the roof Production anim and skips the stock
+            // PlayAnim; every other unit keeps the stock play.
+            {
+                let roof_exit = contact
+                    .and_then(|product| sim.substrate.entities.get(product))
+                    .and_then(|product| sim.entity_object_type(product, rules))
+                    .is_some_and(|product_type| product_type.exits_through_roof());
+                let garrisoned = sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|building| !building.passenger_role.occupants().is_empty());
+                if roof_exit {
+                    sim.play_roof_production_anim(id, damaged, garrisoned, rules);
+                } else {
+                    let _ = sim.set_building_anim_slot(id, 8, damaged, false, 0, rules);
+                }
+            }
             //Draw-dirty and activation sound remain presentation dependencies.
         }
         1 => {
@@ -793,6 +825,22 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
             queue_and_commence(sim, id, MissionType::Attack, rules);
             return 1;
         }
+        // Phobos' armed Guard return (`Ext/Building/Hooks.cpp:1284-1305`,
+        // hook `0x4496FB`): a set `GuardRetryDelay` (type first, then
+        // `[General] BuildingGuardRetryDelay`) answers the retry frames
+        // directly; a range draws its own jitter and a single value draws
+        // nothing, replacing the stock `AARate` body below.
+        if let Some(range) = obj
+            .guard_retry_delay()
+            .or(rules.phobos_globals.building_guard_retry_delay)
+        {
+            return if range.is_single() {
+                range.low
+            } else {
+                sim.scenario_rng
+                    .next_range_i32_inclusive(range.low, range.high)
+            };
+        }
         // `0x004497AF..0x004497DA`: the AARate delay.
         let frames = rules.mission_control.aa_rate_frames(current);
         return rate_delay(&mut sim.scenario_rng, frames, 1);
@@ -989,6 +1037,9 @@ fn attack_arm(
     match code {
         FireError::Ok => {
             fire_arm(sim, id, rules, target, weapon, ctx, bridge_state_changed);
+            // Phobos BuildingClass_Mission_Attack_TurretAnim (0x44B6C7):
+            // arm the firing block at the firing instant.
+            arm_turret_anim_firing(sim, id, rules);
             // The tail every OK arm reaches (`0x0044B6D6..0x0044B724`).
             if !gattling_step(sim, id, rules, StageCall::Increase, ctx.effects) {
                 advance_turret_anim(&mut sim.substrate, id);
@@ -1012,7 +1063,9 @@ fn attack_arm(
         }
         // `0x0044B187` and `0x0044B1DE`: after Set_Desired, a Gattling type
         // charges (`0x0044B1C6`, `0x0044B21D`); any other keeps the count, and
-        // on REARM advances `+0x148` (`0x0044B235..0x0044B23C`).
+        // on REARM advances `+0x148` (`0x0044B235..0x0044B23C`). The TurretAnim
+        // arm hook at `0x44B6C7` is not on these arms; only the OK FireAt
+        // path and the upgrade second shot reach it.
         FireError::Facing | FireError::Rearm => {
             aim_turret(sim, id, rules, target);
             if !gattling_step(sim, id, rules, StageCall::Increase, ctx.effects)
@@ -1153,6 +1206,132 @@ fn advance_turret_anim(substrate: &mut ObjectSubstrate, id: u64) {
     }
 }
 
+/// `AnimationAI @ 0x451250..0x451296` without Phobos' hook: the slot-9
+/// animation's current frame is `BodyShape[facing]` from the `0x007F4890`
+/// table (`(28 - i) & 31`), written with the animation step/delay cleared.
+fn update_native_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(anim_id) = entity.building_art.anim_slots()[9] else {
+        return;
+    };
+    let name = sim.interner.resolve(entity.type_ref());
+    let Some(object) = rules.object(name) else {
+        return;
+    };
+    if object.turret_anim_is_voxel {
+        return;
+    }
+    if !entity
+        .building_upgrades()
+        .has_turret(object, rules, &sim.interner)
+    {
+        return;
+    }
+    let facing = crate::util::direction_tables::step32_from_facing16(
+        entity.body_facing_current(sim.session.binary_frame()),
+    );
+    let frame = crate::util::direction_tables::DRAGON_FRAME_TABLE[usize::from(facing)];
+    let z_adjust = sim
+        .substrate
+        .anims
+        .get(anim_id)
+        .map_or(0, crate::sim::anim_class::AnimObject::z_adjust);
+    sim.substrate
+        .set_anim_frame_and_z_adjust(anim_id, frame, z_adjust);
+}
+
+/// Phobos `BuildingClass_AnimationAI_TurretAnim` hook `0x451242`
+/// (`Ext/Building/Hooks.cpp:1318-1331`): `AnimationAI` calls
+/// `BuildingExt::GetTurretFrame` (`Ext/Building/Body.cpp:488-569`) once per
+/// frame and writes `pAnim->Animation.Value`, but only while a
+/// `BuildingAnimSlot::Turret` (slot 9) animation exists. VERA's SHP slot-9
+/// drawing is unported (retail dormant), so this pins only the CPU frame
+/// selection + state advance on the existing `UpdateAnimation` owner.
+fn update_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(anim_id) = entity.building_art.anim_slots()[9] else {
+        return;
+    };
+    let name = sim.interner.resolve(entity.type_ref());
+    let Some(object) = rules.object(name) else {
+        return;
+    };
+    if object.turret_anim_is_voxel {
+        return;
+    }
+    // `0x451238` asks `HasTurret()` (vt+0x3FC = 0x4527D0) and skips to
+    // `0x451296` when the host has none; a WallTower slot-9 anim on a
+    // `Turret=no` host never reaches GetTurretFrame.
+    if !entity
+        .building_upgrades()
+        .has_turret(object, rules, &sim.interner)
+    {
+        return;
+    }
+    // `facing = PrimaryFacing.Current().GetValue<5>()` and
+    // `shapeFacing = ObjectClass::BodyShape[facing]` (`Body.cpp:492-493`):
+    // the 0x007F4890 table, `(28 - i) & 31`, not the raw bucket.
+    let facing = crate::util::direction_tables::step32_from_facing16(
+        entity.body_facing_current(sim.session.binary_frame()),
+    );
+    let shape_facing = crate::util::direction_tables::DRAGON_FRAME_TABLE[usize::from(facing)];
+    // `isLowPower = !StuffEnabled || !IsPowerOnline()` (`Body.cpp:495`);
+    // `IsPowerOnline @ 0x004555D0` includes the house power ratio, EMP, zero
+    // health and Construction/Selling, which the Building+660 latch misses.
+    let is_low_power = !entity.building_art.stuff_enabled()
+        || !sim.building_operational_state(id, rules).unwrap_or(false);
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    let frame = object.phobos_turret_anim.get_turret_frame(
+        &mut entity.phobos_turret_anim,
+        shape_facing,
+        is_low_power,
+    );
+    let z_adjust = sim
+        .substrate
+        .anims
+        .get(anim_id)
+        .map_or(0, crate::sim::anim_class::AnimObject::z_adjust);
+    sim.substrate
+        .set_anim_frame_and_z_adjust(anim_id, frame, z_adjust);
+}
+
+/// Phobos `BuildingClass_Mission_Attack_TurretAnim` hook `0x44B6C7`
+/// (`Ext/Building/Hooks.cpp:1333-1357`): on the firing instant, with
+/// `HasTurret()` (`0x004527D0`) and a Turret slot animation, arm the firing
+/// block when its frame count is positive and no firing animation plays.
+fn arm_turret_anim_firing(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.building_art.anim_slots()[9].is_none() {
+        return;
+    }
+    let name = sim.interner.resolve(entity.type_ref());
+    let Some(object) = rules.object(name) else {
+        return;
+    };
+    if !entity
+        .building_upgrades()
+        .has_turret(object, rules, &sim.interner)
+    {
+        return;
+    }
+    let is_low_power = !entity.building_art.stuff_enabled()
+        || !sim.building_operational_state(id, rules).unwrap_or(false);
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    object
+        .phobos_turret_anim
+        .arm_firing(&mut entity.phobos_turret_anim, is_low_power);
+}
+
 /// BuildingClass::Update's Gattling block once the Techno AI has returned
 /// with the building alive (`0x0043FE5B`; a dead one returns from the Update),
 /// with the generic zero-Ammo refill between its two Gattling arms:
@@ -1207,6 +1386,9 @@ pub(super) fn gattling_idle(
             ammo.refill_empty_from_type(obj.ammo);
         }
     }
+    let Some(entity) = substrate.entities.get_mut(id) else {
+        return;
+    };
     if !obj.is_gattling {
         return;
     }
@@ -1216,6 +1398,10 @@ pub(super) fn gattling_idle(
     let since = now.wrapping_sub(entity.last_fire_frame.frame() as i32);
     if since > rules.general.guard_area_targeting_delay.wrapping_add(5) {
         let elite = is_elite(entity);
+        let ammo = entity.ammo().map_or(-1, |ammo| ammo.current());
+        entity
+            .gattling
+            .idle_decay_phobos(&obj.gattling_stages, elite, &obj.phobos_rate_down, ammo);
         entity.gattling.idle_decay(&obj.gattling_stages, elite);
     }
     if entity.gattling.value() > 0 {
@@ -1295,11 +1481,21 @@ fn fire_arm(
         prism_arm(sim, id, rules, obj);
         return;
     }
-    match rules
+    let burst_index = sim
+        .substrate
+        .entities
+        .get(id)
+        .map_or(0, |entity| entity.weapon_burst.index());
+    let art_metadata = rules
         .art()
         .resolve_metadata_entry(&obj.id, &obj.image)
-        .filter(|art| art.is_anim_delayed_fire)
-    {
+        .filter(|art| art.is_anim_delayed_fire);
+    // `Ext/Building/Hooks.cpp:868-873` (hook `0x44B630`): with
+    // `IsAnimDelayedBurst=` (ART, constructor true) off, a burst already in
+    // progress jumps to JustFire `0x44B6C4` instead of arming the SpecialAnim
+    // delay again. The first shot (index 0) keeps the vanilla check either way.
+    let art_metadata = art_metadata.filter(|art| art.is_anim_delayed_burst || burst_index == 0);
+    match art_metadata {
         Some(art) => {
             let slot = if weapon == 1 {
                 WeaponSlot::Secondary

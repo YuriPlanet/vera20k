@@ -1,6 +1,6 @@
 # Optional Phobos superweapon sidebar
 
-Build with `--features phobos` and set `[Sidebar] SuperWeaponSidebar=yes` in
+Phobos is in every build; turn it on from a game's data and set `[Sidebar] SuperWeaponSidebar=yes` in
 `uimd.ini` to put superweapon cameos in a left-edge column like C&C3. Default is
 `no`.
 
@@ -107,6 +107,16 @@ and `src/Commands/FireTacticalSW.h`.
 Phobos's "Exclusive SuperWeapon Sidebar" is credited to **NetsuNegi** and
 **CrimRecya** in Phobos's `CREDITS.md`. VERA20K implements the behavior in Rust
 and does not load or redistribute the Phobos DLL.
+
+## Native anchors
+
+The sidebar membership is gamemd's own: `SidebarClass_AddCameo_SuperWeapon_SWSidebar` (`0x6A6316`,
+`SWSidebarClass.cpp`) admits a Super to the column, `StripClass_RecheckCameo_RemoveCameo` (`0x6AA790`)
+drops it when the tech tree changes, `HouseClass_UpdateTechTree_SWSidebar` (`0x4F92FB`) re-evaluates
+after a tech change, and `SidebarClass_InitGUI` (`0x6A51E9`) fixes the grid metrics. The column's own
+pixels are drawn by Phobos' `SWSidebarClass` code over the sidebar surface, so no gamemd routine
+exists to cite for the drawing itself; the residual below is about drawing parity, not a missing
+address.
 
 ## Residuals
 

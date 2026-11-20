@@ -86,6 +86,14 @@ impl LandType {
             _ => return None,
         })
     }
+
+    /// `GroundType::GetLandTypeFromName`: a case-insensitive match of the
+    /// canonical land-type name, `None` for any unknown name.
+    pub fn from_name(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|land_type| value.eq_ignore_ascii_case(land_type.section_name()))
+    }
 }
 
 /// Native TMP terrain byte to canonical land-type table.

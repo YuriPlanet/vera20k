@@ -60,6 +60,150 @@ const fn opposite_octant(octant: usize) -> usize {
     (octant + 4) & 7
 }
 
+/// Phobos `CanUnloadNow` (`Ext/Techno/Hooks.Transport.cpp:369-376`): the
+/// transport's cell must not be Water, unless `AmphibiousUnload=` replaces
+/// the test with the head passenger's land row. Shared by state 0's arrival
+/// check and `NoQueueUpToUnload`'s one-frame loop.
+fn transport_can_unload_now(sim: &Simulation, rules: &RuleSet, entity: &GameEntity) -> bool {
+    // `ObjectType::amphibious_unload` owns the type-else-`[General]` precedence.
+    let amphibious_unload = sim
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.amphibious_unload(rules));
+    let transport_land = sim
+        .resolved_terrain
+        .as_ref()
+        .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
+        .map(|cell| i32::from(cell.land_type));
+    if amphibious_unload {
+        first_passenger_type(sim, rules, entity).is_none_or(|passenger| {
+            let (Some(terrain), Some(land)) = (sim.resolved_terrain.as_ref(), transport_land)
+            else {
+                return true;
+            };
+            terrain
+                .land_speed_costs(land)
+                .cost_for_speed_type(passenger.speed_type)
+                .is_some_and(|cost| !cost.is_zero())
+        })
+    } else {
+        transport_land != Some(i32::from(LandType::Water.as_index()))
+    }
+}
+
+/// Phobos `NoQueueUpToUnload` on a building type, falling back to
+/// `[General] NoQueueUpToUnload.Buildings=` and then
+/// `[General] NoQueueUpToUnload=` (`Ext/Techno/Hooks.Transport.cpp:810`).
+fn building_no_queue_up_to_unload(
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+) -> bool {
+    object
+        .phobos_techno_extras
+        .no_queue_up_to_unload
+        .or(rules.phobos_globals.no_queue_up_to_unload_buildings)
+        .unwrap_or(rules.phobos_globals.no_queue_up_to_unload)
+}
+
+/// `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`): `LeaveTransportSound`
+/// at the transport's Location. Phobos' `NoQueueUpToUnload` one-frame arm
+/// plays it once at the end instead of after each passenger.
+fn emit_leave_transport_sound(sim: &mut Simulation, rules: &RuleSet, transport_id: u64) {
+    let Some((sound, world)) = sim
+        .substrate
+        .entities
+        .get(transport_id)
+        .and_then(|transport| {
+            let sound = sim
+                .object_type(transport.type_ref(), rules)?
+                .leave_transport_sound
+                .clone()?;
+            let world = crate::sim::movement::ground_pose::object_location(
+                transport,
+                sim.resolved_terrain.as_ref(),
+            );
+            Some((sound, world))
+        })
+    else {
+        return;
+    };
+    // The same PlayAtCoord750E20 shape the per-passenger arm emits.
+    sim.sound_events.emit(SimSoundEvent::VocAtCoord {
+        sound_id: sound,
+        coordinate: world,
+        flags: 0,
+    });
+}
+
+/// Phobos `UnitClass_Mission_Unload_NoQueueUpToUnloadBreak` (`0x73DC9C`,
+/// `Ext/Techno/Hooks.Transport.cpp:389-426`): a failed placement scatters
+/// the allied content of the eight neighbouring cells away from the
+/// transport, on its `OnBridge` layer (`FindTechnoNearestTo` gates on the
+/// nearest object being allied, then the cell's objects scatter).
+fn scatter_unload_neighbours(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    transport_id: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) {
+    let Some((base, owner, layer, source)) =
+        sim.substrate.entities.get(transport_id).map(|transport| {
+            (
+                (transport.position.rx(), transport.position.ry()),
+                transport.owner(),
+                if transport.on_bridge() {
+                    MovementLayer::Bridge
+                } else {
+                    MovementLayer::Ground
+                },
+                crate::sim::movement::ground_pose::object_get_coords(
+                    transport,
+                    sim.resolved_terrain.as_ref(),
+                ),
+            )
+        })
+    else {
+        return;
+    };
+    for delta in DIRECTION_DELTAS {
+        let Some(cell) = cell_from(base, delta) else {
+            continue;
+        };
+        let nearest = sim.nearest_cell_object(cell, layer, None);
+        let allied = nearest
+            .and_then(|id| sim.substrate.entities.get(id))
+            .is_some_and(|object| {
+                sim.house_alliances
+                    .is_allied(&sim.interner, owner, object.owner())
+            });
+        if allied {
+            let _ = sim.scatter_cell_objects(
+                cell,
+                layer,
+                Some(source),
+                crate::sim::movement::ScatterFlags::new(true, true),
+                rules,
+                overlay_registry,
+                effects,
+            );
+        }
+    }
+}
+
+/// The head passenger's type, as `CargoClass::GetFirstPassenger` resolves it.
+fn first_passenger_type<'a>(
+    sim: &'a Simulation,
+    rules: &'a RuleSet,
+    transport: &GameEntity,
+) -> Option<&'a crate::rules::object_type::ObjectType> {
+    transport
+        .passenger_role
+        .cargo()
+        .and_then(|cargo| cargo.passengers().first())
+        .and_then(|&id| sim.substrate.entities.get(id))
+        .and_then(|passenger| sim.object_type(passenger.type_ref(), rules))
+}
+
 /// Handler states on `unit+0xBC` (`MissionCom::handler_state`).
 const STATE_PICK_EXIT: u32 = 0;
 const STATE_TURNING: u32 = 1;
@@ -87,6 +231,22 @@ fn unload_epilogue(
     id: u64,
 ) -> i32 {
     Simulation::mission_rate_epilogue_for(scenario_rng, substrate, rules, id, MissionType::Unload)
+}
+
+/// Phobos `DeployFireDelay` (`Ext/Building/Hooks.Unload.cpp:73-77`): a set
+/// building key replaces the Unload epilogue's `RandomRanged(0, 2) + 14`
+/// and consumes no random draw.
+fn building_unload_delay(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
+    if let Some(delay) = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|building| sim.object_type(building.type_ref(), rules))
+        .and_then(|object| object.phobos_deploy_fire_delay)
+    {
+        return delay;
+    }
+    unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
 }
 
 /// Whether this entity's type takes the transport branch of the Unit Unload
@@ -155,6 +315,7 @@ fn octant_cell_open(
     sim: &Simulation,
     cell: (u16, u16),
     transport_owner: crate::sim::intern::InternedId,
+    speed_type: SpeedType,
 ) -> bool {
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return false;
@@ -163,7 +324,7 @@ fn octant_cell_open(
     let native = cells.lookup((cell.0 as i16, cell.1 as i16));
     if terrain
         .land_speed_costs(cells.land_type(native))
-        .cost_for_speed_type(SpeedType::Foot)
+        .cost_for_speed_type(speed_type)
         .is_some_and(|cost| cost.is_zero())
     {
         return false;
@@ -200,8 +361,23 @@ fn octant_cell_open(
 /// The `UnitType+0xC94` (`IsTrain=`) override that returns the current facing
 /// octant instead (`0x00740DC5`) is not represented: no stock YR unit sets
 /// the key and it is not parsed.
-fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16), usize)> {
+fn pick_exit_octant(
+    sim: &Simulation,
+    rules: &RuleSet,
+    entity: &GameEntity,
+) -> Option<((u16, u16), usize)> {
     let owner = entity.owner();
+    // Phobos `AmphibiousUnload` (hook `0x740C9C`,
+    // `Ext/Techno/Hooks.Transport.cpp:700-714`): the exit scan's hard-coded
+    // Foot speed becomes the head passenger's own SpeedType.
+    let speed_type = if sim
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.amphibious_unload(rules))
+    {
+        first_passenger_type(sim, rules, entity).map_or(SpeedType::Foot, |object| object.speed_type)
+    } else {
+        SpeedType::Foot
+    };
     let base = (entity.position.rx(), entity.position.ry());
     // `0x00740B9F..BAD`: the body's `Current()` (`+0x388`), full 16 bits.
     let facing16 = entity.body_facing_current(sim.session.binary_frame());
@@ -211,7 +387,8 @@ fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16)
     let mut best_score: i32 = -1;
     let mut best_octant: usize = 0;
     for (octant, &delta) in DIRECTION_DELTAS.iter().enumerate() {
-        let open = cell_from(base, delta).is_some_and(|cell| octant_cell_open(sim, cell, owner));
+        let open = cell_from(base, delta)
+            .is_some_and(|cell| octant_cell_open(sim, cell, owner, speed_type));
         let mut score: i32 = if open { 0x80 } else { -0x80 };
         let dir8 = i32::from(((octant as u32) << 5) as u8 as i8);
         score -= (dir8 - rear8).abs();
@@ -271,6 +448,7 @@ fn queue_guard(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 }
 
 /// Outcome of one state-3 ejection attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EjectOutcome {
     /// Placed at the exit cell; the passenger was given `dest`.
     Placed,
@@ -320,6 +498,7 @@ fn eject_head_passenger(
     rules: &RuleSet,
     transport_id: u64,
     effects: FrameEffects<'_>,
+    play_leave_sound: bool,
 ) -> EjectOutcome {
     match depart_cargo_head(
         sim,
@@ -328,15 +507,26 @@ fn eject_head_passenger(
         DepartureRoute::Vehicle,
         |sim, pax_id| {
             let now = sim.session.binary_frame();
+            // Phobos `AmphibiousUnload` (hook `0x73DAD8`,
+            // `Ext/Techno/Hooks.Transport.cpp:716-728`): the placement search's
+            // hard-coded MovementZone Normal becomes the head passenger's.
+            let amphibious_unload =
+                sim.substrate
+                    .entities
+                    .get(transport_id)
+                    .is_some_and(|transport| {
+                        sim.object_type(transport.type_ref(), rules)
+                            .is_some_and(|object| object.amphibious_unload(rules))
+                    });
             let (base, facing16, transport_z, height, leave_sound) = {
                 let transport = sim
                     .substrate
                     .entities
                     .get(transport_id)
                     .expect("transport resolved before the head pop");
-                let obj = sim.object_type(transport.type_ref(), rules);
                 // The scan's `+0x1AC` height: the transport's Object
                 // `0x005F5F00` (`0x0073D97B`, `0x0073D9A9`).
+                let obj = sim.object_type(transport.type_ref(), rules);
                 let height = object_cell_height(sim, transport);
                 (
                     (transport.position.rx(), transport.position.ry()),
@@ -442,7 +632,11 @@ fn eject_head_passenger(
                                 PassabilityArgs {
                                     speed_type: object.speed_type,
                                     required_zone_id: None,
-                                    movement_zone: MovementZone::Normal,
+                                    movement_zone: if amphibious_unload {
+                                        object.movement_zone
+                                    } else {
+                                        MovementZone::Normal
+                                    },
                                     bridge_aware_zone: false,
                                 },
                                 NearbyFootprint::SINGLE,
@@ -517,6 +711,9 @@ fn eject_head_passenger(
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
                 passenger.passenger_role_mut().clear_transporter();
             }
+            // Phobos `FootClass_LeaveTransport` (0x4DE722): the ejected
+            // passenger leaves the scenario reloader list.
+            sim.remove_transport_reloader(pax_id);
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
             // Deactivated passenger's locomotor is powered off, and an
@@ -567,8 +764,9 @@ fn eject_head_passenger(
 
             // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`, flags 0):
             // a retained request at the transport's Location, after the
-            // passenger's Unlimbo, once per placed passenger.
-            if let Some(sound_id) = leave_sound {
+            // passenger's Unlimbo, once per placed passenger; the Phobos
+            // one-frame arm passes `false` and rings it at the end instead.
+            if play_leave_sound && let Some(sound_id) = leave_sound {
                 let coordinate = crate::sim::movement::ground_pose::object_location(
                     sim.substrate
                         .entities
@@ -799,7 +997,22 @@ pub(crate) fn building_mission_unload_absorber(
         },
         effects,
     );
-    unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
+    let delay = building_unload_delay(sim, rules, id);
+    // Phobos `BuildingClass_Mi_Unload_NoQueueUpToUnload` (`0x44DCB1`,
+    // `Ext/Techno/Hooks.Transport.cpp:804-817`): the building type's key,
+    // else the Building global, else the General global, answers 0 for the
+    // dispatch delay; the native hook runs after the stock draw, so the
+    // epilogue's RandomRanged still consumes its value.
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|building| sim.object_type(building.type_ref(), rules))
+        .is_some_and(|object| building_no_queue_up_to_unload(object, rules))
+    {
+        return 0;
+    }
+    delay
 }
 
 /// Ares 3.0 `BuildingClass_Mi_Unload_Tunnel` (`100174A0`, hook
@@ -817,12 +1030,7 @@ pub(crate) fn ares_tunnel_mission_unload(
     let owner = sim.substrate.entities.get(id)?.owner();
     let member = *sim.ares_tunnels.members(owner, tunnel).last()?;
     ares_tunnel_unload_one(sim, rules, id, owner, tunnel, member, effects);
-    Some(unload_epilogue(
-        &mut sim.scenario_rng,
-        &sim.substrate,
-        rules,
-        id,
-    ))
+    Some(building_unload_delay(sim, rules, id))
 }
 
 /// `TunnelData::UnloadOne @ 100098A0` for the network's last `member`:
@@ -1004,13 +1212,15 @@ pub(crate) fn unit_mission_unload(
             }
             // No NavCom and the current cell's LandType is Water (`+0xEC == 2`,
             // `0x0073D769`): drive to the nearest passable cell first and
-            // `return 10` — a hover transport unloads on land.
-            let on_water = sim
-                .resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
-                .is_some_and(|cell| cell.land_type == LandType::Water.as_index());
-            if entity.navigation.nav_com().is_none() && on_water {
+            // `return 10` — a hover transport unloads on land. Phobos
+            // `AmphibiousUnload` (`Ext/Techno/Hooks.Transport.cpp:382-388`,
+            // hook `0x73D769`) replaces the water test with the head
+            // passenger's own land row when the key is set.
+            let amphibious_unload = sim
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.amphibious_unload(rules));
+            let can_unload_here = transport_can_unload_now(sim, rules, entity);
+            if entity.navigation.nav_com().is_none() && !can_unload_here {
                 // `PUSH 0x2` at `0x0073D790`: the search runs for speed-type
                 // index 2 — Wheel in the native `SpeedType` order (Foot 0,
                 // Track 1, Wheel 2, Hover 3, ...), a land-only type — not for
@@ -1020,22 +1230,40 @@ pub(crate) fn unit_mission_unload(
                 // cell (`0x0073D772..0x0073D7B0`). A failed search still
                 // returns packed CellStruct::Empty (0,0), which the caller
                 // looks up and passes to Set_Destination73D7B5..73D7D1.
+                // Phobos hook `0x73D7AB`
+                // (`Ext/Techno/Hooks.Transport.cpp:671-689`) replaces Wheel
+                // and Normal with the head passenger's own SpeedType and
+                // MovementZone when `AmphibiousUnload` is set.
                 let seed = (
                     i32::from(entity.position.rx()),
                     i32::from(entity.position.ry()),
                 );
+                let (speed_type, movement_zone) = if amphibious_unload {
+                    first_passenger_type(sim, rules, entity)
+                        .map_or((SpeedType::Wheel, MovementZone::Normal), |passenger| {
+                            (passenger.speed_type, passenger.movement_zone)
+                        })
+                } else {
+                    (SpeedType::Wheel, MovementZone::Normal)
+                };
                 let wheel_land = PassabilityArgs {
-                    speed_type: SpeedType::Wheel,
+                    speed_type,
                     required_zone_id: None,
-                    movement_zone: MovementZone::Normal,
+                    movement_zone,
                     bridge_aware_zone: false,
                 };
-                let cell = sim
-                    .nearby_passable_cell(
-                        seed,
-                        NearbyArgs::plain(wheel_land, NearbyFootprint::SINGLE),
-                    )
-                    .unwrap_or((0, 0));
+                let nearby = sim.nearby_passable_cell(
+                    seed,
+                    NearbyArgs::plain(wheel_land, NearbyFootprint::SINGLE),
+                );
+                // `0x73D7B7`: a failed search leaves packed CellStruct::Empty,
+                // and Phobos returns the CannotUnload arm (`0x73D87F`,
+                // `Ext/Techno/Hooks.Transport.cpp:691-698`) instead of
+                // setting (0,0) as the next destination.
+                let Some(cell) = nearby else {
+                    queue_guard(sim, id, rules);
+                    return unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id);
+                };
                 if let Some(terrain) = sim.resolved_terrain.as_ref() {
                     // This fresh lookup precedes the Unit setter. Retain its
                     // identity even if a later setter lookup restamps Dummy.
@@ -1053,7 +1281,7 @@ pub(crate) fn unit_mission_unload(
                 return WAIT_MOVING_FRAMES;
             }
             let cargo = entity.passenger_role().passenger_count();
-            let pick = pick_exit_octant(sim, entity);
+            let pick = pick_exit_octant(sim, rules, entity);
             if let (true, Some((_exit_cell, face_octant))) = (cargo != 0, pick) {
                 // `FUN_0070DC60` → `Type+0x808 TurretCount > 0` (`0x00717880`):
                 // a turreted transport (the IFV) keeps its last passenger —
@@ -1112,10 +1340,95 @@ pub(crate) fn unit_mission_unload(
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_EJECT => {
-            if entity.passenger_role().passenger_count()
-                > entity.transport_unload_keep_count.count()
-            {
-                let _ = eject_head_passenger(sim, rules, id, effects);
+            let keep = entity.transport_unload_keep_count.count();
+            let count = entity.passenger_role.passenger_count();
+            // Phobos `NoQueueUpToUnload` (`0x73DC1E`,
+            // `Ext/Techno/Hooks.Transport.cpp:427-466`): the transport
+            // type's nullable, else `[General] NoQueueUpToUnload`.
+            let no_queue_up_to_unload =
+                sim.object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| {
+                        object
+                            .phobos_techno_extras
+                            .no_queue_up_to_unload(rules.phobos_globals.no_queue_up_to_unload)
+                    });
+
+            if count > keep {
+                // Stock plays its LeaveTransportSound inside a placed
+                // passenger; the Phobos one-frame arm holds it for the end.
+                let outcome = eject_head_passenger(sim, rules, id, effects, !no_queue_up_to_unload);
+                // Phobos `NoQueueUpToUnloadBreak` (`0x73DC9C`): a failed
+                // placement scatters the allied neighbours.
+                if outcome == EjectOutcome::Failed {
+                    scatter_unload_neighbours(
+                        sim,
+                        rules,
+                        id,
+                        Some(rules.overlay_registry()),
+                        effects,
+                    );
+                }
+                if no_queue_up_to_unload {
+                    if outcome == EjectOutcome::Placed {
+                        // Within a single frame: eject until the keep count
+                        // remains or a placement fails (`R->EBX(0)` ->
+                        // `0x73D8CB`).
+                        loop {
+                            let count =
+                                sim.substrate.entities.get(id).map_or(0, |transport| {
+                                    transport.passenger_role.passenger_count()
+                                });
+                            if count <= keep {
+                                emit_leave_transport_sound(sim, rules, id);
+                                break;
+                            }
+                            let can_unload =
+                                sim.substrate.entities.get(id).is_some_and(|transport| {
+                                    transport_can_unload_now(sim, rules, transport)
+                                });
+                            if !can_unload {
+                                emit_leave_transport_sound(sim, rules, id);
+                                if let Some(transport) = sim.substrate.entities.get_mut(id) {
+                                    transport.mission.clear_movement_bypass_latch();
+                                }
+                                // `MissionStatus = 0` retry: no epilogue draw.
+                                return 1;
+                            }
+                            match eject_head_passenger(sim, rules, id, effects, false) {
+                                EjectOutcome::Placed => {}
+                                EjectOutcome::Failed => {
+                                    scatter_unload_neighbours(
+                                        sim,
+                                        rules,
+                                        id,
+                                        Some(rules.overlay_registry()),
+                                        effects,
+                                    );
+                                    emit_leave_transport_sound(sim, rules, id);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // The stock key-off tail (`0x73DC1E`) retries while a
+                    // passenger remains and the cell cannot unload.
+                    let count = sim
+                        .substrate
+                        .entities
+                        .get(id)
+                        .map_or(0, |transport| transport.passenger_role.passenger_count());
+                    let can_unload =
+                        sim.substrate.entities.get(id).is_some_and(|transport| {
+                            transport_can_unload_now(sim, rules, transport)
+                        });
+                    if count > keep && !can_unload {
+                        if let Some(transport) = sim.substrate.entities.get_mut(id) {
+                            transport.mission.clear_movement_bypass_latch();
+                        }
+                        return 1;
+                    }
+                }
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(STATE_DONE);
             }

@@ -13,7 +13,7 @@ use crate::util::native_x87::{
     MaskedX87Chop53 as X87, MaskedX87Ordering as Ordering, NativeF64Bits,
 };
 
-pub(super) fn mission_repair(
+pub(crate) fn mission_repair(
     sim: &mut Simulation,
     rules: &RuleSet,
     hospital: u64,
@@ -22,12 +22,21 @@ pub(super) fn mission_repair(
 ) -> i32 {
     let now = sim.session.binary_frame();
     //44BA44 reads the live BuildingType+684 Ammo, not an instance cache.
-    let type_ammo = sim
+    // Phobos `BuildingClass_Mission_Repair_Hospital` (`0x44B8F1`,
+    // `Hooks.cpp:617-628`): the building type's `Units.RepairRate=` replaces
+    // `[General] IRepairRate=`.
+    let (type_ammo, repair_rate) = sim
         .substrate
         .entities
         .get(hospital)
         .and_then(|building| sim.object_type(building.type_ref(), rules))
-        .map_or(-1, |object| object.ammo);
+        .map_or((-1, rules.general.infantry_repair_rate), |object| {
+            let rate = object
+                .phobos_units_repair
+                .repair_rate
+                .unwrap_or(rules.general.infantry_repair_rate);
+            (object.ammo, rate)
+        });
     let Some(building) = sim.substrate.entities.get_mut(hospital) else {
         return 1;
     };
@@ -52,9 +61,7 @@ pub(super) fn mission_repair(
         //44B8E6: compare the unrounded double rate*900 with the signed
         //Stage value, including the native unordered branch.
         let threshold = X87::mul(
-            X87::load_f64(NativeF64Bits::from_bits(
-                rules.general.infantry_repair_rate.to_bits(),
-            )),
+            X87::load_f64(NativeF64Bits::from_bits(repair_rate.to_bits())),
             X87::load_i32(900),
         );
         if X87::compare(threshold, X87::load_i32(progress)) == Ordering::Greater {

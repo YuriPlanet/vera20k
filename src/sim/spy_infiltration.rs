@@ -61,6 +61,10 @@ mod retail_tests;
 #[path = "spy_infiltration_ares_tests.rs"]
 mod ares_tests;
 
+#[cfg(all(test, tests_sim_p_s))]
+#[path = "phobos_spy_effect_tests.rs"]
+mod phobos_spy_effect_tests;
+
 /// The arm `BuildingClass::Infiltrate` took, which picks its EVA lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfiltrationEffect {
@@ -185,6 +189,10 @@ impl Simulation {
             return;
         };
         let owner = building.owner();
+        // `BuildingClass_InfiltratedBy_Wrapper` (`Ext/Building/Body.cpp:662-671`)
+        // samples the owner's balance before the native call and feeds the
+        // delta to `BuildingExt::HandleInfiltrate`'s `AccumulatedIncome`.
+        let money_before = credit_income::available_money(&self.houses, owner);
         let ares = rules.ares_form();
         // Ares 3.0 10012000 (hook 0x004571E0): the spy's house answers
         // IsAlliedWith for the owner first, its own house included.
@@ -210,6 +218,7 @@ impl Simulation {
         };
         if ares && object.infiltration_rules().custom {
             let arms = self.ares_infiltrated_by(building_id, owner, infiltrator, object, rules);
+            self.accumulate_infiltrated_income(building_id, owner, money_before);
             self.announce_infiltration(owner, infiltrator, InfiltrationEffect::Ares(arms), radar);
             return;
         }
@@ -271,7 +280,27 @@ impl Simulation {
         } else {
             InfiltrationEffect::None
         };
+        self.accumulate_infiltrated_income(building_id, owner, money_before);
         self.announce_infiltration(owner, infiltrator, effect, radar);
+    }
+
+    /// Phobos `BuildingExt::HandleInfiltrate`'s
+    /// `AccumulatedIncome += Available_Money() - moneybefore`
+    /// (`Ext/Building/Body.cpp:316-322`): the victim building's own balance
+    /// delta, cash steal included.
+    fn accumulate_infiltrated_income(
+        &mut self,
+        building_id: u64,
+        owner: InternedId,
+        money_before: i32,
+    ) {
+        let delta = credit_income::available_money(&self.houses, owner).wrapping_sub(money_before);
+        if delta != 0
+            && let Some(building) = self.substrate.entities.get_mut(building_id)
+        {
+            let income = building.phobos_accumulated_income().wrapping_add(delta);
+            building.set_phobos_accumulated_income(income);
+        }
     }
 
     /// The radar event and EVA lines, asked for only when the owner or the
@@ -486,5 +515,71 @@ impl Simulation {
             );
         }
         !supers.is_empty()
+    }
+
+    /// Phobos `BuildingExt::HandleInfiltrate` (`Ext/Building/Body.cpp:316-356`),
+    /// the second half of the `BuildingClass_InfiltratedBy_Wrapper` hook at
+    /// `0x51A00B` (`Ext/Building/Body.cpp:662-671`): after the base
+    /// `BuildingClass::Infiltrate` (or Ares' `InfiltratedBy`) ran, a building
+    /// whose type sets `SpyEffect.Custom=` launches its configured victim and
+    /// infiltrator superweapons, victim first, at its centre cell
+    /// (`CellClass::Coord2Cell(GetCenterCoords())`). The two houses must
+    /// differ; the launches keep their recharge timers.
+    ///
+    /// The `AccumulatedIncome` delta is recorded by
+    /// [`Simulation::infiltrate_building`] around the whole infiltration.
+    /// RESIDUAL: the `DisplayIncome_AllowAI` Ares interop write into the
+    /// victim House's reserved Ares field is not modelled (no consumer).
+    pub(crate) fn phobos_handle_infiltrate(
+        &mut self,
+        building_id: u64,
+        infiltrator: InternedId,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: crate::sim::world::FrameEffects<'_>,
+    ) {
+        let (owner, cell, victim, infiltrator_sw) = {
+            let Some(building) = self.substrate.entities.get(building_id) else {
+                return;
+            };
+            let Some(object) = self.object_type(building.type_ref(), rules) else {
+                return;
+            };
+            let spy = &object.phobos_spy_effect;
+            if !spy.custom || building.owner() == infiltrator {
+                return;
+            }
+            let coords = crate::sim::movement::ground_pose::object_get_coords(
+                building,
+                self.resolved_terrain.as_ref(),
+            );
+            // `Coord2Cell` divides toward zero; a centre-height Z never
+            // enters a cell.
+            (
+                building.owner(),
+                ((coords.x / 256) as u16, (coords.y / 256) as u16),
+                spy.victim_super_weapon.as_deref(),
+                spy.infiltrator_super_weapon.as_deref(),
+            )
+        };
+        for (name, house) in [(victim, owner), (infiltrator_sw, infiltrator)] {
+            let Some(name) = name else {
+                continue;
+            };
+            // A name the rules never defined behaves like the unset index.
+            let Some(sw) = rules.super_weapon(name) else {
+                continue;
+            };
+            let type_id = self.interner.intern(&sw.id);
+            crate::sim::superweapon::launch_super_preserving_charge(
+                self,
+                rules,
+                house,
+                type_id,
+                cell,
+                overlay_registry,
+                frame_effects,
+            );
+        }
     }
 }

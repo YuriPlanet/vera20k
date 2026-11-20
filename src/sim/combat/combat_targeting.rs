@@ -199,6 +199,8 @@ pub(crate) fn calculate_ai_threat_score(
     terrain: Option<&ResolvedTerrainGrid>,
     alliances: Option<&HouseAlliances>,
     scorer_enemy_house: Option<crate::sim::intern::InternedId>,
+    world: Option<&crate::sim::world::Simulation>,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
     let scorer_type = interner.object_type(scorer.type_ref(), rules)?;
@@ -207,6 +209,11 @@ pub(crate) fn calculate_ai_threat_score(
         scorer_type,
         super::greatest_threat::HOUSE_SELECTS_OWN_COEFFICIENTS,
     );
+    // Phobos `ExtraThreat` needs the world's fire-error and InRange owners;
+    // a caller with no world (the score's unit tests) keeps the stock score.
+    let bonus = world.and_then(|world| {
+        super::extra_threat::ThreatBonusContext::for_world(world, overlay_registry)
+    });
     super::greatest_threat::calculate_threat_score(
         entities,
         scorer_id,
@@ -218,6 +225,7 @@ pub(crate) fn calculate_ai_threat_score(
         coefficients,
         super::greatest_threat::ThreatReference::NullCoord,
         scorer_enemy_house,
+        bonus,
     )
 }
 
@@ -275,6 +283,7 @@ pub(crate) fn should_retaliate(
     rules: &RuleSet,
     victim_id: u64,
     source_id: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> bool {
     use crate::rules::object_type::Ability;
     let entities = &world.substrate.entities;
@@ -407,6 +416,15 @@ pub(crate) fn should_retaliate(
         {
             return false;
         }
+    }
+    // Phobos `TechnoClass_AllowedToRetaliate_AttackMindControlledDelay`
+    // (`0x7089E8`, `Ext/Techno/Hooks.Misc.cpp:621-629`): a freshly
+    // mind-controlled source is shielded from the retaliation of houses
+    // allied with its original owner.
+    if !world.can_attack_mind_controlled(source_id, victim_id) {
+        return false;
+    }
+    if human {
         // `0x007089E8..0x00708A26`: unless `PlayerReturnFire=`, a human's
         // non-building object retaliates only on Guard, Area Guard or Patrol.
         const GUARD: i32 = 5;
@@ -447,6 +465,8 @@ pub(crate) fn should_retaliate(
                 world.resolved_terrain.as_ref(),
                 Some(&world.house_alliances),
                 victim_enemy,
+                Some(world),
+                overlay_registry,
             ),
             calculate_ai_threat_score(
                 entities,
@@ -457,6 +477,8 @@ pub(crate) fn should_retaliate(
                 world.resolved_terrain.as_ref(),
                 Some(&world.house_alliances),
                 victim_enemy,
+                Some(world),
+                overlay_registry,
             ),
         )
         && retaliation_score_refuses(current_score, source_score)
@@ -465,6 +487,21 @@ pub(crate) fn should_retaliate(
     }
     // `0x00708AAA..0x00708AC3`: a Foot never turns on the parasite eating it.
     if victim.parasite.eater() == Some(source_id) {
+        return false;
+    }
+    // Phobos `TechnoClass_ShouldRetaliate_IronCurtain` (`0x708AD0`,
+    // `Ext/Techno/Hooks.Firing.cpp:1226-1264`): a human's weapon override,
+    // else the global, can suppress retaliation at an iron-curtained source.
+    if human
+        && crate::sim::superweapon::invulnerability::is_invulnerable(
+            source.invulnerability.as_ref(),
+            world.session.binary_frame(),
+        )
+        && !subject
+            .weapon_at(subject.weapon_index)
+            .and_then(|weapon| weapon.phobos_auto_target_iron_curtained)
+            .unwrap_or(rules.phobos_globals.auto_target_iron_curtained)
+    {
         return false;
     }
     // `0x00708AC5..0x00708B09`: the selected weapon's Verses against the
@@ -477,7 +514,13 @@ pub(crate) fn should_retaliate(
         .is_none_or(|warhead| {
             // Ares 3.0 hook100543E0 replaces only this original threshold
             // with the independently retained Retaliate flag.
-            warhead.interaction(source_type.armor_id()).can_retaliate()
+            // Phobos `TechnoClass_ReplaceArmorWithShields` (`0x708AEB`,
+            // `Ext/Techno/Hooks.cpp:483`) replaces the source's armor load at
+            // `0x00708AEB`; its shield answers while the victim's warhead
+            // cannot penetrate it.
+            let armor =
+                crate::sim::shield::warhead_versus_armor(source, rules, warhead, source_type);
+            warhead.interaction(armor).can_retaliate()
         })
 }
 

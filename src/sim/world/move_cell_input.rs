@@ -569,9 +569,29 @@ impl Simulation {
                                 .house_alliances
                                 .is_allied(&self.interner, owner, entity.owner())
                         });
+                // Phobos `TechnoClass_WhatAction_WallWeapon` (`0x70095A`,
+                // `Ext/Techno/Hooks.TargetEvaluation.cpp:81-89`) reads the
+                // wall test's weapon from `GetWeaponIndexAgainstWall`
+                // (`Ext/Techno/WeaponHelpers.cpp:196-228`), so a secondary
+                // wall-breaker can admit the ATTACK rung the current weapon
+                // would refuse.
+                let wall_warhead = {
+                    let index = crate::sim::combat::combat_weapon::weapon_index_against_wall(
+                        self, entity, object, rules, overlay,
+                    );
+                    crate::sim::combat::combat_weapon::get_weapon(
+                        entity,
+                        object,
+                        index,
+                        &self.substrate.entities,
+                        rules,
+                        &self.interner,
+                    )
+                    .and_then(|weapon| rules.weapon_warhead(weapon))
+                };
                 enemy_owned
                     && overlay.wall
-                    && warhead.is_some_and(|warhead| {
+                    && wall_warhead.is_some_and(|warhead| {
                         warhead.wall || (warhead.wood && overlay.armor_is_wood)
                     })
             }
@@ -639,6 +659,7 @@ impl Simulation {
         };
         let terrain_fire = weapon.terrain_fire;
         match *target {
+            TargetKind::Bullet(..) => false,
             TargetKind::Entity(target_id) if self.terrain_objects().get(target_id).is_some() => {
                 rules.general.tree_targeting || terrain_fire
             }
@@ -666,6 +687,15 @@ impl Simulation {
                     })
             }
         }
+    }
+
+    /// Phobos `IsPassable` resolved for a live Terrain object
+    /// (`Ext/TerrainType/Hooks.Passable.cpp:25-44`): the player's unforced
+    /// click over it answers Move. A stock constructor projects `false`.
+    pub fn terrain_object_is_passable(&self, id: u64) -> bool {
+        self.terrain_objects()
+            .get(id)
+            .is_some_and(|terrain| terrain.passable())
     }
 
     /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at a clicked Cell's

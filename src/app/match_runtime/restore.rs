@@ -137,6 +137,7 @@ pub(crate) fn commit_prepared_load(
         house_roster: committed.map.house_roster().clone(),
         lighting_config: committed.map.lighting().clone(),
         lighting_events: None,
+        fresh_startup: false,
         theater_name,
         theater_ext,
     };
@@ -231,7 +232,6 @@ pub(crate) fn commit_prepared_load(
     // without reordering.
     state.match_state.match_presentation.active_sidebar_tab =
         crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
-    #[cfg(feature = "phobos")]
     let sw_sidebar_expanded = committed
         .details
         .sidebar_order
@@ -242,7 +242,6 @@ pub(crate) fn commit_prepared_load(
         .match_presentation
         .sidebar_projection
         .restore_order(committed.details.sidebar_order);
-    #[cfg(feature = "phobos")]
     if let Some(expanded) = sw_sidebar_expanded {
         // `ScenarioExt::SWSidebar_Enable` survives the load like the strips.
         state.match_state.match_presentation.sw_sidebar.expanded = expanded;

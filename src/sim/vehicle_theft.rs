@@ -516,7 +516,7 @@ impl Simulation {
             && !crate::sim::combat::vehicle_like(
                 target.category(),
                 target_type.non_vehicle,
-                target_type.is_1x1_with_undeploy(),
+                target_type.is_vehicle(),
                 low_flying,
             )
             || !low_flying()

@@ -428,3 +428,170 @@ fn approach_takes_the_first_queued_destination_of_any_kind() {
     assert_eq!(actor.navigation.nav_com(), Some(queued[0]));
     assert_eq!(actor.navigation.nav_queue(), &queued[1..]);
 }
+
+/// Phobos `ApproachTarget.*` fixtures (`Ext/TechnoType/Body.cpp:1093-1101`).
+fn approach_target_rules(techno: &str, general: &str) -> RuleSet {
+    RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+        "[General]\n{general}\
+         [VehicleTypes]\n0=TANK\n\
+         [TANK]\nStrength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=TankGun\n\
+         Locomotor={{4A582741-9839-11D1-B709-00A024DDAFD1}}\n{techno}\
+         [TankGun]\nDamage=10\nROF=20\nRange=4\nProjectile=InvisibleAll\nWarhead=HITWH\n\
+         [InvisibleAll]\nInviso=yes\nAA=yes\nAG=yes\n\
+         [HITWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    )))
+    .expect("tank rules")
+}
+
+/// A tank at (2,10) driving to (20,10) with a Russian tank three cells out.
+/// The locomotor corridor advances without mission AI, so the foot is really
+/// moving when the approach owner reads it.
+fn moving_tank_scene(rules: &RuleSet, seed: u64) -> (Simulation, u64, u64) {
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, seed);
+    let tank = sim
+        .spawn_object_at_height("TANK", "Americans", 2, 10, 0, 0, rules)
+        .expect("tank spawns");
+    let enemy = sim
+        .spawn_object_at_height("TANK", "Russians", 5, 10, 0, 0, rules)
+        .expect("enemy spawns");
+    let grid = crate::sim::pathfinding::PathGrid::from_resolved_terrain(
+        sim.resolved_terrain.as_ref().unwrap(),
+    );
+    assert!(sim.set_unit_destination(
+        tank,
+        NavTargetRef::cell(20, 10),
+        rules,
+        true,
+        FrameEffects::default(),
+    ));
+    for frame in 0..64 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.process_ground_locomotor_for_test(tank, Some(rules), Some(&grid), None)
+            .unwrap();
+        if approach_target_moving(&sim, tank, rules) {
+            break;
+        }
+    }
+    assert!(
+        approach_target_moving(&sim, tank, rules),
+        "the fixture tank drives"
+    );
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(combat::TargetKind::Entity(enemy)));
+    (sim, tank, enemy)
+}
+
+fn approach_target_moving(sim: &Simulation, tank: u64, rules: &RuleSet) -> bool {
+    crate::sim::movement::motion_query::is_really_moving_now(
+        sim.substrate.entities.get(tank).unwrap(),
+        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+        sim.session.binary_frame() as u32,
+    )
+}
+
+/// `FootClass_ApproachTarget_StopWhenInRange` (`0x4D5A34`,
+/// `Ext/Techno/Hooks.Firing.cpp:1303-1340`): in range and really moving, the
+/// type key — else the `[General]` key — calls StopMoving and AbortMotion.
+#[test]
+fn approach_stop_when_in_range_stops_a_moving_close_foot() {
+    for (techno, general) in [
+        ("ApproachTarget.StopWhenInRange=yes\n", ""),
+        ("", "ApproachTarget.StopWhenInRange=yes\n"),
+    ] {
+        let rules = approach_target_rules(techno, general);
+        let (mut sim, tank, _enemy) = moving_tank_scene(&rules, 0x4D5A34);
+        assert!(approach_target_moving(&sim, tank, &rules));
+        let answer = sim
+            .approach_foot_target(tank, &rules, None, FrameEffects::default())
+            .unwrap();
+        assert_eq!(answer, None, "the in-range tail returns no destination");
+        assert!(
+            sim.substrate
+                .entities
+                .get(tank)
+                .unwrap()
+                .navigation
+                .nav_com()
+                .is_none(),
+            "StopMoving/AbortMotion clear the foot's motion"
+        );
+    }
+}
+
+/// Without the key the same in-range tail leaves the foot driving.
+#[test]
+fn approach_without_stop_when_in_range_keeps_the_moving_foot_going() {
+    let rules = approach_target_rules("", "");
+    let (mut sim, tank, _enemy) = moving_tank_scene(&rules, 0x4D5A34);
+    assert!(approach_target_moving(&sim, tank, &rules));
+    let answer = sim
+        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .unwrap();
+    assert_eq!(answer, None);
+    assert!(
+        approach_target_moving(&sim, tank, &rules),
+        "without the key the foot keeps moving"
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .navigation
+            .nav_com()
+            .is_some(),
+        "and keeps its motion"
+    );
+}
+
+/// `FootClass_ApproachTarget_PursuitTarget` (`0x4D57EA`,
+/// `Ext/Techno/Hooks.Firing.cpp:1343-1362`): the type key sets the Target as
+/// the destination and returns through the zeroed `0x4D5A34` pointer, before
+/// the existing-path gate would have returned.
+#[test]
+fn approach_pursuit_target_sets_the_target_destination() {
+    let rules = approach_target_rules("ApproachTarget.PursuitTarget=yes\n", "");
+    let (mut sim, tank, enemy) = moving_tank_scene(&rules, 0x4D57EA);
+    let answer = sim
+        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .unwrap();
+    assert_eq!(answer, None, "native returns after SetDestination");
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .navigation
+            .nav_com(),
+        Some(NavTargetRef::object(enemy)),
+        "SetDestination(Target, 1) replaces the old destination"
+    );
+
+    let plain = approach_target_rules("", "");
+    let (mut control, control_tank, _) = moving_tank_scene(&plain, 0x4D57EA);
+    let before = control
+        .substrate
+        .entities
+        .get(control_tank)
+        .unwrap()
+        .navigation
+        .nav_com();
+    control
+        .approach_foot_target(control_tank, &plain, None, FrameEffects::default())
+        .unwrap();
+    assert_eq!(
+        control
+            .substrate
+            .entities
+            .get(control_tank)
+            .unwrap()
+            .navigation
+            .nav_com(),
+        before,
+        "without the key the existing-path gate keeps the old destination"
+    );
+}

@@ -43,7 +43,6 @@
 //! paradrop's descent, its one VERA producer; no other fall is represented.
 
 use crate::map::entities::EntityCategory;
-#[cfg(feature = "phobos")]
 use crate::rules::airstrike_targets::AirstrikeKind;
 use crate::sim::combat::Health;
 
@@ -210,6 +209,8 @@ pub(crate) struct WeaponFacts {
     /// `+0xA0`. Never NULL natively (read unchecked at T38, T39, T41, U11 and
     /// U12).
     pub projectile: ProjectileFacts,
+    /// Phobos `CanTarget.IronCurtained=`; `None` uses the owner's global.
+    pub can_target_iron_curtained: Option<bool>,
 }
 
 /// A WarheadTypeClass, as the tests read it against this target.
@@ -224,10 +225,12 @@ pub(crate) struct WarheadFacts {
     pub bomb_disarm: bool,  // +0x16E
     /// `+0x16C`. Phobos' `AirstrikeTargets` gate reads it with the target's
     /// `AllowAirstrike`.
-    #[cfg(feature = "phobos")]
     pub airstrike: bool,
-    #[cfg(feature = "phobos")]
     pub airstrike_targets: crate::rules::airstrike_targets::AirstrikeTargets,
+    /// Phobos `WarheadTypeExt::TransactMoney`: the signed amount a detonation
+    /// moves on the firing house. A negative amount gates the shot at
+    /// `0x6FC339` on that house's wallet.
+    pub transact_money: i32,
     /// Rule-owned armor interaction refuses this target. Vanilla T54 uses
     /// `FCOMP` zero/unordered; Ares100542A0 uses its independent fire flag.
     pub armor_rejects_fire: bool,
@@ -238,6 +241,10 @@ pub(crate) struct WarheadFacts {
 pub(crate) struct ProjectileFacts {
     pub aa: bool, // +0x2A4
     pub ag: bool, // +0x2A5
+    /// Phobos `BulletTypeExt::AU` (`Ext/BulletType/Body.h:88`, read
+    /// `Ext/BulletType/Body.cpp:83`): a `[Projectile]` extension field, not a
+    /// stock `BulletTypeClass` offset.
+    pub au: bool,
     pub rot: i32, // +0x2DC
 }
 
@@ -301,6 +308,12 @@ pub(crate) struct FirerFacts {
     pub temporal_gunner_weapon: bool,
     /// Owner `IsHumanPlayer` (`House+0x1EC`).
     pub owner_is_human: bool,
+    /// Phobos `HouseClass::IsControlledByHuman @ 0x0050B730`: the mode-aware
+    /// predicate its `0x6FC339` hook reads (`PlayerControl=` counts).
+    pub owner_controlled_by_human: bool,
+    /// The owner's `Available_Money` (`0x004F6990`), read by the Phobos
+    /// `0x6FC339` `TransactMoney<0` gate.
+    pub owner_money: i32,
     /// Paralysed (vt+0x380: Foot `0x004DE770`, time left != 0).
     pub paralyzed: bool,
     /// SpawnManager (`+0x2D0`) counts: `0x006B7D30` spawns not
@@ -338,6 +351,24 @@ pub(crate) struct FirerFacts {
     /// Ares: a charging supporter of a `PrismForwarding.BreakSupport=yes`
     /// tower that can fire (`10016360`).
     pub prism_breaks_support: bool,
+    // Phobos `TechnoClass_CanFire_OpenTopped @ 0x6FC5C7`
+    // (`Ext/Techno/Hooks.Firing.cpp:439-482`), transport-side facts. The
+    // `OpenTopped.*` type keys are resolved to their effective values against
+    // `[General]` at assembly time; cart/aircraft non-Foot carriers leave the
+    // raw facts false. Defaults are false, so a corpus `FirerFacts` that has
+    // no transport facts leaves the Phobos branch a no-op.
+    pub transport_deactivated: bool,
+    pub transport_weapons_disabled: bool,
+    pub transport_attacked_by_locomotor: bool,
+    pub transport_is_foot: bool,
+    pub transport_moving: bool,
+    pub transport_allow_firing_if_deactivated: bool,
+    pub transport_allow_firing_if_attacked_by_locomotor: bool,
+    pub transport_check_disable_weapons: bool,
+    pub transport_fire_while_moving: bool,
+    /// The passenger's `OpenTransport.FireWhileMoving` (else `[General]`).
+    pub passenger_fire_while_moving: bool,
+    pub transport_decloak_to_fire: bool,
 }
 
 impl Default for FirerFacts {
@@ -375,6 +406,8 @@ impl Default for FirerFacts {
             temporal: None,
             temporal_gunner_weapon: false,
             owner_is_human: false,
+            owner_controlled_by_human: false,
+            owner_money: 0,
             paralyzed: false,
             spawns: None,
             primary_facing: 0,
@@ -396,6 +429,17 @@ impl Default for FirerFacts {
             delayed_fire_counter: 0,
             building_has_turret: false,
             prism_breaks_support: false,
+            transport_deactivated: false,
+            transport_weapons_disabled: false,
+            transport_attacked_by_locomotor: false,
+            transport_is_foot: false,
+            transport_moving: false,
+            transport_allow_firing_if_deactivated: false,
+            transport_allow_firing_if_attacked_by_locomotor: false,
+            transport_check_disable_weapons: false,
+            transport_fire_while_moving: false,
+            passenger_fire_while_moving: true,
+            transport_decloak_to_fire: false,
         }
     }
 }
@@ -434,6 +478,11 @@ pub(crate) struct FirerTypeFacts {
     pub can_occupy_fire: bool, // +0x157C
     pub emp_pulse_cannon: bool, // +0x16C3
     pub turret_anim_is_voxel: bool, // +0x16C5
+    /// Phobos `NoTurret.TrackTarget` resolved against `[General]`
+    /// (`Ext/UnitType/Body.cpp:77`, `Ext/Rules/Body.cpp:393`), read by the
+    /// `0x7410BB` hook in [`unit`] only (the type key exists on UnitTypes;
+    /// the world fills the global fallback for every class).
+    pub no_turret_track_target: bool,
 }
 
 impl Default for FirerTypeFacts {
@@ -461,6 +510,7 @@ impl Default for FirerTypeFacts {
             can_occupy_fire: false,
             emp_pulse_cannon: false,
             turret_anim_is_voxel: false,
+            no_turret_track_target: false,
         }
     }
 }
@@ -518,17 +568,14 @@ pub(crate) struct TargetTypeFacts {
     /// UnitType `+0xE13` and `+0xE1B`.
     pub is_simple_deployer: bool,
     pub non_vehicle: bool,
-    /// [`ObjectType::is_1x1_with_undeploy`], a Building's vt+0x80 answer.
-    pub is_1x1_with_undeploy: bool,
+    /// [`ObjectType::is_vehicle`], a Building's vt+0x80 answer.
+    pub is_vehicle: bool,
     /// Phobos `AllowAirstrike=`, `None` when the key is absent.
-    #[cfg(feature = "phobos")]
     pub allow_airstrike: Option<bool>,
     /// Phobos `AllowAirstrike=`'s unset default for a building.
-    #[cfg(feature = "phobos")]
     pub can_c4: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl TargetTypeFacts {
     /// Phobos `AllowAirstrike` as the `CanFire` gate reads it: an explicit
     /// value wins, a building otherwise follows `CanC4`, every other kind is
@@ -553,10 +600,8 @@ impl Default for TargetTypeFacts {
             organic: false,
             is_simple_deployer: false,
             non_vehicle: false,
-            is_1x1_with_undeploy: false,
-            #[cfg(feature = "phobos")]
+            is_vehicle: false,
             allow_airstrike: None,
-            #[cfg(feature = "phobos")]
             can_c4: false,
         }
     }
@@ -575,6 +620,14 @@ pub(crate) struct FireFacts {
     pub firer_type: FirerTypeFacts,
     pub target: TargetFacts,
     pub target_type: TargetTypeFacts,
+    /// Phobos `[CombatDamage] CanTarget.IronCurtained=` (human owners).
+    pub can_target_iron_curtained: bool,
+    /// Phobos `[CombatDamage] CanTargetAI.IronCurtained=` (computer owners).
+    pub can_target_ai_iron_curtained: bool,
+    /// Phobos `[CombatDamage] BerzerkTargeting=` (`Ext/Rules/Body.cpp:420`,
+    /// default `all`): the houses a berzerk firer may target
+    /// (`Ext/Techno/Hooks.Firing.cpp:370`).
+    pub berzerk_targeting: crate::rules::phobos_shields::AffectedHouse,
 }
 
 /// The questions GetFireError asks other owners. Each is asked only where,
@@ -639,6 +692,15 @@ pub(crate) trait FireQuery {
     fn attach_effect_gate(&mut self, _weapon_index: i32) -> bool {
         true
     }
+    /// Phobos `EnumFunctions::CanTargetHouse(BerzerkTargeting, firer, target)`
+    /// (`Ext/Techno/Hooks.Firing.cpp:370`). The default allows, for query
+    /// owners with no House graph.
+    fn can_target_berzerk_house(
+        &mut self,
+        _flags: crate::rules::phobos_shields::AffectedHouse,
+    ) -> bool {
+        true
+    }
     /// Building vt+0x408, the occupant count (B1).
     fn occupants(&mut self) -> i32;
     /// Building vt+0x350 Is_Operational_For_Output (B5).
@@ -679,18 +741,29 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
         return FireError::Illegal;
     }
     let base = techno(facts, query, check_range);
-    // `0x0074104B`: the base has no producer of Facing, so only 0 goes on.
-    if base != FireError::Ok && base != FireError::Facing {
-        return base;
-    }
-    // U4 `0x00741050..0x007410A8`: the cell is asked first, on every call.
-    // vt+0x4E4 (`0x00736D50`) answers true at once for DeployToFire.
-    let cell_ok = query.deploy_cell_ok();
-    if firer_type.deploy_to_fire && !cell_ok {
-        return FireError::MustDeploy;
-    }
-    if base != FireError::Ok {
-        return base;
+    // Phobos `UnitClass_GetFireError_CheckFacingError` (`0x7410BB`, 8 bytes,
+    // `Ext/Techno/Hooks.Misc.cpp:752-769`): a keyed turretless unit that is
+    // not warping in continues its REARM at U5 (`0x7410C3`), skipping U4, so
+    // the facing check below turns it toward the target while it cools down.
+    let track_rearm = base == FireError::Rearm
+        && !firer_type.turret
+        && !firer.warping_in
+        && firer_type.no_turret_track_target;
+    // `0x0074104B`: only OK and Facing enter U4; every other error reaches
+    // the `0x007410BB` gate, where the Phobos REARM arm above continues.
+    if !track_rearm {
+        if base != FireError::Ok && base != FireError::Facing {
+            return base;
+        }
+        // U4 `0x00741050..0x007410A8`: the cell is asked first, on every call.
+        // vt+0x4E4 (`0x00736D50`) answers true at once for DeployToFire.
+        let cell_ok = query.deploy_cell_ok();
+        if firer_type.deploy_to_fire && !cell_ok {
+            return FireError::MustDeploy;
+        }
+        if base != FireError::Ok {
+            return base;
+        }
     }
     // U5 `0x007410C3`: docked at a building.
     if firer.tethered && firer.radio_link == RadioLink::Building {
@@ -711,7 +784,7 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
                 || super::vehicle_like(
                     class,
                     facts.target_type.non_vehicle,
-                    facts.target_type.is_1x1_with_undeploy,
+                    facts.target_type.is_vehicle,
                     || query.low_flying(),
                 )
         });
@@ -770,8 +843,15 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
             return FireError::Facing;
         }
     }
-    // U13 `0x00741300`.
-    query.locomotor_can_fire()
+    // U13 `0x00741300..0x00741323`: a nonzero Can_Fire wins; otherwise the
+    // routine returns the base held at `[esp+0x28]`. The base is OK for every
+    // stock route that reaches here; the Phobos REARM continuation above is
+    // the only way it is not.
+    let locomotor = query.locomotor_can_fire();
+    if locomotor != FireError::Ok {
+        return locomotor;
+    }
+    base
 }
 
 /// `InfantryClass::GetFireError @ 0x0051C8B0`.
@@ -962,12 +1042,15 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
 
     // T12..T18 `0x006FC1B6`: a techno target only.
     if kind.is_techno() {
+        // T16: a computer house never fires at the Iron Curtain. Phobos
+        // removes this check with the jump `0x6FC22A` -> `0x6FC24D` and
+        // applies its own arm after T21 (`0x6FC339`).
+        let iron_curtain_refuses = false;
         if target.in_limbo
             || (firer.berserk && target_type.berserk_friendly)
             || (firer_type.natural && target_type.unnatural)
             || target.chrono_warp_latch
-            // T16: a computer house never fires at the Iron Curtain.
-            || (!firer.owner_is_human && target.iron_curtained)
+            || iron_curtain_refuses
         {
             return Illegal;
         }
@@ -1004,11 +1087,44 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     let Some(weapon) = query.weapon(facts.weapon_index) else {
         return Cant;
     };
+    // Phobos `TechnoClass_CanFire` (`0x6FC339`) money arm
+    // (`Ext/Techno/Hooks.Firing.cpp:325-328`): a negative `TransactMoney`
+    // warhead refuses the shot unless the firing house can pay `-amount`.
+    // The negation wraps like the native one, so `i32::MIN` passes.
+    if weapon.warhead.is_some_and(|warhead| {
+        warhead.transact_money < 0
+            && facts.firer.owner_money < warhead.transact_money.wrapping_neg()
+    }) {
+        return Cant;
+    }
     // Phobos `TechnoClass_CanFire` (`0x6FC339`): the weapon's AttachEffect
     // lists gate the shot against the target (or, with `CheckOnFirer`, the
     // firer) right after the weapon exists and before the per-target arms.
     if !query.attach_effect_gate(facts.weapon_index) {
         return Cant;
+    }
+    // Phobos `TechnoClass_CanFire` (`0x6FC339`) iron-curtain arm
+    // (`Ext/Techno/Hooks.Firing.cpp:365-369`): after T21, the money arm and
+    // the cell/attach gate. `CannotFire` there is Illegal (`0x6FCB7E`).
+    if kind.is_techno()
+        && target.iron_curtained
+        && !weapon
+            .can_target_iron_curtained
+            .unwrap_or(if firer.owner_controlled_by_human {
+                facts.can_target_iron_curtained
+            } else {
+                facts.can_target_ai_iron_curtained
+            })
+    {
+        return Illegal;
+    }
+    // Phobos `TechnoClass_CanFire` (`0x6FC339`) berzerk arm
+    // (`Ext/Techno/Hooks.Firing.cpp:370-371`), right after the iron-curtain
+    // one and only against a techno: a berzerk firer may target only the
+    // houses `[CombatDamage] BerzerkTargeting=` (default all) admits.
+    if kind.is_techno() && firer.berserk && !query.can_target_berzerk_house(facts.berzerk_targeting)
+    {
+        return Illegal;
     }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();
@@ -1070,6 +1186,47 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     {
         return Illegal;
     }
+    // Phobos `TechnoClass_CanFire_OpenTopped @ 0x6FC5C7`
+    // (`Ext/Techno/Hooks.Firing.cpp:439-482`): replaces the native T33 tail
+    // for a passenger whose weapon has `FireInTransport` and whose carrier is
+    // not warped-out/nested (T32/T33 above already answered those, and its
+    // `Transporter::Nested` arm is the hook's key-free check ②). The strict
+    // order is: Deactivated -> Carrier.Transporter -> CheckDisable ->
+    // IsAttackedByLocomotor -> FireWhileMoving's moving check.
+    if firer.in_open_transport {
+        // ① `pTransport->Deactivated && !AllowFiringIfDeactivated` -> Illegal.
+        if firer.transport_deactivated && !firer.transport_allow_firing_if_deactivated {
+            return Illegal;
+        }
+        // ③ the passenger's weapon is `weapon` (Some past T21 here).
+        // ④ `CheckTransportDisableWeapons && HasWeaponsDisabled(pTransport)
+        //    && pWeapon` jumps to `0x6FC0DF`, the T3 Rearm block (the same
+        //    address the Ares DisableWeapons hook calls Rearm), not Illegal.
+        if firer.transport_check_disable_weapons && firer.transport_weapons_disabled {
+            return Rearm;
+        }
+        // ⑤ only when the carrier casts to `FootClass`.
+        if firer.transport_is_foot {
+            // 5a `IsAttackedByLocomotor && !AllowFiringIfAttackedByLocomotor`.
+            if firer.transport_attacked_by_locomotor
+                && !firer.transport_allow_firing_if_attacked_by_locomotor
+            {
+                return Illegal;
+            }
+            // 5b three-way AND: carrier `OpenTopped.FireWhileMoving`, the
+            // passenger `OpenTransport.FireWhileMoving` and the weapon's YR
+            // `FireWhileMoving`. Any false runs the carrier moving check
+            // (`BalloonHover` Is_Moving_Now / else Destination != nullptr).
+            if !firer.transport_fire_while_moving
+                || !firer.passenger_fire_while_moving
+                || !weapon.fire_while_moving
+            {
+                if firer.transport_moving {
+                    return Illegal;
+                }
+            }
+        }
+    }
     // T34 `0x006FC5D5`: only Chrono shots join an erase.
     if kind.is_techno() && weapon.warhead.is_some() && target.warped_out && !warhead.temporal {
         return Illegal;
@@ -1105,8 +1262,23 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Illegal;
     }
     // T39 `0x006FC73C`.
-    if kind.is_foot() && query.target_layer() != 2 && !weapon.projectile.aa {
-        return Illegal;
+    if kind.is_foot() {
+        let layer = query.target_layer();
+        if layer != 2 && !weapon.projectile.aa {
+            return Illegal;
+        }
+        // Phobos `TechnoClass_CanFire_AntiUnderground` (`0x6FC749`,
+        // `Ext/Techno/Hooks.Firing.cpp:535-558`), in the hook's slot between
+        // T39 and T40. Its `switch (layer)` answers `Layer::Underground` (0)
+        // with ILLEGAL unless the projectile has `AU=yes`; only a Foot rides
+        // the Tunnel locomotor, so the arm stays inside T39's Foot branch and
+        // reuses the layer it already read. The hook's Air/Top arms repeat
+        // T38's `AA` requirement and add nothing here.
+        if layer == i32::from(crate::sim::world::display_layers::DisplayLayer::UNDERGROUND.index())
+            && !weapon.projectile.au
+        {
+            return Illegal;
+        }
     }
     if kind.is_techno() {
         // T40 `0x006FC76A..0x006FC7E9`: water or beach under a ground
@@ -1191,14 +1363,27 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // T48 `0x006FCA26`: an aircraft surfaces only from a full cloak.
     // Ares 3.0 TechnoClass_GetWeaponState (1005D2B0, hook 0x6FCA30): a
     // transport that is not uncloaked answers CLOAKED first.
+    // Phobos `TechnoClass_CanFire_RevertAresOpenTopCloakFix @ 0x6FCA26`
+    // (`Ext/Techno/Hooks.Cloak.cpp:179-199`): an open-topped carrier whose
+    // `OpenTopped.DecloakToFire` is on returns `NotApplicable(0x6FCA5E)`,
+    // reverting the Ares forced-CLOAKED verdict and skipping T48; the
+    // `0x6FCD1D` hook uncloaks the carrier instead. `weapon.decloak_to_fire`
+    // is the YR WeaponType key, distinct from the Phobos TechnoType key.
+    let revert_decloak = {
+        {
+            firer.transport_decloak_to_fire
+        }
+    };
     if facts.ares
         && weapon.decloak_to_fire
         && firer.transporter != Transporter::None
         && firer.transporter_cloaked
+        && !revert_decloak
     {
         return Cloaked;
     }
     if weapon.decloak_to_fire
+        && !revert_decloak
         && firer.cloak_state != 0
         && (class != FirerClass::Aircraft || firer.cloak_state == 2)
     {
@@ -1235,7 +1420,6 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         // `AllowAirstrike` permits. The weapon-choice arm at `0x6F3477` only
         // reaches this for a secondary airstrike weapon; a primary one is
         // gated here alone.
-        #[cfg(feature = "phobos")]
         if warhead.airstrike {
             let target_kind = match kind {
                 FireTargetKind::Infantry => AirstrikeKind::Infantry,

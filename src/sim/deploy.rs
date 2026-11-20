@@ -152,11 +152,51 @@ pub(crate) fn issue_order(
     .is_ok()
 }
 
+/// Phobos `UnitClass_Mi_Unload_Subterranean` passenger skip
+/// (`Ext/Unit/Hooks.Unload.cpp:53-58`, hook `0x73D63B`): a Unit transport skips
+/// its passenger unload and takes the deploy path when
+/// `Deploy.SkipPassengerUnload` is set, or `Deploy.NoPassenger` holds with no
+/// passengers and `MissionStatus == 0`. The bunker and linked/unloading
+/// harvester arms precede it natively, so it applies only outside a tank bunker
+/// and outside a harvester/weeder still holding a radio link or the unload
+/// latch. Builds without Phobos always answer false.
+pub(crate) fn phobos_unload_skips_passengers(
+    sim: &Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+) -> bool {
+    {
+        let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        if object.passengers <= 0
+            || entity.bunker.link().installed_in().is_some()
+            || ((object.harvester || object.weeder)
+                && (!entity.radio_contacts.is_empty()
+                    || entity
+                        .miner
+                        .as_ref()
+                        .is_some_and(|miner| miner.unload_active())))
+        {
+            return false;
+        }
+        let live = entity
+            .passenger_role
+            .cargo()
+            .map_or(0, |cargo| cargo.passengers().len());
+        object
+            .phobos_deploy
+            .mission_skips_passengers(live, entity.mission.handler_state())
+    }
+}
+
 /// The head of `UnitClass::Mission_Unload @ 0x0073D630`: a Unit in no tank
 /// bunker (`+0x2E4`) whose type has `Passengers=` below 1 and `DeployFire=`
 /// without `IsSimpleDeployer=` takes the deploy-fire arm
 /// ([`Simulation::unit_deploy_fire_unload`]) before every other Unload arm.
-/// Retail: the Chaos Drone (`[CAOS]`).
+/// Retail: the Chaos Drone (`[CAOS]`). Phobos `Deploy.SkipPassengerUnload` /
+/// `Deploy.NoPassenger` admit a loaded transport that skips its passenger
+/// unload (`Ext/Unit/Hooks.Unload.cpp:53-58`, hook `0x73D63B`).
 pub fn unit_fires_on_deploy(
     sim: &Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -167,7 +207,9 @@ pub fn unit_fires_on_deploy(
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
-                object.passengers < 1 && object.deploy_fire && !object.is_simple_deployer
+                (object.passengers < 1 || phobos_unload_skips_passengers(sim, entity, rules))
+                    && object.deploy_fire
+                    && !object.is_simple_deployer
             })
 }
 
@@ -316,6 +358,22 @@ impl Simulation {
                     return false;
                 }
                 let bunkered = entity.bunker.link().installed_in().is_some();
+                // Phobos `HasAmmoToDeploy` inside `CanDeploySlashUnload`
+                // (hook 0x7010C1, `Ext/Techno/Hooks.cpp:1455-1470`): every
+                // admission (deploy key, `UnitClass::Deploy`, AI/scripted)
+                // refuses outside the `Ammo.DeployUnlock*` band; a bunkered
+                // Unit is exempt.
+                if !self.phobos_unit_has_ammo_to_deploy(id, rules) {
+                    return false;
+                }
+                // Phobos `SimpleDeployerAllowedToDeploy(pUnit, true, false)`
+                // inside the same `CanShowDeployCursor` hook 0x7010C1
+                // (`Ext/Techno/Hooks.cpp:1471-1473`): a simple deployer whose
+                // own cell fails `IsSimpleDeployer.ConsiderPathfinding` /
+                // `.DisallowedLandTypes` refuses deploy.
+                if !self.phobos_simple_deployer_allowed_to_deploy(id, rules) {
+                    return false;
+                }
                 if object.deploys_into.is_none()
                     && object.passengers == 0
                     && !object.is_simple_deployer
@@ -324,11 +382,16 @@ impl Simulation {
                 {
                     return false;
                 }
+                let allow_controlled_mcv = rules.phobos_globals.allow_deploy_controlled_mcv;
                 if object.deploys_into.is_some()
                     && (entity.parasite.eater().is_some()
                         || (crate::sim::mcv_deploy::deploys_into(self, entity, rules)
                             .is_some_and(|yard| yard.construction_yard)
-                            && entity.mind_control.controller().is_some()))
+                            && entity.mind_control.controller().is_some()
+                            // Phobos `AllowDeployControlledMCV` (`Ext/Unit/
+                            // Hooks.DeploysInto.cpp:170-178`): opt in to
+                            // deploying a mind-controlled MCV.
+                            && !allow_controlled_mcv))
                 {
                     return false;
                 }
@@ -355,11 +418,17 @@ impl Simulation {
                         }))
                         .flatten()
                         .any(|index| cell(index).bridge_facts.has_structural_bridge());
+                    // Phobos `AmphibiousUnload` (hook `0x70107A`,
+                    // `Ext/Techno/Hooks.Transport.cpp:646-657`): on water the
+                    // water refusal yields to the type key or `[General]`.
+                    // `ObjectType::amphibious_unload` owns that precedence.
+                    let amphibious_unload = object.amphibious_unload(rules);
                     if near_deck
-                        || (self
-                            .houses
-                            .get(&entity.owner())
-                            .is_some_and(|house| house.is_human())
+                        || (!amphibious_unload
+                            && self
+                                .houses
+                                .get(&entity.owner())
+                                .is_some_and(|house| house.is_human())
                             && cell(own).land_type == LandType::Water.as_index())
                     {
                         return false;
@@ -392,6 +461,102 @@ impl Simulation {
             }
             EntityCategory::Aircraft => object.passengers != 0,
         }
+    }
+
+    /// Phobos `UnitExt::SimpleDeployerAllowedToDeploy(pThis, true, false)`
+    /// (`Ext/Unit/Body.cpp:258-316`), the `CanShowDeployCursor` hook 0x7010C1
+    /// caller (`Ext/Techno/Hooks.cpp:1471-1473`). `defaultValue` is true and
+    /// `alwaysCheckLandTypes` is false, so only `ConsiderPathfinding` opens the
+    /// gate: a disallowed cell land type refuses, else the cell must pass
+    /// `CellClass::CheckCellPassability @ 0x004834A0` with the deploy type's
+    /// SpeedType/MovementZone (the `Convert.Deploy` target's under Ares).
+    fn phobos_simple_deployer_allowed_to_deploy(&self, id: u64, rules: &RuleSet) -> bool {
+        use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        use crate::sim::cell_rect::{
+            CellPassabilityArgs, CellPassabilityMap, CellRef, check_cell_passability,
+            get_cellclass_fallback,
+        };
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return true;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return true;
+        };
+        if !object.is_simple_deployer || !object.phobos_deploy.consider_pathfinding {
+            return true;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return true;
+        };
+        let Some((x, y)) = self.own_map_cell(id) else {
+            return true;
+        };
+        let cell = get_cellclass_fallback(Some(terrain), i32::from(x), i32::from(y));
+        let land_type = match &cell {
+            CellRef::Real(real) => LandType::from_index(real.land_type),
+            CellRef::Dummy { .. } => LandType::from_index(0),
+        };
+        let disallowed = object
+            .phobos_deploy
+            .disallowed_flags(object.deploy_to_land, object.locomotor);
+        if land_type
+            .is_some_and(|land| crate::rules::phobos_deploy::land_type_disallowed(disallowed, land))
+        {
+            return false;
+        }
+        // alwaysCheckLandTypes is false, so the land-only short-circuit
+        // (`Body.cpp:286-287`) does not apply: fall through to pathfinding.
+        let convert = object
+            .techno_combat()
+            .convert_deploy()
+            .and_then(|target| rules.object(&target.id));
+        let speed_type = convert.map_or(object.speed_type, |target| target.speed_type);
+        let movement_zone = convert.map_or(object.movement_zone, |target| target.movement_zone);
+        // SpeedType::None / MovementZone::None (`Body.cpp:309`) are the -1
+        // parser-invalid rows; either skips the cell test.
+        if speed_type == SpeedType::Invalid || movement_zone == MovementZone::Invalid {
+            return true;
+        }
+        let cells = NativeCellQuery::canonical(terrain);
+        let map = CellPassabilityMap {
+            native_cells: Some(&cells),
+            ..self.cell_passability_map()
+        };
+        check_cell_passability(
+            &cell,
+            CellPassabilityArgs {
+                speed_type,
+                ignore_infantry: true,
+                ignore_vehicles: true,
+                zone: None,
+                movement_zone,
+                level: None,
+                is_bridge: cell.bridge_flags_0x1180() & BRIDGE_FLAG_STRUCTURAL != 0,
+            },
+            &map,
+        )
+        .admits()
+    }
+
+    /// Phobos `UnitClass_Mi_Unload_SkipHarvester`
+    /// (`Ext/Unit/Hooks.Unload.cpp:61-75`, hook `0x73DEEB`): a harvester at the
+    /// no-link tail (`HasAnyLink() == false`, the `0x73DEE9` branch) that is not
+    /// unloading skips the dump for the deploy path when `Deploy.NoTiberium` is
+    /// unset or the hold holds no tiberium value (`Tiberium.GetTotalValue() == 0`).
+    pub(crate) fn phobos_harvester_skips_tiberium_dump(&self, id: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let Some(miner) = entity.miner.as_ref() else {
+            return false;
+        };
+        !miner.unload_active() && (!object.phobos_deploy.no_tiberium || miner.cargo_value() == 0)
     }
 }
 
@@ -446,6 +611,50 @@ impl Simulation {
 
     /// Infantry vtable+54C = Stop callback521B40. Clear6E4 BEFORE calling
     /// unforced Do_Action27: a zero-health action may re-enter Stop_Driver.
+    /// Phobos `InfantryClass_DoingAI_DeployConvert_Deploy @ 0x520B3E` and
+    /// `_Undeploy @ 0x520B99`: the completed sequence converts a type that
+    /// sets `Convert.Deploy`/`Convert.Undeploy`, setting its own latch and
+    /// clearing the other. Both latches clear in the DoingAI reset while the
+    /// current sequence is neither Deploy nor Undeploy (`0x520E75`).
+    fn phobos_infantry_deploy_convert(
+        &mut self,
+        id: u64,
+        deploying: bool,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(target_name) = self.substrate.entities.get(id).and_then(|actor| {
+            if actor.category() != EntityCategory::Infantry {
+                return None;
+            }
+            if deploying && actor.phobos_infantry_deploy_converted()
+                || !deploying && actor.phobos_infantry_undeploy_converted()
+            {
+                return None;
+            }
+            let object = self.entity_object_type(actor, rules)?;
+            if deploying {
+                object.phobos_convert.deploy.clone()
+            } else {
+                object.phobos_convert.undeploy.clone()
+            }
+        }) else {
+            return;
+        };
+        let Some(target) = rules.object(&target_name) else {
+            return;
+        };
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor.set_phobos_infantry_deploy_converted(deploying);
+            actor.set_phobos_infantry_undeploy_converted(!deploying);
+        }
+        let target = crate::rules::superweapon_type::DeliveryType {
+            category: target.category,
+            id: target.id.clone(),
+        };
+        self.convert_techno_type(id, &target, rules, effects);
+    }
+
     pub(crate) fn infantry_pending_deploy_stop_callback(
         &mut self,
         id: u64,
@@ -490,6 +699,13 @@ impl Simulation {
             31 => 0,
             other => return Err(format!("deployment completion received Doing{other}")),
         };
+        // Phobos `InfantryClass_DoingAI_DeployConvert_Deploy @ 0x520B3E` and
+        // `_Undeploy @ 0x520B99` (`Ext/Infantry/Hooks.cpp:18-50`): the
+        // completed Deploy/Undeploy sequence converts a type that sets
+        // `Convert.Deploy`/`Convert.Undeploy`, latching first.
+        if completed_doing == 27 || completed_doing == 31 {
+            self.phobos_infantry_deploy_convert(id, completed_doing == 27, rules, effects);
+        }
         self.infantry_do_action(id, next, true, rules, effects)?;
         //520B3B/520B9A re-read the type AFTER the concrete action receiver.
         let actor = self
@@ -621,3 +837,11 @@ impl Simulation {
         Ok(if delay > -1 { delay } else { 450 })
     }
 }
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "phobos_infantry_undeploy_convert_tests.rs"]
+mod phobos_undeploy_convert_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "phobos_deploy_gates_tests.rs"]
+mod phobos_deploy_gates_tests;

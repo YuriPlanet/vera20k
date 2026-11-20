@@ -740,6 +740,7 @@ pub(crate) fn emit_projectile_detonations(
                 detonations,
                 out,
                 &mut Vec::new(),
+                false,
             )
         },
     )
@@ -794,7 +795,9 @@ pub(crate) fn resolve_attacker_fire(
             if let Some(fog) = fog {
                 world.fog = fog.clone();
             }
-            world_fire::resolve_attacker_fire(
+            // The receiver fixture has no class firing update around this call,
+            // so `Burst.NoDelay` has nobody to hand the repeat to.
+            let _ = world_fire::resolve_attacker_fire(
                 world,
                 rules,
                 overlay_registry,
@@ -804,6 +807,7 @@ pub(crate) fn resolve_attacker_fire(
                 has_active_wave,
                 out,
                 crate::sim::world::FrameEffects::default(),
+                false,
             );
         },
     )

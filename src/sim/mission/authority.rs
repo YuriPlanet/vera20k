@@ -273,6 +273,18 @@ fn evaluate_ready(
         )
         .or(Some(DEGRADED_NOT_MOVING));
         let attack_target_present = entity.attack_target.target().is_some();
+        // Phobos `FootClass_ReadyToNextMission_MovingCheck`
+        // (`Misc/Hooks.BugFixes.cpp:3325-3338`): the `Is_Moving_Now` query is
+        // skipped for a human player unless `ReadyToNextMission.MovingCheck`
+        // restores the native check; a queued Unload or a computer-controlled
+        // house always queries (`HouseClass::IsControlledByHuman @ 0x0050B730`).
+        // Without the Phobos capability VERA keeps the native always-query.
+        let moving_check = rules.phobos_globals.ready_to_next_mission_moving_check
+            || mission.queued().known() == Some(super::MissionType::Unload)
+            || !sim
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
 
         match entity.category() {
             EntityCategory::Unit => {
@@ -293,6 +305,7 @@ fn evaluate_ready(
                     locomotor,
                     attack_target_present,
                     position,
+                    moving_check,
                     world: &LiveUnitWorld { sim, rules, entity },
                 })
             }
@@ -307,6 +320,7 @@ fn evaluate_ready(
                     object_is_falling_down: u8::from(entity.is_falling_down()),
                     locomotor,
                     attack_target_present,
+                    moving_check,
                 })
             }
             EntityCategory::Aircraft => {
@@ -541,7 +555,48 @@ impl Simulation {
         let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
         let prepared =
             effects.preflight(self, receiver, ConcreteSetterRequest::Target { requested })?;
+        // `Assign_Target @ 0x006FCDCA..0x006FCDCC` returns before the store
+        // (and Phobos' `0x6FCF3E` hook) when the requested pointer equals the
+        // current target; the hook body therefore belongs to changed stores.
+        let previous = self
+            .substrate
+            .entities
+            .get(receiver)
+            .and_then(|entity| entity.attack_target.target());
         effects.apply_target(self, &prepared, requested);
+        if requested != previous {
+            // Phobos `UpdateGattlingRateDownReset` at `TechnoClass_SetTarget_After`
+            // (`0x6FCF3E`): a `RateDown.Reset=yes` gattling restarts its value on
+            // every changed or lost stored target.
+            self.apply_rate_down_target_reset(receiver, rules);
+            let stored = self
+                .substrate
+                .entities
+                .get(receiver)
+                .and_then(|entity| entity.attack_target.target());
+            match stored {
+                // Phobos `TechnoClass_SetTarget_After` (`Hooks.cpp:1176-1184`):
+                // a turretless Unit with an active firing sequence clears it
+                // unless `FireUp.ResetInRetarget=no` and the stored target is
+                // already in range.
+                Some(target) => {
+                    reset_fire_up_in_retarget(
+                        self,
+                        receiver,
+                        &target,
+                        rules,
+                        Some(rules.overlay_registry()),
+                    );
+                }
+                // `Hooks.cpp:1175`: a stored null resets the `DelayedFireTimer`
+                // (and force-removes an attached no-delay anim).
+                None => {
+                    crate::sim::combat::world_fire::reset_phobos_delayed_fire_timer(
+                        self, rules, receiver,
+                    );
+                }
+            }
+        }
         Ok(())
     }
 
@@ -2014,5 +2069,43 @@ mod tests {
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.mission.current(), MOVE);
         assert_eq!(entity.mission_leaf.as_building().unwrap().ready_latch(), 0);
+    }
+}
+
+/// `TechnoClass_SetTarget_After`'s FireUp arm (`0x6FCF3E`,
+/// `Ext/Techno/Hooks.cpp:1176-1184`): `!pUnit->Type->Turret`,
+/// `CurrentFiringFrame != -1`, and `FireUp.ResetInRetarget || !IsCloseEnough`
+/// clear the Unit's firing sequence to -1.
+fn reset_fire_up_in_retarget(
+    sim: &mut Simulation,
+    id: u64,
+    target: &TargetKind,
+    rules: &RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.category() != EntityCategory::Unit || entity.unit_firing_counter.get() == -1 {
+        return;
+    }
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    if object.has_turret {
+        return;
+    }
+    let key = rules
+        .art()
+        .resolve_metadata_entry(&object.id, &object.image)
+        .is_none_or(|art| art.phobos_fire_up_reset_in_retarget);
+    if key
+        || !crate::sim::keep_target_on_move::is_close_enough_with_weapon(
+            sim, id, target, rules, registry, -1,
+        )
+    {
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.unit_firing_counter.reset();
+        }
     }
 }

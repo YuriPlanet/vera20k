@@ -646,7 +646,7 @@ impl Simulation {
         match order {
             None => {}
             Some(FlyStopOrder::SelfDestruct) => {
-                self.receive_own_health_c4(id, rules, registry, frame_effects);
+                self.receive_own_health_c4(id, rules, registry, frame_effects, true);
                 if let Some(state) = self
                     .substrate
                     .entities

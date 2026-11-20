@@ -93,12 +93,76 @@ fn warhead_shake_rules_drive_ordered_conditional_main_rng_detonation_updates() {
             crate::sim::combat::ScreenShakeUpdate {
                 x: Some(expected_x),
                 y: Some(expected_y),
+                local_only: false,
+                coord: ProjectileCoord::new(2688, 2688, 0),
             },
             crate::sim::combat::ScreenShakeUpdate {
                 x: None,
                 y: Some(expected_y_only),
+                local_only: false,
+                coord: ProjectileCoord::new(2688, 2688, 0),
             },
         ]
     );
     assert_eq!(world.main_rng.logical_state(), expected_state);
+}
+
+/// Phobos `[Warhead] ShakeIsLocal=` (`Ext/WarheadType/Body.cpp:184`) falls
+/// back to `[General] ShakeIsLocal` (`Ext/Rules/Body.cpp:491`), whose
+/// constructor default is `no`; the per-warhead key wins either way.
+#[test]
+fn shake_is_local_reads_the_warhead_key_over_the_general_fallback() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[General]\nShakeIsLocal=yes\n\
+         [Warheads]\n0=LOCAL\n1=PLAIN\n2=OFFLOCAL\n\
+         [LOCAL]\nShakeIsLocal=yes\nShakeXhi=2\n\
+         [PLAIN]\nShakeXhi=2\n\
+         [OFFLOCAL]\nShakeIsLocal=no\nShakeXhi=2\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nShakeIsLocal=yes\n"),
+    );
+    let rules = RuleSet::from_processed_rules(&layers.process().expect("rules pass stack"))
+        .expect("projected rules");
+    assert!(rules.phobos_globals.shake_is_local);
+
+    let mut world = Simulation::with_seed(0x5A_AA_1E);
+    world.intern_rule_type_ids(&rules);
+    world.resolve_type_handles(&rules);
+    let requests = [
+        detonation(&mut world, "LOCAL", 1),
+        detonation(&mut world, "PLAIN", 2),
+        detonation(&mut world, "OFFLOCAL", 3),
+    ];
+    let mut run = super::world_receiver::ReceiverRun::default();
+    super::world_receiver::commit_projectiles(&mut world, &mut run, &requests, &rules, None);
+    run.finish();
+
+    let local: Vec<bool> = world
+        .screen_shake_updates
+        .iter()
+        .map(|update| update.local_only)
+        .collect();
+    assert_eq!(local, vec![true, true, false]);
+}
+
+/// A run without the `[General]` switch keeps every write ordinary.
+#[test]
+fn shake_is_local_is_off_by_default() {
+    let rules = layered_rules();
+    assert!(!rules.phobos_globals.shake_is_local);
+    let mut world = Simulation::with_seed(0x5A_AA_1E);
+    world.intern_rule_type_ids(&rules);
+    world.resolve_type_handles(&rules);
+    let requests = [detonation(&mut world, "BOTH", 1)];
+    let mut run = super::world_receiver::ReceiverRun::default();
+    super::world_receiver::commit_projectiles(&mut world, &mut run, &requests, &rules, None);
+    run.finish();
+    assert!(
+        world
+            .screen_shake_updates
+            .iter()
+            .all(|update| !update.local_only)
+    );
 }

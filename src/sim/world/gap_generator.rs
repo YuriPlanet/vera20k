@@ -142,6 +142,13 @@ impl Simulation {
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
             tesla_chargers: entity.building.tesla_charge.chargers().len() as i32,
+            tesla_charge_levels: Self::power_charger_level_sum(
+                &self.interner,
+                &self.substrate,
+                rules,
+                entity.building.tesla_charge.chargers(),
+            ),
+            overpower_keep_online: object.overpower_keep_online,
             charger_bypass: {
                 let keep = rules.ares()
                     && self
@@ -233,6 +240,12 @@ impl Simulation {
         // `0x0043FB6D..0x0043FBE3`: the working sound precedes the dispatcher.
         self.building_working_sound_edge(id, operational, rules, frame_effects);
         self.dispatch_building_operational(id, rules, registry, frame_effects);
+        // Phobos `BuildingClass_AI_PoweredKillSpawns` (`0x43FBEF`,
+        // `Ext/Building/Hooks.cpp:30-37`) runs on this changed edge, ahead of
+        // the sample store, and acts only while the building is offline.
+        if !operational {
+            self.phobos_powered_kill_spawns(id, rules, registry, frame_effects);
+        }
         //43FBEF stores the caller's sample, independently of the dispatcher's
         //fresh vt350 read. Action36 also calls4549B0 but does not store6C8.
         if let Some(entity) = self.substrate.entities.get_mut(id) {

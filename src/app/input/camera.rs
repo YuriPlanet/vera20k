@@ -1916,7 +1916,6 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
     {
         return None;
     }
-    #[cfg(feature = "phobos")]
     if crate::app::presentation::sw_sidebar::hit_test(state, x, y).is_some() {
         return None;
     }

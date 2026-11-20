@@ -461,7 +461,23 @@ pub(super) fn send_planes(
     let (authored, waypoint) = sim.houses.get(&owner).map_or((-1, 0), |house| {
         (house.authored_edge(), house.waypoint_edge())
     });
-    let edge = Edge::authored_or_waypoint(authored, waypoint);
+    let owned_edge = Edge::authored_or_waypoint(authored, waypoint);
+    // Phobos `AircraftExt::PickEdgeCellForPlane` (`Ext/Aircraft/Body.cpp:88`):
+    // the type's `SpawnFromEdge=` else `[General] AircraftSpawnFromEdge=`.
+    // `Owner` keeps the edge above; `Random` spends one `RandomRanged` draw
+    // over the four edges first. `Closest` also scatters the destination cell
+    // and picks on `Edge::None`, which `find_paradrop_edge_cell` does not
+    // model (RESIDUAL: such a type keeps the `Owner` pick).
+    let edge = {
+        let mode = rules
+            .object_in_category(
+                crate::rules::object_type::ObjectCategory::Aircraft,
+                plane_type,
+            )
+            .and_then(|plane| plane.phobos_spawn_from_edge)
+            .unwrap_or(rules.phobos_globals.aircraft_spawn_from_edge);
+        crate::sim::world::edge_cell::edge_for_mode(mode, owned_edge, &mut sim.scenario_rng)
+    };
     let Some(cell) = find_paradrop_edge_cell(
         sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),

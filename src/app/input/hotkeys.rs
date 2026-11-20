@@ -150,10 +150,8 @@ pub(crate) enum HotkeyCommand {
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
     /// Phobos: `FireTacticalSW1..10`, positional on the first left-sidebar column.
-    #[cfg(feature = "phobos")]
     FireTacticalSw(usize),
     /// Phobos: collapse/expand the left superweapon sidebar.
-    #[cfg(feature = "phobos")]
     ToggleSwSidebar,
 }
 

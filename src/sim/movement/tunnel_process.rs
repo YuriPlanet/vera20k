@@ -120,6 +120,8 @@ impl Simulation {
             super::foot_speed::owner_current_speed(
                 entity,
                 self.object_type(entity.type_ref(), rules),
+                rules,
+                &self.interner,
                 rules.general.veteran_speed,
                 &self.houses,
             )
@@ -310,7 +312,7 @@ impl Simulation {
                 }
             }
             None => {
-                self.receive_own_health_c4(id, rules, registry, effects);
+                self.receive_own_health_c4(id, rules, registry, effects, false);
                 if let Some(runtime) = self.tunnel_runtime_mut(id) {
                     runtime.set_destination(NULL_COORD);
                 }
@@ -622,7 +624,7 @@ impl Simulation {
                     )
                 });
             let Some((x, y)) = found else {
-                self.receive_own_health_c4(id, rules, registry, effects);
+                self.receive_own_health_c4(id, rules, registry, effects, false);
                 return;
             };
             self.tunnel_move_to(

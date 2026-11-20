@@ -146,7 +146,40 @@ impl Simulation {
         {
             ge.ares.ares_initial_payload.mark_created();
         }
+        self.phobos_initialize_state(&mut ge, Some(obj), rules);
         Ok(Some(ge))
+    }
+
+    /// Phobos `TechnoExt::InitializeState` (`Ext/Techno/Hooks.cpp:286-327`,
+    /// hook `0x6F42F7` `TechnoClass_Init`): every techno init draws its
+    /// per-object `RandomFactor` (`:292`, `RandomRanged(0, 15)`), and when the
+    /// `DistributeTargetingFrame` gate allows it (`:323-326`,
+    /// `!(IsControlledByHuman && DistributeTargetingFrame.AIOnly) &&
+    /// type.Get(global)`) re-arms the construction-anchored targeting timer at
+    /// `45 + RandomFactor` — vanilla arms 45 at the constructor
+    /// (`0x006F2C33`, `0x006F2C39`, the `PassiveScan::new` anchor).
+    pub(in crate::sim) fn phobos_initialize_state(
+        &mut self,
+        ge: &mut GameEntity,
+        obj: Option<&ObjectType>,
+        rules: &RuleSet,
+    ) {
+        let globals = &rules.phobos_globals;
+        let distribute = obj
+            .and_then(|obj| obj.phobos_distribute_targeting_frame)
+            .unwrap_or(globals.distribute_targeting_frame);
+        let owner_human = self.owner_is_human(ge.owner());
+        if !(owner_human && globals.distribute_targeting_frame_ai_only) && distribute {
+            // `ScenarioClass::Instance->Random.RandomRanged(0, 15)` (`:292`)
+            // and `TargetingTimer.Start(45 + RandomFactor)` (`:326`). Native
+            // draws the factor on every init, but only this armed branch reads
+            // it; VERA draws only when the (default-off) feature is active so
+            // stock oracles keep their stream. Recorded deviation.
+            let factor = self.scenario_rng.next_range_i32_inclusive(0, 15);
+            ge.set_phobos_random_factor(factor);
+            ge.passive_scan
+                .arm_timer(self.session.binary_frame(), (45 + factor) as u32);
+        }
     }
 
     pub(super) fn install_techno_components(
@@ -164,7 +197,6 @@ impl Simulation {
         // Phobos attaches the type's AttachEffect.AttachTypes at creation,
         // before the object can be observed or act. The list mutably borrows
         // the entity, so the gate's target facts are read first.
-        #[cfg(feature = "phobos")]
         if let Some(obj) = obj {
             let invulnerability = ge.invulnerability.clone();
             crate::sim::attach_effect::attach_initial_effects(
@@ -176,6 +208,22 @@ impl Simulation {
                 session.binary_frame(),
                 None,
             );
+            // `TechnoExt::InitializeAttachEffects`' second `Attach`
+            // (`Body.Internal.cpp:157`): the owner country's list.
+            if let Some(country) = houses.get(&ge.owner()).and_then(|house| house.country()) {
+                let country = interner.resolve(country).to_owned();
+                let invulnerability = ge.invulnerability.clone();
+                crate::sim::attach_effect::attach_country_effects(
+                    ge.phobos_attach_effects_mut(),
+                    category.into(),
+                    invulnerability.as_ref(),
+                    obj,
+                    rules,
+                    session.binary_frame(),
+                    None,
+                    &country,
+                );
+            }
         }
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned
@@ -206,7 +254,6 @@ impl Simulation {
         // Phobos `TechnoClass_Init` (`Hooks.cpp:297..301`): allocate the
         // ShieldClass only when the bound type resolves and its `Strength` is
         // above zero; `SetHP(InitialStrength.Get(Strength))` clamps at creation.
-        #[cfg(feature = "phobos")]
         if let Some(object) = obj
             && let Some(name) = object.shield_type()
             && let Some(ty) = rules.shield_type(name)
@@ -465,7 +512,11 @@ impl GameEntity {
     /// Derived reads of the live Type pointer. Construction, native bare type
     /// stores and Ares conversion10043740 share these caches without replaying constructors,
     /// manager allocation, passenger setup or discovery-history writes.
-    fn refresh_type_projection(&mut self, object: Option<&ObjectType>, rules: &RuleSet) {
+    pub(in crate::sim) fn refresh_type_projection(
+        &mut self,
+        object: Option<&ObjectType>,
+        rules: &RuleSet,
+    ) {
         self.stamp_scoring_flags(TypeProjectionWrite(()), object, rules);
         if let Some(object) = object {
             self.sight.stamp_type_sight(object.sight);

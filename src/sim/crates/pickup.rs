@@ -244,6 +244,15 @@ fn announce_upgrade(
     }
 }
 
+/// `[CrateRules] UnitCrateVehicleCap` (`Ext/Rules/Body.cpp:282`,
+/// `CellClass_GoodieCheck_UnitCrateVehicleCap @ 0x481C27`): the Unit crate's
+/// tracked-vehicle ceiling, `50` natively; a negative value never caps.
+fn unit_crate_vehicle_cap(rules: &RuleSet) -> i32 {
+    {
+        rules.phobos_globals.unit_crate_vehicle_cap
+    }
+}
+
 /// `0x00481C03..0x00481D6B`: the multiplayer eligibility switch on the
 /// selected slot and the over-water test. Returns the slot the arm runs.
 pub(crate) fn multiplayer_eligible_slot(
@@ -263,7 +272,10 @@ pub(crate) fn multiplayer_eligible_slot(
     let object = sim.object_type(actor.type_ref(), rules);
     let eligible = match powerup {
         // `0x00481C1E`: too many vehicles, or a shore cell.
-        POWERUP_UNIT => house.tracking().vehicles() <= UNIT_CRATE_MAX_VEHICLES && !shore,
+        POWERUP_UNIT => {
+            let cap = unit_crate_vehicle_cap(rules);
+            (cap < 0 || house.tracking().vehicles() <= cap) && !shore
+        }
         // `0x00481C32`: too much infantry, or a shore cell.
         POWERUP_SQUAD => house.tracking().infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded
@@ -332,6 +344,15 @@ pub(crate) fn multiplayer_eligible_slot(
     slot
 }
 
+/// `[CrateRules] FreeMCV.CreditsThreshold` (`Ext/Rules/Body.cpp:283`,
+/// `CellClass_GoodieCheck_FreeMCV @ 0x481BB8`): the MCV pre-empt's credit
+/// floor, `1500` natively.
+fn free_mcv_credits_threshold(rules: &RuleSet) -> i32 {
+    {
+        rules.phobos_globals.free_mcv_credits_threshold
+    }
+}
+
 /// `0x00481BB8..0x00481BFF`: with the lobby Bases option, a house with no
 /// tracked building, more than 1500 available credits and no tracked first
 /// ownable `BaseUnit=` is forced onto the Unit slot.
@@ -343,7 +364,7 @@ fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     if house.tracking().buildings() != 0 {
         return false;
     }
-    if house.economy().available_money() <= MCV_PREEMPT_CREDITS {
+    if house.economy().available_money() <= free_mcv_credits_threshold(rules) {
         return false;
     }
     let country_bit = rules.country_owner_mask(sim.interner.resolve(house.house_type_id()));

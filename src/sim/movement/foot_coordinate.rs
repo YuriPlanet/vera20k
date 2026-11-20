@@ -77,6 +77,8 @@ pub(super) fn navigation_coordinate(
             // see tools/spatial_oracle/foot_bridge_layer.{json,md}.
             Ok(head_or_current(stored_head(entity), current))
         }
+        // Fly/Rocket/Teleport/Tunnel share +18/55ACA0: copy linked Object+9C
+        // (Tunnel's slot 6 is the base 0x0055ACA0).
         // Fly/Rocket/Teleport/Tunnel share +18/55ACA0: copy linked Object+9C.
         LocomotorKind::Teleport
         | LocomotorKind::Fly

@@ -38,8 +38,17 @@ mod infantry_entry_priority_tests;
 mod wall_entry_tests;
 
 #[cfg(all(test, tests_sim_world_c_o))]
+#[path = "phobos_wall_weapon_tests.rs"]
+mod phobos_wall_weapon_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "plain_entry_tests.rs"]
 mod plain_entry_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "phobos_balloon_pathing_tests.rs"]
+mod phobos_balloon_pathing_tests;
 
 /// The +1AC decision reads live simulation state without borrowing the bridge
 /// publisher. Native Map lookups still stamp the canonical shared Dummy through
@@ -477,6 +486,25 @@ impl Simulation {
             .map(crate::sim::movement::infantry_entry::InfantryEntryClass::from_raw)
     }
 
+    /// `BalloonHoverPathingFix` (`Misc/Hooks.BugFixes.cpp:3522-3534`) in both
+    /// `IsCellOccupied` entry points (`0x51BFA2`, `0x73F0A7`) and the
+    /// `FootClass::ApproachTarget_CheckArcCell` hook (`0x4D62C0`): an airborne
+    /// `BalloonHover=` Foot skips the cell walk and answers move-OK. VERA has
+    /// no separate `IsInAir`; its AircraftTracker membership is the airborne
+    /// state, so the bucket is Some exactly while the Foot is tracked in the air.
+    pub(crate) fn phobos_balloon_hover_ignores_cell_entry(&self, id: u64, rules: &RuleSet) -> bool {
+        if !rules.phobos_globals.balloon_hover_pathing_fix {
+            return false;
+        }
+        let Some(e) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        e.air_spatial_bucket().is_some()
+            && self
+                .object_type(e.type_ref(), rules)
+                .is_some_and(|object| object.balloon_hover)
+    }
+
     /// The class's own `Can_Enter_Cell` (+0x1AC) for a live Foot receiver:
     /// Infantry 0x0051BF90 or Unit 0x0073F0A0, as the raw native code 0..7.
     /// Foot4D3920's target query and the Drive/Ship Process continuations
@@ -498,6 +526,9 @@ impl Simulation {
             )
         }) {
             return Err("Foot entry requires a live Infantry or Unit receiver".into());
+        }
+        if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
+            return Ok(0);
         }
         // An installed oracle seam answers before the receiver's type is
         // resolved, as it did before the search shared this receiver.
@@ -823,6 +854,13 @@ impl FootEntryReceiver<'_> {
         ) {
             return Ok(code);
         }
+        if self
+            .live
+            .sim
+            .phobos_balloon_hover_ignores_cell_entry(self.mover.id, self.live.rules)
+        {
+            return Ok(0);
+        }
         classify_foot_entry(&self.live, &self.mover, cell, args)
     }
 }
@@ -1124,7 +1162,19 @@ fn full_foot_entry<'a>(
             let allied = live_overlay
                 .wall_owner
                 .is_some_and(|o| mover.allied_with(live, o));
-            let warhead = weapon0.and_then(|w| live.rules.weapon_warhead(w));
+            // Phobos hooks `0x51C1F1`/`0x73F495` replace the native's
+            // `GetWeapon(0)` with `GetWeapon(GetWeaponIndexAgainstWall(..))`
+            // (`Ext/Techno/WeaponHelpers.cpp:196-228`), so the secondary may
+            // answer the wall test.
+            let wall_weapon = combat_weapon::get_weapon(
+                e,
+                obj,
+                combat_weapon::weapon_index_against_wall(live.sim, e, obj, live.rules, flags),
+                &live.sim.substrate.entities,
+                live.rules,
+                &live.sim.interner,
+            );
+            let warhead = wall_weapon.and_then(|w| live.rules.weapon_warhead(w));
             if infantry {
                 //51C1BB..51C223: a wall at damage stage DamageLevels (+0x2A0)
                 //is no wall to Infantry. Otherwise the primary warhead needs

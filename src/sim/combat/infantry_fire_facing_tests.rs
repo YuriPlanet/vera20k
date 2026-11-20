@@ -483,7 +483,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
         80,
         20,
         40,
-        0,
+        [0, 0, 0],
         crate::util::flh_transform::FlhFacings {
             aim: facing,
             body: facing,

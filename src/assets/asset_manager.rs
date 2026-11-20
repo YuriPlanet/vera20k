@@ -361,6 +361,9 @@ pub struct AssetManager {
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// VERA: the selected mod declares `[Extensions] Phobos=yes`, so its games
+    /// play Phobos (`rules::phobos_switch`).
+    requires_phobos: bool,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -392,6 +395,7 @@ impl Clone for AssetManager {
             mod_dir: self.mod_dir.clone(),
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
+            requires_phobos: self.requires_phobos,
         }
     }
 }
@@ -542,6 +546,7 @@ impl AssetManager {
             self.mod_dir = Some(folder.clone());
         }
         self.client_install = config.client_install.clone();
+        self.requires_phobos = config.requires_phobos;
         self
     }
 
@@ -621,6 +626,13 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// Whether the selected mod declares `[Extensions] Phobos=yes`
+    /// (`rules::phobos_switch`): its games play Phobos even when their rules
+    /// carry no Phobos key of their own.
+    pub fn requires_phobos(&self) -> bool {
+        self.requires_phobos
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -656,6 +668,7 @@ impl AssetManager {
                 .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         })
     }
 
@@ -815,6 +828,13 @@ impl AssetManager {
 
         manager.select_audio_pair();
 
+        // Init_Game's 0x0052C307 pass wildcard-mounts `ECACHE*.MIX` and then
+        // `ELOCAL*.MIX` (FindFirstFileA/FindNextFileA over the literals at
+        // `0x826620` and `0x826614`), after the `EXPANDMD%02d` slots and the
+        // audio selection and ahead of the named bulk archives at 0x0052C59C.
+        // Mods ship extra art inside these families; omitting them left that
+        // art unresolvable (a total-conversion install keeps its tech-oil-derrick
+        // SHPs in `ecachemd97.mix`).
         // Init_External_Cache_Local_Mixes @ 0x00530000 (Init_Game call at
         // 0x0052C307, after Init_Base_Mix_Files at 0x0052BB64 and before
         // Init_Mix_Files at 0x0052C59C): every `ECACHE*.MIX`, then every
@@ -2927,6 +2947,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3014,6 +3035,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
         manager
@@ -3091,6 +3113,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3136,6 +3159,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -3179,6 +3203,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3223,6 +3248,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3263,6 +3289,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3323,6 +3350,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3386,6 +3414,35 @@ mod tests {
         assert_eq!(
             manager.registered_archive_names(),
             ["temperat.mix", "isotemmd.mix"]
+        );
+    }
+
+    /// Init_Game's `0x0052C307` pass wildcard-mounts `ECACHE*.MIX` then
+    /// `ELOCAL*.MIX` (the `0x826620` / `0x826614` literals driven by
+    /// FindFirstFileA/FindNextFileA). A total-conversion install keeps its
+    /// tech-oil-derrick SHPs in `ecachemd97.mix`, so a missing family left the
+    /// building body unresolvable.
+    #[test]
+    fn startup_mounts_the_ecache_and_elocal_wildcard_families() {
+        let dir = audio_test_install("ecache-elocal-mounts");
+        dir.write_mix("ecachemd97.mix", "ZAOILD.SHP", b"ecache-md-art");
+        dir.write_mix("ecache97.mix", "ECACHE97.BIN", b"ecache-art");
+        dir.write_mix("elocal01.mix", "ELOCAL.BIN", b"elocal-art");
+        dir.write_mix("ecache.mix", "ECACHE.BIN", b"bare-ecache");
+        let manager =
+            AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).expect("startup");
+        assert_eq!(
+            manager.get("ZAOILD.SHP").as_deref(),
+            Some(&b"ecache-md-art"[..])
+        );
+        assert_eq!(
+            manager.get("ECACHE97.BIN").as_deref(),
+            Some(&b"ecache-art"[..])
+        );
+        assert_eq!(manager.get("ELOCAL.BIN").as_deref(), Some(&b"elocal-art"[..]));
+        assert_eq!(
+            manager.get("ECACHE.BIN").as_deref(),
+            Some(&b"bare-ecache"[..])
         );
     }
 }

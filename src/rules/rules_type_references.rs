@@ -277,6 +277,11 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("Parachute", |rules, id| {
         rules.general.parachute_shp = named(id).map(|id| id.to_ascii_uppercase());
     }),
+    // BombParachute +BB8: the canopy a `Parachuted=` bullet is born under
+    // (`Ext/Bullet/Hooks.cpp:594` reads `RulesClass::Instance->BombParachute`).
+    ("BombParachute", |rules, id| {
+        rules.general.bomb_parachute = named(id).map(|id| id.to_ascii_uppercase());
+    }),
     // InfantryTypes through the scalar reader `0x0067BAC0`, whose default is
     // the current field: Engineer +F70 (`0x0066FC94`), Technician +F6C
     // (`0x0066FCB3`), AlliedCrew +F78 (`0x0066FCF1`), SovietCrew +F7C

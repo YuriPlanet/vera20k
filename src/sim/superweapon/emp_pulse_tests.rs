@@ -72,6 +72,8 @@ const ART: &str = "[CANNON]\nFoundation=1x1\n[GUN]\nFoundation=1x1\n[DEPOT]\nFou
     [BALL]\n[PULSBALL]\n";
 
 fn rules(extra: &str) -> RuleSet {
+    // The fixture's `Type=EMPulse` data is SWTypeExt (Ares) read the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
     let art = IniFile::from_str(ART);
@@ -315,6 +317,208 @@ fn ares_drop_pod_reads_its_handler_keys() {
     );
 }
 
+/// Phobos `EMPulse.WeaponIndex` (`Ext/SWType/Body.cpp:179`, hook
+/// `0x44CEEC` in `Ext/Building/Hooks.cpp:132-189`): slot 1 takes the
+/// cannon's Secondary, while a negative index asks SelectWeapon against the
+/// EMPTarget cell. PulseGun has `Report=PulseSound`; GunShot has none.
+#[test]
+fn phobos_empulse_weapon_index_selects_the_indexed_weapon() {
+    let slot1 =
+        rules("[Pulse]\nSW.MaxCount=1\nEMPulse.WeaponIndex=1\n[CANNON]\nSecondary=GunShot\n");
+    let (mut sim, _) = scene(&slot1);
+    building(&mut sim, &slot1, "CANNON", (20, 20));
+    assert!(launch(&mut sim, &slot1, "Pulse", (26, 26)));
+    for _ in 0..200 {
+        step(&mut sim, &slot1);
+        if sim.projectiles.iter().next().is_some() {
+            break;
+        }
+    }
+    assert!(
+        sim.projectiles.iter().next().is_some(),
+        "slot 1 still fires a bullet"
+    );
+    assert!(!sim.sound_events.iter().any(|event| matches!(
+        event,
+        SimSoundEvent::VocAt { sound_id, .. } if sound_id == "PulseSound"
+    )));
+
+    let reverse = rules("[Pulse]\nSW.MaxCount=1\nEMPulse.WeaponIndex=-1\n");
+    let (mut sim, _) = scene(&reverse);
+    building(&mut sim, &reverse, "CANNON", (20, 20));
+    assert!(launch(&mut sim, &reverse, "Pulse", (26, 26)));
+    for _ in 0..200 {
+        step(&mut sim, &reverse);
+        if sim.projectiles.iter().next().is_some() {
+            break;
+        }
+    }
+    assert!(
+        sim.projectiles.iter().next().is_some(),
+        "SelectWeapon against the cell still fires weapon 0"
+    );
+}
+
+/// `EMPulse.Cannons` (`Ext/SWType/Body.cpp:181`, `SWHelpers.cpp:232-268`):
+/// the listed type is a launch site, an unlisted provider is not, and an
+/// empty list leaves the Ares `EMPulseCannon=` sites unrestricted.
+#[test]
+fn phobos_empulse_cannons_restrict_the_firing_source() {
+    let listed = rules("");
+    let (mut sim, _) = scene(&listed);
+    let gun = building(&mut sim, &listed, "GUN", (20, 20));
+    let depot = building(&mut sim, &listed, "DEPOT", (22, 22));
+    let cannon = building(&mut sim, &listed, "CANNON", (24, 24));
+    assert!(launch(&mut sim, &listed, "Volley", (26, 26)));
+    assert_eq!(mission(&sim, gun), Some(MissionType::Missile));
+    assert_ne!(mission(&sim, depot), Some(MissionType::Missile));
+    assert_ne!(mission(&sim, cannon), Some(MissionType::Missile));
+
+    let unrestricted = rules("");
+    let pulse = unrestricted
+        .super_weapon_metadata("Pulse")
+        .unwrap()
+        .launch()
+        .emp_pulse();
+    assert!(pulse.cannons.is_empty(), "an empty list is no restriction");
+    let (mut sim, _) = scene(&unrestricted);
+    let cannon = building(&mut sim, &unrestricted, "CANNON", (20, 20));
+    assert!(launch(&mut sim, &unrestricted, "Pulse", (26, 26)));
+    assert_eq!(mission(&sim, cannon), Some(MissionType::Missile));
+}
+
+/// `EMPulse.SuspendOthers` (`Ext/SWType/Body.cpp:180`,
+/// `Ext/SWType/FireSuperWeapon.cpp:380-404`): the other EMPulse Super is
+/// held while the missile flies, the residue is real save state, and
+/// Mission_Missile's select-weapon hook (`0x44CEEC`) resumes and erases it.
+#[test]
+fn phobos_empulse_suspend_others_holds_then_resumes() {
+    // The two SW types share a cannon type, which is Phobos's intersection
+    // condition for holding the other Super (`FireSuperWeapon.cpp:384-392`).
+    // GUN is also an `EMPulseCannon=`: Mission_Missile only runs the cannon
+    // statuses (and so the `0x44CEEC` select-weapon hook that resumes the
+    // held Supers) for such a type; a merely listed non-cannon fires weapon 0
+    // and queues Guard without reaching the hook.
+    let rules = rules(
+        "[Pulse]\nSW.MaxCount=1\nEMPulse.SuspendOthers=yes\nEMPulse.Cannons=GUN\n\
+         [Volley]\nEMPulse.Cannons=GUN\n[GUN]\nEMPulseCannon=yes\n",
+    );
+    let (mut sim, owner) = scene(&rules);
+    building(&mut sim, &rules, "GUN", (20, 20));
+    let volley = sim.interner.intern("Volley");
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+    assert!(sim.super_weapons[&owner][&volley].is_suspended());
+    assert!(!sim.houses[&owner].suspended_emp_pulse_sws().is_empty());
+
+    let saved = serde_json::to_string(&sim.houses[&owner]).expect("house serializes");
+    let restored: crate::sim::house_state::HouseState =
+        serde_json::from_str(&saved).expect("house restores");
+    assert_eq!(
+        restored.suspended_emp_pulse_sws(),
+        sim.houses[&owner].suspended_emp_pulse_sws()
+    );
+
+    for _ in 0..200 {
+        step(&mut sim, &rules);
+        if !sim.super_weapons[&owner][&volley].is_suspended() {
+            break;
+        }
+    }
+    assert!(!sim.super_weapons[&owner][&volley].is_suspended());
+    assert!(sim.houses[&owner].suspended_emp_pulse_sws().is_empty());
+}
+
+/// `EMPulse.TargetSelf` (`Ext/SWType/FireSuperWeapon.cpp:37`) skips
+/// `HandleEMPulseLaunch` entirely: no cannon latch, no suspension, no
+/// residue. `SWHelpers.cpp:272` also makes the cannon range unbounded.
+#[test]
+fn phobos_empulse_target_self_skips_the_launch_tail() {
+    // Without the skip, the shared cannon list would suspend Volley.
+    let rules = rules(
+        "[Pulse]\nEMPulse.TargetSelf=yes\nEMPulse.SuspendOthers=yes\nEMPulse.Cannons=GUN\n\
+         [Volley]\nEMPulse.Cannons=GUN\n",
+    );
+    let (mut sim, owner) = scene(&rules);
+    building(&mut sim, &rules, "GUN", (20, 20));
+    let volley = sim.interner.intern("Volley");
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+    assert!(!sim.super_weapons[&owner][&volley].is_suspended());
+    assert!(sim.houses[&owner].suspended_emp_pulse_sws().is_empty());
+}
+
+/// With none of the four Phobos keys set, the constructor values keep the
+/// Ares EMPulse path: weapon slot 0, no suspension, no residue.
+#[test]
+fn stock_empulse_keys_keep_the_ares_launch() {
+    let rules = rules("");
+    let emp = rules
+        .super_weapon_metadata("Pulse")
+        .unwrap()
+        .launch()
+        .emp_pulse();
+    assert_eq!(emp.empulse_weapon_index, 0);
+    assert!(!emp.empulse_suspend_others);
+    let (mut sim, owner) = scene(&rules);
+    let cannon = building(&mut sim, &rules, "CANNON", (20, 20));
+    let volley = sim.interner.intern("Volley");
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+    assert_eq!(mission(&sim, cannon), Some(MissionType::Missile));
+    assert!(!sim.super_weapons[&owner][&volley].is_suspended());
+    assert!(sim.houses[&owner].suspended_emp_pulse_sws().is_empty());
+}
+
+/// `BuildingExt::CurrentEMPulseSW` (`Ext/Building/Hooks.cpp:132-189`) is real
+/// state across ticks: two otherwise identical worlds that differ only in the
+/// latch take different weapon slots and resume sets, so the state hash must
+/// tell them apart.
+#[test]
+fn the_empulse_cannon_latch_changes_the_state_hash() {
+    let rules = rules("");
+    let (mut first, _) = scene(&rules);
+    let cannon = building(&mut first, &rules, "CANNON", (20, 20));
+    let (mut second, _) = scene(&rules);
+    building(&mut second, &rules, "CANNON", (20, 20));
+    assert_eq!(
+        first.state_hash(),
+        second.state_hash(),
+        "identical worlds start with the same hash"
+    );
+    let pulse = first.interner.intern("Pulse");
+    first
+        .substrate
+        .entities
+        .get_mut(cannon)
+        .unwrap()
+        .set_phobos_current_empulse_sw(pulse);
+    let second_pulse = second.interner.intern("Pulse");
+    assert_eq!(pulse, second_pulse);
+    assert_ne!(
+        first.state_hash(),
+        second.state_hash(),
+        "the latch is hashed"
+    );
+}
+
+/// `FireSuperWeapon.cpp:400-403` pushes a second hold into the existing entry;
+/// the map must keep both lists until the resume hook clears them.
+#[test]
+fn a_second_empulse_hold_appends_to_the_house_entry() {
+    let (mut sim, owner) = scene(&rules(""));
+    let pulse = sim.interner.intern("Pulse");
+    let first = sim.interner.intern("Volley");
+    let second = sim.interner.intern("Pulse2");
+    let house = sim.houses.get(&owner).unwrap();
+    let mut house = house.clone();
+    house.hold_emp_pulse_sws(pulse, vec![first]);
+    house.hold_emp_pulse_sws(pulse, vec![second]);
+    assert_eq!(
+        house.suspended_emp_pulse_sws()[&pulse],
+        [first, second],
+        "the later hold is appended, not replacing the earlier one"
+    );
+    assert_eq!(house.release_emp_pulse_sws(pulse), [first, second]);
+    assert!(house.suspended_emp_pulse_sws().is_empty());
+}
 /// Mental Omega's Iron Guard shape: an auto-firing, self-targeting EMPulse
 /// whose cannon's warhead curtains its House's nearby units.
 const IRON_GUARD: &str = "\

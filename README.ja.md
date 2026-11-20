@@ -79,7 +79,7 @@ cargo run --release --bin vera20k
 
 VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
 
-対戦ルールはロビーの設定、MOD、マップで変更できます。MOD やマップの INI ファイルでは、VERA20K が対応する [Ares](docs/ares.md) や [Phobos](docs/phobos.md) の機能を有効にできます。MOD に `ares.mix` を同梱しても Ares が有効になります。Phobos の一部の機能には、引き続き `--features phobos` を指定したビルドが必要です。
+対戦ルールはロビーの設定、MOD、マップで変更できます。MOD やマップの INI ファイルでは、VERA20K が対応する [Ares](docs/ares.md) や [Phobos](docs/phobos.md) の機能を有効にできます。MOD に `ares.mix` を同梱しても Ares が有効になります。Phobos はすべてのビルドに含まれ、MOD やマップの INI から有効になります。
 
 自分の MOD を作るには、[MOD 制作ガイド](docs/modding.md)をご覧ください。
 

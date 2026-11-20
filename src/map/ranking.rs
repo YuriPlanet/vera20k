@@ -49,6 +49,39 @@ impl RankingSection {
             _ => self.par_time_easy_ticks,
         }
     }
+
+    /// Phobos `ScenarioExt::LoadFromINIFile` (`Ext/Scenario/Body.cpp:152-166`):
+    /// a campaign scenario's own `MISSIONMD.INI` section (named by
+    /// Scenario+0x125C, the loaded map file name) overrides each ranking field
+    /// through `Ranking.<Name>`. Missing keys and values keep the map's
+    /// `[Ranking]` result, which is the current field.
+    pub fn apply_missionmd_overrides(
+        &mut self,
+        campaign: bool,
+        missionmd: &IniFile,
+        scenario_section: &str,
+    ) {
+        if !campaign {
+            return;
+        }
+        let Some(section) = missionmd.section(scenario_section) else {
+            return;
+        };
+        self.par_time_easy_ticks =
+            section.read_campaign_score_time("Ranking.ParTimeEasy", self.par_time_easy_ticks);
+        self.par_time_medium_ticks =
+            section.read_campaign_score_time("Ranking.ParTimeMedium", self.par_time_medium_ticks);
+        self.par_time_hard_ticks =
+            section.read_campaign_score_time("Ranking.ParTimeHard", self.par_time_hard_ticks);
+        self.under_par_title =
+            section.read_string("Ranking.UnderParTitle", &self.under_par_title, 0x1F);
+        self.under_par_message =
+            section.read_string("Ranking.UnderParMessage", &self.under_par_message, 0x1F);
+        self.over_par_title =
+            section.read_string("Ranking.OverParTitle", &self.over_par_title, 0x1F);
+        self.over_par_message =
+            section.read_string("Ranking.OverParMessage", &self.over_par_message, 0x1F);
+    }
 }
 
 /// Read gamemd's `[Ranking]` fields without substituting retail values for
@@ -101,6 +134,88 @@ mod tests {
         assert_eq!(parsed.par_time_for_difficulty(0), 9_000);
         assert_eq!(parsed.par_time_for_difficulty(1), 216_000);
         assert_eq!(parsed.par_time_for_difficulty(2), 540_900);
+    }
+
+    /// Phobos `ScenarioExt::LoadFromINIFile`: the scenario's own MISSIONMD
+    /// section overrides the map's `[Ranking]` fields key by key.
+    #[test]
+    fn missionmd_scenario_section_overrides_the_map_ranking() {
+        let mut ranking = parse_ranking_section(&IniFile::from_str(
+            "[Ranking]
+ParTimeEasy=00:01:00
+ParTimeHard=00:04:00
+UnderParTitle=Map fast
+",
+        ));
+        let missionmd = IniFile::from_str(
+            "[C1A01MD.MAP]
+Ranking.ParTimeEasy=00:02:00
+Ranking.ParTimeMedium=00:03:00
+             Ranking.UnderParTitle=Scenario fast
+Ranking.UnderParMessage=Well done
+             Ranking.OverParTitle=Scenario slow
+Ranking.OverParMessage=Try again
+             [OTHER]
+Ranking.ParTimeEasy=09:00:00
+",
+        );
+        ranking.apply_missionmd_overrides(true, &missionmd, "C1A01MD.MAP");
+        assert_eq!(ranking.par_time_easy_ticks, 7_200);
+        assert_eq!(ranking.par_time_medium_ticks, 10_800);
+        assert_eq!(
+            ranking.par_time_hard_ticks, 14_400,
+            "an absent key keeps the map value"
+        );
+        assert_eq!(ranking.under_par_title, "Scenario fast");
+        assert_eq!(ranking.under_par_message, "Well done");
+        assert_eq!(ranking.over_par_title, "Scenario slow");
+        assert_eq!(ranking.over_par_message, "Try again");
+    }
+
+    /// A scenario lacking a MISSIONMD section (or keys) keeps the map result.
+    #[test]
+    fn missionmd_without_the_scenario_section_keeps_the_map_ranking() {
+        let mut ranking = parse_ranking_section(&IniFile::from_str(
+            "[Ranking]
+ParTimeHard=00:02:00
+OverParMessage=Map slow
+",
+        ));
+        let before = ranking.clone();
+        ranking.apply_missionmd_overrides(
+            true,
+            &IniFile::from_str(
+                "[OTHER]
+Ranking.ParTimeEasy=01:00:00
+",
+            ),
+            "C1A01MD.MAP",
+        );
+        assert_eq!(ranking, before);
+        ranking.apply_missionmd_overrides(
+            true,
+            &IniFile::from_str(
+                "[C1A01MD.MAP]
+Ranking.ParTimeEasy=bad
+",
+            ),
+            "C1A01MD.MAP",
+        );
+        assert_eq!(
+            ranking.par_time_easy_ticks, 0,
+            "Read_Time parses an invalid present value as zero"
+        );
+        let mut skirmish = before.clone();
+        skirmish.apply_missionmd_overrides(
+            false,
+            &IniFile::from_str(
+                "[C1A01MD.MAP]
+Ranking.ParTimeEasy=01:00:00
+",
+            ),
+            "C1A01MD.MAP",
+        );
+        assert_eq!(skirmish, before, "a non-campaign launch ignores MISSIONMD");
     }
 
     #[test]

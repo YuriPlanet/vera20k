@@ -80,6 +80,35 @@ fn resolved_delta(rules: &RuleSet, health: i32, damage: i32) -> i32 {
     .hp_delta
 }
 
+/// Phobos `ApplyModifiersOnNegativeDamage` (`Ext/WarheadType/Hooks.cpp:334-360`):
+/// a negative packet with the key set runs the Verses kernel instead of the
+/// stock near-distance bypass; unset keeps the raw heal or the `[General]`.
+#[test]
+fn negative_damage_modifiers_apply_verses_to_a_heal() {
+    let keyed = rules_with(
+        "50%",
+        "ApplyModifiersOnNegativeDamage=yes
+",
+    );
+    assert_eq!(resolved_delta(&keyed, 1000, -100), -50);
+    let stock = rules_with("50%", "");
+    assert_eq!(resolved_delta(&stock, 1000, -100), -100);
+    let mut global = stock.clone();
+    global.phobos_globals.apply_modifiers_on_negative_damage = true;
+    assert_eq!(resolved_delta(&global, 1000, -100), -50);
+    // An explicit warhead no beats the global yes.
+    let explicit_no = rules_with(
+        "50%",
+        "ApplyModifiersOnNegativeDamage=no
+",
+    );
+    let mut explicit_no_global = explicit_no.clone();
+    explicit_no_global
+        .phobos_globals
+        .apply_modifiers_on_negative_damage = true;
+    assert_eq!(resolved_delta(&explicit_no_global, 1000, -100), -100);
+}
+
 /// ObjectClass_ReceiveDamage_Relative (10053A80): a positive kind value is a
 /// share of Strength, a negative one of the current Health, the packet's sign
 /// is kept, and the Verses kernel still applies after it.

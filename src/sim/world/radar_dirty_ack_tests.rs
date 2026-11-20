@@ -47,7 +47,7 @@ fn radar_dirty_wall_partial_damage_marks_nothing() {
     sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
     sim.overlay_grid.as_mut().unwrap().place_overlay(4, 5, 2, 0);
     let _ = sim.overlay_grid.as_mut().unwrap().take_dirty_cells();
-    sim.apply_wall_damage(WallPointerTarget::Real(4, 5), 1, &registry);
+    sim.apply_wall_damage(WallPointerTarget::Real(4, 5), 1, &registry, 200);
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(4, 5).overlay_data,
         0x10

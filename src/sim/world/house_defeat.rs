@@ -376,6 +376,16 @@ impl Simulation {
                 registry,
                 frame_effects,
             );
+            // Phobos `HouseClass_AI_Superweapons` (`0x4F9038`,
+            // `Ext/House/Hooks.cpp:518-541`), at the start of `HouseClass::Update`'s
+            // chooser block.
+            crate::sim::house_strategy::update_ai_superweapon_delay(
+                self,
+                rules,
+                owner,
+                registry,
+                frame_effects,
+            );
             crate::sim::ai_base_building::update_production_choices(self, rules, owner, registry);
             generated.extend(self.recheck_house_tech_tree(owner, rules, frame_effects));
             if let Some(house) = self.houses.get_mut(&owner) {
@@ -1264,6 +1274,21 @@ impl Simulation {
         }
     }
 
+    /// `HouseClass::Array[RandomRanged(0, Count - 1)]`, the `random` arm of
+    /// `HouseExt::GetHouseKind` (`Ext/House/Body.cpp:386-389`). VERA answers
+    /// absent for an empty array; native's draw and `GetItem` are out of
+    /// domain there.
+    pub(crate) fn random_house(&mut self) -> Option<InternedId> {
+        let order = self.houses.order();
+        if order.is_empty() {
+            return None;
+        }
+        let index = self
+            .scenario_rng
+            .next_range_i32_inclusive(0, order.len() as i32 - 1);
+        order.get(index as usize).copied()
+    }
+
     /// `CaptureManagerClass::SetOriginalOwnerToCivilian @ 0x00472330`: the
     /// first house in HouseClass::Array order whose side is `Civilian`
     /// (`0x006A46D0`) becomes the victim's original owner in every node of
@@ -1304,3 +1329,15 @@ fn take_blowup_trace() -> Vec<EntityDamageEvent> {
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "house_defeat_tests.rs"]
 mod tests;
+
+impl Simulation {
+        /// YRpp `HouseClass::FindNeutral`: the first House whose type is the
+        /// `Neutral` country (`FindByCountryName`); none without one.
+        pub(crate) fn neutral_house(&self) -> Option<InternedId> {
+            let neutral = self.interner.get("Neutral")?;
+            self.houses
+                .in_order()
+                .find(|house| house.house_type_id() == neutral)
+                .map(|house| house.name())
+        }
+}

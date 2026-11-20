@@ -73,7 +73,7 @@ pub(super) fn approach(
             sim.assign_aircraft_destination(id, Some(target.into()), rules, frame_effects);
         }
         Some(_) => {
-            if range.is_some_and(|range| distance <= range) {
+            if range.is_some_and(|range| distance <= range) && camera_count_allows(sim, id, rules) {
                 snapshot(sim, id, rules, true, frame_effects);
             }
         }
@@ -103,13 +103,56 @@ pub(super) fn overfly(
     };
     let target = entity.attack_target.target();
     let distance = super::target_distance(sim, id, target);
-    if weapon(sim, id, rules).is_some_and(|(range, _)| distance <= range) {
+    if weapon(sim, id, rules).is_some_and(|(range, _)| distance <= range)
+        && camera_count_allows(sim, id, rules)
+    {
         snapshot(sim, id, rules, false, frame_effects);
     }
     if super::nav_com_absent(sim, id) {
         head_for_opposite_edge(sim, id, rules, frame_effects);
     }
     OVERFLY_FRAMES
+}
+
+/// Phobos `CheckSpyPlaneCameraCount` (`Ext/Aircraft/Hooks.cpp:1164-1179`,
+/// hooks `0x415666`/`0x4157EB`): only an explicitly authored
+/// `Strafing.Shots` caps the snapshots; once the round counter reached it the
+/// snapshot block is skipped, otherwise the counter increments. Reads
+/// GetWeapon(0), like the stock block.
+fn camera_count_allows(sim: &mut Simulation, id: u64, rules: &RuleSet) -> bool {
+    {
+        let shots = {
+            let Some(plane) = sim.substrate.entities.get(id) else {
+                return true;
+            };
+            let Some(object) = sim.interner.object_type(plane.type_ref(), rules) else {
+                return true;
+            };
+            let Some(weapon) =
+                crate::sim::combat::combat_weapon::primary_for_tier(object, plane.veterancy.rank())
+                    .and_then(|name| rules.weapon(name))
+            else {
+                return true;
+            };
+            weapon.phobos_strafing().shots
+        };
+        let Some(shots) = shots else {
+            return true;
+        };
+        let Some(plane) = sim.substrate.entities.get_mut(id) else {
+            return true;
+        };
+        let counter = plane
+            .mission_leaf
+            .aircraft_strafe_bombs_dropped_this_round();
+        if counter >= shots {
+            return false;
+        }
+        plane
+            .mission_leaf
+            .set_aircraft_strafe_bombs_dropped_this_round(counter.wrapping_add(1));
+        true
+    }
 }
 
 /// GetWeapon(0) (vt+0x3F8 = `0x0070E140`) at the plane's veterancy: its

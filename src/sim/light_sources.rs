@@ -321,6 +321,23 @@ impl Simulation {
         }
     }
 
+    /// The aircraft `DrawIt` level source (`AircraftClass_DrawIt_LevelIntensity`
+    /// `0x4148F4`, `Ext/Techno/Hooks.Tint.cpp:320-338`): the Dominator's
+    /// level first, then the nuke's fading-in flash, then the storm's Ion
+    /// level, else the ordinary one. The jumpjet arms use the cell-lighting
+    /// order instead ([`Self::lighting_cell_profile`], storm first).
+    pub fn lighting_aircraft_profile(&self) -> ScenarioLightingProfile {
+        if crate::sim::superweapon::psychic_dominator::active(self) {
+            ScenarioLightingProfile::Dominator
+        } else if self.session.lighting().nuke_flash_fading_in() {
+            ScenarioLightingProfile::Nuke
+        } else if crate::sim::superweapon::lightning_storm::raging(self) {
+            ScenarioLightingProfile::Ion
+        } else {
+            ScenarioLightingProfile::Normal
+        }
+    }
+
     /// `ScenarioClass::UpdateLighting @ 0x0053C280`: the ambient target
     /// (`+0x3530`) and RecalcLighting's tint come from the nuke's profile
     /// while its flash fades in (`0x00A9FABC == 1`), else the Ion profile

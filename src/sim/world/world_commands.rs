@@ -20,8 +20,8 @@ use crate::sim::command::{
     CycleProducerRecord, DeployRecord, ExitRecord, GameSpeedRecord,
     MEGAMISSION_AUXILIARY_KIND_OFFSET, MEGAMISSION_PLANNING_OFFSET, MegaMissionOrder,
     MegaMissionRecord, MegaMissionTarget, ObjectAction, ObjectActionRecord, PaidSuperAction,
-    PaidSuperRecord, PlaceRecord, ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord,
-    SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
+    PaidSuperRecord, PlaceRecord, PlayerAutoRepairRecord, ProductionEvent, ProductionRecord,
+    RepairRecord, ScatterRecord, SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
 };
 use crate::sim::control_authority::{CommandCapability, ControlScope};
 use crate::sim::house_diplomacy::HouseAlliances;
@@ -324,6 +324,26 @@ impl Simulation {
         }
         .write_into(&mut record);
         Some(record)
+    }
+
+    /// Phobos `EventExt::RaiseTogglePlayerAutoRepair` (`Ext/Event/Body.cpp:
+    /// 109-128`): a one-byte record whose sender sets its own House switch.
+    pub fn encode_player_auto_repair_record(
+        &self,
+        command_owner: InternedId,
+        enabled: bool,
+    ) -> Option<CommandRecord> {
+        let record = self.encode_header_event(
+            command_owner,
+            crate::sim::command::VERA_PLAYER_AUTO_REPAIR_OPCODE,
+        )?;
+        PlayerAutoRepairRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            enabled,
+        }
+        .encode()
+        .ok()
     }
 
     /// TargetEvent4C65E0 is used by SELL16 (Execute4C6F12) and
@@ -704,6 +724,8 @@ impl Simulation {
                 Some(combat::TargetKind::Entity(id)) => MegaMissionTarget::Object {
                     id: i32::try_from(id).ok()?,
                 },
+                // A bullet target is engine-internal and never encoded.
+                Some(combat::TargetKind::Bullet(..)) => return None,
             })
         };
         let (source_id, order) = match *command {
@@ -1122,6 +1144,18 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        if let Some(event) = PlayerAutoRepairRecord::decode(record) {
+            let owner = self.command_sender_owner(event.house_id)?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::TogglePlayerAutoRepair {
+                        enabled: event.enabled,
+                    },
+                )
+            });
+        }
         let owner = self.command_sender_owner(record.house_id())?;
         let envelope = |command| Some(CommandEnvelope::new(owner, execute_tick, command));
         let raw = || {
@@ -1253,6 +1287,7 @@ impl Simulation {
                             target_ry,
                         }
                     }
+                    Some(combat::TargetKind::Bullet(..)) => return None,
                     None => return None,
                 },
                 MegaMissionOrder::AttackMove {
@@ -2663,6 +2698,25 @@ impl Simulation {
                     production::RepairControl::Toggle,
                 )
             }
+            Command::TogglePlayerAutoRepair { enabled } => {
+                // Phobos EventExt `RaiseTogglePlayerAutoRepair`: the event's
+                // house flips its own flag; the next building visit stops each
+                // still-repairing building when it is off
+                // (`Ext/Event/Body.cpp:116-128`, `Ext/House/Hooks.cpp:813-824`).
+                {
+                    if !rules.phobos_globals.extended_player_repair {
+                        return false;
+                    }
+                    let Some(owner) = self.interner.get(command_owner) else {
+                        return false;
+                    };
+                    let Some(house) = self.houses.get_mut(&owner) else {
+                        return false;
+                    };
+                    house.set_player_auto_repair(*enabled);
+                    true
+                }
+            }
             Command::UnloadPassengers { transport_id } => {
                 if !self.command_entity_allowed(
                     command_owner,
@@ -3205,9 +3259,22 @@ impl Simulation {
         context: super::UninitContext<'_>,
     ) -> bool {
         let requested: BTreeSet<u64> = stable_ids.iter().copied().collect();
+        let keys: Vec<u64> = self.substrate.entities.keys_sorted();
+        // Phobos `MapClass_UnselectAll_ClearLimboLaunchers @ 0x48DC90`
+        // (`Ext/WarheadType/Hooks.cpp:659-674`): the Unselect_All an empty
+        // snapshot represents also clears every remembered `UnlimboDetonate`
+        // selection, so a limbo-launched firer is not re-selected when its
+        // bullet lands. Native clears on every Unselect_All; VERA sees only
+        // this input snapshot as one.
+        if stable_ids.is_empty() {
+            for &id in &keys {
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.unlimbo_detonate.clear();
+                }
+            }
+        }
         // Deselect only omitted old members. Requested old members remain set,
         // so the final-admission gates below are never reapplied to them.
-        let keys: Vec<u64> = self.substrate.entities.keys_sorted();
         for &id in &keys {
             if !requested.contains(&id)
                 && let Some(e) = self.substrate.entities.get_mut(id)
@@ -3738,7 +3805,8 @@ impl Simulation {
             | Command::LaunchSuperWeapon { .. }
             | Command::BeginPaidSuperWeapon { .. }
             | Command::CompletePaidSuperWeapon { .. }
-            | Command::CancelPaidSuperWeapon { .. } => CommandSubject::Primary(FullControl),
+            | Command::CancelPaidSuperWeapon { .. }
+            | Command::TogglePlayerAutoRepair { .. } => CommandSubject::Primary(FullControl),
             Command::Move { entity_id, .. }
             | Command::MoveToObject { entity_id, .. }
             | Command::Stop { entity_id }
@@ -3991,6 +4059,8 @@ impl Simulation {
                 );
                 token
             }
+            // No event token names a Bullet.
+            combat::TargetKind::Bullet(..) => None,
         }
     }
 
@@ -4105,6 +4175,19 @@ impl Simulation {
         if !self.order_actor_admits(entity_id) {
             return MegaMissionExecution::Refused;
         }
+        // Phobos `EventClass_Execute_MegaMission_MoveCommand @ 0x4C7462`
+        // clears the latch for every Unit MegaMission that does not take its
+        // keep arm (`Ext/Techno/Hooks.Misc.cpp:1071`); the keep branch below
+        // sets it again.
+        if self
+            .substrate
+            .entities
+            .get(entity_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Unit)
+            && let Some(entity) = self.substrate.entities.get_mut(entity_id)
+        {
+            entity.set_phobos_keep_target_on_move(false);
+        }
         for token in [target, destination] {
             if let Some(id) = self.event_token_object(token)
                 && !self.order_object_token_admits(id)
@@ -4173,6 +4256,31 @@ impl Simulation {
         }
         // `0x004C745B`, then the target setter.
         let target = self.resolve_event_token(target);
+        // Phobos `EventClass_Execute_MegaMission_MoveCommand @ 0x4C7462`
+        // (`Ext/Techno/Hooks.Misc.cpp:1036-1075`) replaces that setter for a
+        // Move order: a unit whose live target is already close enough to
+        // attack keeps it, stores the order destination itself and skips the
+        // shared target clear and destination setter.
+        if mission == MissionType::Move
+            && target.is_none()
+            && crate::sim::keep_target_on_move::move_order_keeps_target(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+            )
+        {
+            let destination = self.resolve_event_token(destination);
+            if let Err(cause) = self.assign_destination_represented(
+                entity_id,
+                destination.map(Into::into),
+                rules,
+                frame_effects,
+            ) {
+                log::warn!("KeepTargetOnMove destination {entity_id}: {cause}");
+            }
+            return MegaMissionExecution::Executed;
+        }
         // Its changed-null path6FCF5B also resets retained burst state;
         // dropping Target alone cannot.
         let _ = self.assign_target_represented(entity_id, target, rules, frame_effects);
@@ -5110,6 +5218,35 @@ mod tests {
                 "rejected admission leaves the machine idle"
             );
         }
+    }
+
+    /// Phobos `BunkerableAnyway=` (`Ext/TechnoType/Body.cpp:1082`, ctor false
+    /// `Ext/TechnoType/Body.h:753`; hook `0x70FB73` at
+    /// `Ext/Techno/Hooks.Misc.cpp:913-929`): a `Bunkerable=` vehicle with no
+    /// turret, no weapon and `SpeedType=Hover` is admitted only when the flag
+    /// is set, and the same type without it is refused.
+    #[test]
+    fn bunkerable_anyway_admits_a_turretless_hover_vehicle() {
+        let rules = |anyway: &str| {
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=ODD\n\n[BuildingTypes]\n0=NATBNK\n\n\
+                 [ODD]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=no\nSpeedType=Hover\n{anyway}\
+                 [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n"
+            )))
+            .expect("bunker rules")
+        };
+        let admit = |rules: &RuleSet| {
+            let mut sim = Simulation::new();
+            spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
+            spawn_bunkerable(&mut sim, 1, "Americans", "ODD", 14, 14);
+            crate::sim::radio::receive::can_load_query(&sim, 2, 1, rules)
+        };
+        let anyway = rules("BunkerableAnyway=yes\n");
+        assert_eq!(anyway.object("ODD").unwrap().phobos_bunkerable_anyway, true);
+        assert_eq!(admit(&anyway), crate::sim::radio::RadioResponse::Roger);
+        let stock = rules("");
+        assert!(!stock.object("ODD").unwrap().phobos_bunkerable_anyway);
+        assert_ne!(admit(&stock), crate::sim::radio::RadioResponse::Roger);
     }
 
     /// CAN_LOAD refuses a bunker under Construction or being sold

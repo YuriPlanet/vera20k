@@ -8,14 +8,49 @@ use crate::render::terrain_draw::TerrainPiece;
 
 /// Terrain DrawIt (0x71C1B0): a static type draws frame 1 below 2 health and
 /// frame 0 otherwise; an animated type draws its stage whatever its health.
+
+/// Phobos `TerrainClass_Draw_PickFrame` (0x71C1FE): the type's
+/// `HasDamagedFrames`/`HasCrumblingFrames`/`AnimationLength` select the
+/// frame; an unset key set draws the static frame 0 whatever the health.
 #[test]
-fn terrain_draw_frame_follows_health_and_stage() {
-    assert_eq!(terrain_draw_frame(None, 2), 0);
-    assert_eq!(terrain_draw_frame(None, 1), 1);
-    assert_eq!(terrain_draw_frame(Some(7), 1), 7);
-    // TerrainAI71C7DD and DrawIt71C208 retain the full Stage. A 514-frame
-    // animated spawner reaches256 before its midpoint257 resets the stage.
-    assert_eq!(terrain_draw_frame(Some(256), 1), 256);
+fn phobos_terrain_draw_frame_follows_type_keys_and_crumbling() {
+    // (stage, health, strength, has_damaged, has_crumbling, crumbling, anim_len, frames, animated)
+    let frame =
+        |stage, health, strength, damaged, crumbling_frames, crumbling, anim, frames, animated| {
+            terrain_draw_frame(
+                stage,
+                health,
+                strength,
+                0.5,
+                damaged,
+                crumbling_frames,
+                crumbling,
+                anim,
+                frames,
+                animated,
+            )
+        };
+    assert_eq!(frame(None, 1, 100, false, false, false, None, 0, false), 0);
+    assert_eq!(frame(None, 1, 100, true, false, false, None, 0, false), 1);
+    assert_eq!(frame(None, 60, 100, true, false, false, None, 0, false), 0);
+    // Animated: stage + damaged * AnimationLength; a crumbling tree moves to
+    // the next half plus 1.
+    assert_eq!(
+        frame(Some(3), 1, 100, true, false, false, Some(4), 8, true),
+        7
+    );
+    assert_eq!(
+        frame(Some(3), 1, 100, true, true, true, Some(4), 8, true),
+        12
+    );
+    assert_eq!(
+        frame(Some(2), 1, 100, true, true, true, Some(4), 8, false),
+        3
+    );
+    assert_eq!(
+        frame(Some(256), 1, 100, false, false, false, None, 0, true),
+        256
+    );
 }
 
 #[test]
@@ -111,4 +146,64 @@ fn terrain_retained_xyz_projection_and_piece_z_match_original_render() {
             );
         }
     }
+}
+
+/// Phobos `ConditionYellow.Terrain` (`Ext/Rules/Body.cpp:147`,
+/// `Ext/TerrainType/Hooks.cpp:106,274`): the damaged-frame threshold falls
+/// back to `[AudioVisual] ConditionYellow`, and a damaged-frame tree switches
+/// exactly at the authored ratio.
+#[test]
+fn phobos_terrain_condition_yellow_reads_and_switches_the_damaged_frame() {
+    use super::terrain_condition_yellow;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]\nConditionYellow=0.5\nConditionYellow.Terrain=0.1\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        terrain_condition_yellow(&rules),
+        f64::from(0.1f32),
+        "the Phobos Parser<double> widening"
+    );
+    let fallback =
+        RuleSet::from_ini(&IniFile::from_str("[AudioVisual]\nConditionYellow=0.4\n")).unwrap();
+    assert_eq!(
+        terrain_condition_yellow(&fallback),
+        f64::from(0.4f32),
+        "the shared ConditionYellow remains binary32-widened"
+    );
+    assert_eq!(
+        terrain_condition_yellow(&rules),
+        rules.terrain_condition_yellow(),
+        "the draw reads the rules owner the 0x71B98B damage latch also asks"
+    );
+
+    let frame = |rules: &RuleSet, health| {
+        terrain_draw_frame(
+            None,
+            health,
+            100,
+            terrain_condition_yellow(rules),
+            true,
+            false,
+            false,
+            None,
+            0,
+            false,
+        )
+    };
+    assert_eq!(
+        frame(&rules, 10),
+        1,
+        "at the authored ratio the frame flips"
+    );
+    assert_eq!(frame(&rules, 11), 0);
+    assert_eq!(
+        frame(&fallback, 40),
+        1,
+        "the shared ConditionYellow fallback"
+    );
+    assert_eq!(frame(&fallback, 41), 0);
 }

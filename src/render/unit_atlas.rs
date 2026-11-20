@@ -85,6 +85,12 @@ pub enum PoseTilt {
     /// `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`), with
     /// the same roll and pitch.
     Jumpjet([f32; 2]),
+    /// Phobos `JumpjetLocomotionClass_Draw_Matrix` default arm (vtable
+    /// `0x7ECD8C`, `Ext/TechnoType/Hooks.MatrixOp.cpp:447-491`): airborne
+    /// roll and pitch in radians, quantized by the caller to 128 `DirStruct`
+    /// facings. Unlike [`Self::Jumpjet`] this arm adds no grounded
+    /// translation: the matrix is yaw, RotateX(roll), RotateY(pitch).
+    JumpjetTilt([f32; 2]),
     /// `RocketLocomotionClass::Draw_Matrix` (`0x00663470`): CurrentPitch in
     /// radians above the horizon, never zero here.
     Rocket(f32),
@@ -742,7 +748,7 @@ fn render_unit_key(
     let legacy_shadow = (key.layer == VxlLayer::Shadow
         && key.frame == 0
         && native_draw_bounds.is_some()
-        && model.shadow.is_some_and(|shadow| shadow.ground))
+        && model.shadow.as_ref().is_some_and(|shadow| shadow.ground))
     .then(|| {
         let mut fallback_key = key.clone();
         fallback_key.frame = LEGACY_SHADOW_FRAME;
@@ -761,7 +767,7 @@ fn render_unit_key(
     });
     if key.layer == VxlLayer::Shadow
         && native_draw_bounds.is_some()
-        && let Some(shadow) = model.shadow
+        && let Some(shadow) = &model.shadow
         && let Some(body) = &model.body
     {
         cached.shadow_center = vxl_raster::shadow::center(
@@ -773,6 +779,7 @@ fn render_unit_key(
                 ..Default::default()
             },
             shadow.index,
+            key.frame as i32,
             shadow.considered_aircraft,
         );
     }
@@ -898,6 +905,20 @@ pub(crate) fn unit_barrel_pitches(fire_angle: i32) -> Vec<i8> {
     pitches
 }
 
+/// Phobos `Ext/TechnoType/Hooks.MatrixOp.cpp:803`: a unit without
+/// `UseTurretShadow=` draws the turret stencil only when its ART
+/// `TurretShadow=` says so, or the `[AudioVisual] DrawTurretShadow=` fallback
+/// does. VERA does not port stock `UseTurretShadow=`, so every type takes that
+/// `notUseTurretShadow` arm.
+pub(crate) fn turret_shadow_enabled(
+    rules: Option<&RuleSet>,
+    object: &crate::rules::object_type::ObjectType,
+) -> bool {
+    object
+        .phobos_turret_shadow
+        .unwrap_or(rules.is_some_and(|rules| rules.phobos_globals.draw_turret_shadow))
+}
+
 fn seed_unit_variant_keys(
     needed: &mut HashSet<UnitSpriteKey>,
     frame_counts: &mut BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
@@ -941,14 +962,14 @@ fn seed_unit_variant_keys(
     // Aircraft414728 includes the body frame remainder in its shadow cache
     // key, but707280 still samples ShadowIndex's HVA frame zero. Unit's key
     // (73B619, 73C21E..73C287) carries no body frame.
-    if is_ground_vehicle || shadow.is_some_and(|shadow| shadow.aircraft || shadow.jumpjet) {
+    if is_ground_vehicle || shadow.as_ref().is_some_and(|shadow| shadow.aircraft || shadow.jumpjet) {
         let mut shadows = HashSet::new();
         insert_unit_layer_keys(
             &mut shadows,
             variant,
             VxlLayer::Shadow,
             0,
-            if shadow.is_some_and(|s| s.aircraft) {
+            if shadow.as_ref().is_some_and(|s| s.aircraft) {
                 shadow_frames
             } else {
                 1
@@ -961,7 +982,7 @@ fn seed_unit_variant_keys(
         let grounded: Vec<_> = shadows
             .iter()
             .filter(|key| {
-                shadow.is_some_and(|shadow| {
+                shadow.as_ref().is_some_and(|shadow| {
                     !shadow.aircraft && (shadow.jumpjet || key.slope_type == 0)
                 })
             })
@@ -1135,6 +1156,13 @@ fn part_native_draw_bounds(
         .ok_or(())
 }
 
+/// One shadow stencil and the fractional center the body mask is sampled
+/// through: the baked atlas key's, or a per-frame re-raster under a pose.
+pub(crate) struct ShadowStencil {
+    pub sprite: VxlSprite,
+    pub center: Option<[f32; 2]>,
+}
+
 /// A voxel model's files, parsed once and shared by every sprite drawn from
 /// it. They are named by [`crate::rules::voxel_frame_catalog::voxel_image_id`].
 pub(crate) struct UnitModel {
@@ -1150,7 +1178,7 @@ pub(crate) struct UnitModel {
     use_buffer: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ShadowModel {
     index: i32,
     considered_aircraft: bool,
@@ -1161,6 +1189,15 @@ struct ShadowModel {
     /// Also draws its ground shadow outside that suffix, so its legacy
     /// stencil stays resident beside a native one.
     ground: bool,
+    /// Phobos `ShadowIndices=` (`Ext/TechnoType/Body.cpp:1325`): one stencil
+    /// per listed HVA section; empty keeps the type's single `ShadowIndex`.
+    indices: Vec<i32>,
+    /// Phobos `ShadowIndex.Frame=` (`Body.cpp:1338`): the HVA frame the
+    /// single-section shadow draws at (`0x7072A1`); 0 in default builds.
+    frame: i32,
+    /// Phobos `ShadowIndices.Frame=` (`Body.cpp:1327`): the HVA frame of each
+    /// entry in `indices`, `-1` where the type names none.
+    frames: Vec<i32>,
 }
 
 impl ShadowModel {
@@ -1193,6 +1230,9 @@ impl ShadowModel {
                 aircraft,
                 jumpjet: own_jumpjet || lifted,
                 ground: vehicle && !own_jumpjet,
+                indices: object.phobos_shadow_indices().to_vec(),
+                frames: object.phobos_shadow_indices_frames().to_vec(),
+                frame: object.phobos_shadow_index_frame(),
             })
     }
 }
@@ -1356,7 +1396,7 @@ impl UnitModel {
         // vehicle's flight template stays unmasked.
         if key.layer == VxlLayer::Shadow
             && key.frame != LEGACY_SHADOW_FRAME
-            && let Some(shadow) = self.shadow
+            && let Some(shadow) = &self.shadow
             && (shadow.aircraft
                 || shadow.jumpjet
                 || (params.slope_type == 0 && key.frame == GROUNDED_SHADOW_FRAME_FLAG))
@@ -1367,6 +1407,7 @@ impl UnitModel {
                 body.hva(),
                 &params,
                 shadow.index,
+                key.frame as i32,
                 shadow.considered_aircraft,
             );
             if (shadow.aircraft || (shadow.jumpjet && !shadow.ground)) && sprite.is_none() {
@@ -1407,6 +1448,14 @@ impl UnitModel {
             VxlLayer::Shadow => {
                 let body = self.body.as_ref()?;
                 vxl_raster::render_legacy_vxl_shadow(body.vxl(), body.hva(), &params)
+            }
+            VxlLayer::ShadowTurret => {
+                // `Hooks.MatrixOp.cpp:870` draws the turret voxel's section zero
+                // through `mtx_turret`; the atlas key's facing is the turret's
+                // own facing (`canonical_turret_facing`), so the stencil is the
+                // turret voxel's shadow at that facing.
+                let turret = turret?;
+                vxl_raster::shadow::render(turret.vxl(), turret.hva(), &params, 0, 0, false)?
             }
             VxlLayer::Body | VxlLayer::Turret | VxlLayer::Barrel => {
                 let key_pose = (params.frame, params.facing, params.slope_type, slope_blend);
@@ -1554,7 +1603,7 @@ impl UnitModel {
                 VxlLayer::Barrel => (barrel?, matrices[2]),
                 // Unit consumer retains independent native-ordered parts;
                 // the existing un-tilted shadow has its own owner.
-                VxlLayer::Composite | VxlLayer::Shadow => return None,
+                VxlLayer::Composite | VxlLayer::Shadow | VxlLayer::ShadowTurret => return None,
             };
             let params = VxlRenderParams {
                 frame: key.frame,
@@ -1573,6 +1622,7 @@ impl UnitModel {
                 half_sizes: crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes(body.vxl())
                     .unwrap_or([0.0; 2]),
             },
+            PoseTilt::JumpjetTilt(angles) => vxl_raster::BodyTilt::JumpjetTilt(angles),
             PoseTilt::Rocket(pitch) => vxl_raster::BodyTilt::Rocket(pitch),
             PoseTilt::Ground(_) => unreachable!("ground parts returned above"),
         };
@@ -1592,6 +1642,136 @@ impl UnitModel {
             .collect();
         let bounds = self.native_draw_bounds(&params, VxlLayer::Composite, key.turret_index);
         Some((layers, params, bounds))
+    }
+
+    /// A single-part type with no guns, as [`Self::load`] builds it from a
+    /// main voxel and its type's shadow section, for stencil tests.
+    #[cfg(test)]
+    pub(crate) fn from_test_shadow(
+        vxl: crate::assets::vxl_file::VxlFile,
+        hva: Option<crate::assets::hva_file::HvaFile>,
+        index: i32,
+    ) -> Self {
+        Self {
+            type_id: "test-shadow".into(),
+            body: Some(VoxelPart::from_parts(vxl, hva)),
+            guns: Vec::new(),
+            shadow: Some(ShadowModel {
+                index,
+                considered_aircraft: false,
+                aircraft: false,
+                jumpjet: true,
+                ground: false,
+                indices: Vec::new(),
+                frame: 0,
+                frames: Vec::new(),
+            }),
+            use_buffer: false,
+        }
+    }
+
+    fn shadow_gate(&self, key: &UnitSpriteKey) -> bool {
+        if key.layer != VxlLayer::Shadow || key.frame == LEGACY_SHADOW_FRAME {
+            return false;
+        }
+        if self.body.is_none() {
+            return false;
+        }
+        self.shadow.as_ref().is_some_and(|shadow| {
+            shadow.aircraft
+                || shadow.jumpjet
+                || (key.slope_type == 0 && key.frame == GROUNDED_SHADOW_FRAME_FLAG)
+        })
+    }
+
+    /// One shadow stencil at `params`'s facing, slope and body pose.
+    /// Phobos `ShadowIndices=` draws one stencil per listed section instead of
+    /// the type's single `ShadowIndex`
+    /// (`Ext/TechnoType/Hooks.MatrixOp.cpp:793-800`).
+    fn shadow_sections(
+        &self,
+        body: &VoxelPart,
+        shadow: &ShadowModel,
+        params: &VxlRenderParams,
+    ) -> Option<VxlSprite> {
+        if shadow.indices.is_empty() {
+            vxl_raster::shadow::render(
+                body.vxl(),
+                body.hva(),
+                params,
+                shadow.index,
+                shadow.frame,
+                shadow.considered_aircraft,
+            )
+        } else {
+            vxl_raster::shadow::render_indices(
+                body.vxl(),
+                body.hva(),
+                params,
+                shadow.index,
+                &shadow.indices,
+                &shadow.frames,
+                shadow.considered_aircraft,
+            )
+        }
+    }
+
+    /// The type's shadow stencil for `key` and its `0x00756860` fractional
+    /// center: the stock facing/slope stencil when `tilt` is None, or the same
+    /// sections re-rastered through the body's pose. A Phobos airborne
+    /// `JumpjetTilt` writes its roll/pitch into the shadow matrix and
+    /// invalidates `vxlIndexKey` (`Ext/TechnoType/Hooks.MatrixOp.cpp:768-773`),
+    /// so native draws such a frame from a fresh raster rather than the baked
+    /// key. `Shadow_Point` stays the stencil's own anchor (`:726-727`); the
+    /// tilt only turns the sections around it.
+    pub(crate) fn shadow_stencil(
+        &self,
+        key: &UnitSpriteKey,
+        tilt: Option<vxl_raster::BodyTilt>,
+    ) -> Option<ShadowStencil> {
+        if !self.shadow_gate(key) {
+            return None;
+        }
+        let shadow = self.shadow.as_ref()?;
+        let body = self.body.as_ref()?;
+        let params = VxlRenderParams {
+            frame: 0,
+            facing: key.facing,
+            slope_type: key.slope_type,
+            body_tilt: tilt,
+            ..VxlRenderParams::default()
+        };
+        let sprite = self.shadow_sections(body, shadow, &params)?;
+        Some(ShadowStencil {
+            sprite,
+            center: self.shadow_center(key, tilt),
+        })
+    }
+
+    /// `0x00756860`'s fractional center for a shadow key, through the same
+    /// pose the stencil draws with. Native builds it from the primary
+    /// section's frame-0 geometry, before `ChooseFrame`, so the frame is left
+    /// at its default.
+    pub(crate) fn shadow_center(
+        &self,
+        key: &UnitSpriteKey,
+        tilt: Option<vxl_raster::BodyTilt>,
+    ) -> Option<[f32; 2]> {
+        let shadow = self.shadow.as_ref()?;
+        let body = self.body.as_ref()?;
+        vxl_raster::shadow::center(
+            body.vxl(),
+            body.hva(),
+            &VxlRenderParams {
+                facing: key.facing,
+                slope_type: key.slope_type,
+                body_tilt: tilt,
+                ..VxlRenderParams::default()
+            },
+            shadow.index,
+            shadow.frame,
+            shadow.considered_aircraft,
+        )
     }
 
     /// A `VoxelAnimClass` piece at its bounce matrix: the body, drawn without
@@ -1752,7 +1932,7 @@ impl UnitModel {
         let (turret, barrel) = self.gun_parts(turret_index);
         let part = |part| part_native_draw_bounds(part, params);
         match layer {
-            VxlLayer::Shadow => None,
+            VxlLayer::Shadow | VxlLayer::ShadowTurret => None,
             VxlLayer::Body => part(self.body.as_ref()).ok().flatten(),
             VxlLayer::Turret => part(turret).ok().flatten(),
             VxlLayer::Barrel => part(barrel).ok().flatten(),
@@ -1991,7 +2171,9 @@ fn facing_config_for_layer(layer: VxlLayer) -> (u8, u16) {
         VxlLayer::Body | VxlLayer::Composite | VxlLayer::Shadow => {
             (UNIT_FACING_STEP, UNIT_FACING_BUCKETS)
         }
-        VxlLayer::Turret | VxlLayer::Barrel => (TURRET_FACING_STEP, TURRET_FACING_BUCKETS),
+        VxlLayer::Turret | VxlLayer::Barrel | VxlLayer::ShadowTurret => {
+            (TURRET_FACING_STEP, TURRET_FACING_BUCKETS)
+        }
     }
 }
 

@@ -103,8 +103,14 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             for sign in [1i32, -1] {
                 let coords =
                     offset_coords(p.coords, dx.wrapping_mul(sign), dy.wrapping_mul(sign), 0);
-                let mut child =
-                    Particle::new(next, coords, IVec3::ZERO, rules.particle_type(next), sim);
+                let mut child = Particle::new(
+                    next,
+                    coords,
+                    IVec3::ZERO,
+                    rules.particle_type(next),
+                    sim,
+                    rules,
+                );
                 //62EF3B/62EFA0..62F003: constructor draw then one fade draw.
                 child.velocity = p.velocity;
                 child.translucency = if sim.particle_rng().next_raw_modulo_signed(6) != 0 {
@@ -165,6 +171,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
                     target_coords,
                     rules.particle_type(holds),
                     sim,
+                    rules,
                 );
                 if X87::compare(
                     X87::load_f32(timer),

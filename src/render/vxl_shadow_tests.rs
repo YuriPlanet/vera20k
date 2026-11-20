@@ -45,6 +45,59 @@ fn check(sprite: &VxlSprite, case: &Value, label: &str) {
     assert_eq!(errors, 0, "{label} complete cropped stencil");
 }
 
+/// Phobos `ShadowIndices=`'s loop (`Ext/TechnoType/Hooks.MatrixOp.cpp:793-800`)
+/// draws one stencil per listed section; a list naming only the type's own
+/// `ShadowIndex` must answer exactly that single-section stencil, and an
+/// index the voxel has no section for draws nothing. The shared anchor is the
+/// primary section's frame-0 center: native builds `shadowCenter` before
+/// `ChooseFrame` (`:726-727`), so the path takes no single-value frame.
+#[test]
+fn shadow_indices_compose_around_the_primary_sections_center() {
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/shadow_fixtures.json",
+    ))
+    .unwrap();
+    let vxl = VxlFile::from_bytes(&bytes(fixture["vxl"].as_str().unwrap())).unwrap();
+    let hva = HvaFile::from_bytes(&bytes(fixture["hva"].as_str().unwrap())).unwrap();
+    assert_eq!(vxl.limbs.len(), 1, "the oracle fixture has one section");
+    for step in [0u8, 7, 15] {
+        let params = VxlRenderParams {
+            facing: step * 8,
+            ..Default::default()
+        };
+        let single = render(&vxl, Some(&hva), &params, 0, 0, false).unwrap();
+        let listed = render_indices(&vxl, Some(&hva), &params, 0, &[0], &[], false).unwrap();
+        // Coverage is what the surrounding surface sees: every stencil pixel
+        // at the same tactical position, whatever crop the two paths picked.
+        let coverage = |sprite: &VxlSprite| {
+            let mut set = std::collections::BTreeSet::new();
+            for y in 0..sprite.height as i32 {
+                for x in 0..sprite.width as i32 {
+                    if sprite.palette_indices[(y * sprite.width as i32 + x) as usize] != 0 {
+                        set.insert((sprite.offset_x as i32 + x, sprite.offset_y as i32 + y));
+                    }
+                }
+            }
+            set
+        };
+        assert_eq!(coverage(&listed), coverage(&single), "step {step}");
+        // A section the voxel does not have contributes no stencil.
+        assert_eq!(
+            coverage(&render_indices(&vxl, Some(&hva), &params, 0, &[0, 4], &[], false).unwrap()),
+            coverage(&single),
+            "unreachable section is skipped"
+        );
+        assert!(render_indices(&vxl, Some(&hva), &params, 0, &[4], &[], false).is_none());
+        // A malformed primary index must not discard a drawable listed
+        // section; the first listed section's frame-0 center stands in.
+        assert_eq!(
+            coverage(&render_indices(&vxl, Some(&hva), &params, 4, &[0], &[], false).unwrap()),
+            coverage(&single),
+            "a missing primary still draws the listed section (step {step})"
+        );
+    }
+}
+
 #[test]
 fn native_generated_shadow_geometry_and_body_mask() {
     let fixture: Value = serde_json::from_str(crate::test_fixture::text(
@@ -63,6 +116,7 @@ fn native_generated_shadow_geometry_and_body_mask() {
                 facing: step * 8,
                 ..Default::default()
             },
+            0,
             0,
             false,
         )
@@ -93,6 +147,7 @@ fn native_generated_shadow_geometry_and_body_mask() {
                 ..Default::default()
             },
             0,
+            0,
             false,
         )
         .is_none()
@@ -105,6 +160,7 @@ fn native_generated_shadow_geometry_and_body_mask() {
                 slope_type: 17,
                 ..Default::default()
             },
+            0,
             0,
             false,
         )
@@ -145,13 +201,14 @@ fn native_aircraft_shadow_half_viewer_selected_section_and_slope() {
             Some(&hva),
             &aircraft_params(caller),
             case["shadow_index"].as_i64().unwrap() as i32,
+            0,
             case["considered_aircraft"].as_bool().unwrap(),
         )
         .unwrap();
         check(&sprite, case, &format!("aircraft generated {case}"));
     }
-    assert!(render(&vxl, Some(&hva), &Default::default(), -1, true).is_none());
-    assert!(render(&vxl, Some(&hva), &Default::default(), 4, true).is_none());
+    assert!(render(&vxl, Some(&hva), &Default::default(), -1, 0, true).is_none());
+    assert!(render(&vxl, Some(&hva), &Default::default(), 4, 0, true).is_none());
 }
 
 fn unit_shadow_params(caller: &Value) -> VxlRenderParams {
@@ -173,10 +230,10 @@ fn native_jumpjet_unit_shadow_low_flight_mask_offsets() {
     let body = bytes(data["body"].as_str().unwrap());
     for case in data["cases"].as_array().unwrap() {
         let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
-        let mut sprite = render(&vxl, Some(&hva), &unit_shadow_params(caller), 0, true).unwrap();
+        let mut sprite = render(&vxl, Some(&hva), &unit_shadow_params(caller), 0, 0, true).unwrap();
         if caller["body_mask_present"].as_bool().unwrap() {
             let fractional_center =
-                center(&vxl, Some(&hva), &unit_shadow_params(caller), 0, true).unwrap();
+                center(&vxl, Some(&hva), &unit_shadow_params(caller), 0, 0, true).unwrap();
             let sample_offset = body_sample_offset(
                 fractional_center,
                 std::array::from_fn(|i| {
@@ -227,7 +284,7 @@ fn retail_kirov_shadow_matches_original_unit_caller_and_stencil() {
     let hva = HvaFile::from_bytes(assets.get_ref("ZEP.HVA").unwrap()).unwrap();
     for case in data["cases"].as_array().unwrap() {
         let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
-        let sprite = render(&vxl, Some(&hva), &unit_shadow_params(caller), 0, true).unwrap();
+        let sprite = render(&vxl, Some(&hva), &unit_shadow_params(caller), 0, 0, true).unwrap();
         check(
             &sprite,
             case,
@@ -259,7 +316,7 @@ fn retail_harrier_shadow_matches_original_caller_and_stencil() {
     let hva = HvaFile::from_bytes(assets.get_ref("FALC.HVA").unwrap()).unwrap();
     for case in stock["cases"].as_array().unwrap() {
         let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
-        let sprite = render(&vxl, Some(&hva), &aircraft_params(caller), 0, true).unwrap();
+        let sprite = render(&vxl, Some(&hva), &aircraft_params(caller), 0, 0, true).unwrap();
         check(
             &sprite,
             case,
@@ -337,6 +394,7 @@ fn stock_shadow_geometry_and_native_composed_body_masks() {
                     ..Default::default()
                 },
                 0,
+                0,
                 false,
             )
             .unwrap();
@@ -367,4 +425,153 @@ fn stock_shadow_geometry_and_native_composed_body_masks() {
     }
     assert_eq!(compared, 80);
     eprintln!("native stock shadow stencil/crop: 64 unmasked + 16 actual native body masks passed");
+}
+
+/// `0x7072A1`'s `ChooseFrame` (`Ext/TechnoType/Hooks.MatrixOp.cpp:1074-1104`):
+/// `ShadowIndex.Frame` selects the shadow section's HVA frame, modulo the
+/// file's frame count. A cleared `-1` falls back to `WalkedFramesSoFar`;
+/// the shadow atlas is keyed by facing and slope with no walked-frame
+/// dimension, so this pass uses frame 0, which retail also reaches because the
+/// constructor value 0 never takes the `-1` arm.
+#[test]
+fn shadow_index_frame_selects_the_sections_hva_frame() {
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/shadow_fixtures.json",
+    ))
+    .unwrap();
+    let vxl = VxlFile::from_bytes(&bytes(fixture["vxl"].as_str().unwrap())).unwrap();
+    let one = HvaFile::from_bytes(&bytes(fixture["hva"].as_str().unwrap())).unwrap();
+    // The oracle HVA holds one frame; a second frame translates that section
+    // so the selected frame moves the stencil's placement.
+    let mut shifted = one.transforms[0];
+    shifted[3] += 32.0;
+    shifted[7] += 32.0;
+    let hva = HvaFile {
+        frame_count: 2,
+        section_count: one.section_count,
+        section_names: one.section_names.clone(),
+        transforms: vec![one.transforms[0], shifted],
+    };
+    let params = VxlRenderParams {
+        facing: 0,
+        ..Default::default()
+    };
+    let frame0 = render(&vxl, Some(&hva), &params, 0, 0, false).unwrap();
+    let frame1 = render(&vxl, Some(&hva), &params, 0, 1, false).unwrap();
+    assert_ne!(
+        [frame0.offset_x as i32, frame0.offset_y as i32],
+        [frame1.offset_x as i32, frame1.offset_y as i32],
+        "frame 1 draws the translated section"
+    );
+    // Frame indices wrap by the frame count.
+    let wrapped = render(&vxl, Some(&hva), &params, 0, 2, false).unwrap();
+    assert_eq!(
+        [wrapped.offset_x as i32, wrapped.offset_y as i32],
+        [frame0.offset_x as i32, frame0.offset_y as i32],
+        "frame 2 wraps to frame 0"
+    );
+    // `ShadowIndex.Frame=-1` is cleared: native falls through to the walked
+    // frame, which the atlas cannot key; retail's constructor value 0 never
+    // takes this arm, so the pass keeps frame 0.
+    let cleared = render(&vxl, Some(&hva), &params, 0, -1, false).unwrap();
+    assert_eq!(
+        [cleared.offset_x as i32, cleared.offset_y as i32],
+        [frame0.offset_x as i32, frame0.offset_y as i32],
+        "a cleared frame stays at frame 0"
+    );
+}
+
+/// Phobos `ShadowIndices.Frame=` (`Ext/TechnoType/Body.cpp:1327-1337`) gives
+/// every listed section its own `ChooseFrame` result: `0x7072A1` multiplies
+/// that section's HVA transform into the shared `&mtx`, so two entries at
+/// different frames must compose to the union of the two single-frame stencils.
+/// The `-1` the native resize fills in draws the walked frame, which the atlas
+/// cannot key and holds at frame 0.
+#[test]
+fn shadow_indices_frames_draw_each_listed_section_at_its_own_hva_frame() {
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/shadow_fixtures.json",
+    ))
+    .unwrap();
+    let vxl = VxlFile::from_bytes(&bytes(fixture["vxl"].as_str().unwrap())).unwrap();
+    assert_eq!(vxl.limbs.len(), 1, "the oracle fixture has one section");
+    // A two-frame HVA for that section: frame 1 moves it along X, the way a
+    // `ShadowIndices.Frame=` pose differs from the walked frame.
+    let mut hva_bytes = vec![0u8; 16];
+    hva_bytes[..9].copy_from_slice(b"ShadowHVA");
+    hva_bytes.extend_from_slice(&2u32.to_le_bytes());
+    hva_bytes.extend_from_slice(&1u32.to_le_bytes());
+    let mut section = [0u8; 16];
+    section[..5].copy_from_slice(b"BODY0");
+    hva_bytes.extend_from_slice(&section);
+    let identity: [f32; 12] = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0.];
+    for value in identity {
+        hva_bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut moved = identity;
+    moved[3] = 64.;
+    for value in moved {
+        hva_bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let hva = HvaFile::from_bytes(&hva_bytes).unwrap();
+    assert_eq!(hva.frame_count, 2, "two frames");
+
+    let coverage = |sprite: &VxlSprite| {
+        let mut set = std::collections::BTreeSet::new();
+        for y in 0..sprite.height as i32 {
+            for x in 0..sprite.width as i32 {
+                if sprite.palette_indices[(y * sprite.width as i32 + x) as usize] != 0 {
+                    set.insert((sprite.offset_x as i32 + x, sprite.offset_y as i32 + y));
+                }
+            }
+        }
+        set
+    };
+    for step in [0u8, 7] {
+        let params = VxlRenderParams {
+            facing: step * 8,
+            ..Default::default()
+        };
+        let frame_0 = render(&vxl, Some(&hva), &params, 0, 0, false).unwrap();
+        let frame_1 = render(&vxl, Some(&hva), &params, 0, 1, false).unwrap();
+        assert_ne!(
+            coverage(&frame_0),
+            coverage(&frame_1),
+            "the fixture's second frame must move the stencil (step {step})"
+        );
+        // Each listed section runs its own `ChooseFrame`: the entry at frame 1
+        // must reach that section's HVA transform, so the composed stencil
+        // differs from two frame-0 entries. Both entries share the primary's
+        // projected center (`Hooks.MatrixOp.cpp:793-800` passes one `bnd`), so
+        // the comparison is against the same composition, not two single
+        // renders whose crops carry their own centers.
+        let two_at_frame_0 =
+            render_indices(&vxl, Some(&hva), &params, 0, &[0, 0], &[0, 0], false).unwrap();
+        let second_at_frame_1 =
+            render_indices(&vxl, Some(&hva), &params, 0, &[0, 0], &[0, 1], false).unwrap();
+        assert_ne!(
+            coverage(&two_at_frame_0),
+            coverage(&second_at_frame_1),
+            "the second entry's frame reaches that section's matrix (step {step})"
+        );
+        assert_eq!(
+            coverage(&two_at_frame_0),
+            coverage(&frame_0),
+            "two frame-0 entries keep the single-section stencil (step {step})"
+        );
+        // `-1` (the native resize placeholder) and a missing entry both draw
+        // the walked frame, which the atlas cannot key and holds at 0.
+        assert_eq!(
+            coverage(
+                &render_indices(&vxl, Some(&hva), &params, 0, &[0, 0], &[0, -1], false).unwrap()
+            ),
+            coverage(&two_at_frame_0),
+            "the resize placeholder draws the walked frame (step {step})"
+        );
+        assert_eq!(
+            coverage(&render_indices(&vxl, Some(&hva), &params, 0, &[0, 0], &[0], false).unwrap()),
+            coverage(&two_at_frame_0),
+            "a short frame list keeps frame 0 (step {step})"
+        );
+    }
 }

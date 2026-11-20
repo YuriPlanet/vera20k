@@ -292,17 +292,25 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
         )
     };
     let constructor = world.effect_anim_constructor(rules, type_name);
-    if let Err(error) = world.spawn_anim_at_world_with_constructor(
+    match world.spawn_anim_at_world_with_constructor(
         rules,
         descriptor,
         coord,
         constructor,
         FrameEffects::default(),
     ) {
-        log::debug!(
-            "muzzle anim [{}] did not construct: {error}",
-            world.interner.resolve(type_name)
-        );
+        Ok(anim_id) => {
+            // `0x6FF42B` marks and counts the anim it just built.
+            if let Some(state) = event.firing_anim {
+                world.attach_firing_anim(anim_id, state);
+            }
+        }
+        Err(error) => {
+            log::debug!(
+                "muzzle anim [{}] did not construct: {error}",
+                world.interner.resolve(type_name)
+            );
+        }
     }
 }
 

@@ -44,6 +44,14 @@ pub fn led_target_coordinate(
             return ProjectileCoord::new(coord.x, coord.y, coord.z);
         }
         Some(TargetKind::Entity(target_id)) => target_id,
+        // A Bullet target has no lead table; FireAt aims at its Location.
+        Some(TargetKind::Bullet(id)) => {
+            return world
+                .projectiles
+                .get(id)
+                .map(|projectile| projectile.position())
+                .unwrap_or_else(|| ProjectileCoord::new(0, 0, 0));
+        }
     };
     // Object410540's virtual+58 forwards virtual+48: the foundation centre
     // for Building447AC0, the live Object5F65A0 coordinate for other Techno
@@ -72,6 +80,8 @@ pub fn led_target_coordinate(
     let target_speed = owner_current_speed(
         target,
         target_type,
+        rules,
+        &world.interner,
         rules.general.veteran_speed,
         &world.houses,
     );

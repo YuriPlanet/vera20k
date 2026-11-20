@@ -57,11 +57,121 @@ pub(crate) enum TimerSource {
 }
 
 /// One timer line; its index is its place in [`timer_lines`]' answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TimerLine {
     pub(crate) source: TimerSource,
     /// Whole seconds left: the frames left over 15, truncated.
     pub(crate) seconds: i32,
+    /// Phobos percentage mode: the elapsed share of the recharge, printed
+    /// instead of `seconds` (`0x6D4A10`).
+    pub(crate) fraction: Option<f64>,
+}
+
+/// The clock a timer line's seconds come from. Stock native divides the
+/// frames it prints by 15 (`0x88888889`, `sar 3`); Phobos
+/// `PrintTimerOnTactical_Start` (`0x006D4B50`, `Misc/Hooks.Timers.cpp:12-90`)
+/// replaces that dividend with a wall-clock one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TimerClock {
+    /// Phobos `[Phobos] RealTimeTimers=` (`Phobos.INI.cpp:102`).
+    pub real_time: bool,
+    /// Phobos `[Phobos] RealTimeTimers.Adaptive=` (`Phobos.INI.cpp:103`).
+    pub adaptive: bool,
+    /// `GameOptionsClass::Instance.GameSpeed`: the engine speed index, 0..=6.
+    pub game_speed: i32,
+    /// `SessionClass::IsMultiplayer()` (`0x006D4B50`'s `SessionClass::IsMultiplayer`).
+    pub multiplayer: bool,
+    /// Phobos `Phobos::Misc::CustomGS`. VERA has no custom game speed, so every
+    /// caller passes `false`; the `[Phobos]` custom-speed feature is not ported.
+    pub custom_game_speed: bool,
+    /// `FPSCounter::CurrentFrameRate`'s stand-in, the adaptive path's divisor
+    /// base. VERA publishes the Logic rate at `ABCD44`, not a rendered-frame
+    /// counter, so adaptive seconds follow the sim's measured rate.
+    pub frame_rate: f64,
+}
+
+impl TimerClock {
+    /// The stock clock: no Phobos switch, so `frames / 15`.
+    pub(crate) const STOCK: Self = Self {
+        real_time: false,
+        adaptive: false,
+        game_speed: 4,
+        multiplayer: false,
+        custom_game_speed: false,
+        frame_rate: 15.0,
+    };
+}
+
+/// `0x006D4B50`'s time in seconds from the frames it prints, with Phobos'
+/// dividend (`Misc/Hooks.Timers.cpp:12-90`). The stock path divides by 15
+/// (`0x88888889`, `sar 3`); the Phobos path first replaces the dividend, then
+/// the native tail divides that by 15 again, which is why both truncations
+/// stay.
+fn timer_seconds(frames: i32, clock: &TimerClock) -> i32 {
+    if !clock.real_time {
+        return frames / FRAMES_PER_SECOND;
+    }
+    let is_mp = clock.multiplayer;
+    // `Misc/Hooks.Timers.cpp:22-31`: adaptive, unlimited SP speed and custom
+    // speed all scale by the measured frame rate (`max(rate, 1) / 15`).
+    let scaled = if clock.adaptive
+        || (!is_mp && clock.game_speed == 0)
+        || (clock.custom_game_speed && !is_mp)
+    {
+        (f64::from(frames) / (clock.frame_rate.max(1.0) / 15.0)) as i32
+    } else if is_mp {
+        // `:40-73`: multiplayer speed indices 0..=6 are 60/45/30/20/15/12/10.
+        match clock.game_speed {
+            0 => frames / 4,
+            1 => frames / 3,
+            2 => frames / 2,
+            3 => (frames * 3) / 4,
+            4 => frames,
+            5 => (frames * 5) / 4,
+            6 => (frames * 3) / 2,
+            _ => frames,
+        }
+    } else {
+        // `:77-99`: SP/skirmish indices 1..=6 are 60/30/20/15/12/10; index 0
+        // took the adaptive arm above.
+        match clock.game_speed {
+            1 => frames / 4,
+            2 => frames / 2,
+            3 => (frames * 3) / 4,
+            4 => frames,
+            5 => (frames * 5) / 4,
+            6 => (frames * 3) / 2,
+            _ => frames,
+        }
+    };
+    scaled / FRAMES_PER_SECOND
+}
+
+/// The clock for this frame's timer lines: the `[Phobos]` switches, the
+/// engine speed index, the session's mode and the published frame rate.
+fn timer_clock(state: &AppState, sim: &crate::sim::world::Simulation) -> TimerClock {
+    let (real_time, adaptive) = {
+        let presentation = &state.match_state.match_presentation;
+        (
+            presentation.real_time_timers,
+            presentation.real_time_timers_adaptive,
+        )
+    };
+    TimerClock {
+        real_time,
+        adaptive,
+        game_speed: sim.session().game_options().game_speed,
+        multiplayer: sim.session().multiplayer_mode_class().is_some(),
+        custom_game_speed: false,
+        frame_rate: f64::from(
+            state
+                .match_state
+                .match_presentation
+                .detail
+                .borrow()
+                .frame_rate(),
+        ),
+    }
 }
 
 /// TacticalClass::Draw's timer lines from the bottom up
@@ -77,10 +187,12 @@ pub(crate) fn timer_lines(
     supers: &[SuperTimerView],
     blackouts: impl IntoIterator<Item = (InternedId, i32)>,
     campaign: bool,
+    clock: &TimerClock,
 ) -> Vec<TimerLine> {
     let line = |source, frames: i32| TimerLine {
         source,
-        seconds: frames / FRAMES_PER_SECOND,
+        seconds: timer_seconds(frames, clock),
+        fraction: None,
     };
     let scenario = scenario_left.map(|left| line(TimerSource::Scenario, left));
     let supers = supers
@@ -88,7 +200,19 @@ pub(crate) fn timer_lines(
         .filter(|view| {
             !(campaign && view.on_hold() && view.frames_left() == view.recharge_frames())
         })
-        .map(|view| line(TimerSource::Super(*view), view.frames_left()));
+        .map(|view| TimerLine {
+            // `0x6D4A10`: `min((recharge - timeLeft) / recharge, 1.0)`, and
+            // exactly 1.0 when the recharge time is zero.
+            fraction: view.percentage().then(|| {
+                let recharge = view.recharge_frames();
+                if recharge > 0 {
+                    ((recharge - view.frames_left()) as f64 / recharge as f64).min(1.0)
+                } else {
+                    1.0
+                }
+            }),
+            ..line(TimerSource::Super(*view), view.frames_left())
+        });
     let blackouts = blackouts
         .into_iter()
         .filter(|&(_, left)| left > 0)
@@ -109,6 +233,12 @@ pub(crate) fn time_text(seconds: i32) -> String {
     } else {
         format!("{minutes:02}:{seconds:02}")
     }
+}
+
+/// `0x6D4A10`'s percentage text: `swprintf("%.2lf%s", fraction * 100, "%")`
+/// (`Misc/Hooks.UI.cpp:646-649`), so two decimals always.
+pub(crate) fn percentage_text(fraction: f64) -> String {
+    format!("{:.2}%", fraction * 100.0)
 }
 
 /// `0x006D4B50`'s label: `%s  ` (`0x00842ACC`).
@@ -394,13 +524,10 @@ fn localized(csf: Option<&CsfFile>, key: &str) -> String {
 /// at `0x006D4CD9`). A `none` (-1) keeps the native scheme where Phobos would
 /// read `Array[-1]`.
 fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
-    #[cfg(feature = "phobos")]
     let scheme = usize::try_from(rules.general.timer_blink_color_scheme)
         .ok()
         .and_then(|scheme| u8::try_from(scheme / 2).ok())
         .map_or(BLINK_SCHEME, HouseColorIndex);
-    #[cfg(not(feature = "phobos"))]
-    let scheme = BLINK_SCHEME;
     house_text_rgb(&rules.color_schemes, scheme)
 }
 
@@ -452,12 +579,14 @@ pub(crate) fn build_super_timer_instances(
         (house, left)
     });
     let scenario = sim.session().scenario_timer_view();
+    let clock = timer_clock(state, sim);
     let grouped = state.persistence.options_profile.grouped_super_timers;
     let mut lines = timer_lines(
         scenario.map(|(left, _)| left),
         if grouped { &[] } else { &supers },
         blackouts,
         !sim.session().game_mode_nonzero(),
+        &clock,
     );
     if grouped {
         // The team lines take the Super lines' place: after the Scenario
@@ -475,6 +604,7 @@ pub(crate) fn build_super_timer_instances(
             teams.into_iter().map(|row| TimerLine {
                 source: TimerSource::Team(row),
                 seconds: row.nearest_seconds,
+                fraction: None,
             }),
         );
     }
@@ -596,7 +726,9 @@ pub(crate) fn build_super_timer_instances(
             continue;
         };
         let label = label_text(label);
-        let time = time_text(line.seconds);
+        let time = line
+            .fraction
+            .map_or_else(|| time_text(line.seconds), percentage_text);
         let (label_at, time_at) = place_line(
             position,
             [view_w as i32, view_h as i32],

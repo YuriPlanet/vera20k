@@ -574,6 +574,120 @@ fn voxel_shadow_index_retains_art_image_history_and_save_state() {
     );
 }
 
+/// Phobos `ShadowIndices=` (`Ext/TechnoType/Body.cpp:1325`) is read from the
+/// pass's retained Image section, keyed by HVA section: a repeated index
+/// collapses (later entries overwrite), and a pass whose section lacks the key
+/// leaves the list empty rather than keeping the previous pass's.
+#[test]
+fn phobos_shadow_indices_read_the_image_section_on_every_pass() {
+    use crate::rules::ruleset::RuleSet;
+    let art =
+        IniFile::from_str("[FIRST]\nShadowIndices=2,1,2\n[OTHER]\n[PLAIN]\nShadowIndices=0\n");
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nImage=FIRST\n",
+    ));
+    let read = |processed: &ProcessedRulesLayers| {
+        RuleSet::from_processed_rules(processed)
+            .unwrap()
+            .object("JET")
+            .unwrap()
+            .phobos_shadow_indices()
+            .to_vec()
+    };
+    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), [2, 1]);
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[JET]\nImage=OTHER\n"),
+    );
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        Vec::<i32>::new()
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[JET]\nImage=PLAIN\n"),
+    );
+    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), [0]);
+}
+
+/// Phobos `ShadowIndex.Frame=` (`Ext/TechnoType/Body.cpp:1338`, ART): a
+/// `Valueable<int>` constructed 0, read from the retained `Image=` section
+/// after the plural `ShadowIndices` tags, so a section without the key keeps
+/// the prior pass's value.
+#[test]
+fn phobos_shadow_index_frame_reads_the_image_section_on_every_pass() {
+    use crate::rules::ruleset::RuleSet;
+    let art = IniFile::from_str("[FIRST]\nShadowIndex.Frame=3\n[OTHER]\n");
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nImage=FIRST\n",
+    ));
+    let read = |processed: &ProcessedRulesLayers| {
+        RuleSet::from_processed_rules(processed)
+            .unwrap()
+            .object("JET")
+            .unwrap()
+            .phobos_shadow_index_frame()
+    };
+    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), 3);
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[JET]\nImage=OTHER\n"),
+    );
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        3,
+        "a section without the key keeps the prior value"
+    );
+
+    // The constructor's 0 is the default before any ART read.
+    let cold = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nShadowIndex=0\n",
+    ))
+    .process_with_fixed_art(&art)
+    .unwrap();
+    assert_eq!(read(&cold), 0);
+}
+
+/// Phobos `TurretShadow=` (`Ext/TechnoType/Body.cpp:1323`): read from the
+/// fixed ART section that pass's `Image=` selects, `Nullable<bool>` so a
+/// section without the key keeps the value the previous pass left.
+#[test]
+fn phobos_turret_shadow_reads_the_image_section_and_keeps_its_prior_value() {
+    use crate::rules::ruleset::RuleSet;
+    let art = IniFile::from_str("[FIRST]\nTurretShadow=yes\n[OTHER]\n[OFF]\nTurretShadow=no\n");
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nImage=FIRST\n",
+    ));
+    let read = |processed: &ProcessedRulesLayers| {
+        RuleSet::from_processed_rules(processed)
+            .unwrap()
+            .object("JET")
+            .unwrap()
+            .phobos_turret_shadow
+    };
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        Some(true)
+    );
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[JET]\nImage=OTHER\n"),
+    );
+    // `OTHER` has no key: the live object keeps what the first pass read.
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        Some(true)
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[JET]\nImage=OFF\n"),
+    );
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        Some(false)
+    );
+}
+
 #[test]
 fn repair_inputs_retain_native_layer_defaults_through_reset_and_save() {
     use crate::rules::ruleset::RuleSet;
@@ -4473,4 +4587,95 @@ fn ares_country_reads_start_in_multiplayer_with_const() {
     };
     assert!(with_const("PARENT"));
     assert!(!with_const("CHILD") && !with_const("PLAIN"));
+}
+
+/// Phobos `ShadowIndices.Frame=` (`Ext/TechnoType/Body.cpp:1327-1337`) is
+/// read beside the section list and shares its `Image=` section: a shorter
+/// frame list is resized with `-1`, a repeated section overwrites its frame,
+/// and a pass whose Image section lacks the list keeps both empty.
+#[test]
+fn phobos_shadow_indices_frames_read_the_image_section_on_every_pass() {
+    use crate::rules::ruleset::RuleSet;
+    let art = IniFile::from_str(
+        "[PAIRED]\nShadowIndices=2,1,2\nShadowIndices.Frame=0,1,5\n\
+         [SHORT]\nShadowIndices=2,1\nShadowIndices.Frame=3\n\
+         [NOFRAMES]\nShadowIndices=2,1\n\
+         [NOLIST]\nShadowIndices.Frame=8\n",
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nImage=PAIRED\n",
+    ));
+    let read = |processed: &ProcessedRulesLayers| {
+        let object = RuleSet::from_processed_rules(processed)
+            .unwrap()
+            .object("JET")
+            .unwrap()
+            .phobos_shadow_indices_frames()
+            .to_vec();
+        object
+    };
+    // The repeated section 2 keeps its later frame 5.
+    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), [5, 1]);
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[JET]\nImage=SHORT\n"),
+    );
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        [3, -1],
+        "a shorter frame list is resized with -1"
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[JET]\nImage=NOFRAMES\n"),
+    );
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        [-1, -1],
+        "a section list without frames fills every entry with -1"
+    );
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[JET]\nImage=NOLIST\n"),
+    );
+    assert_eq!(
+        read(&layers.process_with_fixed_art(&art).unwrap()),
+        Vec::<i32>::new(),
+        "frames without a section list stay empty"
+    );
+}
+
+/// `[AudioVisual] Dig=` is `RulesClass+0x294`: `0x0066A593` pushes the key
+/// string `0x0083A5CC` and `0x00889F64` as the section, `0x00428B80` resolves
+/// the stored name and `0x0066A5BA` writes the pointer back. The tunnel
+/// locomotor's four `AnimClass` constructions (`0x00728F6F`, `0x00729360`,
+/// `0x00729459`, `0x00729A2F`) pass that pointer, so `RuleSet` has to carry it.
+#[test]
+fn audio_visual_dig_retains_its_anim_type_across_layers() {
+    let fresh = RuleSet::from_ini(&IniFile::empty()).unwrap();
+    assert!(
+        fresh.general.dig_anim.is_none(),
+        "ctor665A10 leaves Rules+294 null"
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[AudioVisual]\nDig=DIGANIM\n"));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[AudioVisual]\nFogRate=8\n"),
+    );
+    let processed = layers.process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules.general.dig_anim.as_deref(), Some("DIGANIM"),
+        "a later layer without the key keeps the previous AnimType"
+    );
+    layers.push(
+        RulesLayerKind::Tmcj4f,
+        IniFile::from_str("[AudioVisual]\nDig=DIGOUT\n"),
+    );
+    let processed = layers.process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules.general.dig_anim.as_deref(), Some("DIGOUT"),
+        "a present key replaces the pointer"
+    );
 }

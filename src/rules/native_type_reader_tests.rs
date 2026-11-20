@@ -77,10 +77,17 @@ fn weapon_block_reads_each_reached_pass_from_the_live_counts() {
     );
     let rules = RuleSet::from_rules_layers(&layers).unwrap();
 
-    // The second pass takes the Primary branch; slot 1 keeps Weapon2.
+    // The second pass takes the Primary branch; slot 1 keeps Weapon2 unless
+    // the Phobos MultiWeapon latch flips (see below).
     let swap = rules.object("SWAP").unwrap();
     assert_eq!(swap.turret_count, 0);
     assert_eq!((swap.primary(), swap.secondary()), (Some("P"), Some("B")));
+    // Phobos `TechnoTypeClass_ReadINI_MultiWeapon` (`0x7128B2`,
+    // `Ext/TechnoType/Hooks.MultiWeapon.cpp:15-31`) clears Weapon[0]/[1]
+    // whenever the `TurretCount > 0 || MultiWeapon` latch changes; the
+    // TurretCount override turns it off here, so retained Weapon2 is dropped
+    // before the stock Primary read.
+    assert_eq!((swap.primary(), swap.secondary()), (Some("P"), None));
     // A smaller WeaponCount stops reading slot 3 without clearing it.
     let shrink = rules.object("SHRINK").unwrap();
     assert_eq!(shrink.weapon_count, 1);

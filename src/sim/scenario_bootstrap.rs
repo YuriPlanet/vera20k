@@ -4116,6 +4116,10 @@ pub fn initialize_map_roster_houses(
                     retry_count: node.retry_count,
                 }),
         );
+        // Phobos `HouseExt::LoadFromINIFile` (`Ext/House/Body.cpp:626`) stores
+        // the scenario house's RepairBaseNodes difficulty slots with the rest
+        // of its Read_Scenario_INI state.
+        house_state.install_repair_base_nodes(house.repair_base_nodes);
         // HouseClass::Read_Scenario_INI reads `IQ=` from this exact named
         // house section, defaults it to zero, and changes a value above
         // MaxIQLevels to literal one before storing it as both the authored

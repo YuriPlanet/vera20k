@@ -94,7 +94,7 @@ tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` b
 Lobi ayarları, modlar ve haritalar maç kurallarını değiştirebilir. Modlar ve haritalar, INI
 dosyaları aracılığıyla VERA20K'nin desteklediği [Ares](docs/ares.md) ve [Phobos](docs/phobos.md)
 özelliklerini etkinleştirebilir. Bir mod, `ares.mix` dosyasını içeriyorsa Ares'i de etkinleştirir.
-Bazı Phobos özellikleri için hâlâ `--features phobos` seçeneğiyle derlenmiş bir sürüm gerekir.
+Phobos her derlemeye dahildir ve bir modun veya haritanın INI dosyasından etkinleştirilir.
 
 Kendi modunuzu yapmak için [mod yapım kılavuzuyla](docs/modding.md) başlayabilirsiniz.
 

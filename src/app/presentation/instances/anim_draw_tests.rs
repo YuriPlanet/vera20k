@@ -154,6 +154,62 @@ fn flat_has_one_flat_body_with_its_separate_minus_three_term() {
     assert_eq!(pieces[0].instance.z_adjust, 12.0);
 }
 
+/// Phobos `AnimClass_DrawIt_Tiled_Interval` (`0x423654`,
+/// `Ext/Anim/Hooks.cpp:431-446`) substitutes a positive `Tiled.Interval` for
+/// the frame height before the halving and row step, and
+/// `AnimClass_DrawIt_Tiled_Center` (`0x423660`, `Hooks.cpp:448-462`) zeroes
+/// the `height / 2` term for `Tiled.AlignToCenter`, starting the column on
+/// the draw point and stepping rows and Z by the height alone.
+#[test]
+fn tiled_interval_and_align_to_center_override_the_frame_geometry() {
+    let column = |keys: &str| {
+        let (source, key, config) = fixture(keys);
+        let frame_zero = ShpSpriteEntry {
+            pixel_size: [8.0, 10.0],
+            ..*source.get(&key).unwrap()
+        };
+        let body = *source.get(&key).unwrap();
+        let atlas = SpriteAtlas::from_test_entries(HashMap::from([
+            (key.clone(), body),
+            (crate::render::sprite_atlas::tiled_anim_key("ANIM", 1), body),
+            (
+                crate::render::sprite_atlas::tiled_anim_key("ANIM", 0),
+                frame_zero,
+            ),
+        ]));
+        let mut draw = input(&atlas, &key, &config);
+        draw.viewport[1] = 170.0;
+        let pieces = anim_draw_pieces(&atlas, draw);
+        assert!(
+            pieces
+                .iter()
+                .all(|piece| piece.target == ObjectTexture::ShpPage(1))
+        );
+        pieces
+            .iter()
+            .map(|tile| (tile.instance.position, tile.instance.z_adjust))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        column("Tiled=yes\nTiled.Interval=20\n"),
+        [
+            ([103.0, 201.0], -35.0),
+            ([103.0, 181.0], -65.0),
+            ([103.0, 161.0], -95.0),
+        ],
+        "the interval is the height: rows step 20 from 10 above the point"
+    );
+    assert_eq!(
+        column("Tiled=yes\nTiled.Interval=20\nTiled.AlignToCenter=yes\n"),
+        [
+            ([103.0, 211.0], -35.0),
+            ([103.0, 191.0], -55.0),
+            ([103.0, 171.0], -75.0),
+        ],
+        "align-to-center starts on the point and falls by the height"
+    );
+}
+
 #[test]
 fn a_disabled_shadow_draws_no_second_pass() {
     let (atlas, key, config) = fixture("Shadow=no\n");
@@ -310,6 +366,24 @@ fn has_bounce_draws_the_body_frame_as_a_z_read_ground_shadow_before_the_body() {
         ObjectTexture::SpriteAtlasEdit(2, TerrainPiece::Shadow)
     );
     assert_eq!(shadow.render_z, RenderZPolicy::None);
+}
+
+#[test]
+fn extra_shadow_false_drops_the_has_bounce_ground_shadow() {
+    // Phobos `ExtraShadow` (`Ext/AnimType/Body.h:62,114`, hook `0x423365`,
+    // `Ext/Anim/Hooks.cpp:463-480`) skips only the 4233EE ground pass: the body
+    // and its `Shadow=` half stay.
+    let (atlas, key, config) = fixture("Bouncer=yes\nExtraShadow=no\nShadow=yes\n");
+    let mut draw = input(&atlas, &key, &config);
+    draw.flags = 0x600;
+    draw.bounce_drop_px = Some(37);
+    let pieces = anim_draw_pieces(&atlas, draw);
+    assert_eq!(pieces.len(), 2, "the ground shadow is gone");
+    assert_eq!(pieces[0].target, ObjectTexture::ShpPage(1));
+    assert_eq!(
+        pieces[1].target,
+        ObjectTexture::SpriteAtlasEdit(2, TerrainPiece::Shadow)
+    );
 }
 
 #[test]
@@ -691,4 +765,227 @@ fn free_bouncing_anim_draws_its_ground_shadow_first_at_its_height() {
     // Both Z terms subtract the same drawn lift: YDrawOffset 7 here, -2 for
     // the Shadow= pass (42382C).
     assert_eq!(ground.instance.z_adjust - shadow.instance.z_adjust, 9.0);
+}
+
+/// Phobos `AnimClass_DrawIt_DrawOffset` (`0x423122`/`0x422CD8`) selection-
+/// bracket arms (`Ext/AnimType/Body.cpp:83-90`): the Apply gates, direction
+/// flags, the building `Nullable<int>` override and the shield delta.
+#[test]
+fn phobos_bracket_arms_follow_the_owner_bracket() {
+    use crate::rules::phobos_anim_draw_offset::PhobosAnimDrawOffset;
+
+    let settings = PhobosAnimDrawOffset {
+        x_draw_offset: 7,
+        x_apply_bracket_width: true,
+        x_bracket_adjust: 2,
+        x_bracket_adjust_buildings: Some(-4),
+        y_apply_bracket_height: true,
+        y_bracket_adjust: 3,
+        y_bracket_adjust_buildings: None,
+        ..PhobosAnimDrawOffset::default()
+    };
+    let point = [100.0, 200.0];
+    let anchor = [50.0, 60.0];
+    let building = PhobosBracketOwner::Building {
+        art_height: 4,
+        foundation_width: 3,
+    };
+    // Positive ART Height keeps the default upward shift: Y takes the Top
+    // anchor and X takes the foundation half-width shift plus the
+    // building-only adjust, minus the plain XDrawOffset the atlas already
+    // baked into the frame offset.
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &settings, building, None),
+        [anchor[0] + 3.0 * 30.0 - 4.0 - 7.0, anchor[1] + 3.0]
+    );
+    // A negative ART Height takes the Y arm only when inverted.
+    let flat = PhobosBracketOwner::Building {
+        art_height: -1,
+        foundation_width: 3,
+    };
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &settings, flat, None)[1],
+        point[1],
+        "negative Height without Invert leaves DrawIt's Y"
+    );
+    let mut inverted_y = settings;
+    inverted_y.y_invert_bracket_shift = true;
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &inverted_y, flat, None)[1],
+        anchor[1] + 3.0
+    );
+    // Unset `BracketAdjust.Buildings` falls back to `BracketAdjust`, and an
+    // inverted X shift goes left.
+    let mut inverted_x = settings;
+    inverted_x.x_invert_bracket_shift = true;
+    inverted_x.x_bracket_adjust_buildings = None;
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &inverted_x, building, None)[0],
+        anchor[0] - 3.0 * 30.0 + 2.0 - 7.0
+    );
+    // Foot: `PixelSelectionBracketDelta` picks the Y arm by its sign.
+    let foot = PhobosBracketOwner::Foot {
+        pixel_selection_bracket_delta: -10,
+    };
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &settings, foot, None),
+        [anchor[0] + 2.0 - 7.0, anchor[1] - 10.0 + 3.0]
+    );
+    let raised = PhobosBracketOwner::Foot {
+        pixel_selection_bracket_delta: 10,
+    };
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &settings, raised, None)[1],
+        point[1],
+        "positive delta without Invert leaves DrawIt's Y"
+    );
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &inverted_y, raised, None)[1],
+        anchor[1] + 10.0 + 3.0
+    );
+    // The shield bracket delta follows the same Y sign gate and adds the
+    // hardcoded -3 health-bar offset.
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &settings, foot, Some(-5))[1],
+        anchor[1] - 10.0 + 3.0 - 5.0 - 3.0
+    );
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &settings, foot, Some(5))[1],
+        anchor[1] - 10.0 + 3.0,
+        "an upward-only shield delta is ignored without Invert"
+    );
+    // Without either Apply key the hook cannot replace the location.
+    let off = PhobosAnimDrawOffset {
+        x_draw_offset: 7,
+        ..PhobosAnimDrawOffset::default()
+    };
+    assert!(!off.applies_bracket());
+    assert_eq!(
+        phobos_bracket_draw_point(point, anchor, &off, building, Some(-5)),
+        point
+    );
+}
+
+/// Phobos `AnimClass_DrawIt_DrawOffset` through the production free-anim
+/// Display caller: an attached animation with `XDrawOffset.ApplyBracketWidth`
+/// takes its owner's right-hand foot bracket.
+#[test]
+fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
+    use crate::app::presentation::instances::{
+        DisplayEffectInputs, build_display_effect_instances,
+    };
+    use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
+    use crate::map::entities::EntityCategory;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::combat::Health;
+    use crate::sim::components::AnimClassSpawnDescriptor;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::world::Simulation;
+    use crate::util::fixed_math::SIM_ZERO;
+    use std::cell::RefCell;
+
+    let rules_ini = IniFile::from_str(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=HTNK\n[HTNK]\nStrength=100\nSpeed=6\n\
+         [Animations]\n0=ANIM\n",
+    );
+    let art_ini = IniFile::from_str(
+        "[ANIM]\nLayer=ground\nShadow=yes\nStart=1\nEnd=2\nYDrawOffset=7\n\
+         XDrawOffset=30\nXDrawOffset.ApplyBracketWidth=yes\n\
+         XDrawOffset.BracketAdjust=5\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).expect("rules");
+    let mut art = ArtRegistry::from_ini(&art_ini);
+    art.bind_anim_frame_count_for_test("ANIM", 11);
+    rules.install_art_data(art);
+    let (source, key, _) = fixture("");
+    let entries = [1, 6]
+        .into_iter()
+        .map(|frame| {
+            let mut old = key.clone();
+            old.frame = frame;
+            let entry = *source.get(&old).unwrap();
+            old.palette_context = ShpPaletteContext::GlobalAnim;
+            old.house_color = HouseColorIndex(0);
+            (old, entry)
+        })
+        .collect();
+    let atlas = SpriteAtlas::from_test_entries(entries);
+    let mut sim = Simulation::new();
+    let owner = GameEntity::new_at_frame_zero_for_test(
+        1,
+        10,
+        10,
+        0,
+        0,
+        sim.intern("A"),
+        Health::new(100),
+        sim.intern("HTNK"),
+        EntityCategory::Unit,
+        0,
+        5,
+        false,
+    );
+    let coord = crate::sim::movement::ground_pose::object_get_coords(&owner, None);
+    sim.entities_mut_for_test().insert(owner);
+    let mut descriptor =
+        AnimClassSpawnDescriptor::new(sim.intern("ANIM"), 10, 10, SIM_ZERO, SIM_ZERO, 0);
+    descriptor.owner = Some(1);
+    descriptor.draw_flags = 0x600;
+    let id = sim
+        .spawn_anim_at_world(
+            &rules,
+            descriptor,
+            AnimWorldCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+        )
+        .expect("owned animation");
+    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let detail = RefCell::new(crate::app::presentation::detail::DetailState::new());
+    let lighting = Default::default();
+    let house_colors = Default::default();
+    let hidden = Default::default();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
+    let mut planned = Vec::new();
+    build_display_effect_instances(
+        &DisplayEffectInputs {
+            sim: &sim,
+            frame: &frame,
+            rules: &rules,
+            camera: [-1000.0; 2],
+            render_size: [2000; 2],
+            tactical: [0, 0, 2000, 2000],
+            zoom: 1.0,
+            axis: DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
+            atlas: Some(&atlas),
+            detail: &detail,
+            detail_level: 2,
+            lighting: &lighting,
+            retained_anim_intensities: None,
+            house_colors: &house_colors,
+            hidden_super_anims: &hidden,
+            show_hidden: false,
+            local_owner: None,
+            observe_particles: false,
+        },
+        &mut planned,
+        &order,
+        Default::default(),
+    );
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].parent.id, id);
+    // Cell (10,10) at its centre projects to (0,315), plus the shared 15-row
+    // world bias. Right/Top foot anchor is (0+18, 330-28); the X arm replaces
+    // DrawIt's X with the anchor, `BracketAdjust` 5 and the discarding of the
+    // atlas-baked XDrawOffset 30, while Y stays. The synthetic frame entry
+    // adds its (3,11) origin.
+    assert_eq!(
+        planned[0].pieces[0].instance.position,
+        [18.0 + 5.0 - 30.0 + 3.0, 330.0 + 11.0]
+    );
 }

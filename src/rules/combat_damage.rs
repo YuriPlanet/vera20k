@@ -117,6 +117,35 @@ pub struct CombatDamageDefaults {
     /// constructor 1): that damage starts from the dropped Unit's current
     /// Health rather than its type's `Strength=` (`0x0074621D`).
     pub current_strength_damage: bool,
+    /// Phobos `[CombatDamage] AnimDamage.DealtByInvoker=`
+    /// (`Ext/Rules/Body.cpp:570`, constructor `false`, `Ext/Rules/Body.h:481`,
+    /// `:982`): the global fallback of the AnimType
+    /// `Damage.DealtByInvoker=` key.
+    pub anim_damage_dealt_by_invoker: bool,
+    /// Phobos `[CombatDamage] AnimDamage.ApplyFirepowerMult=`
+    /// (`Ext/Rules/Body.cpp:571`, constructor `false`, `Ext/Rules/Body.h:482`,
+    /// `:983`): the global fallback of the AnimType
+    /// `Damage.ApplyFirepowerMult=` key.
+    pub anim_damage_apply_firepower_mult: bool,
+    /// Phobos `[CombatDamage] ProjectileRange.ApplyModifiers=`
+    /// (`Ext/Rules/Body.cpp:650`, `Valueable<bool>` constructed **true** at
+    /// `Ext/Rules/Body.h:544,1044`): a `Ranged=` bullet's max range passes
+    /// `GetRangeWithModifiers` before its travel budget is spent.
+    pub phobos_projectile_range_apply_modifiers: bool,
+    /// Phobos `[CombatDamage] Psychedelic.StackingMode=`
+    /// (`Ext/Rules/Body.cpp:551`, `Valueable<StackingMode>` with constructor
+    /// `Override` at `Ext/Rules/Body.h:462,967`): how a Psychedelic hit
+    /// combines its damage with an existing berserk time.
+    pub phobos_psychedelic_stacking_mode: crate::rules::phobos_stacking_mode::StackingMode,
+    /// Phobos `[CombatDamage] FallingDownDamage=` (`Ext/Rules/Body.cpp:227`,
+    /// constructor `1.0`, `Ext/Rules/Body.h:671`): the landing-damage ratio
+    /// fallback of the TechnoType `FallingDownDamage=` key.
+    pub falling_down_damage: f64,
+    /// Phobos `[CombatDamage] FallingDownDamage.AllowEMP=`
+    /// (`Ext/Rules/Body.cpp:228`, constructor `true`, `Ext/Rules/Body.h:672`):
+    /// `no` lets an EMP-locked unit take the ratio packet instead of the
+    /// vanilla full-Health kill on landing.
+    pub falling_down_damage_allow_emp: bool,
     /// `TiberiumExplosive=` (`RulesClass+0x17E5`, ReadBool over the current
     /// value at `0x0066CE7E`; constructor false). Stock UnitClass::
     /// Death_Explosion only sums a dead local with it; Ares 1004BD90 (hook
@@ -210,6 +239,18 @@ impl CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
+            anim_damage_dealt_by_invoker: section.read_bool("AnimDamage.DealtByInvoker", false),
+            anim_damage_apply_firepower_mult: section
+                .read_bool("AnimDamage.ApplyFirepowerMult", false),
+            phobos_projectile_range_apply_modifiers: section
+                .read_bool("ProjectileRange.ApplyModifiers", true),
+            phobos_psychedelic_stacking_mode:
+                crate::rules::phobos_stacking_mode::StackingMode::read_valueable(
+                    section,
+                    "Psychedelic.StackingMode",
+                ),
+            falling_down_damage: section.read_double("FallingDownDamage", 1.0),
+            falling_down_damage_allow_emp: section.read_bool("FallingDownDamage.AllowEMP", true),
             tiberium_explosive: crate::rules::ares_switch::ares_way()
                 && section.read_bool("TiberiumExplosive", false),
             ivan_warhead: None,
@@ -253,6 +294,13 @@ impl Default for CombatDamageDefaults {
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,
+            anim_damage_dealt_by_invoker: false,
+            anim_damage_apply_firepower_mult: false,
+            phobos_projectile_range_apply_modifiers: true,
+            phobos_psychedelic_stacking_mode:
+                crate::rules::phobos_stacking_mode::StackingMode::Override,
+            falling_down_damage: 1.0,
+            falling_down_damage_allow_emp: true,
             tiberium_explosive: false,
             ivan_warhead: None,
             ivan_damage: 100,

@@ -586,7 +586,6 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
 /// integration test above that boundary covers damage, credit and expiry.
 // Vanilla goldens: Phobos skips the Inviso scatter (`0x469AC1` ->
 // `0x469AF0`) and scatters each animation itself, which shifts the stream.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER};
@@ -2735,4 +2734,31 @@ fn campaign_player_controlled_house_hears_voice_crashing() {
         event,
         super::SimSoundEvent::VocAt { sound_id, audible_to: None, .. } if sound_id == "OrcaFalls"
     )));
+}
+
+/// Phobos `CrashSpin.Multiplier` (hook `0x4DECBB`,
+/// `Ext/Techno/Hooks.Misc.cpp:978-999`): a value `<= 0` replaces the whole
+/// block, so the three draws do not happen.
+#[test]
+fn phobos_crash_spin_zero_multiplier_skips_the_spin_and_its_draws() {
+    let row = oracle()["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["draws"].as_array().unwrap().len() == 3 && int(&row["input"], "i_know", 0) == 0
+        })
+        .unwrap();
+    let mut input = row["input"].clone();
+    input["crashing"] = serde_json::json!(0);
+    input["type_extra"] = serde_json::json!("CrashSpin.Multiplier=0.0");
+    let (mut sim, rules) = fixture(&input);
+    let before = sim.scenario_rng.state();
+    assert!(sim.foot_crash(1, None, &rules, crate::sim::world::FrameEffects::default()));
+    assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
+    assert_eq!(
+        sim.scenario_rng.state(),
+        before,
+        "the skipped block spends no draws"
+    );
 }

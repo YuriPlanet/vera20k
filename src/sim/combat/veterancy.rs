@@ -318,9 +318,52 @@ impl Veterancy {
         self.raw = X87::store_f32_masked_chop(stored);
         true
     }
+
+    /// `SpawnManagerClass_AI_PromoteSpawns @ 0x6B7282`'s
+    /// `pUnit->Veterancy.Add(ownerVeterancy - unitVeterancy)`:
+    /// `TechnoExt` copies both floats, tests `unit < owner`, then calls
+    /// YRpp's inline `VeterancyStruct::Add(double)`. The difference and the
+    /// add run under gamemd's ambient 53-bit round-toward-zero x87 word; the
+    /// sum is capped at `[General] VeteranCap` and stored as a chopped `f32`.
+    /// The rank cache is left alone, so the next `AI_Update` sample announces
+    /// the crossing.
+    pub(crate) fn promote_toward(&mut self, owner: NativeF32Bits, veteran_cap: f64) {
+        use crate::util::native_x87::X87Chop53;
+        if !(f32::from_bits(self.raw.bits()) < f32::from_bits(owner.bits())) {
+            return;
+        }
+        let difference = X87Chop53::sub(
+            X87Chop53::load_f32(owner).expect("finite owner veterancy"),
+            X87Chop53::load_f32(self.raw).expect("a stored veterancy is finite"),
+        );
+        self.raw = add_chop53(self.raw, difference, veteran_cap);
+    }
 }
 
-/// Fixture setup for tests outside this module.
+/// `VeterancyStruct::Add(double)`'s tail (YRpp inline, reached from
+/// `0x0074FF50` and from [`Veterancy::promote_toward`]): the unrounded sum
+/// under the ambient 53-bit x87 word, the `VeteranCap` clamp and the chopped
+/// `f32` store.
+fn add_chop53(
+    raw: NativeF32Bits,
+    value: crate::util::native_x87::X87Value,
+    veteran_cap: f64,
+) -> NativeF32Bits {
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
+    let cap = X87Chop53::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()))
+        .expect("finite VeteranCap");
+    let sum = X87Chop53::add(
+        value,
+        X87Chop53::load_f32(raw).expect("a stored veterancy is finite"),
+    );
+    let stored = if X87Chop53::compare(sum, cap) == X87Ordering::Less {
+        sum
+    } else {
+        cap
+    };
+    X87Chop53::store_f32_masked_chop(stored)
+}
+
 #[cfg(any(test, feature = "test-support"))]
 impl Veterancy {
     /// Seed the accumulator at a rank's threshold, as `set_elite`,

@@ -39,8 +39,7 @@ pub mod spawn;
 pub mod system_ai;
 pub mod wind;
 
-#[cfg(all(test, tests_sim_p_s))]
-mod ares_gas_tests;
+#[cfg(all(test, tests_sim_p_s))]mod ares_gas_tests;
 #[cfg(all(test, tests_sim_p_s))]
 mod fire_native_tests;
 #[cfg(all(test, tests_sim_p_s))]
@@ -49,9 +48,9 @@ mod gas_native_tests;
 mod native_fixture;
 #[cfg(all(test, tests_sim_p_s))]
 mod native_identity_tests;
-// Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
 #[cfg(all(test, tests_sim_p_s))]
 mod railgun_native_tests;
+// Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
 #[cfg(all(test, tests_sim_p_s))]
 mod virus_tests;
 
@@ -372,12 +371,13 @@ impl Particle {
         target: IVec3,
         pt: &ParticleType,
         sim: &mut Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> Self {
         let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
             spark_world::constructor_ground_height(sim, x, y)
         })
         .expect("particle construction requires supported ground facts");
-        Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
+        sim.reveal_particle_with_alpha_shape(&particle, rules);
         particle
     }
 
@@ -1244,6 +1244,7 @@ mod tests {
             IVec3::ZERO,
             rules.particle_type(ParticleTypeId(0)),
             &mut sim,
+            &rules,
         );
         assert_eq!(particle.lifetime_remaining(), 0);
         assert_eq!(sim.scenario_rng.logical_state(), rng_before);
@@ -1266,6 +1267,7 @@ mod tests {
             IVec3::ZERO,
             rules.particle_type(ParticleTypeId(0)),
             &mut sim,
+            &rules,
         );
         sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
         sim.session.set_binary_frame_for_test(0);
@@ -1352,3 +1354,7 @@ mod tests {
         assert_eq!(restored.particles[0].velocity().bits(), 0x4000_0000);
     }
 }
+
+#[cfg(all(test, tests_sim_p_s))]
+#[path = "alpha_shape_tests.rs"]
+mod alpha_shape_tests;

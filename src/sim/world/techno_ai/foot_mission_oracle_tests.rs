@@ -362,7 +362,7 @@ fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value, family: &s
         );
         assert_eq!(
             std::array::from_fn::<_, 3, _>(|mode| {
-                threat_range_leptons(object, mode as i32, ranges)
+                threat_range_leptons(object, mode as i32, ranges, false)
             }),
             xyz(&control["threat_range_leptons"]),
             "{}: original707E60 modes0/1/2",
@@ -992,6 +992,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 Some(&fixture.sim.house_alliances),
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
+                None,
                 None,
             )
             .unwrap();

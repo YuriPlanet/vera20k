@@ -411,36 +411,67 @@ impl Simulation {
             }
             _ => {}
         }
-        let count = self
+        // Phobos TechnoExt::ApplyKillDriver100458F3..10045953: after the
+        // operator removal, `passive && KeptPassengers.Get(global)` breaks
+        // out of the do-while(false) and leaves every passenger aboard;
+        // otherwise `KillPassengers.Get(global)` makes each departure a
+        // RegisterDestruction(nullptr)+UnInit without an EjectRandomly
+        // attempt (Ext/Techno/Body.cpp:930-1017). The type keys are
+        // Nullable<bool> (Ext/TechnoType/Body.cpp:969-970) falling back to
+        // the [CombatDamage] globals (Ext/Rules/Body.cpp:533-534).
+        let (kept_passengers, kill_passengers) = self
             .substrate
             .entities
             .get(target)
-            .map_or(0, |actor| actor.passenger_role().passenger_count());
-        for _ in 0..count {
-            let result = depart_cargo_head(
-                self,
-                rules,
-                target,
-                DepartureRoute::DeathEscape,
-                |sim, id| {
-                    let point = sim
-                        .substrate
-                        .entities
-                        .get(target)
-                        .map(|actor| ground_pose::position_world_coord(&actor.position));
-                    if point.is_none_or(|point| {
-                        !sim.place_ares_survivor(rules, registry, id, point, 128, false, effects)
-                    }) {
-                        sim.record_kill_and_uninit(id, None, context);
-                    }
-                    // Shared placement owns successful carrier/+82 clearing
-                    // (native100448A0 ->7104A0), including parachutes.
-                    Ok(())
-                },
-                effects,
-            );
-            if result.is_err() {
-                break;
+            .and_then(|actor| self.entity_object_type(actor, rules))
+            .map_or((false, false), |kind| {
+                let settings = &kind.phobos_driver_killed;
+                (
+                    settings.kept_passengers(rules.phobos_globals.driver_killed_kept_passengers),
+                    settings.kill_passengers(rules.phobos_globals.driver_killed_kill_passengers),
+                )
+            });
+        if passive && kept_passengers {
+            // Every passenger stays aboard: no ejection, kill or
+            // ExitedOpenTopped for this driver change.
+        } else {
+            let count = self
+                .substrate
+                .entities
+                .get(target)
+                .map_or(0, |actor| actor.passenger_role().passenger_count());
+            for _ in 0..count {
+                let result = depart_cargo_head(
+                    self,
+                    rules,
+                    target,
+                    DepartureRoute::DeathEscape,
+                    |sim, id| {
+                        if kill_passengers {
+                            sim.record_kill_and_uninit(id, None, context);
+                            return Ok(());
+                        }
+                        let point = sim
+                            .substrate
+                            .entities
+                            .get(target)
+                            .map(|actor| ground_pose::position_world_coord(&actor.position));
+                        if point.is_none_or(|point| {
+                            !sim.place_ares_survivor(
+                                rules, registry, id, point, 128, false, effects,
+                            )
+                        }) {
+                            sim.record_kill_and_uninit(id, None, context);
+                        }
+                        // Shared placement owns successful carrier/+82 clearing
+                        // (native100448A0 ->7104A0), including parachutes.
+                        Ok(())
+                    },
+                    effects,
+                );
+                if result.is_err() {
+                    break;
+                }
             }
         }
         if let Some(actor) = self.substrate.entities.get_mut(target) {
@@ -815,5 +846,182 @@ mod tests {
         );
         assert!(sim.trigger_local_is_set_for_test(2), "69");
         assert!(!sim.trigger_local_is_set_for_test(3), "70 by another house");
+    }
+
+    /// The shared KillDriver fixture: a Russian HOST with two boarded
+    /// infantry (the head is removed as the operator), a passive `Special`
+    /// takeover through the production receiver, and the caller's
+    /// `DriverKilled.*` keys. Returns (sim, rules, host, rider, operator).
+    fn driver_killed_passenger_fixture(
+        host_extra: &str,
+        combat_damage: &str,
+    ) -> (Simulation, RuleSet, u64, u64, u64) {
+        // `KillDriver=` is an Ares warhead key: the fixture reads its Rules
+        // the Ares way.
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            &format!(
+                "[Countries]\n0=Americans\n1=Russians\n2=Special\n\
+                 [Special]\nMultiplayPassive=yes\n\
+                 [InfantryTypes]\n2=OP\n[VehicleTypes]\n0=HOST\n\
+                 [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
+                 [HOST]\nStrength=300\nPassengers=3\nOperator=_ANY_\nSpeed=5\nPrimary=HostGun\n\
+                 CrateGoodie=yes\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n{host_extra}\
+                 [HostGun]\nDamage=1\nRange=6\nROF=20\nProjectile=Invisible\nWarhead=DRIVER_WH\n\
+                 [Warheads]\n0=DRIVER_WH\n\
+                 [DRIVER_WH]\nKillDriver=yes\n\
+                 {combat_damage}"
+            ),
+        );
+        for (name, side) in [("Americans", 0), ("Russians", 1), ("Special", 0)] {
+            let owner = sim.interner.intern(name);
+            sim.houses
+                .register(HouseState::new(owner, side, Some(owner), false, 0, 10));
+        }
+        let host = sim
+            .spawn_object_at_height("HOST", "Russians", 16, 15, 0, 0, &rules)
+            .unwrap();
+        let rider = sim
+            .spawn_object_at_height("OP", "Russians", 17, 15, 0, 0, &rules)
+            .unwrap();
+        let operator = sim
+            .spawn_object_at_height("OP", "Russians", 17, 16, 0, 0, &rules)
+            .unwrap();
+        for passenger in [rider, operator] {
+            assert!(board_passenger(
+                &mut sim,
+                &rules,
+                passenger,
+                host,
+                BoardingArm::InfantryTransport,
+                Some(&overlays),
+                Default::default()
+            ));
+        }
+        let invoker = sim
+            .spawn_object_at_height("OP", "Americans", 15, 15, 0, 0, &rules)
+            .unwrap();
+        let warhead_ref = sim.interner.intern("DRIVER_WH");
+        let hit = EntityDamageEvent::direct_receiver(
+            host,
+            1,
+            0,
+            invoker,
+            None,
+            warhead_ref,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        sim.commit_noncombat_aoe_hits(&rules, Some(&overlays), &[hit], Default::default());
+        (sim, rules, host, rider, operator)
+    }
+
+    /// TechnoExt::ApplyKillDriver100458F3..10045953: with the type key set,
+    /// a passive takeover keeps the remaining passenger aboard (`yes`) or
+    /// still ejects it (`no`); the operator removal runs in both cases.
+    #[test]
+    fn driver_killed_kept_passengers_decides_whether_the_rider_stays_aboard() {
+        for (host_extra, kept) in [
+            ("DriverKilled.KeptPassengers=yes\n", true),
+            ("DriverKilled.KeptPassengers=no\n", false),
+        ] {
+            let (sim, rules, host, rider, operator) =
+                driver_killed_passenger_fixture(host_extra, "");
+            let vehicle = sim.entities().get(host).unwrap();
+            assert!(vehicle.driver_killed(), "{host_extra}");
+            assert_eq!(
+                sim.interner.resolve(vehicle.owner()),
+                "Special",
+                "{host_extra}"
+            );
+            assert!(
+                sim.entities()
+                    .get(operator)
+                    .is_none_or(|actor| !actor.lifecycle.object_alive()),
+                "{host_extra} the operator removal still runs first"
+            );
+            let rider_state = sim.entities().get(rider).unwrap();
+            assert_eq!(
+                rider_state.passenger_role.is_inside_transport(),
+                kept,
+                "{host_extra}"
+            );
+            assert!(
+                rider_state.lifecycle.object_alive(),
+                "{host_extra} the rider survives either way"
+            );
+            assert_eq!(
+                vehicle.passenger_role.passenger_count(),
+                u32::from(kept),
+                "{host_extra}"
+            );
+        }
+    }
+
+    /// TechnoExt::ApplyKillDriver10045953: `KillPassengers` makes the
+    /// departing passenger a `RegisterDestruction(nullptr)` without an
+    /// `EjectRandomly` attempt, even where the ejection would succeed.
+    #[test]
+    fn driver_killed_kill_passengers_destroys_the_rider_instead_of_ejecting() {
+        for (host_extra, killed) in [
+            ("DriverKilled.KillPassengers=yes\n", true),
+            ("DriverKilled.KillPassengers=no\n", false),
+        ] {
+            let (sim, rules, host, rider, _operator) =
+                driver_killed_passenger_fixture(host_extra, "");
+            let vehicle = sim.entities().get(host).unwrap();
+            assert!(vehicle.driver_killed(), "{host_extra}");
+            assert_eq!(vehicle.passenger_role.passenger_count(), 0, "{host_extra}");
+            let rider_state = sim.entities().get(rider);
+            if killed {
+                assert!(
+                    rider_state.is_none_or(|actor| !actor.lifecycle.object_alive()),
+                    "{host_extra} the rider is destroyed without an ejection attempt"
+                );
+            } else {
+                let rider_state = rider_state.unwrap();
+                assert!(
+                    !rider_state.lifecycle.in_limbo()
+                        && !rider_state.passenger_role.is_inside_transport(),
+                    "{host_extra} the rider still ejects alive"
+                );
+            }
+        }
+    }
+
+    /// The `[CombatDamage]` globals apply only to a type with no own key
+    /// (`Nullable<T>::Get`, `Ext/TechnoType/Body.h:212-213`).
+    #[test]
+    fn driver_killed_globals_apply_when_the_type_keys_are_unset() {
+        for (combat_damage, killed) in [
+            ("[CombatDamage]\nDriverKilled.KillPassengers=yes\n", true),
+            ("[CombatDamage]\nDriverKilled.KillPassengers=no\n", false),
+        ] {
+            let (sim, rules, host, rider, _operator) =
+                driver_killed_passenger_fixture("", combat_damage);
+            let vehicle = sim.entities().get(host).unwrap();
+            assert!(vehicle.driver_killed(), "{combat_damage}");
+            assert_eq!(
+                vehicle.passenger_role.passenger_count(),
+                0,
+                "{combat_damage}"
+            );
+            let rider_state = sim.entities().get(rider);
+            if killed {
+                assert!(
+                    rider_state.is_none_or(|actor| !actor.lifecycle.object_alive()),
+                    "{combat_damage} the global destroys the rider"
+                );
+            } else {
+                let rider_state = rider_state.unwrap();
+                assert!(
+                    !rider_state.lifecycle.in_limbo()
+                        && !rider_state.passenger_role.is_inside_transport(),
+                    "{combat_damage} the global keeps the stock ejection"
+                );
+            }
+        }
     }
 }

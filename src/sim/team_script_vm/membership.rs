@@ -58,6 +58,31 @@ pub(super) const fn entry_short(amount: i32, recruited: i32) -> bool {
     amount > recruited
 }
 
+/// Phobos `TeamMember.ConsideredAs` (`Ext/Team/Hooks.cpp:61-127`): whether
+/// `member_type` fills a TaskForce entry for `entry_type`. The member's type
+/// names the entry types it is treated as; native compares TechnoType
+/// pointers, so for retail's unique type names the name identity is the same
+/// test. An unset or unresolved list never matches.
+pub(crate) fn member_fills_entry(
+    member_type: TeamMemberTypeIdentity,
+    member_object: Option<&crate::rules::object_type::ObjectType>,
+    entry_type: TeamMemberTypeIdentity,
+    interner: &crate::sim::intern::StringInterner,
+) -> bool {
+    if member_type == entry_type {
+        return true;
+    }
+    if let Some(object) = member_object {
+        let entry_name = interner.resolve(entry_type.id);
+        return object
+            .phobos_team_member_considered_as
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(entry_name));
+    }
+    let _ = (member_object, interner);
+    false
+}
+
 /// An object `Recruit` weighs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct RecruitCandidate {
@@ -254,7 +279,9 @@ impl Simulation {
         let member_type = member_type_identity(entity);
         let slot = entries
             .iter()
-            .position(|entry| entry.member_type == member_type)
+            .position(|entry| {
+                member_fills_entry(member_type, Some(object), entry.member_type, &self.interner)
+            })
             .unwrap_or(entries.len());
         if slot == entries.len() && !constrained {
             return None;
@@ -427,14 +454,20 @@ impl Simulation {
             .entities
             .get(entity_id)
             .map(member_type_identity);
+        let member_object = self
+            .substrate
+            .entities
+            .get(entity_id)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules));
         let vm = &mut self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
             return;
         };
-        let slot = vm
-            .task_force_entries(team)
-            .iter()
-            .position(|entry| Some(entry.member_type) == member_type);
+        let slot = vm.task_force_entries(team).iter().position(|entry| {
+            member_type.is_some_and(|member| {
+                member_fills_entry(member, member_object, entry.member_type, &self.interner)
+            })
+        });
         let other_initiated = team
             .members
             .iter()

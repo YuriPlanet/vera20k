@@ -174,6 +174,7 @@ fn assert_native_landing_inputs(rules: &RuleSet) {
             row["distance"].as_i64().unwrap() as i32,
             false,
             rules.combat_damage.max_damage,
+            false,
         );
         let expected = row["native"].as_i64().unwrap() as i32;
         assert_eq!(actual, expected, "native HE damage: {row}");

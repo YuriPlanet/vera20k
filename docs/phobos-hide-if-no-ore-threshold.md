@@ -1,6 +1,6 @@
 # Optional Phobos ore-stage animation hiding
 
-Build with `--features phobos` to read Phobos `AnimTypeExt`'s
+Phobos is in every build; turn it on from a game's data to read Phobos `AnimTypeExt`'s
 `HideIfNoOre.Threshold=` on an `Animations` entry. Default builds keep the
 original test: the anim hides whenever its cell holds no resource value at all.
 
@@ -34,3 +34,9 @@ along" use the tag exists for. A custom type with a negative `Value=` hides at
 every density, since its cell value is then always at or below the threshold.
 
 This feature does not load Phobos DLLs or establish complete mod compatibility.
+
+## Residuals
+
+The threshold is a credit value, not a density (`TiberiumClass::Value * (OverlayData + 1)`), so a
+custom type with a negative `Value=` hides at every density. That is the arithmetic the tag implies,
+not a deviation.

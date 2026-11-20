@@ -37,6 +37,12 @@ pub enum VxlLayer {
     /// flattened onto z = 0 and shifted by the shadow light vector, always at
     /// motion frame 0. See `render::vxl_raster::render_vxl_shadow`.
     Shadow,
+    /// Ground shadow of the turret voxel (`{IMAGE}TUR.VXL`), section zero, drawn
+    /// at the turret's own facing: Phobos' `TurretShadow=`
+    /// (`Ext/TechnoType/Body.cpp:1323`) makes `Ext/TechnoType/Hooks.MatrixOp.cpp:870`
+    /// call `DrawVoxelShadow` a second time with `mtx_turret`
+    /// (`ApplyTurretOffsetUnit` plus `RotateZ(secondary - primary)`, `:860-861`).
+    ShadowTurret,
 }
 
 pub const NO_SPAWN_ALT_SUFFIX: &str = "WO";
@@ -314,7 +320,7 @@ pub fn detect_hva_frame_count(
                 .and_then(|i| model.indexed_parts(i).1),
             VxlLayer::Turret => model.auxiliary(),
             VxlLayer::Barrel => model.barrel(),
-            VxlLayer::Shadow => None,
+            VxlLayer::Shadow | VxlLayer::ShadowTurret => None,
         };
         return part
             .and_then(|part| part.hva())
@@ -340,7 +346,7 @@ pub fn detect_hva_frame_count(
             // The shadow is rendered from motion frame 0 regardless of the body's
             // HVA length (`Get_Layer_Matrix(layer, 0)` in the TS shadow path, and
             // the RA2 shadow key folds only slope and facing: 0x0055A7D0).
-            VxlLayer::Shadow => return 1,
+            VxlLayer::Shadow | VxlLayer::ShadowTurret => return 1,
         }
     };
 

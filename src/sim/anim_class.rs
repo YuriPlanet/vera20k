@@ -33,13 +33,14 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::overlay_types::TiberiumImageError;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bounce::{BounceOutcome, BounceState};
-use crate::sim::components::AnimClassSpawnDescriptor;
+use crate::sim::components::{AnimClassSpawnDescriptor, DriveCoord};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{RawCellKey, RawCellOccupationGrid, infantry_raw_occupation_mask};
@@ -62,6 +63,13 @@ mod flaming_guy;
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "anim_vein_attack_tests.rs"]
+mod vein_attack_tests;
+
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "anim_firing_update_tests.rs"]
+mod anim_firing_update_tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnimWorldCoord {
@@ -170,6 +178,12 @@ const LEVEL_HEIGHT_LEPTONS: i32 = crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTO
 const TRAILER_DRAW_FLAGS: u32 = 0x600;
 const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
 
+/// `static_cast<int>(cells * Unsorted::LeptonsPerCell)`, the fire-spawn
+/// distance conversion (`Ext/Anim/Body.cpp:369,371`): truncation toward zero.
+fn leptons_of_cells(cells: f64) -> i32 {
+    (cells * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32)) as i32
+}
+
 /// `AnimClass_Update` @ 0x00423f37: landing consumes two inclusive rolls.
 pub(crate) fn bounce_spawn_count(
     has_spawns: bool,
@@ -220,7 +234,20 @@ pub struct AnimTranslucencyInput {
     /// AnimType `End` (`+0x2C0`), which the `Translucent=` ladder divides
     /// (`0x004230AC`); see `AnimTypeRuntimeConfig::loaded_end`.
     pub end_frame: i32,
+    /// Stock `Translucency=` integer level. A build without Phobos has no
+    /// `Animatable`, so the key stays the plain value the draw arm maps.
     pub explicit_translucency: i32,
+    /// Phobos `Translucency.Get(currentFrame / End)` for this frame
+    /// (`Ext/Anim/Hooks.cpp:601-605`, hook `0x423183`). `None` is native
+    /// `BlitterFlags::None`, which keeps the stock ladder.
+    pub translucency_level: Option<u8>,
+    /// Phobos `Translucency.Cloaked.Get(...)` for this frame (`:588-599`),
+    /// consulted only while [`Self::cloaked_translucency_answers`].
+    pub translucency_cloaked_level: Option<u8>,
+    /// The cloaked track has values and the owner is Cloaking or Cloaked, so
+    /// the plain track is not consulted even when the cloaked answer is
+    /// `None` — native's `hasValue` (`:588-605`).
+    pub cloaked_translucency_answers: bool,
     pub instance_ramp: i32,
 }
 
@@ -228,6 +255,49 @@ pub struct AnimTranslucencyInput {
 pub struct AnimTranslucencyResult {
     pub draw: bool,
     pub flags: u32,
+}
+
+impl AnimTranslucencyInput {
+    /// The draw's translucency input for one frame, from the resolved anim-type
+    /// config the draw already holds.
+    ///
+    /// `AnimClass_DrawIt_Translucency` (`0x423183`, `Ext/Anim/Hooks.cpp:583-605`)
+    /// queries each track at `currentFrame / End`, `End` being the animation
+    /// type's frame count
+    /// ([`AnimTypeRuntimeConfig::loaded_end`](crate::rules::art_data::AnimTypeRuntimeConfig::loaded_end)).
+    /// `End == 0` divides by zero exactly as native does: frame 0 yields
+    /// `0/0` (`NaN`, which matches no keyframe, so the stock ladder runs) and
+    /// any later frame yields infinity, which reads the last keyframe.
+    pub fn new(
+        config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>,
+        base_flags: u32,
+        current_frame: i32,
+        shp_frame_count: i32,
+        game_detail_level: i32,
+        draw_runtime: AnimDrawRuntime,
+        owner_cloaked: bool,
+    ) -> Self {
+        let end_frame = config.map_or(shp_frame_count, |value| value.loaded_end(shp_frame_count));
+        let percentage = f64::from(current_frame) / f64::from(end_frame);
+        // Without Phobos there is no cloaked track to gate.
+        Self {
+            base_flags,
+            forced_translucent: draw_runtime.forced_translucent,
+            double_thick: config.is_some_and(|value| value.double_thick),
+            translucency_detail_level: config.map_or(0, |value| value.translucency_detail_level),
+            game_detail_level,
+            translucent_ramp: config.is_some_and(|value| value.translucent),
+            current_frame,
+            end_frame,
+            explicit_translucency: config.map_or(0, |value| value.translucency),
+            translucency_level: config.and_then(|value| value.phobos_translucency.get(percentage)),
+            translucency_cloaked_level: config
+                .and_then(|value| value.phobos_translucency_cloaked.get(percentage)),
+            cloaked_translucency_answers: owner_cloaked
+                && config.is_some_and(|value| value.phobos_translucency_cloaked.has_values()),
+            instance_ramp: i32::from(draw_runtime.translucency_ramp),
+        }
+    }
 }
 
 fn translucency_flag(level: i32) -> u32 {
@@ -276,6 +346,25 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
         };
         return AnimTranslucencyResult { draw: true, flags };
     }
+    // Phobos `0x423183`: the airborne `Translucency` track replaces the stock
+    // level. A cloaked Techno owner answers from `Translucency.Cloaked` and
+    // never consults the plain track, even when that answer is `None`
+    // (`hasValue`, `:588-605`). A `None` answer keeps the stock ladder below.
+    {
+        let level = if input.cloaked_translucency_answers {
+            input.translucency_cloaked_level
+        } else {
+            input.translucency_level
+        };
+        if let Some(level) = level {
+            return AnimTranslucencyResult {
+                draw: input.instance_ramp < 15,
+                flags: flags | translucency_flag(i32::from(level)),
+            };
+        }
+    }
+    // A build without Phobos has no `Animatable`: the authored integer is the
+    // level, and any other value keeps the stock ladder.
     if input.explicit_translucency > 0 {
         return AnimTranslucencyResult {
             draw: input.instance_ramp < 15,
@@ -371,6 +460,30 @@ pub enum AnimRemap {
     },
 }
 
+fn one_f64_bits() -> NativeF64Bits {
+    NativeF64Bits::ONE
+}
+
+/// `Phobos AnimExt::FiringAnim_*` (`Ext/Anim/Body.h`): the muzzle anim a
+/// `[WeaponType] Anim=` list produced keeps following its firer, and every
+/// firing direction re-picks its own type (`Ext/Anim/Body.cpp:72-101`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FiringAnimState {
+    /// `FiringAnim_Weapon`: the weapon whose `Anim=` list supplied the type.
+    pub weapon: InternedId,
+    /// `FiringAnim_WeaponIndex`: which barrel of the firer fired it.
+    pub weapon_index: u8,
+    /// `FiringAnim_BurstIndex`: the burst frame the muzzle came from; the
+    /// anchor restores it only while it asks `GetFLH`.
+    pub burst_index: u8,
+    /// `FiringAnim_LastFacing`: the owner facing the current type was picked
+    /// for; an unchanged facing does not re-pick.
+    pub last_facing: u16,
+    /// `FiringAnim_LastCoords`: the owner render coord the muzzle was last
+    /// anchored to; an unchanged coord and facing does not re-anchor.
+    pub last_coords: AnimWorldCoord,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnimObject {
     stable_id: AnimId,
@@ -411,6 +524,10 @@ pub struct AnimObject {
     /// and UnInit4255DA suppress effects, independently of drawing/Middle.
     #[serde(default)]
     no_effects: bool,
+    /// Present only on a muzzle anim `Anim.Update` keeps following its firer
+    /// (`Ext/Anim/Hooks.cpp:714-740`); every other anim leaves it None.
+    #[serde(default)]
+    firing_anim: Option<FiringAnimState>,
     /// Anim+188. Normal ctor421FA4/421FC8 seeds1; default ctor4227FD/
     ///42280F and Next424877/424885 seed0. Load425280 retains saved bytes.
     /// Binary64 keeps the reader's fractional precision and full accumulator
@@ -420,6 +537,12 @@ pub struct AnimObject {
     /// Precision residual: round-to-nearest replaces native PC53/chop. Near
     /// an integer threshold a long-running fire can emit on a different visit.
     damage_accumulator: NativeF64Bits,
+    /// Phobos `AnimExt::FirepowerMult` (`Ext/Anim/Body.h:41,62`, constructed
+    /// 1.0): the invoker's firepower multiplier cached on the first damage
+    /// round (`Ext/Anim/Hooks.cpp:119-128`); `Damage.ApplyFirepowerMult`
+    /// scales each damage application by it.
+    #[serde(default = "one_f64_bits")]
+    phobos_firepower_mult: NativeF64Bits,
     /// LogicClass membership is reconstructed from the serialized vector.
     /// ObjectClass::Save does not persist its local membership byte.
     #[serde(skip)]
@@ -463,6 +586,31 @@ pub struct AnimObject {
     /// rides its missile this way.
     #[serde(default)]
     attached_bullet: Option<u64>,
+    /// Phobos `AnimExt::Invoker` (`Ext/Anim/Body.h:28`): the Techno whose
+    /// `SetInvoker` named this anim. `InvalidateTechnoPointers`
+    /// (`Body.cpp:497`) clears it when that Techno is destroyed; VERA keeps
+    /// the identity and a stable-id lookup answers absent instead.
+    #[serde(default)]
+    invoker: Option<u64>,
+    /// Phobos `AnimExt::InvokerHouse` (`Ext/Anim/Body.h:29`).
+    #[serde(default)]
+    invoker_house: Option<InternedId>,
+    /// Phobos `AnimExt::FromDeathUnit` (`Ext/Anim/Body.h`): the anim came
+    /// from `AnimTypeExt::ProcessDestroyAnims` (`Ext/AnimType/Body.cpp:55`).
+    #[serde(default)]
+    from_death_unit: bool,
+    /// Phobos `AnimExt::DeathUnitFacing`: the destroyed unit's body direction.
+    #[serde(default)]
+    death_unit_facing: Option<u8>,
+    /// Phobos `AnimExt::DeathUnitHasTurret`.
+    #[serde(default)]
+    death_unit_has_turret: bool,
+    /// Phobos `AnimExt::DeathUnitTurretFacing`.
+    #[serde(default)]
+    death_unit_turret_facing: Option<u8>,
+    /// VERA-internal: the `CreateUnit` actual-effects arm already ran.
+    #[serde(default)]
+    create_unit_fired: bool,
     /// `AnimClass+0xCC` when it names a `TerrainClass`: a tree's fire, which
     /// only the Ares terrain fire attaches (`sim::terrain_fire`). VERA keeps
     /// a terrain owner apart from `owner_entity` and its stored coordinate
@@ -549,6 +697,11 @@ impl AnimObject {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn runtime_frame_for_test(&self) -> i32 {
+        self.runtime.current_frame
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn world_coord_mut_for_test(&mut self) -> &mut AnimWorldCoord {
         &mut self.world_coord
     }
@@ -606,6 +759,15 @@ impl AnimObject {
     /// Anim resume (`0x00425270`).
     pub(crate) fn resume(&mut self) {
         self.runtime.paused = false;
+    }
+
+    /// Anim+11A `UnderTemporal` ("temporal'd building's active anims"): freeze
+    /// the frame advance without the erase's translucent draw (+119). Phobos
+    /// `ShieldClass::AI_Temporal`/`OnlineCheck` write it and `TemporalCheck`
+    /// clears it (`src/New/Entity/ShieldClass.cpp:398..437,585..604`); the AI
+    /// stops on it exactly as on +19E (`0x004244A9`).
+    pub(crate) fn set_under_temporal(&mut self, under: bool) {
+        self.runtime.temporal_paused = under;
     }
 
     /// A building's Temporal erase on one slot anim: `0x004521C0` freezes it
@@ -751,6 +913,43 @@ impl AnimObject {
         self.building_anim
     }
 
+    /// `Phobos AnimExt::UpdateAsFiringAnim` `pThis->Type = pNewType`
+    /// (`Ext/Anim/Body.cpp:88-92`): a changed firing direction swaps the anim's
+    /// own type on the spot. `AnimClass` keeps the frame counters, not the type,
+    /// so the running frame, step and delay carry over while only the
+    /// type-owned bounds (`Type->End`, `Type->LoopEnd`) are re-derived.
+    /// `TechnoClass_Fire_Anim @ 0x6FF42B` stores the weapon, barrel and
+    /// burst the muzzle came from; the per-frame pass then keeps the flash
+    /// on the firer (`0x423B95`, `Ext/Anim/Hooks.cpp:714-740`).
+    pub(crate) fn set_firing_anim(&mut self, state: FiringAnimState) {
+        self.firing_anim = Some(state);
+    }
+
+    pub(crate) fn firing_anim(&self) -> Option<FiringAnimState> {
+        self.firing_anim
+    }
+
+    /// `AnimClass::SetLocation` (`ObjectClass+0x9C..+0xA4`): Phobos
+    /// `UpdateAsFiringAnim` writes `GetFLH - GetRenderCoords`
+    /// (`Ext/Anim/Body.cpp:93..103`) while the muzzle anim is owner-attached,
+    /// so the stored coordinate stays owner-relative.
+    pub(crate) fn set_stored_location(&mut self, coord: AnimWorldCoord) {
+        self.world_coord = coord;
+    }
+
+    pub(crate) fn retype_for_firing_anim(
+        &mut self,
+        type_id: InternedId,
+        type_name: &str,
+        config: &crate::rules::art_data::AnimTypeRuntimeConfig,
+    ) -> Result<(), AnimSpawnError> {
+        let (end, loop_end) = effective_bounds(type_name, config)?;
+        self.type_id = type_id;
+        self.effective_end = end;
+        self.effective_loop_end = loop_end;
+        Ok(())
+    }
+
     /// Building45199B..4519A2 marks the slot animation and replaces its
     /// constructor YSortAdjust with the building slot's retained value.
     /// The Anim store touch invalidates the existing Ground key cache.
@@ -794,6 +993,7 @@ impl AnimObject {
             remap: None,
             effective_end: 1,
             effective_loop_end: 1,
+            firing_anim: None,
             runtime,
             draw_runtime: AnimDrawRuntime::default(),
             viewer_hidden: None,
@@ -801,6 +1001,7 @@ impl AnimObject {
             terrain_attached: false,
             no_effects: false,
             damage_accumulator: NativeF64Bits::POSITIVE_ZERO,
+            phobos_firepower_mult: NativeF64Bits::ONE,
             in_logic_vector: false,
             owner_entity: None,
             building_slot: None,
@@ -814,6 +1015,13 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
+            invoker: None,
+            invoker_house: None,
+            from_death_unit: false,
+            death_unit_facing: None,
+            death_unit_has_turret: false,
+            death_unit_turret_facing: None,
+            create_unit_fired: false,
             owner_terrain: None,
             presentation: None,
             presentation_order: 0,
@@ -821,9 +1029,48 @@ impl AnimObject {
     }
 
     /// The owning House (`AnimClass+0x180`).
-    #[cfg(test)]
     pub fn owner_house(&self) -> Option<InternedId> {
         self.owner_house
+    }
+
+    /// The invoker Techno (`AnimExt::Invoker`).
+    pub fn invoker(&self) -> Option<u64> {
+        self.invoker
+    }
+
+    /// The invoker House (`AnimExt::InvokerHouse`).
+    pub fn invoker_house(&self) -> Option<InternedId> {
+        self.invoker_house
+    }
+
+    /// Phobos `AnimExt::FromDeathUnit`: a destruction-animation receipt.
+    pub fn from_death_unit(&self) -> bool {
+        self.from_death_unit
+    }
+
+    /// Phobos `AnimExt::DeathUnitFacing`: the destroyed unit's body DirType.
+    pub fn death_unit_facing(&self) -> Option<u8> {
+        self.death_unit_facing
+    }
+
+    /// Phobos `AnimExt::DeathUnitHasTurret`.
+    pub fn death_unit_has_turret(&self) -> bool {
+        self.death_unit_has_turret
+    }
+
+    /// Phobos `AnimExt::DeathUnitTurretFacing`.
+    pub fn death_unit_turret_facing(&self) -> Option<u8> {
+        self.death_unit_turret_facing
+    }
+
+    /// VERA-internal one-shot latch for the `CreateUnit` actual-effects arm
+    /// (native reaches it once per anim).
+    pub(crate) fn create_unit_fired(&self) -> bool {
+        self.create_unit_fired
+    }
+
+    pub(crate) fn set_create_unit_fired(&mut self) {
+        self.create_unit_fired = true;
     }
 
     /// The bullet whose expiry ends this anim (`AnimClass+0x17C`).
@@ -880,11 +1127,31 @@ impl AnimObject {
             b"anim-damage-accumulator-v1".hash(hasher);
             self.damage_accumulator.hash(hasher);
         }
+        if self.phobos_firepower_mult != NativeF64Bits::ONE {
+            b"anim-phobos-firepower-mult-v1".hash(hasher);
+            self.phobos_firepower_mult.hash(hasher);
+        }
         // Unset links add no bytes, preserving earlier streams.
         if self.owner_house.is_some() || self.attached_bullet.is_some() {
             b"anim-owner-house-bullet-v1".hash(hasher);
             self.owner_house.hash(hasher);
             self.attached_bullet.hash(hasher);
+        }
+        if self.invoker.is_some() || self.invoker_house.is_some() {
+            b"anim-invoker-v1".hash(hasher);
+            self.invoker.hash(hasher);
+            self.invoker_house.hash(hasher);
+        }
+        if self.from_death_unit
+            || self.death_unit_facing.is_some()
+            || self.death_unit_has_turret
+            || self.death_unit_turret_facing.is_some()
+        {
+            b"anim-death-unit-v1".hash(hasher);
+            self.from_death_unit.hash(hasher);
+            self.death_unit_facing.hash(hasher);
+            self.death_unit_has_turret.hash(hasher);
+            self.death_unit_turret_facing.hash(hasher);
         }
         if let Some(state) = &self.flaming_guy {
             b"anim-flaming-guy-v1".hash(hasher);
@@ -1432,7 +1699,7 @@ enum VisitAction {
 const MAKE_INFANTRY_UNLIMBO_FACING: u8 = 0x60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AnimOccupationOperation {
+pub(crate) enum AnimOccupationOperation {
     Mark,
     Clear,
 }
@@ -1443,7 +1710,7 @@ enum AnimOccupationOperation {
 /// index, -1 (vtable `+0x38` = `0x00410490`, stored at `0x004262D0` /
 /// `0x004262F5`); Clear resets it once `0x1C` is clear (`0x0042634F` /
 /// `0x00426378`).
-fn apply_anim_raw_occupation(
+pub(crate) fn apply_anim_raw_occupation(
     grid: &mut RawCellOccupationGrid,
     key: RawCellKey,
     mask: u8,
@@ -1461,6 +1728,27 @@ fn apply_anim_raw_occupation(
         AnimOccupationOperation::Clear => reaches_deck,
     };
     let layer = if use_deck {
+        MovementLayer::Bridge
+    } else {
+        MovementLayer::Ground
+    };
+    let put = operation == AnimOccupationOperation::Mark;
+    grid.write_occupant(key, layer, mask, None, put);
+}
+
+/// `AnimClass::MarkAllOccupationBits` / `UnmarkAllOccupationBits` with the
+/// constructor's and actual-effects' `GetCell()->GetCoordsWithBridge()`
+/// argument (`Ext/Anim/Hooks.AnimCreateUnit.cpp:36-80`): the coordinate's
+/// plane follows the cell's live structural bridge flag alone; the anim's
+/// height does not select a layer.
+pub(crate) fn apply_anim_coords_occupation(
+    grid: &mut RawCellOccupationGrid,
+    key: RawCellKey,
+    mask: u8,
+    live_structural_bridge: bool,
+    operation: AnimOccupationOperation,
+) {
+    let layer = if live_structural_bridge {
         MovementLayer::Bridge
     } else {
         MovementLayer::Ground
@@ -1541,6 +1829,96 @@ impl AnimGates {
 impl Simulation {
     pub fn anim(&self, id: AnimId) -> Option<&AnimObject> {
         self.substrate.anims.get(id)
+    }
+
+    /// Phobos `AnimClass_DrawIt_Visibility @ 0x423061`
+    /// (`Ext/Anim/Hooks.cpp:520-570`): the `RestrictVisibilityIfCloaked=`
+    /// skip ([`Self::anim_owner_is_cloaked`], with the owner's alliance and
+    /// the viewer's sensors) followed by the `VisibleTo` owner-house gate.
+    /// `VisibleTo.ConsiderInvokerAsOwner` replaces the owner object's house
+    /// with the anim's invoker (or invoker house) first.
+    ///
+    /// RESIDUAL: the cloak arm's trailer-anim fallback
+    /// (`pExt->IsTechnoTrailerAnim` then `Invoker` when `OwnerObject` is not a
+    /// techno) has no trailer-anim marker in VERA; such an anim keeps the
+    /// non-techno answer.
+    pub fn anim_visibility_skipped(
+        &self,
+        id: AnimId,
+        rules: &RuleSet,
+        viewer: Option<InternedId>,
+    ) -> bool {
+        use crate::rules::phobos_shields::AffectedHouse;
+        let Some(anim) = self.anim(id) else {
+            return false;
+        };
+        let Some(config) = rules
+            .art()
+            .anim_runtime_config(self.interner().resolve(anim.type_id()))
+        else {
+            return false;
+        };
+        let visible_to = config.phobos_visible_to.unwrap_or(AffectedHouse::ALL);
+        if !config.phobos_restrict_visibility_if_cloaked && visible_to == AffectedHouse::ALL {
+            return false;
+        }
+        let Some(viewer) = viewer.or_else(|| self.session().current_house()) else {
+            return false;
+        };
+        if self.session().is_observer_house(viewer) {
+            return false;
+        }
+        if config.phobos_restrict_visibility_if_cloaked
+            && let Some(owner_id) = anim.owner_entity()
+            && let Some(owner) = self.entities().get(owner_id)
+            && matches!(owner.cloak.as_ref().map_or(0, |cloak| cloak.state()), 1 | 2)
+            && !self
+                .house_alliances()
+                .is_allied(self.interner(), viewer, owner.owner())
+            // `pTechno->GetCell()->Sensors_InclHouse(current)`: a sensor over
+            // the owner's cell reveals it regardless of the alliance.
+            && !self
+                .fog()
+                .has_sensor_for_house(viewer, owner.position.rx(), owner.position.ry())
+        {
+            return true;
+        }
+        // `pOwner = OwnerObject ? OwnerObject->GetOwningHouse() : pThis->Owner`.
+        let mut owner = anim
+            .owner_entity()
+            .and_then(|owner_id| self.entities().get(owner_id))
+            .map(|entity| entity.owner())
+            .or_else(|| anim.owner_house());
+        if config.phobos_visible_to_consider_invoker_as_owner {
+            if let Some(invoker) = anim.invoker() {
+                owner = self.entities().get(invoker).map(|entity| entity.owner());
+            } else if let Some(house) = anim.invoker_house() {
+                owner = Some(house);
+            }
+        }
+        let Some(owner) = owner else {
+            return false;
+        };
+        !crate::sim::combat::can_target_house(
+            visible_to,
+            viewer,
+            owner,
+            self.houses(),
+            self.house_alliances(),
+            self.interner(),
+        )
+    }
+
+    /// The anim's entity owner is Cloaking (1) or Cloaked (2): the
+    /// `Translucency.Cloaked` gate in `AnimClass_DrawIt_Translucency`
+    /// (`0x423183`, `Ext/Anim/Hooks.cpp:573-615`).
+    pub fn anim_owner_is_cloaked(&self, id: u64) -> bool {
+        let Some(owner_id) = self.anim(id).and_then(AnimObject::owner_entity) else {
+            return false;
+        };
+        self.entities().get(owner_id).is_some_and(|owner| {
+            matches!(owner.cloak.as_ref().map_or(0, |cloak| cloak.state()), 1 | 2)
+        })
     }
 
     pub fn anims(&self) -> impl Iterator<Item = (&AnimId, &AnimObject)> {
@@ -1779,30 +2157,7 @@ impl Simulation {
         ) {
             Ok(id) => {
                 if let Some(house) = owner_house {
-                    self.substrate.set_anim_owner_house(id, house);
-                    // `SetAnimOwnerHouseKind` updates LightConvert only for a
-                    // `MakeInfantry=` type or a `CreateUnit=` type with
-                    // `CreateUnit.RemapAnim=`, and not for a defeated House.
-                    #[cfg(feature = "phobos")]
-                    {
-                        let (make_infantry, create_unit) = {
-                            let name = self.interner.resolve(type_name);
-                            rules
-                                .art()
-                                .anim_runtime_config(name)
-                                .map_or((false, None), |config| {
-                                    (config.make_infantry > -1, config.phobos_create_unit)
-                                })
-                        };
-                        let remaps = make_infantry || create_unit.is_some_and(|(_, remap)| remap);
-                        let defeated = self
-                            .houses
-                            .get(&house)
-                            .is_some_and(|state| state.is_defeated());
-                        if remaps && !defeated {
-                            self.substrate.anims.set_anim_house_remap(id, house);
-                        }
-                    }
+                    self.install_anim_owner_house(rules, type_name, id, house);
                 }
                 Some(id)
             }
@@ -1820,39 +2175,255 @@ impl Simulation {
         }
     }
 
-    /// Run the effect anims that change nothing but their picture as
-    /// presentation anims from now on ([`AnimConstructorInput::Presentation`]).
-    /// Simulations start without, in native order, so a comparison with
-    /// gamemd's unique ids, Logic order and anim rows holds; real matches,
-    /// replays of them and sim-bench turn it on.
-    pub fn present_effect_anims(&mut self) {
-        self.effect_anims.presentation = true;
-    }
-
-    /// Whether picture-only effect anims run as presentation anims
-    /// ([`Self::present_effect_anims`]).
-    pub(crate) fn effect_anims_presented(&self) -> bool {
-        self.effect_anims.presentation
-    }
-
-    /// The constructor a muzzle flash, an impact or a trailer of type
-    /// `type_id` takes: a presentation anim when the match runs them
-    /// ([`Self::present_effect_anims`]) and the type changes nothing but
-    /// its picture ([`crate::rules::art_data::ArtRegistry::anim_presentation_only`]),
-    /// else an ordinary one. Only producers that keep no hold on the anim ask.
-    pub(crate) fn effect_anim_constructor(
-        &self,
+    /// `AnimExt::CreateRandomAnim`'s construction half: a new anim at
+    /// `world_coord` with the `AnimClass` constructor defaults (`loop=1`,
+    /// flags `0x600`) and `owner_house` installed through the same
+    /// `SetAnimOwnerHouseKind(..., false, true)` tail the combat producer
+    /// `SetAnimOwnerObject` (native `ownedObject=true`). RESIDUAL: a
+    /// `MakeInfantry=`/`CreateUnit=` type re-selects its own owner kind here;
+    /// this owner keeps the invoker House, like the existing combat producer.
+    /// `invoker` is `CreateRandomAnim`'s `pTechno` under its `invoker` flag
+    /// (the same object may or may not also be the `ownedObject`).
+    pub(crate) fn spawn_owned_anim(
+        &mut self,
         rules: &RuleSet,
-        type_id: InternedId,
-    ) -> AnimConstructorInput {
-        if self.effect_anims_presented()
-            && rules
-                .art()
-                .anim_presentation_only(self.interner.resolve(type_id))
+        type_name: InternedId,
+        world_coord: AnimWorldCoord,
+        owner_house: InternedId,
+        owner_object: Option<u64>,
+        invoker: Option<u64>,
+    ) -> Option<AnimId> {
+        let (rx, ry, sub_x, sub_y, z) = world_coord.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            draw_flags: 0x600,
+            owner: owner_object,
+            ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+        };
+        let id = self
+            .spawn_anim_at_world(rules, descriptor, world_coord)
+            .ok()?;
+        self.install_anim_owner_house(rules, type_name, id, owner_house);
+        if let Some(invoker) = invoker {
+            self.substrate
+                .set_anim_invoker(id, Some(invoker), Some(owner_house));
+        }
+        Some(id)
+    }
+
+    /// Phobos `VoxelAnimClass_AI_Trailer @ 0x74A70E`
+    /// (`Ext/VoxelAnim/Hooks.cpp:47-67`): `GameCreate<AnimClass>(TrailerAnim,
+    /// Location, 1, 1)` then `SetAnimOwnerHouseKind(OwnerHouse, nullptr,
+    /// false, true)`. A null owner house leaves the anim unowned, as the
+    /// default kind does.
+    ///
+    /// RESIDUAL: a `MakeInfantry=`/`CreateUnit=` trailer type re-selects its
+    /// own owner kind in native, as [`Self::spawn_owned_anim`] records; this
+    /// keeps the invoker house like the combat producer.
+    pub(crate) fn spawn_trailer_anim(
+        &mut self,
+        rules: &RuleSet,
+        type_name: InternedId,
+        world_coord: AnimWorldCoord,
+        owner_house: Option<InternedId>,
+    ) -> Option<AnimId> {
+        let (rx, ry, sub_x, sub_y, z) = world_coord.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            delay: 1,
+            draw_flags: TRAILER_DRAW_FLAGS,
+            ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+        };
+        let id = self
+            .spawn_anim_at_world(rules, descriptor, world_coord)
+            .ok()?;
+        if let Some(house) = owner_house {
+            self.install_anim_owner_house(rules, type_name, id, house);
+        }
+        Some(id)
+    }
+
+    /// `AnimExt::CreateRandomAnim`'s name/random half
+    /// (`Ext/Anim/Body.cpp:407-432`), shared by the Phobos consumers: an
+    /// unresolvable `ValueableVector<AnimTypeClass*>` token never reached the
+    /// native vector, so only names with a type take part in
+    /// `RandomRanged(0, size - 1)`; an empty list draws nothing.
+    pub(crate) fn resolve_random_anim_name<'n>(
+        &mut self,
+        rules: &RuleSet,
+        names: &'n [String],
+    ) -> Option<&'n str> {
+        let anims: Vec<&str> = names
+            .iter()
+            .map(String::as_str)
+            .filter(|name| rules.has_anim_type(name))
+            .collect();
+        if anims.is_empty() {
+            return None;
+        }
+        let pick = self
+            .scenario_rng
+            .next_range_i32_inclusive(0, anims.len() as i32 - 1) as usize;
+        Some(anims[pick])
+    }
+
+    /// [`Self::resolve_random_anim_name`] plus construction with the owner
+    /// house and owner object.
+    pub(crate) fn spawn_random_owned_anim(
+        &mut self,
+        rules: &RuleSet,
+        names: &[String],
+        world_coord: AnimWorldCoord,
+        owner_house: InternedId,
+        owner_object: Option<u64>,
+        invoker: Option<u64>,
+    ) -> Option<AnimId> {
+        let name = self.resolve_random_anim_name(rules, names)?;
+        let type_name = self.interner.intern(name);
+        self.spawn_owned_anim(
+            rules,
+            type_name,
+            world_coord,
+            owner_house,
+            owner_object,
+            invoker,
+        )
+    }
+
+    /// `AnimExt::SetAnimOwnerHouseKind(anim, house, None, false, true)`'s
+    /// post-construction tail: install the owner House and, for a
+    /// `MakeInfantry=` or remapping `CreateUnit=` type, its light conversion.
+    pub(crate) fn install_anim_owner_house(
+        &mut self,
+        rules: &RuleSet,
+        type_name: InternedId,
+        id: AnimId,
+        owner_house: InternedId,
+    ) {
+        self.substrate.set_anim_owner_house(id, owner_house);
         {
-            AnimConstructorInput::Presentation
-        } else {
-            AnimConstructorInput::Runtime
+            let remaps = {
+                let name = self.interner.resolve(type_name);
+                rules.art().anim_runtime_config(name).is_some_and(|config| {
+                    config.make_infantry > -1
+                        || config
+                            .phobos_create_unit
+                            .as_ref()
+                            .is_some_and(|settings| settings.remap_anim)
+                })
+            };
+            let defeated = self
+                .houses
+                .get(&owner_house)
+                .is_some_and(|state| state.is_defeated());
+            if remaps && !defeated {
+                self.substrate.anims.set_anim_house_remap(id, owner_house);
+            }
+        }
+    }
+
+    /// `0x6FF42B` marks the anim the muzzle block just built and counts it
+    /// into `FiringAnimUpdateCount`; the anim also holds it for its own AI.
+    pub(crate) fn attach_firing_anim(&mut self, id: AnimId, state: FiringAnimState) {
+        if let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.set_firing_anim(state);
+            self.firing_anim_update_count = self.firing_anim_update_count.saturating_add(1);
+        }
+    }
+
+    pub const fn firing_anim_update_count(&self) -> u32 {
+        self.firing_anim_update_count
+    }
+
+    /// Phobos `AnimExt::~AnimExt` releases the owner count for a marked anim.
+    pub(crate) fn release_firing_anim_count(&mut self, anim: &AnimObject) {
+        if anim.firing_anim().is_some() {
+            self.firing_anim_update_count = self.firing_anim_update_count.saturating_sub(1);
+        }
+    }
+
+    /// Phobos `AnimExt::UpdateAsFiringAnim`
+    /// (`Ext/Anim/Body.cpp:72..105`), called per anim by the early-AI hook
+    /// `0x423B95` while `FiringAnimUpdateCount > 0`: a changed real facing
+    /// re-picks the type from the weapon's `Anim=` list, and a changed facing
+    /// or owner render coordinate re-anchors the anim at
+    /// `GetFLH(weaponIndex) - GetRenderCoords`.
+    ///
+    /// `TechnoClass::GetRealFacing` (`0x708D70`) forwards to the turret-facing
+    /// virtual (`vt+0x2A8`). The pass uses `fire_coordinate`'s aim facing as
+    /// that value: the barrel facing when the object has one (and for
+    /// aircraft), the body heading otherwise; `Fire_At` picks the muzzle type
+    /// from the same facing.
+    fn update_as_firing_anim(&mut self, id: AnimId, rules: &RuleSet) {
+        let Some(anim) = self.substrate.anims.get(id) else {
+            return;
+        };
+        let Some(mut state) = anim.firing_anim() else {
+            return;
+        };
+        let Some(owner_id) = anim.owner_entity() else {
+            return;
+        };
+        let current_type = anim.type_id();
+        let Some(owner) = self.substrate.entities.get(owner_id) else {
+            return;
+        };
+        if !matches!(
+            owner.category(),
+            EntityCategory::Infantry
+                | EntityCategory::Unit
+                | EntityCategory::Aircraft
+                | EntityCategory::Structure
+        ) {
+            return;
+        }
+        let Some(obj) = self.interner.object_type(owner.type_ref(), rules) else {
+            return;
+        };
+        let Some(weapon) = rules.weapon(self.interner.resolve(state.weapon)) else {
+            return;
+        };
+        let source = crate::sim::combat::fire_coord::FireSource::of_entity(owner);
+        let owner_coords = anim_owner_world_coords(owner, self.resolved_terrain.as_ref());
+        let fire = crate::sim::combat::fire_coord::fire_coordinate(
+            self,
+            rules,
+            &source,
+            obj,
+            i32::from(state.weapon_index),
+            state.burst_index,
+            crate::rules::flh::Flh::default(),
+        );
+
+        let facing_changed = fire.aim_facing16 != state.last_facing;
+        if facing_changed {
+            state.last_facing = fire.aim_facing16;
+            let index = crate::sim::unit_simple_deploy::item_for_direction(
+                weapon.anim.len(),
+                fire.aim_facing16,
+            );
+            if let Some(name) = weapon.anim.get(index) {
+                let type_id = self.interner.intern(name);
+                if type_id != current_type
+                    && let Some(config) = rules.art().anim_runtime_config(name)
+                    && let Some(anim) = self.substrate.anims.get_mut(id)
+                {
+                    // A refused retype (unbound art) keeps the current type.
+                    let _ = anim.retype_for_firing_anim(type_id, name, config);
+                }
+            }
+        }
+
+        if facing_changed || owner_coords != state.last_coords {
+            state.last_coords = owner_coords;
+            if let Some(anim) = self.substrate.anims.get_mut(id) {
+                anim.set_stored_location(AnimWorldCoord {
+                    x: fire.coord.x.wrapping_sub(owner_coords.x),
+                    y: fire.coord.y.wrapping_sub(owner_coords.y),
+                    z: fire.coord.z.wrapping_sub(owner_coords.z),
+                });
+            }
+        }
+        if let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.set_firing_anim(state);
         }
     }
 
@@ -2234,6 +2805,7 @@ impl Simulation {
             remap: None,
             effective_end,
             effective_loop_end,
+            firing_anim: None,
             runtime: AnimRuntime {
                 current_frame: if reverse {
                     effective_loop_end.wrapping_sub(1)
@@ -2257,6 +2829,7 @@ impl Simulation {
             terrain_attached: descriptor.terrain_attached,
             no_effects: false,
             damage_accumulator: NativeF64Bits::ONE,
+            phobos_firepower_mult: NativeF64Bits::ONE,
             in_logic_vector: false,
             owner_entity: None,
             building_slot: None,
@@ -2278,6 +2851,13 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
+            invoker: None,
+            invoker_house: None,
+            from_death_unit: false,
+            death_unit_facing: None,
+            death_unit_has_turret: false,
+            death_unit_turret_facing: None,
+            create_unit_fired: false,
             owner_terrain: None,
             presentation: presentation.then_some(None),
             presentation_order: 0,
@@ -2287,6 +2867,20 @@ impl Simulation {
         // scheduler anim ever existed in a shipped build.
         let previous = self.substrate.anims.insert(object);
         debug_assert!(previous.is_none());
+        // Phobos `AnimClass_CTOR_CreateUnit_MarkOccupationBits @ 0x4226F0`.
+        // A `CreateUnit=` naming no loaded unit type is null at load natively,
+        // so it marks nothing.
+        if config
+            .phobos_create_unit
+            .as_ref()
+            .is_some_and(|settings| rules.object(&settings.unit_type).is_some())
+        {
+            Self::anim_mark_all_occupation_bits(
+                &mut self.substrate,
+                &self.resolved_terrain,
+                world_coord,
+            );
+        }
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
             AnimConstructorInput::Runtime
@@ -2507,6 +3101,12 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
+        // Phobos `AnimClass_AI_Early @ 0x423B95` (`Ext/Anim/Hooks.cpp:714-740`)
+        // runs the firing-anim pass before the stock AI body; it may retype
+        // the anim, so it precedes this visit's single read.
+        if self.firing_anim_update_count() > 0 {
+            self.update_as_firing_anim(id, rules);
+        }
         // One read serves the visit's prefix and gates: most visits end at a
         // gate, and each step that may write the anim re-reads it (VERA-only,
         // results unchanged).
@@ -2553,10 +3153,7 @@ impl Simulation {
             // gate and compares instead: `GetContainedTiberiumValue() <=
             // abs(HideIfNoOre.Threshold)`. `wrapping_abs` keeps the native
             // two's-complement result for INT_MIN, where C++'s `abs` overflows.
-            #[cfg(feature = "phobos")]
             let hidden = value <= config.hide_if_no_ore_threshold.wrapping_abs();
-            #[cfg(not(feature = "phobos"))]
-            let hidden = value == 0;
             self.substrate.set_anim_hidden(id, hidden);
         }
 
@@ -2705,6 +3302,12 @@ impl Simulation {
         if self.substrate.pending_delete.contains_object(&id) {
             return Ok(false);
         }
+        // Phobos `AnimClass_Update_VeinholeAttack` (hook `0x4243BC`,
+        // `Misc/Hooks.VeinholeMonster.cpp:59-67`): an `IsVeins=` anim runs
+        // the veinhole attack AI before the animated-tiberium check.
+        if config.is_veins {
+            self.vein_attack_ai(id, rules, overlay_registry, frame_effects)?;
+        }
         // AnimAI4243BC..424427: compare the exact CellAnim type at virtual
         // GetCoords minus384 in XY. A mismatch writes inactive but falls
         // through this visit's frame/damage work; retirement is next visit.
@@ -2781,6 +3384,15 @@ impl Simulation {
                 random_loop_delay = config.random_loop_delay;
             }
             AnimBoundary::Complete => {
+                // Phobos `AnimClass_AI_CreateUnit_ActualEffects @ 0x424932`.
+                if let Some(settings) = config.phobos_create_unit.clone()
+                    && !self.anim(id).is_some_and(|anim| anim.create_unit_fired())
+                {
+                    if let Some(anim) = self.substrate.anims.get_mut(id) {
+                        anim.set_create_unit_fired();
+                    }
+                    self.anim_create_unit(id, &settings, rules, overlay_registry, frame_effects);
+                }
                 action = if let Some(next) = config.next.clone() {
                     VisitAction::Next(next)
                 } else if config.make_infantry != -1 {
@@ -2803,6 +3415,7 @@ impl Simulation {
         match action {
             VisitAction::None => {}
             VisitAction::Destroy => {
+                self.anim_spawn_fire_anims(id, &config, rules);
                 if let Some(anim) = self.substrate.anims.get_mut(id) {
                     anim.completed = true;
                 }
@@ -2816,6 +3429,7 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 ) {
+                    self.anim_spawn_fire_anims(id, &config, rules);
                     if let Some(anim) = self.substrate.anims.get_mut(id) {
                         anim.completed = true;
                     }
@@ -2832,6 +3446,132 @@ impl Simulation {
     /// AnimClass::AI424513..424647, after the stage/timer commit. Debit the
     /// retained fraction before GetCoords/AreaDamage can retire this emitter.
     /// The body adds no RNG request; receiver consequences keep their owners.
+    /// Phobos `AnimExt::VeinAttackAI` (`Ext/Anim/Body.cpp:164-195`, hook
+    /// `0x4243BC`): a `IsVeins=` anim on the fully grown weed overlay (index
+    /// 126, data >= 0x30, flat cell) retires itself when a precondition fails
+    /// and damages every low techno of its cell every other frame with
+    /// `[General] VeinDamage=` and `[General] VeinholeWarhead=`.
+    ///
+    /// RESIDUAL: native passes a null warhead when `VeinholeWarhead=` is
+    /// unset; a damage packet needs a live warhead, so an unset/unknown key
+    /// deals no damage (retail leaves it unset with `VeinDamage=0`). The TS
+    /// `VeinProof` ability has no YR type flag to read.
+    fn vein_attack_ai(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
+        const WEED_OVERLAY_INDEX: u8 = 126;
+        const FULLY_GROWN_FROM: u8 = 0x30;
+        let Some(location) = self.anim_absolute_coord(id) else {
+            return Ok(());
+        };
+        let (occupiers, retire) = {
+            let Some(terrain) = self.resolved_terrain.as_ref() else {
+                return Ok(());
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let identity = cells.lookup_world(location.x, location.y);
+            let (rx, ry) = cells.coord(identity);
+            let slope = match identity {
+                crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                    terrain.cells()[index].slope_type
+                }
+                crate::map::cell_index::NativeCellIdentity::Dummy => {
+                    terrain.shared_cell_dummy().snapshot().slope_type
+                }
+            };
+            let (overlay, overlay_data) = self.anim_cell_overlay_fields(location);
+            let mut occupiers: Vec<u64> = Vec::new();
+            if let Some(cell) = self.substrate.occupancy.get(rx as u16, ry as u16) {
+                for layer in [
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                    crate::sim::movement::locomotor::MovementLayer::Bridge,
+                    crate::sim::movement::locomotor::MovementLayer::Air,
+                    crate::sim::movement::locomotor::MovementLayer::Underground,
+                ] {
+                    for occupant in cell.iter_layer(layer) {
+                        occupiers.push(occupant.entity_id);
+                    }
+                }
+            }
+            // `pOccupier->GetHeight() > 0` for the cell list head blocks the
+            // anim from continuing.
+            let blocked = occupiers.iter().any(|&occupier| {
+                self.substrate.entities.get(occupier).is_some_and(|entity| {
+                    crate::sim::movement::air_movement::current_fly_height(entity, Some(terrain))
+                        > 0
+                })
+            });
+            let retire = occupiers.is_empty()
+                || blocked
+                || overlay != Some(WEED_OVERLAY_INDEX)
+                || overlay_data < FULLY_GROWN_FROM
+                || slope != 0;
+            (occupiers, retire)
+        };
+        // `pAnim->UnableToContinue = true`; the same next-visit retirement
+        // byte the animated-tiberium mismatch writes.
+        if retire && let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.runtime.inactive = true;
+        }
+        if !self.session.binary_frame().is_multiple_of(2) {
+            return Ok(());
+        }
+        let Some(warhead_name) = rules.phobos_globals.veinhole_warhead.as_deref() else {
+            return Ok(());
+        };
+
+        let Some(warhead) = rules.warhead(warhead_name) else {
+            return Ok(());
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        let damage = rules.general.vein_damage;
+        let terrain = self.resolved_terrain.as_ref();
+        let targets: Vec<u64> = occupiers
+            .into_iter()
+            .filter(|&occupier| {
+                let Some(entity) = self.substrate.entities.get(occupier) else {
+                    return false;
+                };
+                if !matches!(
+                    entity.category(),
+                    crate::map::entities::EntityCategory::Structure
+                        | crate::map::entities::EntityCategory::Unit
+                        | crate::map::entities::EntityCategory::Infantry
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) {
+                    return false;
+                }
+                let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                    return false;
+                };
+                !object.immune_to_veins
+                    && entity.health.current() > 0
+                    && entity.lifecycle.object_alive()
+                    && crate::sim::movement::air_movement::current_fly_height(entity, terrain) <= 5
+            })
+            .collect();
+        for occupant in targets {
+            let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                occupant,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: false,
+                    arg6: false,
+                },
+            );
+            self.commit_direct_damage_receiver(rules, overlay_registry, receiver, effects);
+        }
+        Ok(())
+    }
+
     fn anim_frame_damage(
         &mut self,
         id: AnimId,
@@ -2849,13 +3589,13 @@ impl Simulation {
         if !(damage > 0.0) || anim.bounce.is_some() {
             return false;
         }
-        // 0x00424538..0x0042455E: an owner whose WhatAmI is Terrain (0x24)
-        // scales Damage by 5.0 (0x007E3568). A tree owner is kept in
-        // `owner_terrain`, never in `owner_entity`.
-        let terrain_owner = anim.owner_terrain.is_some();
+        let terrain_owner = anim
+            .owner_entity
+            .is_some_and(|owner| self.terrain_objects.get(owner).is_some());
         // Ares AnimClass_Update_DamageDelay1000B1AF..1000B1E7 passes the
         // animation's House, falling back to an attached Techno's owner.
-        // Neither owner is an attacking object; keep RAD_NO_ATTACKER below.
+        // Neither owner is an attacking object; keep RAD_NO_ATTACKER below
+        // unless `DealtByInvoker` fires.
         let source_house = if ares {
             anim.owner_house.or_else(|| {
                 anim.owner_entity
@@ -2866,8 +3606,20 @@ impl Simulation {
             None
         };
         let no_effects = anim.no_effects;
+        // Phobos' replaced body (`Ext/Anim/Hooks.cpp:46-47`) rejects the inert
+        // flag trigger action 41 writes (`IsInert`,
+        // `Ext/TAction/Hooks.cpp:118`) before the accumulator runs, where the
+        // stock body gates after it.
+        if no_effects {
+            return false;
+        }
         let type_id = anim.type_id;
         let accumulator = f64::from_bits(anim.damage_accumulator.bits());
+        let anim_invoker = anim.invoker();
+        let anim_invoker_house = anim.invoker_house();
+        let anim_owner_entity = anim.owner_entity;
+        let anim_owner_house = anim.owner_house;
+        let anim_frame = anim.runtime.current_frame;
         // Rust does not specify arithmetic NaN payloads across platforms.
         let store = |sim: &mut Self, value: f64| {
             let bits = if value.is_nan() {
@@ -2878,77 +3630,196 @@ impl Simulation {
             sim.substrate.anims.get_mut(id).unwrap().damage_accumulator =
                 NativeF64Bits::from_bits(bits);
         };
-        // Ares 3.0 AnimClass_Update_DamageDelay (1000AFE0, hook 0x424538,
-        // resuming at 0x42464C or 0x42465D): with `Damage.Delay=` above zero
-        // and `Damage=` at least 1, +0x188 counts frames and the whole Damage
-        // (truncated, times 5 on a terrain owner) lands once the count reaches
-        // the delay, which then restarts from zero. Otherwise the original
-        // fraction accumulates. Its conversion (100772B0) truncates and gives
-        // the integer indefinite out of range; a result below 1 or a
-        // no-effects anim delivers nothing and keeps the count.
-        let whole = if ares {
-            let multiplier = if terrain_owner { 5 } else { 1 };
-            let delay = config.ares_damage_delay;
-            let delayed = delay >= 1 && !(damage < 1.0);
-            let counted = if delayed {
-                accumulator + 1.0
-            } else {
-                f64::from(multiplier) * damage + accumulator
-            };
-            store(self, counted);
-            let short = if delayed {
-                counted < f64::from(delay)
-            } else {
-                counted < 1.0
-            };
-            if short {
-                return false;
+        // Phobos `Damage.DealtByInvoker` (`Ext/Anim/Hooks.cpp:101-135`): with
+        // the type key or the `[CombatDamage] AnimDamage.DealtByInvoker`
+        // global, the attacker becomes the stored invoker (a techno
+        // `OwnerObject` when unset) and the damage house the invoker house or
+        // the invoker's owner. RESIDUAL: the hook's `IsBuildingAnim ->
+        // ParentBuilding` fallback has no VERA model.
+        let dealt_by_invoker = config
+            .damage_dealt_by_invoker
+            .unwrap_or(rules.combat_damage.anim_damage_dealt_by_invoker);
+        let anim_attacker = if dealt_by_invoker {
+            let mut invoker = anim_invoker;
+            if invoker.is_none() {
+                // `abstract_cast<TechnoClass*, true>(pOwnerObject)`: the owner
+                // object when it is a techno — a Terrain owner lives in the
+                // terrain store and does not qualify.
+                invoker = anim_owner_entity.and_then(|owner| {
+                    self.terrain_objects
+                        .get(owner)
+                        .is_none()
+                        .then_some(owner)
+                        .filter(|&owner| self.substrate.entities.contains(owner))
+                });
             }
-            let whole = if delayed {
-                ares_truncate(damage).wrapping_mul(multiplier)
-            } else {
-                ares_truncate(counted)
-            };
-            if whole < 1 || no_effects {
-                return false;
+            invoker.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER)
+        } else {
+            crate::sim::combat::RAD_NO_ATTACKER
+        };
+        let anim_source_house = if dealt_by_invoker {
+            match anim_invoker_house {
+                Some(house) => Some(house),
+                None => anim_invoker
+                    .and_then(|invoker| self.substrate.entities.get(invoker).map(|e| e.owner())),
             }
-            store(
-                self,
-                if delayed {
-                    0.0
-                } else {
-                    counted - f64::from(whole)
-                },
+            .or(anim_owner_house)
+            .or_else(|| {
+                anim_owner_entity
+                    .and_then(|owner| self.substrate.entities.get(owner))
+                    .map(|owner| owner.owner())
+            })
+        } else {
+            source_house
+        };
+        // Phobos `Damage.ApplyFirepowerMult` (`Ext/Anim/Hooks.cpp:119-128`):
+        // with the type key or the `[CombatDamage] AnimDamage.ApplyFirepowerMult`
+        // global, an anim inside the `Damage.DealtByInvoker` block caches the
+        // invoker's current firepower multiplier on its first damage round
+        // (`Animation.Value == max(Damage.Delay-1, 1)`, after the applied>0
+        // gate) and scales every application by it.
+        let apply_firepower = config
+            .damage_apply_firepower_mult
+            .unwrap_or(rules.combat_damage.anim_damage_apply_firepower_mult)
+            && dealt_by_invoker;
+        let first_damage_round =
+            anim_frame == std::cmp::max(config.ares_damage_delay.wrapping_sub(1), 1);
+        let refresh_firepower = |sim: &mut Self| {
+            if first_damage_round
+                && let Some(multiplier) =
+                    crate::sim::combat::world_fire::bullet_init_firepower_multiplier(
+                        &sim.interner,
+                        &sim.substrate,
+                        &sim.houses,
+                        rules,
+                        anim_attacker,
+                    )
+                && let Some(anim) = sim.substrate.anims.get_mut(id)
+            {
+                anim.phobos_firepower_mult = multiplier;
+            }
+        };
+        let fold_firepower = |sim: &mut Self, value: i32| -> i32 {
+            if !apply_firepower || value <= 0 {
+                return value;
+            }
+            refresh_firepower(sim);
+            let cached = f64::from_bits(
+                sim.substrate
+                    .anims
+                    .get(id)
+                    .map_or(NativeF64Bits::ONE, |anim| anim.phobos_firepower_mult)
+                    .bits(),
             );
+            crate::sim::attach_effect::scale_i32(value, cached)
+        };
+        // Phobos `Damage.ApplyOncePerLoop` (`Ext/Anim/Hooks.cpp:56-66`): the
+        // damage lands only on the loop's first frame —
+        // `Animation.Value == max(Damage.Delay-1, 1)` — as
+        // `round(Damage)` times the terrain multiplier, bypassing the
+        // accumulator and the delay counter. RESIDUAL: Phobos's replaced body
+        // would also fold the stock branches through `std::round`; VERA keeps
+        // the native/Ares conversion for the stock paths.
+        let once_per_loop = if config.damage_apply_once_per_loop {
+            let delay = config.ares_damage_delay;
+            if anim_frame != std::cmp::max(delay.wrapping_sub(1), 1) {
+                return false;
+            }
+            let applied = phobos_anim_round(damage).wrapping_mul(if terrain_owner { 5 } else { 1 });
+            if applied <= 0 {
+                return false;
+            }
             // Weapon= detonates a bullet of that weapon instead (0x42464C).
             if let Some(weapon) = config
                 .ares_weapon
                 .as_deref()
                 .and_then(|name| rules.weapon(name))
             {
+                let applied = fold_firepower(self, applied);
                 return self.ares_anim_weapon_detonation(
                     id,
                     weapon,
-                    whole,
+                    applied,
+                    anim_attacker,
                     rules,
                     overlay_registry,
                     effects,
                 );
             }
-            whole
+            Some(applied)
         } else {
-            let increment = if terrain_owner { damage * 5.0 } else { damage };
-            let accumulated = accumulator + increment;
-            store(self, accumulated);
-            if !(accumulated >= 1.0) || no_effects {
-                return false;
-            }
-            //4245AC..4245D5 consumes Math7C5F00's low signed32 result, including
-            // masked conversion/overflow, and subtracts that signed integer.
-            let whole = X87Chop53::ftol_f64_low_masked(accumulated);
-            store(self, accumulated - f64::from(whole));
-            whole
+            None
         };
+        let whole = if let Some(applied) = once_per_loop {
+            applied
+        } else {
+            if ares {
+                let increment = if terrain_owner { damage * 5.0 } else { damage };
+                let accumulated = accumulator + increment;
+                store(self, accumulated);
+                if !(accumulated >= 1.0) || no_effects {
+                    return false;
+                }
+                //4245AC..4245D5 consumes Math7C5F00's low signed32 result, including
+                // masked conversion/overflow, and subtracts that signed integer.
+                let whole = X87Chop53::ftol_f64_low_masked(accumulated);
+                store(self, accumulated - f64::from(whole));
+                whole
+            } else {
+                let multiplier = if terrain_owner { 5 } else { 1 };
+                let delay = config.ares_damage_delay;
+                let delayed = delay >= 1 && !(damage < 1.0);
+                let counted = if delayed {
+                    accumulator + 1.0
+                } else {
+                    f64::from(multiplier) * damage + accumulator
+                };
+                store(self, counted);
+                let short = if delayed {
+                    counted < f64::from(delay)
+                } else {
+                    counted < 1.0
+                };
+                if short {
+                    return false;
+                }
+                let whole = if delayed {
+                    ares_truncate(damage).wrapping_mul(multiplier)
+                } else {
+                    ares_truncate(counted)
+                };
+                if whole < 1 || no_effects {
+                    return false;
+                }
+                store(
+                    self,
+                    if delayed {
+                        0.0
+                    } else {
+                        counted - f64::from(whole)
+                    },
+                );
+                // Weapon= detonates a bullet of that weapon instead (0x42464C).
+                if let Some(weapon) = config
+                    .ares_weapon
+                    .as_deref()
+                    .and_then(|name| rules.weapon(name))
+                {
+                    let whole = fold_firepower(self, whole);
+                    return self.ares_anim_weapon_detonation(
+                        id,
+                        weapon,
+                        whole,
+                        crate::sim::combat::RAD_NO_ATTACKER,
+                        rules,
+                        overlay_registry,
+                        effects,
+                    );
+                }
+                whole
+            }
+        };
+        let whole = fold_firepower(self, whole);
         //4245C3..424630 compares the own stored ID exactly, not Image.
         let warhead_name = if self.interner.resolve(type_id) == "INVISO" {
             Some(rules.bridge_warheads.c4_name.as_str())
@@ -2957,12 +3828,9 @@ impl Simulation {
         };
         // Ares1000B179 first reads AnimType+330 (the existing art Warhead
         // reader); only a null pointer uses the stock INVISO/FlameDamage2
-        // fallback.
-        let warhead_name = if ares {
-            config.warhead.as_deref().or(warhead_name)
-        } else {
-            warhead_name
-        };
+        // fallback. Phobos's replaced body keeps the native `pType->Warhead`
+        // read, which the ART registry resolves the same way.
+        let warhead_name = config.warhead.as_deref().or(warhead_name);
         let Some((name, warhead)) =
             warhead_name.and_then(|name| rules.warhead(name).map(|warhead| (name, warhead)))
         else {
@@ -2980,11 +3848,7 @@ impl Simulation {
             whole,
             warhead,
             true,
-            (
-                crate::sim::combat::RAD_NO_ATTACKER,
-                source_house,
-                warhead_ref,
-            ),
+            (anim_attacker, anim_source_house, warhead_ref),
             effects,
         )
         .bridge_state_changed
@@ -3002,6 +3866,7 @@ impl Simulation {
         id: AnimId,
         weapon: &crate::rules::weapon_type::WeaponType,
         damage: i32,
+        attacker: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
@@ -3033,7 +3898,7 @@ impl Simulation {
         .with_installed_weapon(Some(self.interner.intern(&weapon.id)));
         let detonation = crate::sim::projectile::ProjectileDetonation {
             projectile_id: id,
-            source_id: crate::sim::combat::RAD_NO_ATTACKER,
+            source_id: attacker,
             target,
             impact,
             payload,
@@ -3306,7 +4171,9 @@ impl Simulation {
         // Scalar slot deletion451A2C ends its inherited FoggedOut199 flag;
         // the immutable FoggedObject record does not retain this Anim pointer.
         self.fog.forget_fogged_live_object(id);
-        self.substrate.anims.remove(id);
+        if let Some(anim) = self.substrate.anims.remove(id) {
+            self.release_firing_anim_count(&anim);
+        }
     }
 
     /// AnimClass::SetOwnerObject424B50. Normal detach preserves absolute
@@ -3334,7 +4201,7 @@ impl Simulation {
             }
             let last = !self.substrate.anims.another_owned_by_terrain(id, terrain);
             if last {
-                self.terrain_finish_fire_death(terrain);
+                self.terrain_finish_fire_death(terrain, rules);
             }
             self.substrate.anims.set_owner_terrain(id, None);
             if marked {
@@ -3393,7 +4260,8 @@ impl Simulation {
     }
 
     /// Anim GetLayer424CB0: attached -> Ground; missing type -> Air; otherwise
-    /// the current type's layer.
+    /// the current type's layer. Phobos `Layer.UseObjectLayer` overrides an
+    /// attached anim (owner's layer for true, the type's for false).
     pub(crate) fn submit_anim_display(&mut self, id: AnimId, rules: &RuleSet) {
         // A presentation anim keeps the layer it draws in instead of a slot.
         if self.anim(id).is_some_and(AnimObject::is_presentation) {
@@ -3420,21 +4288,41 @@ impl Simulation {
         use crate::rules::art_data::AnimLayer;
         use crate::sim::world::display_layers::DisplayLayer;
         let anim = self.substrate.anims.get(id)?;
-        let attached = anim.owner_entity.is_some() || anim.owner_terrain.is_some();
-        if attached {
-            return Some(DisplayLayer::GROUND);
-        }
         let config = rules
             .art()
             .anim_runtime_config(self.interner.resolve(anim.type_id));
-        match config.map(|config| config.layer) {
-            None => Some(DisplayLayer::AIR),
-            Some(AnimLayer::Ground) => Some(DisplayLayer::GROUND),
-            Some(AnimLayer::Top) => Some(DisplayLayer::TOP),
-            Some(AnimLayer::Other(index)) => {
-                u8::try_from(index).ok().and_then(DisplayLayer::from_index)
+        let type_layer =
+            |config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>| match config
+                .map(|config| config.layer)
+            {
+                None => Some(DisplayLayer::AIR),
+                Some(AnimLayer::Ground) => Some(DisplayLayer::GROUND),
+                Some(AnimLayer::Top) => Some(DisplayLayer::TOP),
+                Some(AnimLayer::Other(index)) => {
+                    u8::try_from(index).ok().and_then(DisplayLayer::from_index)
+                }
+            };
+        let attached = anim.owner_entity.is_some() || anim.owner_terrain.is_some();
+        if attached {
+            // Phobos `AnimClass_InWhichLayer` (hook `0x424CB0`,
+            // `Ext/Anim/Hooks.cpp:354-375`): a set `Layer.UseObjectLayer`
+            // picks the owner object's layer (true) or the type's (false).
+            if let Some(use_object_layer) =
+                config.and_then(|config| config.phobos_layer_use_object_layer)
+            {
+                if !use_object_layer {
+                    return type_layer(config);
+                }
+                // The hook reads OwnerObject only; a terrain-owned anim keeps
+                // the stock attached layer.
+                return match anim.owner_entity {
+                    Some(owner) => self.entity_display_layer(owner, rules),
+                    None => Some(DisplayLayer::GROUND),
+                };
             }
+            return Some(DisplayLayer::GROUND);
         }
+        type_layer(config)
     }
 
     /// gamemd-derived: `AnimClass::GetCoords @ 0x00422BE0` — with an owner at
@@ -3571,6 +4459,29 @@ impl Simulation {
         }
         self.set_anim_owner_object(id, None, rules);
         Some(owner)
+    }
+
+    /// Phobos `DetachOnCloak=` (`Ext/AnimType/Body.cpp:112`, `Valueable<bool>`
+    /// constructor `true`): `Detach_All(false)` on a cloaking object detaches
+    /// every attached anim (`TechnoClass::Do_Cloak @ 0x703789` reaches vtable
+    /// `+0xDC`), and the hook `AnimClass_Detach_Cloak @ 0x425174`
+    /// (`Ext/Anim/Hooks.cpp:663-684`) suppresses that detach only for a type
+    /// whose key reads `no`.
+    pub(crate) fn detach_attached_anims_for_cloak(&mut self, owner_id: u64, rules: &RuleSet) {
+        let ids: Vec<AnimId> = self
+            .anims()
+            .filter(|(_, anim)| anim.owner_entity() == Some(owner_id))
+            .filter(|(_, anim)| {
+                let name = self.interner.resolve(anim.type_id());
+                {
+                    anim_type_detach_on_cloak(rules, name)
+                }
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.detach_anim_from_owner(id, rules);
+        }
     }
 
     /// Anim PointerExpired425150 removes Display, calls owner+60, clears +CC,
@@ -3908,6 +4819,96 @@ impl Simulation {
         }
     }
 
+    /// Phobos `AnimExt::ChangeAnimType` (`Ext/Anim/Body.cpp:198-243`), the
+    /// retype one live anim takes when its cumulative `AttachEffectType`
+    /// layer count picks another body
+    /// (`New/Entity/AttachEffectClass.cpp:520-526`) instead of a destroy and
+    /// re-create.
+    ///
+    /// In order: the fraction travelled through the old body
+    /// (`Value / Type->End`, `1.0` for a zero-length body where native divides
+    /// by zero), the new type's `End`/`LoopEnd` resolved when the art reader
+    /// left them at -1, the type swap, `resetLoops` re-arming
+    /// `RemainingIterations` as `static_cast<byte>(LoopCount)`, `Accum = 0`,
+    /// `UnableToContinue = false`, `Reverse =` the new type's own byte, the
+    /// fresh `Rate=`/`RandomRate=` pick (`0x004221F5`) normalized by
+    /// `Normalized=`, and finally either a restart at the new body's first
+    /// frame (`Value = Reverse ? End : Start`, then `AnimClass::Start`) or the
+    /// proportional frame `int(End * fraction)`.
+    ///
+    /// VERA stores the stage offset the constructor writes rather than native's
+    /// absolute `Value`, so the proportional arm is exact for the retail
+    /// `Start=0` bodies and the restart arm re-arms the same offset a fresh
+    /// construction would. A body with a nonzero `Start=` lands within one
+    /// `Start` of native in both arms; no retail ART sets that key.
+    pub(crate) fn change_anim_type(
+        &mut self,
+        id: AnimId,
+        new_type: InternedId,
+        reset_loops: bool,
+        restart: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(object) = self.substrate.anims.get(id) else {
+            return false;
+        };
+        // The native caller retypes only when the resolved name differs.
+        if object.type_id == new_type {
+            return false;
+        }
+        let old_end = object.effective_end;
+        let value = object.runtime.current_frame;
+        let fraction = if old_end == 0 {
+            1.0
+        } else {
+            f64::from(value) / f64::from(old_end)
+        };
+        let name = self.interner.resolve(new_type).to_ascii_uppercase();
+        let Some(config) = rules.art().anim_runtime_config(&name).cloned() else {
+            return false;
+        };
+        let Ok((effective_end, effective_loop_end)) = effective_bounds(&name, &config) else {
+            return false;
+        };
+        let reverse = config.reverse;
+        let rate = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, &config);
+        let now = self.session.binary_frame() as i32;
+        let stop_sound_id = config
+            .stop_sound
+            .as_deref()
+            .map(|sound| self.interner.intern(sound));
+        let frame = if restart {
+            if reverse {
+                effective_loop_end.wrapping_sub(1)
+            } else {
+                0
+            }
+        } else {
+            (f64::from(effective_end) * fraction) as i32
+        };
+        let Some(object) = self.substrate.anims.get_mut(id) else {
+            return false;
+        };
+        object.type_id = new_type;
+        object.effective_end = effective_end;
+        object.effective_loop_end = effective_loop_end;
+        object.stop_sound_id = stop_sound_id;
+        object.runtime.frame_step = if reverse { -1 } else { 1 };
+        object.runtime.current_frame = frame;
+        object.runtime.rate_reload = rate;
+        object.runtime.frame_timer = CdTimer::started(now, i32::from(rate));
+        if reset_loops {
+            object.runtime.loop_remaining = config.loop_count as u8;
+        }
+        // `pAnim->Start()` in the restart arm is native `AnimClass::Start
+        // @ 0x00424CE0` (start sound + `Middle`), not the frame-rate
+        // `Animation.Start(rate, direction)` line above it.
+        if restart {
+            let _ = self.anim_start(id, &config, rules, None, FrameEffects::empty());
+        }
+        true
+    }
+
     fn choose_anim_rate(
         session: &ScenarioSession,
         scenario_rng: &mut SimRng,
@@ -4067,17 +5068,52 @@ impl Simulation {
             crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z),
         );
         let above_deck = position.z >= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
-        if self.bounce_cell_is_water(position, rules) && !above_deck {
+        //Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`,
+        //`Ext/Anim/Body.cpp:252`): a water landing still takes the explosion
+        //arm when the type sets the key.
+        let explode_on_water = config.explode_on_water;
+        if self.bounce_cell_is_water(position, rules) && !above_deck && !explode_on_water {
             //423CDB..423DE2: a meteor uses the LAST splash, without a Wake.
+            //Phobos `SplashAnims=`/`SplashAnims.PickRandom=`
+            //(`Ext/AnimType/Body.cpp:102-103`, `Ext/Anim/Hooks.cpp:236-241`):
+            //the type's list, filtered by the animation registry, replaces
+            //the stock `SplashList=`, and PickRandom draws
+            //`RandomRanged(0, last)` before the Wake is created.
+            let splash_names: Vec<&str> = match config.splash_anims.as_deref() {
+                Some(names) => names
+                    .iter()
+                    .filter(|name| {
+                        rules
+                            .anim_type_names
+                            .iter()
+                            .any(|valid| valid.eq_ignore_ascii_case(name))
+                    })
+                    .map(String::as_str)
+                    .collect(),
+                None => rules
+                    .combat_damage
+                    .splash_list
+                    .iter()
+                    .map(String::as_str)
+                    .collect(),
+            };
+            let splash = if splash_names.is_empty() {
+                None
+            } else if config.splash_anims_pick_random {
+                let index = self
+                    .scenario_rng
+                    .next_range_u32_inclusive(0, (splash_names.len() - 1) as u32)
+                    as usize;
+                splash_names.get(index).copied()
+            } else if config.is_meteor {
+                splash_names.last().copied()
+            } else {
+                splash_names.first().copied()
+            };
             if !config.is_meteor {
                 let wake = rules.general.wake.name.clone();
                 self.spawn_named_anim(rules, &wake, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
             }
-            let splash = if config.is_meteor {
-                rules.combat_damage.splash_list.last()
-            } else {
-                rules.combat_damage.splash_list.first()
-            };
             if let Some(splash) = splash {
                 let splash_coord = AnimWorldCoord {
                     z: location.z.wrapping_add(BOUNCE_SPLASH_LIFT_LEPTONS),
@@ -4087,49 +5123,31 @@ impl Simulation {
             }
             return Ok(false);
         }
-        //423C4A..423EFD: only the explosion prefix requires ExpireAnim.
+        //423C4A..423EFD: the stock explosion prefix requires ExpireAnim.
         //The Spawns/IsTiberium continuation still runs without it or a Warhead.
         let mut bridge_state_changed = false;
-        if let Some(expire) = config.expire_anim.as_deref() {
-            self.spawn_named_anim(
+        // Phobos `AnimExt::HandleDebrisImpact` (`Ext/Anim/Body.cpp:253-280`)
+        // replaces the expiry block (`0x423CC7`): the warhead applies whenever
+        // the type names one, before the ExpireAnim and without requiring it.
+        // Stock `0x423DE7` nests both under the ExpireAnim slot and creates
+        // the anim first, so retain that order without the feature.
+        {
+            bridge_state_changed |= self.bounce_landing_warhead(
+                config,
                 rules,
-                expire,
-                location,
-                0,
-                BOUNCE_EXPIRE_DRAW_FLAGS,
-                BOUNCE_EXPIRE_Z_ADJUST,
+                overlay_registry,
+                position,
+                frame_effects,
             );
-            if let (Some(warhead_name), Ok(damage)) = (
-                config.warhead.as_deref(),
-                X87Chop53::load_f64(config.damage).and_then(X87Chop53::ftol_i64),
-            ) && let Some(warhead) = rules.warhead(warhead_name)
-            {
-                let damage = damage as i32;
-                let warhead_ref = self.interner.intern(warhead_name);
-                let impact = crate::sim::projectile::ProjectileCoord::new(
-                    position.x, position.y, position.z,
-                );
-                bridge_state_changed = crate::sim::combat::world_receiver::apply_area_damage(
-                    self,
+            if let Some(expire) = config.expire_anim.as_deref() {
+                self.spawn_named_anim(
                     rules,
-                    overlay_registry,
-                    impact,
-                    damage,
-                    warhead,
-                    true,
-                    (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-                    frame_effects,
-                )
-                .bridge_state_changed;
-                self.combat_light_requests
-                    .emit(crate::sim::combat::CombatLightRequest::Impact {
-                        target_id: None,
-                        damage,
-                        warhead_ref,
-                        coord: impact,
-                        force_create: false,
-                        flags: 0,
-                    });
+                    expire,
+                    location,
+                    0,
+                    BOUNCE_EXPIRE_DRAW_FLAGS,
+                    BOUNCE_EXPIRE_Z_ADJUST,
+                );
             }
         }
         //423F37..423FC4: two inclusive draws precede the live constructor loop.
@@ -4150,6 +5168,81 @@ impl Simulation {
             self.anim_landing_tiberium(config, rules, overlay_registry, position, frame_effects)?;
         }
         Ok(bridge_state_changed)
+    }
+
+    /// The landing warhead: Phobos `WarheadTypeExt::DetonateAt` for a
+    /// `Warhead.Detonate=yes` type (`Ext/Anim/Body.cpp:256-263`), else the
+    /// stock `DamageArea` plus `FlashbangWarheadAt` pair (`0x423E75..0x423EFD`).
+    fn bounce_landing_warhead(
+        &mut self,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        position: glam::IVec3,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        let (Some(warhead_name), Ok(damage)) = (
+            config.warhead.as_deref(),
+            X87Chop53::load_f64(config.damage).and_then(X87Chop53::ftol_i64),
+        ) else {
+            return false;
+        };
+        let Some(warhead) = rules.warhead(warhead_name) else {
+            return false;
+        };
+        let damage = damage as i32;
+        let warhead_ref = self.interner.intern(warhead_name);
+        let impact =
+            crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z);
+        let detonate_at = config.phobos_warhead_detonate;
+        if detonate_at {
+            // `WarheadTypeExt::DetonateAt` builds a bullet with no weapon and
+            // explodes it at the landing coords instead of the stock damage
+            // area.
+            let packet = crate::sim::projectile::ProjectileDetonation {
+                projectile_id: u64::MAX,
+                source_id: crate::sim::combat::RAD_NO_ATTACKER,
+                target: crate::sim::projectile::ProjectileTarget::None,
+                impact,
+                payload: crate::sim::projectile::ProjectilePayload::new(
+                    damage,
+                    warhead_ref,
+                    None,
+                    warhead.bright,
+                ),
+                reason: crate::sim::projectile::ProjectileDetonationReason::AnimWarheadDetonate,
+            };
+            return self.commit_logic_projectile_detonations(
+                rules,
+                overlay_registry,
+                &[packet],
+                frame_effects,
+            );
+        }
+        let bridge_state_changed = crate::sim::combat::world_receiver::apply_area_damage(
+            self,
+            rules,
+            overlay_registry,
+            impact,
+            damage,
+            warhead,
+            true,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            frame_effects,
+        )
+        .bridge_state_changed;
+        if crate::sim::combat::combat_light_chance_admits(self, rules, warhead_ref) {
+            self.combat_light_requests
+                .emit(crate::sim::combat::CombatLightRequest::Impact {
+                    target_id: None,
+                    damage,
+                    warhead_ref,
+                    coord: impact,
+                    force_create: false,
+                    flags: 0,
+                });
+        }
+        bridge_state_changed
     }
 
     /// AnimAI423FD0..424269. The radius gates a squared-distance loop, but
@@ -4182,6 +5275,15 @@ impl Simulation {
                     (position.x / 256).wrapping_add(dx) as u16,
                     (position.y / 256).wrapping_add(dy) as u16,
                 );
+                let Some(base) = config
+                    .tiberium_spawn_type
+                    .as_deref()
+                    .and_then(|name| registry.id_for_name(name))
+                else {
+                    continue;
+                };
+                let ramp_type_allows =
+                    crate::sim::tiberium::overlay_tiberium_allows_ramps(rules, registry, base);
                 let admitted = {
                     let (Some(terrain), Some(grid)) =
                         (self.resolved_terrain.as_ref(), self.overlay_grid.as_ref())
@@ -4201,16 +5303,10 @@ impl Simulation {
                         self.terrain_objects.spawning_cells(),
                         NewTiberiumAdmission::runtime(terrain, objects),
                         cell,
+                        ramp_type_allows,
                     )
                 };
                 let Some(cell) = admitted else {
-                    continue;
-                };
-                let Some(base) = config
-                    .tiberium_spawn_type
-                    .as_deref()
-                    .and_then(|name| registry.id_for_name(name))
-                else {
                     continue;
                 };
                 let variant = self.scenario_rng.next_range_i32_inclusive(0, 3);
@@ -4280,6 +5376,222 @@ impl Simulation {
         }
     }
 
+    /// Phobos `AnimExt::SpawnFireAnims` (`Ext/Anim/Body.cpp:309-405`), the body
+    /// of `DEFINE_HOOK(0x425060, AnimClass_Expire_ScorchFlamer, 0x6)`
+    /// (`Ext/Anim/Hooks.cpp:693-703`): a `Flamer=` or `Scorch=` anim that
+    /// completes runs its small fire loop, and a `Flamer=` one its large loop.
+    ///
+    /// Per iteration the native order is `RandomDouble()` for the chance,
+    /// `RandomRanged(0, n-1)` when the anim vector holds more than one entry,
+    /// then the spawned anim's constructor `RandomRanged(1, 2)` loop count.
+    /// Chances and distances fall back to the last authored entry, then to the
+    /// per-arm defaults; distances are cells scaled by 256 leptons.
+    ///
+    /// RESIDUAL: `MapClass::GetRandomCoordsNear` is not ported; the point
+    /// reuses the recorded single-angle form (`sim::projectile::launch`). The
+    /// `Chances`/`Distances` shorter-than-count arm reads past its vector in
+    /// gamemd (a native bug); VERA reads the last entry instead.
+    fn anim_spawn_fire_anims(
+        &mut self,
+        id: AnimId,
+        config: &crate::rules::art_data::AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+    ) {
+        use crate::rules::phobos_anim_type_ext::LandTypeFlags;
+
+        if !(config.flamer || config.scorch) {
+            return;
+        }
+        let Some(coord) = self.anim(id).map(|anim| anim.world_coord()) else {
+            return;
+        };
+        let land = self.resolved_terrain.as_ref().map(|terrain| {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            cells.land_type(cells.lookup_world(coord.x, coord.y))
+        });
+        let disallowed =
+            config
+                .phobos_fire_anim_disallowed_land_types
+                .unwrap_or(if config.scorch {
+                    LandTypeFlags::DEFAULT_DISALLOWED
+                } else {
+                    LandTypeFlags::NONE
+                });
+        if land
+            .and_then(|index| crate::rules::terrain_rules::LandType::from_index(index as u8))
+            .is_some_and(|land| disallowed.contains(land))
+        {
+            return;
+        }
+        let constrain = config.phobos_constrain_fire_anims_to_cell_spots;
+        let attach = config
+            .phobos_attach_fire_anims_to_parent
+            .unwrap_or(config.scorch);
+        // `SpawnAnim`'s `attach && pThis->OwnerObject` arm is the anim's
+        // `SetOwnerObject`; VERA's spawned anims take the default owner.
+        let _ = attach;
+        let small_count = config
+            .phobos_small_fire_count
+            .unwrap_or(1 + i32::from(config.flamer));
+        if config.flamer {
+            self.fire_anim_loop(
+                rules,
+                coord,
+                &config.phobos_small_fire_anims,
+                &config.phobos_small_fire_chances,
+                &config.phobos_small_fire_distances,
+                small_count.clamp(0, i32::MAX as i32),
+                rules.general.small_fire_anim.as_str(),
+                (0.5, 1.0),
+                (64, 160),
+                constrain,
+            );
+            self.fire_anim_loop(
+                rules,
+                coord,
+                &config.phobos_large_fire_anims,
+                &config.phobos_large_fire_chances,
+                &config.phobos_large_fire_distances,
+                config.phobos_large_fire_count.clamp(0, i32::MAX as i32),
+                rules.general.large_fire_anim.as_str(),
+                (0.5, 0.5),
+                (112, 112),
+                constrain,
+            );
+        } else if config.scorch {
+            self.fire_anim_loop(
+                rules,
+                coord,
+                &config.phobos_small_fire_anims,
+                &config.phobos_small_fire_chances,
+                &config.phobos_small_fire_distances,
+                small_count.clamp(0, i32::MAX as i32),
+                rules.general.small_fire_anim.as_str(),
+                (1.0, 1.0),
+                (0, 0),
+                constrain,
+            );
+        }
+    }
+
+    /// `AnimExt::SpawnFireAnims`'s `LoopAnims` lambda
+    /// (`Ext/Anim/Body.cpp:342-377`).
+    #[allow(clippy::too_many_arguments)]
+    fn fire_anim_loop(
+        &mut self,
+        rules: &RuleSet,
+        coord: AnimWorldCoord,
+        anims: &[String],
+        chances: &[crate::util::native_x87::NativeF64Bits],
+        distances: &[crate::util::native_x87::NativeF64Bits],
+        count: i32,
+        default_anim: &str,
+        default_chances: (f64, f64),
+        default_distances: (i32, i32),
+        constrain: bool,
+    ) {
+        for index in 0..count {
+            let i = index as usize;
+            let chance = if chances.len() > i {
+                f64::from_bits(chances[i].bits())
+            } else if let Some(last) = chances.last() {
+                f64::from_bits(last.bits())
+            } else if index == 0 {
+                default_chances.0
+            } else {
+                default_chances.1
+            };
+            // `if (chance < random.RandomDouble()) continue;`
+            if chance < self.scenario_rng.random_double() {
+                continue;
+            }
+            let anim_type = if anims.len() > 1 {
+                let pick = self
+                    .scenario_rng
+                    .next_range_i32_inclusive(0, anims.len() as i32 - 1)
+                    as usize;
+                anims[pick].clone()
+            } else if let Some(first) = anims.first() {
+                first.clone()
+            } else {
+                default_anim.to_owned()
+            };
+            if anim_type.is_empty() {
+                continue;
+            }
+            let distance = if distances.len() > i {
+                leptons_of_cells(f64::from_bits(distances[i].bits()))
+            } else if let Some(last) = distances.last() {
+                leptons_of_cells(f64::from_bits(last.bits()))
+            } else if index == 0 {
+                default_distances.0
+            } else {
+                default_distances.1
+            };
+            self.spawn_fire_anim(rules, &anim_type, coord, distance, constrain);
+        }
+    }
+
+    /// `AnimExt::SpawnFireAnims`'s `SpawnAnim` lambda
+    /// (`Ext/Anim/Body.cpp:317-340`).
+    fn spawn_fire_anim(
+        &mut self,
+        rules: &RuleSet,
+        type_name: &str,
+        coord: AnimWorldCoord,
+        distance: i32,
+        constrain: bool,
+    ) {
+        let mut target = coord;
+        if distance > 0 {
+            let jittered = crate::sim::projectile::launch::random_coords_near(
+                self.cell_grid(),
+                crate::sim::projectile::ProjectileCoord {
+                    x: coord.x,
+                    y: coord.y,
+                    z: coord.z,
+                },
+                distance,
+                &mut self.scenario_rng,
+            );
+            target = AnimWorldCoord::from(jittered);
+            if constrain {
+                let (rx, ry, _, _, z) = target.to_cell_sub_z();
+                let spot = crate::sim::movement::bump_crush::pick_infantry_sublocation(
+                    self.resolved_terrain.as_ref(),
+                    &self.substrate.raw_cell_occupation,
+                    &self.substrate.occupancy,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                    &mut self.scenario_rng,
+                    crate::sim::components::DriveCoord {
+                        x: target.x,
+                        y: target.y,
+                        z: target.z,
+                    },
+                )
+                .map(|(spot, _)| spot);
+                let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(spot);
+                target = AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z);
+            }
+        }
+        let loop_count = self.scenario_rng.next_range_i32_inclusive(1, 2);
+        let type_id = self.interner.intern(type_name);
+        let (rx, ry, sub_x, sub_y, z) = target.to_cell_sub_z();
+        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+            delay: 0,
+            loop_count,
+            draw_flags: 0x600,
+            z_adjust: 0,
+            reverse: false,
+            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                type_id, rx, ry, sub_x, sub_y, z,
+            )
+        };
+        let _ = self.spawn_anim_at_world(rules, descriptor, target);
+    }
+
     /// Native `AnimClass::Start @ 0x00424CE0` — the anim's sound emitter.
     ///
     /// `AnimClass::Start @ 0x00424CE0`: it Marks, then
@@ -4339,6 +5651,22 @@ impl Simulation {
                 .get_mut(id)
                 .expect("restarting animation remains present")
                 .start_sound_active = false;
+        }
+        // Phobos `DetachedReport=` (`0x424CF1`, `Ext/Anim/Hooks.cpp:269-280`):
+        // `VocClass::PlayAt` at the animation's own coordinate, with no
+        // NoEffects gate in the hook.
+        if let Some(sound_id) = config.detached_report.clone()
+            && let Some(world) = self.anim_absolute_coord(id)
+        {
+            self.sound_events.emit(SimSoundEvent::VocAtCoord {
+                sound_id,
+                coordinate: DriveCoord {
+                    x: world.x,
+                    y: world.y,
+                    z: world.z,
+                },
+                flags: 0,
+            });
         }
         if middle_frame(config).is_none() {
             self.anim_middle(id, config, rules, overlay_registry);
@@ -4600,12 +5928,17 @@ impl Simulation {
             .map_or((30, 30), |entry| {
                 (i32::from(entry.frame_width), i32::from(entry.frame_height))
             });
+        // 0x4250E1: the AnimType's Phobos key, else the `[General]` fallback.
+        let destroy_tiberium = config
+            .crater_destroy_tiberium
+            .unwrap_or(rules.phobos_globals.anim_crater_destroy_tiberium);
         let marks = crate::sim::combat::smudge_dispatch::AnimMiddleMarks {
             scorch: config.scorch,
             crater: config.crater,
             force_big_craters: config.force_big_craters,
             width,
             height,
+            destroy_tiberium,
         };
         let coord = crate::sim::smudge_grid::SimCoord {
             x: coord.x,
@@ -4723,6 +6056,11 @@ impl Simulation {
             anim.runtime.loop_remaining = native_loop_remaining(config.loop_count, 1);
             anim.runtime.first_ai_guard = false;
             anim.runtime.inactive = false;
+            {
+                // The one-shot CreateUnit latch belongs to the current type:
+                // a `Next=` chain of two CreateUnit= types spawns each.
+                anim.create_unit_fired = false;
+            }
         }
         self.anim_start(id, config, rules, overlay_registry, frame_effects)
     }
@@ -4854,10 +6192,59 @@ impl crate::sim::world::ObjectSubstrate {
         anim.owner_house = Some(house);
         true
     }
+
+    /// Phobos `AnimTypeExt::ProcessDestroyAnims`' death-unit facts
+    /// (`Ext/AnimType/Body.cpp:55-70`): `FromDeathUnit` and the inherited
+    /// facing/turret facts a `CreateUnit` anim consumes.
+    pub(crate) fn set_anim_death_facts(
+        &mut self,
+        id: AnimId,
+        from_death_unit: bool,
+        facing: Option<u8>,
+        has_turret: bool,
+        turret_facing: Option<u8>,
+    ) -> bool {
+        let Some(anim) = self.anims.get_mut(id) else {
+            return false;
+        };
+        anim.from_death_unit = from_death_unit;
+        anim.death_unit_facing = facing;
+        anim.death_unit_has_turret = has_turret;
+        anim.death_unit_turret_facing = turret_facing;
+        true
+    }
+
+    /// Phobos `AnimExt::SetInvoker` (`Ext/Anim/Body.cpp:28-45`): store the
+    /// invoker Techno and its House. RESIDUAL: the native per-Techno
+    /// `AnimRefCount` and `InvalidateTechnoPointers` (clearing a destroyed
+    /// invoker) are not modeled; a stable-id lookup answers absent instead.
+    pub(crate) fn set_anim_invoker(
+        &mut self,
+        id: AnimId,
+        invoker: Option<u64>,
+        house: Option<InternedId>,
+    ) -> bool {
+        let Some(anim) = self.anims.get_mut(id) else {
+            return false;
+        };
+        anim.invoker = invoker;
+        anim.invoker_house = house;
+        true
+    }
     /// `0x00424C90`: store `+0x17C`, the bullet whose expiry ends the anim.
     pub(crate) fn set_anim_attached_bullet(&mut self, id: AnimId, bullet: Option<u64>) -> bool {
         self.anims.set_attached_bullet(id, bullet)
     }
+}
+
+/// Phobos `AnimTypeExt::DetachOnCloak` (`Ext/AnimType/Body.cpp:112`,
+/// `Valueable<bool>` constructor `true`): one query for every consumer. A type
+/// with no art entry keeps the constructor default.
+pub(crate) fn anim_type_detach_on_cloak(rules: &RuleSet, type_name: &str) -> bool {
+    rules
+        .art()
+        .anim_runtime_config(type_name)
+        .is_none_or(|config| config.phobos_detach_on_cloak)
 }
 
 fn effective_bounds(
@@ -5093,6 +6480,18 @@ fn ares_truncate(value: f64) -> i32 {
         .map_or(i32::MIN, ares_truncate_x87)
 }
 
+/// C++ `static_cast<int>(std::round(value))` in Phobos's replaced anim
+/// damage body (`Ext/Anim/Hooks.cpp:60,75,91`): round half away from zero,
+/// then the x87 masked conversion (the integer indefinite out of range).
+fn phobos_anim_round(value: f64) -> i32 {
+    let rounded = if value.is_nan() {
+        value
+    } else {
+        (value.abs() + 0.5).floor().copysign(value)
+    };
+    X87Chop53::ftol_f64_low_masked(rounded)
+}
+
 fn ares_truncate_x87(value: crate::util::native_x87::X87Value) -> i32 {
     X87Chop53::ftol_i64(value)
         .ok()
@@ -5177,6 +6576,18 @@ fn advance_anim_boundary(anim: &mut AnimObject, config: &AnimTypeRuntimeConfig) 
 mod long_tail_contract_tests {
     use super::*;
 
+    /// The answer a single-entry `Translucency` fallback track gives for an
+    /// authored integer (`Utilities/Constructs.h:481-501`): only the three
+    /// translucent stages survive, everything else is `BlitterFlags::None`.
+    fn plain_level(value: i32) -> Option<u8> {
+        match value {
+            25 => Some(25),
+            50 => Some(50),
+            75 => Some(75),
+            _ => None,
+        }
+    }
+
     /// `0x0042319A..0x004231BC`: only an exact `Translucency=` 25, 50 or 75
     /// selects a stage; any other value draws without one.
     /// `0x0042306B`: the `+0x119` arm ORs 75% for a `DoubleThick=` type,
@@ -5193,6 +6604,9 @@ mod long_tail_contract_tests {
             current_frame: 0,
             end_frame: 10,
             explicit_translucency,
+            translucency_level: plain_level(explicit_translucency),
+            translucency_cloaked_level: None,
+            cloaked_translucency_answers: false,
             instance_ramp,
         };
         for (double_thick, explicit, ramp, expected) in [
@@ -5228,6 +6642,9 @@ mod long_tail_contract_tests {
                 current_frame: 0,
                 end_frame: 10,
                 explicit_translucency: 0,
+                translucency_level: None,
+                translucency_cloaked_level: None,
+                cloaked_translucency_answers: false,
                 instance_ramp,
             });
             assert_eq!(
@@ -5254,6 +6671,9 @@ mod long_tail_contract_tests {
                 current_frame,
                 end_frame: 15,
                 explicit_translucency: 0,
+                translucency_level: None,
+                translucency_cloaked_level: None,
+                cloaked_translucency_answers: false,
                 instance_ramp: 0,
             });
             assert_eq!(
@@ -5287,6 +6707,9 @@ mod long_tail_contract_tests {
                     current_frame: 0,
                     end_frame: 10,
                     explicit_translucency,
+                    translucency_level: plain_level(explicit_translucency),
+                    translucency_cloaked_level: None,
+                    cloaked_translucency_answers: false,
                     instance_ramp: 0,
                 }),
                 AnimTranslucencyResult { draw: true, flags },
@@ -5317,11 +6740,439 @@ mod tests {
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
 
+    /// Phobos `Translucency.Cloaked=` (`Ext/AnimType/Body.cpp:114`,
+    /// `AnimClass_DrawIt_Translucency` hook `0x423183`,
+    /// `Ext/Anim/Hooks.cpp:573-615`): while the anim's Techno owner is
+    /// Cloaking or Cloaked the alternate level replaces `Translucency`; an
+    /// animation without the key keeps the plain level.
+    #[test]
+    fn translucency_cloaked_overrides_on_a_cloaked_owner_only() {
+        use crate::sim::world::Simulation;
+
+        const ANIM: &str = "CLOAKTINT";
+        const PLAIN: &str = "PLAINTINT";
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[General]\nCloakingStages=6\n\
+             [VehicleTypes]\n0=VICTIM\n\
+             [VICTIM]\nStrength=1000\nArmor=heavy\nSpeed=4\nCloakable=yes\nCloakingSpeed=3\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("arena rules");
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[{ANIM}]\nTranslucency=50\nTranslucency.Cloaked=25\n\
+             [{PLAIN}]\nTranslucency=50\n"
+        )));
+        art.bind_anim_frame_count_for_test(ANIM, 8);
+        art.bind_anim_frame_count_for_test(PLAIN, 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        let owner = sim
+            .spawn_object("VICTIM", "Russians", 10, 10, 0, &rules)
+            .expect("owner");
+        let attach = |sim: &mut Simulation, name: &str| {
+            let ty = sim.intern(name);
+            let anim = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor::new(
+                        ty,
+                        16,
+                        16,
+                        crate::util::fixed_math::SIM_ZERO,
+                        crate::util::fixed_math::SIM_ZERO,
+                        0,
+                    ),
+                    AnimWorldCoord {
+                        x: 10 * 256,
+                        y: 10 * 256,
+                        z: 0,
+                    },
+                )
+                .expect("the art section spawns the anim");
+            assert!(sim.set_anim_owner_object(anim, Some(owner), &rules));
+            anim
+        };
+        let tinted = attach(&mut sim, ANIM);
+        let plain = attach(&mut sim, PLAIN);
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config(ANIM)
+                .unwrap()
+                .phobos_translucency_cloaked
+                .keyframes(),
+            &[
+                crate::rules::phobos_translucency_track::TranslucencyKeyframe {
+                    percentage: 0.0,
+                    level: 25,
+                }
+            ]
+        );
+        assert!(
+            !rules
+                .art()
+                .anim_runtime_config(PLAIN)
+                .unwrap()
+                .phobos_translucency_cloaked
+                .has_values(),
+            "an absent Translucency.Cloaked leaves the cloaked track empty"
+        );
+        let select = |sim: &Simulation, anim: u64| {
+            let config = rules
+                .art()
+                .anim_runtime_config(sim.interner().resolve(sim.anim(anim).unwrap().type_id()));
+            crate::sim::anim_class::anim_translucency_selection(
+                crate::sim::anim_class::AnimTranslucencyInput::new(
+                    config,
+                    0,
+                    0,
+                    8,
+                    2,
+                    crate::sim::anim_class::AnimDrawRuntime::default(),
+                    sim.anim_owner_is_cloaked(anim),
+                ),
+            )
+            .flags
+        };
+        assert_eq!(select(&sim, tinted), 4, "50% from Translucency");
+        assert_eq!(select(&sim, plain), 4);
+        let cloak = |sim: &mut Simulation, state: i32| {
+            sim.substrate
+                .entities
+                .get_mut(owner)
+                .unwrap()
+                .cloak
+                .as_mut()
+                .expect("Cloakable=yes carries the cloak runtime")
+                .set_state_for_test(state);
+        };
+        cloak(&mut sim, 1);
+        assert_eq!(select(&sim, tinted), 2, "Cloaking uses the cloaked 25%");
+        assert_eq!(select(&sim, plain), 4, "no key keeps Translucency");
+        cloak(&mut sim, 2);
+        assert_eq!(select(&sim, tinted), 2, "Cloaked uses the cloaked 25%");
+        cloak(&mut sim, 0);
+        assert_eq!(select(&sim, tinted), 4, "uncloaked returns to Translucency");
+    }
+
+    /// Phobos keyframeable `Translucency=` (`Ext/AnimType/Body.cpp:113`,
+    /// `Animatable<TranslucencyLevel>`; `AnimClass_DrawIt_Translucency`
+    /// `0x423183`, `Ext/Anim/Hooks.cpp:583-605`): the track answers at
+    /// `currentFrame / End`, interpolation truncates, and a `None` answer
+    /// keeps the stock instance ramp. A cloaked owner answers from
+    /// `Translucency.Cloaked` and never from the plain track.
+    #[test]
+    fn translucency_keyframes_answer_per_frame_and_keep_the_stock_fallback() {
+        const TRACK: &str = "TINTTRACK";
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[{TRACK}]\nEnd=8\n\
+             Translucency.Keyframe0.Percentage=0\n\
+             Translucency.Keyframe0.Value=0\n\
+             Translucency.Keyframe1.Percentage=1\n\
+             Translucency.Keyframe1.Value=50\n\
+             Translucency.Interpolation=linear\n\
+             Translucency.Cloaked=75\n"
+        )));
+        art.bind_anim_frame_count_for_test(TRACK, 8);
+        let config = art.anim_runtime_config(TRACK).unwrap();
+        let select = |frame: i32, owner_cloaked: bool| {
+            anim_translucency_selection(AnimTranslucencyInput::new(
+                Some(config),
+                0,
+                frame,
+                8,
+                2,
+                AnimDrawRuntime::default(),
+                owner_cloaked,
+            ))
+        };
+        for (frame, owner_cloaked, flags) in [
+            (0, false, 0),
+            (2, false, 0),
+            (4, false, 2),
+            (8, false, 4),
+            (4, true, 6),
+        ] {
+            let result = select(frame, owner_cloaked);
+            assert!(
+                result.draw,
+                "frame {frame} cloak {owner_cloaked} keeps drawing"
+            );
+            assert_eq!(result.flags, flags, "frame {frame} cloak {owner_cloaked}");
+        }
+    }
+
+    /// Phobos `Layer.UseObjectLayer=` (`Ext/AnimType/Body.cpp:92`,
+    /// `AnimClass_InWhichLayer` hook `0x424CB0`,
+    /// `Ext/Anim/Hooks.cpp:354-375`): an attached anim takes the owner
+    /// object's `InWhichLayer` when true, its own type layer when false, and
+    /// the stock Ground when the key is unset.
+    #[test]
+    fn layer_use_object_layer_selects_between_the_owner_and_the_type() {
+        use crate::sim::world::Simulation;
+        use crate::sim::world::display_layers::DisplayLayer;
+
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=OWNER\n[OWNER]\nStrength=1000\nArmor=heavy\nSpeed=4\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("arena rules");
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[OWNERLAYER]\nLayer=Top\nLayer.UseObjectLayer=yes\n\
+             [TYPELAYER]\nLayer=Top\nLayer.UseObjectLayer=no\n\
+             [STOCK]\nLayer=Top\n",
+        ));
+        for name in ["OWNERLAYER", "TYPELAYER", "STOCK"] {
+            art.bind_anim_frame_count_for_test(name, 8);
+        }
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        let owner = sim
+            .spawn_object("OWNER", "Russians", 10, 10, 0, &rules)
+            .expect("owner");
+        assert_eq!(
+            sim.entity_display_layer(owner, &rules),
+            Some(DisplayLayer::GROUND)
+        );
+        let attach = |sim: &mut Simulation, name: &str| {
+            let ty = sim.intern(name);
+            let anim = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor::new(
+                        ty,
+                        16,
+                        16,
+                        crate::util::fixed_math::SIM_ZERO,
+                        crate::util::fixed_math::SIM_ZERO,
+                        0,
+                    ),
+                    AnimWorldCoord {
+                        x: 10 * 256,
+                        y: 10 * 256,
+                        z: 0,
+                    },
+                )
+                .expect("the art section spawns the anim");
+            assert!(sim.set_anim_owner_object(anim, Some(owner), &rules));
+            anim
+        };
+        let anim = attach(&mut sim, "OWNERLAYER");
+        assert_eq!(
+            sim.anim_display_layer(anim, &rules),
+            Some(DisplayLayer::GROUND),
+            "true takes the owner object's layer"
+        );
+        let anim = attach(&mut sim, "TYPELAYER");
+        assert_eq!(
+            sim.anim_display_layer(anim, &rules),
+            Some(DisplayLayer::TOP),
+            "false takes the type's layer"
+        );
+        let anim = attach(&mut sim, "STOCK");
+        assert_eq!(
+            sim.anim_display_layer(anim, &rules),
+            Some(DisplayLayer::GROUND),
+            "unset keeps the stock attached Ground"
+        );
+    }
+
+    /// Phobos `RestrictVisibilityIfCloaked=` (`Ext/AnimType/Body.cpp:111`) at
+    /// `AnimClass_DrawIt_Visibility @ 0x423061` (`Ext/Anim/Hooks.cpp:524-570`):
+    /// the cloak state of the anim's techno owner, its alliance with the viewer
+    /// and the viewer's sensors on the owner's cell decide the skip.
+    #[test]
+    fn a_cloaked_owners_anim_hides_only_from_unsensing_unallied_viewers() {
+        use crate::sim::world::Simulation;
+
+        const ANIM: &str = "CLOAKSPARK";
+        const PLAIN: &str = "PLAINSPARK";
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[General]\nCloakingStages=6\n\
+             [VehicleTypes]\n0=VICTIM\n\
+             [VICTIM]\nStrength=1000\nArmor=heavy\nSpeed=4\nCloakable=yes\nCloakingSpeed=3\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("arena rules");
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[{ANIM}]\nRestrictVisibilityIfCloaked=yes\nLayer=Ground\n\
+             [{PLAIN}]\nLayer=Ground\n"
+        )));
+        art.bind_anim_frame_count_for_test(ANIM, 8);
+        art.bind_anim_frame_count_for_test(PLAIN, 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.session.set_map_width_for_test(32);
+        sim.session.set_map_height_for_test(32);
+        sim.fog.set_width_for_test(32);
+        sim.fog.set_height_for_test(32);
+        sim.intern_rule_type_ids(&rules);
+        let target = sim
+            .spawn_object("VICTIM", "Russians", 10, 10, 0, &rules)
+            .expect("the arena places the cloakable victim");
+        let americans = sim.intern("Americans");
+        let russians = sim.intern("Russians");
+        let attach = |sim: &mut Simulation, name: &str, owner: Option<u64>| {
+            let ty = sim.intern(name);
+            let anim = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor::new(
+                        ty,
+                        16,
+                        16,
+                        crate::util::fixed_math::SIM_ZERO,
+                        crate::util::fixed_math::SIM_ZERO,
+                        0,
+                    ),
+                    AnimWorldCoord {
+                        x: 10 * 256,
+                        y: 10 * 256,
+                        z: 0,
+                    },
+                )
+                .expect("the art section spawns the anim");
+            sim.substrate.anims.set_owner_entity_for_test(anim, owner);
+            anim
+        };
+        let cloak = |sim: &mut Simulation, state: i32| {
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .cloak
+                .as_mut()
+                .expect("Cloakable=yes carries the cloak runtime")
+                .set_state_for_test(state);
+        };
+
+        assert!(rules.art().anim_runtime_config(ANIM).is_some());
+        let anim = attach(&mut sim, ANIM, Some(target));
+        // An uncloaked owner draws, whatever the viewer.
+        assert!(!sim.anim_visibility_skipped(anim, &rules, Some(americans)));
+
+        cloak(&mut sim, 2);
+        assert!(
+            sim.anim_visibility_skipped(anim, &rules, Some(americans)),
+            "an enemy viewer without a sensor loses the cloaked owner's anim"
+        );
+        cloak(&mut sim, 1);
+        assert!(
+            sim.anim_visibility_skipped(anim, &rules, Some(americans)),
+            "Cloaking (1) hides like Cloaked (2)"
+        );
+        // The owner's own house is allied with itself.
+        assert!(!sim.anim_visibility_skipped(anim, &rules, Some(russians)));
+
+        // `Sensors_InclHouse` on the owner's cell reveals it to the enemy.
+        let cell = {
+            let entity = sim.entities().get(target).unwrap();
+            (entity.position.rx(), entity.position.ry())
+        };
+        sim.fog_mut_for_test()
+            .increment_sensor_at(americans, cell.0, cell.1);
+        assert!(!sim.anim_visibility_skipped(anim, &rules, Some(americans)));
+
+        // The key off, and an anim without a techno owner, both draw.
+        let plain = attach(&mut sim, PLAIN, Some(target));
+        assert!(!sim.anim_visibility_skipped(plain, &rules, Some(americans)));
+        let free = attach(&mut sim, ANIM, None);
+        assert!(!sim.anim_visibility_skipped(free, &rules, Some(americans)));
+    }
+
+    /// Phobos `VisibleTo` (`Ext/AnimType/Body.cpp:109`,
+    /// `Valueable<AffectedHouse>` default All) and
+    /// `VisibleTo.ConsiderInvokerAsOwner` at `AnimClass_DrawIt_Visibility`
+    /// (`0x423061`, `Ext/Anim/Hooks.cpp:530-568`): the anim's owning house
+    /// gates the draw, and the invoker's house replaces it when keyed.
+    #[test]
+    fn visible_to_filters_anim_draws_by_the_owner_or_invoker_house() {
+        use crate::rules::phobos_shields::AffectedHouse;
+        use crate::sim::world::Simulation;
+
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=VICTIM\n1=INVOKER\n\
+             [VICTIM]\nStrength=1000\nArmor=heavy\nSpeed=4\n\
+             [INVOKER]\nStrength=1000\nArmor=heavy\nSpeed=4\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("arena rules");
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[VISOWNER]\nVisibleTo=owner\n\
+             [VISENEMY]\nVisibleTo=enemies\n\
+             [VISINVOKER]\nVisibleTo=owner\nVisibleTo.ConsiderInvokerAsOwner=yes\n",
+        ));
+        for name in ["VISOWNER", "VISENEMY", "VISINVOKER"] {
+            art.bind_anim_frame_count_for_test(name, 8);
+        }
+        rules.replace_art_registry_for_test(art);
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config("VISOWNER")
+                .unwrap()
+                .phobos_visible_to,
+            Some(AffectedHouse::OWNER)
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        let owner = sim
+            .spawn_object("VICTIM", "Russians", 10, 10, 0, &rules)
+            .expect("owner");
+        let invoker = sim
+            .spawn_object("INVOKER", "Americans", 12, 10, 0, &rules)
+            .expect("invoker");
+        let americans = sim.intern("Americans");
+        let russians = sim.intern("Russians");
+        let attach = |sim: &mut Simulation, name: &str| {
+            let ty = sim.intern(name);
+            let anim = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor::new(
+                        ty,
+                        16,
+                        16,
+                        crate::util::fixed_math::SIM_ZERO,
+                        crate::util::fixed_math::SIM_ZERO,
+                        0,
+                    ),
+                    AnimWorldCoord {
+                        x: 10 * 256,
+                        y: 10 * 256,
+                        z: 0,
+                    },
+                )
+                .expect("the art section spawns the anim");
+            assert!(sim.set_anim_owner_object(anim, Some(owner), &rules));
+            anim
+        };
+        let owner_only = attach(&mut sim, "VISOWNER");
+        assert!(sim.anim_visibility_skipped(owner_only, &rules, Some(americans)));
+        assert!(!sim.anim_visibility_skipped(owner_only, &rules, Some(russians)));
+        let enemies_only = attach(&mut sim, "VISENEMY");
+        assert!(sim.anim_visibility_skipped(enemies_only, &rules, Some(russians)));
+        assert!(!sim.anim_visibility_skipped(enemies_only, &rules, Some(americans)));
+        // The invoker's American house replaces the Russian owner: the
+        // American viewer becomes the "owner", the Russian one an enemy.
+        let invoker_owned = attach(&mut sim, "VISINVOKER");
+        assert!(
+            sim.substrate
+                .set_anim_invoker(invoker_owned, Some(invoker), Some(americans))
+        );
+        assert!(!sim.anim_visibility_skipped(invoker_owned, &rules, Some(americans)));
+        assert!(sim.anim_visibility_skipped(invoker_owned, &rules, Some(russians)));
+        // Without the key the owner object's house wins even with an invoker.
+        assert!(
+            sim.substrate
+                .set_anim_invoker(owner_only, Some(invoker), Some(americans))
+        );
+        assert!(!sim.anim_visibility_skipped(owner_only, &rules, Some(russians)));
+        assert!(sim.anim_visibility_skipped(owner_only, &rules, Some(americans)));
+    }
+
     /// Phobos' `AnimClass_AI_Early @ 0x423B95` replacement of the stock
     /// `HideIfNoOre` test: the anim's cell `Get_Tiberium_Value @ 0x00485020`
     /// hides it at or below `abs(HideIfNoOre.Threshold=)`, not only at zero.
     #[test]
-    #[cfg(feature = "phobos")]
     fn hide_if_no_ore_threshold_moves_the_value_cut_off() {
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::world::Simulation;
@@ -5907,6 +7758,60 @@ mod tests {
         }
         rules.install_art_fixture(art);
         rules
+    }
+
+    /// Phobos `DetachOnCloak=`: `Detach_All(false)` on a cloaking object
+    /// detaches attached anims, and only the type that reads the key `no`
+    /// stays attached (`Ext/AnimType/Body.cpp:112`, hook `0x425174`).
+    #[test]
+    fn detach_on_cloak_keeps_only_the_anim_type_that_asks_for_it() {
+        let rules = runtime_rules(
+            "[CLOAKKEEP]\nDetachOnCloak=no\nLayer=Ground\n[CLOAKNORM]\nLayer=Ground\n",
+            &[("CLOAKKEEP", 8), ("CLOAKNORM", 8)],
+        );
+        let mut sim = Simulation::new();
+        let owner_id = 100;
+        let type_ref = sim.interner.intern("CLOAKOWNER");
+        let mut entity = GameEntity::new_at_frame_zero_for_test(
+            owner_id,
+            5,
+            5,
+            0,
+            0,
+            sim.interner.intern("Americans"),
+            Health::new(100),
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            false,
+        );
+        entity.lifecycle.set_in_limbo_for_test(false);
+        sim.substrate.entities.insert(entity);
+        let keep_type = sim.interner.intern("CLOAKKEEP");
+        let norm_type = sim.interner.intern("CLOAKNORM");
+        let keep = sim
+            .spawn_anim_object(&rules, runtime_descriptor(keep_type, 0))
+            .unwrap();
+        let norm = sim
+            .spawn_anim_object(&rules, runtime_descriptor(norm_type, 0))
+            .unwrap();
+        for id in [keep, norm] {
+            assert!(sim.set_anim_owner_object(id, Some(owner_id), &rules));
+        }
+
+        sim.detach_attached_anims_for_cloak(owner_id, &rules);
+
+        assert_eq!(
+            sim.anim(keep).unwrap().owner_entity,
+            Some(owner_id),
+            "DetachOnCloak=no keeps the attached anim"
+        );
+        assert_eq!(
+            sim.anim(norm).unwrap().owner_entity,
+            None,
+            "the default detaches"
+        );
     }
 
     fn runtime_descriptor(type_name: InternedId, delay: u16) -> AnimClassSpawnDescriptor {
@@ -6559,6 +8464,63 @@ mod tests {
         assert_eq!(starts(&sim), 1, "Start runs once per delay");
     }
 
+    /// Phobos `DetachedReport=` (`Ext/AnimType/Body.h:63,115`,
+    /// `Ext/AnimType/Body.cpp:108`): `AnimClass::Start`'s hook `0x424CF1`
+    /// (`Ext/Anim/Hooks.cpp:269-280`) plays a positional `VocClass::PlayAt` cue
+    /// at the animation itself, alongside its own `Report=`.
+    #[test]
+    fn detached_report_plays_a_positional_cue_from_start() {
+        let rules = runtime_rules(
+            "[CUE]\nRate=900\nEnd=1\nReport=OwnCue\nDetachedReport=TestCue\n",
+            &[("CUE", 1)],
+        );
+        let mut sim = Simulation::with_seed(0);
+        let type_id = sim.interner.intern("CUE");
+        let id = sim
+            .spawn_anim_object(
+                &rules,
+                AnimClassSpawnDescriptor::new(
+                    type_id,
+                    7,
+                    9,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    crate::util::lepton::CELL_CENTER_LEPTON,
+                    0,
+                ),
+            )
+            .expect("bound art constructs");
+        let cues = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    ..
+                } => Some((sound_id.clone(), *coordinate)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let world = sim.anim_absolute_coord(id).unwrap();
+        assert_eq!(
+            cues,
+            [(
+                "TESTCUE".to_owned(),
+                DriveCoord {
+                    x: world.x,
+                    y: world.y,
+                    z: world.z
+                }
+            )],
+            "the detached cue plays at the animation, next to its own Report="
+        );
+        assert!(
+            sim.sound_events
+                .iter()
+                .any(|event| matches!(event, SimSoundEvent::AnimationStarted { anim_id, .. } if *anim_id == id)),
+            "the ordinary Report= still plays"
+        );
+    }
     /// A presentation anim draws where gamemd's Display would hold it as an
     /// ordinary anim: on Ground by its GetYSort key (Anim422BC0, inserted
     /// by Ground551A90) among the members, not after all of them.
@@ -7675,6 +9637,288 @@ mod tests {
         assert_eq!(sim.combat_light_requests.len(), 1);
     }
 
+    /// Phobos `AnimExt::HandleDebrisImpact` (`Ext/Anim/Body.cpp:245-307`) with
+    /// `Warhead.Detonate=yes` (`Ext/AnimType/Body.cpp:100`): the landing
+    /// routes the warhead through `WarheadTypeExt::DetonateAt`, a bullet
+    /// detonation, instead of `MapClass::DamageArea`. A warhead with
+    /// `DetonateOnAllMapObjects=yes` therefore reaches a tank parked away
+    /// from the impact only under the key.
+    #[test]
+    fn the_warhead_detonate_key_routes_the_landing_through_detonate_at() {
+        for (key, far_damaged) in [
+            (
+                "Warhead.Detonate=yes
+",
+                true,
+            ),
+            (
+                "Warhead.Detonate=no
+",
+                false,
+            ),
+            ("", false),
+        ] {
+            let art_ini = IniFile::from_str(&format!(
+                "[CHUNK]
+Bouncer=yes
+Elasticity=0.0
+MaxXYVel=0.5
+MinZVel=25.0
+ExpireAnim=BOOM
+Damage=20
+DamageRadius=80
+Warhead=HE
+{key}LoopEnd=15
+LoopCount=-1
+RandomRate=220,600
+[BOOM]
+Rate=900
+"
+            ));
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str(
+                    "[General]
+DamageFireTypes=
+[AudioVisual]
+ConditionYellow=50%
+ConditionRed=25%
+[InfantryTypes]
+[VehicleTypes]
+0=TANK
+[AircraftTypes]
+[BuildingTypes]
+[Animations]
+0=CHUNK
+1=BOOM
+[TANK]
+Strength=300
+Armor=heavy
+Speed=4
+[Warheads]
+0=HE
+[HE]
+CellSpread=.5
+PercentAtMax=.5
+DetonateOnAllMapObjects=yes
+DetonateOnAllMapObjects.AffectsTarget=all
+DetonateOnAllMapObjects.AffectsHouse=all
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+",
+                ),
+                &art_ini,
+            )
+            .unwrap();
+            let he = rules.warhead("HE").expect("HE");
+            assert!(
+                he.detonate_on_all_map.claims_detonation(),
+                "{key:?}: DOAM claims, target {:?}",
+                he.detonate_on_all_map.affects_target
+            );
+            let mut art = ArtRegistry::from_ini(&art_ini);
+            art.bind_anim_frame_count_for_test("CHUNK", 30);
+            art.bind_anim_frame_count_for_test("BOOM", 17);
+            rules.install_art_fixture(art);
+            assert_eq!(
+                rules
+                    .art()
+                    .anim_runtime_config("CHUNK")
+                    .expect("CHUNK config")
+                    .phobos_warhead_detonate,
+                key.contains("=yes"),
+                "{key:?}: the ART key"
+            );
+            let mut sim = Simulation::with_seed(3);
+            let americans = sim.interner.intern("Americans");
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    americans, 0, None, true, 0, 10,
+                ));
+            crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+            let near = sim
+                .spawn_object_at_height("TANK", "Americans", 8, 8, 0, 0, &rules)
+                .unwrap();
+            let far = sim
+                .spawn_object_at_height("TANK", "Americans", 1, 1, 0, 0, &rules)
+                .unwrap();
+            let chunk_type = sim.interner.intern("CHUNK");
+            let center = crate::util::lepton::CELL_CENTER_LEPTON;
+            let chunk = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor {
+                        delay: 0,
+                        loop_count: 1,
+                        draw_flags: 0x600,
+                        z_adjust: 0,
+                        reverse: false,
+                        ..AnimClassSpawnDescriptor::new(chunk_type, 8, 8, center, center, 0)
+                    },
+                    AnimWorldCoord {
+                        x: 8 * 256 + 128,
+                        y: 8 * 256 + 128,
+                        z: 20,
+                    },
+                )
+                .unwrap();
+            for frame in 1..200 {
+                sim.session.set_binary_frame_for_test(frame);
+                sim.visit_anim(
+                    chunk,
+                    &rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
+                if sim.substrate.pending_delete.contains_object(&chunk) {
+                    break;
+                }
+            }
+            assert!(
+                sim.substrate.pending_delete.contains_object(&chunk),
+                "{key:?}: the chunk lands"
+            );
+            let near_health = sim.substrate.entities.get(near).unwrap().health.current();
+            let far_health = sim.substrate.entities.get(far).unwrap().health.current();
+            assert!(
+                near_health < 300,
+                "{key:?}: the landing blasts the near tank"
+            );
+            assert_eq!(
+                far_health < 300,
+                far_damaged,
+                "{key:?}: the far tank at {far_health}"
+            );
+        }
+    }
+
+    /// A landing warhead applies with no `ExpireAnim=` at all.
+    ///
+    /// Phobos `AnimExt::HandleDebrisImpact` (`Ext/Anim/Body.cpp:253-271`)
+    /// tests `pWarhead` before, and independently of, `pExpireAnim`; the stock
+    /// block at `0x423DE7` nests both under the ExpireAnim slot. Both key
+    /// states must damage the tank at the impact, while only
+    /// `Warhead.Detonate=yes` reaches a tank away from it.
+    #[test]
+    fn a_warhead_applies_without_an_expire_anim() {
+        for (key, far_damaged) in [("Warhead.Detonate=yes\n", true), ("", false)] {
+            let art_ini = IniFile::from_str(&format!(
+                "[CHUNK]
+Bouncer=yes
+Elasticity=0.0
+MaxXYVel=0.5
+MinZVel=25.0
+Damage=20
+DamageRadius=80
+Warhead=HE
+{key}LoopEnd=15
+LoopCount=-1
+RandomRate=220,600
+"
+            ));
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str(
+                    "[General]
+DamageFireTypes=
+[AudioVisual]
+ConditionYellow=50%
+ConditionRed=25%
+[InfantryTypes]
+[VehicleTypes]
+0=TANK
+[AircraftTypes]
+[BuildingTypes]
+[Animations]
+0=CHUNK
+[TANK]
+Strength=300
+Armor=heavy
+Speed=4
+[Warheads]
+0=HE
+[HE]
+CellSpread=.5
+PercentAtMax=.5
+DetonateOnAllMapObjects=yes
+DetonateOnAllMapObjects.AffectsTarget=all
+DetonateOnAllMapObjects.AffectsHouse=all
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+",
+                ),
+                &art_ini,
+            )
+            .unwrap();
+            let he = rules.warhead("HE").expect("HE");
+            assert!(he.detonate_on_all_map.claims_detonation());
+            let mut art = ArtRegistry::from_ini(&art_ini);
+            art.bind_anim_frame_count_for_test("CHUNK", 30);
+            rules.install_art_fixture(art);
+            let config = rules.art().anim_runtime_config("CHUNK").expect("CHUNK");
+            assert_eq!(config.phobos_warhead_detonate, key.contains("=yes"));
+            assert!(config.expire_anim.is_none(), "{key:?}: no ExpireAnim");
+            let mut sim = Simulation::with_seed(3);
+            let americans = sim.interner.intern("Americans");
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    americans, 0, None, true, 0, 10,
+                ));
+            crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+            let near = sim
+                .spawn_object_at_height("TANK", "Americans", 8, 8, 0, 0, &rules)
+                .unwrap();
+            let far = sim
+                .spawn_object_at_height("TANK", "Americans", 1, 1, 0, 0, &rules)
+                .unwrap();
+            let chunk_type = sim.interner.intern("CHUNK");
+            let center = crate::util::lepton::CELL_CENTER_LEPTON;
+            let chunk = sim
+                .spawn_anim_at_world(
+                    &rules,
+                    AnimClassSpawnDescriptor {
+                        delay: 0,
+                        loop_count: 1,
+                        draw_flags: 0x600,
+                        z_adjust: 0,
+                        reverse: false,
+                        ..AnimClassSpawnDescriptor::new(chunk_type, 8, 8, center, center, 0)
+                    },
+                    AnimWorldCoord {
+                        x: 8 * 256 + 128,
+                        y: 8 * 256 + 128,
+                        z: 20,
+                    },
+                )
+                .unwrap();
+            for frame in 1..200 {
+                sim.session.set_binary_frame_for_test(frame);
+                sim.visit_anim(
+                    chunk,
+                    &rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
+                if sim.substrate.pending_delete.contains_object(&chunk) {
+                    break;
+                }
+            }
+            assert!(
+                sim.substrate.pending_delete.contains_object(&chunk),
+                "{key:?}: the chunk lands"
+            );
+            let near_health = sim.substrate.entities.get(near).unwrap().health.current();
+            let far_health = sim.substrate.entities.get(far).unwrap().health.current();
+            assert!(
+                near_health < 300,
+                "{key:?}: the landing warhead applies without an ExpireAnim"
+            );
+            assert_eq!(
+                far_health < 300,
+                far_damaged,
+                "{key:?}: the far tank at {far_health}"
+            );
+        }
+    }
+
     /// A world whose flat 8x8 map takes a 1x1 crater and a 1x1 scorch.
     fn middle_world(art_text: &str, frames: i32) -> (RuleSet, Simulation) {
         let mut rules = runtime_rules(art_text, &[("MARK", frames)]);
@@ -7708,6 +9952,102 @@ mod tests {
         sim.smudge_grid.as_ref().unwrap().iter_occupied().count()
     }
 
+    /// Phobos `AnimExt::SpawnFireAnims` (`Ext/Anim/Body.cpp:309-405`, hook
+    /// `0x425060`): a completing `Scorch=` anim runs `SmallFireCount` iterations
+    /// over its `SmallFireAnims=` vector, and `SmallFireChances=0` keeps every
+    /// iteration's anim unspawned while still drawing.
+    #[test]
+    fn a_scorch_anim_spawns_its_small_fire_anims_when_it_completes() {
+        fn spawned_fire_anims(count: i32, chances: &str) -> usize {
+            let art = format!(
+                "[MARK]\nRate=900\nScorch=yes\nSmallFireCount={count}\n\
+                 SmallFireAnims=FIREFX\nSmallFireChances={chances}\nSmallFireDistances=0\n\
+                 [FIREFX]\nRate=900\n"
+            );
+            let (mut rules, mut sim) = middle_world(&art, 13);
+            // The spawned child needs a bound frame count, else
+            // `spawn_anim_at_world` refuses to construct it.
+            let mut art_registry = ArtRegistry::from_ini(&IniFile::from_str(&art));
+            art_registry.bind_anim_frame_count_for_test("MARK", 13);
+            art_registry.bind_anim_frame_count_for_test("FIREFX", 3);
+            rules.install_art_fixture(art_registry);
+            let mark = spawn_mark(&mut sim, &rules, 0);
+            for frame in 1..60 {
+                sim.session.set_binary_frame_for_test(frame);
+                sim.visit_anim(
+                    mark,
+                    &rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
+                if sim.substrate.pending_delete.contains_object(&mark) {
+                    break;
+                }
+            }
+            let mut spawned = 0;
+            for (_, anim) in sim.anims() {
+                if sim
+                    .interner
+                    .resolve(anim.type_id)
+                    .eq_ignore_ascii_case("FIREFX")
+                {
+                    spawned += 1;
+                }
+            }
+            spawned
+        }
+
+        // `SmallFireDistances=0` keeps every spawn at the scorch's own point,
+        // so the only draws are the chance and the constructor loop count.
+        assert_eq!(spawned_fire_anims(2, "1,1"), 2);
+        assert_eq!(spawned_fire_anims(2, "0,0"), 0);
+        assert_eq!(spawned_fire_anims(3, "1"), 3);
+    }
+
+    /// A `Flamer=` type runs the small loop `1 + Flamer` times (here the
+    /// authored `SmallFireCount=1`) and then the large loop
+    /// `LargeFireCount` times (`Ext/Anim/Body.cpp:391-399`).
+    #[test]
+    fn a_flamer_anim_runs_both_its_fire_loops() {
+        let art = "[MARK]\nRate=900\nFlamer=yes\nSmallFireCount=1\n\
+                   SmallFireAnims=FIREFX\nSmallFireChances=1\nSmallFireDistances=0\n\
+                   LargeFireCount=2\nLargeFireAnims=FIRELG\nLargeFireChances=1,1\n\
+                   LargeFireDistances=0\n\
+                   [FIREFX]\nRate=900\n[FIRELG]\nRate=900\n";
+        let (mut rules, mut sim) = middle_world(art, 13);
+        let mut art_registry = ArtRegistry::from_ini(&IniFile::from_str(art));
+        for (name, frames) in [("MARK", 13), ("FIREFX", 3), ("FIRELG", 3)] {
+            art_registry.bind_anim_frame_count_for_test(name, frames);
+        }
+        rules.install_art_fixture(art_registry);
+        let mark = spawn_mark(&mut sim, &rules, 0);
+        for frame in 1..60 {
+            sim.session.set_binary_frame_for_test(frame);
+            sim.visit_anim(
+                mark,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+            if sim.substrate.pending_delete.contains_object(&mark) {
+                break;
+            }
+        }
+        let mut small = 0;
+        let mut large = 0;
+        for (_, anim) in sim.anims() {
+            let name = sim.interner.resolve(anim.type_id);
+            if name.eq_ignore_ascii_case("FIREFX") {
+                small += 1;
+            } else if name.eq_ignore_ascii_case("FIRELG") {
+                large += 1;
+            }
+        }
+        assert_eq!((small, large), (1, 2));
+    }
+
     /// `AnimClass::AI 0x0042465D`: a 13-frame crater anim (S_CLSN22, the
     /// AP warhead's large AnimList entry) marks the ground once, on the
     /// visit that commits stage 6 (`13 / 2`), not at construction.
@@ -7738,6 +10078,75 @@ mod tests {
             sim.smudge_grid.as_ref().unwrap().cell(4, 4).type_id,
             Some(0)
         );
+    }
+
+    /// Phobos `Crater.DestroyTiberium=` (`Ext/Anim/Hooks.cpp:707`, hook
+    /// `0x4250E1`) resolved at Middle through the AnimType ART key and the
+    /// `[General] AnimCraterDestroyTiberium=` fallback: false leaves the
+    /// cell's ore untouched, true still reduces it by 6.
+    #[test]
+    fn phobos_crater_destroy_tiberium_controls_the_middle_frame_ore_reduction() {
+        use crate::sim::overlay_grid::OverlayGrid;
+
+        for (art_key, global, density, expected_data) in [
+            ("Crater.DestroyTiberium=no\n", true, 9, 9),
+            ("", false, 9, 9),
+            ("Crater.DestroyTiberium=yes\n", false, 9, 3),
+            ("", true, 9, 3),
+            // 6 covers or exceeds the density, so these rows exercise the
+            // clear plus neighbour reseed whose RNG the skipped call owns.
+            ("Crater.DestroyTiberium=no\n", true, 4, 4),
+            ("Crater.DestroyTiberium=yes\n", false, 4, 0),
+        ] {
+            let ini = IniFile::from_str(&format!(
+                "[General]\nAnimCraterDestroyTiberium={}\n\
+                 [InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n{}",
+                if global { "yes" } else { "no" },
+                crate::sim::tiberium::test_support::tiberium_rules_text(),
+            ));
+            let mut rules = RuleSet::from_ini(&ini).expect("rules");
+            let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
+                "[MARK]\nRate=900\nCrater=yes\n{art_key}"
+            )));
+            art.bind_anim_frame_count_for_test("MARK", 13);
+            rules.replace_art_registry_for_test(art);
+            rules.smudge_types =
+                crate::rules::smudge_type::SmudgeTypeRegistry::from_rules_ini(&IniFile::from_str(
+                    "[SmudgeTypes]\n0=CR1\n\
+                     [CR1]\nCrater=yes\nWidth=1\nHeight=1\n",
+                ));
+            let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+
+            let mut sim = Simulation::new();
+            let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+            for ry in 0..8 {
+                for rx in 0..8 {
+                    terrain.cell_mut_for_test(rx, ry).unwrap().accepts_smudge = true;
+                }
+            }
+            sim.resolved_terrain = Some(terrain);
+            let mut grid = OverlayGrid::new(8, 8);
+            grid.place_overlay(4, 4, overlays.id_for_name("TIB01").unwrap(), density);
+            sim.overlay_grid = Some(grid);
+            sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
+
+            let id = spawn_mark(&mut sim, &rules, 0);
+            for frame in 1..40 {
+                sim.session.set_binary_frame_for_test(frame);
+                sim.visit_anim(
+                    id,
+                    &rules,
+                    Some(&overlays),
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                sim.overlay_grid.as_ref().unwrap().cell(4, 4).overlay_data,
+                expected_data,
+                "art_key={art_key:?} global={global} density={density}"
+            );
+        }
     }
 
     /// `AnimClass::Middle 0x00425057`: an anim 30 leptons or more above the
@@ -8726,3 +11135,45 @@ pub(in crate::sim) mod meteor_tests;
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_damage_tests.rs"]
 mod damage_tests;
+
+impl Simulation {
+        /// Run the effect anims that change nothing but their picture as
+        /// presentation anims from now on ([`AnimConstructorInput::Presentation`]).
+        /// Simulations start without, in native order, so a comparison with
+        /// gamemd's unique ids, Logic order and anim rows holds; real matches,
+        /// replays of them and sim-bench turn it on.
+        pub fn present_effect_anims(&mut self) {
+            self.effect_anims.presentation = true;
+        }
+}
+
+impl Simulation {
+        /// Whether picture-only effect anims run as presentation anims
+        /// ([`Self::present_effect_anims`]).
+        pub(crate) fn effect_anims_presented(&self) -> bool {
+            self.effect_anims.presentation
+        }
+}
+
+impl Simulation {
+        /// The constructor a muzzle flash, an impact or a trailer of type
+        /// `type_id` takes: a presentation anim when the match runs them
+        /// ([`Self::present_effect_anims`]) and the type changes nothing but
+        /// its picture ([`crate::rules::art_data::ArtRegistry::anim_presentation_only`]),
+        /// else an ordinary one. Only producers that keep no hold on the anim ask.
+        pub(crate) fn effect_anim_constructor(
+            &self,
+            rules: &RuleSet,
+            type_id: InternedId,
+        ) -> AnimConstructorInput {
+            if self.effect_anims_presented()
+                && rules
+                    .art()
+                    .anim_presentation_only(self.interner.resolve(type_id))
+            {
+                AnimConstructorInput::Presentation
+            } else {
+                AnimConstructorInput::Runtime
+            }
+        }
+}

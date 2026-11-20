@@ -90,14 +90,34 @@ fn assert_rng(sim: &Simulation, expected: &Value, name: &str) {
 fn controlled_rules(retail: &RetailBattleRules, input: &Value) -> RuleSet {
     let mut ini = (*retail.processed_rules).clone();
     let mut art = (*retail.fixed_art).clone();
+    let ebolt_z = input["ebolt_z_adjust"]
+        .as_i64()
+        .map_or_else(String::new, |value| format!("EBoltZAdjust={value}\n"));
+    let ebolt_clamp = input["ebolt_clamp"]
+        .as_bool()
+        .map_or_else(String::new, |value| {
+            format!(
+                "EBoltZAdjust.ClampInitialDepthForBuilding={}\n",
+                if value { "yes" } else { "no" }
+            )
+        });
     let mut controls = format!(
-        "[CoilBolt]\nIsLaser={}\nIsElectricBolt={}\nIsAlternateColor={}\n\
+        "[CoilBolt]\nIsLaser={}\nIsElectricBolt={}\nIsAlternateColor={}\n{ebolt_z}{ebolt_clamp}\
          [TESLA]\nTurretCount={}\n",
         input["is_laser"].as_bool().unwrap(),
         input["is_electric_bolt"].as_bool().unwrap(),
         input["alternate"].as_bool().unwrap(),
         int(&input["selector_turret_count"]),
     );
+    if let Some(global) = input["global_ebolt_z_adjust"].as_i64() {
+        controls.push_str(&format!("[AudioVisual]\nEBoltZAdjust={global}\n"));
+    }
+    if let Some(global) = input["global_ebolt_clamp"].as_bool() {
+        controls.push_str(&format!(
+            "[AudioVisual]\nEBoltZAdjust.ClampInitialDepthForBuilding={}\n",
+            if global { "yes" } else { "no" }
+        ));
+    }
     if input["secondary_weapon_present"] == true {
         controls.push_str(&format!(
             "WeaponCount=2\nWeapon1=CoilBolt\nWeapon2=OPCoilBolt\n\
@@ -355,6 +375,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         rules.weapon("CoilBolt").unwrap(),
         from,
         None,
+        false,
     );
     let births: Vec<_> = sim
         .lifecycle_outputs
@@ -375,6 +396,57 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         int(&spark["birth"]["state"]["systems"][0]["native_id"])
     );
     assert_eq!(systems[0].1.coords().to_array(), xyz(&expected["target"]));
+}
+
+/// Phobos `EBolt_Draw` (`Ext/EBolt/Hooks.cpp:215`): the weapon's
+/// `EBoltZAdjust=` else `[AudioVisual] EBoltZAdjust` adds to the retained
+/// bolt zAdjust.
+#[test]
+fn ebolt_z_adjust_adds_the_weapon_value_else_the_global() {
+    let Some(retail) = retail_battle_rules_for_map("XMP03T4.MAP") else {
+        return;
+    };
+    let row = ordinary_birth();
+    let base_input = row["input"].clone();
+    let z = |weapon: Option<i64>, global: Option<i64>| {
+        let mut input = base_input.clone();
+        input["is_laser"] = Value::Bool(true);
+        if let Some(value) = weapon {
+            input["ebolt_z_adjust"] = json!(value);
+        }
+        if let Some(value) = global {
+            input["global_ebolt_z_adjust"] = json!(value);
+        }
+        let rules = controlled_rules(&retail, &input);
+        let (mut sim, source, target) = scene(&rules, &input);
+        let expected = &row["bolts"][0];
+        let from = coord(&expected["source"]);
+        electric_bolt::create(
+            &mut sim,
+            &rules,
+            source,
+            crate::sim::projectile::ProjectileTarget::Entity(target),
+            rules.weapon("CoilBolt").unwrap(),
+            from,
+            None,
+            false,
+        );
+        sim.lifecycle_outputs
+            .iter()
+            .find_map(|output| match output {
+                LifecycleOutput::ElectricBoltCreated(birth) => Some(birth.z_adjust),
+                _ => None,
+            })
+            .expect("the admitted bolt retains a birth")
+    };
+    let base = z(None, None);
+    assert_eq!(z(Some(10), None), base + 10);
+    assert_eq!(z(None, Some(5)), base + 5);
+    assert_eq!(
+        z(Some(10), Some(5)),
+        base + 10,
+        "the weapon key overrides the global"
+    );
 }
 
 #[test]
@@ -1011,7 +1083,8 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
         owner,
         electric_bolt::ElectricBoltOwner {
             unit: tank,
-            weapon_index: 0
+            weapon_index: 0,
+            unit_slot: true,
         }
     );
     assert_eq!(
@@ -1027,6 +1100,63 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
     sim.uninit_with_rules(tank, &rules);
     sim.substrate.entities.remove(tank);
     assert_eq!(electric_bolt::owner_source(&sim, &rules, owner), None);
+}
+
+/// Phobos `EBoltZAdjust` (`Ext/WeaponType/Body.cpp:131`, nullable): the
+/// `FireEBolt` hook adds it after the clamped depth
+/// (`Ext/EBolt/Hooks.cpp:208-220`), while the simulated bolt passes it alone
+/// (`Ext/Bullet/Body.cpp:268-280`). An unset key takes
+/// `[AudioVisual] EBoltZAdjust` (`Ext/Rules/Body.cpp:278`).
+#[test]
+fn ebolt_z_adjust_reads_the_weapon_then_the_audio_visual_global() {
+    let produce = |global: &str, weapon: &str, simulated: bool| {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[AudioVisual]\n{global}\
+             [InfantryTypes]\n0=ZAPPER\n1=MARK\n[ZAPPER]\nPrimary=ZAP\n[MARK]\n\
+             [ZAP]\nIsElectricBolt=yes\n{weapon}"
+        )))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let source = sim
+            .spawn_object("ZAPPER", "Americans", 16, 16, 64, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("MARK", "Russians", 18, 16, 0, &rules)
+            .unwrap();
+        sim.lifecycle_outputs.clear_for_test();
+        if simulated {
+            electric_bolt::create_effect(
+                &mut sim,
+                &rules,
+                ProjectileCoord::new(4096, 4096, 0),
+                ProjectileCoord::new(4096 * 19, 4096 * 16, 0),
+                rules.weapon("ZAP").unwrap(),
+                None,
+            );
+        } else {
+            electric_bolt::create(
+                &mut sim,
+                &rules,
+                source,
+                crate::sim::projectile::ProjectileTarget::Entity(target),
+                rules.weapon("ZAP").unwrap(),
+                ProjectileCoord::new(4096, 4096, 0),
+                None,
+                false,
+            );
+        }
+        let [LifecycleOutput::ElectricBoltCreated(birth)] = sim.lifecycle_outputs.as_slice() else {
+            panic!("one bolt");
+        };
+        birth.z_adjust
+    };
+    assert_eq!(produce("", "", false), 0);
+    assert_eq!(produce("EBoltZAdjust=9\n", "", false), 9);
+    assert_eq!(produce("EBoltZAdjust=9\n", "EBoltZAdjust=-2\n", false), -2);
+    assert_eq!(produce("EBoltZAdjust=4\n", "", true), 4);
+    assert_eq!(produce("", "EBoltZAdjust=6\n", true), 6);
 }
 
 /// Ares TechnoClass_FireEBolt (Ares.dll 10056350) and EBolt_Fire_Particles
@@ -1063,6 +1193,7 @@ fn ares_bolt_keys_choose_colors_and_spark_system() {
             rules.weapon(weapon).unwrap(),
             ProjectileCoord::new(4096, 4096, 0),
             None,
+            false,
         );
         let [LifecycleOutput::ElectricBoltCreated(birth)] = sim.lifecycle_outputs.as_slice() else {
             panic!("one bolt");
@@ -1084,4 +1215,89 @@ fn ares_bolt_keys_choose_colors_and_spark_system() {
         )
     );
     assert_eq!(fire("OFF"), ([None; 3], Vec::new()));
+}
+
+/// Phobos `EBoltZAdjust.ClampInitialDepthForBuilding=` (`Ext/WeaponType/
+/// Body.cpp:132`, global default yes at `Ext/Rules/Body.h:197,720`) gates the
+/// stock positive-delta clamp at `0x6FD4E4..0x6FD4ED`: with the key off a
+/// building's bolt keeps the positive initial-depth delta.
+#[test]
+fn the_building_initial_depth_clamp_is_keyed() {
+    let z = |weapon: Option<bool>, global: Option<bool>| {
+        let clamp = |value: Option<bool>, key: &str| {
+            value.map_or_else(String::new, |value| {
+                format!("{key}={}\n", if value { "yes" } else { "no" })
+            })
+        };
+        let mut ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[BuildingTypes]\n0=TOWER\n1=SHED\n\
+             [TOWER]\nStrength=1000\nFoundation=1x1\nPrimary=COIL\n\
+             [SHED]\nStrength=1000\nFoundation=1x1\n\
+             [Warheads]\n0=WH\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [Weapons]\n0=COIL\n\
+             [COIL]\nDamage=1\nROF=10\nRange=5\nIsElectricBolt=yes\nProjectile=Invisible\n\
+             Warhead=WH\n{}",
+            clamp(weapon, "EBoltZAdjust.ClampInitialDepthForBuilding"),
+        ));
+        // The global key lives in [AudioVisual]; merge it over the arena's.
+        ini.merge(&IniFile::from_str(&format!(
+            "[AudioVisual]\nEBoltZAdjust.ClampInitialDepthForBuilding={}\n",
+            if global.unwrap_or(true) { "yes" } else { "no" }
+        )));
+        let art = IniFile::from_str("[TOWER]\nFoundation=1x1\n[SHED]\nFoundation=1x1\n");
+        let rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("bolt clamp rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 3);
+        sim.intern_rule_type_ids(&rules);
+        let source = sim
+            .spawn_object("TOWER", "Russians", 10, 10, 0, &rules)
+            .expect("tower");
+        let target = sim
+            .spawn_object("SHED", "Americans", 12, 10, 0, &rules)
+            .expect("shed");
+        let location = crate::sim::movement::ground_pose::object_location(
+            sim.substrate.entities.get(source).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        );
+        let from = crate::sim::projectile::ProjectileCoord::new(
+            location.x,
+            location.y,
+            location.z.wrapping_sub(4000),
+        );
+        electric_bolt::create(
+            &mut sim,
+            &rules,
+            source,
+            crate::sim::projectile::ProjectileTarget::Entity(target),
+            rules.weapon("COIL").unwrap(),
+            from,
+            None,
+            false,
+        );
+        sim.lifecycle_outputs
+            .iter()
+            .find_map(|output| match output {
+                LifecycleOutput::ElectricBoltCreated(birth) => Some(birth.z_adjust),
+                _ => None,
+            })
+            .expect("the admitted bolt retains a birth")
+    };
+    let clamped = z(None, None);
+    let unclamped = z(Some(false), None);
+    assert_eq!(
+        clamped, 0,
+        "stock and the default key clamp a positive delta"
+    );
+    assert!(
+        unclamped > 0,
+        "the key off keeps the positive delta: clamped={clamped} unclamped={unclamped}"
+    );
+    assert_eq!(z(Some(true), None), clamped);
+    assert_eq!(z(None, Some(false)), unclamped);
+    assert_eq!(
+        z(Some(true), Some(false)),
+        clamped,
+        "the weapon key overrides the global"
+    );
 }

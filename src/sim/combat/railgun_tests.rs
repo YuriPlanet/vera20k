@@ -319,3 +319,102 @@ fn a_detached_railgun_never_holds_its_particle_system() {
         "only {shots} detached railgun shots in 64 ticks"
     );
 }
+
+/// Synthetic railgun rules for the Phobos `AmbientDamage.*` keys.
+fn phobos_railgun_rules(weapon_keys: &str, general_keys: &str) -> crate::rules::ruleset::RuleSet {
+    crate::rules::ruleset::RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        &format!(
+            "[VehicleTypes]\n0=TANK\n1=DUMMY\n\
+             [TANK]\nStrength=300\nArmor=heavy\nPrimary=RAIL\n\
+             [DUMMY]\nStrength=1000\nArmor=heavy\n\
+             [Warheads]\n0=RAILWH\n1=ALTWH\n\
+             [RAILWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [ALTWH]\nVerses=50%,50%,50%,50%,50%,50%,50%,50%,50%,50%,50%\n\
+             [RAIL]\nDamage=0\nAmbientDamage=150\nROF=60\nRange=10\nWarhead=RAILWH\n\
+             Speed=100\nIsRailgun=yes\n{weapon_keys}\
+             [General]\n{general_keys}"
+        ),
+    ))
+    .expect("railgun ambient rules")
+}
+
+fn phobos_railgun_health(rules: &crate::rules::ruleset::RuleSet) -> (i32, i32) {
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x70CB_DA00);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let firer = sim
+        .spawn_object("TANK", "Americans", 16, 16, 0, rules)
+        .expect("firer");
+    let target = sim
+        .spawn_object("DUMMY", "Russians", 20, 16, 0, rules)
+        .expect("target");
+    let on_line = sim
+        .spawn_object("DUMMY", "Russians", 18, 16, 0, rules)
+        .expect("line object");
+    let weapon = rules.weapon("RAIL").expect("railgun weapon");
+    let mut deaths = DeathEffects::default();
+    super::railgun::line_damage(
+        &mut sim,
+        rules,
+        None,
+        FrameEffects::default(),
+        &mut deaths,
+        firer,
+        ProjectileCoord::new(16 * 256 + 128, 16 * 256 + 128, 0),
+        TargetKind::Entity(target),
+        weapon,
+    );
+    (
+        sim.substrate.entities.get(target).unwrap().health.current(),
+        sim.substrate
+            .entities
+            .get(on_line)
+            .unwrap()
+            .health
+            .current(),
+    )
+}
+
+/// Phobos `AmbientDamage.Warhead` (`0x70CBDA`) replaces the ambient hit's
+/// warhead, and `AmbientDamage.IgnoreTarget` (`0x70C862`/`0x70CA8B`) leaves
+/// the primary target out; unset keys keep the weapon warhead and the
+/// `[General]` fallback.
+#[test]
+fn phobos_railgun_ambient_damage_reads_the_warhead_and_ignore_target() {
+    let rules = phobos_railgun_rules("", "");
+    assert_eq!(
+        phobos_railgun_health(&rules),
+        (850, 850),
+        "the default warhead hits the target and the line object"
+    );
+    let armed = phobos_railgun_rules("AmbientDamage.Warhead=ALTWH\n", "");
+    assert_eq!(
+        phobos_railgun_health(&armed),
+        (925, 925),
+        "the override warhead's 50% Verses scales both hits"
+    );
+    let ignore = phobos_railgun_rules(
+        "AmbientDamage.Warhead=ALTWH\nAmbientDamage.IgnoreTarget=yes\n",
+        "",
+    );
+    assert_eq!(
+        phobos_railgun_health(&ignore),
+        (1000, 925),
+        "the primary target is skipped, the line object still takes it"
+    );
+    let global = phobos_railgun_rules("", "AmbientDamage.IgnoreTarget=yes\n");
+    assert_eq!(
+        phobos_railgun_health(&global),
+        (1000, 850),
+        "the [General] fallback skips the target with the weapon warhead"
+    );
+    let explicit = phobos_railgun_rules(
+        "AmbientDamage.Warhead=ALTWH\nAmbientDamage.IgnoreTarget=no\n",
+        "AmbientDamage.IgnoreTarget=yes\n",
+    );
+    assert_eq!(
+        phobos_railgun_health(&explicit),
+        (925, 925),
+        "the weapon's explicit no overrides the [General] yes"
+    );
+}

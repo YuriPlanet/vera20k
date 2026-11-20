@@ -1,6 +1,6 @@
 # Optional Phobos power plant enhancers
 
-Build with `--features phobos` to let buildings raise the output of nearby
+Phobos is in every build; turn it on from a game's data to let buildings raise the output of nearby
 power plants, scale a plant's damage loss, and show the enhancers' ranges
 while placing a plant.
 

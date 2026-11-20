@@ -67,40 +67,6 @@ pub(crate) fn apply_foot_radiation(
         return None;
     }
     let cell = foot_radiation_cell(world, stable_id)?;
-    #[cfg(not(feature = "phobos"))]
-    {
-        let crate::sim::cell_rect::CellRef::Real(cell) = cell else {
-            return None;
-        };
-        // FootClass::AI @ 0x004DA5EB..0x004DA629 reads the retained
-        // Cell487CB0 total once and makes one direct receiver call. Site
-        // membership is irrelevant, including residual F0 after site deletion.
-        let level = cell_radiation_level(world, rules, cell);
-        if level <= 0 {
-            return None;
-        }
-        let warhead = rules.warhead(&rules.radiation.site_warhead)?;
-        let warhead_id = world.interner.intern(&warhead.id);
-        let receiver = EntityDamageEvent::direct_receiver(
-            stable_id,
-            scale_rad_level(level, rules.radiation.level_factor),
-            0,
-            RAD_NO_ATTACKER,
-            None,
-            warhead_id,
-            ReceiverCallFlags {
-                ignore_defenses: false,
-                arg6: true,
-            },
-        );
-        return Some(world.commit_direct_damage_receiver(
-            rules,
-            overlay_registry,
-            receiver,
-            effects,
-        ));
-    }
-    #[cfg(feature = "phobos")]
     {
         // Group the cell's per-site levels by bound radiation type. A type whose
         // warhead does not resolve contributes nothing, as native's
@@ -123,7 +89,6 @@ pub(crate) fn apply_foot_radiation(
                 if rules.warhead(effective.site_warhead).is_none() {
                     continue;
                 }
-                #[cfg(feature = "phobos")]
                 {
                     if !rules.radiation.use_global_rad_application_delay
                         && (effective.application_delay <= 0
@@ -184,10 +149,7 @@ pub(crate) fn apply_foot_radiation(
                 // (the anim and flash `WarheadTypeExt::DetonateAt` reaches through
                 // `BulletExt::Detonate`); the plain form is the bare area call that
                 // `DamageAreaWithTarget` makes.
-                #[cfg(feature = "phobos")]
                 let detonate = effective.site_warhead_detonate;
-                #[cfg(not(feature = "phobos"))]
-                let detonate = false;
                 if detonate {
                     let Some(coord) = object_get_coords(world, stable_id) else {
                         continue;
@@ -204,9 +166,6 @@ pub(crate) fn apply_foot_radiation(
                         (attacker, source_house, warhead_id),
                         effects,
                     );
-                    #[cfg(not(feature = "phobos"))]
-                    let _ = receipt;
-                    #[cfg(feature = "phobos")]
                     if effective.site_warhead_detonate_full {
                         // `BulletExt::Detonate` reaches the same
                         // `BulletClass_Logics_DamageAnimSelected` (`0x469C46`)
@@ -305,10 +264,46 @@ pub(crate) fn apply_foot_radiation(
     }
 }
 
-/// `min(level, remain) * RadLevelFactor` with the native clamp and masked
-/// double-to-int conversions. The Foot loop (`0x004DA5FA`) and the building
-/// loop (`0x0043FB23`) scale a cell's summed level the same way.
-#[cfg(feature = "phobos")]
+/// Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`,
+/// `Ext/TerrainType/Hooks.cpp:268-283`): a non-animated `HasDamagedFrames=`
+/// type whose ratio crosses `ConditionYellow.Terrain` downward on a non-lethal
+/// hit latches `IsCrumbling` (native's own comment calls the flag a dirty hack
+/// that forces the next draw through the crumbling arm) and joins Logic. This
+/// arm restarts no Stage and plays no `CrumblingSound`: only `0x71BB2C` starts
+/// a real crumble.
+fn refresh_terrain_damage_frame(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    stable_id: u64,
+    prior_health: i32,
+    remaining: i32,
+) {
+    use crate::sim::combat::Health;
+    use crate::util::native_x87::MaskedX87Ordering::Greater;
+
+    let Some(type_ref) = world
+        .terrain_objects
+        .get(stable_id)
+        .map(|terrain| terrain.type_ref())
+    else {
+        return;
+    };
+    let name = world.interner.resolve(type_ref).to_string();
+    let Some(terrain_type) = rules.terrain_object_type_case_insensitive(&name) else {
+        return;
+    };
+    if terrain_type.is_animated || !terrain_type.has_damaged_frames {
+        return;
+    }
+    let condition_yellow = rules.terrain_condition_yellow();
+    let strength = terrain_type.strength;
+    let was_above = Health::new(prior_health).compare_ratio(strength, condition_yellow) == Greater;
+    let at_or_below = Health::new(remaining).compare_ratio(strength, condition_yellow) != Greater;
+    if was_above && at_or_below && !world.terrain_objects.is_crumbling(stable_id) {
+        world.terrain_latch_damaged_frame(stable_id);
+    }
+}
+
 fn rad_damage(level: f64, remain: i32, factor: f64) -> (i32, i32) {
     let level = crate::sim::radiation::clamp_level(level, remain);
     (level, scale_rad_level(level, factor))
@@ -332,10 +327,15 @@ fn scale_rad_level(level: i32, factor: f64) -> i32 {
 /// (Phobos labels it "Too OP"), so a build without the capability keeps
 /// buildings immune.
 ///
-/// `RadBuildingDamageMaxCount` is read and retained: Phobos' hook tests a
-/// per-site counter it never increments, so the key has no observable effect
-/// there and none here.
-#[cfg(feature = "phobos")]
+/// `RadBuildingDamageMaxCount` is read and retained, and no cap is applied,
+/// because the native gate is dead: `Ext/RadSite/Hooks.cpp:124` declares the
+/// per-site `damageCounts` map this hook reads at `:147`, and nothing in the
+/// hook — or anywhere else in Phobos — increments it, so
+/// `maxDamageCount > 0 && damageCounts[site] >= maxDamageCount` is `0 >= n`
+/// and never true. Applying a cap here would invent behaviour Phobos does not
+/// have. `dormant_building_damage_max_count_leaves_damage_unchanged`
+/// (`sim/combat/combat_tests.rs`) holds that line: it fails if someone wires a
+/// real cap without a new native body that increments the counter.
 pub(crate) fn apply_building_radiation(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -787,6 +787,86 @@ pub(crate) fn apply_area_damage_in_run(
 /// per-target pass of a warhead without `CellSpread` visits. Stock never
 /// reads it.
 #[allow(clippy::too_many_arguments)]
+/// Phobos `MapClass_DamageArea_DamageUnderGround` (`0x4899DA`,
+/// `Ext/Bullet/Hooks.DetonateLogics.cpp:933-975`): for an
+/// `AffectsUnderground` warhead, walk the Underground-layer technos and call
+/// ReceiveDamage directly within `CellSpread * 256` leptons (3D distance, or
+/// planar when `CellSpread.Cylinder` is set), skipping dead, Iron-Curtined,
+/// off-map and limbo objects. Returns whether any object was hit.
+#[allow(clippy::too_many_arguments)]
+fn apply_underground_area_damage(
+    world: &mut Simulation,
+    run: &mut ReceiverRun,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    impact: crate::sim::projectile::ProjectileCoord,
+    damage: i32,
+    warhead: &WarheadType,
+    origin: (u64, Option<InternedId>, InternedId),
+    effects: FrameEffects<'_>,
+) -> bool {
+    use crate::sim::movement::locomotor::MovementLayer;
+    if !warhead.phobos_anim.affects_underground || world.session.no_damage() {
+        return false;
+    }
+    let spread = warhead.cell_spread_f64 * 256.0;
+    let frame = world.session.binary_frame();
+    let terrain = world.resolved_terrain.as_ref();
+    let victims: Vec<(u64, i32)> = world
+        .substrate
+        .entities
+        .values_sorted()
+        .filter_map(|entity| {
+            if entity.locomotor.as_ref().map(|loco| loco.layer())
+                != Some(MovementLayer::Underground)
+            {
+                return None;
+            }
+            if !entity.lifecycle.object_alive()
+                || entity.lifecycle.in_limbo()
+                || entity.in_playfield()
+                || crate::sim::superweapon::invulnerability::is_invulnerable(
+                    entity.invulnerability.as_ref(),
+                    frame,
+                )
+            {
+                return None;
+            }
+            let coords = crate::sim::movement::ground_pose::object_get_coords(entity, terrain);
+            let dx = f64::from(coords.x.wrapping_sub(impact.x));
+            let dy = f64::from(coords.y.wrapping_sub(impact.y));
+            let dz = f64::from(coords.z.wrapping_sub(impact.z));
+            // `CellSpread.Cylinder`: `{dx, dy, 0}.Magnitude()` drops the height.
+            let distance = if warhead.phobos_cell_spread_cylinder {
+                (dx * dx + dy * dy).sqrt()
+            } else {
+                (dx * dx + dy * dy + dz * dz).sqrt()
+            };
+            (distance <= spread).then_some((entity.stable_id(), distance as i32))
+        })
+        .collect();
+    if victims.is_empty() {
+        return false;
+    }
+    for (target, distance) in victims {
+        let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            target,
+            damage,
+            distance,
+            origin.0,
+            origin.1,
+            origin.2,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        world.commit_direct_damage_receiver(rules, overlay_registry, event, effects);
+    }
+    let _ = run;
+    true
+}
+
 pub(crate) fn apply_area_damage_in_run_with_target(
     world: &mut Simulation,
     run: &mut ReceiverRun,
@@ -799,30 +879,10 @@ pub(crate) fn apply_area_damage_in_run_with_target(
     origin: (u64, Option<InternedId>, InternedId),
     area_target: Option<u64>,
 ) -> (DeathEffects, Vec<UnderAttackEvent>, bool, AreaDamageResult) {
-    let area = collect_area_at(
-        world,
-        rules,
-        overlay_registry,
-        impact,
-        damage,
-        warhead,
-        affects_tiberium,
-        origin,
-        run.effects(),
-    );
+    // Phobos `MapClass_DamageArea @ 0x489286`: the hook runs at the routine's
+    // entry, so the per-target pass (its own cell-spread walk) visits its
+    // targets before the native area damage collects and commits them.
     let mut effects = DeathEffects::default();
-    #[cfg(test)]
-    append_fixture_tiberium(world, &mut effects.tiberium_reduction_requests);
-    #[cfg(any(test, feature = "test-support"))]
-    effects.wall_mutations.extend(area.aoe.wall_mutations);
-    #[cfg(any(test, feature = "test-support"))]
-    effects
-        .cell_target_detaches
-        .extend(area.aoe.cell_target_detaches);
-    // Phobos `MapClass_DamageArea @ 0x489286`: a direct `DamageArea` caller's
-    // per-target pass runs before the native area damage, exactly like the
-    // bullet path.
-    #[cfg(feature = "phobos")]
     let crit_active = super::crit::detonate(
         world,
         run,
@@ -834,16 +894,52 @@ pub(crate) fn apply_area_damage_in_run_with_target(
         origin.1,
         impact,
         area_target,
-        &area.aoe.receivers,
+        0,
+        false,
         &mut effects,
     );
-    #[cfg(not(feature = "phobos"))]
-    let _ = area_target;
-    #[cfg(not(feature = "phobos"))]
-    let crit_active = false;
+    // Phobos `MapClass_DamageArea_DamageUnderGround` (`0x4899DA`,
+    // `Ext/Bullet/Hooks.DetonateLogics.cpp:933-975`): before the collected
+    // surface receivers dispatch, an `AffectsUnderground` warhead damages
+    // every Underground-layer techno inside its CellSpread directly.
+    let underground_hit = apply_underground_area_damage(
+        world,
+        run,
+        rules,
+        overlay_registry,
+        impact,
+        damage,
+        warhead,
+        origin,
+        run.effects(),
+    );
+    let area = collect_area_at(
+        world,
+        rules,
+        overlay_registry,
+        impact,
+        damage,
+        warhead,
+        affects_tiberium,
+        origin,
+        run.effects(),
+    );
+    #[cfg(test)]
+    append_fixture_tiberium(world, &mut effects.tiberium_reduction_requests);
+    #[cfg(any(test, feature = "test-support"))]
+    effects.wall_mutations.extend(area.aoe.wall_mutations);
+    #[cfg(any(test, feature = "test-support"))]
+    effects
+        .cell_target_detaches
+        .extend(area.aoe.cell_target_detaches);
     let (nested, mut pings, area_result) =
         commit_area_with_dispatch(world, run, &area.aoe.receivers, rules, overlay_registry);
     effects.append(nested);
+    let area_result = if underground_hit && area_result == AreaDamageResult::NoReceiver {
+        AreaDamageResult::ReceiverDispatched
+    } else {
+        area_result
+    };
     let (tail, mut tail_pings) = continue_area_damage(
         world,
         run,
@@ -975,7 +1071,6 @@ pub(crate) struct ReceiverRun<'a> {
     /// Phobos `WarheadTypeExt::InApplyCrit`: the warhead types whose crit is
     /// currently applying, so a nested detonation of the same warhead cannot
     /// re-enter. Transaction-local and never saved.
-    #[cfg(feature = "phobos")]
     pub(crate) crit_warheads: Vec<InternedId>,
     effects: FrameEffects<'a>,
 }
@@ -1172,6 +1267,13 @@ pub(crate) fn commit_terrain(
             caller_damage.read(world, rules),
         );
     };
+    // Phobos `TerrainClass_TakeDamage_SetContext` (`0x71B965`,
+    // `Ext/TerrainType/Hooks.cpp:259-266`) stores the Health ratio its
+    // `0x71B98B` refresh compares against, before the Health write.
+    let prior_health = world
+        .terrain_objects
+        .get(event.stable_id)
+        .map(|terrain| terrain.health());
     let mut packet = event.damage;
     let receive = world.terrain_objects.receive_damage(
         &mut run.finalizing_terrain,
@@ -1198,6 +1300,13 @@ pub(crate) fn commit_terrain(
             .get(event.stable_id)
             .is_some_and(|terrain| !terrain.on_fire());
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
+        // Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`)
+        // runs inside ReceiveDamage, before the Ares `0x71B99E` ignite hook.
+        if let TerrainAreaReceiveResult::Damaged { remaining } = receive
+            && let Some(prior_health) = prior_health
+        {
+            refresh_terrain_damage_frame(world, rules, event.stable_id, prior_health, remaining);
+        }
         if ignites {
             world.terrain_catch_fire(event.stable_id, rules);
         }
@@ -1277,6 +1386,37 @@ pub(crate) fn commit_terrain(
         }
     }
 
+    // Phobos `TerrainClass_TakeDamage_NowDead_Add` (0x71BB2C): a
+    // `HasCrumblingFrames=` tree keeps playing its crumble sequence; every
+    // other type plays `PlayDestroyEffects` before the stock UnInit.
+    {
+        // `0x71BADC..0x71BAED`: an on-fire object clears its owned anim loops
+        // and skips Start_To_Crumble, so `0x71BB2C` still sees IsCrumbling
+        // clear and destroys it in this call.
+        let on_fire = world
+            .terrain_objects
+            .objects()
+            .get(&lethal.stable_id)
+            .is_some_and(|terrain| terrain.on_fire());
+        let crumbles = {
+            let type_name = world
+                .terrain_objects
+                .objects()
+                .get(&lethal.stable_id)
+                .map(|terrain| world.interner.resolve(terrain.type_ref()).to_string());
+            type_name
+                .and_then(|name| rules.terrain_object_type_case_insensitive(&name))
+                .is_some_and(|terrain_type| terrain_type.has_crumbling_frames)
+        };
+        if crumbles && !on_fire {
+            // The stock same-call UnInit never runs, so this transaction must
+            // not keep the id for the later finalizer either.
+            run.finalizing_terrain.remove(&lethal.stable_id);
+            world.terrain_start_crumble(lethal.stable_id, rules);
+            return (effects, under_attack_events, 0);
+        }
+        world.terrain_play_destroy_effects(lethal.stable_id, rules);
+    }
     world.terrain_lethal_uninit(lethal, &mut run.finalizing_terrain, uninit_context);
     (
         effects,
@@ -1515,12 +1655,21 @@ fn commit_entity(
         let mut receiver_event = *event;
         receiver_event.damage = caller_damage.read(world, rules);
         let event = &receiver_event;
+        // Phobos `Ext/Techno/Hooks.ReceiveDamage.cpp:86-140`, inside
+        // `TechnoClass_ReceiveDamage_Shield @ 0x701900`: the combat alert
+        // runs after the damage multipliers and before the shield stage.
+        super::combat_alert::raise_combat_alert(
+            world,
+            rules,
+            event,
+            receiver_event.damage,
+            current_tick as u32 as i32,
+        );
         // Phobos `TechnoClass_ReceiveDamage @ 0x701900+0x6` runs the shield
         // before gamemd's receiver body and replaces `args->Damage` with the
         // surviving damage. The stage owns the mutation here, before the
         // otherwise-immutable resolver is entered.
-        #[cfg(feature = "phobos")]
-        let shield_receipt = {
+        let mut shield_receipt = {
             let warhead = world.interner.warhead_type(event.warhead_ref, rules);
             let target = world.substrate.entities.get(target_id);
             match (target, warhead) {
@@ -1540,11 +1689,9 @@ fn commit_entity(
                 _ => None,
             }
         };
-        #[cfg(feature = "phobos")]
         if let Some(receipt) = &shield_receipt {
             caller_damage.write(world, rules, receipt.remaining);
         }
-        #[cfg(feature = "phobos")]
         if shield_receipt
             .as_ref()
             .is_some_and(|receipt| receipt.shield_damage_positive)
@@ -1560,29 +1707,44 @@ fn commit_entity(
             start_uncloaking_for_damage(world, target_id, rules, current_tick, sound_enabled);
         }
 
-        #[cfg(feature = "phobos")]
+        if shield_receipt
+            .as_ref()
+            .is_some_and(|receipt| !receipt.break_shots.is_empty())
+        {
+            // `BreakShield`'s `TechnoExt::FireWeaponAtSelf`
+            // (`ShieldClass.cpp:858..859` -> `WeaponTypeExt::DetonateAt`):
+            // the break weapon detonates on the shield owner inside the
+            // receive stage, before the native receiver body. Commit through
+            // this run; a break weapon that hits its own carrier re-enters
+            // the shield stage on the already-broken state.
+            let shots = std::mem::take(
+                &mut shield_receipt
+                    .as_mut()
+                    .expect("the outer test holds a receipt")
+                    .break_shots,
+            );
+            let detonations = world.shield_break_detonations(shots, rules);
+            let commit = commit_projectiles(world, run, &detonations, rules, overlay_registry);
+            death.append(commit.effects);
+            under_attack_events.extend(commit.under_attack_events);
+        }
+
         let ares_initially_positive = shield_receipt
             .as_ref()
             .map_or(event.damage > 0, |receipt| receipt.remaining > 0);
-        #[cfg(not(feature = "phobos"))]
-        let ares_initially_positive = event.damage > 0;
-        #[cfg(feature = "phobos")]
         let post_shield_input = shield_receipt
             .as_ref()
             .map_or(event.damage, |receipt| receipt.remaining);
         // The Phobos wrapper's Unkillable arm runs after the shield and
         // before the original ReceiveDamage body.
-        #[cfg(feature = "phobos")]
         let unkillable_clamp =
             world.apply_unkillable_clamp(target_id, event, post_shield_input, rules);
-        #[cfg(feature = "phobos")]
         if unkillable_clamp {
             caller_damage.write(world, rules, 0);
         }
         // Phobos TechnoClass_ReceiveDamage_ArmorMultiplier (0x00701966): the
         // effects' armor chances belong to the positive, defended divide on
         // the post-shield damage. `None` keeps the cached unrestricted product.
-        #[cfg(feature = "phobos")]
         let receiver_ae_armor = {
             if !event.receiver_flags.ignore_defenses
                 && post_shield_input >= 0
@@ -1608,7 +1770,6 @@ fn commit_entity(
                 None
             }
         };
-        #[cfg(feature = "phobos")]
         let (receiver_input, skip_low_damage_check) = if unkillable_clamp {
             (0, true)
         } else {
@@ -1619,7 +1780,6 @@ fn commit_entity(
                     .is_some_and(|receipt| receipt.remaining == 0),
             )
         };
-        #[cfg(feature = "phobos")]
         let receiver_outcome = resolve_receive_damage_with_input(
             event,
             &world.substrate.entities,
@@ -1634,28 +1794,30 @@ fn commit_entity(
             skip_low_damage_check,
             receiver_ae_armor,
         );
-        #[cfg(not(feature = "phobos"))]
-        let receiver_outcome = resolve_receive_damage(
-            event,
-            &world.substrate.entities,
-            rules,
-            &world.interner,
-            &world.houses,
-            &world.house_alliances,
-            scenario_no_damage,
-            current_tick,
-            world.resolved_terrain.as_ref(),
-            None,
-        );
         // Techno701ADB..701B62 precedes bunker/warhead/Object gates, even
         // when those gates suppress the HP write. It also runs for healing
         // and IgnoreDefenses; only the earlier receiver exits skip it.
         if let Some(damage) =
             receiver_outcome.and_then(|resolved| resolved.outcome.readiness_damage)
-            && let Some(target) = world.substrate.entities.get_mut(target_id)
-            && let Some(object) = world.interner.object_type(target.type_ref(), rules)
         {
-            target.reduce_ammo_for_damage(object, damage, world.session.binary_frame() as i32);
+            let reduced = if let Some(target) = world.substrate.entities.get_mut(target_id)
+                && let Some(object) = world.interner.object_type(target.type_ref(), rules)
+            {
+                target.reduce_ammo_for_damage(object, damage)
+            } else {
+                false
+            };
+            // Techno701B62 calls StartReloading unconditionally after the
+            // count write; the Phobos shared-ammo pass runs at its entry.
+            if reduced {
+                crate::sim::shared_ammo::start_reloading(
+                    &mut world.substrate.entities,
+                    &world.interner,
+                    rules,
+                    target_id,
+                    world.session.binary_frame() as i32,
+                );
+            }
         }
         // Techno70196C..701D69 writes its defended/gated/kernel value before
         // team removal and Object's synchronous Tag/Kill/Destroy callbacks.
@@ -1666,22 +1828,31 @@ fn commit_entity(
         }
         if let Some(effect) = receiver_outcome.and_then(|resolved| resolved.invulnerability_impact)
         {
-            death.combat_light_requests.push(effect);
+            // The invulnerability flash is another `Flash 0x48A620` call, so
+            // Phobos' chance gate (`Misc/Hooks.LightEffects.cpp:69-74`) precedes
+            // it as well.
+            let admitted = match &effect {
+                CombatLightRequest::Impact { warhead_ref, .. } => {
+                    crate::sim::combat::combat_light_chance_admits(world, rules, *warhead_ref)
+                }
+                CombatLightRequest::Spark { .. } => true,
+            };
+            if admitted {
+                death.combat_light_requests.push(effect);
+            }
         }
         // `0x00701D71..0x00701DB4`: a Psychedelic hit that turns its target
         // berserk takes it out of its team, with its idle order
         // (`0x006EA870`), clears its target (`vt+0x3C8(0)`) and queues Hunt
-        // (`vt+0x1E8(0xF, 0)`). The removal runs here, before the receiver's
-        // timer and flag writes, which it does not read; the other two follow
-        // them, as natively.
+        // (`vt+0x1E8(0xF, 0)`). Phobos' `StopBerzerk` (`0x701DBA`) skips this
+        // whole block when the combined time is not positive. The removal
+        // runs here, before the receiver's timer and flag writes, which it
+        // does not read; the other two follow them, as natively.
         let starts_berserk = receiver_outcome
             .and_then(|resolved| resolved.outcome.psychedelic_value)
-            .is_some()
-            && world
-                .substrate
-                .entities
-                .get(target_id)
-                .is_some_and(|target| !target.berserk.is_active());
+            .is_some_and(|value| {
+                receiver_health::psychedelic_starts_berserk(world, rules, event, value)
+            });
         if starts_berserk {
             world.leave_team(target_id, false, rules, run.effects());
         }
@@ -1701,7 +1872,6 @@ fn commit_entity(
             uncloak_after_damage,
             house_threat_delta,
             psychedelic,
-            #[cfg(feature = "phobos")]
             object_packet,
         }) = receiver_health::commit_receiver_health(
             event,
@@ -1732,7 +1902,6 @@ fn commit_entity(
         // here after the additive anger update at `0x00701E68`. A null source
         // house would fault in the count's `IsNeutral`; VERA reads the
         // attacker's owner instead.
-        #[cfg(feature = "phobos")]
         if attacker_id != RAD_NO_ATTACKER
             && let Some(damage) = object_packet
             && damage > 0
@@ -1786,9 +1955,21 @@ fn commit_entity(
             // The class setter: Infantry's (`0x0051B1F0`) also resets its
             // action and path head.
             let _ = world.assign_target_represented(target_id, None, rules, run.effects());
+            // Phobos' `TechnoClass_ReceiveDamage_Berzerk` replaces the six
+            // bytes of the stock `push 0 / push 0xF / mov ecx,esi` queue call
+            // at `0x701DAE` (returning `0x701DBA`): it adds
+            // `SetDestination(NULL, false)`, vt+0x480 mode 0 which keeps the
+            // NavQueue, and queues `[CombatDamage] BerzerkMission=` where
+            // stock pushes `0xF`, Hunt
+            // (`Ext/Techno/Hooks.ReceiveDamage.cpp:541-552`).
+            let queued_mission = rules.phobos_globals.berzerk_mission;
+            {
+                let _ =
+                    world.assign_destination_keeping_queue(target_id, None, rules, run.effects());
+            }
             let _ = world.mission_queue_exact(
                 target_id,
-                MissionId::from_known(MissionType::Hunt),
+                MissionId::from_known(queued_mission),
                 0,
                 world.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
@@ -1808,10 +1989,12 @@ fn commit_entity(
         if result_one_arm && sound_enabled {
             for _ in 0..2 {
                 if let Some(target) = world.substrate.entities.get(target_id)
-                    && let Some(sound_id) = world
-                        .interner
-                        .object_type(target.type_ref(), rules)
-                        .and_then(|object| object.damage_sound())
+                    && let Some(object) = world.interner.object_type(target.type_ref(), rules)
+                    // Phobos `DisableDamageSound` skips both of this arm's
+                    // requests (`Ext/BuildingType/Hooks.cpp:389-411`, hooks
+                    // `0x70272E`/`0x702777` return `0x702765`/`0x7027AE`).
+                    && !object.disable_damage_sound()
+                    && let Some(sound_id) = object.damage_sound()
                 {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&target.position);
@@ -1914,7 +2097,6 @@ fn commit_entity(
         // Phobos `TechnoClass_ReceiveDamage_Decloak @ 0x00702819` replaces the
         // retail call with a per-warhead switch: only an admitting warhead
         // reaches `Uncloak(false)`, and a missing extension skips it.
-        #[cfg(feature = "phobos")]
         let uncloak_after_damage = uncloak_after_damage
             && world
                 .interner
@@ -1981,7 +2163,13 @@ fn commit_entity(
                 death
                     .receiver_stage_trace
                     .push(ReceiverStageTrace::ShouldRetaliate { target_id });
-                combat_targeting::should_retaliate(world, rules, target_id, attacker_id)
+                combat_targeting::should_retaliate(
+                    world,
+                    rules,
+                    target_id,
+                    attacker_id,
+                    overlay_registry,
+                )
             };
             if retaliates && retaliation_reaches(world, rules, target_id, attacker_id) {
                 world.override_mission_on_damage_response(
@@ -2117,6 +2305,16 @@ fn commit_entity(
         ) && let Some(target) = world.substrate.entities.get(target_id)
             && target.category() == EntityCategory::Structure
             && target.lifecycle.object_alive()
+            && world
+                .interner
+                .object_type(target.type_ref(), rules)
+                // Phobos `DisableDamageSound` also skips the global request
+                // this block issues (`Ext/BuildingType/Hooks.cpp:389-411`,
+                // hook `0x4426DB` returns `0x44270B`).
+                .is_some_and(|object| {
+                    !object.disable_damage_sound() && object.damage_sound().is_none()
+                })
+            && let Some(sound_id) = rules.general.building_damage_sound()
         {
             if sound_enabled
                 && world
@@ -2184,6 +2382,9 @@ fn commit_entity(
         // Infantry returns on 0 (`0x0051805B`) and Unit skips its ping on 0
         // (`0x007384BB`), so what follows runs for 1..=3.
         if let Some((damage, survivor_tail, _hostile_source)) = positive_postlude
+            // A `StopBerzerk` hit (non-positive combined time) skips the
+            // target clear and Hunt natively.
+            && (!psychedelic || starts_berserk)
             && survivor_tail
             && matches!(
                 receive_state,
@@ -2453,7 +2654,6 @@ pub(crate) fn handle_death(
             // (`0x702050`): effects with `ExpireWeapon.TriggerOn=death` fire
             // before the native death arm frees slaves and before the death
             // weapon.
-            #[cfg(feature = "phobos")]
             if callbacks_enabled(world) {
                 world.apply_attach_effect_death_weapons(
                     dead_id,
@@ -2597,7 +2797,15 @@ pub(crate) fn handle_death(
                 // bomb over water, past the debris, KillPassengers and the
                 // death weapon; ordinary water deaths still run them.
                 let low_water_bomb = world.dropped_bomb_water_death_location(dead_id).is_some();
-                if !low_water_bomb {
+                // Phobos `TechnoClass_ReceiveDamage_Debris` (`0x702299`,
+                // `Misc/Hooks.BugFixes.cpp:143`): a Techno still held by a
+                // Transporter skips the whole debris block.
+                let transporter_held = world
+                    .substrate
+                    .entities
+                    .get(dead_id)
+                    .is_some_and(|entity| entity.passenger_role.transporter().is_some());
+                if !low_water_bomb && !transporter_held {
                     throw_debris_for_death(
                         world,
                         obj,
@@ -2625,7 +2833,31 @@ pub(crate) fn handle_death(
                 });
                 let explodes =
                     !low_water_bomb && death_arm_explodes(obj, veterancy, numbered_weapon);
-                if explodes && callbacks_enabled(world) {
+                // Phobos `TechnoClass_ReceiveDamage_Explodes`
+                // (`Ext/Techno/Hooks.ReceiveDamage.cpp:242-258`, hook
+                // `0x702603`): a building destroyed while its CurrentMission
+                // is Construction or Selling behaves as `Explodes=false` when
+                // `Explodes.DuringBuildup` is off, skipping the passenger
+                // kill and the death weapon (`0x702672`).
+                let explodes = explodes
+                    && !(obj.category == crate::rules::object_type::ObjectCategory::Building
+                        && world.substrate.entities.get(dead_id).is_some_and(|entity| {
+                            matches!(
+                                entity.mission.current().known(),
+                                Some(MissionType::Construction | MissionType::Selling)
+                            )
+                        })
+                        && !obj
+                            .phobos_explodes
+                            .during_buildup
+                            .unwrap_or(rules.phobos_globals.explodes_during_buildup));
+                // `Explodes.KillPassengers=false` keeps the same arm's death
+                // weapon but skips only the passenger kill (`0x702669`).
+                let kill_passengers = obj
+                    .phobos_explodes
+                    .kill_passengers
+                    .unwrap_or(rules.phobos_globals.explodes_kill_passengers);
+                if explodes && kill_passengers && callbacks_enabled(world) {
                     let attacker = killing_attacker(world, damage_events, dead_id);
                     world.kill_passengers(
                         dead_id,
@@ -2659,19 +2891,66 @@ pub(crate) fn handle_death(
                 }
             }
             // Phobos `TechnoClass_ReceiveDamage_RevengeWeapon` (`0x702672`):
-            // after the death weapon, an effect-granted revenge weapon fires
-            // at the killing source, if one exists.
-            #[cfg(feature = "phobos")]
+            // `ApplyKillWeapon` first (warhead `KillWeapon`/`.OnFirer`), then
+            // an effect-granted revenge weapon fires at the killing source,
+            // if one exists.
             if callbacks_enabled(world)
-                && let Some(attacker_id) = killing_attacker(world, damage_events, dead_id)
+                && let Some(event) = damage_events
+                    .iter()
+                    .rfind(|event| event.target_id == dead_id)
             {
-                world.apply_attach_effect_revenge_weapons(
+                world.apply_phobos_kill_weapons(
                     dead_id,
-                    attacker_id,
+                    event,
                     rules,
                     overlay_registry,
                     run.effects(),
                 );
+            }
+            if callbacks_enabled(world)
+                && let Some(attacker_id) = killing_attacker(world, damage_events, dead_id)
+            {
+                // Phobos `SuppressRevengeWeapons=` on the killing warhead
+                // (`Ext/Techno/WeaponHelpers.cpp:281-282`).
+                let suppress = damage_events
+                    .iter()
+                    .rfind(|event| event.target_id == dead_id)
+                    .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+                    .map(|warhead| warhead.phobos_revenge_weapon.clone())
+                    .unwrap_or_default();
+                world.apply_attach_effect_revenge_weapons(
+                    dead_id,
+                    attacker_id,
+                    &suppress,
+                    rules,
+                    overlay_registry,
+                    run.effects(),
+                );
+            }
+            // Phobos `TechnoClass_ReceiveDamage_RevengeWeapon`
+            // (`Ext/Techno/Hooks.ReceiveDamage.cpp:259-280`, hook `0x702672`):
+            // after the kill and revenge weapons, `PreventCrewEscape=yes`
+            // latches the dying techno's crew count to 0 and
+            // `PreventPassengerEscape=yes` kills its passengers.
+            if callbacks_enabled(world)
+                && let Some(event) = damage_events
+                    .iter()
+                    .rfind(|event| event.target_id == dead_id)
+                && let Some(warhead) = rules.warhead(world.interner.resolve(event.warhead_ref))
+            {
+                if warhead.prevent_crew_escape
+                    && let Some(entity) = world.substrate.entities.get_mut(dead_id)
+                {
+                    entity.phobos_prevent_crew_escape = true;
+                }
+                if warhead.prevent_passenger_escape {
+                    let attacker = killing_attacker(world, damage_events, dead_id);
+                    world.kill_passengers(
+                        dead_id,
+                        attacker,
+                        crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
+                    );
+                }
             }
             // `0x0070267F`: after its death weapon, the bomb it carries goes
             // off (`BombClass::Detonate @ 0x00438720`).
@@ -2857,6 +3136,25 @@ fn finish_concrete_death(
     // TechnoClass's synchronous death weapon has returned. Capture the
     // immutable plan now; placement and all RNG stay at that postlude.
     if category == EntityCategory::Structure {
+        // Phobos `BuildingClass_ReceiveDamage_PreventOccupantEscape`
+        // (`Ext/Techno/Hooks.ReceiveDamage.cpp:282-297`, hook `0x442635`): a
+        // killing hit with this warhead kills the occupants where the stock
+        // building would release them (`0x44263B`'s SellBuilding call). The
+        // release in `BeforeBuildingDestruction` then finds none.
+        if callbacks_enabled(world)
+            && damage_events
+                .iter()
+                .rfind(|event| event.target_id == dead_id)
+                .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+                .is_some_and(|warhead| warhead.prevent_occupant_escape)
+        {
+            crate::sim::passenger::garrison_eject::kill_building_occupants(
+                world,
+                dead_id,
+                None,
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
+            );
+        }
         // Building442625..44264C follows the completed Techno death arm
         // and NowDead contact callbacks, before DestructionEffects442665.
         if callbacks_enabled(world) {
@@ -2998,6 +3296,9 @@ fn finish_concrete_death(
             inf_death,
             anim_house,
             inf_death_anim,
+            killing_warhead
+                .as_ref()
+                .map_or(-1, |(warhead, _)| warhead.phobos_not_human_death_sequence),
             rules,
             overlay_registry,
             frame_effects,
@@ -3365,10 +3666,7 @@ fn run_special_detonation_arm(
                 SpecialArmTarget::Cell => crate::sim::locomotor_lift::LocomotorShotTarget::Cell,
                 SpecialArmTarget::None => crate::sim::locomotor_lift::LocomotorShotTarget::None,
             };
-            #[cfg(feature = "phobos")]
             let jumpjet_override = warhead.jumpjet_override;
-            #[cfg(not(feature = "phobos"))]
-            let jumpjet_override = crate::rules::jumpjet_params::JumpjetOverride::default();
             world.locomotor_detonation(
                 owner,
                 target,
@@ -3615,6 +3913,7 @@ fn continue_area_damage(
             rules,
             rules.general.barrel_explode.as_deref(),
             coord,
+            None,
             &mut death.explosion_effects,
         ) {
             log::warn!("barrel explosion animation did not construct: {error}");
@@ -3693,6 +3992,20 @@ fn continue_area_damage(
     );
     //48A437..48A479 follows both the bridge and Explodes branches. WH.Particle
     //uses the outer sourceHouse and also constructs one immediate child.
+    //48A444 stores the light-flash mark before the system starts and 48A47E
+    //puts it back after the immediate child, so everything the window reveals
+    //keeps it and nothing outside the window does.
+    let light_flash = context
+        .warhead
+        .phobos_extras
+        .particle_alpha_image_is_light_flash
+        .unwrap_or(
+            rules
+                .phobos_globals
+                .warhead_particle_alpha_image_is_light_flash,
+        );
+    let outer_light_flash = world.particle_light_flash();
+    world.set_particle_light_flash(light_flash);
     if let Some(type_id) = context
         .warhead
         .particle_system
@@ -3710,6 +4023,7 @@ fn continue_area_damage(
     {
         world.spawn_particle_in_system(system, position, position, rules);
     }
+    world.set_particle_light_flash(outer_light_flash);
     (death, pings)
 }
 
@@ -3894,6 +4208,213 @@ fn ares_damage_occupants(
 /// The area damage's house (`0x00469A5C..0x00469A75`) is the live bullet
 /// owner's: a bullet whose firer has expired (`BulletClass::PointerExpired
 /// @ 0x004684E0` nulled `+0xB0`) damages with no house.
+/// Phobos `BulletClass_Logics_DetonateOnAllMapObjects @ 0x4690C1`
+/// (`Ext/Bullet/Hooks.DetonateLogics.cpp:78-168`): a claiming warhead replaces
+/// this detonation with one pass over the live Technos of each affected class
+/// array (aircraft, buildings, infantry, units, each snapshot taken right
+/// before its walk) and returns from `DetonateAtCoord` before its shake,
+/// radiation, special arms, shrapnel, area damage and anim tail. `Full`
+/// re-detonates the bullet at each target (`BulletClass::Detonate`, one
+/// DetonateAtCoord with no Explode cluster draws), otherwise each target
+/// takes the bullet's `(Health * DamageMultiplier) >> 8` area damage with
+/// itself as the intended target (`DamageAreaWithTarget`).
+/// `WasDetonatedOnAllMapObjects` is per warhead type.
+fn detonate_on_all_map_objects(
+    world: &mut Simulation,
+    run: &mut ReceiverRun<'_>,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
+    out: &mut CombatEmit,
+    under_attack_events: &mut Vec<UnderAttackEvent>,
+) -> bool {
+    let rules_ext = &warhead.detonate_on_all_map;
+    if !rules_ext.claims_detonation() {
+        return false;
+    }
+    let warhead_ref = detonation.payload.warhead;
+    if world.phobos_all_map_detonation_active == Some(warhead_ref) {
+        return false;
+    }
+    use crate::rules::phobos_crit::AffectedTarget;
+    let owner = detonation_source_house(world, detonation);
+    let walks = [
+        (AffectedTarget::AIRCRAFT, EntityCategory::Aircraft),
+        (AffectedTarget::BUILDING, EntityCategory::Structure),
+        (AffectedTarget::INFANTRY, EntityCategory::Infantry),
+        (AffectedTarget::UNIT, EntityCategory::Unit),
+    ];
+    // The native reader drops unresolvable `AffectTypes` names; an all-invalid
+    // authored list is therefore empty, which means "no type filter".
+    let affect_types: Vec<&str> = rules_ext
+        .affect_types
+        .iter()
+        .map(String::as_str)
+        .filter(|name| rules.object(name).is_some())
+        .collect();
+    let ignore_types: Vec<&str> = rules_ext
+        .ignore_types
+        .iter()
+        .map(String::as_str)
+        .filter(|name| rules.object(name).is_some())
+        .collect();
+    world.phobos_all_map_detonation_active = Some(warhead_ref);
+    // The nested detonations commit their own receiver records synchronously.
+    // Drop the records they append so the caller does not commit the same
+    // receivers a second time in its own area pass.
+    let receiver_mark = out.damage_events.len();
+    for (flag, category) in walks {
+        if !rules_ext.affects(flag) {
+            continue;
+        }
+        // Each class array is copied immediately before its walk; a creature
+        // spawned by an earlier walk (crew, survivors) is therefore visited.
+        let ids: Vec<u64> = world
+            .substrate
+            .entities
+            .values()
+            .filter(|entity| entity.category() == category)
+            .map(|entity| entity.stable_id())
+            .collect();
+        for id in ids {
+            let Some(entity) = world.substrate.entities.get(id) else {
+                continue;
+            };
+            if !eligible_for_full_map_detonation(
+                world,
+                rules,
+                warhead,
+                entity,
+                owner,
+                &affect_types,
+                &ignore_types,
+            ) {
+                continue;
+            }
+            let coord = crate::sim::movement::ground_pose::object_get_coords(
+                entity,
+                world.resolved_terrain.as_ref(),
+            );
+            let impact = ProjectileCoord::new(coord.x, coord.y, coord.z);
+            if rules_ext.full {
+                let original = detonation.target;
+                world
+                    .projectiles
+                    .set_target(detonation.projectile_id, ProjectileTarget::Entity(id));
+                let nested = ProjectileDetonation {
+                    impact,
+                    target: ProjectileTarget::Entity(id),
+                    ..*detonation
+                };
+                let mut pings = Vec::new();
+                commit_projectile_detonations_inline(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    &[nested],
+                    out,
+                    &mut pings,
+                    true,
+                );
+                under_attack_events.append(&mut pings);
+                world
+                    .projectiles
+                    .set_target(detonation.projectile_id, original);
+            } else {
+                let (nested, mut pings, _, _) = apply_area_damage_in_run_with_target(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    impact,
+                    detonation.payload.area_damage(),
+                    warhead,
+                    true,
+                    (detonation.source_id, owner, detonation.payload.warhead),
+                    Some(id),
+                );
+                out.effects.append(nested);
+                under_attack_events.append(&mut pings);
+            }
+        }
+    }
+    out.damage_events.truncate(receiver_mark);
+    world.phobos_all_map_detonation_active = None;
+    true
+}
+
+/// `WarheadTypeExt::EligibleForFullMapDetonation`
+/// (`Ext/WarheadType/Body.cpp:110-134`).
+fn eligible_for_full_map_detonation(
+    world: &Simulation,
+    rules: &RuleSet,
+    warhead: &WarheadType,
+    entity: &crate::sim::game_entity::GameEntity,
+    owner: Option<InternedId>,
+    affect_types: &[&str],
+    ignore_types: &[&str],
+) -> bool {
+    if !entity.lifecycle.object_alive()
+        || entity.lifecycle.in_limbo()
+        || entity.health.current() <= 0
+        || entity.sinking.is_active()
+        || entity.is_warped_out()
+    {
+        return false;
+    }
+    let rules_ext = &warhead.detonate_on_all_map;
+    if let Some(owner) = owner
+        && !crate::sim::combat::can_target_house(
+            rules_ext.affects_house,
+            owner,
+            entity.owner(),
+            &world.houses,
+            &world.house_alliances,
+            &world.interner,
+        )
+    {
+        return false;
+    }
+    let type_name = world.interner.resolve(entity.type_ref());
+    let in_affect = affect_types.is_empty()
+        || affect_types
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(type_name));
+    if !in_affect
+        || ignore_types
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(type_name))
+    {
+        return false;
+    }
+    if rules_ext.require_verses {
+        let Some(obj) = world.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let armor = crate::sim::shield::warhead_versus_armor(entity, rules, warhead, obj);
+        // `GetWarheadVersusArmor(...) == 0.0`: `GetTotalDamage(100) / 100`
+        // truncates a nonzero-but-sub-1% rate to zero.
+        if (warhead.verses_f64[armor.index()] * 100.0) as i32 == 0 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Whether this detonation will be replaced by the all-map pass, so the
+/// per-cluster shake block must not draw. The native hook sits before the
+/// shake block (`0x4690D4`, `SkipShaking = 0x469130`).
+fn all_map_claims(
+    world: &Simulation,
+    detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
+) -> bool {
+    warhead.detonate_on_all_map.claims_detonation()
+        && world.phobos_all_map_detonation_active != Some(detonation.payload.warhead)
+}
+
 fn emit_detonation_receivers<'r>(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -3901,8 +4422,32 @@ fn emit_detonation_receivers<'r>(
     overlay_registry: Option<&OverlayTypeRegistry>,
     detonation: &ProjectileDetonation,
     warhead: &'r WarheadType,
+    trigger_skip: bool,
     out: &mut CombatEmit,
-) -> (Option<AreaDamageContinuation<'r>>, bool) {
+    under_attack_events: &mut Vec<UnderAttackEvent>,
+) -> (Option<AreaDamageContinuation<'r>>, bool, bool) {
+    // Phobos `0x4690C1` replaces the whole DetonateAtCoord, tail included.
+    if detonate_on_all_map_objects(
+        world,
+        run,
+        rules,
+        overlay_registry,
+        detonation,
+        warhead,
+        out,
+        under_attack_events,
+    ) {
+        return (None, false, true);
+    }
+    // Phobos `BulletClass_Logics_NewChecks` (`0x4690D4`,
+    // `Ext/Bullet/Hooks.DetonateLogics.cpp:22-29`): a Techno target failing
+    // the warhead's health/veterancy/neutral/invoker conditions jumps to the
+    // extras (`0x469AA4`), past radiation (`0x469150`), the interceptor head
+    // (`0x46920B`), the per-target pass, the stock damage arms and the area
+    // damage. Only the all-map claim above precedes the gate.
+    if trigger_skip {
+        return (None, false, false);
+    }
     let effects = run.effects();
     let (impact_rx, impact_ry, ..) = projectile_impact_cell(detonation.impact);
 
@@ -3936,6 +4481,12 @@ fn emit_detonation_receivers<'r>(
                 invoker: (detonation.source_id != 0).then_some(detonation.source_id),
             });
     }
+
+    // Phobos `WarheadTypeExt::Detonate` (`Ext/WarheadType/Detonate.cpp:38-48`):
+    // the detonating bullet's interceptor head resolves its prey after the
+    // stock radiation block and before the create-gap and per-target effects;
+    // the hook is `0x46920B`, after `0x4690D4` and radiation.
+    world.intercept_bullets(rules, overlay_registry, detonation, warhead, run.effects());
 
     // Installed Ares46920B ->100536E0/10052870 runs after radiation,
     // before the exclusive special/ordinary damage arms (including Damage=0).
@@ -4023,9 +4574,33 @@ fn emit_detonation_receivers<'r>(
             overlay_registry,
             effects,
         ) {
-            return (None, false);
+            return (None, false, false);
         }
     }
+
+    // Phobos `BulletClass_Detonate @ 0x46920B` runs at this routine's entry:
+    // the warhead's per-target pass (AttachEffect lists, crit) visits its own
+    // cell-spread collection before the special/ordinary arm split, before
+    // SpawnShrapnel and before the native area damage. A target it kills is
+    // therefore skipped by the arm and area gates below.
+    let crit_active = super::crit::detonate(
+        world,
+        run,
+        rules,
+        overlay_registry,
+        warhead,
+        detonation.payload.warhead,
+        detonation.source_id,
+        detonation_source_house(world, detonation),
+        detonation.impact,
+        match detonation.target {
+            ProjectileTarget::Entity(id) => Some(id),
+            _ => None,
+        },
+        detonation.payload.base_damage,
+        bullet_was_intercepted(world, detonation),
+        &mut out.effects,
+    );
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only
     // conditional arm and the only one that consults the target: it reads the
@@ -4095,33 +4670,9 @@ fn emit_detonation_receivers<'r>(
             out.effects
                 .cell_target_detaches
                 .extend(area.aoe.cell_target_detaches);
-            // Phobos `BulletClass_Detonate @ 0x46920B`: the warhead's
-            // per-target pass (AttachEffect lists, crit) runs before the
-            // native area damage, so a target it kills is skipped by the
-            // dispatch gates below.
-            #[cfg(feature = "phobos")]
-            let crit_active = super::crit::detonate(
-                world,
-                run,
-                rules,
-                overlay_registry,
-                warhead,
-                detonation.payload.warhead,
-                detonation.source_id,
-                source_house,
-                detonation.impact,
-                match detonation.target {
-                    ProjectileTarget::Entity(id) => Some(id),
-                    _ => None,
-                },
-                &area.aoe.receivers,
-                &mut out.effects,
-            );
-            #[cfg(not(feature = "phobos"))]
-            let crit_active = false;
             out.damage_events.extend(area.aoe.receivers);
 
-            (Some(area.continuation), crit_active)
+            (Some(area.continuation), crit_active, false)
         }
         claimed => {
             run_special_detonation_arm(
@@ -4132,7 +4683,7 @@ fn emit_detonation_receivers<'r>(
                 overlay_registry,
                 effects,
             );
-            (None, false)
+            (None, crit_active, false)
         }
     }
 }
@@ -4144,6 +4695,18 @@ fn emit_detonation_receivers<'r>(
 /// never placed: Fire_Death_Weapon creates it, Limbos it and detonates it at
 /// its firer's GetCoords (`0x0070D756..0x0070D782`), so its Location is still
 /// the constructor's zero coordinate (`0x005F3993` copies `0x00AC1380`, which
+/// Phobos `WarheadTypeExt::Detonate`'s `bulletWasIntercepted`: the detonating
+/// bullet's Intercepted status bit.
+fn bullet_was_intercepted(world: &Simulation, detonation: &ProjectileDetonation) -> bool {
+    world
+        .projectiles
+        .get(detonation.projectile_id)
+        .is_some_and(|bullet| {
+            bullet.intercepted_status() & crate::sim::projectile::intercepted_status::INTERCEPTED
+                != 0
+        })
+}
+
 /// `0x005F38A0` zeroes), off any bridge. A detonation with no live bullet (a
 /// test fixture) stands at its own coordinate.
 fn bullet_location(
@@ -4161,10 +4724,14 @@ fn bullet_location(
     }
 }
 
-/// Bullet469D06..469EBA: one budget, then the typed VoxelAnim arm or the
-/// MetallicDebris SHP fallback. Both finish constructors synchronously before
-/// the outer cluster successor. Stock Smashing/TRexWH use the empty-list arm;
-/// an authored Smashing TIRE list uses the same typed selector as Techno deaths.
+/// Bullet469D06..469EBA, replaced by Phobos `BulletClass_Logics_Debris`
+/// (`0x469D1A`, `Ext/Bullet/Hooks.DetonateLogics.cpp:171-242`): with
+/// `Debris.Conventional` resolved over a Water cell the whole block is
+/// skipped; otherwise the budget is `RandomRanged(MinDebris, MaxDebris)` and
+/// a nonzero typed count runs the restored one-pass loop (warhead
+/// `DebrisMinimums`/`DebrisTypes.Limit`), while a zero count throws the
+/// warhead's `DebrisAnims` list, else `[General] MetallicDebris=`. Every
+/// constructor finishes synchronously before the outer cluster successor.
 fn emit_warhead_debris(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -4172,33 +4739,68 @@ fn emit_warhead_debris(
     warhead: &WarheadType,
     out: &mut CombatEmit,
 ) {
-    use crate::sim::voxel_anim::{
-        ShpDebrisSource, debris_budget, throw_shp_debris, throw_typed_debris,
-    };
+    use crate::sim::voxel_anim::debris_budget;
+    use crate::sim::voxel_anim::{ShpDebrisSource, throw_shp_debris, throw_typed_debris};
 
-    let budget = debris_budget(
-        warhead.min_debris,
-        warhead.max_debris,
-        &mut world.scenario_rng,
-    );
+    if warhead
+        .phobos_debris_conventional
+        .unwrap_or(rules.phobos_globals.debris_conventional)
+    {
+        let water = world.resolved_terrain.as_ref().is_some_and(|terrain| {
+            let rx = u16::try_from(crate::util::lepton::lepton_to_cell(detonation.impact.x));
+            let ry = u16::try_from(crate::util::lepton::lepton_to_cell(detonation.impact.y));
+            rx.ok()
+                .zip(ry.ok())
+                .and_then(|(rx, ry)| terrain.cell(rx, ry))
+                .is_some_and(|cell| {
+                    crate::rules::terrain_rules::LandType::from_index(cell.land_type)
+                        == Some(crate::rules::terrain_rules::LandType::Water)
+                })
+        });
+        if water {
+            return;
+        }
+    }
+
+    let budget = if warhead.max_debris <= 0 {
+        0
+    } else {
+        world
+            .scenario_rng
+            .next_range_i32_inclusive(warhead.min_debris, warhead.max_debris)
+    };
     if budget <= 0 {
         return;
     }
+    let count = warhead
+        .debris_types
+        .len()
+        .min(warhead.debris_maximums.len());
+    // Phobos `pOwner = pThis->Owner ? pThis->Owner->Owner : FirerHouse`.
+    let owner_house = world
+        .substrate
+        .entities
+        .get(detonation.source_id)
+        .map(|entity| entity.owner())
+        .or_else(|| detonation.payload.source_house());
     let mut host = WarheadDebrisHost {
         world,
         rules,
         detonation: *detonation,
+        warhead,
+        owner_house,
         anims: &mut out.effects.explosion_effects,
         voxels: &mut out.effects.voxel_debris,
     };
-    let result = if warhead.debris_types.is_empty() {
-        throw_shp_debris(
-            budget,
-            ShpDebrisSource::RulesMetallicDebris,
-            rules.general.metallic_debris.len(),
-            &mut host,
-        )
-    } else {
+    let (minimums, limit, restored) = (
+        &warhead.phobos_debris_minimums[..],
+        warhead.phobos_debris_types_limit,
+        true,
+    );
+    // Vanilla enters the typed arm on `DebrisTypes.Count` alone; the Phobos
+    // hook gates it on `min(DebrisTypes.Count, DebrisMaximums.Count)`.
+    let typed = count > 0;
+    let result = if typed {
         let types: Vec<_> = warhead
             .debris_types
             .iter()
@@ -4208,7 +4810,56 @@ fn emit_warhead_debris(
                     .map(|id| (id, rules.voxel_anim_type(id)))
             })
             .collect();
-        throw_typed_debris(budget, &types, &warhead.debris_maximums, None, &mut host).map(|_| ())
+        throw_typed_debris(
+            budget,
+            &types,
+            &warhead.debris_maximums,
+            minimums,
+            owner_house,
+            restored,
+            limit,
+            &mut host,
+        )
+        .map(|_| ())
+    } else {
+        // Phobos `pWHExt->DebrisAnims.GetElements(MetallicDebris)`: an unset
+        // (or `<default>`) list falls back to the metallic names, a set list
+        // is used as-is, and a zero-length list draws nothing (`maxIndex < 0`
+        // returns before the do-while).
+        let warhead_anims: Option<Vec<String>> =
+            warhead.phobos_debris_anims.as_ref().map(|names| {
+                names
+                    .iter()
+                    .filter(|name| {
+                        rules
+                            .anim_type_names
+                            .contains(name.to_ascii_uppercase().as_str())
+                    })
+                    .cloned()
+                    .collect()
+            });
+        let result = match warhead_anims {
+            Some(names) if names.is_empty() => Ok(()),
+            Some(names) => throw_shp_debris(
+                budget,
+                ShpDebrisSource::WarheadDebrisAnims,
+                names.len(),
+                &mut host,
+            ),
+            None => {
+                if rules.general.metallic_debris.is_empty() {
+                    Ok(())
+                } else {
+                    throw_shp_debris(
+                        budget,
+                        ShpDebrisSource::RulesMetallicDebris,
+                        rules.general.metallic_debris.len(),
+                        &mut host,
+                    )
+                }
+            }
+        };
+        result
     };
     if let Err(error) = result {
         // Preserve earlier synchronous births on unsupported authored launch
@@ -4221,6 +4872,8 @@ struct WarheadDebrisHost<'w, 'r> {
     world: &'w mut Simulation,
     rules: &'r RuleSet,
     detonation: ProjectileDetonation,
+    warhead: &'r WarheadType,
+    owner_house: Option<InternedId>,
     anims: &'w mut Vec<ExplosionEffect>,
     voxels: &'w mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
 }
@@ -4235,26 +4888,35 @@ impl crate::sim::voxel_anim::ShpDebrisHost for WarheadDebrisHost<'_, '_> {
         source: crate::sim::voxel_anim::ShpDebrisSource,
         index: usize,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
-        debug_assert_eq!(
-            source,
-            crate::sim::voxel_anim::ShpDebrisSource::RulesMetallicDebris
-        );
         //469E50 reads live GetCoords per piece, independently of the
-        // impact argument and Inviso-scattered explosion placement.
+        // impact argument and Inviso-scattered explosion placement. The
+        // vanilla arm lifts the anim 20 leptons; the Phobos hook passes its
+        // own `coord` unchanged (`Ext/Bullet/Hooks.DetonateLogics.cpp:224`).
         let location = bullet_location(self.world, &self.detonation).0;
+        let z = location.z;
         let coord = crate::sim::anim_class::AnimWorldCoord {
             x: location.x,
             y: location.y,
-            z: location.z.wrapping_add(20),
+            z,
+        };
+        let name = match source {
+            crate::sim::voxel_anim::ShpDebrisSource::RulesMetallicDebris => {
+                self.rules.general.metallic_debris.get(index)
+            }
+            crate::sim::voxel_anim::ShpDebrisSource::WarheadDebrisAnims => self
+                .warhead
+                .phobos_debris_anims
+                .as_ref()
+                .and_then(|names| names.get(index)),
+            crate::sim::voxel_anim::ShpDebrisSource::WarheadDebrisAnims => None,
+            // Techno deaths own their own host and never route here.
+            crate::sim::voxel_anim::ShpDebrisSource::TypeDebrisAnims => None,
         };
         self.world.emit_debris_anim(
             self.rules,
-            self.rules
-                .general
-                .metallic_debris
-                .get(index)
-                .map(String::as_str),
+            name.map(String::as_str),
             coord,
+            self.owner_house,
             self.anims,
         )
     }
@@ -4308,7 +4970,7 @@ fn emit_detonation_anim(
     // Phobos jumps over this scatter (`DEFINE_JUMP(LJMP, 0x469AC1,
     // 0x469AF0)`): the light and the Iron Curtain anim keep the raw impact,
     // and its `0x469C46` tail scatters each animation itself.
-    let (x, y) = if inviso && !cfg!(feature = "phobos") {
+    let (x, y) = if inviso && !true {
         inviso_scatter::random_direction_coord(
             world.cell_grid(),
             &mut world.scenario_rng,
@@ -4325,12 +4987,9 @@ fn emit_detonation_anim(
     // coordinate copied at469AA4. The terrain here includes the synchronous
     // bridge continuation, so a collapsed deck can now select SplashList.
     let (selection_coordinate, on_bridge) = bullet_location(world, detonation);
-    #[cfg(feature = "phobos")]
     let ignore_water_units = warhead
         .phobos_anim
         .conventional_ignore_units(&rules.phobos_warhead_anim);
-    #[cfg(not(feature = "phobos"))]
-    let ignore_water_units = false;
     let land = detonation_anim::bullet_land(
         world,
         rules,
@@ -4341,7 +5000,6 @@ fn emit_detonation_anim(
     );
     // Selection still runs for an isolated Iron Curtain impact, including
     // EMEffect RNG. Only afterward469BEA replaces its constructor type.
-    #[cfg(feature = "phobos")]
     let selection = detonation_anim::select_with_context(
         world,
         rules,
@@ -4349,17 +5007,6 @@ fn emit_detonation_anim(
         detonation.payload.base_damage,
         land,
         selection_coordinate,
-        crit_active,
-    );
-    #[cfg(not(feature = "phobos"))]
-    let selected = detonation_anim::effect(
-        world,
-        rules,
-        warhead,
-        detonation.payload.base_damage,
-        land,
-        selection_coordinate,
-        placement,
         crit_active,
     );
     // `0x00469BD6..0x00469C41`: a Bright bullet (`+0xE0`, the weapon's
@@ -4370,18 +5017,20 @@ fn emit_detonation_anim(
         let flags = (u32::from(warhead.cl_disable_red) << 1)
             | (u32::from(warhead.cl_disable_green) << 2)
             | (u32::from(warhead.cl_disable_blue) << 3);
-        out.effects
-            .combat_light_requests
-            .push(CombatLightRequest::Impact {
-                target_id: None,
-                damage: detonation.payload.base_damage,
-                warhead_ref: detonation.payload.warhead,
-                coord: placement,
-                force_create: true,
-                flags,
-            });
+        if crate::sim::combat::combat_light_chance_admits(world, rules, detonation.payload.warhead)
+        {
+            out.effects
+                .combat_light_requests
+                .push(CombatLightRequest::Impact {
+                    target_id: None,
+                    damage: detonation.payload.base_damage,
+                    warhead_ref: detonation.payload.warhead,
+                    coord: placement,
+                    force_create: true,
+                    flags,
+                });
+        }
     }
-    #[cfg(feature = "phobos")]
     {
         if area_result == Some(AreaDamageResult::IronCurtain) {
             if !rules.general.weapon_nullify_anim.is_empty() {
@@ -4413,22 +5062,6 @@ fn emit_detonation_anim(
             }
         }
     }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let effect = if area_result == Some(AreaDamageResult::IronCurtain) {
-            (!rules.general.weapon_nullify_anim.is_empty()).then(|| {
-                let type_id = world.interner.intern(&rules.general.weapon_nullify_anim);
-                // 46A2A1..46A301 uses the same placement and constructor row as
-                // the ordinary impact, then returns before the ordinary tail.
-                detonation_anim::placed_effect(type_id, placement)
-            })
-        } else {
-            selected
-        };
-        if let Some(effect) = effect {
-            crate::sim::world::damage_consequences::admit_explosion_effect(world, rules, effect);
-        }
-    }
 }
 
 /// One bullet's detonation, `BulletClass::DetonateAtCoord` then its cluster
@@ -4449,6 +5082,7 @@ pub(crate) fn commit_projectile_detonations_inline(
     projectile_detonations: &[ProjectileDetonation],
     emit: &mut CombatEmit,
     under_attack_events: &mut Vec<UnderAttackEvent>,
+    force_single_detonation: bool,
 ) {
     for request in projectile_detonations {
         let current = world.projectiles.current_detonation(*request);
@@ -4474,15 +5108,24 @@ pub(crate) fn commit_projectile_detonations_inline(
             detonation.reason,
             crate::sim::projectile::ProjectileDetonationReason::DeathWeapon
                 | crate::sim::projectile::ProjectileDetonationReason::AttachEffectShot
+                | crate::sim::projectile::ProjectileDetonationReason::FeedbackWeapon
+                | crate::sim::projectile::ProjectileDetonationReason::AnimWarheadDetonate
         );
         // Phobos `BulletClass_Explodes_AirburstCheck1/2` and Ares
         // BulletClass_Fire_SplitsB (1001A810, hook 0x468FFA) make `Splits`
         // take the airburst arm: one detonation and no outer cluster draws.
-        let (clusters, cluster_draws) = match projectile_type {
-            Some(projectile) if !projectile.airburst_arm() && !single_detonation => {
-                (projectile.cluster.max(0), true)
+        let (clusters, cluster_draws) = if force_single_detonation {
+            // `BulletClass::Detonate` runs one DetonateAtCoord and no Explode
+            // wrapper, so neither the cluster count nor its successor draw
+            // applies (Phobos `0x4690C1` calls it per target).
+            (1, false)
+        } else {
+            match projectile_type {
+                Some(projectile) if !projectile.airburst_arm() && !single_detonation => {
+                    (projectile.cluster.max(0), true)
+                }
+                _ => (1, false),
             }
-            _ => (1, false),
         };
         let mut coordinate = detonation.impact;
         // Production impacts retain their Bullet until this transaction ends.
@@ -4490,43 +5133,67 @@ pub(crate) fn commit_projectile_detonations_inline(
         // the temporary Bullet packet; do not invent a second alive flag.
         let represented_bullet = world.projectiles.get(detonation.projectile_id).is_some();
         for _ in 0..clusters {
+            let clustered = world.projectiles.current_detonation(ProjectileDetonation {
+                impact: coordinate,
+                ..*detonation
+            });
             // BulletClass::DetonateAtCoord prologue @0x004690B0 reads each
             // axis pair before its special/damage chain (0x004690CE..0x0046912B).
             // The native tests either bound for nonzero, then calls the shared
             // RandomRanged @0x0065C7E0 on g_MainRng @0x00886B88, X before Y.
-            let shake_x = (warhead.shake_x_lo != 0 || warhead.shake_x_hi != 0).then(|| {
-                world
-                    .main_rng
-                    .next_range_i32_inclusive(warhead.shake_x_lo, warhead.shake_x_hi)
-            });
-            let shake_y = (warhead.shake_y_lo != 0 || warhead.shake_y_hi != 0).then(|| {
-                world
-                    .main_rng
-                    .next_range_i32_inclusive(warhead.shake_y_lo, warhead.shake_y_hi)
-            });
+            // Phobos `0x4690C1` returns to `0x46A2FB` past that whole block, so
+            // a detonation the all-map pass will claim draws no shake at all.
+            let shake_suppressed = all_map_claims(world, &clustered, warhead);
+            // Phobos `BulletClass_Logics_NewChecks` (`0x4690D4`): a target
+            // failing the warhead's trigger conditions lands at the extras
+            // (`0x469AA4`) without the shake draws or the whole body.
+            let trigger_skip = warhead_trigger_skips(world, rules, &clustered, warhead);
+            let shake_x = (!trigger_skip
+                && !shake_suppressed
+                && (warhead.shake_x_lo != 0 || warhead.shake_x_hi != 0))
+                .then(|| {
+                    world
+                        .main_rng
+                        .next_range_i32_inclusive(warhead.shake_x_lo, warhead.shake_x_hi)
+                });
+            let shake_y = (!trigger_skip
+                && !shake_suppressed
+                && (warhead.shake_y_lo != 0 || warhead.shake_y_hi != 0))
+                .then(|| {
+                    world
+                        .main_rng
+                        .next_range_i32_inclusive(warhead.shake_y_lo, warhead.shake_y_hi)
+                });
             if shake_x.is_some() || shake_y.is_some() {
+                // Phobos `[Warhead] ShakeIsLocal=` falls back to
+                // `[General] ShakeIsLocal` (`Ext/Bullet/Hooks.DetonateLogics.cpp:38`).
+                // The visibility decision belongs to the client; carry the flag
+                // and the impact point to the presentation owner.
+                let local_only = warhead
+                    .phobos_extras
+                    .shake_is_local(rules.phobos_globals.shake_is_local);
                 world
                     .screen_shake_updates
                     .emit(crate::sim::combat::ScreenShakeUpdate {
                         x: shake_x,
                         y: shake_y,
+                        local_only,
+                        coord: clustered.impact,
                     });
             }
-            let clustered = world.projectiles.current_detonation(ProjectileDetonation {
-                impact: coordinate,
-                ..*detonation
-            });
             let damage_start = emit.damage_events.len();
             let explosion_start = emit.effects.explosion_effects.len();
             let smudge_start = emit.effects.smudge_spawn_requests.len();
-            let (area_continuation, crit_active) = emit_detonation_receivers(
+            let (area_continuation, crit_active, all_map_claimed) = emit_detonation_receivers(
                 world,
                 run,
                 rules,
                 overlay_registry,
                 &clustered,
                 warhead,
+                trigger_skip,
                 emit,
+                under_attack_events,
             );
             let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
             let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
@@ -4599,15 +5266,61 @@ pub(crate) fn commit_projectile_detonations_inline(
             // The ordinary outer cluster successor still follows that return.
             if area_continuation.is_none() || area_result != AreaDamageResult::IronCurtain {
                 emit_warhead_debris(world, rules, &live_tail, warhead, emit);
-                #[cfg(feature = "phobos")]
-                super::phobos_airburst::emit(world, rules, &live_tail);
-                #[cfg(not(feature = "phobos"))]
-                super::airburst::emit(world, rules, &live_tail);
+                // Phobos `BulletClass_Logics_Extras` (`0x469AA4`,
+                // `Ext/Bullet/Hooks.DetonateLogics.cpp:367-470`): after this
+                // cluster's detonation, the weapon's `ExtraWarheads=` fire at
+                // the same impact, before the airburst tail (`0x469EBA`).
+                super::phobos_extra_warheads::emit(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    &live_tail,
+                    emit,
+                    under_attack_events,
+                );
+                // Phobos `BulletClass_Logics_Extras`'s "Return to sender" arm
+                // (`0x469AA4`, `Ext/Bullet/Hooks.DetonateLogics.cpp:480-500`):
+                // after the extra warheads and before `UnlimboDetonate`, a
+                // `BulletType`'s `ReturnWeapon=` fires back at the firer from
+                // this impact.
+                super::phobos_return_weapon::emit(world, rules, &live_tail);
+                // Phobos `BulletClass_Logics_Extras`'s `UnlimboDetonate` arm
+                // (`0x469AA4`, `Ext/Bullet/Hooks.DetonateLogics.cpp:502-592`):
+                // after the weapon's own warhead, the same hook replays a
+                // `LimboLaunch=` firer of a qualifying warhead at this impact.
+                super::phobos_unlimbo_detonate::emit(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    &live_tail,
+                    warhead,
+                    emit,
+                    under_attack_events,
+                );
+                // Phobos NOPs the native airburst tail and owns both
+                // `Airburst=` and `Splits=` (`0x469EBA`, taking precedence
+                // over Ares); without Phobos the tail is `super::airburst`.
+                if rules.phobos() {
+                    super::phobos_airburst::emit(world, rules, &live_tail);
+                } else {
+                    super::airburst::emit(world, rules, &live_tail);
+                }
             }
             if cluster_draws {
+                // Phobos `BulletClass_Explode_Cluster` (`0x46902C`,
+                // `Ext/Bullet/Hooks.cpp:352-378`) replaces the stock
+                // `RandomRanged(0x100, 0x200)` bounds with the firing type's
+                // `ClusterScatter.Min=`/`Max=` leptons.
+                let (scatter_min, scatter_max) = projectile_type.map_or((0x100, 0x200), |kind| {
+                    (kind.cluster_scatter_min, kind.cluster_scatter_max)
+                });
                 coordinate = projectile_next_cluster_coord(
                     world.cell_grid(),
                     detonation.impact,
+                    scatter_min,
+                    scatter_max,
                     &mut world.scenario_rng,
                 );
             }
@@ -4632,6 +5345,7 @@ pub(crate) fn commit_projectiles(
         detonations,
         &mut emit,
         &mut under_attack_events,
+        false,
     );
 
     debug_assert!(emit.remove_attack.is_empty());
@@ -4643,6 +5357,106 @@ pub(crate) fn commit_projectiles(
         effects: emit.effects,
         under_attack_events,
     }
+}
+
+/// The warhead trigger refusal shared by the bullet `0x4690D4` gate and the
+/// `TechnoClass::ReceiveDamage` gate: health and veterancy thresholds, the
+/// neutral filter and `IsInvokerAllowed`.
+fn warhead_trigger_refuses(
+    world: &Simulation,
+    rules: &RuleSet,
+    warhead: &WarheadType,
+    target: &crate::sim::game_entity::GameEntity,
+    invoker: Option<u64>,
+) -> bool {
+    let object = world.interner.object_type(target.type_ref(), rules);
+    if !super::super::combat::warhead_triggers_allow(
+        warhead,
+        target,
+        object,
+        invoker,
+        rules
+            .phobos_globals
+            .affects_invoker_only_ignore_invoker_state,
+    ) {
+        return true;
+    }
+    !warhead.affects_neutral
+        && world
+            .houses
+            .get(&target.owner())
+            .is_some_and(|house| house.multiplay_passive())
+}
+
+/// Phobos `BulletClass_Logics_NewChecks` (`0x4690D4`,
+/// `Ext/Bullet/Hooks.DetonateLogics.cpp:9-41`): a bullet whose type (else the
+/// `[CombatDamage]` global, default yes) obeys warhead trigger conditions
+/// applies the health, veterancy, neutral and invoker tests to a Techno
+/// target; failing any sends the detonation to the impact extras
+/// (`GoToExtras 0x469AA4`) without the shake draws or the warhead body.
+fn warhead_trigger_skips(
+    world: &Simulation,
+    rules: &RuleSet,
+    detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
+) -> bool {
+    let obey = detonation
+        .payload
+        .projectile_type()
+        .and_then(|projectile| rules.projectile(world.interner.resolve(projectile)))
+        .and_then(|kind| kind.shrapnel_obey_warhead_trigger_conditions)
+        .unwrap_or(
+            rules
+                .phobos_globals
+                .shrapnel_obey_warhead_trigger_conditions,
+        );
+    if !obey {
+        return false;
+    }
+    let ProjectileTarget::Entity(target_id) = detonation.target else {
+        return false;
+    };
+    let Some(target) = world.substrate.entities.get(target_id) else {
+        return false;
+    };
+    warhead_trigger_refuses(
+        world,
+        rules,
+        warhead,
+        target,
+        (detonation.source_id != 0).then_some(detonation.source_id),
+    )
+}
+
+/// The `0x702CFE` scatter decision for a damage event's warhead name.
+/// gamemd's rules lookup allocates an empty type for an unknown name, so the
+/// hook still reads a warhead and its absent `PreventScatter=` falls through
+/// to the global; a name VERA cannot resolve must not turn the global off.
+fn warhead_prevents_scatter(rules: &RuleSet, name: &str) -> bool {
+    match rules.warhead(name) {
+        Some(warhead) => warhead.prevents_scatter(rules),
+        None => rules.phobos_globals.warhead_prevent_scatter,
+    }
+}
+
+/// `Ext/Techno/Hooks.ReceiveDamage.cpp:26-34`'s gate, with the damaging
+/// techno as invoker.
+fn receive_damage_trigger_refuses(
+    world: &Simulation,
+    event: &super::receiver_call::EntityDamageEvent,
+    target: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+) -> bool {
+    let Some(warhead) = rules.warhead(world.interner.resolve(event.warhead_ref)) else {
+        return false;
+    };
+    warhead_trigger_refuses(
+        world,
+        rules,
+        warhead,
+        target,
+        (event.attacker_id != 0).then_some(event.attacker_id),
+    )
 }
 
 #[inline]
@@ -4733,9 +5547,7 @@ fn radiation_delay_admits(world: &Simulation, rules: &RuleSet) -> bool {
         .session
         .binary_frame()
         .is_multiple_of(rules.radiation.application_delay as u32);
-    #[cfg(feature = "phobos")]
     return !rules.radiation.use_global_rad_application_delay || shared;
-    #[cfg(not(feature = "phobos"))]
     shared
 }
 
@@ -4756,7 +5568,6 @@ fn foot_radiation_cell(
 
 /// The retained Cell487CB0 total [`apply_foot_radiation`] reads once
 /// (`0x004DA5EB..0x004DA629`); site membership is irrelevant.
-#[cfg(not(feature = "phobos"))]
 fn cell_radiation_level(
     world: &Simulation,
     rules: &RuleSet,
@@ -4772,7 +5583,6 @@ fn cell_radiation_level(
 /// positive level in its cell. A sleeping Foot is woken by it
 /// (`world::idle_sleep`); the immunity terms it leaves out only wake one
 /// that would have ignored it.
-#[cfg(not(feature = "phobos"))]
 pub(crate) fn radiation_reaches_foot(world: &Simulation, rules: &RuleSet, stable_id: u64) -> bool {
     radiation_enabled(world)
         && radiation_delay_admits(world, rules)
@@ -4797,7 +5607,7 @@ pub(super) fn radiation_enabled(_world: &Simulation) -> bool {
 /// detonated (`WarheadType/Hooks.cpp:17`). A simulated detonation never has a
 /// projectile, so `BulletExt::Detonate`'s `pFiringHouse` travels on its
 /// payload instead.
-fn detonation_source_house(
+pub(crate) fn detonation_source_house(
     world: &Simulation,
     detonation: &ProjectileDetonation,
 ) -> Option<InternedId> {
@@ -4807,7 +5617,6 @@ fn detonation_source_house(
         .get(detonation.source_id)
         .map(|source| source.owner())
         .or_else(|| {
-            #[cfg(feature = "phobos")]
             {
                 detonation.payload.source_house().or_else(|| {
                     world
@@ -4816,10 +5625,6 @@ fn detonation_source_house(
                         .filter(|projectile| projectile.source_id() == detonation.source_id)
                         .and_then(|projectile| projectile.phobos_firer_house())
                 })
-            }
-            #[cfg(not(feature = "phobos"))]
-            {
-                None
             }
         })
 }
@@ -4843,13 +5648,43 @@ mod nuke_maker_tests;
 #[path = "building_hit_fire_tests.rs"]
 mod building_hit_fire_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "phobos_bullet_init_tests.rs"]
 mod phobos_bullet_init_tests;
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+#[path = "world_receiver_debris_tests.rs"]
+mod debris_tests;
 
 fn warhead_damages_wall(
     warhead: &WarheadType,
     wall_flags: &crate::rules::overlay_types::OverlayTypeFlags,
 ) -> bool {
     warhead.wall || warhead.wall_absolute_destroyer || (warhead.wood && wall_flags.armor_is_wood)
+}
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod prevent_scatter_tests {
+    use super::warhead_prevents_scatter;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    /// gamemd allocates an empty warhead for a name the rules do not define,
+    /// so the native hook's nullable read falls through to the global instead
+    /// of scattering.
+    #[test]
+    fn an_unresolved_warhead_name_keeps_the_global_prevent_scatter() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[CombatDamage]\nWarhead.PreventScatter=yes\n\
+             [Warheads]\n0=HIT\n1=OFF\n\
+             [HIT]\n[OFF]\nPreventScatter=no\n",
+        ))
+        .unwrap();
+        assert!(warhead_prevents_scatter(&rules, "HIT"));
+        assert!(!warhead_prevents_scatter(&rules, "OFF"));
+        assert!(
+            warhead_prevents_scatter(&rules, "NO-SUCH-WARHEAD"),
+            "an unknown name keeps the global"
+        );
+    }
 }

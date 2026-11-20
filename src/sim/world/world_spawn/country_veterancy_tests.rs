@@ -216,3 +216,51 @@ fn ares_country_building_rank_matches_native_init_manager_hook() {
         );
     }
 }
+
+/// Phobos `BuildingClass_Init_CountryBuildingVeteran`
+/// (`Ext/HouseType/Hooks.cpp:59-84`, hook `0x00442D1B`): the country's
+/// `VeteranDefenses` (`Ext/HouseType/Body.cpp:28`) ranks a `BuildCat=Combat`
+/// building; the same membership on any other building is ignored because that
+/// arm reads `VeteranBuildings` instead.
+#[test]
+fn phobos_veteran_defenses_rank_combat_buildings_only() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=SYNTHCOUNTRY\n[SYNTHCOUNTRY]\nVeteranDefenses=DEF,LAB\n\
+         [BuildingTypes]\n0=DEF\n1=LAB\n[DEF]\nStrength=200\nBuildCat=Combat\n\
+         [LAB]\nStrength=200\nBuildCat=Infrastructure\n",
+    ))
+    .unwrap();
+    for (type_name, expected_bits) in [("DEF", 0x3f80_0000_u64), ("LAB", 0)] {
+        let mut sim = Simulation::with_seed(0x442D_1B);
+        let owner = install_country_house(&mut sim, false);
+        let type_id = sim.interner.intern(type_name);
+        let mut actor = GameEntity::new_at_frame_zero_for_test(
+            1,
+            6,
+            5,
+            0,
+            0,
+            owner,
+            Health::new(200),
+            type_id,
+            EntityCategory::Structure,
+            0,
+            8,
+            false,
+        );
+        Simulation::install_techno_components(
+            &mut sim.interner,
+            &sim.session,
+            &sim.houses,
+            &mut actor,
+            rules.object(type_name),
+            &rules,
+            construction::ComponentOrigin::Runtime,
+        );
+        assert_eq!(
+            u64::from(actor.veterancy.raw().bits()),
+            expected_bits,
+            "{type_name}"
+        );
+    }
+}

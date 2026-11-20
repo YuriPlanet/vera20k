@@ -42,6 +42,22 @@ pips, the self-heal icon, control-group digits, and Phobos `DigitalDisplay`.
 With `phobos` compiled in, a shield bar drawn inside the health strip follows the
 strip because it shares the same block.
 
+## Phobos type switches
+
+With `phobos` compiled in, four TechnoType keys change when a bar and its pip
+call draw. All are `Valueable<bool>` defaulting to `no`
+(`Ext/TechnoType/Body.cpp:761-764`).
+
+| key | effect |
+|---|---|
+| `HealthBar.Hide=` | skips the whole health-bar tail (`0x6F64A9`): background, strip, pip call, shield bar and `DigitalDisplay`. The rank insignia draws earlier (`0x6F534E`) and stays. |
+| `HealthBar.HidePips=` | skips the class pip call (`0x6F6637` buildings, `0x6F683C` mobiles) while the strip still draws. Scale pips, the self-heal icon and control-group digits share that call. |
+| `HealthBar.Permanent=` | takes the hovered arm while the object is unhovered and unselected (`0x6F5E37`); the shroud and disguise tests still apply. |
+| `HealthBar.Permanent.PipScale=` | lifts the pip call's hover/selection test (`0x6F67E8`/`0x6F6A58`), so pips and group digits stay with a permanent bar. |
+
+These are presentation switches: they change no simulation state, saves or
+network sync.
+
 ## Residuals
 
 - The visible-object count times the pip count (17 for mobiles, 8 for infantry)
@@ -49,3 +65,5 @@ strip because it shares the same block.
   measurement is recorded yet.
 - `docs/ini-commander-personalities.md` and other product extensions keep their
   own presentation switches; this option is independent of them.
+- `HealthBar.Hide=` also gates Phobos's select-box hooks (`0x6D9076`/`0x6D9134`)
+  together with `HideSelectBox`. VERA's select box reads neither key yet.

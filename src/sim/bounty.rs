@@ -2,6 +2,8 @@
 //! Source: installed Ares payout10043230..10043395 and display10044490.
 //! HouseTracking and Economy retain ownership of counts and money.
 
+pub use crate::sim::flying_text::BountyText;
+
 use crate::{
     map::entities::EntityCategory,
     rules::ruleset::RuleSet,
@@ -16,17 +18,6 @@ use crate::{
     },
     util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits},
 };
-
-/// A consumed signed credit label, before the client's shroud/visual-character
-/// checks. Display rejection cannot undo the wallet or requeue the amount.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BountyText {
-    pub entity_id: u64,
-    pub amount: i32,
-    /// Unraised virtual+48 point: IsShrouded586360 reads its height too.
-    pub coord: ProjectileCoord,
-    pub z_offset: i32,
-}
 
 /// TechnoExt+A8/AC, cleared by constructor10042DFE/10042E04. This queued
 /// presentation survives saves and in-place conversion, but is not gameplay CRC.
@@ -111,7 +102,7 @@ impl Simulation {
             self,
             rules,
             BountyText {
-                entity_id: id,
+                entity_id: Some(id),
                 amount,
                 coord: ProjectileCoord {
                     x: coord.x,
@@ -119,6 +110,9 @@ impl Simulation {
                     z: coord.z,
                 },
                 z_offset: lift,
+                display_to: None,
+                display_owner: None,
+                pixel_offset: [0, 0],
             },
         );
     }
@@ -325,9 +319,10 @@ mod tests {
         );
         let events = RefCell::new(Vec::new());
         let observe = |sim: &Simulation, _: &RuleSet, text: BountyText| {
-            events
-                .borrow_mut()
-                .push((text, sim.entities().get(text.entity_id).unwrap().owner()));
+            events.borrow_mut().push((
+                text,
+                sim.entities().get(text.entity_id.unwrap()).unwrap().owner(),
+            ));
         };
         let effects = FrameEffects::empty().with_bounty_text(&observe);
         sim.flush_bounty_display(hunter, &rules, effects, false);

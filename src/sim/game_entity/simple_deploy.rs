@@ -27,6 +27,13 @@ impl GameEntity {
         })
     }
 
+    /// Unit+0x6E1 alone: the forward (`Deploying`) transition byte.
+    pub fn unit_deploy_begin_active(&self) -> bool {
+        self.mission_leaf
+            .as_unit()
+            .is_some_and(|leaf| leaf.deploy_begin_active() != 0)
+    }
+
     pub fn deploy_anim(&self) -> Option<AnimId> {
         self.deploy_attachment.deploy_anim
     }

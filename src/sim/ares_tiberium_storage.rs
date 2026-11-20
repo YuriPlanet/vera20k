@@ -131,18 +131,13 @@ impl TiberiumStore {
         ));
     }
 
-    /// `StorageClass::RemoveAmount @ 0x006C96B0`: at most the slot's
-    /// amount leaves; returns what left.
+    /// `StorageClass::RemoveAmount @ 0x006C96B0`; the single native port lives
+    /// on [`crate::sim::storage_class::StorageAmounts`], which this Ares view
+    /// borrows by value.
     fn remove_amount(&mut self, amount: NativeF32Bits, slot: usize) -> NativeF32Bits {
-        let held = self.0[slot];
-        let removed = if X87::compare(X87::load_f32(held), X87::load_f32(amount))
-            == MaskedX87Ordering::Less
-        {
-            held
-        } else {
-            amount
-        };
-        self.0[slot] = minus(held, removed);
+        let mut store = crate::sim::storage_class::StorageAmounts::from_amounts(self.0);
+        let removed = store.remove_amount(amount, slot);
+        self.0 = store.amounts();
         removed
     }
 
@@ -449,6 +444,20 @@ impl AresTiberiumStorage {
 }
 
 /// A tiberium type's `Value=` (0 for a slot no type fills).
+/// Phobos `BuildingExt::StoreTiberium` (`Ext/Building/Body.cpp:77-94`): the
+/// deposited float converts to `amount * Value[orig] / Value[storage]`
+/// bales of the storage type in binary32. A zero/unknown storage value is
+/// left to the float division natively; VERA keeps the ratio as computed.
+fn phobos_storage_conversion(
+    amount: NativeF32Bits,
+    original_value: i32,
+    storage_value: i32,
+) -> NativeF32Bits {
+    let original = f32::from_bits(amount.bits());
+    let converted = original * original_value as f32 / storage_value as f32;
+    NativeF32Bits::from_bits(converted.to_bits())
+}
+
 fn tiberium_value(rules: &RuleSet, slot: usize) -> i32 {
     u8::try_from(slot)
         .ok()
@@ -581,6 +590,27 @@ impl Simulation {
         }
         if positive(amount) {
             if use_storage {
+                // Phobos `UnitClass_Unload_Storage` (`0x73E474`,
+                // `Ext/House/Hooks.cpp:61-79`): `[General]
+                // Storage.TiberiumIndex >= 0` converts the deposit into
+                // `amount * Value[orig] / Value[storage]` bales of the
+                // storage type before it reaches the house store.
+                let (amount, slot) = {
+                    let storage = rules.phobos_globals.storage_tiberium_index;
+                    if storage >= 0 {
+                        let storage_slot = usize::try_from(storage).unwrap_or(0);
+                        (
+                            phobos_storage_conversion(
+                                amount,
+                                tiberium_value(rules, slot),
+                                tiberium_value(rules, storage_slot),
+                            ),
+                            storage_slot,
+                        )
+                    } else {
+                        (amount, slot)
+                    }
+                };
                 self.give_tiberium(owner, amount, slot, rules);
             } else {
                 value = value.wrapping_add(worth(amount, price, income));

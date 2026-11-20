@@ -36,7 +36,6 @@ use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeRef
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules, RuleSet};
 use crate::rules::superweapon_targeting::AresSuperWeaponTargetingState;
 use crate::rules::superweapon_type::AresSuperWeaponPresentation;
-#[cfg(feature = "phobos")]
 use crate::rules::superweapon_type::PhobosSuperWeaponAvailability;
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
 use crate::rules::superweapon_type::UnitDeliveryRules;
@@ -239,6 +238,9 @@ pub struct RulesLayerStack {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// (`ares_switch::launch_keys_off`).
     ares_keys_off: bool,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so the games this
+    /// stack processes play Phobos (`rules::phobos_switch`).
+    phobos_required: bool,
 }
 
 impl RulesLayerStack {
@@ -253,6 +255,7 @@ impl RulesLayerStack {
             // stands for the game `ares_switch::game_ships_ares` says.
             ships_ares: crate::rules::ares_switch::game_ships_ares(false),
             ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
+            phobos_required: false,
         }
     }
 
@@ -272,6 +275,15 @@ impl RulesLayerStack {
     /// launch's (`ares_switch::launch_keys_off`).
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the stack of a game whose selected mod declares
+    /// `[Extensions] Phobos=yes`, so its rules play Phobos whatever keys they
+    /// hold. The game's owner sets it from the launch
+    /// (`NativeRulesProcessOwner::startup_layers`).
+    pub fn with_phobos_required(mut self, required: bool) -> Self {
+        self.phobos_required = required;
         self
     }
 
@@ -504,6 +516,7 @@ impl RulesLayerStack {
                     content_hash: self.content_hash_for_layers(index + 1),
                     native_type_construction_trace,
                     ares_inputs,
+                    phobos_required: self.phobos_required,
                 };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
@@ -540,6 +553,7 @@ impl RulesLayerStack {
                 content_hash: self.content_hash(),
                 native_type_construction_trace,
                 ares_inputs,
+                phobos_required: self.phobos_required,
             },
             after_map_result,
         ))
@@ -841,11 +855,22 @@ pub struct ProcessedRulesLayers {
     /// What the passes give the per-game Ares switch; saved with the rules,
     /// so a loaded game projects the same answer.
     ares_inputs: crate::rules::ares_switch::AresInputs,
+    /// The selected mod declared `[Extensions] Phobos=yes`: the projection
+    /// turns Phobos on even without a Phobos key. Saved with the rules, so a
+    /// loaded game projects the same answer.
+    #[serde(default)]
+    phobos_required: bool,
 }
 
 impl ProcessedRulesLayers {
     pub(crate) fn ares_inputs(&self) -> &crate::rules::ares_switch::AresInputs {
         &self.ares_inputs
+    }
+
+    /// Whether the selected mod declares `[Extensions] Phobos=yes`
+    /// (`rules::phobos_switch`).
+    pub(crate) fn phobos_required(&self) -> bool {
+        self.phobos_required
     }
 
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {
@@ -910,7 +935,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[RadiationTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn radiation_types(&self) -> Option<&RadiationTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -920,7 +944,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[InsigniaTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn insignia_types(&self) -> Option<&InsigniaTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -930,7 +953,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[ShieldTypes]` catalog with the same retained process lifetime
     /// as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn shield_types(&self) -> Option<&ShieldTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -940,7 +962,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[DigitalDisplayTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn digital_display_types(&self) -> Option<&DigitalDisplayTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -950,7 +971,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[AttachEffectTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn attach_effect_types(&self) -> Option<&AttachEffectTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -1418,9 +1438,7 @@ impl ProcessedRulesLayers {
         registry.validate_prerequisites()?;
         registry.validate_radiation_types()?;
         registry.validate_shield_types()?;
-        #[cfg(feature = "phobos")]
         registry.validate_digital_display_types()?;
-        #[cfg(feature = "phobos")]
         registry.validate_attach_effect_types()?;
         let families = &registry.families;
         let projectile_count = families
@@ -1969,7 +1987,6 @@ impl ProcessedRulesLayers {
     }
 
     /// Phobos insignia state after every reached TechnoType ReadINI pass.
-    #[cfg(feature = "phobos")]
     pub(crate) fn techno_insignia_states(
         &self,
     ) -> impl Iterator<
@@ -2237,6 +2254,73 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// Phobos `ShadowIndices=` after every reached fixed-ART pass.
+    pub(crate) fn phobos_shadow_index_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, &[i32], &[i32])> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.phobos_shadow_indices.as_slice(),
+                        member.phobos_shadow_indices_frames.as_slice(),
+                    )
+                })
+            })
+    }
+
+    /// Phobos `ShadowIndex.Frame=` after every reached fixed-ART pass.
+    pub(crate) fn phobos_shadow_index_frame_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.phobos_shadow_index_frame,
+                    )
+                })
+            })
+    }
+
+    /// Phobos `TurretShadow=` after every reached fixed-ART pass.
+    pub(crate) fn phobos_turret_shadow_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, Option<bool>)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.phobos_turret_shadow,
+                    )
+                })
+            })
+    }
+
     /// Each SuperWeaponType's `WeaponType=` (+9C) and `AuxBuilding=` (+C8)
     /// after every reached pass.
     pub(crate) fn super_weapon_reference_states(
@@ -2282,12 +2366,64 @@ impl ProcessedRulesLayers {
         })
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_super_weapon_availability_states(
         &self,
     ) -> impl Iterator<Item = (&str, PhobosSuperWeaponAvailability)> {
         self.member_states(RulesTypeFamily::SuperWeapon, |member| {
             member.super_weapon_phobos_availability.clone()
+        })
+    }
+
+    /// Phobos `SW.Next*`/`SW.Link*`, one entry per registered definition.
+    pub(crate) fn phobos_super_weapon_chaining_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_chaining.clone()
+        })
+    }
+
+    /// Phobos `Detonate.*`, one entry per registered definition.
+    pub(crate) fn phobos_super_weapon_detonate_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_detonate.clone()
+        })
+    }
+
+    /// Phobos `LimboDelivery.*`/`LimboKill.*`, one entry per registered
+    /// definition.
+    pub(crate) fn phobos_super_weapon_limbo_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, crate::rules::phobos_limbo::PhobosSuperWeaponLimbo)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_limbo.clone()
+        })
+    }
+
+    /// Phobos `Message.Activated.*`/`EVA.Activated.*` and the linked pair, one
+    /// entry per registered definition.
+    pub(crate) fn phobos_super_weapon_messages_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_messages.clone()
         })
     }
 
@@ -2298,11 +2434,18 @@ impl ProcessedRulesLayers {
     }
 
     /// Phobos `UnitTypeExt`'s `OreGathering.*` vectors, one per VehicleType.
-    #[cfg(feature = "phobos")]
     pub(crate) fn ore_gathering_states(
         &self,
     ) -> impl Iterator<Item = (&str, &crate::rules::object_type::PhobosOreGathering)> {
         self.member_states(RulesTypeFamily::Vehicle, |member| &member.ore_gathering)
+    }
+
+    /// Phobos `UnitTypeExt`'s resolved `DeployingAnims=`, one list per
+    /// VehicleType.
+    pub(crate) fn deploying_anim_states(&self) -> impl Iterator<Item = (&str, &[String])> {
+        self.member_states(RulesTypeFamily::Vehicle, |member| {
+            member.phobos_deploying_anims.as_slice()
+        })
     }
 
     /// Ares GenericWarhead references, resolved by the same ordered type
@@ -2875,6 +3018,14 @@ impl ProcessedRulesLayers {
         )
     }
 
+    pub(crate) fn stock_fire_anims(&self) -> (Option<&str>, Option<&str>) {
+        let state = &self
+            .native_type_construction_trace
+            .registry_state()
+            .select_anim;
+        (state.small_fire.as_deref(), state.large_fire.as_deref())
+    }
+
     pub(crate) fn wind_direction(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -3110,7 +3261,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`, the runtime ColorScheme
     /// index the ordered passes resolved.
-    #[cfg(feature = "phobos")]
     pub(crate) fn timer_blink_color_scheme(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -3119,7 +3269,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[AudioVisual] MissingCameo=`, retained with the Rules scalars
     /// rather than read from the compatibility projection.
-    #[cfg(feature = "phobos")]
     pub(crate) fn missing_cameo(&self) -> &str {
         &self
             .native_type_construction_trace
@@ -3284,6 +3433,15 @@ impl ProcessedRulesLayers {
             &state.rules_ion_beam_anim,
             &state.rules_ion_cannon_warhead,
         )
+    }
+
+    /// `[AudioVisual] Dig=`: the `Rules+0x294` AnimType name the Tunnel
+    /// locomotor's dig/dig-out transitions construct.
+    pub(crate) fn dig_anim(&self) -> &str {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_dig_anim
     }
 
     /// Consume only the typed-reader compatibility projection and deliberately
@@ -3511,7 +3669,12 @@ pub(crate) struct CountryVeterancyState {
     infantry: Vec<String>,
     units: Vec<String>,
     aircraft: Vec<String>,
-    /// Only a read the Ares way leaves this from its default.
+    /// Phobos `HouseTypeExt::VeteranDefenses` (`Ext/HouseType/Body.cpp:28`):
+    /// `ValueableVector<BuildingTypeClass*>`, empty at the extension
+    /// constructor (`:46`), read from the country's own section. It replaces
+    /// `VeteranBuildings` only for a `BuildCat=Combat` building
+    /// (`Ext/HouseType/Hooks.cpp:59-84`, hook `0x00442D1B`).
+    phobos_defenses: Vec<String>,
     ares: AresCountryState,
 }
 
@@ -3885,7 +4048,8 @@ pub(crate) fn read_nullable_type_vector<T: Clone>(
 
 /// Ares `NullableVector<int>::Read` (`0x1002EB00`) over `parse_values<int>`,
 /// with the same retain/`<default>` rules as [`read_nullable_type_vector`].
-fn read_nullable_int_vector(
+/// Phobos repeats it for its own `NullableVector<int>` fields.
+pub(crate) fn read_nullable_int_vector(
     section: &IniSection,
     key: &str,
     current: Option<&Vec<i32>>,
@@ -3917,7 +4081,8 @@ fn read_valueable_type(
 /// Ares `ValueableVector<TechnoTypeClass*>::Read` (`0x1000EDD0`): ReadString
 /// returning 0 (absent or empty) retains; any other value replaces the
 /// vector with the tokens that resolve. There is no `<default>` form.
-fn read_valueable_type_vector(
+/// Phobos repeats it for `ValueableVector<TechnoTypeClass*>` fields.
+pub(crate) fn read_valueable_type_vector(
     section: &IniSection,
     key: &str,
     current: &[String],
@@ -4080,6 +4245,16 @@ impl CountryVeterancyState {
     /// The country's own Ares paradrop overrides.
     pub(crate) fn paradrop(&self) -> &crate::rules::ares_country_paradrop::AresCountryParadrop {
         &self.ares.paradrop
+    }
+
+    /// Phobos `BuildingClass_Init_CountryBuildingVeteran`
+    /// (`Ext/HouseType/Hooks.cpp:59-84`, hook `0x00442D1B`): the country's
+    /// `VeteranDefenses` membership, consulted only when the building's
+    /// `BuildCat` is `Combat`; any other building keeps `VeteranBuildings`.
+    pub(crate) fn contains_defense(&self, type_id: &str) -> bool {
+        self.phobos_defenses
+            .iter()
+            .any(|id| id.eq_ignore_ascii_case(type_id))
     }
 
     pub(crate) fn contains(&self, category: ObjectCategory, type_id: &str) -> bool {
@@ -4620,15 +4795,18 @@ pub(crate) struct NativeRulesRegistryState {
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
     rules_ion_cannon_warhead: String,
+    /// `[AudioVisual] Dig=` (`Rules+0x294`): the AnimType the Tunnel locomotor
+    /// constructs at its four dig/dig-out transitions. Empty is the null pointer
+    /// the native constructor starts with (`0x00665A10`).
+    #[serde(default)]
+    rules_dig_anim: String,
     /// Phobos `RulesExt::TimerBlinkColorScheme`: the runtime ColorScheme the
     /// blinking timer prints in, `[Colors]` entry `R / 2`, or -1 for `none`.
-    #[cfg(feature = "phobos")]
     rules_timer_blink_color_scheme: i32,
     /// Phobos `RulesExt::MissingCameo`: the file a type with no cameo art and
     /// a superweapon with no icon take in place of the stock `XXICON.SHP`
     /// (`Replace_XXICON_With_New` at `0x715A4D`, `0x716D13`, `0x6CE8AA` and
     /// `0x6CEE31`); empty after `none`.
-    #[cfg(feature = "phobos")]
     #[serde(default = "crate::rules::ruleset::default_missing_cameo")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
@@ -4750,11 +4928,10 @@ impl NativeRulesRegistryState {
             rules_ion_blast_anim: String::new(),
             rules_ion_beam_anim: String::new(),
             rules_ion_cannon_warhead: String::new(),
+            rules_dig_anim: String::new(),
             // RulesExt::ExtData constructor `TimerBlinkColorScheme { 5 }`, the
             // scheme the game blinks in.
-            #[cfg(feature = "phobos")]
             rules_timer_blink_color_scheme: 5,
-            #[cfg(feature = "phobos")]
             rules_missing_cameo: crate::rules::ruleset::DEFAULT_MISSING_CAMEO.to_owned(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
@@ -4904,7 +5081,6 @@ impl NativeRulesRegistryState {
         Ok(())
     }
 
-    #[cfg(feature = "phobos")]
     fn validate_attach_effect_types(&self) -> Result<(), RulesError> {
         if self.phobos_attach_effect_types.is_some() != crate::rules::PHOBOS_ENABLED {
             return Err(RulesError::InvalidSavedState(
@@ -4914,7 +5090,6 @@ impl NativeRulesRegistryState {
         Ok(())
     }
 
-    #[cfg(feature = "phobos")]
     fn validate_digital_display_types(&self) -> Result<(), RulesError> {
         if self.phobos_digital_display_types.is_some() != crate::rules::PHOBOS_ENABLED {
             return Err(RulesError::InvalidSavedState(
@@ -5172,9 +5347,7 @@ impl NativeRulesRegistryState {
             //686D35 precedes this TypeReset6876AC and its flags/phase survive.
             ares_global_controls: self.ares_global_controls,
             // Phobos allocates RulesExt only with RulesClass (0x667A1D).
-            #[cfg(feature = "phobos")]
             rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
-            #[cfg(feature = "phobos")]
             rules_missing_cameo: self.rules_missing_cameo,
             rules_color_add: self.rules_color_add,
             rules_color_add_selectors: self.rules_color_add_selectors,
@@ -5355,6 +5528,10 @@ struct SelectAnimRulesState {
     weather_con_bolt_explosion: String,
     weapon_nullify_anim: String,
     splash_list: Vec<String>,
+    /// ReadAudioVisual `SmallFire=` / `LargeFire=` animation pointers;
+    /// `None` is the constructor's null.
+    small_fire: Option<String>,
+    large_fire: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -5506,6 +5683,29 @@ struct ProcessedType {
     /// current value as default across Image changes and later Rules passes.
     #[serde(default)]
     voxel_shadow_index: i32,
+    /// Phobos `ShadowIndices=` (`Ext/TechnoType/Body.cpp:1325`): the ART
+    /// section re-reads it on every pass, so a missing key leaves this pass's
+    /// list empty. Its frames are read beside it (`Body.cpp:1327`); the hooked
+    /// `0x7072A1` matrix build consumes the drawing section's own frame
+    /// (`Hooks.MatrixOp.cpp:1074-1104`).
+    #[serde(default)]
+    phobos_shadow_indices: Vec<i32>,
+    /// Phobos `ShadowIndices.Frame=` (`Ext/TechnoType/Body.cpp:1327`): one
+    /// HVA frame per entry of the section list, `-1` where the native resize
+    /// filled a missing entry.
+    #[serde(default)]
+    phobos_shadow_indices_frames: Vec<i32>,
+    /// Phobos `ShadowIndex.Frame=` (`Ext/TechnoType/Body.cpp:1338`, ART):
+    /// `Valueable<int>` constructed 0 for the single-section shadow's HVA
+    /// frame (`0x7072A1`).
+    #[serde(default)]
+    phobos_shadow_index_frame: i32,
+    /// Phobos `TurretShadow=` (`Ext/TechnoType/Body.cpp:1323`, ART, `Nullable<bool>`):
+    /// whether a drawing unit adds the turret's own shadow stencil
+    /// (`Ext/TechnoType/Hooks.MatrixOp.cpp:803,870`); unset takes
+    /// `[AudioVisual] DrawTurretShadow=`.
+    #[serde(default)]
+    phobos_turret_shadow: Option<bool>,
     /// TechnoType ctor711082 initializes+634 to255; ReadInt714570 uses
     /// its current value, including a prior TAction106 write, as the default.
     /// Native controls: trigger_object_tech_level.json scalar_layers/lifecycle.
@@ -5730,19 +5930,35 @@ struct ProcessedType {
     super_weapon_launch: crate::rules::superweapon_type::AresSuperWeaponLaunch,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
     /// ordered Process owner as the Ares gates and keyed the same way.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     super_weapon_phobos_availability: PhobosSuperWeaponAvailability,
+    /// Phobos `SW.Next*`/`SW.Link*` (`Ext/SWType/Body.cpp:170-265`), read by
+    /// the same ordered Process owner as the availability gates.
+    #[serde(default)]
+    super_weapon_phobos_chaining: crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining,
+    /// Phobos `Detonate.*` (`Ext/SWType/Body.cpp:274-278`), read in the same
+    /// pass before the chaining group.
+    #[serde(default)]
+    super_weapon_phobos_detonate: crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate,
+    /// Phobos `LimboDelivery.*`/`LimboKill.*` (`Ext/SWType/Body.cpp:159-169`).
+    #[serde(default)]
+    super_weapon_phobos_limbo: crate::rules::phobos_limbo::PhobosSuperWeaponLimbo,
+    /// Phobos `Message.Activated.*`/`EVA.Activated.*` and the linked pair
+    /// (`Ext/SWType/Body.cpp:241-250`).
+    #[serde(default)]
+    super_weapon_phobos_messages: crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages,
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` vectors.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     ore_gathering: crate::rules::object_type::PhobosOreGathering,
+    /// Phobos `UnitTypeExt`'s `DeployingAnims=` resolved against the
+    /// animation registry; an absent key keeps the previous pass's list.
+    #[serde(default)]
+    phobos_deploying_anims: Vec<String>,
     /// Phobos `TechnoTypeExt::LoadFromINIFile`'s insignia block. Its
     /// `InsigniaType=` resolution and direct keys are read per reached pass on
     /// the same live TechnoType, so this accumulates instead of projecting a
     /// final merged section.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
     /// Ares `TechnoTypeExt`'s insignia keys, read on every reached pass of
@@ -5966,8 +6182,8 @@ pub(crate) struct AnimTypeReferences {
     spawns_particle: Option<String>,
     /// Ares AnimTypeExt `Weapon` (1000A590 -> 1000A370: WeaponType Find,
     /// no allocation), read last by the LoadFromINI hook (0x4287DC/0x4287E9).
-    /// `none` clears it; an unknown name keeps it. Only a read the Ares way
-    /// sets it.
+    /// `none` clears it; an unknown name keeps it. Phobos's replaced anim
+    /// damage body reads the same reference.
     #[serde(default)]
     weapon: Option<String>,
     /// The one sound slot (+2F8, constructor -1) `AnimTypeClass::Start @
@@ -6091,6 +6307,16 @@ pub(crate) struct WeaponSlots {
     extra_elite: Vec<Option<String>>,
     #[serde(default)]
     offsets: crate::rules::weapon_offsets::WeaponOffsets,
+    /// Phobos `MultiWeapon.*`, read on every reached TechnoType pass by the
+    /// same ordered reader that owns the slot arrays
+    /// (`Ext/TechnoType/Hooks.MultiWeapon.cpp:3-66`, hook `0x7128B2`).
+    #[serde(default)]
+    multi_weapon: crate::rules::phobos_multi_weapon::PhobosMultiWeapon,
+    /// Phobos `TechnoTypeExt::ReadMultiWeapon` (constructor false,
+    /// `Body.h:812`): the latch the numbered weapon read branches on. It lives
+    /// beside the slots it clears, not in the projected type.
+    #[serde(default)]
+    multi_weapon_read: bool,
 }
 
 impl WeaponSlots {
@@ -6104,6 +6330,12 @@ impl WeaponSlots {
 
     pub(crate) fn weapon_count(&self) -> i32 {
         self.weapon_count
+    }
+
+    /// Phobos `MultiWeapon.*` after every reached pass; the projected type's
+    /// `SelectMultiWeapon` reads it.
+    pub(crate) fn multi_weapon(&self) -> &crate::rules::phobos_multi_weapon::PhobosMultiWeapon {
+        &self.multi_weapon
     }
 
     pub(crate) fn base(&self) -> Vec<Option<String>> {
@@ -6252,6 +6484,10 @@ impl ProcessedType {
             overlay_explodes: false,
             overlay_cell_anim: None,
             voxel_shadow_index: 0,
+            phobos_shadow_indices: Vec::new(),
+            phobos_shadow_indices_frames: Vec::new(),
+            phobos_shadow_index_frame: 0,
+            phobos_turret_shadow: None,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(),
             techno_references: TechnoTypeReferences::new(),
@@ -6343,12 +6579,18 @@ impl ProcessedType {
             super_weapon_targeting: AresSuperWeaponTargetingState::default(),
             super_weapon_charge: AresSuperWeaponCharge::default(),
             super_weapon_launch: Default::default(),
-            #[cfg(feature = "phobos")]
             super_weapon_phobos_availability: PhobosSuperWeaponAvailability::default(),
+            super_weapon_phobos_chaining:
+                crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining::default(),
+            super_weapon_phobos_detonate:
+                crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate::default(),
+            super_weapon_phobos_limbo: crate::rules::phobos_limbo::PhobosSuperWeaponLimbo::default(
+            ),
+            super_weapon_phobos_messages:
+                crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages::default(),
             additional_super_weapons: Vec::new(),
-            #[cfg(feature = "phobos")]
             ore_gathering: crate::rules::object_type::PhobosOreGathering::default(),
-            #[cfg(feature = "phobos")]
+            phobos_deploying_anims: Vec::new(),
             phobos_insignia: Default::default(),
             ares_insignia: Default::default(),
             generic_super_weapon_warhead: None,
@@ -6519,11 +6761,10 @@ struct RulesPassProcessor {
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
     rules_ion_cannon_warhead: String,
-    #[cfg(feature = "phobos")]
+    rules_dig_anim: String,
     rules_timer_blink_color_scheme: i32,
     /// Phobos `[AudioVisual] MissingCameo=`, retained with the other Rules
     /// scalars for the pass.
-    #[cfg(feature = "phobos")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
     rules_drain_money_frame_delay: i32,
@@ -6615,9 +6856,8 @@ impl RulesPassProcessor {
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
             rules_ion_cannon_warhead: registry_state.rules_ion_cannon_warhead,
-            #[cfg(feature = "phobos")]
+            rules_dig_anim: registry_state.rules_dig_anim,
             rules_timer_blink_color_scheme: registry_state.rules_timer_blink_color_scheme,
-            #[cfg(feature = "phobos")]
             rules_missing_cameo: registry_state.rules_missing_cameo,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
@@ -6735,12 +6975,35 @@ impl RulesPassProcessor {
         // Phobos `AttachEffectTypeClass::LoadFromINI`'s `Read<true>` type
         // factories run before this pass's type bodies, so a WeaponType or
         // WarheadType only an AttachEffect key names is read in this pass.
-        #[cfg(feature = "phobos")]
         self.allocate_attach_effect_references(pass);
+        // Phobos `BuildingTypeExt::LoadFromINI`'s `Grinding_Weapon.Read<true>`
+        // constructs the named weapon on the same pass.
+        self.allocate_grinding_references(pass);
+        // Phobos `SWTypeExt::LoadFromINI`'s `Detonate.Weapon`/
+        // `Detonate.Warhead` `Read<true>` factories construct their types on
+        // the same pass (`Ext/SWType/Body.cpp:274-275`).
+        self.allocate_sw_detonate_references(pass);
+        // Phobos `TechnoTypeExt::LoadFromINI`'s `WarpInWeapon.Read<true>` and
+        // `WarpInMinRangeWeapon.Read<true>` construct their weapons on the
+        // same pass, for every TechnoType family.
+        self.allocate_warp_in_weapon_references(pass);
+        // Phobos `DroppodTypeClass::LoadFromINI`'s `DropPod.Weapon.Read<true>`
+        // (`New/Type/Affiliated/DroppodTypeClass.cpp:27`) constructs its
+        // weapon on the same pass, for every non-building TechnoType (the
+        // settings block exists for each; `Ext/TechnoType/Body.cpp:1430`).
+        self.allocate_droppod_weapon_references(pass);
+        // Phobos `StraightTrajectoryType::Read` reads
+        // `Trajectory.Straight.PassDetonateWarhead` / `ProximityWarhead` with
+        // `Read<true>`: their warheads are constructed on this pass too.
+        self.allocate_trajectory_warhead_references(pass);
+        // Phobos `WarheadTypeExt`'s `Shield.BreakWeapon.Read<true>`
+        // (`Ext/WarheadType/Body.cpp:253`) constructs the weapon it names
+        // before this pass's type bodies, for every WarheadType; the
+        // plain-Find `Shield.Respawn.Weapon` allocates nothing.
+        self.allocate_shield_break_weapon_references(pass);
         // Phobos `RulesExt::LoadBeforeTypeData` runs
         // `InsigniaTypeClass::LoadFromINIList` before this pass's type bodies,
         // so a same-pass `InsigniaType=` resolves against it.
-        #[cfg(feature = "phobos")]
         self.allocate_insignia_types(pass);
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds);
         // RulesExt LoadAfterTypeData: installed679CAF ->1002C9B0 ->1002AAF0
@@ -6876,13 +7139,9 @@ impl RulesPassProcessor {
         // keeps their order.
         self.missile_spawn.apply_pass(pass);
         self.allocate_radiation_references(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_radiation_types(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_shield_types(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_digital_display_types(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_attach_effect_types(pass);
         // Elevation and Wall contain no Type factories.
         self.allocate_audio_visual_references(pass, fixed_sounds);
@@ -7161,7 +7420,6 @@ impl RulesPassProcessor {
     /// `ValueableVector<TechnoTypeClass*>` resolves each token across every
     /// techno family (`TechnoTypeClass::Find`), skipping unknown ones; a
     /// reached list replaces and an absent key retains.
-    #[cfg(feature = "phobos")]
     fn resolve_existing_techno_list_from(
         &self,
         section: &IniSection,
@@ -7245,6 +7503,27 @@ impl RulesPassProcessor {
                 .filter_map(|token| self.find_existing_techno_type(token))
                 .collect(),
         )
+    }
+
+    /// `SuperWeaponTypeClass::FindIndex` over the registered
+    /// `[SuperWeaponTypes]` entries: the canonical section name for a
+    /// case-insensitive token, or `None` for an unknown one.
+    /// `BuildingTypeClass::Find` over the registered `[BuildingTypes]` for
+    /// the limbo-delivery type list.
+    fn find_existing_building_name(&self, token: &str) -> Option<String> {
+        self.families
+            .get(&RulesTypeFamily::Building)?
+            .iter()
+            .find(|member| member.native_stored_id.eq_ignore_ascii_case(token))
+            .map(|member| member.native_stored_id.clone())
+    }
+
+    fn find_existing_super_weapon_name(&self, token: &str) -> Option<String> {
+        self.families
+            .get(&RulesTypeFamily::SuperWeapon)?
+            .iter()
+            .find(|member| member.native_stored_id.eq_ignore_ascii_case(token))
+            .map(|member| member.native_stored_id.clone())
     }
 
     /// Installed Ares typed pointers: Anim Parser1000C9C0/Find1000D3E0,
@@ -7891,7 +8170,6 @@ impl RulesPassProcessor {
         }
         // Phobos RulesData_LoadBeforeTypeData (0x679A15), before this pass's
         // type bodies.
-        #[cfg(feature = "phobos")]
         if let Some(section) = pass.section("AudioVisual") {
             let _phobos = crate::rules::ares_switch::not_ares_reads();
             // `PhobosFixedString<32>`: an empty read keeps the earlier pass's
@@ -7989,6 +8267,21 @@ impl RulesPassProcessor {
                 let side = self.read_side_index(&raw, "Side", current);
                 if let Ok(side) = usize::try_from(side) {
                     self.change_country_side(index, side);
+                }
+                // Phobos `HouseTypeExt::LoadFromINIFile`'s
+                // `VeteranDefenses` (`Ext/HouseType/Body.cpp:28`): the same
+                // Building vector reader as Ares' `VeteranBuildings`, kept in
+                // its own list because the consumer picks between them by
+                // `BuildCat`. An absent key retains the current list.
+                if let Some(resolved) = self.resolve_existing_list_from(
+                    &raw,
+                    "VeteranDefenses",
+                    RulesTypeFamily::Building,
+                    0x800,
+                ) {
+                    self.family_mut(RulesTypeFamily::Country)[index]
+                        .country_veterancy
+                        .phobos_defenses = resolved;
                 }
             }
             // Both original success51214F and failed-section51215A enter
@@ -8267,7 +8560,6 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
                 }
-                #[cfg(feature = "phobos")]
                 {
                     // Phobos SWTypeExt reads its three gates in the same
                     // ordered body as the Ares keys: level first, then the two
@@ -8288,8 +8580,61 @@ impl RulesPassProcessor {
                     {
                         availability.set_neg_technos(neg);
                     }
+                    availability.set_shots(raw.read_ares_int("SW.Shots", availability.shots()));
+                    let (range_minimum, range_maximum) = availability.range_bits();
+                    availability.set_range(
+                        raw.read_ares_double_bits("SW.RangeMinimum", range_minimum),
+                        raw.read_ares_double_bits("SW.RangeMaximum", range_maximum),
+                    );
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
+                    // Phobos `SWTypeExt::LoadFromINIFile` then reads
+                    // `SW.Next`, its flags/rolls/weights, and the `SW.Link`
+                    // group (`Ext/SWType/Body.cpp:170-243`) into the retained
+                    // extension, so keys this pass omits keep the earlier
+                    // pass's values (and the weight vectors keep their native
+                    // replace/append growth).
+                    let chaining =
+                        crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining::from_section(
+                            self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                                .super_weapon_phobos_chaining
+                                .clone(),
+                            &raw,
+                            |token| self.find_existing_super_weapon_name(token),
+                        );
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_chaining = chaining;
+                    // Phobos `SWTypeExt::LoadFromINIFile`'s LimboDelivery and
+                    // LimboKill block (`Ext/SWType/Body.cpp:159-169`), then
+                    // the `Detonate.*` group (`:274-278`); absent Detonate
+                    // keys keep the earlier pass's values.
+                    let limbo = crate::rules::phobos_limbo::PhobosSuperWeaponLimbo::from_section(
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_phobos_limbo
+                            .clone(),
+                        &raw,
+                        |token| self.find_existing_building_name(token),
+                    );
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_limbo = limbo;
+                    // Phobos `SWTypeExt::LoadFromINIFile`'s
+                    // `Message.LinkedSWAcquired`/`EVA.LinkedSWAcquired` pair
+                    // then the six `Message.Activated.*`/`EVA.Activated.*`
+                    // keys (`Ext/SWType/Body.cpp:241-250`), read after the
+                    // `SW.Link` group and before `Detonate.*`. Absent keys
+                    // keep the earlier pass's values.
+                    let mut messages = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_messages
+                        .clone();
+                    messages.read_pass(&raw, _fixed_eva);
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_messages = messages;
+                    let mut detonate = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_detonate
+                        .clone();
+                    detonate.read_pass(&raw);
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_phobos_detonate = detonate;
                 }
                 if ares_way {
                     let _ares = crate::rules::ares_switch::ares_reads();
@@ -8914,7 +9259,6 @@ impl RulesPassProcessor {
                 // against the `[InsigniaTypes]` state this pass allocated, and
                 // its weapon loop uses this pass's native `WeaponCount` and
                 // `Gunner` values.
-                #[cfg(feature = "phobos")]
                 if self.phobos_insignia_types.is_some() {
                     let catalog = self.phobos_insignia_types.take();
                     let member = &self.families[&family][index];
@@ -8975,7 +9319,59 @@ impl RulesPassProcessor {
                 member.voxel_shadow_index = fixed_art
                     .section_or_empty(&image)
                     .read_int("ShadowIndex", member.voxel_shadow_index);
-                // TechnoRead715B10..716005 reads the WeaponStruct geometry
+                // Phobos reads the plural key right after the singular one
+                // (`Ext/TechnoType/Body.cpp:1325`), keyed by section so a
+                // repeat collapses and later entries win.
+                // RESIDUAL (follow-up): the native map persists across INI
+                // passes (`Body.cpp:1335-1336` never clears), so an earlier
+                // layer's entries survive a later `Image=` section that omits
+                // the key; VERA replaces the list per pass. No retail layer
+                // authors a second Image with its own list.
+                {
+                    let mut indices = Vec::new();
+                    let mut frames = Vec::new();
+                    if let Some(list) = fixed_art
+                        .section_or_empty(&image)
+                        .read_int_list("ShadowIndices")
+                    {
+                        // `Ext/TechnoType/Body.cpp:1327-1337`: the frame list
+                        // is resized to the section list's length with -1 when
+                        // they differ, then zipped into the section->frame map
+                        // so a later duplicate section overwrites its frame.
+                        let mut frame_list = fixed_art
+                            .section_or_empty(&image)
+                            .read_int_list("ShadowIndices.Frame")
+                            .unwrap_or_default();
+                        if frame_list.len() != list.len() {
+                            frame_list.resize(list.len(), -1);
+                        }
+                        for (section, frame) in list.into_iter().zip(frame_list) {
+                            match indices.iter().position(|known| *known == section) {
+                                Some(position) => frames[position] = frame,
+                                None => {
+                                    indices.push(section);
+                                    frames.push(frame);
+                                }
+                            }
+                        }
+                    }
+                    member.phobos_shadow_indices = indices;
+                    member.phobos_shadow_indices_frames = frames;
+                    // `Ext/TechnoType/Body.cpp:1338`: `ShadowIndex.Frame` is
+                    // read right after the plural tags; `Valueable<int>`
+                    // keeps this member's current value as its default.
+                    member.phobos_shadow_index_frame = fixed_art
+                        .section_or_empty(&image)
+                        .read_int("ShadowIndex.Frame", member.phobos_shadow_index_frame);
+                    // `Ext/TechnoType/Body.cpp:1323`: the ART `TurretShadow=`
+                    // beside `TurretOffset=`, `Nullable<bool>` empty at
+                    // construction (`Body.h:57`/`:495`); its consumer falls
+                    // back to `[AudioVisual] DrawTurretShadow=`.
+                    member.phobos_turret_shadow = fixed_art
+                        .section_or_empty(&image)
+                        .read_phobos_nullable_bool("TurretShadow", member.phobos_turret_shadow);
+                }
+                // TechnoRead715B10..716005 reads the WeaponStruct coordinates
                 // after the retained Image selects this pass's fixed ART.
                 let slots = &mut member.weapon_slots;
                 slots.offsets.read_pass(
@@ -8983,6 +9379,15 @@ impl RulesPassProcessor {
                     slots.turret_count,
                     slots.weapon_count,
                 );
+                // Phobos `InfantryTypeExt::LoadFromINIFile` adds the deployed
+                // and prone firing-offset reads to an InfantryType.
+                if family == RulesTypeFamily::Infantry {
+                    slots.offsets.read_infantry_state_pass(
+                        &fixed_art.section_or_empty(&image),
+                        slots.turret_count,
+                        slots.weapon_count,
+                    );
+                }
                 // TechnoRead716090..7160A4 reaches LoadVoxel5F8110 only
                 // with the retained Voxel byte. Later Image changes cannot
                 // rename a resource whose load was skipped.
@@ -9231,14 +9636,16 @@ impl RulesPassProcessor {
                 }
                 match family {
                     RulesTypeFamily::Building => {
-                        if ares_way
-                            && let Some(supers) = self.resolve_existing_list_from(
+                        // Phobos' `SuperWeapons=` detonation firer reads the
+                        // list in every game; the key still marks the switch.
+                        if let Some(supers) = crate::rules::phobos_switch::phobos_read(|| {
+                            self.resolve_existing_list_from(
                                 &raw,
                                 "SuperWeapons",
                                 RulesTypeFamily::SuperWeapon,
                                 2048,
                             )
-                        {
+                        }) {
                             // BuildingTypeExt1000E71B ->1000EC70: ordered
                             // lookup-only ID vector, missing/empty retains,
                             // unknown tokens are skipped, registered sentinel IDs
@@ -9453,7 +9860,6 @@ impl RulesPassProcessor {
                         self.families.get_mut(&family).unwrap()[index]
                             .unit_shp
                             .read_pass(fixed_art.section_or_empty(&image), has_turret);
-                        #[cfg(feature = "phobos")]
                         {
                             let _phobos = crate::rules::ares_switch::not_ares_reads();
                             // `UnitTypeExt::LoadFromINI` reads the three
@@ -9482,6 +9888,19 @@ impl RulesPassProcessor {
                                 gathering.frames_per_dir = frames;
                             }
                             self.family_mut(family)[index].ore_gathering = gathering;
+                            // `UnitTypeExt::LoadFromINI` reads
+                            // `DeployingAnims=` as a `ValueableVector<AnimType*>`
+                            // just before the three `DeployingAnim.*` keys: an
+                            // absent key retains the list, a present one
+                            // replaces it and drops unknown tokens.
+                            if let Some(anims) = self.resolve_existing_list_from(
+                                &raw,
+                                "DeployingAnims",
+                                RulesTypeFamily::Animation,
+                                0x800,
+                            ) {
+                                self.family_mut(family)[index].phobos_deploying_anims = anims;
+                            }
                         }
                     }
                     RulesTypeFamily::Infantry => {
@@ -9742,8 +10161,28 @@ impl RulesPassProcessor {
             .read_int("WeaponCount", slots.weapon_count)
             .min(crate::rules::object_type::WEAPON_COUNT_LIMIT);
         slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
-        if slots.turret_count > 0 {
-            if ares_way {
+        // Phobos TechnoTypeClass_ReadINI_MultiWeapon (0x7128B2): read the
+        // `MultiWeapon.*` group before the weapon list and clear base/elite
+        // slots 0/1 whenever the `TurretCount > 0 || MultiWeapon` latch
+        // changes (`Ext/TechnoType/Hooks.MultiWeapon.cpp:13-31`). The numbered
+        // `WeaponN` read runs while that latch is on, so `MultiWeapon=yes`
+        // reaches it with `TurretCount=0`; the second read gate `0x715B10`
+        // keeps the same condition.
+        let read_numbered_weapons = {
+            let multi = slots
+                .multi_weapon
+                .read_pass(raw, slots.turret_count, slots.weapon_count);
+            if slots.multi_weapon_read != multi {
+                for array in [&mut slots.base, &mut slots.elite] {
+                    array[0] = None;
+                    array[1] = None;
+                }
+                slots.multi_weapon_read = multi;
+            }
+            multi
+        };
+        if read_numbered_weapons {
+            {
                 self.family_mut(family)[index]
                     .gunner_turrets
                     .prepare_numbered_read(slots.weapon_count);
@@ -10055,6 +10494,16 @@ impl RulesPassProcessor {
                 if let Some(warhead) = warhead {
                     state.warhead = warhead;
                 }
+                // Phobos `FeedbackWeapon=` is `Read<true>`, i.e.
+                // `WeaponTypeClass::FindOrAllocate` (`Ext/WeaponType/Body.cpp:124`);
+                // the referenced weapon joins the family even when no stock
+                // key names it.
+                {
+                    let incoming = raw.read_string("FeedbackWeapon", "", 0x100);
+                    if !incoming.is_empty() {
+                        self.find_or_allocate(RulesTypeFamily::Weapon, &incoming);
+                    }
+                }
                 // Ares WeaponTypeExt::LoadFromINIFile 10055520 follows the
                 // whole ReadINI (hooks 0x7729B0/0x7729C7/0x7729D6). Its
                 // Nullable<ParticleSystemTypeClass*> read finds only a type
@@ -10128,14 +10577,10 @@ impl RulesPassProcessor {
             if bullet.read_int("ROT", 0) == 0 {
                 // Phobos `WeaponTypeClass_SetSpeed_ApplyGravity` 0x772A0A
                 // selects the type's own `Gravity` over the current Rules one.
-                #[cfg(feature = "phobos")]
                 let gravity = crate::rules::projectile_type::read_phobos_gravity(bullet).map_or(
                     crate::util::native_ballistics::BallisticGravity::Rules(self.rules_gravity),
                     crate::util::native_ballistics::BallisticGravity::Value,
                 );
-                #[cfg(not(feature = "phobos"))]
-                let gravity =
-                    crate::util::native_ballistics::BallisticGravity::Rules(self.rules_gravity);
                 let speed = crate::util::native_ballistics::ballistic_launch_speed(
                     state.range_leptons,
                     gravity,
@@ -10282,7 +10727,6 @@ impl RulesPassProcessor {
                     )
                     .map(|value| NativeF64Bits::from_bits(value.to_bits()));
                 }
-                #[cfg(feature = "phobos")]
                 {
                     // Phobos `Crit.Warhead` is read with `Read<true>`, so the
                     // warhead it names is allocated here even when no other
@@ -10445,7 +10889,6 @@ impl RulesPassProcessor {
                             theater,
                             tree_strength,
                         );
-                        #[cfg(feature = "phobos")]
                         {
                             // `TerrainTypeExt::LoadFromINI` is hooked at
                             // 0x0071E0A6, the end of this same ReadINI body, so
@@ -10833,7 +11276,6 @@ impl RulesPassProcessor {
     /// Phobos `RadTypeClass::LoadFromINIList` + each type's `LoadFromINI`,
     /// reached on every Rules pass: the pass's `[RadiationTypes]` list
     /// appends entries and every retained type re-reads its own section.
-    #[cfg(feature = "phobos")]
     fn allocate_radiation_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_radiation_types.as_mut() {
             catalog.apply_pass(pass);
@@ -10841,7 +11283,6 @@ impl RulesPassProcessor {
     }
 
     /// Phobos `ShieldTypeClass::LoadFromINIList` + each type's `LoadFromINI`.
-    #[cfg(feature = "phobos")]
     fn allocate_shield_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_shield_types.as_mut() {
             catalog.apply_pass(pass);
@@ -10850,7 +11291,6 @@ impl RulesPassProcessor {
 
     /// Phobos `InsigniaTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
-    #[cfg(feature = "phobos")]
     fn allocate_insignia_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_insignia_types.as_mut() {
             catalog.apply_pass(pass);
@@ -10859,7 +11299,6 @@ impl RulesPassProcessor {
 
     /// Phobos `DigitalDisplayTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
-    #[cfg(feature = "phobos")]
     fn allocate_digital_display_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_digital_display_types.as_mut() {
             catalog.apply_pass(pass);
@@ -10869,7 +11308,6 @@ impl RulesPassProcessor {
     /// The `Read<true>` type factories of `AttachEffectTypeClass::LoadFromINI`
     /// (`ExpireWeapon`, `RevengeWeapon`, `ReflectDamage.Warhead`), run ahead of
     /// the type-body pass so those types are constructed and read this pass.
-    #[cfg(feature = "phobos")]
     fn allocate_attach_effect_references(&mut self, pass: &IniFile) {
         let Some(list) = pass.section("AttachEffectTypes") else {
             return;
@@ -10898,9 +11336,183 @@ impl RulesPassProcessor {
         }
     }
 
+    /// Phobos `BuildingTypeExt::LoadFromINI`'s `Grinding_Weapon.Read<true>`:
+    /// the named weapon is constructed before this pass's type bodies, so a
+    /// weapon only `Grinding.Weapon=` names is read in this pass.
+    fn allocate_grinding_references(&mut self, pass: &IniFile) {
+        let Some(list) = pass.section("BuildingTypes") else {
+            return;
+        };
+        for key in list.physical_keys() {
+            let Some(name) = list.read_name(key, 2048) else {
+                continue;
+            };
+            let section = pass.section(name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            if let Some(weapon) = section.read_type_name("Grinding.Weapon", 0x80) {
+                self.find_or_allocate(RulesTypeFamily::Weapon, weapon);
+            }
+        }
+    }
+
+    /// Phobos `SWTypeExt::LoadFromINI`'s `Detonate.Weapon.Read<true>` and
+    /// `Detonate.Warhead.Read<true>` (`Ext/SWType/Body.cpp:274-275`): the
+    /// named types are constructed before this pass's bodies, so a weapon or
+    /// warhead only these keys name is read in this pass.
+    fn allocate_sw_detonate_references(&mut self, pass: &IniFile) {
+        let Some(list) = pass.section("SuperWeaponTypes") else {
+            return;
+        };
+        for key in list.physical_keys() {
+            let Some(name) = list.read_name(key, 2048) else {
+                continue;
+            };
+            let section = pass.section(name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            if let Some(weapon) = section.read_type_name("Detonate.Weapon", 0x100) {
+                self.find_or_allocate(RulesTypeFamily::Weapon, weapon);
+            }
+            if let Some(warhead) = section.read_type_name("Detonate.Warhead", 0x100) {
+                self.find_or_allocate(RulesTypeFamily::Warhead, warhead);
+            }
+        }
+    }
+
+    /// Phobos `TechnoTypeExt::LoadFromINI`'s `WarpInWeapon.Read<true>` and
+    /// `WarpInMinRangeWeapon.Read<true>`: a weapon only these keys name is
+    /// constructed before this pass's type bodies, for every TechnoType
+    /// family, so the later merged type read resolves it.
+    fn allocate_warp_in_weapon_references(&mut self, pass: &IniFile) {
+        let order = self.techno_type_order.clone();
+        for (family, index) in order {
+            let Some(member) = self.families.get(&family).and_then(|list| list.get(index)) else {
+                continue;
+            };
+            let name = member.native_stored_id.clone();
+            let section = pass.section(&name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(&name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            for key in ["WarpInWeapon", "WarpInMinRangeWeapon", "WarpOutWeapon"] {
+                if let Some(weapon) = section.read_type_name(key, 2048) {
+                    self.find_or_allocate(RulesTypeFamily::Weapon, weapon);
+                }
+            }
+        }
+    }
+
+    /// Phobos `DroppodTypeClass::LoadFromINI`'s `DropPod.Weapon.Read<true>`:
+    /// the weapon a non-building TechnoType's drop pod names is constructed
+    /// before this pass's type bodies. `TechnoTypeExt::LoadFromINI` resets the
+    /// block for a BuildingType and never reads the key there.
+    fn allocate_droppod_weapon_references(&mut self, pass: &IniFile) {
+        let order = self.techno_type_order.clone();
+        for (family, index) in order {
+            if family == RulesTypeFamily::Building {
+                continue;
+            }
+            let Some(member) = self.families.get(&family).and_then(|list| list.get(index)) else {
+                continue;
+            };
+            let name = member.native_stored_id.clone();
+            let section = pass.section(&name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(&name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            if let Some(weapon) = section.read_type_name("DropPod.Weapon", 2048) {
+                self.find_or_allocate(RulesTypeFamily::Weapon, weapon);
+            }
+        }
+    }
+
+    /// Phobos `StraightTrajectoryType::Read`'s two `Read<true>` warhead keys
+    /// (`Ext/Bullet/Trajectories/StraightTrajectory.cpp:75,87`): a warhead
+    /// only a bullet trajectory names is constructed before this pass's type
+    /// bodies, so the later bullet read resolves it.
+    fn allocate_trajectory_warhead_references(&mut self, pass: &IniFile) {
+        let ids: Vec<String> = self
+            .families
+            .get(&RulesTypeFamily::Projectile)
+            .map(|members| {
+                members
+                    .iter()
+                    .map(|member| member.native_stored_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        for name in ids {
+            let section = pass.section(&name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(&name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            for key in [
+                "Trajectory.Straight.PassDetonateWarhead",
+                "Trajectory.Straight.ProximityWarhead",
+            ] {
+                if let Some(warhead) = section.read_type_name(key, 2048) {
+                    self.find_or_allocate(RulesTypeFamily::Warhead, warhead);
+                }
+            }
+        }
+    }
+
+    /// Phobos `WarheadTypeExt`'s `Shield.BreakWeapon.Read<true>`: the weapon
+    /// only this warhead key names is constructed before this pass's type
+    /// bodies, so the later merged type read resolves it.
+    fn allocate_shield_break_weapon_references(&mut self, pass: &IniFile) {
+        let members = self
+            .families
+            .get(&RulesTypeFamily::Warhead)
+            .cloned()
+            .unwrap_or_default();
+        for member in members {
+            let name = member.native_stored_id;
+            let section = pass.section(&name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(&name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            if let Some(weapon) = section.read_type_name("Shield.BreakWeapon", 2048) {
+                self.find_or_allocate(RulesTypeFamily::Weapon, weapon);
+            }
+        }
+    }
+
     /// Phobos `AttachEffectTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
-    #[cfg(feature = "phobos")]
     fn allocate_attach_effect_types(&mut self, pass: &IniFile) {
         let Some(mut catalog) = self.phobos_attach_effect_types.take() else {
             return;
@@ -11013,8 +11625,18 @@ impl RulesPassProcessor {
         self.rules_type_references.read_list("OnFire", on_fire);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
-        for key in ["SmallFire", "LargeFire"] {
-            let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+        // ReadAudioVisual's SmallFire/LargeFire animation pointers. Phobos's
+        // fire spawn is their consumer (`Ext/Anim/Body.cpp:393`, `:399`,
+        // `:403`); they are stock Keys, so the read is not gated.
+        if let Some(anim) =
+            self.resolve_scalar_from(section, "SmallFire", RulesTypeFamily::Animation, 0x80)
+        {
+            self.select_anim.small_fire = anim;
+        }
+        if let Some(anim) =
+            self.resolve_scalar_from(section, "LargeFire", RulesTypeFamily::Animation, 0x80)
+        {
+            self.select_anim.large_fire = anim;
         }
     }
 
@@ -11239,9 +11861,8 @@ impl RulesPassProcessor {
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,
                     rules_ion_cannon_warhead: self.rules_ion_cannon_warhead,
-                    #[cfg(feature = "phobos")]
+                    rules_dig_anim: self.rules_dig_anim,
                     rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
-                    #[cfg(feature = "phobos")]
                     rules_missing_cameo: self.rules_missing_cameo,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,

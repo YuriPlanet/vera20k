@@ -86,9 +86,11 @@ impl FacingClass {
         self.current
     }
 
-    /// Per-frame step value, for tests that check the rotation rate.
-    #[cfg(test)]
-    pub fn rot_per_frame(&self) -> u16 {
+    /// The raw native ROT word (`+0x10`, `FacingClass`'s `ROT.Raw`): signed
+    /// when read as `i16`. Phobos' `GetTurningRadius`
+    /// (`Ext/Aircraft/Hooks.cpp:492-500`) reads it from `PrimaryFacing`, and
+    /// the facing corpora record it; every other reader is a test.
+    pub(crate) fn rot_per_frame(&self) -> u16 {
         self.rot_per_frame
     }
 
@@ -208,6 +210,13 @@ impl FacingClass {
     /// not cached.
     pub fn is_rotating(&self, binary_frame: u32) -> bool {
         (self.rot_per_frame as i16) > 0 && self.remaining_frames(binary_frame) != 0
+    }
+
+    /// `FacingClass::Difference` (`YRpp/Facing.h:115-118`): the signed arc
+    /// from the rotation's start to its destination, in DirStruct units.
+    /// Phobos's JumpjetTilt reads `(short)Difference().Raw` while turning.
+    pub fn difference_raw(&self) -> i16 {
+        self.current.wrapping_sub(self.prev) as i16
     }
 
     /// Whether the live SecondaryFacing turn selects Fly's positive or

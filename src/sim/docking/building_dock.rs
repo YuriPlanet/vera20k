@@ -927,6 +927,17 @@ pub(crate) fn building_dock_cell(
     };
     let published = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
 
+    // Phobos `BuildingClass_FindExitCell_BarracksExitCell` @ 0x44EFD8
+    // (`Ext/Building/Hooks.cpp:794-822`): a set `BarracksExitCell` replaces
+    // this whole search with the producer's map coords plus the authored
+    // offset. That cell must be legal and admit the mover, else the hook jumps
+    // to the call's failure tail (0x44F13B) and no flag, offered or foundation
+    // cell is tried.
+    if let Some((dx, dy)) = object.barracks_exit_cell() {
+        let cell = relative(dx as i16, dy as i16);
+        return admits(cell, EntryQueryMode::CheckLocomotor).then(|| published(cell));
+    }
+
     //44EFD8/44F051/44F0CA: flags alone choose the preferred cell; there is
     //no Infantry RTTI condition. A refused preferred cell tries the next flag.
     for (flag, dx, dy) in [
@@ -1008,6 +1019,13 @@ fn depot_rally_cell(
                 sim.substrate.entities.get(id)?,
             );
             Some((u16::try_from(x / 256).ok()?, u16::try_from(y / 256).ok()?))
+        }
+        TargetKind::Bullet(id) => {
+            let point = sim.projectiles.get(id)?.position();
+            Some((
+                u16::try_from(point.x / 256).ok()?,
+                u16::try_from(point.y / 256).ok()?,
+            ))
         }
     }
 }
@@ -1385,6 +1403,27 @@ fn release_contact(
 /// as a plain `Bunker=` type.
 const PLAIN_REPAIR_DELAY_FRAMES: i32 = 0xF;
 
+/// `0x0044C970`'s return for a plain type, with Phobos
+/// `BunkerStateUpdateDelay` (`Ext/Building/Hooks.cpp:1474-1485`, hook
+/// `0x44C976`): a `Bunker=` type whose install is underway
+/// (`TankBunkerState > Idle && < Bunkered`) returns the BuildingType's
+/// `Nullable<int>`, else `[General] BunkerStateUpdateDelay=` (constructor 15).
+fn plain_repair_delay(
+    object: &crate::rules::object_type::ObjectType,
+    bunker_installing: Option<bool>,
+    rules: &RuleSet,
+) -> i32 {
+    {
+        if object.bunker && bunker_installing == Some(true) {
+            return object
+                .phobos_bunker_state_update_delay
+                .unwrap_or(rules.phobos_globals.bunker_state_update_delay);
+        }
+    }
+    let _ = (object, bunker_installing, rules);
+    PLAIN_REPAIR_DELAY_FRAMES
+}
+
 /// BuildingClass::MissionRepairAndProduce's ConstructionYard arm
 /// (`0x0044B7BC..0x0044B86F`), entered through Receive_Radio's 0xB message
 /// (`0x0043CC39`). Status 0 begins the Active body (Begin_Mode(2),
@@ -1452,6 +1491,13 @@ pub(crate) fn mission_repair(
     };
     let building = sim.substrate.entities.get(depot)?;
     let object = sim.object_type(building.type_ref(), rules)?;
+    // Phobos `BuildingClass_Mission_Repair_UnitRepair` (`0x44BD38`,
+    // `Hooks.cpp:630-640`): the building type's `Units.RepairRate=`
+    // replaces `[General] URepairRate=`.
+    let unit_repair_rate = object
+        .phobos_units_repair
+        .repair_rate
+        .unwrap_or(rules.general.unit_repair_rate);
     // 0x0044B791..0x0044B7A3: a Bunker= type steps its install first.
     if object.bunker {
         super::bunker_install::update_bunker(sim, rules, registry, depot, frame_effects);
@@ -1482,7 +1528,15 @@ pub(crate) fn mission_repair(
         }
         // 0x0044C836 -> 0x0044C970: a type in none of the five families.
         let plain = !(object.unit_reload || object.hospital || object.armory());
-        return plain.then_some(PLAIN_REPAIR_DELAY_FRAMES);
+        if !plain {
+            return None;
+        }
+        let bunker_state = sim.substrate.entities.get(depot).and_then(|building| {
+            building
+                .bunker_runtime
+                .map(|runtime| runtime.is_installing())
+        });
+        return Some(plain_repair_delay(object, bunker_state, rules));
     }
     let status = building.mission.handler_state();
     let current = building
@@ -1691,9 +1745,7 @@ pub(crate) fn mission_repair(
             .mission_leaf
             .advance_building_repair_progress(now as i32);
         let threshold = X87::mul(
-            X87::load_f64(NativeF64Bits::from_bits(
-                rules.general.unit_repair_rate.to_bits(),
-            )),
+            X87::load_f64(NativeF64Bits::from_bits(unit_repair_rate.to_bits())),
             X87::load_i32(900),
         );
         // FC0/C2/C3 test includes unordered, as the original FCOMPP.
@@ -1774,6 +1826,39 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::occupancy::CellListInsertion;
+
+    /// Phobos `BunkerStateUpdateDelay` (`Ext/Building/Hooks.cpp:1474-1485`,
+    /// hook `0x44C976`): the BuildingType nullable, else `[General]`, replaces
+    /// the plain-family return only while a `Bunker=` type's install is
+    /// underway; every other state keeps the stock 15 frames.
+    #[test]
+    fn bunker_state_update_delay_covers_the_install_states_only() {
+        use crate::rules::object_type::{ObjectCategory, ObjectType};
+
+        let section =
+            IniFile::from_str("[BNK]\nStrength=500\nBunker=yes\nBunkerStateUpdateDelay=40\n");
+        let object = ObjectType::from_ini_section(
+            "BNK",
+            section.section("BNK").unwrap(),
+            ObjectCategory::Building,
+        );
+        assert_eq!(object.phobos_bunker_state_update_delay, Some(40));
+        let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nBunkerStateUpdateDelay=33\n"))
+            .unwrap();
+        assert_eq!(plain_repair_delay(&object, Some(true), &rules), 40);
+        assert_eq!(
+            plain_repair_delay(&object, Some(false), &rules),
+            PLAIN_REPAIR_DELAY_FRAMES
+        );
+        let bare = IniFile::from_str("[BNK]\nStrength=500\nBunker=yes\n");
+        let bare = ObjectType::from_ini_section(
+            "BNK",
+            bare.section("BNK").unwrap(),
+            ObjectCategory::Building,
+        );
+        assert_eq!(bare.phobos_bunker_state_update_delay, None);
+        assert_eq!(plain_repair_delay(&bare, Some(true), &rules), 33);
+    }
 
     /// Every initialized45C300 row comes from saved original execution,
     /// including omitted/repeated entries and the empty0x0 row.
@@ -1937,6 +2022,30 @@ mod tests {
                 expected
             );
         }
+    }
+
+    /// Phobos `BuildingClass_FindExitCell_BarracksExitCell` @ 0x44EFD8
+    /// (`Ext/Building/Hooks.cpp:794-822`): a set offset replaces the whole
+    /// search. The producer stands at (14,14) with `GDIBarracks=yes`, whose
+    /// stock preferred cell is (15,16).
+    #[test]
+    fn barracks_exit_cell_replaces_the_stock_cell_search() {
+        // (17,15): the authored offset, not the GDIBarracks (15,16).
+        let (sim, rules) = factory_exit_fixture("GDIBarracks=yes\nBarracksExitCell=3,1\n");
+        assert_eq!(
+            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules),
+            Some((17, 15))
+        );
+
+        // A blocked offset cell answers the empty cell: the stock preferred
+        // cell is free and the hook never falls back to it.
+        let (mut sim, rules) = factory_exit_fixture("GDIBarracks=yes\nBarracksExitCell=3,1\n");
+        spawn_exit_query_building(&mut sim, &rules, 90, "GAPOWR", 17, 15);
+        assert_eq!(building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules), None);
+
+        // The offset cell is bounds-checked before the mover query.
+        let (sim, rules) = factory_exit_fixture("GDIBarracks=yes\nBarracksExitCell=-100,-100\n");
+        assert_eq!(building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules), None);
     }
 
     #[test]
@@ -2189,6 +2298,8 @@ mod tests {
              [AircraftTypes]\n\
              [BuildingTypes]\n\
              0=GADEPT\n\
+             1=BUNKER\n\
+             2=BUNKER7\n\
              [MTNK]\n\
              Name=Grizzly\n\
              Cost=700\n\
@@ -2211,6 +2322,15 @@ mod tests {
              Name=Depot\n\
              UnitRepair=yes\n\
              NumberImpassableRows=1\n\
+             Strength=1000\n\
+             [BUNKER]\n\
+             Name=Bunker\n\
+             Bunker=yes\n\
+             Strength=1000\n\
+             [BUNKER7]\n\
+             Name=Bunker7\n\
+             Bunker=yes\n\
+             BunkerStateUpdateDelay=7\n\
              Strength=1000\n",
         ));
         RuleSet::from_ini_with_fixed_art_for_test(
@@ -2355,6 +2475,59 @@ mod tests {
         assert_eq!(house.economy().credits(), 9_998);
         assert_eq!(house.economy().spent_credits(), 2);
         assert_eq!(sim.scenario_rng.state(), rng);
+    }
+
+    /// Phobos `BuildingClass_Mission_Repair_TankBunker` (`0x44C976`,
+    /// `Ext/Building/Hooks.cpp:1475-1483`): a bunker mid-install returns the
+    /// type's `BunkerStateUpdateDelay=` else `[General]`, default 15; a settled
+    /// or idle state keeps the stock return.
+    #[test]
+    fn bunker_state_update_delay_replaces_the_plain_repair_return() {
+        use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState};
+        fn delay(type_name: &str, state: BunkerState) -> Option<i32> {
+            let rules = depot_rules();
+            let mut sim = Simulation::new();
+            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+            spawn_entity(
+                &mut sim,
+                9,
+                type_name,
+                EntityCategory::Structure,
+                20,
+                20,
+                1000,
+            );
+            spawn_entity(&mut sim, 8, "MTNK", EntityCategory::Unit, 25, 25, 300);
+            {
+                let building = sim.substrate.entities.get_mut(9).unwrap();
+                building.bunker.set_bunker_occupant_for_test(Some(8));
+                let mut runtime = BunkerRuntime::idle();
+                runtime.set_state_for_test(state);
+                building.bunker_runtime = Some(runtime);
+            }
+            mission_repair(
+                &mut sim,
+                &rules,
+                9,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+        }
+        assert_eq!(
+            delay("BUNKER", BunkerState::ClearWait),
+            Some(15),
+            "the [General] default"
+        );
+        assert_eq!(
+            delay("BUNKER7", BunkerState::ClearWait),
+            Some(7),
+            "the type key replaces the return"
+        );
+        assert_eq!(
+            delay("BUNKER7", BunkerState::Idle),
+            Some(15),
+            "not a transitioning state"
+        );
     }
 
     /// Unit+0x500 survives an admitted visit and only its native clear writers

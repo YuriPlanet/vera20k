@@ -3,6 +3,8 @@
 //! registration. Original: SpawnLaser6FD210, support44ABD0, ctor54FE60.
 
 use crate::map::entities::EntityCategory;
+use crate::rules::flh::Flh;
+use crate::rules::phobos_laser_tracking::PositionFollow;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::intern::InternedId;
@@ -29,6 +31,92 @@ pub struct LaserBirth {
     /// Laser+58, copied by54FE60. Ordinary lasers fade1→0; the delayed
     /// ring caller4A778E/4A785F retains0.5 as its other endpoint.
     pub fade_end: NativeF32Bits,
+    /// Phobos `LaserRT` data: which live objects `from`/`to` follow. Not a
+    /// LaserDraw field; presentation refreshes the copy each frame.
+    pub track: Option<LaserTrack>,
+}
+
+/// Phobos `LaserRT::TrackingData`: the retained objects and the frozen
+/// muzzle facts needed to move one LaserDraw's endpoints. A laser is not a
+/// simulation object, so this rides on the copied birth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LaserTrack {
+    /// The followed firer; cleared once it dies or converts under
+    /// `StopOnFirerConvert`.
+    firer: Option<u64>,
+    /// The followed target. Phobos casts it to `ObjectClass*`, so cells are
+    /// never tracked.
+    target: Option<ProjectileTarget>,
+    weapon_index: i32,
+    /// `CurrentBurstIndex` frozen at creation: it selects the Phobos burst ART
+    /// offset and `GetFLH`'s lateral parity shift.
+    burst_index: u8,
+    /// `GetBurstFLH`'s answer at creation: the burst offset when the frozen
+    /// index has one, else the weapon record's ART FLH. `GetFLH6F3B28` adds
+    /// this base to the selected FLH again.
+    base_flh: Flh,
+    /// `initial source - tracked world FLH` at creation.
+    saved_offset: ProjectileCoord,
+    stop_on_firer_convert: bool,
+    original_type: Option<InternedId>,
+}
+
+impl LaserTrack {
+    /// `TrackingData::LocalFLH`, the FLH frozen at creation. Reading it does
+    /// not refresh anything.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn local_flh(self) -> Flh {
+        self.base_flh
+    }
+}
+
+impl LaserBirth {
+    /// `LaserDrawClass::Update @ 0x00550173`'s LaserRT arm (Phobos
+    /// `Hooks.LaserDraw.cpp`): refresh the copied endpoints from the live
+    /// firer and target. A dead firer, or a TechnoType change under
+    /// `StopOnFirerConvert`, stops the follow and leaves the last coordinate,
+    /// as `OnObjectRemoved` nulls the retained pointer.
+    pub fn update_tracking(&mut self, world: &Simulation, rules: &RuleSet) {
+        let Some(track) = self.track.as_mut() else {
+            return;
+        };
+        if let Some(id) = track.firer {
+            let source = world.substrate.entities.get(id);
+            let converted = track.stop_on_firer_convert
+                && track.original_type.is_some_and(|original| {
+                    source.is_none_or(|entity| entity.type_ref() != original)
+                });
+            if converted || source.is_none() {
+                track.firer = None;
+            } else if let Some((source, object)) = source.and_then(|source| {
+                world
+                    .interner
+                    .object_type(source.type_ref(), rules)
+                    .map(|object| (source, object))
+            }) {
+                let world_flh = super::fire_coord::fire_coordinate(
+                    world,
+                    rules,
+                    &super::fire_coord::FireSource::of_entity(source),
+                    object,
+                    track.weapon_index,
+                    track.burst_index,
+                    track.base_flh,
+                )
+                .coord;
+                self.from = ProjectileCoord::new(
+                    world_flh.x.wrapping_add(track.saved_offset.x),
+                    world_flh.y.wrapping_add(track.saved_offset.y),
+                    world_flh.z.wrapping_add(track.saved_offset.z),
+                );
+            }
+        }
+        if let Some(target) = track.target
+            && let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target)
+        {
+            self.to = to;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +127,11 @@ pub enum LaserColor {
     /// The general54FE60 caller4A7526 copies the same House RGB and half
     /// of it for the outer lines. It does not select DrawBeamSpecial.
     HouseWithHalfOuter { owner: InternedId, spread: [u8; 3] },
+    /// A DrawBeamSpecial laser whose RGB was copied before construction, as
+    /// Phobos' trail does: `LaserTrailClass` forces `IsHouseColor` on the
+    /// LaserDraw but passes `CurrentColor`, which is the type's `Color` when
+    /// the trail type is not `IsHouseColor` or has no owner House.
+    HouseStyle([u8; 3]),
     Explicit {
         inner: [u8; 3],
         outer: [u8; 3],
@@ -128,6 +221,16 @@ pub(crate) fn fired(
         };
         (width, supported)
     };
+    // Phobos `TechnoClass_DrawSth_DrawToInvisoFlakScatterLocation`
+    // (`0x6FD38D`, `Ext/Techno/Hooks.WeaponEffects.cpp:220-248`): a
+    // `VisualScatter=` weapon's draw replaces the endpoint inside SpawnLaser,
+    // so the returned birth carries it; assigning after `create` stores the
+    // same value the constructor would have.
+    let scattered = if weapon.phobos_visual_scatter() {
+        super::fire_coord::visual_scatter_target(world, rules, target.projectile_target(world))
+    } else {
+        None
+    };
     if let Some(laser) = create(
         world,
         rules,
@@ -136,11 +239,15 @@ pub(crate) fn fired(
         weapon_index,
         weapon,
         None,
+        false,
     ) {
         // FireAt6FF50A..6FF571 changes the returned LaserDraw after the
         // shared SpawnLaser constructor. Direct shrapnel calls omit this.
         laser.width = width;
         laser.supported = supported;
+        if let Some(to) = scattered {
+            laser.to = to;
+        }
     }
 }
 
@@ -148,7 +255,10 @@ pub(crate) fn fired(
 /// policy. Explicit source coordinates (SpawnShrapnel46A8AC/46AD81) keep
 /// ZAdjust0; only the NullCoord arm computes GetFLH and building ZAdjust.
 /// StaticInit6F2A50 establishes NullCoordB0EA90 as [0,0,0], so an explicitly
-/// supplied zero coordinate takes the same arm as `None`.
+/// supplied zero coordinate takes the same arm as `None`. `ignore_firer` is
+/// Phobos' `ignoreShooter`: shrapnel's direct `CreateLaser` wrappers and
+/// `Splits` children start from a detonation position and never follow the
+/// firer, while the target end still tracks.
 pub(crate) fn create<'w>(
     world: &'w mut Simulation,
     rules: &RuleSet,
@@ -157,12 +267,10 @@ pub(crate) fn create<'w>(
     weapon_index: i32,
     weapon: &WeaponType,
     from: Option<ProjectileCoord>,
+    ignore_firer: bool,
 ) -> Option<&'w mut LaserBirth> {
     let source = world.substrate.entities.get(source_id)?;
-    #[cfg(feature = "phobos")]
     let single_color = weapon.phobos_laser_is_single_color;
-    #[cfg(not(feature = "phobos"))]
-    let single_color = false;
     let color = if weapon.is_house_color {
         LaserColor::House(source.owner())
     } else if single_color {
@@ -192,7 +300,7 @@ pub(crate) fn create<'w>(
                 &super::fire_coord::FireSource::of_entity(source),
                 object,
                 weapon_index,
-                (source.weapon_burst.index() & 1) as u8,
+                source.weapon_burst.index() as u8,
                 Default::default(),
             )
             .coord;
@@ -203,10 +311,35 @@ pub(crate) fn create<'w>(
                     source,
                     from,
                     super::fire_coord::EffectDepthProjection::ClampedBuilding,
+                    true,
                 ),
             )
         };
+    // Phobos `Misc/Hooks.LaserDraw.cpp:49-57`: the draw adds
+    // `LaserZAdjust.Get(RulesExt::Global()->LaserZAdjust)`. VERA stores that
+    // value on the beam, which is the same depth the draw reads.
+    let z_adjust = z_adjust.wrapping_add(crate::rules::phobos_beam_z_adjust::resolved(
+        weapon.phobos_laser_z_adjust,
+        rules.phobos_beam_z_adjust.laser,
+    ));
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;
+    let (follow, stop_on_firer_convert) = (
+        weapon.laser_position_update,
+        weapon
+            .laser_position_update_stop_on_firer_convert
+            .unwrap_or(rules.phobos_laser_tracking.stop_on_firer_convert),
+    );
+    let track = build_track(
+        world,
+        rules,
+        source_id,
+        target,
+        weapon_index,
+        follow,
+        stop_on_firer_convert,
+        from,
+        ignore_firer,
+    );
     let birth = construct(
         &world.session,
         &mut world.lifecycle_outputs,
@@ -222,21 +355,131 @@ pub(crate) fn create<'w>(
     if rules.ares() && weapon.ares_visuals.laser_thickness > 1 {
         birth.width = weapon.ares_visuals.laser_thickness;
     }
+    birth.track = track;
     Some(birth)
+}
+
+/// Phobos `LaserRT::SetLaserTrackingData` / `TrackingData::Initialize`: the
+/// objects one laser follows and the frozen `GetFLH` inputs that move its
+/// source. `ignore_firer` is the shrapnel and split-child `ignoreShooter`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_track(
+    world: &Simulation,
+    rules: &RuleSet,
+    source_id: u64,
+    target: ProjectileTarget,
+    weapon_index: i32,
+    follow: PositionFollow,
+    stop_on_firer_convert: bool,
+    initial_from: ProjectileCoord,
+    ignore_firer: bool,
+) -> Option<LaserTrack> {
+    if follow == PositionFollow::None {
+        return None;
+    }
+    let source = world.substrate.entities.get(source_id);
+    let object = source.and_then(|source| world.interner.object_type(source.type_ref(), rules));
+    let burst_index = source.map_or(0, |source| source.weapon_burst.index() as u8);
+    let mut firer = None;
+    let mut base_flh = Flh::default();
+    let mut saved_offset = ProjectileCoord::new(0, 0, 0);
+    let mut original_type = None;
+    // Initialize's building gate: a transport-capable building fires from an
+    // occupant's port, so its laser never follows the building. An expired
+    // firer falls through too, as `pShooter` arrives null there.
+    if follow.follows_firer()
+        && !ignore_firer
+        && let Some(source) = source
+        && let Some(object) = object
+        && !(source.category() == EntityCategory::Structure && object.max_number_occupants > 0)
+    {
+        // `GetBurstFLH`, then `GetWeapon(weaponIdx)->FLH`: the installed
+        // record's ART coordinate, elite-qualified by live veterancy.
+        let record_flh = || {
+            super::combat_weapon::get_weapon_record(
+                source,
+                object,
+                weapon_index,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+            )
+            .map_or_else(Flh::default, |record| record.flh)
+        };
+        {
+            let (deployed, crawling) = super::fire_coord::infantry_flh_states(source);
+            // `SetLaserTrackingData` (Hooks.LaserDraw.cpp:147-160) recomputes
+            // the stored triple itself: `GetBurstFLH`, else the weapon record
+            // with no parity shift. The separately mirrored `SavedLocalFLH` in
+            // the 0x006FD210 hook (:277-287) is only written and reset, never
+            // read into `TrackingData`.
+            base_flh = object
+                .burst_flh(
+                    weapon_index,
+                    source.veterancy.rank() >= super::veterancy::RANK_ELITE_U16,
+                    if deployed {
+                        crate::rules::weapon_offsets::InfantryFlhState::Deployed
+                    } else if crawling {
+                        crate::rules::weapon_offsets::InfantryFlhState::Crouched
+                    } else {
+                        crate::rules::weapon_offsets::InfantryFlhState::Ordinary
+                    },
+                    burst_index,
+                )
+                .unwrap_or_else(record_flh);
+        }
+        let world_flh = super::fire_coord::fire_coordinate(
+            world,
+            rules,
+            &super::fire_coord::FireSource::of_entity(source),
+            object,
+            weapon_index,
+            burst_index,
+            base_flh,
+        )
+        .coord;
+        saved_offset = ProjectileCoord::new(
+            initial_from.x.wrapping_sub(world_flh.x),
+            initial_from.y.wrapping_sub(world_flh.y),
+            initial_from.z.wrapping_sub(world_flh.z),
+        );
+        firer = Some(source_id);
+        if stop_on_firer_convert {
+            original_type = Some(source.type_ref());
+        }
+    }
+    let target = (follow.follows_target()
+        && matches!(
+            target,
+            ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)
+        ))
+    .then_some(target);
+    if firer.is_none() && target.is_none() {
+        return None;
+    }
+    Some(LaserTrack {
+        firer,
+        target,
+        weapon_index,
+        burst_index,
+        base_flh,
+        saved_offset,
+        stop_on_firer_convert,
+        original_type,
+    })
 }
 
 /// Phobos `BulletExt::SimulatedFiringLaser`: the same copied birth from
 /// explicit endpoints and the child's firing House, so a shot whose Techno
 /// already expired still draws. `IsSingleColor`/`LaserThickness` replace the
 /// stock color pair and width; `IsHouseColor` takes the House laser color.
-#[cfg(feature = "phobos")]
-pub(crate) fn create_effect(
-    world: &mut Simulation,
+pub(crate) fn create_effect<'w>(
+    world: &'w mut Simulation,
     house: Option<InternedId>,
     from: ProjectileCoord,
     to: ProjectileCoord,
     weapon: &WeaponType,
-) {
+) -> &'w mut LaserBirth {
     let (color, width, supported) = if weapon.is_house_color || weapon.phobos_laser_is_single_color
     {
         let color = match (weapon.is_house_color, house) {
@@ -272,6 +515,7 @@ pub(crate) fn create_effect(
     );
     birth.width = width;
     birth.supported = supported;
+    birth
 }
 
 /// LaserDraw54FE60 initializes every caller's width1/unsupported object;
@@ -297,6 +541,7 @@ pub(crate) fn construct<'a>(
         color,
         fade_start: NativeF32Bits::ONE,
         fade_end,
+        track: None,
     }));
     let LifecycleOutput::LaserCreated(laser) = birth else {
         unreachable!("newly appended laser birth")
@@ -341,7 +586,7 @@ pub(crate) fn support_source(
             &super::fire_coord::FireSource::of_entity(source),
             obj,
             0,
-            (source.weapon_burst.index() & 1) as u8,
+            source.weapon_burst.index() as u8,
             Default::default(),
         )
         .coord,

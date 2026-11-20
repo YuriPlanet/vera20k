@@ -444,6 +444,86 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
 }
 
 #[test]
+fn a_fast_scramble_aircraft_takes_off_instead_of_dying_with_its_helipad() {
+    use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+    use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
+    use crate::sim::world::FrameEffects;
+
+    // Phobos `BuildingClass_ReceiveDamage_NoDestroyLink`
+    // (`Ext/Aircraft/Hooks.cpp:1072-1093`, hook `0x4425B6`): the type's
+    // `ExtendedAircraftMissions.FastScramble` sends the RUN_AWAY arm instead
+    // of the `Strength * 10` kill for a helipad's linked aircraft.
+    let mut ini = IniFile::from_str(RULES);
+    ini.merge(&IniFile::from_str(
+        "[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
+         [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ));
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut fast = ini.clone();
+    fast.merge(&IniFile::from_str(
+        "[ORCA]\nExtendedAircraftMissions=yes\n\
+         ExtendedAircraftMissions.FastScramble=yes\n",
+    ));
+    let fast_rules = RuleSet::from_ini(&fast).unwrap();
+
+    // The same docked ORCA that the killing hit destroys without the key
+    // (`an_airfield_killing_hit_destroys_all_four_docked_aircraft`).
+    let kill = |sim: &mut Simulation, airfield: u64, rules: &RuleSet| {
+        let c4 = sim.interner.intern("Super");
+        sim.commit_direct_damage_receiver(
+            rules,
+            None,
+            EntityDamageEvent::direct_receiver(
+                airfield,
+                1000,
+                0,
+                RAD_NO_ATTACKER,
+                None,
+                c4,
+                ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: true,
+                },
+            ),
+            FrameEffects::default(),
+        );
+    };
+    for (rules, survives) in [(&rules, false), (&fast_rules, true)] {
+        let (mut sim, orca, airfield) = spent_orca(rules, true);
+        assert_eq!(
+            radio::transmit(
+                &mut sim,
+                orca,
+                airfield,
+                RadioMessage::Hello,
+                RadioPayload::default(),
+                rules,
+                FrameEffects::default(),
+            ),
+            RadioResponse::Roger
+        );
+        assert!(
+            sim.substrate
+                .entities
+                .get(airfield)
+                .unwrap()
+                .radio_contacts
+                .contains(orca)
+        );
+        kill(&mut sim, airfield, rules);
+        let alive = sim
+            .substrate
+            .entities
+            .get(orca)
+            .is_some_and(|entity| entity.is_alive());
+        assert_eq!(
+            alive, survives,
+            "FastScramble {survives}: the docked aircraft's fate follows the key"
+        );
+    }
+}
+
+#[test]
 fn a_non_helipad_kills_near_contacts_and_releases_distant_contacts() {
     use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
     use crate::sim::components::DriveCoord;

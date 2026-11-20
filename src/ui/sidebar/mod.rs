@@ -132,6 +132,18 @@ impl SidebarTab {
             Self::Vehicle => 3,
         }
     }
+
+    /// Phobos `TabIndex` (`Ext/SWType/Body.cpp:285-286`): the tab a super
+    /// weapon's cameo occupies. The reader has already reset any out-of-range
+    /// value to `1`, so `index` is always `0..=3`.
+    pub(crate) fn for_sw_tab_index(index: usize) -> Self {
+        match index {
+            0 => Self::Building,
+            2 => Self::Infantry,
+            3 => Self::Vehicle,
+            _ => Self::Defense,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -278,6 +290,29 @@ pub struct SidebarLayout {
     pub side2_tile_count: usize,
 }
 
+/// One Phobos sidebar text indicator drawn by
+/// `CreditsClass_GraphicLogic_HarvesterCounter @ 0x4A25E0`: the string the hook
+/// formats, the colour it picks and the anchor it draws at, all in unscaled
+/// sidebar-surface pixels. `app::presentation::sidebar_render` resolves these on
+/// the same per-frame pass as the power bar, because the native hook runs inside
+/// the credits tick rather than on a cameo transition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SidebarIndicator {
+    /// The formatted label and value, e.g. `⚡+12` or the blackout label alone.
+    pub text: String,
+    /// The colour the hook would pack through `Drawing::RGB_To_Int`, as the
+    /// linear tint the sidebar text lane takes. The harvester counter falls back
+    /// to the sidebar tooltip colour, which is already a float tint here.
+    pub tint: [f32; 3],
+    /// X added to the sidebar surface midpoint — the hook's own base, `-70` for
+    /// the power delta, `+50` for the harvester and weeds counters — plus the
+    /// side's `Sidebar.*.Offset` X.
+    pub anchor_x: i32,
+    /// Y from the top of the sidebar surface; the hook passes the literal `2`.
+    pub anchor_y: i32,
+    /// The alignment bits Phobos ORs into the `TextPrintType` flags.
+    pub align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign,
+}
 /// A grid of build pictures a layout adds beside the sidebar's own: one
 /// tab's strip from `scroll_rows` rows down, in `rows` rows of `columns`,
 /// its first picture at `origin` in the sidebar's layout pixels. `part` is

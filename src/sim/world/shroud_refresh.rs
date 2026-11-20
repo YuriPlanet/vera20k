@@ -303,6 +303,143 @@ impl Simulation {
         }
     }
 
+    /// Phobos `WarheadTypeExt::Detonate`'s positive `Reveal` gate
+    /// (`Ext/WarheadType/Detonate.cpp:88`), asked exactly as native asks it —
+    /// of `PlayerPtr`, before `MapClass::RevealArea2`: the warhead's house
+    /// must be the current player (`IsControlledByCurrentPlayer`) or name
+    /// that player an ally (`HouseClass::IsAlliedWith @ 0x004F9A50`, which
+    /// reads the asking house's own ally bits), and the current player must
+    /// not be `Defeated`. Native also tests `!PlayerPtr->Visionary`; VERA
+    /// keeps no `Visionary` byte, so that term cannot veto. Without a
+    /// current House there is no `PlayerPtr` to admit the reveal.
+    pub(crate) fn warhead_reveal_admits_current_player(
+        &self,
+        owner: crate::sim::intern::InternedId,
+    ) -> bool {
+        let Some(player) = self.session.current_house() else {
+            return false;
+        };
+        let allied = crate::map::houses::ally_test(
+            &self.house_alliances.as_map(),
+            self.interner.resolve(owner),
+        );
+        (player == owner || allied(self.interner.resolve(player)))
+            && !self
+                .houses
+                .get(&player)
+                .is_some_and(|house| house.is_defeated())
+    }
+
+    /// Phobos `WarheadTypeExt::Detonate`'s CreateGap arm
+    /// (`Ext/WarheadType/Detonate.cpp:51-80`): a positive `cells` radius
+    /// conceals that area for every client map whose player is not the owner
+    /// and not allied with it, and is neither defeated nor SpySat; a negative
+    /// value reshrouds the whole map for every non-allied house with the same
+    /// gates. Returns whether anything was written.
+    pub(crate) fn apply_warhead_create_gap(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        coord: [i32; 3],
+        cells: i32,
+        rules: &RuleSet,
+        context: UninitContext<'_>,
+    ) -> bool {
+        if cells > 0 {
+            let viewers: Vec<_> = {
+                let allied = crate::map::houses::ally_test(
+                    &self.house_alliances.as_map(),
+                    self.interner.resolve(owner),
+                );
+                self.fog_viewers()
+                    .iter()
+                    .copied()
+                    .filter(|&viewer| {
+                        viewer != owner
+                            && !allied(self.interner.resolve(viewer))
+                            && !self
+                                .houses
+                                .get(&viewer)
+                                .is_some_and(|house| house.is_defeated() || house.spy_sat_active())
+                    })
+                    .collect()
+            };
+            if viewers.is_empty() {
+                return false;
+            }
+            // `CellRangeIterator<CellClass>{}(CellClass::Coord2Cell(coords),
+            // CreateGap + 0.5, ...)` (`Detonate.cpp:60`): `Coord2Cell`
+            // truncates each lepton axis by 256; the iterator walks the
+            // `floor(radius + 0.99) * 2 + 1` square around it and keeps the
+            // cells whose centre lies within `radius` (`radius + 0.99`
+            // rounds half up past `Cells + 1.49`). Clipping the square to the
+            // map first yields the same cells.
+            let terrain = context.terrain().or(self.resolved_terrain.as_ref());
+            let (width, height) = terrain.map_or((0x200, 0x200), |terrain| {
+                (i32::from(terrain.width()), i32::from(terrain.height()))
+            });
+            let centre = (coord[0] / 256, coord[1] / 256);
+            let radius = f64::from(cells) + 0.5;
+            let half = (radius + 0.99).floor().min(f64::from(0x200)) as i32;
+            let range = half * 2 + 1;
+            let left = (centre.0 - half).max(0);
+            let top = (centre.1 - half).max(0);
+            let right = (centre.0 - half + range).min(width - 1);
+            let bottom = (centre.1 - half + range).min(height - 1);
+            let radius_squared = radius * radius;
+            let mut area = Vec::new();
+            for y in top..=bottom {
+                for x in left..=right {
+                    let (dx, dy) = (f64::from(x - centre.0), f64::from(y - centre.1));
+                    if dx * dx + dy * dy > radius_squared {
+                        continue;
+                    }
+                    area.push((x as u16, y as u16));
+                }
+            }
+            for viewer in viewers {
+                {
+                    let terrain = context.terrain().or(self.resolved_terrain.as_ref());
+                    let native_cells =
+                        terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    for &cell in &area {
+                        self.fog
+                            .conceal_map_cell(viewer, cell, native_cells.as_ref());
+                    }
+                }
+                self.update_shroud_edges(viewer, context);
+            }
+            true
+        } else if cells < 0 {
+            let targets: Vec<_> = {
+                let allied = crate::map::houses::ally_test(
+                    &self.house_alliances.as_map(),
+                    self.interner.resolve(owner),
+                );
+                self.houses
+                    .order()
+                    .iter()
+                    .copied()
+                    .filter(|&house| {
+                        house != owner
+                            && !allied(self.interner.resolve(house))
+                            && !self
+                                .houses
+                                .get(&house)
+                                .is_some_and(|state| state.is_defeated() || state.spy_sat_active())
+                    })
+                    .collect()
+            };
+            let mut changed = false;
+            for house in targets {
+                self.reset_shroud_for_owner(house, rules);
+                changed = true;
+            }
+            changed
+        } else {
+            false
+        }
+    }
+
     /// Original Execute1016DE8B7 ->6E1A70 ->567F70 ->578100. Action+90
     /// names the waypoint; current Player+240 gates both local conceal and
     /// the immediate whole-map update independently of the Trigger House.
@@ -2026,6 +2163,25 @@ impl Simulation {
         // Each logical PlayerPtr has its own native Techno +250/+254/+260.
         // Publish all source state before any RevealArea receiver can reenter;
         // a client whose +250 is already set takes no part.
+        // Phobos `TechnoClass_RevealHouses` (`0x70AF22`/`0x70B15A`/`0x70B1F2`,
+        // `Ext/Techno/Hooks.cpp:2562-2596`): the reveal reaches the current
+        // player only when the techno's resolved `RevealHouses` (type, then
+        // country, then `[AudioVisual]`) admits the owner against it. Each
+        // logical client here is one such player.
+        let reveal_houses = {
+            let rules = context.rules();
+            let country = self
+                .houses
+                .get(&owner)
+                .and_then(|house| house.country())
+                .and_then(|country| self.interner.try_resolve(country));
+            self.interner
+                .try_resolve(entity.type_ref())
+                .and_then(|name| rules.object(name))
+                .and_then(|object| object.phobos_reveal_houses)
+                .or_else(|| country.and_then(|country| rules.country_reveal_houses(country)))
+                .unwrap_or(rules.phobos_globals.reveal_houses)
+        };
         let mut admitted = self.fog.take_admitted_viewers();
         admitted.extend(
             requested_viewers
@@ -2038,6 +2194,16 @@ impl Simulation {
                         owner,
                         viewer,
                         config,
+                        &self.interner,
+                    )
+                })
+                .filter(|&viewer| {
+                    crate::sim::combat::can_target_house(
+                        reveal_houses,
+                        owner,
+                        viewer,
+                        &self.houses,
+                        &self.house_alliances,
                         &self.interner,
                     )
                 }),
@@ -3128,6 +3294,15 @@ impl Simulation {
         if !Self::passes_alternate_reveal_gates(entity, config) {
             return None;
         }
+        // Phobos `RevealToAll.Radius=` (`Ext/BuildingType/Body.cpp:284`):
+        // 0x446816 and 0x4ADE55 pass `Get(RevealToAll.Radius, Type->Sight)`
+        // as UpdateSight's explicit radius, so the alternate circle uses the
+        // key, else the type's raw Sight.
+        let radius_override = self
+            .interner
+            .try_resolve(entity.type_ref())
+            .and_then(|name| rules.object(name))
+            .map(|object| object.reveal_to_all_radius.unwrap_or(object.sight));
         let ability = config.sight_ability(entity, &self.interner, rules);
         vision::entity_sight_admission(
             &self.fog,
@@ -3137,7 +3312,7 @@ impl Simulation {
             height_grid.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
             self.resolved_terrain.as_ref(),
             ability,
-            None,
+            radius_override,
         )
     }
 

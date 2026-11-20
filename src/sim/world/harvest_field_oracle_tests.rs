@@ -653,3 +653,44 @@ fn campaign_player_scan_rejects_unexplored_ore() {
         "the native campaign scan rejects the only hidden candidate"
     );
 }
+
+/// Phobos `UnitClass_MissionHarvest_HarvesterScanAfterUnload` (hook
+/// `0x73E730`, `Ext/Unit/Hooks.Harvester.cpp:145-170`): an enabled harvester
+/// replaces its archive focus with a nearer `TiberiumLongScan` ore cell; with
+/// the key off the focus stays the destination.
+#[test]
+fn phobos_scan_after_unload_prefers_a_nearer_ore_cell_over_the_archive() {
+    let dispatch = |scan_after_unload: bool| {
+        let mut scene = row_scene(&serde_json::json!({
+            "name": "scan_after_unload",
+            "mission": "harvest",
+            "miner_cell": [15, 15],
+            "archive": [20, 12],
+            "long_scan": 3072,
+            "ore": [[17, 16, 0, 0, 3]],
+        }));
+        scene.rules.phobos_globals.harvester_scan_after_unload = scan_after_unload;
+        crate::sim::world::dispatch_foot_mission(
+            &mut scene.sim,
+            scene.miner,
+            &scene.rules,
+            crate::sim::world::ObjectAiCtx {
+                overlay_registry: Some(registry()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let entity = scene.sim.substrate.entities.get(scene.miner).unwrap();
+        (entity.navigation.nav_com(), entity.archive_target())
+    };
+    assert_eq!(
+        dispatch(true),
+        (Some(NavTargetRef::Cell { rx: 17, ry: 16 }), None),
+        "the nearer ore cell replaces the archived focus"
+    );
+    assert_eq!(
+        dispatch(false),
+        (Some(NavTargetRef::Cell { rx: 20, ry: 12 }), None),
+        "a disabled scan keeps the archived focus"
+    );
+}

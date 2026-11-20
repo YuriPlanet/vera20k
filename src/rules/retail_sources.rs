@@ -16,6 +16,7 @@ use crate::rules::personal_rules::PersonalRules;
 use crate::rules::process_owner::{NativeLangRuleSource, NativeRulesProcessOwner};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+use crate::util::native_x87::NativeF64Bits;
 use crate::util::sha256::sha256_hex;
 
 const MAX_INCLUDED_SOURCE_BYTES: usize = 32 * 1024 * 1024;
@@ -218,6 +219,9 @@ pub struct RetailRulesSources {
     ships_ares: bool,
     /// The player's Ares setting is Off: no Ares key turns Ares on.
     ares_keys_off: bool,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so its games play
+    /// Phobos whatever keys their rules hold.
+    requires_phobos: bool,
 }
 
 impl RetailRulesSources {
@@ -245,6 +249,7 @@ impl RetailRulesSources {
             personal_rules: PersonalRules::default(),
             ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
+            requires_phobos: assets.requires_phobos(),
         })
     }
 
@@ -281,6 +286,7 @@ impl RetailRulesSources {
             self.personal_rules,
             self.ships_ares,
             self.ares_keys_off,
+            self.requires_phobos,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)
@@ -958,15 +964,15 @@ mod tests {
 
         assert_eq!(
             rules.object("APOC").expect("retail APOC").weight,
-            SimFixed::lit("3.5")
+            NativeF64Bits::from_bits(3.5_f64.to_bits())
         );
         assert_eq!(
             rules.object("MTNK").expect("retail MTNK").weight,
-            SimFixed::ONE
+            NativeF64Bits::ONE
         );
         assert_eq!(
             rules.object("DEST").expect("retail DEST").weight,
-            SimFixed::lit("3")
+            NativeF64Bits::from_bits(3.0_f64.to_bits())
         );
         assert_eq!(
             rules.general.direct_rocking_coefficient,

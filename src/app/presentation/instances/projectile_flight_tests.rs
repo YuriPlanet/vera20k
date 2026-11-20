@@ -108,6 +108,8 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         vertical: kind.vertical,
         heading: None,
         arcing: kind.arcing,
+        arcing_fix: false,
+        lobber: weapon.lobber,
         gravity: projectile_gravity(rules.general.gravity, kind.gravity(), kind.floater),
         high_root: launch::high_arc_root(weapon.lobber, origin, Some(target)),
         voxel_downward: None,

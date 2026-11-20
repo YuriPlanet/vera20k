@@ -332,3 +332,36 @@ fn guard_scan_refuses_a_candidate_strictly_below_minus_twenty_leptons() {
         "the gate reads the current height each scan"
     );
 }
+
+/// Phobos `AU` (`Ext/BulletType/Body.cpp:83`,
+/// `Ext/Techno/Hooks.cpp:1537-1545`): the selected weapon's projectile ORs
+/// the underground allowance into the auto-target gate (`0x772AB3`), so a
+/// candidate below the -20 lepton cutoff is admitted.
+#[test]
+fn guard_scan_an_au_projectile_admits_an_underground_candidate() {
+    let patch = crate::rules::ini_parser::IniFile::from_str("[Cannon]\nAU=yes\n");
+    let Some(patched) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = &patched.rules;
+    assert!(rules.projectile("Cannon").unwrap().au);
+    assert_eq!(
+        rules.weapon("105mm").unwrap().projectile.as_deref(),
+        Some("Cannon"),
+        "MTNK's retail primary"
+    );
+    let (mut sim, tank, target) = guard_scene(rules, "HTNK");
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(-21));
+    assert_eq!(
+        guard_pick(&mut sim, rules, tank),
+        Some(target),
+        "AU=yes bypasses the -20 underground gate"
+    );
+}

@@ -1,6 +1,6 @@
 # Optional Phobos timer blink colour
 
-Build with `--features phobos` to choose the colour a superweapon timer blinks
+Phobos is in every build; turn it on from a game's data to choose the colour a superweapon timer blinks
 in once its countdown has finished.
 
 ```ini

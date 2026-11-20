@@ -81,16 +81,9 @@ impl Simulation {
     }
 
     /// BuildingExt::ExtData::ReverseEngineer (Ares.dll 10012E00): only a
-    /// `ReverseEngineersVictims=` building reverse engineers, for its owner,
-    /// through HouseExt::ExtData::ReverseEngineer (10022360): a
-    /// `CanBeReversed=` victim records `ReversedAs=` (the victim's own type
-    /// when unset) unless the House lists it already. When the type was not
-    /// buildable before (PrereqValidate 10021B00, `can_build` with requirements
-    /// and queued counts) House+1FC is set when RequirementsMet (10021FF0),
-    /// asked after the record, answers at least Incomplete: a theater outside
-    /// `Prerequisite.RequiredTheaters` (Unbuildable) or an owned
-    /// `Prerequisite.Negative` entry (Forbidden) answer lower. Answers whether
-    /// the type was newly recorded.
+    /// `ReverseEngineersVictims=` building reverse engineers, for its owner.
+    /// The house-level half is [`Self::ares_reverse_engineer_house`]
+    /// (HouseExt::ExtData::ReverseEngineer, 10022360).
     fn ares_reverse_engineer(
         &mut self,
         grinder: u64,
@@ -107,6 +100,26 @@ impl Simulation {
         {
             return false;
         }
+        self.ares_reverse_engineer_house(owner, victim_type, rules)
+    }
+
+    /// HouseExt::ExtData::ReverseEngineer (Ares.dll 10022360): a
+    /// `CanBeReversed=` victim records `ReversedAs=` (the victim's own type
+    /// when unset) unless the House lists it already. When the type was not
+    /// buildable before (PrereqValidate 10021B00, `can_build` with requirements
+    /// and queued counts) House+1FC is set when RequirementsMet (10021FF0),
+    /// asked after the record, answers at least Incomplete: a theater outside
+    /// `Prerequisite.RequiredTheaters` (Unbuildable) or an owned
+    /// `Prerequisite.Negative` entry (Forbidden) answer lower. Answers whether
+    /// the type was newly recorded. The grinder arm reaches it through
+    /// [`Self::ares_reverse_engineer`]; a Phobos `ReverseEngineer=` warhead
+    /// calls it directly (`Ext/WarheadType/Detonate.cpp:260-264`).
+    pub(crate) fn ares_reverse_engineer_house(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        victim_type: &ObjectType,
+        rules: &RuleSet,
+    ) -> bool {
         let (can_be_reversed, reversed_as) = victim_type.techno_combat().reverse_engineering();
         if !can_be_reversed {
             return false;
@@ -170,7 +183,7 @@ impl Simulation {
         };
         let (Some(house), Some(factors)) = (
             self.houses.get(&owner),
-            Simulation::house_cost_factors(&self.houses, owner),
+            Simulation::house_cost_factors_for(&self.houses, owner, hijacker),
         ) else {
             return;
         };

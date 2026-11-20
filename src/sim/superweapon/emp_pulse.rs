@@ -62,6 +62,13 @@ pub(super) fn launch(
     if let Some(house) = sim.houses.get_mut(&owner) {
         house.aim_emp_cannons(cell);
     }
+    // `FireSuperWeaponExt` (`Ext/SWType/FireSuperWeapon.cpp:37`) calls
+    // HandleEMPulseLaunch only for a non-TargetSelf EMPulse. VERA reaches
+    // the same tail from the Ares launch owner rather than adding a second
+    // launch path.
+    if !emp.target_self {
+        suspend_phobos_others(sim, rules, owner, sw_type_id, &emp);
+    }
     let count = usize::try_from(emp.max_count).unwrap_or(usize::MAX);
     let ignore_range = emp.linked || emp.target_self;
     let target = (i32::from(cell.0), i32::from(cell.1));
@@ -108,6 +115,11 @@ pub(super) fn launch(
                 },
                 super_target,
             );
+            // `HandleEMPulseLaunch`'s per-cannon latch
+            // (`Ext/SWType/FireSuperWeapon.cpp:365`).
+            if !emp.target_self {
+                building.set_phobos_current_empulse_sw(sw_type_id);
+            }
             building
                 .mission_leaf
                 .set_building_firing_super_weapon(firing_type);
@@ -115,4 +127,61 @@ pub(super) fn launch(
         crate::sim::world::queue_and_commence(sim, id, MissionType::Missile, rules);
     }
     true
+}
+
+/// `SWTypeExt::HandleEMPulseLaunch`'s SuspendOthers arm
+/// (`Ext/SWType/FireSuperWeapon.cpp:380-404`): every other EMPulse Super of
+/// the House is held when both cannon lists are empty (no restriction) or
+/// when the two lists share a type. `HouseExt::SuspendedEMPulseSWs` keeps
+/// the held type IDs under the firing SW type until Mission_Missile resumes
+/// them (`Ext/Building/Hooks.cpp:170-180`).
+fn suspend_phobos_others(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    firing: InternedId,
+    emp: &crate::rules::superweapon_type::AresEMPulseRules,
+) {
+    if !emp.empulse_suspend_others {
+        return;
+    }
+    let held: Vec<InternedId> = {
+        let Some(supers) = sim.super_weapons.get(&owner) else {
+            return;
+        };
+        let interner = &sim.interner;
+        supers
+            .iter()
+            .filter_map(|(&ty, _)| {
+                if ty == firing {
+                    return None;
+                }
+                let name = interner.resolve(ty);
+                let other = rules.super_weapon(name)?;
+                if other.kind != crate::rules::superweapon_type::SuperWeaponKind::EMPulse {
+                    return None;
+                }
+                let other_cannons = &rules
+                    .super_weapon_metadata(name)?
+                    .launch()
+                    .emp_pulse()
+                    .cannons;
+                let shares_cannon = emp.cannons.iter().any(|ours| {
+                    other_cannons
+                        .iter()
+                        .any(|theirs| ours.eq_ignore_ascii_case(theirs))
+                });
+                (emp.cannons.is_empty() && other_cannons.is_empty() || shares_cannon).then_some(ty)
+            })
+            .collect()
+    };
+    let frame = sim.session.binary_frame() as u32;
+    for &ty in &held {
+        if let Some(instance) = sim.super_weapons.instance_mut(&owner, &ty) {
+            instance.phobos_set_suspended(true, frame);
+        }
+    }
+    if let Some(house) = sim.houses.get_mut(&owner) {
+        house.hold_emp_pulse_sws(firing, held);
+    }
 }

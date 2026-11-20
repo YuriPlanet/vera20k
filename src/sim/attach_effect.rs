@@ -14,9 +14,7 @@
 use crate::rules::attach_effect::{
     AttachEffectType, AttachedAnimFlag, DiscardOn, ExpireWeaponCondition,
 };
-#[cfg(feature = "phobos")]
 use crate::rules::phobos_shields::AffectedHouse;
-#[cfg(feature = "phobos")]
 use crate::sim::world::Simulation;
 
 /// `AttachEffectClass`'s constructor arguments, as the attach sites supply
@@ -54,39 +52,44 @@ pub struct AttachEffectInstance {
     is_online: bool,
     /// `Animation`: the live `AnimClass` showing this effect, owned by the
     /// same tree as the entity so a save restores the pair.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     anim: Option<u64>,
     /// `ShouldBeDiscarded`: set by the effect's event conditions (a fired
     /// count, received damage, entry, owner change, invoker death).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     should_be_discarded: bool,
     /// `FiringCount`: shots counted towards `DiscardOn.Firing.Count`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     firing_count: i32,
     /// `ReceivedDamageCount`: hits counted towards
     /// `DiscardOn.ReceivedDamage.Count`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     received_damage_count: i32,
     /// `LastSequenceCheck`: the infantry art sequence the previous frame
     /// played, for the deferred `DiscardOn.Sequences` form.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     last_sequence_check: Option<crate::rules::animation_sequence::SequenceKind>,
     /// `ArmorMultiplierTimer`: a real hit that applied a restricted
     /// `ArmorMultiplier` with `.Delay > 0` blocks further rolls until it runs
     /// out (`TechnoHooks.cpp:552`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     armor_multiplier_timer: crate::sim::timer::CdTimer,
     /// `ReflectDamageTimer`: a reflection under `.Delay > 0` blocks the next
     /// one until it runs out (`Hooks.ReceiveDamage.cpp:429`).
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     reflect_damage_timer: crate::sim::timer::CdTimer,
+    /// `Animation.ResetOnReapply` (`New/Entity/AttachEffectClass.cpp:549-555`,
+    /// `:928-934`, `:991-997`): every `RefreshDuration` and the shorter-duration
+    /// reapply arm kill and re-create the animation. The flag asks the
+    /// animation owner (`maintain_phobos_attach_effect_anim`) to retire the
+    /// live one before its next pass.
+    #[serde(default)]
+    reset_anim: bool,
+    /// `LaserTrailClass::LastLocation`: the endpoint the next trail segment
+    /// starts from. The trail is created and retired with this instance
+    /// (`AttachEffectClass::AttachEffect` / destructor).
+    #[serde(default)]
+    trail_last_location: Option<[i32; 3]>,
 }
 
 impl AttachEffectInstance {
@@ -105,20 +108,15 @@ impl AttachEffectInstance {
             has_initialized: false,
             source: None,
             is_online: true,
-            #[cfg(feature = "phobos")]
             anim: None,
-            #[cfg(feature = "phobos")]
             should_be_discarded: false,
-            #[cfg(feature = "phobos")]
             firing_count: 0,
-            #[cfg(feature = "phobos")]
             received_damage_count: 0,
-            #[cfg(feature = "phobos")]
             last_sequence_check: None,
-            #[cfg(feature = "phobos")]
             armor_multiplier_timer: crate::sim::timer::CdTimer::default(),
-            #[cfg(feature = "phobos")]
             reflect_damage_timer: crate::sim::timer::CdTimer::default(),
+            reset_anim: false,
+            trail_last_location: None,
         };
         instance.refresh(effect);
         instance
@@ -148,6 +146,37 @@ impl AttachEffectInstance {
         self.source.is_none()
     }
 
+    /// A copy for `TransferAttachedEffects` (`AttachEffectClass.cpp:1294..1332`):
+    /// the delays, source pair, duration and counters travel, while the target
+    /// creates its own animation and starts a fresh `CurrentDelay`. The trail
+    /// starts unset too: `CreateAndAttach` builds a new `LaserTrailClass`
+    /// (`AttachEffectClass.cpp:89`) whose `LastLocation` the first `Update`
+    /// seeds, and the transfer's sync list (`:1297..1315`) never names it.
+    fn transfer_copy(&self) -> Self {
+        Self {
+            type_index: self.type_index,
+            remaining: self.remaining,
+            duration_override: self.duration_override,
+            delay: self.delay,
+            initial_delay: self.initial_delay,
+            recreation_delay: self.recreation_delay,
+            current_delay: 0,
+            should_refresh: false,
+            has_initialized: self.has_initialized,
+            source: self.source,
+            is_online: self.is_online,
+            anim: None,
+            should_be_discarded: self.should_be_discarded,
+            firing_count: self.firing_count,
+            received_damage_count: self.received_damage_count,
+            last_sequence_check: self.last_sequence_check,
+            armor_multiplier_timer: self.armor_multiplier_timer,
+            reflect_damage_timer: self.reflect_damage_timer,
+            reset_anim: false,
+            trail_last_location: None,
+        }
+    }
+
     /// The frame's `AI()` walk reaches the animation check: not in the initial
     /// delay, the re-creation delay or the queued refresh (those return early),
     /// and the effect still has a duration to show.
@@ -160,7 +189,6 @@ impl AttachEffectInstance {
     }
 
     /// The live animation this effect shows, if one is attached.
-    #[cfg(feature = "phobos")]
     pub fn anim(&self) -> Option<u64> {
         self.anim
     }
@@ -196,12 +224,33 @@ impl AttachEffectInstance {
         } else {
             effect.duration
         };
+        if effect.animation_reset_on_reapply {
+            self.request_anim_reset();
+        }
     }
 
     /// `RefreshDuration` for a caller that already folded the duration
-    /// multipliers into `duration`.
+    /// multipliers into `duration`. `AttachEffectClass.cpp:549-555` ends it
+    /// with the `Animation.ResetOnReapply` kill-and-re-create.
     pub fn refresh_with(&mut self, duration: i32) {
         self.remaining = duration.max(0);
+    }
+
+    /// The shorter-duration reapply arm (`AttachEffectClass.cpp:928-934` and
+    /// `:991-997`): the duration is not refreshed, but the animation still
+    /// restarts when the type asks for it.
+    fn request_reapply_anim_reset(&mut self, effect: &AttachEffectType) {
+        if effect.animation_reset_on_reapply {
+            self.request_anim_reset();
+        }
+    }
+
+    /// `KillAnim()` when there is one: the animation owner re-creates it on the
+    /// next pass if `CanShowAnim`.
+    fn request_anim_reset(&mut self) {
+        if self.anim.is_some() {
+            self.reset_anim = true;
+        }
     }
 
     pub fn is_online(&self) -> bool {
@@ -241,17 +290,14 @@ impl AttachEffectInstance {
     }
 
     /// `ShouldBeDiscarded`: an event condition asked for removal.
-    #[cfg(feature = "phobos")]
     pub fn is_flagged_discarded(&self) -> bool {
         self.should_be_discarded
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn mark_discarded(&mut self) {
         self.should_be_discarded = true;
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_discarded(&mut self) {
         self.should_be_discarded = false;
     }
@@ -339,7 +385,6 @@ impl AttachEffectInstance {
 /// One weapon an effect asks the world to fire (`AEWeaponParams`): the weapon
 /// name, the invoker that owns the shot, and the house to use when the
 /// invoker is gone.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AttachEffectWeaponShot {
     pub weapon: String,
@@ -349,7 +394,6 @@ pub(crate) struct AttachEffectWeaponShot {
     pub house: Option<crate::sim::intern::InternedId>,
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectInstance {
     /// `AttachEffectClass::AddExpireWeaponParams` (`AttachEffectClass.cpp:1345`):
     /// the weapon this instance fires for `condition`, if it does. `owner` and
@@ -466,7 +510,6 @@ impl AttachSource {
     /// `AttachEffectClass::IsFromSource(pInvoker, pSource)` compares the two
     /// pointers only; the retained house is not part of it. `warhead` is the
     /// querying weapon's warhead name, resolved against the stored handle.
-    #[cfg(feature = "phobos")]
     pub(crate) fn matches(
         self,
         invoker: Option<u64>,
@@ -567,9 +610,13 @@ impl AttachEffectList {
             }
             current_type_count += 1;
             if !effect.cumulative {
+                // Both arms restart the animation under `ResetOnReapply`:
+                // `RefreshDuration` does it itself, the shorter-duration arm
+                // does it explicitly.
                 if policy.replace_longer_duration || duration >= instance.remaining {
                     self.instances[index].refresh_with(duration);
                 }
+                self.instances[index].request_reapply_anim_reset(effect);
                 return AttachOutcome::Refreshed;
             }
             // `IsFromSource(pInvoker, pSource)`: the retained house is no
@@ -598,12 +645,14 @@ impl AttachEffectList {
                 if policy.cumulative_refresh_all {
                     for index in matches {
                         self.instances[index].refresh_with(duration);
+                        self.instances[index].request_reapply_anim_reset(effect);
                     }
-                } else if let Some(index) = shortest
-                    && (policy.replace_longer_duration
-                        || duration >= self.instances[index].remaining)
-                {
-                    self.instances[index].refresh_with(duration);
+                } else if let Some(index) = shortest {
+                    if policy.replace_longer_duration || duration >= self.instances[index].remaining
+                    {
+                        self.instances[index].refresh_with(duration);
+                    }
+                    self.instances[index].request_reapply_anim_reset(effect);
                 }
                 return AttachOutcome::Refreshed;
             } else if policy.cumulative_refresh_all && policy.cumulative_refresh_all_on_attach {
@@ -611,6 +660,7 @@ impl AttachEffectList {
                 // still appends the new instance.
                 for index in matches {
                     self.instances[index].refresh_with(duration);
+                    self.instances[index].request_reapply_anim_reset(effect);
                 }
             }
         }
@@ -651,7 +701,6 @@ impl AttachEffectList {
 
 /// One value of a paired list: the index's own entry, else the last, else the
 /// key's default. Phobos' `ValueableVector` reads extend the same way.
-#[cfg(feature = "phobos")]
 fn paired(list: &[i32], index: usize, default: i32) -> i32 {
     list.get(index)
         .or_else(|| list.last())
@@ -659,12 +708,31 @@ fn paired(list: &[i32], index: usize, default: i32) -> i32 {
         .unwrap_or(default)
 }
 
+/// `EnumFunctions::IsTechnoEligible`'s type side: the category mask, then
+/// `AffectTypes` (when non-empty) and `IgnoreTypes` against the target's type
+/// id. Shared by every attach gate and by the transfer hook.
+fn effect_target_eligible(
+    category: crate::rules::object_type::ObjectCategory,
+    object: &crate::rules::object_type::ObjectType,
+    effect: &AttachEffectType,
+) -> bool {
+    effect.affects_target.allows(category)
+        && (effect.affect_types.is_empty()
+            || effect
+                .affect_types
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&object.id)))
+        && !effect
+            .ignore_types
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(&object.id))
+}
+
 /// `AttachEffectClass::CreateAndAttach` (`AttachEffectClass.cpp:883..898`)
 /// gates every attach site before the cumulative decision: an active Iron
 /// Curtain or Force Shield needs the type's matching penetration flag,
 /// `AffectsTarget` must admit the target's class, and `AffectTypes` (when
 /// non-empty) then `IgnoreTypes` filter the target's type id.
-#[cfg(feature = "phobos")]
 pub fn can_attach_effect(
     category: crate::rules::object_type::ObjectCategory,
     invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
@@ -685,21 +753,7 @@ pub fn can_attach_effect(
             return false;
         }
     }
-    if !effect.affects_target.allows(category) {
-        return false;
-    }
-    if !effect.affect_types.is_empty()
-        && !effect
-            .affect_types
-            .iter()
-            .any(|name| name.eq_ignore_ascii_case(&object.id))
-    {
-        return false;
-    }
-    !effect
-        .ignore_types
-        .iter()
-        .any(|name| name.eq_ignore_ascii_case(&object.id))
+    effect_target_eligible(category, object, effect)
 }
 
 /// Phobos attaches a techno type's `AttachEffect.AttachTypes` once when the
@@ -708,7 +762,6 @@ pub fn can_attach_effect(
 /// attachment came from outside (a warhead or weapon); a type's own list has
 /// none. Each entry passes [`can_attach_effect`] first, as `CreateAndAttach`
 /// does for every attach site.
-#[cfg(feature = "phobos")]
 pub fn attach_initial_effects(
     list: &mut AttachEffectList,
     category: crate::rules::object_type::ObjectCategory,
@@ -718,14 +771,75 @@ pub fn attach_initial_effects(
     frame: u32,
     source: Option<AttachSource>,
 ) -> usize {
-    let names = object.attach_effect_attach_types();
+    attach_effect_names(
+        list,
+        object.attach_effect_attach_types(),
+        object.attach_effect_duration_overrides(),
+        object.attach_effect_delays(),
+        object.attach_effect_initial_delays(),
+        object.attach_effect_recreation_delays(),
+        category,
+        invulnerability,
+        object,
+        rules,
+        frame,
+        source,
+    )
+}
+
+/// Phobos `TechnoExt::InitializeAttachEffects`' second call
+/// (`Body.Internal.cpp:157`) and the owner-change hook
+/// (`House/Hooks.cpp:342-343`): the owner country's
+/// `AttachEffect.AttachTypes`, paired with its own overrides and delays,
+/// attaches with the techno itself as the source object.
+#[allow(clippy::too_many_arguments)]
+pub fn attach_country_effects(
+    list: &mut AttachEffectList,
+    category: crate::rules::object_type::ObjectCategory,
+    invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    frame: u32,
+    source: Option<AttachSource>,
+    country: &str,
+) -> usize {
+    let Some(country) = rules.country_rules(country) else {
+        return 0;
+    };
+    attach_effect_names(
+        list,
+        &country.attach_effect_attach_types,
+        &country.attach_effect_duration_overrides,
+        &country.attach_effect_delays,
+        &country.attach_effect_initial_delays,
+        &country.attach_effect_recreation_delays,
+        category,
+        invulnerability,
+        object,
+        rules,
+        frame,
+        source,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn attach_effect_names(
+    list: &mut AttachEffectList,
+    names: &[String],
+    overrides: &[i32],
+    delays: &[i32],
+    initial_delays: &[i32],
+    recreation_delays: &[i32],
+    category: crate::rules::object_type::ObjectCategory,
+    invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    frame: u32,
+    source: Option<AttachSource>,
+) -> usize {
     if names.is_empty() {
         return 0;
     }
-    let overrides = object.attach_effect_duration_overrides();
-    let delays = object.attach_effect_delays();
-    let initial_delays = object.attach_effect_initial_delays();
-    let recreation_delays = object.attach_effect_recreation_delays();
     let policy = AttachPolicy {
         replace_longer_duration: rules.attach_effect_globals().replace_longer_duration,
         ..AttachPolicy::default()
@@ -778,7 +892,6 @@ fn cpp_i32(value: f64) -> i32 {
 
 /// Phobos `GeneralUtils::SafeMultiply(int, double)`: the product clamped to
 /// the `int` range, then MSVC's cast.
-#[cfg(feature = "phobos")]
 fn safe_multiply(value: i32, multiplier: f64) -> i32 {
     let product = f64::from(value) * multiplier;
     if product > f64::from(i32::MAX) {
@@ -790,13 +903,90 @@ fn safe_multiply(value: i32, multiplier: f64) -> i32 {
     }
 }
 
-/// `WeaponTypeExt::GetRangeWithModifiers` (`WeaponType/Body.cpp:398..443`):
-/// the entity whose AttachEffect range fold applies. A passenger inside an
-/// `OpenTopped` transport whose type enables
-/// `OpenTopped.UseTransportRangeModifiers` (defaulting to `[General]`) folds
-/// the transport's active effects instead of its own. `None` entities
+/// `WeaponTypeExt::GetRangeWithModifiers(WeaponTypeClass*, TechnoClass*)`
+/// (`Ext/WeaponType/Body.cpp:374-396`): the weapon's own range behind the
+/// `-512` always-in-range sentinel, then the three-argument fold.
+///
+/// RESIDUAL: the native `CanOccupyFire` arm (`OccupyWeaponRange *
+/// LeptonsPerCell`) has no VERA equivalent on this owner.
+pub(crate) fn weapon_range_with_modifiers(
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+    entities: Option<&crate::sim::entity_store::EntityStore>,
+    firer: &crate::sim::game_entity::GameEntity,
+    weapon: &crate::rules::weapon_type::WeaponType,
+) -> i32 {
+    let range = weapon.range_leptons;
+    if i64::from(range) == crate::util::lepton::WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS {
+        return range;
+    }
+    get_range_with_modifiers(rules, interner, entities, firer, &weapon.id, range)
+}
+
+/// `WeaponTypeExt::GetRangeWithModifiers(WeaponTypeClass*, TechnoClass*, int)`
+/// (`Ext/WeaponType/Body.cpp:398-443`): the veteran `Range` ability's
+/// `VeteranRange` multiplier (max with 0) and then the AttachEffect fold,
+/// both over the transport an open-topped passenger resolves its range
+/// against ([`range_modifier_source`]). The explicit-range overload has no
+/// `-512` arm; [`weapon_range_with_modifiers`] owns that short-circuit.
+pub(crate) fn get_range_with_modifiers(
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+    entities: Option<&crate::sim::entity_store::EntityStore>,
+    firer: &crate::sim::game_entity::GameEntity,
+    weapon: &str,
+    range: i32,
+) -> i32 {
+    let mut range = range;
+    let source = range_modifier_source(firer, entities, rules, interner);
+    if interner.try_resolve(source.type_ref()).is_some()
+        && let Some(object) = interner.object_type(source.type_ref(), rules)
+        && crate::sim::combat::crit::has_phobos_ability(
+            source.veterancy.rank_kind(),
+            object,
+            crate::rules::phobos_crit::PhobosAbilityFlags::RANGE,
+        )
+    {
+        let global = f64::from_bits(rules.phobos_globals.veteran_range.bits());
+        let multiplier = object.phobos_techno_extras.veteran_range_multiplier(global);
+        range = safe_multiply(range, multiplier.max(0.0));
+    }
+    range_with_attach_effects(source, weapon, range, rules)
+}
+
+/// `BulletClass_AI_Ranged @ 0x467B8E` (`Ext/Bullet/Hooks.cpp:636-659`): a
+/// `Ranged=` projectile's `maxRange` passes [`get_range_with_modifiers`] when
+/// it is positive, its weapon's nullable key else `[CombatDamage]
+/// ProjectileRange.ApplyModifiers` (default true) admits it. The native
+/// `maxRange > 0` guard runs before the key, so zero and negative ranges are
+/// left untouched.
+pub(crate) fn initial_projectile_range(
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+    entities: Option<&crate::sim::entity_store::EntityStore>,
+    firer: &crate::sim::game_entity::GameEntity,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    range: i32,
+) -> i32 {
+    if range <= 0 {
+        return range;
+    }
+    let apply = weapon
+        .phobos_projectile_range_apply_modifiers
+        .unwrap_or(rules.combat_damage.phobos_projectile_range_apply_modifiers);
+    if apply {
+        get_range_with_modifiers(rules, interner, entities, firer, &weapon.id, range)
+    } else {
+        range
+    }
+}
+
+/// `WeaponTypeExt::GetRangeWithModifiers`'s entity choice
+/// (`Ext/WeaponType/Body.cpp:400-410`): the entity whose AttachEffect range
+/// fold applies. A passenger inside an `OpenTopped` transport whose type
+/// enables `OpenTopped.UseTransportRangeModifiers` (defaulting to `[General]`)
+/// folds the transport's active effects instead of its own. `None` entities
 /// (mapless probes) keep the firer.
-#[cfg(feature = "phobos")]
 pub(crate) fn range_modifier_source<'a>(
     entity: &'a crate::sim::game_entity::GameEntity,
     entities: Option<&'a crate::sim::entity_store::EntityStore>,
@@ -827,22 +1017,30 @@ pub(crate) fn range_modifier_source<'a>(
     }
 }
 
-#[cfg(not(feature = "phobos"))]
-pub(crate) fn range_modifier_source<'a>(
-    entity: &'a crate::sim::game_entity::GameEntity,
-    _entities: Option<&'a crate::sim::entity_store::EntityStore>,
-    _rules: &crate::rules::ruleset::RuleSet,
-    _interner: &crate::sim::intern::StringInterner,
-) -> &'a crate::sim::game_entity::GameEntity {
-    entity
+/// Resolve the open-topped carrier's `ObjectType` for a passenger. The Phobos
+/// `OpenTopped.*` hooks read the transport's type extension
+/// (`TechnoExt::Fetch(pThis->Transporter)->TypeExtData`), e.g.
+/// `TechnoClass_IsCloseEnoughToTarget_OpenTopped_RangeBonus @ 0x6F72D2`
+/// (`Ext/Techno/Hooks.Transport.cpp:173-176`); VERA's carrier relation
+/// (`inside_transport_id`) is that entity. `None` for a mapless probe or a
+/// carrier whose type does not resolve.
+pub(crate) fn open_topped_transport_type<'r>(
+    entity: &crate::sim::game_entity::GameEntity,
+    entities: &crate::sim::entity_store::EntityStore,
+    rules: &'r crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) -> Option<&'r crate::rules::object_type::ObjectType> {
+    let id = entity.passenger_role.inside_transport_id()?;
+    let transport = entities.get(id)?;
+    let kind = interner.object_type(transport.type_ref(), rules)?;
+    kind.open_topped.then_some(kind)
 }
 
 /// Phobos `WeaponTypeExt::GetRangeWithModifiers`'s AttachEffect arm: every
 /// active effect whose weapon lists admit `weapon` multiplies the range (in
 /// leptons, clamped) and sums its `WeaponRange.ExtraRange`; the summed cells
 /// are converted to leptons and added after every multiplier, and the result
-/// floors at zero. The `-512` always-in-range sentinel returns before the
-/// fold, and a type with nothing to add leaves the range untouched.
+/// floors at zero. A type with nothing to add leaves the range untouched.
 /// `entity` is the fold source [`range_modifier_source`] resolved.
 pub(crate) fn range_with_attach_effects(
     entity: &crate::sim::game_entity::GameEntity,
@@ -850,12 +1048,7 @@ pub(crate) fn range_with_attach_effects(
     range: i32,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> i32 {
-    #[cfg(feature = "phobos")]
     {
-        const WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS: i32 = -512;
-        if range == WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS {
-            return range;
-        }
         if !entity.phobos_stat_multipliers().has_range_modifier {
             return range;
         }
@@ -887,11 +1080,6 @@ pub(crate) fn range_with_attach_effects(
         // `Math::max(range, 0)` (`WeaponType/Body.cpp:467`).
         range.wrapping_add(cpp_i32(extra_range * 256.0)).max(0)
     }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (entity, weapon, rules);
-        range
-    }
 }
 
 /// Phobos `AttachEffectTechnoProperties`'s cached stat fold
@@ -907,10 +1095,11 @@ pub(crate) fn range_with_attach_effects(
 /// `FootClass+0x6CC IsAttackedByLocomotor` is set) and `0x006FC5C7`
 /// (open-topped `CheckTransportDisableWeapons` asks the transport's flag),
 /// plus the gattling AI arms, and VERA keeps no `IsAttackedByLocomotor`
-/// producer; and the charge-turret half of
-/// `ROFMultiplier.ApplyOnCurrentTimer` needs the
-/// `LastRearmWasFullDelay`/charge-timer state VERA does not keep.
-#[cfg(feature = "phobos")]
+/// producer. The `ROFMultiplier.ApplyOnCurrentTimer` charge-turret half is
+/// ported on the per-effect initialization reader
+/// ([`crate::sim::game_entity::GameEntity::phobos_scale_charge_turret_delay`]);
+/// the batch attach path's copy (`AttachEffectClass.cpp:831-837`) is not,
+/// and that residual sits in `docs/phobos-burst-sequence.md`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosStatMultipliers {
     pub firepower: f64,
@@ -926,7 +1115,6 @@ pub(crate) struct PhobosStatMultipliers {
     pub has_crit_modifiers: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Default for PhobosStatMultipliers {
     fn default() -> Self {
         Self {
@@ -945,7 +1133,6 @@ impl Default for PhobosStatMultipliers {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectList {
     /// The active effects with their catalog entries, in attach order.
     pub(crate) fn active_effects<'a>(
@@ -1184,7 +1371,6 @@ impl AttachEffectList {
 
 /// The per-frame target facts `AttachEffectClass::ShouldBeDiscardedNow`
 /// reads.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct DiscardFacts {
     pub is_foot: bool,
@@ -1210,7 +1396,6 @@ pub(crate) struct DiscardFacts {
     pub owner_human: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectInstance {
     /// `ShouldBeDiscardedNow`: the event flag or any continuous condition the
     /// type lists. RESIDUAL: `Drain` waits on a victim-side drain owner.
@@ -1361,7 +1546,6 @@ impl AttachEffectInstance {
 
 /// Where an effect's animation lives: attached to `owner` at its world point,
 /// drawn under `house`, and paused or running with the effect's state.
-#[cfg(feature = "phobos")]
 struct AttachEffectAnimTarget {
     owner: u64,
     house: crate::sim::intern::InternedId,
@@ -1369,7 +1553,6 @@ struct AttachEffectAnimTarget {
     paused: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// Phobos `TechnoExt::UpdateAttachEffects`
     /// (`src/Ext/Techno/Body.Update.cpp:895..975`, reached from the
@@ -1377,14 +1560,17 @@ impl Simulation {
     /// phase, expired effects are removed, and each surviving effect
     /// reconciles its `AnimClass` with `CanShowAnim`.
     ///
-    /// RESIDUALS: `DiscardOn` belongs to its own slice, so nothing is discarded
-    /// here yet; native `IsImmobilized` is approximated by the chrono-warp and
-    /// transport-interior gates VERA models; `CloakCheck` and the tunnel
-    /// animation state are not ported; a cumulative type's animation is
-    /// rebuilt when the layer count changes instead of going through
-    /// `AnimExt::ChangeAnimType`, so `CumulativeAnimations.RestartOnChange=no`
-    /// still restarts; `Animation.ResetOnReapply` does not restart a refreshed
-    /// effect's animation.
+    /// RESIDUALS: native `IsImmobilized` is approximated by the chrono-warp and
+    /// transport-interior gates VERA models. The tunnel animation gate reads
+    /// the Tunnel locomotor's own state and has no `IsBurrowedState()` term
+    /// (burrow has no host here). A cumulative type's animation follows `AnimExt::ChangeAnimType`
+    /// for the designated layer (`CumulativeAnimations.RestartOnChange` picks
+    /// the proportional or the restart arm); the native per-instance
+    /// `AnimClass` of every other layer is not modeled, because VERA shows one
+    /// animation per cumulative type. `Animation.ResetOnReapply` retires the
+    /// animation when the effect refreshes or is reapplied, so the replacement
+    /// is created on the next pass of this walk rather than inside the attach
+    /// call as native does.
     /// `ShouldBeDiscardedNow`'s target facts for one entity, read once per
     /// frame before the AI walk. `needs_range` skips the weapon selection
     /// when no effect on the object reads inrange/outofrange.
@@ -1430,6 +1616,15 @@ impl Simulation {
         let target = if needs_range {
             entity.attack_target.target().and_then(|target| {
                 let target_coords = match target {
+                    crate::sim::combat::TargetKind::Bullet(id) => {
+                        use crate::sim::projectile::ProjectileCoord;
+                        let position = self
+                            .projectiles
+                            .get(id)
+                            .map(|projectile| projectile.position())
+                            .unwrap_or(ProjectileCoord::new(0, 0, 0));
+                        [position.x, position.y, position.z]
+                    }
                     crate::sim::combat::TargetKind::Entity(id) => {
                         let target = self.substrate.entities.get(id)?;
                         let coord = crate::sim::movement::ground_pose::position_world_coord(
@@ -1475,17 +1670,12 @@ impl Simulation {
                     Some(&self.house_alliances),
                 )?;
                 let range = selected.map_or(-1, |selected| {
-                    let source = range_modifier_source(
-                        entity,
-                        Some(&self.substrate.entities),
+                    weapon_range_with_modifiers(
                         rules,
                         &self.interner,
-                    );
-                    range_with_attach_effects(
-                        source,
-                        &selected.weapon.id,
-                        selected.weapon.range_leptons,
-                        rules,
+                        Some(&self.substrate.entities),
+                        entity,
+                        selected.weapon,
                     )
                 });
                 Some((distance, range))
@@ -1664,7 +1854,21 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.phobos_attach_effects().is_empty() {
+        // The new country's list may attach even when this object holds no
+        // effect yet (Phobos `House/Hooks.cpp:342-343`), so the empty list
+        // only lets an owner change with no attach work return early.
+        let attach_country = self
+            .houses
+            .get(&new_owner)
+            .and_then(|house| house.country())
+            .map(|country| self.interner.resolve(country).to_owned())
+            .filter(|country| {
+                rules
+                    .country_rules(country)
+                    .and_then(|country| country.attach_effect_attach_on_owner_change)
+                    .unwrap_or(rules.attach_effect_globals().attach_on_owner_change)
+            });
+        if entity.phobos_attach_effects().is_empty() && attach_country.is_none() {
             return;
         }
         let old_human = self
@@ -1720,6 +1924,250 @@ impl Simulation {
             .get_mut(id)
             .expect("the gated entity still exists")
             .phobos_attach_effects_mut() = list;
+        // Phobos `House/Hooks.cpp:342-343`: the new country's list attaches
+        // under `AttachEffect.AttachOnOwnerChange` (country value, else the
+        // `[General]` fallback).
+        let Some(country) = attach_country else {
+            return;
+        };
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let type_name = self.interner.resolve(entity.type_ref()).to_owned();
+        let attachment_category = entity.category().into();
+        let invulnerability = entity.invulnerability.clone();
+        let Some(object) = rules.object(&type_name) else {
+            return;
+        };
+        let frame = self.session.binary_frame();
+        let list = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("the entity checked above still exists")
+            .phobos_attach_effects_mut();
+        attach_country_effects(
+            list,
+            attachment_category,
+            invulnerability.as_ref(),
+            object,
+            rules,
+            frame,
+            None,
+            &country,
+        );
+    }
+
+    /// Phobos `TechnoExt::UpdateLaserTrails` (`Body.Update.cpp:526..570`):
+    /// every live instance whose type names a `[LaserTrailTypes]` entry draws
+    /// one laser segment once it moves `SegmentLength`. The trail state lives
+    /// on this instance, so it is created and retired with the effect.
+    /// RESIDUALS: only `DrawType=laser` draws (EBolt/RadBeam are parsed but
+    /// unported); `CloakVisible.DetectedOnly`, `DropPodOnly` and the
+    /// `HideLaserTrailEffects` config have no reader; this runs in the shared
+    /// techno AI phase, not after the foot locomotor process.
+    pub(crate) fn update_phobos_laser_trails(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.phobos_attach_effects().is_empty()
+            || entity.lifecycle.in_limbo()
+            || entity.passenger_role.inside_transport_id().is_some()
+            || entity.chrono_warp_latch()
+        {
+            return;
+        }
+        let location = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        let current = [location.x, location.y, location.z];
+        let owner = entity.owner();
+        let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state());
+        let effects = rules.attach_effect_types().types();
+        let art = rules.art();
+        let mut list = std::mem::take(
+            self.substrate
+                .entities
+                .get_mut(id)
+                .expect("the gated entity still exists")
+                .phobos_attach_effects_mut(),
+        );
+        for instance in &mut list.instances {
+            let Some(effect) = effects.get(instance.type_index) else {
+                continue;
+            };
+            let Some(name) = effect.laser_trail_type.as_deref() else {
+                continue;
+            };
+            let Some(trail) = art.laser_trail(name) else {
+                continue;
+            };
+            // `UpdateLaserTrails` while uncloaking and the type is not
+            // cloak-visible only moves `LastLocation` (`Body.Update.cpp:564..566`).
+            if cloak_state == 3 && !trail.cloak_visible {
+                instance.trail_last_location = Some(current);
+                continue;
+            }
+            // The shared `LaserTrailClass::Update` owner: distance, visibility,
+            // `IgnoreVertical` and the one LaserDraw construction live in
+            // `sim::laser_trail`, also used by bullets and voxel debris.
+            let cloaked = cloak_state == 2 && !trail.cloak_visible;
+            crate::sim::laser_trail::update(
+                &mut instance.trail_last_location,
+                trail,
+                current,
+                true,
+                cloaked,
+                Some(owner),
+                rules.radiation.color,
+                &self.session,
+                &self.main_rng,
+                &mut self.lifecycle_outputs,
+            );
+        }
+        let entity = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("the gated entity still exists");
+        *entity.phobos_attach_effects_mut() = list;
+    }
+
+    /// Phobos `AttachEffectClass::TransferAttachedEffects`
+    /// (`AttachEffectClass.cpp:1222..1333`) at the deploy
+    /// (`UnitClass_Deploy_Transfer 0x739956`) and undeploy
+    /// (`BuildingClass_Mi_Selling_Transfer 0x44A03C`) hooks: the source techno
+    /// is deleted afterwards, so its instances move to the target unless
+    /// `AllowTransfer` refuses or the target fails the category/type gates.
+    /// An existing instance keeps the longer duration; a cumulative type
+    /// appends until its own cap, and only a same-source match is refreshed.
+    pub(crate) fn transfer_phobos_attach_effects(
+        &mut self,
+        source: u64,
+        target: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        if source == target {
+            return;
+        }
+        let (Some(source_entity), Some(target_entity)) = (
+            self.substrate.entities.get(source),
+            self.substrate.entities.get(target),
+        ) else {
+            return;
+        };
+        if source_entity.phobos_attach_effects().is_empty() {
+            return;
+        }
+        let Some(target_object) = self.interner.object_type(target_entity.type_ref(), rules) else {
+            return;
+        };
+        let target_category = target_entity.category().into();
+        let target_invulnerability = target_entity.invulnerability.clone();
+        let effects = rules.attach_effect_types().types();
+        let mut list = std::mem::take(
+            self.substrate
+                .entities
+                .get_mut(source)
+                .expect("the gated source still exists")
+                .phobos_attach_effects_mut(),
+        );
+        let mut target_list = std::mem::take(
+            self.substrate
+                .entities
+                .get_mut(target)
+                .expect("the gated target still exists")
+                .phobos_attach_effects_mut(),
+        );
+        for instance in std::mem::take(&mut list.instances) {
+            let Some(effect) = effects.get(instance.type_index) else {
+                continue;
+            };
+            if !effect.allows_transfer(instance.is_self_owned(), false)
+                || !effect_target_eligible(target_category, target_object, effect)
+            {
+                continue;
+            }
+            let mut type_count = 0;
+            let mut first_match: Option<usize> = None;
+            let mut shortest_same_source: Option<usize> = None;
+            for (index, held) in target_list.instances.iter().enumerate() {
+                if held.type_index != instance.type_index {
+                    continue;
+                }
+                type_count += 1;
+                first_match.get_or_insert(index);
+                if held.source.map(|held| (held.invoker, held.source))
+                    == instance
+                        .source
+                        .map(|incoming| (incoming.invoker, incoming.source))
+                    && shortest_same_source
+                        .is_none_or(|best| held.remaining < target_list.instances[best].remaining)
+                {
+                    shortest_same_source = Some(index);
+                }
+            }
+            // `CreateAndAttach`'s match: a non-cumulative type takes the first
+            // same-type instance; a cumulative one only a same-source match,
+            // and only at its cap.
+            let matched = if effect.cumulative {
+                let at_cap =
+                    effect.cumulative_max_count >= 0 && type_count >= effect.cumulative_max_count;
+                at_cap.then_some(shortest_same_source).flatten()
+            } else {
+                first_match
+            };
+            if let Some(index) = matched {
+                let duration = target_list.instances[index]
+                    .remaining
+                    .max(instance.remaining);
+                target_list.instances[index].remaining = duration;
+                continue;
+            }
+            // A same-source cumulative match below the cap takes native's
+            // `if (match)` arm, which writes nothing and discards the source
+            // instance.
+            if effect.cumulative && shortest_same_source.is_some() {
+                continue;
+            }
+            // Otherwise native calls `CreateAndAttach(..., checkCumulative=false)`:
+            // the attach gate runs again, then the first same-type instance
+            // refreshes with the attach duration when it is not longer, or a
+            // new instance is appended when none exists.
+            if !can_attach_effect(
+                target_category,
+                target_invulnerability.as_ref(),
+                target_object,
+                effect,
+                self.session.binary_frame(),
+            ) {
+                continue;
+            }
+            let incoming_duration = if instance.duration_override != 0 {
+                instance.duration_override
+            } else {
+                effect.duration
+            };
+            if let Some(index) = first_match {
+                if incoming_duration >= target_list.instances[index].remaining {
+                    target_list.instances[index].remaining = incoming_duration;
+                }
+                continue;
+            }
+            target_list.instances.push(instance.transfer_copy());
+        }
+        let target_entity = self
+            .substrate
+            .entities
+            .get_mut(target)
+            .expect("the gated target still exists");
+        *target_entity.phobos_attach_effects_mut() = target_list;
+        target_entity.recalculate_phobos_stat_multipliers(effects);
     }
 
     /// Phobos `TechnoClass_Limbo_Wrapper` (`Ext/Techno/Hooks.cpp:400..472`,
@@ -1795,6 +2243,12 @@ impl Simulation {
             }
             list.instances.remove(index);
         }
+        // Native clears every trail's `LastLocation` when the carrier enters
+        // Limbo or a transport (`Techno/Hooks.cpp` 0x71067B, `0x4D7221`), so a
+        // carried or re-placed object does not draw a segment across the gap.
+        for instance in &mut list.instances {
+            instance.trail_last_location = None;
+        }
         let entity = self
             .substrate
             .entities
@@ -1858,6 +2312,27 @@ impl Simulation {
             && (entity.category() != crate::map::entities::EntityCategory::Structure
                 || entity.building_online());
         let owner_house = entity.owner();
+        // `AttachEffectClass::CloakCheck` (`New/Entity/AttachEffectClass.cpp:446-453`):
+        // Cloaking or Cloaked counts as cloaked for the animation gate.
+        let owner_cloaked = matches!(
+            entity.cloak.as_ref().map_or(0, |cloak| cloak.state()),
+            1 | 2
+        );
+        // `TunnelLocomotionClass_Process_KillAnims @ 0x728F74` /
+        // `RestoreAnims @ 0x728E5F` (`Ext/Techno/Hooks.Misc.cpp:487-527`):
+        // effect animations are killed on the dug-in transition and restored
+        // when the tunnel reaches `PreDigOut`.
+        let owner_in_tunnel = entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .is_some_and(|runtime| {
+                matches!(
+                    runtime.state(),
+                    crate::sim::movement::TunnelState::DugIn
+                        | crate::sim::movement::TunnelState::Digging
+                )
+            });
         let position = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let world = crate::sim::anim_class::AnimWorldCoord {
             x: position.x,
@@ -1976,6 +2451,11 @@ impl Simulation {
                     .rearm_timer
                     .start(frame, scale_i32(remaining, effect.rof_multiplier));
             }
+            // Same block (`AttachEffectClass.cpp:209-210`): the saved
+            // charge-turret denominator follows the multiplier too, but only
+            // while the `ChargeTurret.Delays` timer has never started and the
+            // last GetROF answered the full-rearm arm.
+            entity.phobos_scale_charge_turret_delay(effect.rof_multiplier);
         }
         // `HasExpired || (IsActiveIgnorePowered && ShouldBeDiscardedNow)`:
         // a discardable effect behind a recreation delay is reset instead of
@@ -2039,7 +2519,10 @@ impl Simulation {
             let anim_state = instance.animation_state(effect, false);
             let hidden =
                 list.has_active_type(&effect.animation_hide_if_attached_with, effects, false);
-            can_show.push(instance.animation_phase() && anim_state.show && !hidden);
+            // `CanShowAnim` (`AttachEffectClass.h:43-50`): the tunnel state is
+            // the last conjunct, hiding the animation while sunk or travelling.
+            can_show
+                .push(instance.animation_phase() && anim_state.show && !hidden && !owner_in_tunnel);
             state.push(anim_state);
         }
         // One cumulative type shows one animation no matter how many layers it
@@ -2097,9 +2580,21 @@ impl Simulation {
             } else {
                 owner_house
             };
+            let retime = if effect.cumulative && !effect.cumulative_animations.is_empty() {
+                Some(effect.cumulative_animations_restart_on_change)
+            } else {
+                None
+            };
+            // `AttachEffectClass::CreateAnim` (`:476-477`): a cloaked owner
+            // refuses to create an animation whose type asks for `DetachOnCloak`,
+            // and `CloakCheck` has already killed the live one.
+            let desired = desired.filter(|name| {
+                !(owner_cloaked && crate::sim::anim_class::anim_type_detach_on_cloak(rules, *name))
+            });
             self.maintain_phobos_attach_effect_anim(
                 &mut list.instances[instance_index],
                 desired,
+                retime,
                 AttachEffectAnimTarget {
                     owner: id,
                     house,
@@ -2134,12 +2629,16 @@ impl Simulation {
 
     /// `CreateAnim` / `KillAnim`: keep exactly `desired` alive on the effect.
     /// Phobos creates the animation at the owner's location, attaches it with
-    /// `SetOwnerObject`, and holds its loops; a changed cumulative type is
-    /// rebuilt here because `AnimExt::ChangeAnimType` has no VERA owner yet.
+    /// `SetOwnerObject`, and holds its loops. `AttachEffectClass::UpdateCumulativeAnim`
+    /// (`New/Entity/AttachEffectClass.cpp:520-526`) retypes a running animation
+    /// through `AnimExt::ChangeAnimType` when the layer count picks another
+    /// body, so a `Some(retime)` call keeps the same `AnimClass` instead of
+    /// rebuilding it.
     fn maintain_phobos_attach_effect_anim(
         &mut self,
         instance: &mut AttachEffectInstance,
         desired: Option<&str>,
+        retime: Option<bool>,
         target: AttachEffectAnimTarget,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
@@ -2149,6 +2648,14 @@ impl Simulation {
             world,
             paused,
         } = target;
+        // `KillAnim()` from a `RefreshDuration` or a shorter-duration reapply:
+        // the re-creation below is the native `CreateAnim()` half.
+        if instance.reset_anim {
+            instance.reset_anim = false;
+            if let Some(anim) = instance.anim.take() {
+                self.destroy_anim_with_context(anim, rules);
+            }
+        }
         if let Some(anim) = instance.anim {
             let keeps = desired.is_some_and(|name| {
                 self.substrate.anims.get(anim).is_some_and(|live| {
@@ -2157,7 +2664,19 @@ impl Simulation {
                         .eq_ignore_ascii_case(name)
                 })
             });
-            if !keeps {
+            // `AttachEffectClass::UpdateCumulativeAnim`
+            // (`New/Entity/AttachEffectClass.cpp:520-526`): a picked body that
+            // differs from the running one is retyped in place
+            // (`ChangeAnimType(pAnim, pAnimType, false, RestartOnChange)`),
+            // never destroyed and rebuilt.
+            let retyped = match (keeps, retime, desired) {
+                (false, Some(restart), Some(name)) => {
+                    let type_name = self.interner.intern(name);
+                    self.change_anim_type(anim, type_name, false, restart, rules)
+                }
+                _ => false,
+            };
+            if !keeps && !retyped {
                 self.destroy_anim_with_context(anim, rules);
                 instance.anim = None;
             }
@@ -2344,11 +2863,16 @@ impl Simulation {
         multiplier
     }
 
-    /// Phobos' `Unkillable` arm of the ReceiveDamage wrapper:
+    /// Phobos' `Unkillable`/`!CanKill` arm of the ReceiveDamage wrapper
+    /// (`Ext/Techno/Hooks.ReceiveDamage.cpp:178-188`):
     /// `MapClass::GetTotalDamage(input, WH, target armor, distance)` reaching
     /// the target's health leaves `Health` and `EstimatedHealth` at 1 and the
-    /// receiver packet at 0. `WarheadTypeExt::CanKill` is not ported, so only
-    /// the effect's flag opens the arm. Returns whether it applied.
+    /// receiver packet at 0. Either the AttachEffect flag or a false
+    /// `WarheadType CanKill` opens the arm.
+    ///
+    /// The arm sits inside `if (!args->IgnoreDefenses)` (`:141`), so a forced
+    /// hit — C4 damage, a scripted kill — never leaves 1 HP, not even on an
+    /// `Unkillable` carrier. Returns whether it applied.
     pub(crate) fn apply_unkillable_clamp(
         &mut self,
         target_id: u64,
@@ -2359,12 +2883,19 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return false;
         };
-        if !target.phobos_unkillable() || target.health.current() <= 0 || input == 0 {
-            return false;
-        }
         let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
+        // `:141` guards the whole shield block this arm lives in.
+        if event.receiver_flags.ignore_defenses {
+            return false;
+        }
+        if !(target.phobos_unkillable() || !warhead.can_kill)
+            || target.health.current() <= 0
+            || input == 0
+        {
+            return false;
+        }
         let Some(object) = self.interner.object_type(target.type_ref(), rules) else {
             return false;
         };
@@ -2385,6 +2916,7 @@ impl Simulation {
             event.distance_leptons,
             self.session.no_damage(),
             rules.combat_damage.max_damage,
+            warhead.apply_modifiers_on_negative_damage(rules),
         );
         if total < target.health.current() {
             return false;
@@ -2429,7 +2961,6 @@ impl Simulation {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// `WeaponTypeExt::HasRequiredAttachedEffects` (`src/Ext/WeaponType/Body.cpp:11`):
     /// a weapon carrying no AE list always allows the shot. Otherwise the
@@ -2915,11 +3446,14 @@ impl Simulation {
     /// Phobos `TechnoExt::ApplyRevengeWeapon` (`src/Ext/Techno/WeaponHelpers.cpp:254`):
     /// once a victim dies from a sourced hit, every active effect carrying
     /// `RevengeWeapon` fires that weapon at the attacker, under the effect's
-    /// house gate and invoker ownership.
+    /// house gate and invoker ownership. The killing warhead's
+    /// `SuppressRevengeWeapons`/`.Types` drop shots before the house gate
+    /// (`:262-264`).
     pub(crate) fn apply_attach_effect_revenge_weapons(
         &mut self,
         victim_id: u64,
         attacker_id: u64,
+        suppress: &crate::rules::phobos_revenge_weapon::SuppressRevengeWeaponsRules,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::world::FrameEffects<'_>,
@@ -2935,7 +3469,13 @@ impl Simulation {
         let table = rules.attach_effect_types().types();
         let mut shots = Vec::new();
         for (instance, effect) in victim.phobos_attach_effects().active_effects(table) {
-            if effect.revenge_weapon.is_none() {
+            let Some(weapon) = effect.revenge_weapon.as_deref() else {
+                continue;
+            };
+            // `TechnoExt::ApplyRevengeWeapon`
+            // (`Ext/Techno/WeaponHelpers.cpp:281-282`): a warhead whose
+            // `SuppressRevengeWeapons=` covers this weapon drops the shot.
+            if suppress.suppresses(effect.revenge_weapon.as_deref()) {
                 continue;
             }
             let Some(shot) = instance.revenge_weapon_shot(effect, victim_id, victim_owner) else {
@@ -3211,7 +3751,6 @@ impl Simulation {
 /// Phobos `EnumFunctions::CanTargetHouse` with a nullable source: the
 /// shared port handles a known source; a hit with none follows the enemy
 /// bucket, as the AttachEffect branch has always read it.
-#[cfg(feature = "phobos")]
 fn affects_house(
     flags: AffectedHouse,
     source: Option<crate::sim::intern::InternedId>,
@@ -3226,7 +3765,7 @@ fn affects_house(
     crate::sim::combat::can_target_house(flags, source, target, houses, alliances, interner)
 }
 
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
 
@@ -3234,6 +3773,276 @@ mod tests {
         let mut effect = AttachEffectType::default();
         effect.duration = duration;
         effect
+    }
+
+    fn lasers(sim: &Simulation) -> Vec<crate::sim::combat::laser::LaserBirth> {
+        sim.lifecycle_outputs
+            .as_slice()
+            .iter()
+            .filter_map(|fact| match fact {
+                crate::sim::world::LifecycleOutput::LaserCreated(laser) => Some(*laser),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `LaserTrail.Type` resolves through the ART `[LaserTrailTypes]` catalog:
+    /// one segment per `SegmentLength` of movement, with the type's fade,
+    /// thickness and color.
+    #[test]
+    fn a_named_laser_trail_draws_one_segment_after_moving() {
+        let art = crate::rules::ini_parser::IniFile::from_str(
+            "[LaserTrailTypes]\n0=TRAIL\n[TRAIL]\nSegmentLength=64\nFadeDuration=5\n\
+             Thickness=2\nColor=1,2,3\n",
+        );
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSpeed=5\n\
+                 AttachEffect.AttachTypes=AE\n\
+                 [AttachEffectTypes]\n0=AE\n[AE]\nDuration=100\nLaserTrail.Type=TRAIL\n\
+                 [Clear]\nBuildable=yes\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        let mut sim = Simulation::with_seed(3);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let tank = sim
+            .spawn_object_at_height("TANK", "Neutral", 10, 10, 0, 0, &rules)
+            .expect("TANK spawns");
+        sim.update_phobos_laser_trails(tank, &rules);
+        assert!(
+            lasers(&sim).is_empty(),
+            "the first update only seeds LastLocation"
+        );
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .position
+            .set_rx_for_test(11);
+        sim.update_phobos_laser_trails(tank, &rules);
+        let births = lasers(&sim);
+        assert_eq!(births.len(), 1, "one SegmentLength crossing");
+        assert_eq!(births[0].width, 2);
+        assert_eq!(births[0].duration, 5);
+        assert!(!births[0].supported);
+        assert_eq!(
+            births[0].color,
+            crate::sim::combat::laser::LaserColor::HouseStyle([1, 2, 3]),
+            "the trail type's Color is the DrawBeamSpecial RGB"
+        );
+        assert_eq!(births[0].from.y, births[0].to.y, "moved along X");
+        sim.update_phobos_laser_trails(tank, &rules);
+        assert_eq!(lasers(&sim).len(), 1, "no movement adds no segment");
+    }
+
+    fn transfer_rules(allow_transfer: &str, target_attach: &str) -> crate::rules::ruleset::RuleSet {
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=SMIN\n[BuildingTypes]\n0=YAREFN\n[InfantryTypes]\n0=SLAV\n\
+                 [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\n\
+                 SlavesNumber=1\n\
+                 [YAREFN]\nStrength=1000\nDeployFacing=0\nUndeploysInto=SMIN\n{target_attach}\
+                 [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n\
+                 [AttachEffectTypes]\n0=AE\n[AE]\nDuration=100\n{allow_transfer}\n\
+                 [Clear]\nBuildable=yes\n"
+            )),
+            &crate::rules::ini_parser::IniFile::from_str("[YAREFN]\nFoundation=1x1\n"),
+        )
+        .unwrap();
+        // A building without a buildup SHP cannot be sold or undeployed.
+        rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
+        rules
+    }
+
+    fn instances(sim: &Simulation, id: u64) -> usize {
+        sim.substrate
+            .entities
+            .get(id)
+            .expect("entity")
+            .phobos_attach_effects()
+            .instances()
+            .len()
+    }
+
+    fn only_entity(sim: &Simulation, name: &str) -> u64 {
+        sim.substrate
+            .entities
+            .values()
+            .find(|entity| {
+                entity.lifecycle.object_alive() && sim.interner.resolve(entity.type_ref()) == name
+            })
+            .expect("converted entity")
+            .stable_id()
+    }
+
+    /// One externally attached `AE` instance with a distinct source pair.
+    fn attach_external(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet, id: u64) {
+        let effect = rules.attach_effect_types().types()[0].clone();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .phobos_attach_effects_mut()
+            .attach(
+                0,
+                AttachEffectParams::default(),
+                &effect,
+                AttachPolicy::default(),
+                Some(AttachSource {
+                    invoker: Some(id),
+                    source: Some(2),
+                    invoker_house: None,
+                }),
+            );
+    }
+
+    /// A cumulative type already on the target refreshes its first instance
+    /// through `CreateAndAttach(checkCumulative=false)` instead of stacking,
+    /// matching `TransferAttachedEffects` when no same-source match exists.
+    #[test]
+    fn cumulative_transfer_refreshes_an_existing_instance() {
+        let rules = transfer_rules(
+            "AllowTransfer=yes\nCumulative=yes",
+            "AttachEffect.AttachTypes=AE\n",
+        );
+        let mut sim = Simulation::with_seed(7);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let mcv = sim
+            .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
+            .expect("SMIN spawns");
+        attach_external(&mut sim, &rules, mcv);
+        assert!(sim.deploy_mcv(
+            mcv,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let yard = only_entity(&sim, "YAREFN");
+        assert_eq!(
+            instances(&sim, yard),
+            1,
+            "the building's own instance absorbed the transfer"
+        );
+    }
+
+    /// `AllowTransfer` at Phobos' deploy (`UnitClass_Deploy_Transfer
+    /// 0x739956`) and undeploy (`BuildingClass_Mi_Selling_Transfer 0x44A03C`)
+    /// hooks: a self-attached effect with `AllowTransfer=yes` follows the
+    /// techno across both conversions, while `no` drops it.
+    #[test]
+    fn allow_transfer_moves_effects_across_deploy_and_undeploy() {
+        for (allow, expected) in [("AllowTransfer=yes", 1), ("AllowTransfer=no", 0)] {
+            let rules = transfer_rules(allow, "");
+            let mut sim = Simulation::with_seed(7);
+            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+            let mcv = sim
+                .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
+                .expect("SMIN spawns");
+            attach_external(&mut sim, &rules, mcv);
+            assert_eq!(instances(&sim, mcv), 1, "one externally attached effect");
+            assert!(sim.deploy_mcv(
+                mcv,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default()
+            ));
+            let yard = only_entity(&sim, "YAREFN");
+            assert_eq!(instances(&sim, yard), expected, "deploy transfer ({allow})");
+            sim.substrate
+                .entities
+                .get_mut(yard)
+                .unwrap()
+                .finish_building_construction_for_test();
+            assert!(sim.undeploy_building(
+                yard,
+                false,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default()
+            ));
+            sim.substrate
+                .entities
+                .get_mut(yard)
+                .unwrap()
+                .finish_pack_up_for_test();
+            sim.advance_tick(&[], Some(&rules), None, None, 22);
+            let unit = only_entity(&sim, "SMIN");
+            assert_eq!(
+                instances(&sim, unit),
+                expected,
+                "undeploy transfer ({allow})"
+            );
+        }
+    }
+
+    /// A transferred effect starts its trail at the target: `CreateAndAttach`
+    /// builds a fresh `LaserTrailClass` (`AttachEffectClass.cpp:89`) and the
+    /// transfer's sync list (`:1297..1315`) never names `LastLocation`, so the
+    /// source's stored endpoint must not draw a segment across the deploy.
+    #[test]
+    fn a_transferred_effect_seeds_its_trail_at_the_target() {
+        let art = crate::rules::ini_parser::IniFile::from_str(
+            "[YAREFN]\nFoundation=1x1\n[LaserTrailTypes]\n0=TRAIL\n[TRAIL]\n\
+             SegmentLength=64\nFadeDuration=5\nThickness=2\nColor=1,2,3\n",
+        );
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=SMIN\n[BuildingTypes]\n0=YAREFN\n[InfantryTypes]\n0=SLAV\n\
+                 [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\n\
+                 SlavesNumber=1\n\
+                 [YAREFN]\nStrength=1000\nDeployFacing=0\nUndeploysInto=SMIN\n\
+                 [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n\
+                 [AttachEffectTypes]\n0=AE\n[AE]\nDuration=100\nAllowTransfer=yes\n\
+                 LaserTrail.Type=TRAIL\n\
+                 [Clear]\nBuildable=yes\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
+        let mut sim = Simulation::with_seed(7);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let mcv = sim
+            .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
+            .expect("SMIN spawns");
+        attach_external(&mut sim, &rules, mcv);
+        sim.update_phobos_laser_trails(mcv, &rules);
+        assert!(
+            lasers(&sim).is_empty(),
+            "the first update only seeds LastLocation"
+        );
+        // Move without a trail update, so the stored endpoint stays two cells
+        // behind the cell the building deploys on.
+        sim.substrate
+            .entities
+            .get_mut(mcv)
+            .unwrap()
+            .position
+            .set_rx_for_test(12);
+        assert!(sim.deploy_mcv(
+            mcv,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let yard = only_entity(&sim, "YAREFN");
+        assert_eq!(instances(&sim, yard), 1, "the effect followed the deploy");
+        sim.substrate
+            .entities
+            .get_mut(yard)
+            .unwrap()
+            .finish_building_construction_for_test();
+        let before = lasers(&sim).len();
+        sim.update_phobos_laser_trails(yard, &rules);
+        assert_eq!(
+            lasers(&sim).len(),
+            before,
+            "a fresh trail seeds at the building instead of drawing from the unit's old endpoint"
+        );
     }
 
     /// The initial delay gates everything, then the duration counts down and a
@@ -3741,8 +4550,10 @@ mod tests {
         use crate::rules::ini_parser::IniFile;
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[Countries]\n0=Americans\n[VehicleTypes]\n0=TARGET\n1=PLAIN\n\
-             [Warheads]\n0=HIT\n\
+             [Warheads]\n0=HIT\n1=HIT_NOKILL\n\
              [HIT]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [HIT_NOKILL]\nCanKill=no\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
              [TARGET]\nStrength=500\nSpeed=6\nArmor=light\n\
              AttachEffect.AttachTypes=AE_UK\n\
              [PLAIN]\nStrength=500\nSpeed=6\nArmor=light\n\
@@ -3807,6 +4618,26 @@ mod tests {
             !sim.apply_unkillable_clamp(plain, &event, 100, &rules),
             "an object without the effect takes the lethal hit"
         );
+
+        // Phobos `WarheadTypeExt::CanKill=no` opens the same clamp without the
+        // AttachEffect (`Ext/Techno/Hooks.ReceiveDamage.cpp:178-188`).
+        let no_kill = sim.interner.intern("HIT_NOKILL");
+        sim.substrate
+            .entities
+            .get_mut(plain)
+            .unwrap()
+            .health
+            .set(50);
+        let event = crate::sim::combat::EntityDamageEvent::area(
+            plain,
+            100,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            no_kill,
+        );
+        assert!(sim.apply_unkillable_clamp(plain, &event, 100, &rules));
+        assert_eq!(sim.entities().get(plain).unwrap().health.current(), 1);
     }
 
     /// `GetRangeWithModifiers`: multipliers apply in attach order, summed
@@ -3856,11 +4687,6 @@ mod tests {
             "B's allow-list skips it entirely"
         );
         assert_eq!(fold("gun", 1000), 3256, "the weapon match ignores case");
-        assert_eq!(
-            fold("GUN", -512),
-            -512,
-            "the always-in-range sentinel precedes the fold"
-        );
         assert_eq!(
             fold("OTHER", i32::MAX),
             i32::MAX,
@@ -5407,6 +6233,57 @@ AttachEffect.InitialDelays=3
         );
     }
 
+    /// Phobos `SuppressRevengeWeapons=` / `.Types=` on the killing warhead
+    /// (`Ext/WarheadType/Body.cpp:356-357`;
+    /// `Ext/Techno/WeaponHelpers.cpp:281-282`): the effect's revenge weapon is
+    /// dropped for every weapon without a filter list, dropped for a listed
+    /// weapon, and still fired when the list names another weapon.
+    #[test]
+    fn suppress_revenge_weapons_drops_the_effect_shot() {
+        let run = |warhead_keys: &str| {
+            let (mut sim, rules) = arena_scene(
+                &format!(
+                    "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=ATTACKER\n1=TARGET\n\
+                     [ATTACKER]\nStrength=1000\nSpeed=6\nArmor=none\nPrimary=KILLW\n\
+                     [TARGET]\nStrength=50\nSpeed=6\nArmor=none\nAttachEffect.AttachTypes=REV\n\
+                     [HIT]\n{ALL_HIT}{warhead_keys}\
+                     [KILLW]\nDamage=100\nRange=1\nWarhead=HIT\n\
+                     [REVW]\nDamage=7\nRange=1\nWarhead=HIT\n\
+                     [OTHERW]\nDamage=11\nRange=1\nWarhead=HIT\n\
+                     [AttachEffectTypes]\n0=REV\n[REV]\nDuration=-1\nRevengeWeapon=REVW\n"
+                ),
+                23,
+            );
+            let attacker = spawn(&mut sim, &rules, "ATTACKER", "Russians", 20, 20);
+            let victim = spawn(&mut sim, &rules, "TARGET", "Americans", 21, 20);
+            sim.update_phobos_attach_effects(victim, &rules);
+            assert_eq!(attach_count(&sim, victim), 1);
+            let warhead = sim.interner.intern("HIT");
+            let event = direct_hit(victim, 100, attacker, warhead);
+            let _ = sim.commit_direct_damage_receiver(
+                &rules,
+                None,
+                event,
+                crate::sim::world::FrameEffects::empty(),
+            );
+            health(&sim, attacker)
+        };
+        // The killing warhead's own `HIT` carries no suppression: 1000 - 7.
+        assert_eq!(run(""), 993);
+        // No filter list: every revenge weapon is suppressed.
+        assert_eq!(run("SuppressRevengeWeapons=yes\n"), 1000);
+        // The filter names the fired weapon.
+        assert_eq!(
+            run("SuppressRevengeWeapons=yes\nSuppressRevengeWeapons.Types=REVW\n"),
+            1000
+        );
+        // The filter names another weapon, so the shot still lands.
+        assert_eq!(
+            run("SuppressRevengeWeapons=yes\nSuppressRevengeWeapons.Types=OTHERW\n"),
+            993
+        );
+    }
+
     /// Phobos `TechnoClass_ReceiveDamage_AttachEffectExpireWeapon` (`0x702050`):
     /// a dying effect owner fires `ExpireWeapon.TriggerOn=death` at itself
     /// before the death weapon; two cumulative instances with
@@ -6083,5 +6960,772 @@ AttachEffect.InitialDelays=3
             0,
             "a matching DisallowWarheads list skips the effect"
         );
+    }
+
+    /// Phobos `WeaponTypeExt::GetRangeWithModifiers` veteran arm:
+    /// `HasAdditionalAbility(Range)` at veteran/elite multiplies by the type's
+    /// `VeteranRange` else the `[General]` value (max with 0); a rookie is
+    /// untouched. The explicit-range overload scales even `-512`; only the
+    /// two-argument wrapper owns the sentinel.
+    #[test]
+    fn the_veteran_range_ability_scales_get_range_with_modifiers() {
+        use crate::rules::ini_parser::IniFile;
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+                "[Countries]
+0=Americans
+[VehicleTypes]
+0=VET
+1=PLAIN
+2=ELITEONLY
+                 [WeaponTypes]
+0=GUN
+[GUN]
+Range=5
+Damage=10
+ROF=20
+                 [VET]
+Strength=1000
+Speed=6
+Primary=GUN
+VeteranAbilities=RANGE
+VeteranRange=1.5
+                 [PLAIN]
+Strength=1000
+Speed=6
+Primary=GUN
+VeteranAbilities=RANGE
+                 [ELITEONLY]
+Strength=1000
+Speed=6
+Primary=GUN
+EliteAbilities=RANGE
+                 [General]
+VeteranRange=2.0
+",
+            ))
+            .expect("rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let spawn = |sim: &mut Simulation, kind: &str, rank: u16, rx: u16| {
+            let id = sim
+                .spawn_object(kind, "Americans", rx, 20, 0, &rules)
+                .unwrap_or_else(|| panic!("spawn {kind}"));
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .veterancy
+                .set_rank_for_test(rank);
+            id
+        };
+        let range = |sim: &Simulation, id: u64, base: i32| {
+            super::get_range_with_modifiers(
+                &rules,
+                &sim.interner,
+                Some(&sim.substrate.entities),
+                sim.substrate.entities.get(id).unwrap(),
+                "GUN",
+                base,
+            )
+        };
+        let vet = spawn(&mut sim, "VET", 0, 20);
+        assert_eq!(range(&sim, vet, 1000), 1000, "a rookie has no ability");
+        sim.substrate
+            .entities
+            .get_mut(vet)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(100);
+        assert_eq!(range(&sim, vet, 1000), 1500, "the type's VeteranRange");
+        sim.substrate
+            .entities
+            .get_mut(vet)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(200);
+        assert_eq!(range(&sim, vet, 1000), 1500, "elite keeps the veteran tier");
+        let plain = spawn(&mut sim, "PLAIN", 100, 22);
+        assert_eq!(range(&sim, plain, 1000), 2000, "the global VeteranRange");
+        let elite_only = spawn(&mut sim, "ELITEONLY", 100, 24);
+        assert_eq!(
+            range(&sim, elite_only, 1000),
+            1000,
+            "a veteran does not read the elite tier"
+        );
+        sim.substrate
+            .entities
+            .get_mut(elite_only)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(200);
+        assert_eq!(range(&sim, elite_only, 1000), 2000);
+        assert_eq!(
+            range(&sim, plain, -512),
+            -1024,
+            "the explicit-range overload has no sentinel arm"
+        );
+        let mut sentinel_weapon = rules.weapon("GUN").expect("GUN").clone();
+        sentinel_weapon.range_leptons =
+            crate::util::lepton::WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS as i32;
+        assert_eq!(
+            super::weapon_range_with_modifiers(
+                &rules,
+                &sim.interner,
+                Some(&sim.substrate.entities),
+                sim.substrate.entities.get(plain).unwrap(),
+                &sentinel_weapon,
+            ),
+            -512,
+            "the two-argument wrapper keeps the sentinel"
+        );
+    }
+
+    /// Phobos `ProjectileRange.ApplyModifiers` gates the fold for the
+    /// projectile's initial range: the weapon's nullable key else the
+    /// `[CombatDamage]` global (constructor true).
+    #[test]
+    fn initial_projectile_range_reads_the_global_and_weapon_keys() {
+        use crate::rules::ini_parser::IniFile;
+        let scene = |global: &str, weapon_key: &str, base: i32| {
+            let rules = crate::rules::ruleset::RuleSet::from_ini(
+                &crate::sim::arena_fixture::clear_ground_ini(&format!(
+                    "[Countries]
+0=Americans
+[VehicleTypes]
+0=VET
+                     [WeaponTypes]
+0=GUN
+                     [GUN]
+Range=5
+Damage=10
+ROF=20
+{weapon_key}
+                     [VET]
+Strength=1000
+Speed=6
+Primary=GUN
+VeteranAbilities=RANGE
+                     VeteranRange=1.5
+                     [CombatDamage]
+{global}
+[General]
+VeteranRange=2.0
+"
+                )),
+            )
+            .expect("rules");
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let id = sim
+                .spawn_object("VET", "Americans", 20, 20, 0, &rules)
+                .expect("spawn");
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .veterancy
+                .set_rank_for_test(100);
+            let firer = sim.substrate.entities.get(id).unwrap();
+            super::initial_projectile_range(
+                &rules,
+                &sim.interner,
+                Some(&sim.substrate.entities),
+                firer,
+                rules.weapon("GUN").unwrap(),
+                base,
+            )
+        };
+        assert_eq!(
+            scene("", "", 1000),
+            1500,
+            "the constructor's true applies the fold"
+        );
+        assert_eq!(
+            scene("ProjectileRange.ApplyModifiers=no", "", 1000),
+            1000,
+            "the global off skips the fold"
+        );
+        assert_eq!(
+            scene(
+                "ProjectileRange.ApplyModifiers=no",
+                "ProjectileRange.ApplyModifiers=yes",
+                1000
+            ),
+            1500,
+            "the weapon key overrides the global"
+        );
+        assert_eq!(
+            scene("", "", 0),
+            0,
+            "the native maxRange > 0 guard precedes the key"
+        );
+        assert_eq!(scene("", "", -300), -300, "a negative range is untouched");
+        assert_eq!(
+            scene("", "", -512),
+            -512,
+            "no sentinel arm on the bullet gate"
+        );
+    }
+
+    /// Phobos `TechnoExt::InitializeAttachEffects`'s second call
+    /// (`Body.Internal.cpp:157`): the owner country's
+    /// `AttachEffect.AttachTypes` list attaches at creation, with the country's
+    /// own paired duration override.
+    #[test]
+    fn a_country_attach_types_list_attaches_at_creation() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]
+0=Americans
+             [Americans]
+AttachEffect.AttachTypes=CTRY
+             AttachEffect.DurationOverrides=7
+             [VehicleTypes]
+0=TANK
+             [TANK]
+Strength=100
+Speed=5
+             [AttachEffectTypes]
+0=CTRY
+[CTRY]
+Duration=100
+",
+        ))
+        .expect("country attach rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 9);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_country_for_test(Some(owner));
+        let tank = sim
+            .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
+            .expect("TANK spawns");
+        let effects = sim
+            .substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .phobos_attach_effects();
+        assert_eq!(effects.instances.len(), 1, "the country list attached");
+        assert_eq!(effects.instances[0].remaining(), 7, "the country override");
+    }
+
+    /// Phobos `House/Hooks.cpp:342-343`: an owner change attaches the new
+    /// country's list when `AttachEffect.AttachOnOwnerChange` allows it.
+    #[test]
+    fn a_new_country_attaches_its_list_on_owner_change() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]
+0=Americans
+1=Russians
+             [Americans]
+             [Russians]
+AttachEffect.AttachTypes=CTRY
+             AttachEffect.AttachOnOwnerChange=yes
+             [VehicleTypes]
+0=TANK
+             [TANK]
+Strength=100
+Speed=5
+             [AttachEffectTypes]
+0=CTRY
+[CTRY]
+Duration=100
+",
+        ))
+        .expect("owner-change attach rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let russians = sim.interner.intern("Russians");
+        sim.houses
+            .get_mut(&russians)
+            .unwrap()
+            .set_country_for_test(Some(russians));
+        let tank = sim
+            .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
+            .expect("TANK spawns");
+        assert_eq!(attach_count(&sim, tank), 0, "the old country has no list");
+        sim.change_owner_with_rules(
+            tank,
+            russians,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::empty(),
+        );
+        assert_eq!(
+            attach_count(&sim, tank),
+            1,
+            "the new country's list attached"
+        );
+        assert_eq!(sim.substrate.entities.get(tank).unwrap().owner(), russians);
+    }
+
+    /// Phobos `AttachEffectClass::UpdateCumulativeAnim`
+    /// (`New/Entity/AttachEffectClass.cpp:520-526`): a layer count that picks
+    /// another body retypes the running animation in place through
+    /// `AnimExt::ChangeAnimType` (`Ext/Anim/Body.cpp:198-243`) instead of
+    /// destroying and re-creating it. With `RestartOnChange=no` the retype
+    /// keeps the fraction the old body had travelled.
+    #[test]
+    fn a_cumulative_layer_change_retypes_the_same_animation_in_place() {
+        let (mut sim, rules) = cumulative_anim_scene(
+            "CumulativeAnimations=AEONE,AETWO\nCumulativeAnimations.RestartOnChange=no\n",
+            21,
+        );
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (anim, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE", "one layer picks the first body");
+        // Half of the eight frames behind us.
+        sim.substrate
+            .anims
+            .get_mut(anim)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "ADDCUM", target, &rules);
+        assert_eq!(attach_count(&sim, target), 2, "the second layer attached");
+        sim.update_phobos_attach_effects(target, &rules);
+        let (after, name, frame) = cumulative_anim(&sim, target);
+        assert_eq!(after, anim, "the retype keeps the same anim instance");
+        assert_eq!(name, "AETWO", "two layers pick the second body");
+        assert_eq!(
+            frame, 6,
+            "int(End=12 * fraction 4/8) keeps the travelled fraction"
+        );
+    }
+
+    /// The same retype with the key's default (`RestartOnChange=yes`) re-arms
+    /// the new body at its first frame.
+    #[test]
+    fn a_cumulative_layer_change_restarts_when_the_type_asks_for_it() {
+        let (mut sim, rules) = cumulative_anim_scene("CumulativeAnimations=AEONE,AETWO\n", 22);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (anim, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        sim.substrate
+            .anims
+            .get_mut(anim)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "ADDCUM", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (after, name, frame) = cumulative_anim(&sim, target);
+        assert_eq!(after, anim, "the default still retypes in place");
+        assert_eq!(name, "AETWO");
+        assert_eq!(frame, 0, "RestartOnChange=yes re-arms the first frame");
+    }
+
+    /// `TARGET` attaches one `CUM` layer; `ADDCUM` adds a second.
+    fn cumulative_anim_scene(
+        effect_keys: &str,
+        seed: u64,
+    ) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+             AttachEffect.AttachTypes=CUM\n\
+             [Warheads]\n0=ADDCUM\n\
+             [ADDCUM]\n{ALL_HIT}AttachEffect.AttachTypes=CUM\n\
+             AttachEffect.DurationOverrides=50\n\
+             [AttachEffectTypes]\n0=CUM\n\
+             [CUM]\nDuration=100\nCumulative=yes\n{effect_keys}"
+        ));
+        let mut rules =
+            crate::rules::ruleset::RuleSet::from_ini(&ini).expect("cumulative anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[AEONE]\nEnd=8\nRate=2\n[AETWO]\nEnd=12\nRate=2\n",
+            ),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        art.bind_anim_frame_count_for_test("AETWO", 12);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
+    }
+
+    /// The designated cumulative instance's animation: its id, type name and
+    /// committed frame.
+    fn cumulative_anim(
+        sim: &Simulation,
+        target: u64,
+    ) -> (crate::sim::anim_class::AnimId, String, i32) {
+        let list = sim
+            .substrate
+            .entities
+            .get(target)
+            .expect("live entity")
+            .phobos_attach_effects();
+        let anim = list
+            .instances()
+            .iter()
+            .find_map(|instance| instance.anim)
+            .expect("the cumulative effect shows an animation");
+        let live = sim.substrate.anims.get(anim).expect("live animation");
+        (
+            anim,
+            sim.interner.resolve(live.type_id()).to_owned(),
+            live.runtime_frame_for_test(),
+        )
+    }
+
+    /// `AttachEffectClass::CanShowAnim` (`New/Entity/AttachEffectClass.h:43-50`)
+    /// with the tunnel hooks (`Ext/Techno/Hooks.Misc.cpp:487-527`): an effect
+    /// animation is killed once the tunnel reaches its dug-in state and comes
+    /// back when the unit starts to surface.
+    #[test]
+    fn a_dug_in_tunnel_hides_and_restores_its_effect_animation() {
+        let (mut sim, rules) = tunnel_anim_scene("", 51);
+        let target = spawn(&mut sim, &rules, "MOLE", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let first = effect_anim_id(&sim, target).expect("the effect shows an animation");
+        set_tunnel_state(
+            &mut sim,
+            target,
+            crate::sim::movement::TunnelState::DiggingIn,
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            Some(first),
+            "digging in still shows the animation"
+        );
+        set_tunnel_state(&mut sim, target, crate::sim::movement::TunnelState::DugIn);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "the dug-in transition kills the animation"
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "CanShowAnim keeps it hidden while travelling"
+        );
+        set_tunnel_state(
+            &mut sim,
+            target,
+            crate::sim::movement::TunnelState::PreDigOut,
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        let back = effect_anim_id(&sim, target).expect("surfacing restores the animation");
+        assert_ne!(back, first, "the restored animation is a new instance");
+    }
+
+    /// A `Tunnel` locomotor target carrying one `Duration=100` effect whose
+    /// `Animation=AEONE`.
+    fn tunnel_anim_scene(
+        art_keys: &str,
+        seed: u64,
+    ) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=MOLE\n\
+             [MOLE]\nStrength=1000\nSpeed=6\nArmor=none\nLocomotor=Tunnel\n\
+             AttachEffect.AttachTypes=TUNNELE\n\
+             [AttachEffectTypes]\n0=TUNNELE\n\
+             [TUNNELE]\nDuration=100\nAnimation=AEONE\n"
+        ));
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("tunnel anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[AEONE]\nEnd=8\nRate=2\n{art_keys}"
+            )),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
+    }
+
+    fn set_tunnel_state(sim: &mut Simulation, id: u64, state: crate::sim::movement::TunnelState) {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .expect("live entity")
+            .locomotor
+            .as_mut()
+            .expect("Locomotor=Tunnel carries the runtime")
+            .tunnel_runtime_mut_for_test()
+            .expect("the Tunnel locomotor payload")
+            .set_state_and_timer_for_test(state, 0, 0);
+    }
+
+    /// `AttachEffectClass::CloakCheck` (`New/Entity/AttachEffectClass.cpp:446-453`)
+    /// with `CreateAnim`'s matching gate (`:476-477`): a cloaked owner kills an
+    /// effect animation whose type asks for `DetachOnCloak` and refuses to
+    /// create a new one until the object uncloaks.
+    #[test]
+    fn a_cloaked_owner_hides_a_detach_on_cloak_effect_animation() {
+        let (mut sim, rules) = cloak_anim_scene("", 41);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let first = effect_anim_id(&sim, target).expect("the effect shows an animation");
+        set_cloak_state(&mut sim, target, 2);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "Cloaked kills the DetachOnCloak animation"
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            None,
+            "and CreateAnim keeps refusing while cloaked"
+        );
+        set_cloak_state(&mut sim, target, 0);
+        sim.update_phobos_attach_effects(target, &rules);
+        let back = effect_anim_id(&sim, target).expect("uncloaking recreates the animation");
+        assert_ne!(back, first, "the recreated animation is a new instance");
+    }
+
+    /// `DetachOnCloak=no` (`Ext/AnimType/Body.cpp:112`, default true): the
+    /// animation type keeps its effect animation while the owner is cloaked.
+    #[test]
+    fn a_detach_on_cloak_opt_out_keeps_the_effect_animation_while_cloaked() {
+        let (mut sim, rules) = cloak_anim_scene("DetachOnCloak=no\n", 42);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        sim.update_phobos_attach_effects(target, &rules);
+        let first = effect_anim_id(&sim, target).expect("the effect shows an animation");
+        set_cloak_state(&mut sim, target, 2);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(
+            effect_anim_id(&sim, target),
+            Some(first),
+            "the opt-out keeps the same animation"
+        );
+        set_cloak_state(&mut sim, target, 0);
+        sim.update_phobos_attach_effects(target, &rules);
+        assert_eq!(effect_anim_id(&sim, target), Some(first));
+    }
+
+    /// A `Cloakable=yes` target that carries one `Duration=100` effect whose
+    /// `Animation=AEONE`; the art keys decide the animation type's cloak flag.
+    fn cloak_anim_scene(art_keys: &str, seed: u64) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]\nCloakingStages=6\n\
+             [Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+             Cloakable=yes\nCloakingSpeed=3\n\
+             AttachEffect.AttachTypes=CLOAKAE\n\
+             [AttachEffectTypes]\n0=CLOAKAE\n\
+             [CLOAKAE]\nDuration=100\nAnimation=AEONE\n"
+        ));
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("cloak anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[AEONE]\nEnd=8\nRate=2\n{art_keys}"
+            )),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
+    }
+
+    fn set_cloak_state(sim: &mut Simulation, id: u64, state: i32) {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .expect("live entity")
+            .cloak
+            .as_mut()
+            .expect("Cloakable=yes carries the cloak runtime")
+            .set_state_for_test(state);
+    }
+
+    fn effect_anim_id(sim: &Simulation, id: u64) -> Option<crate::sim::anim_class::AnimId> {
+        sim.substrate
+            .entities
+            .get(id)
+            .expect("live entity")
+            .phobos_attach_effects()
+            .instances()
+            .iter()
+            .find_map(|instance| instance.anim)
+    }
+
+    /// One detonation of the `ADDCUM` warhead on `target`.
+    fn add_layer_from_warhead(
+        sim: &mut Simulation,
+        warhead: &str,
+        target: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let warhead = sim.interner.intern(warhead);
+        let impacted = {
+            let entity = sim.substrate.entities.get(target).expect("live entity");
+            crate::sim::movement::ground_pose::object_get_coords(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            )
+        };
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: u64::MAX,
+            source_id: target,
+            target: crate::sim::projectile::ProjectileTarget::Entity(target),
+            impact: crate::sim::projectile::ProjectileCoord::new(
+                impacted.x, impacted.y, impacted.z,
+            ),
+            payload: crate::sim::projectile::ProjectilePayload::new(1, warhead, None, false),
+            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+        };
+        sim.commit_attach_effect_detonations(
+            &[detonation],
+            rules,
+            None,
+            crate::sim::world::FrameEffects::empty(),
+        );
+    }
+
+    /// `Animation.ResetOnReapply` (`New/Entity/AttachEffectClass.cpp:549-555`
+    /// and `:928-934`): a reapply of a non-cumulative effect kills the live
+    /// animation and creates a fresh one.
+    #[test]
+    fn a_reapply_restarts_the_animation_when_reset_on_reapply_is_set() {
+        let (mut sim, rules) = reapply_anim_scene("Animation.ResetOnReapply=yes\n", 31);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (first, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        sim.substrate
+            .anims
+            .get_mut(first)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        // Half of the remaining duration: the refresh arm is skipped, the
+        // animation restart is not.
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        assert_eq!(attach_count(&sim, target), 1, "the instance absorbed it");
+        sim.update_phobos_attach_effects(target, &rules);
+        let (second, name, frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        assert_ne!(second, first, "KillAnim + CreateAnim made a new animation");
+        assert_eq!(frame, 0, "the fresh animation starts at its first frame");
+    }
+
+    /// The key's default (`Animation.ResetOnReapply` unset) keeps the running
+    /// animation across a reapply.
+    #[test]
+    fn a_reapply_keeps_the_animation_without_reset_on_reapply() {
+        let (mut sim, rules) = reapply_anim_scene("", 32);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (first, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        sim.substrate
+            .anims
+            .get_mut(first)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (after, _, frame) = cumulative_anim(&sim, target);
+        assert_eq!(after, first, "the same animation keeps running");
+        assert_eq!(frame, 4, "its frame position survives the reapply");
+    }
+
+    /// `Animation.ResetOnReapply` on the shorter-duration reapply arm
+    /// (`AttachEffectClass.cpp:928-934`): the duration is not refreshed, yet
+    /// the animation still restarts.
+    #[test]
+    fn a_shorter_reapply_still_restarts_the_animation() {
+        let (mut sim, rules) = reapply_anim_scene("Animation.ResetOnReapply=yes\n", 33);
+        let target = spawn(&mut sim, &rules, "TARGET", "Americans", 20, 20);
+        add_layer_from_warhead(&mut sim, "REAPPLY", target, &rules);
+        sim.update_phobos_attach_effects(target, &rules);
+        let (first, name, _frame) = cumulative_anim(&sim, target);
+        assert_eq!(name, "AEONE");
+        let remaining = {
+            let instances = sim
+                .substrate
+                .entities
+                .get(target)
+                .expect("live entity")
+                .phobos_attach_effects()
+                .instances();
+            instances[0].remaining()
+        };
+        assert!(remaining > 50, "the override is shorter than what is left");
+        sim.substrate
+            .anims
+            .get_mut(first)
+            .expect("the running effect animation")
+            .runtime_mut_for_test()
+            .current_frame = 4;
+        add_layer_from_warhead(&mut sim, "SHORTER", target, &rules);
+        let remaining_after = {
+            let instances = sim
+                .substrate
+                .entities
+                .get(target)
+                .expect("live entity")
+                .phobos_attach_effects()
+                .instances();
+            instances[0].remaining()
+        };
+        assert_eq!(
+            remaining_after, remaining,
+            "the shorter hit kept the duration"
+        );
+        sim.update_phobos_attach_effects(target, &rules);
+        let (second, _, frame) = cumulative_anim(&sim, target);
+        assert_ne!(second, first, "the animation still restarted");
+        assert_eq!(frame, 0);
+    }
+
+    /// `TARGET` carries no effect; `REAPPLY` attaches one `AE` (duration 100)
+    /// and `SHORTER` attaches the same type with `DurationOverrides=50`, so the
+    /// second hit takes the reapply arm that does not refresh the duration.
+    fn reapply_anim_scene(
+        effect_keys: &str,
+        seed: u64,
+    ) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+             [Warheads]\n0=REAPPLY\n1=SHORTER\n\
+             [REAPPLY]\n{ALL_HIT}AttachEffect.AttachTypes=AE\n\
+             [SHORTER]\n{ALL_HIT}AttachEffect.AttachTypes=AE\n\
+             AttachEffect.DurationOverrides=50\n\
+             [AttachEffectTypes]\n0=AE\n\
+             [AE]\nDuration=100\nAnimation=AEONE\n{effect_keys}"
+        ));
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("reapply anim rules");
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str("[AEONE]\nEnd=8\nRate=2\n"),
+        );
+        art.bind_anim_frame_count_for_test("AEONE", 8);
+        rules.replace_art_registry_for_test(art);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        (sim, rules)
     }
 }

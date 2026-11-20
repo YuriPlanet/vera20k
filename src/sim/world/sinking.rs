@@ -184,6 +184,23 @@ impl Simulation {
         {
             return false;
         }
+        // Phobos `UnitClass_Update_SinkSpeed` (`0x7364DC`,
+        // `Ext/Unit/Hooks.Sinking.cpp:3-11`): a UnitType's nullable
+        // `SinkSpeed`, else `[General] SinkSpeed=` (default 5), replaces the
+        // stock five-lepton step. The native hook rewrites EDX after the
+        // stock `add edx, -5`, leaving the total at the configured value;
+        // Aircraft keep the stock step (UnitClass hook only).
+        let sink_speed = {
+            {
+                if entity.category() == EntityCategory::Unit {
+                    self.object_type(entity.type_ref(), rules)
+                        .and_then(|object| object.phobos_sink_speed)
+                        .unwrap_or(rules.phobos_globals.sink_speed)
+                } else {
+                    5
+                }
+            }
+        };
         let mut coord = position_world_coord(&entity.position);
         let floor = ground_surface_z_at(
             [coord.x, coord.y],
@@ -192,7 +209,7 @@ impl Simulation {
             None,
         )
         .unwrap_or(0);
-        coord.z = coord.z.wrapping_sub(5);
+        coord.z = coord.z.wrapping_sub(sink_speed);
         // Unit7364E3/Aircraft414DF8 call vt+1B4, Foot SetLocation4DB810. The fatal
         // receiver's Mark(UP) makes its unmarked arm4DB868 applicable; a
         // Chrono Warp's sink leaves the hull marked, so it takes the marked
@@ -224,7 +241,30 @@ impl Simulation {
                 y: coord.y.wrapping_add(y),
                 z: floor,
             };
-            let type_id = self.interner.intern(&rules.general.wake.name);
+            // Phobos `Wake.Sinking` (`Ext/Techno/Hooks.Misc.cpp:404-422`,
+            // both sinking sites) falls back through the native type `Wake=`
+            // to `[General] Wake=`; an unknown name is a null pointer and
+            // takes the same fallback.
+            let wake_name = self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.entity_object_type(entity, rules))
+                .and_then(|object| {
+                    {
+                        object
+                            .phobos_wake_sinking
+                            .clone()
+                            .or_else(|| object.wake.clone())
+                    }
+                })
+                .filter(|name| {
+                    rules
+                        .anim_type_names
+                        .contains(name.to_ascii_uppercase().as_str())
+                })
+                .unwrap_or_else(|| rules.general.wake.name.clone());
+            let type_id = self.interner.intern(&wake_name);
             let (rx, ry, sub_x, sub_y, z) = wake.to_cell_sub_z();
             let descriptor = AnimClassSpawnDescriptor {
                 draw_flags: 0x600,

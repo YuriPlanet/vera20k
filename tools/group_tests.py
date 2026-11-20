@@ -178,7 +178,9 @@ def test_modules(root: Path, crates: dict[str, Crate]) -> list[TestMod]:
             package, base = owner[top].package, module_path(relative)
         else:
             continue
-        text = path.read_text(encoding='utf-8')
+        # Raw bytes, not read_text(): universal newlines fold CRLF to LF, and the
+        # offsets below index the same text rewrite() slices out of the file.
+        text = path.read_bytes().decode('utf-8')
         for match in _ATTRIBUTE.finditer(text):
             start = match.end(1)
             end = _attribute_end(text, start)
@@ -281,8 +283,11 @@ def rewrite(edits: list[tuple[TestMod, str]]) -> int:
         by_file.setdefault(mod.path, []).append((mod, text))
     for path, items in by_file.items():
         source = path.read_bytes().decode('utf-8')
+        # Keep the file's line endings: a CRLF checkout must not gain LF attributes.
+        eol = '\r\n' if source.count('\r\n') * 2 > source.count('\n') else '\n'
         result = source
         for mod, text in sorted(items, key=lambda item: -item[0].start):
+            text = text.replace('\n', eol)
             changed += result[mod.start:mod.end] != text
             result = result[:mod.start] + text + result[mod.end:]
         if result != source:

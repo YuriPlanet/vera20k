@@ -1,7 +1,7 @@
 # Building production queue
 
-Every build reads Phobos' rules key; a mod, mode or map may set it. Default is
-`no`.
+Phobos is in every build; turn it on from a game's data and set `[General] BuildingProductionQueue=yes`
+to queue buildings like mobile production. Default is `no`.
 
 ```ini
 [General]

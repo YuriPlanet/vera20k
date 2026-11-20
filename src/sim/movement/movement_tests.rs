@@ -286,7 +286,17 @@ fn test_drive_arrival_clears_navcom_same_tick() {
     let one_lepton = SimFixed::lit("0.15");
     e.foot_speed.set_speed_fraction(one_lepton);
     assert_eq!(
-        crate::sim::movement::owner_current_speed(&e, None, 1.0, &Default::default()),
+        crate::sim::movement::owner_current_speed(
+            &e,
+            None,
+            &crate::rules::ruleset::RuleSet::from_ini(
+                &crate::rules::ini_parser::IniFile::from_str("")
+            )
+            .expect("empty rules"),
+            &crate::sim::intern::StringInterner::new(),
+            1.0,
+            &Default::default(),
+        ),
         1
     );
     e.navigation

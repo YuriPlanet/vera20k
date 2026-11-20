@@ -69,7 +69,8 @@ const ZERO_COMBINED_SUBSTITUTE: NativeF64Bits = NativeF64Bits::HALF;
 /// The original engine multiplies the already-computed per-cell speed fraction
 /// by this constant, after the terrain × slope product, in Drive and Ship
 /// `Process_Movement` and nowhere else.
-const DAMAGED_MOVER_SPEED_FACTOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fe8_0000_0000_0000);
+pub(crate) const DAMAGED_MOVER_SPEED_FACTOR: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3fe8_0000_0000_0000);
 
 /// Drive4B3DD4..3DEE / Ship6A3423..343D test AH,0x41: Less, Equal or
 /// Unordered all apply the penalty. The shared x87 owner preserves signed
@@ -146,6 +147,7 @@ pub(crate) fn fresh_track_speed_fraction(
     terrain: &ResolvedTerrainGrid,
     config: &TerrainSpeedConfig,
     below_condition_yellow: bool,
+    damaged_speed_factor: NativeF64Bits,
 ) -> NativeF64Bits {
     let terrain_factor = road_row.map_or_else(
         || terrain_speed_factor(speed_type, next_cell, terrain),
@@ -165,7 +167,12 @@ pub(crate) fn fresh_track_speed_fraction(
         ground_height_at_world((centre.x, centre.y), terrain),
         config,
     );
-    combine_speed_stages(terrain_factor, slope_factor, below_condition_yellow)
+    combine_speed_stages(
+        terrain_factor,
+        slope_factor,
+        below_condition_yellow,
+        damaged_speed_factor,
+    )
 }
 
 /// Stages 2–4 of the per-cell multiplier chain, isolated so the ordering can be
@@ -177,6 +184,7 @@ fn combine_speed_stages(
     terrain_factor: NativeF64Bits,
     slope_factor: NativeF64Bits,
     below_condition_yellow: bool,
+    damaged_speed_factor: NativeF64Bits,
 ) -> NativeF64Bits {
     // Stage 3: exact-zero substitution on the *combined* value. Ordering
     // matters — a 0% land row multiplied by the 1.2 downhill coefficient is
@@ -195,10 +203,12 @@ fn combine_speed_stages(
         combined = ZERO_COMBINED_SUBSTITUTE;
     }
     // Stage 4: damaged mover. No clamp follows it in the original engine.
+    // Phobos `DamagedSpeed` replaces the stock 0.75 constant here
+    // (`LocomotionClass_Process_DamagedSpeedMultiplier`, 0x4B3DF0/0x6A343F).
     if below_condition_yellow {
         X::store_f64_masked_chop(X::mul(
             X::load_f64(combined),
-            X::load_f64(DAMAGED_MOVER_SPEED_FACTOR),
+            X::load_f64(damaged_speed_factor),
         ))
     } else {
         combined
@@ -341,6 +351,7 @@ mod tests {
                     &terrain,
                     &TerrainSpeedConfig::default(),
                     damaged,
+                    DAMAGED_MOVER_SPEED_FACTOR,
                 );
                 assert_eq!(
                     actual,
@@ -357,6 +368,11 @@ mod tests {
 
     fn native(value: f64) -> NativeF64Bits {
         NativeF64Bits::from_bits(value.to_bits())
+    }
+
+    /// Stock damaged-mover stage factor; the Phobos key substitutes its own.
+    fn combine(a: NativeF64Bits, b: NativeF64Bits, below: bool) -> NativeF64Bits {
+        combine_speed_stages(a, b, below, DAMAGED_MOVER_SPEED_FACTOR)
     }
 
     /// A8 D1, over a real grid and through the production entry point.
@@ -428,6 +444,7 @@ mod tests {
             &terrain,
             &config,
             false,
+            DAMAGED_MOVER_SPEED_FACTOR,
         );
 
         // Standing on the flat cell already, heading further along it.
@@ -440,6 +457,7 @@ mod tests {
             &terrain,
             &config,
             false,
+            DAMAGED_MOVER_SPEED_FACTOR,
         );
 
         assert!(
@@ -520,16 +538,13 @@ mod tests {
     fn gsi_06_13_zero_land_row_substitution_runs_after_slope() {
         let zero = NativeF64Bits::POSITIVE_ZERO;
         let downhill = native(1.2);
+        assert_eq!(combine(zero, downhill, false), NativeF64Bits::HALF,);
         assert_eq!(
-            combine_speed_stages(zero, downhill, false),
-            NativeF64Bits::HALF,
-        );
-        assert_eq!(
-            combine_speed_stages(zero, NativeF64Bits::ONE, false),
+            combine(zero, NativeF64Bits::ONE, false),
             NativeF64Bits::HALF
         );
         assert_eq!(
-            combine_speed_stages(
+            combine(
                 NativeF64Bits::ONE,
                 NativeF64Bits::from_bits(0x7ff8_0000_0000_0001),
                 false,
@@ -537,8 +552,8 @@ mod tests {
             NativeF64Bits::HALF,
         );
         let half = NativeF64Bits::HALF;
-        assert_eq!(combine_speed_stages(half, downhill, false), native(0.6));
-        assert!(combine_speed_stages(half, downhill, false).bits() > half.bits());
+        assert_eq!(combine(half, downhill, false), native(0.6));
+        assert!(combine(half, downhill, false).bits() > half.bits());
     }
 
     /// GSI-06.13 gap 8 — the damaged-mover factor is the *last* operation and
@@ -549,18 +564,41 @@ mod tests {
     #[test]
     fn gsi_06_13_damaged_factor_is_last_and_uncapped() {
         assert_eq!(
-            combine_speed_stages(NativeF64Bits::ONE, native(1.2), true).bits(),
+            combine(NativeF64Bits::ONE, native(1.2), true).bits(),
             0x3fec_cccc_cccc_cccc,
         );
         // The zero substitution feeds the damaged multiply: 0.5 * 0.75.
         assert_eq!(
-            combine_speed_stages(NativeF64Bits::POSITIVE_ZERO, native(1.2), true),
+            combine(NativeF64Bits::POSITIVE_ZERO, native(1.2), true),
             native(0.375),
         );
         // Undamaged downhill on a full-speed row exceeds 1.0 — no upper clamp.
-        assert!(
-            combine_speed_stages(NativeF64Bits::ONE, native(1.2), false).bits()
-                > NativeF64Bits::ONE.bits()
+        assert!(combine(NativeF64Bits::ONE, native(1.2), false).bits() > NativeF64Bits::ONE.bits());
+    }
+
+    /// Phobos `DamagedSpeed` (`0x4B3DF0`/`0x6A343F`): the stage-4 factor is
+    /// the caller's configured value, not the stock 0.75 constant; an
+    /// undamaged mover ignores it.
+    #[test]
+    fn phobos_damaged_speed_replaces_the_stock_stage_factor() {
+        assert_eq!(
+            combine_speed_stages(
+                NativeF64Bits::ONE,
+                NativeF64Bits::ONE,
+                true,
+                DAMAGED_MOVER_SPEED_FACTOR,
+            ),
+            native(0.75),
+            "the stock constant is the default"
+        );
+        assert_eq!(
+            combine_speed_stages(NativeF64Bits::ONE, NativeF64Bits::ONE, true, native(0.5),),
+            native(0.5),
+        );
+        assert_eq!(
+            combine_speed_stages(NativeF64Bits::ONE, NativeF64Bits::ONE, false, native(0.5),),
+            NativeF64Bits::ONE,
+            "an undamaged mover ignores the factor"
         );
     }
 

@@ -128,7 +128,7 @@ pub struct FrameEffects<'a> {
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
     command_applied: Option<&'a dyn Fn(&Simulation, &CommandRecord, bool)>,
-    bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::bounty::BountyText)>,
+    bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::flying_text::BountyText)>,
     production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
     production_request_cleared: Option<&'a dyn Fn(crate::sim::intern::InternedId)>,
 }
@@ -162,6 +162,15 @@ impl<'a> FrameEffects<'a> {
     pub fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
+            tactical_radar: None,
+            outcome_wait: None,
+            local_planning: None,
+            network_commands: None,
+            before_logic: None,
+            command_applied: None,
+            bounty_text: None,
+            production_factories: &[],
+            production_request_cleared: None,
             ..Self::empty()
         }
     }
@@ -177,7 +186,7 @@ impl<'a> FrameEffects<'a> {
     /// consumed its pending sum/deadline before this optional observer runs.
     pub fn with_bounty_text(
         self,
-        boundary: &'a dyn Fn(&Simulation, &RuleSet, crate::sim::bounty::BountyText),
+        boundary: &'a dyn Fn(&Simulation, &RuleSet, crate::sim::flying_text::BountyText),
     ) -> Self {
         Self {
             bounty_text: Some(boundary),
@@ -189,7 +198,7 @@ impl<'a> FrameEffects<'a> {
         self,
         sim: &Simulation,
         rules: &RuleSet,
-        text: crate::sim::bounty::BountyText,
+        text: crate::sim::flying_text::BountyText,
     ) {
         if let Some(boundary) = self.bounty_text {
             boundary(sim, rules, text);

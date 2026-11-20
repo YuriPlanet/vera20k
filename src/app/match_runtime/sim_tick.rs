@@ -100,7 +100,10 @@ pub(crate) fn prepare_replay_recording(state: &mut AppState) {
         let launch = campaign
             .map(|campaign| ReplayLaunchInput::MapHouses(&campaign.authored))
             .or_else(|| {
-                state.match_state.session.network_setup()
+                state
+                    .match_state
+                    .session
+                    .network_setup()
                     .or_else(|| state.match_state.startup.offline_launch())
                     .map(ReplayLaunchInput::Slots)
             });
@@ -215,7 +218,11 @@ fn replay_flush_time() -> u64 {
 pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64) {
     if !matches!(state.frontend.screen, GameScreen::InGame)
         || state.match_state.scenario_exit.is_some()
-        || state.match_state.match_presentation.narrative_sync.pending()
+        || state
+            .match_state
+            .match_presentation
+            .narrative_sync
+            .pending()
     {
         return;
     }
@@ -1238,7 +1245,11 @@ fn advance_in_game_runtime_mode(
     // entire barrier frame, including a retained network transaction, finishes.
     // Transport and UI continue in the outer service loop.
     if state.match_state.multiplayer_paused()
-        || state.match_state.match_presentation.narrative_sync.pending()
+        || state
+            .match_state
+            .match_presentation
+            .narrative_sync
+            .pending()
     {
         return false;
     }
@@ -1562,7 +1573,6 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
         } else {
             crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
         }
-        #[cfg(feature = "phobos")]
         crate::app::presentation::sw_sidebar::refresh_draw_state(state);
     }
 }
@@ -1687,6 +1697,10 @@ fn after_simulation_pass(
     );
     crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
     crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
+    // Phobos draws its sidebar indicators from that same credits tick, so the
+    // net power text follows the per-frame power bar rather than a cameo
+    // transition.
+    crate::app::presentation::sidebar_render::refresh_sidebar_indicators(state);
     crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
     // Per-frame gadget idle tick (G22 rows 2/3 drag-off/drag-back tracking).
     crate::app::input::gadget_input::idle_tick(state);
@@ -2212,7 +2226,6 @@ fn advance_one_simulation_frame(
         );
         let sidebar =
             std::cell::RefCell::new(&mut state.match_state.match_presentation.sidebar_projection);
-        #[cfg(feature = "phobos")]
         let sw_sidebar_expanded = state.match_state.match_presentation.sw_sidebar.expanded;
         let clear_production_request = |type_id| {
             sidebar.borrow_mut().clear_production_request(type_id);
@@ -2233,7 +2246,6 @@ fn advance_one_simulation_frame(
                 let order = sidebar
                     .saved_order()
                     .map(|order| order.with_active_tab(active_tab));
-                #[cfg(feature = "phobos")]
                 let order = order.map(|mut order| {
                     order.set_sw_sidebar_expanded(sw_sidebar_expanded);
                     order
@@ -2587,13 +2599,40 @@ fn finish_simulation_frame(
     // Read before the world is borrowed for writing below.
     #[cfg(feature = "telemetry-dashboard")]
     let telemetry_budget_ms = super::network_match::game_frame_ms(state);
+    // Phobos `[Phobos] HideShakeEffects=` (`Ext/Bullet/Hooks.DetonateLogics.cpp:33`):
+    // the detonation writes never move the view. The sim still samples the
+    // shake range, so the offsets are dropped at the presentation owner
+    // instead. Phobos `[Warhead] ShakeIsLocal=` asks this client's view
+    // (`:36-39`). The camera and the tactical rectangle cannot move during a
+    // simulation frame, so read them before borrowing `sim_runtime` mutably.
+    let (view_camera, view_size) = {
+        let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+        (
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+            [width as f32, height as f32],
+        )
+    };
+    let hide_shake_effects = state.match_state.match_presentation.hide_shake_effects;
     {
         if let Some((rt, _)) = state.match_state.sim_runtime.tick_parts() {
             state
                 .match_state
                 .match_presentation
                 .screen_shake
-                .apply_updates(&output.screen_shake_updates);
+                .apply_updates_with_hide(
+                    &output.screen_shake_updates,
+                    hide_shake_effects,
+                    |update| {
+                        crate::app::presentation::screen_shake::update_is_on_screen(
+                            update,
+                            view_camera,
+                            view_size,
+                        )
+                    },
+                );
             hud_messages = frame_hud_messages(
                 &output,
                 &rt.simulation,
@@ -2753,6 +2792,10 @@ fn finish_simulation_frame(
             frame_overlay_removals = overlay_removals;
             frame_committed = tick_result.frame_committed;
             if tick_result.frame_committed {
+                let hide_light_flash_effects = state
+                    .match_state
+                    .match_presentation
+                    .hide_light_flash_effects;
                 drained_combat_lights =
                     crate::app::presentation::combat_lights::materialize_combat_lights(
                         combat_lights,
@@ -2764,6 +2807,7 @@ fn finish_simulation_frame(
                             .in_game_options
                             .detail_level,
                         &mut state.match_state.match_presentation.detail.borrow_mut(),
+                        hide_light_flash_effects,
                     );
             }
             // Parity capture, if requested. The sim has already finalized all
@@ -2942,6 +2986,9 @@ fn finish_simulation_frame(
                 LifecycleOutput::LatencyFudgeChanged { value, .. } => {
                     state.match_state.session.set_latency_fudge(value);
                 }
+                LifecycleOutput::ObjectTypeChanged { .. } => {
+                    state.match_state.match_presentation.atlas_refresh_owed = true;
+                }
                 LifecycleOutput::PlanningNodeDeleted {
                     owner,
                     node_id,
@@ -3024,7 +3071,11 @@ fn finish_simulation_frame(
                         .record_logic_visit();
                 }
                 LifecycleOutput::LaserUpdate { frame } => {
-                    state.match_state.match_presentation.lasers.update(frame);
+                    let runtime = state.match_state.sim_runtime.runtime();
+                    state.match_state.match_presentation.lasers.update(
+                        frame,
+                        runtime.map(|runtime| (&runtime.simulation, &runtime.resources.rules)),
+                    );
                 }
                 LifecycleOutput::LaserCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.runtime();
@@ -3240,14 +3291,19 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 pause_simulation,
             } => {
                 if !(*pause_simulation
-                    && super::narrative_sync::queue(state, super::narrative_sync::Clip::Radar(*index)))
+                    && super::narrative_sync::queue(
+                        state,
+                        super::narrative_sync::Clip::Radar(*index),
+                    ))
                 {
                     crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
                 }
             }
             TriggerEffect::FullscreenMovie { index } => {
-                if super::narrative_sync::queue(state, super::narrative_sync::Clip::Fullscreen(*index))
-                {
+                if super::narrative_sync::queue(
+                    state,
+                    super::narrative_sync::Clip::Fullscreen(*index),
+                ) {
                     continue;
                 }
                 let name = state
@@ -3332,6 +3388,9 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                             &runtime.resources.rules,
                         );
                 }
+            }
+            TriggerEffect::VariableValuePrinted { text } => {
+                crate::app::input::messages::post_variable_value_message(state, &text);
             }
         }
     }

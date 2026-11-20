@@ -161,6 +161,12 @@ impl Simulation {
                     continue;
                 };
                 // Remove (vt+0xD4) finds the new object in limbo already.
+                // `Misc/Hooks.Ares.cpp:31-42`: each Ares payload is registered
+                // in `ScenarioExt::AutoDeathObjects` before it is attached, so
+                // the limbo sweep owns its `AutoDeath` visits — a limboed
+                // object never reaches the live Logic walk. Ordinary boarding,
+                // a Chrono limbo and a sell/repair limbo do not register.
+                self.register_auto_death(payload, rules);
                 if occupiable {
                     self.substrate.attach_garrison_occupant(id, payload);
                     self.refresh_spatial_threat(id, rules, None);

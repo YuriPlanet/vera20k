@@ -1,6 +1,6 @@
 # Optional Phobos warhead self-damage
 
-Build with `--features phobos` to let a warhead damage the object that fired
+Phobos is in every build; turn it on from a game's data to let a warhead damage the object that fired
 it even when that object's type keeps `DamageSelf=no`.
 
 ```ini
@@ -34,6 +34,11 @@ global, while an empty, `none` or invalid value leaves it to `[General]`.
 Source: `src/Ext/WarheadType/Hooks.cpp`, `src/Ext/WarheadType/Body.cpp`,
 `src/Ext/Rules/Body.cpp` (the toggle, by Starkku) and
 `src/Misc/Hooks.BugFixes.cpp` (the airborne fix, by NetsuNegi).
+
+## Residuals
+
+None recorded. Both admissions (ground/deck and airborne) and the building receive prelude read the
+same resolved flag, so a warhead cannot differ between them.
 
 ## Where VERA20K owns it
 

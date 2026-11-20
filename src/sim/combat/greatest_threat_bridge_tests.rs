@@ -331,6 +331,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         psycho: false,
         controller_house: None,
         fire_world: Some(&world),
+        attack_move_aggressive: false,
         scanner_facts: attacker_facts(firer, obj),
         harvester_immune: false,
         harvester_unit_ids: Vec::new(),

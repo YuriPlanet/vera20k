@@ -181,3 +181,7 @@ impl TextClass {
         }
     }
 }
+
+/// Re-exported for the renderer's callers; the predicate lives in `util` so
+/// the client's UI layer can share it without an upward dependency.
+pub(crate) use crate::util::cjk::is_cjk_sized;

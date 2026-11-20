@@ -1,0 +1,259 @@
+//! Phobos `TechnoClass::GetFLH @ 0x006F3AEB`'s infantry arms: the deployed and
+//! prone burst rows, then `InfantryExt::GetSimpleFLH`, through the production
+//! fire coordinate.
+
+use super::TargetKind;
+use super::fire_coord::{FireSource, fire_coordinate};
+use super::laser;
+use crate::map::entities::EntityCategory;
+use crate::rules::art_data::ArtRegistry;
+use crate::rules::flh::Flh;
+use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::mission::MissionLeafState;
+use crate::sim::projectile::ProjectileCoord;
+use crate::sim::world::{LifecycleOutput, Simulation};
+use crate::util::fixed_math::SimFixed;
+
+const ART: &str = "[EUART]\nPrimaryFireFLH=100,20,30\n\
+                  PrimaryFireFLH.Burst0=200,40,50\n\
+                  DeployedPrimaryFireFLH.Burst0=300,60,70\n\
+                  PronePrimaryFireFLH.Burst0=400,80,90\n\
+                  [DEPART]\nPrimaryFireFLH=300,60,70\n\
+                  [PRONART]\nPrimaryFireFLH=400,80,90\n\
+                  [BASEART]\nPrimaryFireFLH=200,40,50\n\
+                  [SIMPART]\nPrimaryFireFLH=100,20,30\n\
+                  DeployedPrimaryFireFLH=500,10,10\n\
+                  [SIMCART]\nPrimaryFireFLH=500,10,10\n\
+                  [SECART]\nPrimaryFireFLH=100,20,30\n\
+                  SecondaryFireFLH=111,22,33\n\
+                  ProneSecondaryFireFLH=7,8,9\n\
+                  [SECCART]\nPrimaryFireFLH=100,20,30\n\
+                  SecondaryFireFLH=7,8,9\n\
+                  [CHASERART]\nPrimaryFireFLH=0,0,0\n";
+
+fn rules() -> RuleSet {
+    let art_ini = IniFile::from_str(ART);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[InfantryTypes]\n0=EU\n1=DEP\n2=PRO\n3=BASE\n4=SIMP\n5=SIMC\n\
+             6=SEC\n7=SECC\n\
+             [VehicleTypes]\n0=CHASER\n\
+             [EU]\nImage=EUART\nStrength=100\nPrimary=GUN\n\
+             [DEP]\nImage=DEPART\nStrength=100\nPrimary=GUN\n\
+             [PRO]\nImage=PRONART\nStrength=100\nPrimary=GUN\n\
+             [BASE]\nImage=BASEART\nStrength=100\nPrimary=GUN\n\
+             [SIMP]\nImage=SIMPART\nStrength=100\nPrimary=GUN\n\
+             [SIMC]\nImage=SIMCART\nStrength=100\nPrimary=GUN\n\
+             [SEC]\nImage=SECART\nStrength=100\nPrimary=GUN\nSecondary=GUN\n\
+             [SECC]\nImage=SECCART\nStrength=100\nPrimary=GUN\nSecondary=GUN\n\
+             [CHASER]\nImage=CHASERART\nStrength=1000\n\
+             [GUN]\nIsLaser=yes\nIsHouseColor=yes\nLaserDuration=15\n\
+             LaserInnerColor=100,120,140\nLaserOuterColor=10,20,30\n\
+             LaserOuterSpread=0,0,0\nLaserPositionUpdate=Firer\n",
+        ),
+        &art_ini,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules
+}
+
+fn spawn(sim: &mut Simulation, id: u64, kind: &str, deployed: bool, prone: bool) {
+    let mut entity = GameEntity::test_default(id, kind, "Americans", 10, 10);
+    entity.set_type_ref_for_test(sim.intern(kind));
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_category_for_test(if kind == "CHASER" {
+        EntityCategory::Unit
+    } else {
+        EntityCategory::Infantry
+    });
+    entity.position.set_sub_x_for_test(SimFixed::from_num(128));
+    entity.position.set_sub_y_for_test(SimFixed::from_num(128));
+    entity.position.set_exact_z_leptons_for_test(Some(0));
+    entity.type_facts.set_foundation_for_test("1x1".into());
+    if deployed {
+        entity.mission_leaf = MissionLeafState::infantry_raw_for_test(0, 28);
+    }
+    if prone {
+        entity
+            .infantry
+            .get_or_insert_with(Default::default)
+            .set_is_prone_for_test(true);
+    }
+    sim.substrate.entities.insert(entity);
+}
+
+/// `kind` under the given states, against a control type that carries the
+/// expected offset in its ordinary primary slot at the same coordinate.
+fn assert_flh_matches(kind: &str, deployed: bool, prone: bool, control: &str, what: &str) {
+    assert_flh_matches_at_burst(kind, deployed, prone, control, 0, what);
+}
+
+fn assert_flh_matches_at_burst(
+    kind: &str,
+    deployed: bool,
+    prone: bool,
+    control: &str,
+    burst_index: u8,
+    what: &str,
+) {
+    assert_flh_matches_at(kind, deployed, prone, control, 0, burst_index, what);
+}
+
+fn assert_flh_matches_at(
+    kind: &str,
+    deployed: bool,
+    prone: bool,
+    control: &str,
+    weapon_index: i32,
+    burst_index: u8,
+    what: &str,
+) {
+    let mut sim = Simulation::new();
+    let rules = rules();
+    spawn(&mut sim, 1, kind, deployed, prone);
+    spawn(&mut sim, 2, control, false, false);
+    let shot = |id: u64| {
+        let source = sim.substrate.entities.get(id).unwrap();
+        fire_coordinate(
+            &sim,
+            &rules,
+            &FireSource::of_entity(source),
+            rules.object(if id == 1 { kind } else { control }).unwrap(),
+            weapon_index,
+            burst_index,
+            Flh::default(),
+        )
+        .coord
+    };
+    let expected = shot(2);
+    assert_eq!(
+        shot(1),
+        expected,
+        "{what}: {kind} deployed={deployed} prone={prone}"
+    );
+    assert_ne!(expected, ProjectileCoord::new(0, 0, 0));
+}
+
+#[test]
+fn an_undeployed_infantryman_keeps_the_type_burst_rows() {
+    assert_flh_matches("EU", false, false, "BASE", "PrimaryFireFLH.Burst0");
+}
+
+#[test]
+fn a_deployed_infantryman_prefers_its_own_burst_rows() {
+    assert_flh_matches("EU", true, false, "DEP", "DeployedPrimaryFireFLH.Burst0");
+}
+
+#[test]
+fn a_prone_infantryman_prefers_its_own_burst_rows() {
+    assert_flh_matches("EU", false, true, "PRO", "PronePrimaryFireFLH.Burst0");
+}
+
+#[test]
+fn deployed_wins_over_prone_in_the_burst_rows() {
+    // Both states on, the deployed row set (300,60,70) answers, so the same
+    // control matches only the deployed offset.
+    assert_flh_matches("EU", true, true, "DEP", "IsDeployed before Crawling");
+}
+
+#[test]
+fn a_state_vector_without_rows_falls_to_the_simple_override() {
+    // SIMPART has DeployedPrimaryFireFLH but no deployed burst row, so
+    // GetBurstFLH finds nothing and GetSimpleFLH supplies the offset.
+    assert_flh_matches("SIMP", true, false, "SIMC", "InfantryExt::GetSimpleFLH");
+}
+
+#[test]
+fn the_secondary_slot_takes_only_its_prone_key() {
+    // `InfantryExt::GetSimpleFLH` (`Ext/Infantry/Body.cpp:27-31`) answers
+    // weapon index 1 from ProneSecondaryFireFLH alone; the ordinary
+    // SecondaryFireFLH record is what it replaces.
+    assert_flh_matches_at("SEC", false, true, "SECC", 1, 0, "ProneSecondaryFireFLH");
+}
+
+#[test]
+fn the_simple_override_takes_the_odd_burst_mirror() {
+    // The mirror sits inside the `!found` arm (`Hooks.Firing.cpp:1050-1059`),
+    // so it shifts the state override exactly like a record FLH of the same
+    // triple — only `GetBurstFLH`'s own answer is absolute.
+    assert_flh_matches_at_burst(
+        "SIMP",
+        true,
+        false,
+        "SIMC",
+        1,
+        "GetSimpleFLH is mirrored on an odd burst",
+    );
+}
+
+#[test]
+fn a_tracked_laser_freezes_the_deployed_burst_offset() {
+    let mut sim = Simulation::new();
+    let rules = rules();
+    spawn(&mut sim, 1, "EU", true, false);
+    spawn(&mut sim, 2, "CHASER", false, false);
+    laser::fired(
+        &mut sim,
+        &rules,
+        1,
+        TargetKind::Entity(2),
+        0,
+        rules.weapon("GUN").unwrap(),
+        0,
+    );
+    assert_eq!(
+        frozen_local_flh(&sim),
+        Flh::from([300, 60, 70]),
+        "SetLaserTrackingData stores GetBurstFLH's deployed row"
+    );
+}
+
+/// `SetLaserTrackingData` recomputes the triple it stores and applies no parity
+/// shift to the record fallback (`Hooks.LaserDraw.cpp:147-160`); the separately
+/// mirrored `SavedLocalFLH` at `:277-287` is written and reset but never read
+/// into `TrackingData`. SIMC authors no burst rows, so its `500,10,10` record is
+/// what gets stored, odd burst or even.
+#[test]
+fn a_tracked_laser_stores_the_record_offset_unmirrored() {
+    let mut sim = Simulation::new();
+    let rules = rules();
+    spawn(&mut sim, 1, "SIMC", false, false);
+    spawn(&mut sim, 2, "CHASER", false, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .expect("firer")
+        .weapon_burst
+        .advance();
+    laser::fired(
+        &mut sim,
+        &rules,
+        1,
+        TargetKind::Entity(2),
+        0,
+        rules.weapon("GUN").unwrap(),
+        0,
+    );
+    assert_eq!(
+        frozen_local_flh(&sim),
+        Flh::from([500, 10, 10]),
+        "the stored record fallback keeps its lateral on an odd saved burst"
+    );
+}
+
+/// The stored local FLH of the last laser that took firer tracking.
+fn frozen_local_flh(sim: &Simulation) -> Flh {
+    let birth = *sim
+        .lifecycle_outputs
+        .iter()
+        .filter_map(|output| match output {
+            LifecycleOutput::LaserCreated(birth) => Some(birth),
+            _ => None,
+        })
+        .last()
+        .expect("laser birth");
+    birth.track.expect("Firer tracking").local_flh()
+}

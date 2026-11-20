@@ -809,6 +809,7 @@ impl OreGrowthState {
                 != Some(type_id)
                 || !native_can_grow_tiberium(
                     ty,
+                    overlay_registry,
                     overlay_grid.cell(rx, ry).overlay_data,
                     resolved_terrain,
                     (rx, ry),
@@ -1052,21 +1053,24 @@ fn native_occupied_cells(
 /// `OverlayData < MaxDensity - 1`, and `GrowthPercentage >= 1e-05`.
 fn native_can_grow_tiberium(
     ty: &crate::rules::tiberium_type::TiberiumType,
+    overlay_registry: &OverlayTypeRegistry,
     overlay_data: u8,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     cell: (u16, u16),
     growth_enabled: bool,
 ) -> bool {
     growth_enabled
-        && cell_is_flat(resolved_terrain, cell.0, cell.1)
+        && resolved_terrain
+            .and_then(|grid| grid.cell(cell.0, cell.1))
+            .is_none_or(|cell| {
+                crate::sim::tiberium::tiberium_slope_admits(
+                    overlay_registry,
+                    ty,
+                    i32::from(cell.slope_type),
+                )
+            })
         && i32::from(overlay_data) < ty.image().density_levels().wrapping_sub(1)
         && native_percentage_admits(ty.growth_percentage_bits)
-}
-
-fn cell_is_flat(resolved_terrain: Option<&ResolvedTerrainGrid>, rx: u16, ry: u16) -> bool {
-    resolved_terrain
-        .and_then(|grid| grid.cell(rx, ry))
-        .is_none_or(|cell| cell.slope_type == 0)
 }
 
 fn priority_f32(entry: &NativeTiberiumQueueEntry) -> f32 {
@@ -1116,6 +1120,7 @@ fn count_native_spread_targets(
     new_cell_admission: Option<NewTiberiumAdmission<'_>>,
     rx: u16,
     ry: u16,
+    ramp_type_allows: bool,
 ) -> u8 {
     let mut count = 0u8;
     for &(dx, dy) in &ADJACENT_OFFSETS {
@@ -1124,8 +1129,14 @@ fn count_native_spread_targets(
             (ry as i16).wrapping_add(dy as i16) as u16,
         );
         if new_cell_admission.is_some_and(|admission| {
-            admit_new_tiberium_target(overlay_grid, source_object_cells, admission, target)
-                .is_some()
+            admit_new_tiberium_target(
+                overlay_grid,
+                source_object_cells,
+                admission,
+                target,
+                ramp_type_allows,
+            )
+            .is_some()
         }) {
             count = count.saturating_add(1);
         }
@@ -1585,6 +1596,7 @@ impl Simulation {
                 }),
                 entry.rx,
                 entry.ry,
+                crate::sim::tiberium::tiberium_type_allows_ramps(rules, type_id),
             );
             if valid_targets == 0 {
                 self.ore_growth_state.native_tiberium.classes[class_idx]

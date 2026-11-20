@@ -65,6 +65,16 @@ pub struct TerrainObjectState {
     /// Immutable current-theater type projection. Keep the full dword for
     /// CellClass::RecalcZoneType483C80; Mark/Unmark use only bits1/2/4.
     occupation_bits: i32,
+    /// Phobos `IsPassable` resolved for this type: the object stays in the
+    /// cell's object list but contributes no occupation or zone class
+    /// (0x483DDF forces the RecalcZoneType terrain arm to Passable).
+    #[serde(default)]
+    passable: bool,
+    /// Phobos `CanBeBuiltOn` resolved for this type: a building may replace
+    /// this object, and the placement flush removes it
+    /// (`Ext/TerrainType/Hooks.Passable.cpp:104-190`).
+    #[serde(default)]
+    can_be_built_on: bool,
     /// Immutable type projection used to maintain cell admission after unlink.
     spawns_tiberium: bool,
     lifecycle: TerrainObjectLifecycle,
@@ -73,6 +83,11 @@ pub struct TerrainObjectState {
     /// `Catch_Fire @ 0x0071C5B0`.
     #[serde(default)]
     on_fire: bool,
+    /// Phobos `IsCrumbling`: a lethal hit on a `HasCrumblingFrames=` tree
+    /// keeps it alive to play its crumble sequence
+    /// (`Ext/TerrainType/Hooks.cpp:80-131`, `:251-305`).
+    #[serde(default)]
+    is_crumbling: bool,
 }
 
 impl std::hash::Hash for TerrainObjectState {
@@ -85,11 +100,14 @@ impl std::hash::Hash for TerrainObjectState {
         self.health.hash(state);
         self.max_health.hash(state);
         self.occupation_bits.hash(state);
+        self.passable.hash(state);
+        self.can_be_built_on.hash(state);
         self.spawns_tiberium.hash(state);
         self.lifecycle.hash(state);
         if self.on_fire {
             b"ares-terrain-on-fire-v1".hash(state);
         }
+        self.is_crumbling.hash(state);
     }
 }
 
@@ -142,9 +160,12 @@ impl TerrainObjectState {
             health: terrain_type.strength,
             max_health: terrain_type.strength,
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
+            passable: terrain_type.passable(),
+            can_be_built_on: terrain_type.can_be_built_on(),
             spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle,
             on_fire: false,
+            is_crumbling: false,
         }
     }
 
@@ -242,9 +263,12 @@ impl TerrainObjectState {
             health: 100,
             max_health: 100,
             occupation_bits: 0,
+            passable: false,
+            can_be_built_on: false,
             spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
             on_fire: false,
+            is_crumbling: false,
         }
     }
 
@@ -401,6 +425,19 @@ impl TerrainObjectState {
         self.occupation_bits
     }
 
+    /// Whether a building may replace this terrain
+    /// (`CanBeBuiltOn`, Phobos `Ext/TerrainType/Hooks.Passable.cpp`).
+    pub(crate) const fn can_be_built_on(&self) -> bool {
+        self.can_be_built_on
+    }
+
+    /// Phobos `IsPassable` resolved for this live object
+    /// (`Ext/TerrainType/Hooks.Passable.cpp:25-44`): a passable Terrain turns
+    /// the player's unforced click over it into a Move action.
+    pub(crate) const fn passable(&self) -> bool {
+        self.passable
+    }
+
     pub const fn lifecycle(&self) -> TerrainObjectLifecycle {
         self.lifecycle
     }
@@ -456,6 +493,16 @@ impl TerrainObjectState {
     /// `TerrainClass+0xCC` IsOnFire.
     pub(crate) const fn on_fire(&self) -> bool {
         self.on_fire
+    }
+
+    /// Phobos `IsCrumbling`: the tree is playing its crumble sequence. Read
+    /// by the Terrain draw frame selection.
+    pub const fn is_crumbling(&self) -> bool {
+        self.is_crumbling
+    }
+
+    pub(crate) fn set_crumbling(&mut self, value: bool) {
+        self.is_crumbling = value;
     }
 }
 
@@ -738,7 +785,13 @@ impl TerrainObjectStore {
     /// RecalcZone483C80 reads the actual recipient's first Terrain, which
     /// can be anchored elsewhere after shared-Next writes or a saved load.
     pub(crate) fn project_cell_occupation(&self, grid: &mut ResolvedTerrainGrid, cell: (u16, u16)) {
-        let occupation = self.id_at(cell).map(|id| self.objects[&id].occupation_bits);
+        // A passable Terrain keeps its list membership but no occupation or
+        // zone class (Phobos 0x483DDF returns Passable before the type-dword
+        // comparison that would give zone 2/5).
+        let occupation = self.id_at(cell).and_then(|id| {
+            let object = &self.objects[&id];
+            (!object.passable).then_some(object.occupation_bits)
+        });
         grid.set_terrain_object_occupation(cell, occupation);
     }
 
@@ -750,6 +803,59 @@ impl TerrainObjectStore {
 
     pub(crate) fn seed_animation(&mut self, stable_id: u64, animation: TerrainAnimationState) {
         self.animations.insert(stable_id, animation);
+    }
+
+    /// Phobos `IsCrumbling` for the damage and AI owners.
+    pub(crate) fn is_crumbling(&self, stable_id: u64) -> bool {
+        self.objects
+            .get(&stable_id)
+            .is_some_and(|terrain| terrain.is_crumbling())
+    }
+
+    pub(crate) fn set_crumbling(&mut self, stable_id: u64, value: bool) {
+        if let Some(terrain) = self.objects.get_mut(&stable_id) {
+            terrain.set_crumbling(value);
+        }
+    }
+
+    /// `TerrainClass::Start_To_Crumble @ 0x0071C8E0`: Stage resets to 0 at
+    /// rate 2. A type without an animation entry (a non-animated tree) gets
+    /// one; an animated state is rewound in place.
+    pub(crate) fn start_crumble_animation(
+        &mut self,
+        stable_id: u64,
+        frame_count: u16,
+        binary_frame: u32,
+    ) {
+        if let Some(animation) = self.animations.get_mut(&stable_id) {
+            animation.start_crumble(binary_frame);
+            return;
+        }
+        let Some(type_ref) = self
+            .objects
+            .get(&stable_id)
+            .map(TerrainObjectState::type_ref)
+        else {
+            return;
+        };
+        self.animations.insert(
+            stable_id,
+            TerrainAnimationState::new_crumbling(type_ref, frame_count, binary_frame),
+        );
+    }
+
+    /// One Stage step of the crumble sequence (rate 2).
+    pub(crate) fn advance_crumble(&mut self, stable_id: u64, binary_frame: u32) -> bool {
+        self.animations
+            .get_mut(&stable_id)
+            .is_some_and(|animation| animation.advance_crumble(binary_frame))
+    }
+
+    /// Terrain DrawIt71C208's retained Stage value, when the type has one.
+    pub(crate) fn animation_current_frame(&self, stable_id: u64) -> Option<i32> {
+        self.animations
+            .get(&stable_id)
+            .map(TerrainAnimationState::current_frame)
     }
 
     /// The TerrainClass AI leaf's view: the instance's animation to advance, beside
@@ -1053,6 +1159,7 @@ impl TerrainObjectStore {
                 distance_leptons,
                 scenario_no_damage,
                 rules.combat_damage.max_damage,
+                warhead.apply_modifiers_on_negative_damage(rules),
             )
         };
         *raw_damage = resolved_damage;
@@ -1085,9 +1192,11 @@ impl TerrainObjectStore {
         // Take_Damage71B920's ordinary lethal arm (71BAEF..71BB22) sets
         // IsCrumbling and restarts Stage at rate2/value0, the body of the
         // unreferenced `TerrainClass::Start_To_Crumble @ 0x0071C8E0`, then
-        // UnInits in the same call (71BB2C..71BB73). No crumble frame or
-        // AI71C730 crumble test runs, so no IsCrumbling is retained. Its
-        // IsOnFire arm is dormant: only the uncalled Catch_Fire71C5B0 sets it.
+        // UnInits in the same call (71BB2C..71BB73). Stock retains no
+        // IsCrumbling; the Phobos gate in `commit_terrain` keeps a
+        // `HasCrumblingFrames` object for its crumbling AI instead. The
+        // on-fire arm (`71BADC`) skips Start_To_Crumble and is resolved there
+        // as well.
         terrain.health = 0;
         finalizing_terrain.insert(stable_id);
         TerrainAreaReceiveResult::Lethal(TerrainLethalDamage {
@@ -1291,7 +1400,8 @@ pub fn mark_terrain_occupation(
     resolved_terrain: Option<&mut ResolvedTerrainGrid>,
 ) {
     if let Some(grid) = resolved_terrain {
-        grid.set_terrain_object_occupation(terrain.cell(), Some(terrain.occupation_bits));
+        let occupation = (!terrain.passable).then_some(terrain.occupation_bits);
+        grid.set_terrain_object_occupation(terrain.cell(), occupation);
     }
 }
 
@@ -1791,6 +1901,94 @@ mod tests {
         assert_eq!(
             sim.terrain_objects.objects()[&stable_id].lifecycle,
             TerrainObjectLifecycle::Destroyed
+        );
+    }
+
+    /// Phobos `IsPassable=` (`Ext/TerrainType/Body.h:33`,
+    /// `Ext/TerrainType/Hooks.Passable.cpp:10-18`): the type key, else
+    /// `Tibtree.IsPassable`/`Terrain.IsPassable` by `SpawnsTiberium=`, zeroes
+    /// the occupation bits so the terrain never blocks movement.
+    #[test]
+    fn phobos_terrain_is_passable_zeroes_occupation_bits() {
+        let build = |general: &str, tree: &str, rock: &str| {
+            let ini = IniFile::from_str(&format!(
+                "[General]
+TreeStrength=10
+{general}                 [InfantryTypes]
+[VehicleTypes]
+[AircraftTypes]
+[BuildingTypes]
+                 [TerrainTypes]
+0=TREE
+1=ROCK
+                 [TREE]
+SpawnsTiberium=yes
+TemperateOccupationBits=7
+{tree}                 [ROCK]
+TemperateOccupationBits=7
+{rock}"
+            ));
+            RuleSet::from_ini(&ini).expect("passable rules")
+        };
+        let bits = |rules: &RuleSet, name: &str| {
+            rules
+                .terrain_object_type_case_insensitive(name)
+                .unwrap()
+                .raw_occupation_bits(false)
+        };
+        let keyed = build(
+            "",
+            "IsPassable=yes
+",
+            "",
+        );
+        assert_eq!(bits(&keyed, "TREE"), 0, "type key");
+        let stock = build("", "", "");
+        assert_eq!(bits(&stock, "TREE"), 7);
+        assert_eq!(bits(&stock, "ROCK"), 7);
+        let tibtree = build(
+            "Tibtree.IsPassable=yes
+",
+            "",
+            "",
+        );
+        assert_eq!(bits(&tibtree, "TREE"), 0, "tiberium tree global");
+        assert_eq!(bits(&tibtree, "ROCK"), 7, "ordinary terrain untouched");
+        let terrain = build(
+            "Terrain.IsPassable=yes
+",
+            "",
+            "",
+        );
+        assert_eq!(bits(&terrain, "ROCK"), 0, "ordinary global");
+        assert_eq!(bits(&terrain, "TREE"), 7, "tiberium tree untouched");
+        let explicit_no = build(
+            "Terrain.IsPassable=yes
+Tibtree.IsPassable=yes
+",
+            "IsPassable=no
+",
+            "",
+        );
+        assert_eq!(bits(&explicit_no, "TREE"), 7, "explicit no beats globals");
+
+        let terrain_type = keyed.terrain_object_type_case_insensitive("TREE").unwrap();
+        let mut interner = StringInterner::default();
+        let type_ref = interner.intern("TREE");
+        let terrain = TerrainObjectState::new(1, type_ref, (1, 1), terrain_type, false, None);
+        assert_eq!(terrain.occupation_bits(), 0);
+        let mut grid = resolved_clear_grid();
+        mark_terrain_occupation(&terrain, Some(&mut grid));
+        let cell = grid.cell(1, 1).unwrap();
+        assert!(!cell.terrain_object_blocks);
+        assert_eq!(
+            cell.terrain_object_occupation, None,
+            "passable terrain contributes no occupation"
+        );
+        assert_eq!(
+            cell.zone_type,
+            zone_class::GROUND,
+            "0x483DDF returns Passable before the zone 2/5 classification"
         );
     }
 

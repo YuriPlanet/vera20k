@@ -150,6 +150,8 @@ impl Simulation {
             entity.passenger_role_mut().clear_carrier_relation();
             entity.passenger_role_mut().clear_transporter();
         }
+        // Phobos `FootClass_LeaveTransport` (0x4DE722): unlisted here.
+        self.remove_transport_reloader(id);
         Self::foot_neighbors_store_retained_cell(&mut self.substrate, id, retained);
         if airborne {
             let layer = if on_bridge {
@@ -234,7 +236,7 @@ impl Simulation {
             return;
         };
         let crew_rules = object.crew_rules();
-        let crewed = object.crewed;
+        let crewed = object.crewed && !unit.phobos_prevent_crew_escape;
         let open_topped = object.open_topped;
         let original_owner = unit.owner();
         let origin = ground_pose::position_world_coord(&unit.position);

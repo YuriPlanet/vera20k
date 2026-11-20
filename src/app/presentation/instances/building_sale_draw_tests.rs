@@ -344,3 +344,50 @@ fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
     assert_eq!(opening & zshape, 0, "opening gate draws without BUILDNGZ");
     assert_eq!(opening & !zshape, closed & !zshape, "same gradient entry");
 }
+
+/// `0x43D6E5` (`Ext/Building/Hooks.cpp:364-377`): the build-up and sell-down
+/// skip is conditional. `ZShapePointMove.OnBuildup=yes` keeps the type's
+/// `ZShapePointMove` applied through the whole Selling mission.
+#[test]
+fn phobos_keeps_the_zshape_move_during_a_sale_when_the_type_asks() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules.clone();
+    rules.set_buildup_control_for_test("GAWEAP", [0, 25, 2]);
+    let rules = &rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 60);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let factory = sim
+        .spawn_object("GAWEAP", "Americans", 10, 10, 0, rules)
+        .expect("factory");
+    let object = rules.object("GAWEAP").unwrap();
+    // The retail ART section leaves the Phobos key unset; the type asks for
+    // the move to survive the build-up here.
+    let mut art = rules
+        .art()
+        .resolve_metadata_entry("GAWEAP", &object.image)
+        .cloned();
+    art.as_mut().unwrap().z_shape_point_move_on_buildup = true;
+    assert_eq!(art.as_ref().unwrap().z_shape_point_move, (30, 15));
+
+    let order = CommandEnvelope::new(
+        sim.entities().get(factory).unwrap().owner(),
+        sim.session().tick() + 1,
+        Command::SellBuilding { entity_id: factory },
+    );
+    sim.advance_tick(&[order], Some(rules), None, None, 67);
+    let building = sim.entities().get(factory).expect("still standing");
+    assert!(building.building_down(), "the sale starts a build-down");
+    let building = crate::app::presentation::frame::ObjectRecord::of_test_sim(
+        &sim,
+        &rules,
+        factory,
+    );
+    assert_eq!(
+        building_zshape_point_move(&building, art.as_ref()),
+        (30, 15),
+        "the key keeps the move during the sale"
+    );
+}

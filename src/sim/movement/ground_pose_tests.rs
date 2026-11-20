@@ -130,7 +130,17 @@ fn set_track_budget(entity: &mut GameEntity, budget: i32) {
     let fraction = (SimFixed::from_num(budget) + SimFixed::lit("0.5")) / SimFixed::from_num(10);
     entity.foot_speed.set_speed_fraction(fraction);
     assert_eq!(
-        crate::sim::movement::owner_current_speed(entity, None, 1.0, &Default::default()),
+        crate::sim::movement::owner_current_speed(
+            entity,
+            None,
+            &crate::rules::ruleset::RuleSet::from_ini(
+                &crate::rules::ini_parser::IniFile::from_str("")
+            )
+            .expect("empty rules"),
+            &crate::sim::intern::StringInterner::new(),
+            1.0,
+            &Default::default(),
+        ),
         budget
     );
     let loco = entity.locomotor.as_mut().unwrap();

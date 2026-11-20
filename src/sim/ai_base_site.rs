@@ -448,6 +448,8 @@ impl SiteWorld for SimSiteWorld<'_> {
             reservations: Some(&sim.substrate.base_reservations),
             occupancy: Some(&sim.substrate.occupancy),
             terrain_object_cells: Some(sim.terrain_objects.cell_index()),
+            terrain_objects: Some(&sim.terrain_objects),
+            ai_build_location: true,
             resolved_terrain: sim.resolved_terrain.as_ref(),
             overlay_grid: sim.overlay_grid.as_ref(),
             playfield_bounds: sim.playfield_bounds(),

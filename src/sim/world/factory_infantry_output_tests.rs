@@ -719,6 +719,7 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
             "{context}: auxiliary NavCom"
         );
         match actor.attack_target.target() {
+            Some(TargetKind::Bullet(..)) => unreachable!("no bullet target"),
             None => assert_eq!(
                 state["target"], 0,
                 "{context}: Target cleared before destination"

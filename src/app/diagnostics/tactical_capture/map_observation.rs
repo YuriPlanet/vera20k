@@ -2142,6 +2142,20 @@ fn disguise_inputs(
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
+        let local = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_id = local.as_deref().and_then(|name| sim.interner().get(name));
+        let mut observer = instances::observer_draw_context(
+            sim,
+            entity,
+            local.as_deref(),
+            local_id,
+            state.rules(),
+        );
+        // The Phobos water damaged-image pair reads the object's cell.
+        let water = sim.resolved_terrain().is_some_and(|terrain| {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            instances::unit_on_water(entity, Some(&cells))
+        });
         // The record the draw reads (`presentation::frame`).
         let frame = state
             .match_state
@@ -2158,6 +2172,7 @@ fn disguise_inputs(
             state.rules(),
             sim.session().binary_frame(),
             observer,
+            water,
         );
         let voxel =
             instances::drawn_type_uses_voxel(entity, &chosen, sim.interner(), state.rules());
@@ -4280,13 +4295,14 @@ impl TacticalCaptureSession {
                             "house_speed_bonus_f32_bits": crate::sim::movement::owner_speed_bonus(
                                 sim.houses(), entity, Some(object)).bits(),
                             "current_speed": crate::sim::movement::owner_current_speed(
-                                entity, Some(object), rules.general.veteran_speed, sim.houses()),
+                                entity, Some(object), rules, sim.interner(),
+                                rules.general.veteran_speed, sim.houses()),
                             "veterancy": entity.veterancy.rank(),
                             "current_weapon": crate::sim::combat::combat_weapon::current_weapon(
                                 entity, object, sim.entities(), rules, sim.interner())
                                 .map(|weapon| weapon.id.as_str()),
                             "turret_offset": crate::sim::combat::fire_coord::firer_art(rules, object)
-                                .map_or(0, |art| art.turret_offset),
+                                .map_or(0, |art| art.turret_offset[0]),
                             "rocking_angles_fixed_bits": entity.rocking.as_ref().map(|rocking| [
                                 rocking.angle_sideways().to_bits(), rocking.angle_forwards().to_bits()]),
                         })

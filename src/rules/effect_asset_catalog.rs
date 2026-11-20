@@ -357,6 +357,14 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in &rules.general.dead_bodies {
         insert(name);
     }
+    // Phobos `TerrainTypeExt::PlayDestroyEffects` (`Ext/TerrainType/Body.cpp:20`)
+    // constructs one random `DestroyAnim=` type through AnimClass421EA0 when a
+    // crumbling terrain reaches Frames/2 (`Ext/TerrainType/Hooks.cpp:88-91`).
+    for terrain in rules.terrain_object_types.values() {
+        for name in &terrain.destroy_anim {
+            insert(name);
+        }
+    }
     // BuildingReceiveDamage442832..4428F4 constructs an OnFire Anim before
     // attaching it. Keep each resolved slot key, including unread late AV
     // allocations, in the ordinary AnimClass asset-binding closure.
@@ -392,6 +400,18 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // A chunk landing in water below the deck: `Wake=` and the first
     // `SplashList=` entry (`AnimClass::AI 0x00423D46..0x00423DDD`).
     insert(&rules.general.wake.name);
+    // The native TechnoType `Wake=` and the Phobos `Wake.Grapple=` /
+    // `Wake.Sinking=` substitutes (`Ext/Techno/Hooks.Misc.cpp:393-422`).
+    for object in rules.all_objects() {
+        if let Some(name) = &object.wake {
+            insert(name);
+        }
+        for name in [&object.phobos_wake_grapple, &object.phobos_wake_sinking] {
+            if let Some(name) = name {
+                insert(name);
+            }
+        }
+    }
     for name in &rules.combat_damage.splash_list {
         insert(name);
     }
@@ -442,6 +462,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     insert(&rules.general.force_shield_invoke_anim);
     insert(&rules.general.ion_blast_anim);
     insert(&rules.general.ion_beam_anim);
+    // `[AudioVisual] Dig=`: the type the Tunnel locomotor's four dig/dig-out
+    // `AnimClass` constructions pass (`0x00728F6F`, `0x00729360`,
+    // `0x00729459`, `0x00729A2F`). Empty in retail rulesmd.ini.
+    if let Some(dig) = &rules.general.dig_anim {
+        insert(dig.as_str());
+    }
     // The Chronosphere's source loop and both Chrono Warp blasts
     // (`sim::superweapon::chronosphere`).
     insert(&rules.general.chrono_placement_anim);
@@ -1218,7 +1244,7 @@ mod tests {
 
 #[cfg(all(test, tests_rules_a_n))]
 mod anim_class_root_tests {
-    use super::anim_class_roots;
+    use super::{anim_class_roots, tolerant_anim_class_roots};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
 
@@ -1322,6 +1348,34 @@ mod anim_class_root_tests {
             roots
                 .iter()
                 .all(|root| root != "NONE" && root != "<NONE>" && root != "UNREGISTERED")
+        );
+    }
+    /// The rules `TurretAnim=` name is a building animation no ART slot
+    /// declares; the tolerant binder must bind its frames or `Grand_Opening`
+    /// fails the slot-9 spawn with `AnimSpawnError::UnboundType`.
+    #[test]
+    fn rules_turret_anim_joins_the_building_anim_roots() {
+        let ini = IniFile::from_str(
+            "[BuildingTypes]
+0=T
+[T]
+Strength=100
+Turret=yes
+TurretAnim=S
+             TurretAnimIsVoxel=false
+[Animations]
+0=S
+",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("rules");
+        assert!(
+            rules.anim_type_names.contains("S"),
+            "fixture anim registers"
+        );
+        let roots = tolerant_anim_class_roots(&rules);
+        assert!(
+            roots.iter().any(|name| name == "S"),
+            "the rules TurretAnim name joins the roots: {roots:?}"
         );
     }
 }

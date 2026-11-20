@@ -44,6 +44,11 @@ pub(crate) fn locomotor_do_turn(entity: &mut GameEntity, desired: u16, frame: u3
                 .snap(desired, frame);
         }
         LocomotorKind::Rocket => {}
+        // Do_Turn 0x72A0E0 writes the hull FacingClass at Techno+0x388 directly
+        // through 0x4C9220.
+        LocomotorKind::Tunnel => {
+            entity.body_facing.set(desired, frame);
+        }
     }
     true
 }

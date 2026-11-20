@@ -310,14 +310,16 @@ impl Simulation {
             effects,
         )
         .bridge_state_changed;
-        self.combat_light_requests.emit(CombatLightRequest::Impact {
-            target_id: None,
-            damage,
-            warhead_ref: wh,
-            coord: impact,
-            force_create: false,
-            flags: 0,
-        });
+        if crate::sim::combat::combat_light_chance_admits(self, rules, wh) {
+            self.combat_light_requests.emit(CombatLightRequest::Impact {
+                target_id: None,
+                damage,
+                warhead_ref: wh,
+                coord: impact,
+                force_create: false,
+                flags: 0,
+            });
+        }
         (bridge_changed, rock)
     }
 

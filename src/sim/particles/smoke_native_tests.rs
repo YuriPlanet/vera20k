@@ -114,6 +114,7 @@ fn original_smoke_constructors_preserve_signed_delta_then_lifetime_rng() {
             IVec3::ZERO,
             rules.particle_type(id),
             &mut sim,
+            &rules,
         );
         assert_particle(&p, &case["particle"]);
         assert_eq!(

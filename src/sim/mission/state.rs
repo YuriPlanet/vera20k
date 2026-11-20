@@ -232,6 +232,12 @@ impl MissionCom {
         self.movement_bypass_latch = 1;
     }
 
+    /// `+0xB8 = 0`: Phobos `NoQueueUpToUnload`'s interrupted unload retry
+    /// (`Ext/Techno/Hooks.Transport.cpp:446`, `MissionStatus = 0`).
+    pub(crate) fn clear_movement_bypass_latch(&mut self) {
+        self.movement_bypass_latch = 0;
+    }
+
     /// `+0xB8 = 1` after an exact `Queue_Mission` its caller verified
     /// (`JumpjetLocomotionClass::Move_To`'s lift tail, `0x0054B496`).
     pub(super) fn set_movement_bypass_after_verified_queue(&mut self) {

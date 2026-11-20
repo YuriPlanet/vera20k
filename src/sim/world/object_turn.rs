@@ -324,6 +324,7 @@ impl Simulation {
         }
     }
 
+    /// TunnelLocomotionClass::Process `0x728E30` for one object. The dig timer
     /// Fly and Jumpjet Process: the air pass inside the Fly cell-list
     /// transaction, then a touchdown's `Per_Cell_Process(2)` or an impact.
     fn process_air_locomotor(
@@ -430,6 +431,17 @@ impl Simulation {
             teleport_movement::warp_destination_reached(entity, sim.resolved_terrain.as_ref())
         });
         let teleport_relocating = teleport_armed && !teleport_reached;
+        // Phobos `FootExt::LastWarpDistance`: the distance the warp-out step
+        // stores, read below by the arrival WarpIn weapon arm.
+        let warp_distance = if teleport_relocating {
+            sim.substrate
+                .entities
+                .get(stable_id)
+                .and_then(|entity| entity.teleport_state())
+                .map(|state| state.warp_distance_leptons())
+        } else {
+            None
+        };
         if teleport_relocating {
             // `0x007193C7`: the detach sweep (`0x0070D4A0`) with the owner,
             // so every Techno aiming at it restores its mission and takes the
@@ -438,8 +450,16 @@ impl Simulation {
             // 7193CC..7193F4: walk the Bullet array backwards before WarpOut,
             // Mark(UP), or relocation changes the target's original pose.
             sim.lose_projectile_targets(stable_id, rules);
+            // Phobos `..._WarpOutWeapon @ 0x7193F6` detonates the type's
+            // warp-out weapon at the departing object before the departure
+            // WarpOut (`0x00719442`).
+            sim.apply_warp_out_weapon(stable_id, rules, overlay_registry, ctx.effects);
             // `0x00719442`: the departure WarpOut at its Location.
-            sim.teleport_warp_out(stable_id, rules);
+            sim.teleport_warp_anim(
+                stable_id,
+                rules,
+                teleport_movement::WarpAnimKind::OrdinaryOut,
+            );
             // 0x007195BF..0x007195CF: a parasite is ejected (ExitUnit, no
             // suppression).
             if let Some(eater) = sim
@@ -525,7 +545,16 @@ impl Simulation {
             // again.
             sim.assign_null_destination(stable_id, rules, overlay_registry, ctx.effects);
             // 0x00719742..0x00719791: the arrival WarpOut at the Location.
-            sim.teleport_warp_out(stable_id, rules);
+            sim.teleport_warp_anim(
+                stable_id,
+                rules,
+                teleport_movement::WarpAnimKind::OrdinaryIn,
+            );
+            // Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim
+            // @ 0x719742` fires the type's warp-in weapon after that animation.
+            if let Some(distance) = warp_distance {
+                sim.apply_warp_in_weapon(stable_id, distance, rules, overlay_registry, ctx.effects);
+            }
         }
         Ok(process)
     }
@@ -1177,6 +1206,21 @@ impl Simulation {
             return Ok(outcome);
         }
 
+        // Foot4DA8A0 `FootClass::Update`: Phobos fast access
+        // (`Ext/Techno/Hooks.Transport.cpp:324-360`) boards a passenger
+        // standing within its transport's `NoQueueUpToEnter.BoardDistance=`
+        // instead of walking into its cell. Boarding limboes the passenger,
+        // so the rest of its Foot update does not run.
+        if crate::sim::passenger::try_fast_enter(
+            sim,
+            rules,
+            stable_id,
+            overlay_registry,
+            object_ctx.effects,
+        ) {
+            return Ok(outcome);
+        }
+
         // FootClass advances its shared body counter immediately after
         // this object's locomotor Process, against the still-current
         // absolute binary frame, inside the Process admission
@@ -1418,7 +1462,7 @@ impl Simulation {
             // no corresponding ordinary Reload dispatch here. The native
             // post-Foot alive gate precedes firing; no second gate is added.
             let now = sim.session.binary_frame() as i32;
-            if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+            let unit_reloaded = if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
                 entity.category() == EntityCategory::Unit
                     && sim
                         .interner
@@ -1434,6 +1478,18 @@ impl Simulation {
                         entity_id: stable_id,
                         cause,
                     })?;
+                true
+            } else {
+                false
+            };
+            if unit_reloaded {
+                crate::sim::shared_ammo::start_reloading(
+                    &mut sim.substrate.entities,
+                    &sim.interner,
+                    rules,
+                    stable_id,
+                    sim.session.binary_frame() as i32,
+                );
             }
             sim.object_ai_post_movement_promote_one(stable_id, rules);
             // Unit73671F..736817 follows that Commence (the CTF flag block

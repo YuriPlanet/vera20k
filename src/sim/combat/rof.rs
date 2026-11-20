@@ -97,6 +97,13 @@ impl RearmTimer {
         self.timer.start(current_frame, duration);
     }
 
+    /// Phobos `TechnoExt::UpdateRearmInEMPState` (`Ext/Techno/Body.Update.cpp:
+    /// 875-876`) and `UpdateRearmInTemporal` (`:887-888`): hold a running
+    /// rearm with `RearmTimer.StartTime++`.
+    pub(crate) fn delay_one_frame(&mut self) {
+        self.timer.delay_one_frame();
+    }
+
     /// Install a fixture's countdown.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
@@ -144,8 +151,11 @@ pub(crate) struct RofQuery<'a> {
     /// Phobos `ROF.RandomDelay` as `0x006FD0B5` resolves it (the weapon's,
     /// else `[CombatDamage]`). None describes the unpatched kernel for native
     /// controls; Phobos gameplay always supplies Some.
-    #[cfg(feature = "phobos")]
     pub rof_random_delay: Option<crate::rules::ini_value::PartialIntPair>,
+    /// Phobos `TechnoExt::ForceFullRearmDelay`: the `0x6FD054` hook leaves the
+    /// mid-burst branch for the ordinary full-rearm arm (`0x6FD09E`) while it
+    /// is set. `Burst.FireWithinSequence`'s overrun arm sets it.
+    pub force_full_rearm: bool,
     /// The rank holds the ROF ability: a veteran with the type's veteran byte
     /// (`+0x2A0`), or an elite with either byte (`+0x2A0`, `+0x2B2`).
     pub rof_ability: bool,
@@ -160,6 +170,37 @@ pub(crate) struct RofQuery<'a> {
     pub occupy_rof_multiplier: f32,
     /// `[CombatDamage] BunkerROFMultiplier=` (`Rules+0xF50`).
     pub bunker_rof_multiplier: f32,
+}
+
+/// Which `TechnoClass::GetROF @ 0x006FCFA0` arm answered: the caller stores
+/// the Phobos flags that arm writes.
+///
+/// `TechnoClass_RearmDelay_ForceFullDelay @ 0x6FD054`
+/// (`Ext/Techno/Hooks.Firing.cpp:1132-1145`) clears
+/// `TechnoExt::LastRearmWasFullDelay` before it tests the forced flag, and
+/// `TechnoClass_RearmDelay_ROF @ 0x6FD0B5` (same file `:1113-1127`) sets it on
+/// the ordinary arm. The returns above `0x6FD054` — the building-ammo and
+/// empty-slot answers and the direct sonic/particle/railgun one — never reach
+/// either write, so they leave the flag as they found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RearmArm {
+    /// Above `0x6FD054`: the early returns that write no flag.
+    Untouched,
+    /// The mid-burst return at `0x6FD099`: a burst gap, not the whole reload.
+    BurstGap,
+    /// The ordinary full-rearm arm `0x6FD09E..0x6FD0B5`.
+    Full,
+}
+
+impl RearmArm {
+    /// The flag write this arm performs, `None` for an untouched flag.
+    pub(crate) const fn last_rearm_was_full_delay(self) -> Option<bool> {
+        match self {
+            Self::Untouched => None,
+            Self::BurstGap => Some(false),
+            Self::Full => Some(true),
+        }
+    }
 }
 
 /// `TechnoClass::GetROF @ 0x006FCFA0`, arm by arm:
@@ -180,42 +221,59 @@ pub(crate) struct RofQuery<'a> {
 ///
 /// Every draw is Scenario `RandomRanged`; all x87 steps run under the
 /// process control word (53-bit, chop).
-pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
-    let stock_building_shortcut =
-        query.building_ammo.is_some_and(|ammo| ammo > 1) && query.attached_rof.is_none();
+pub(crate) fn get_rof_with_arm(query: &RofQuery<'_>, rng: &mut SimRng) -> (i32, RearmArm) {
+    let stock_building_shortcut = query.building_ammo.is_some_and(|ammo| ammo > 1);
+    let stock_building_shortcut = stock_building_shortcut && query.attached_rof.is_none();
     if stock_building_shortcut {
-        return 1;
+        return (1, RearmArm::Untouched);
     }
     let Some(weapon) = query.weapon else {
-        return 1;
+        return (1, RearmArm::Untouched);
     };
     if weapon.is_sonic
         || (weapon.use_spark_particles && query.live.spark)
         || (weapon.use_fire_particles && query.live.fire)
         || (weapon.is_railgun && query.live.railgun)
     {
-        return weapon.rof;
+        return (weapon.rof, RearmArm::Untouched);
     }
-    if query.burst_index < weapon.burst {
+    let mid_burst = query.burst_index < weapon.burst;
+    // Phobos `TechnoClass_RearmDelay_ForceFullDelay` (`0x6FD054`, 6 bytes
+    // replaced): a forced full rearm skips the mid-burst branch and joins the
+    // ordinary arm below at `0x6FD09E`.
+    let mid_burst = mid_burst && !query.force_full_rearm;
+    if mid_burst {
+        // Phobos `TechnoClass_RearmDelay_BurstDelays` (`0x6FD05E`, 7 bytes
+        // replaced): `WeaponTypeExt::GetBurstDelay` answers the shot's own
+        // rearm delay and returns it at `0x6FD099`, before the stock index 0 /
+        // index 5+ guard and the unit `BurstDelay{index-1}=` table. A negative
+        // answer restores the stock instruction, so `None` continues below.
+        // Index 0 answers 0 with no draw even when the weapon authors no key.
+        if let Some(delay) = weapon.phobos_burst_delay(query.burst_index) {
+            return (delay, RearmArm::BurstGap);
+        }
         if let Some(delays) = query.unit_burst_delays
             && (1..=4).contains(&query.burst_index)
         {
             let delay = delays[(query.burst_index - 1) as usize];
             if delay != -1 {
-                return delay;
+                return (delay, RearmArm::BurstGap);
             }
         }
-        return rng.next_range_u32_inclusive(3, 5) as i32;
+        return (
+            rng.next_range_u32_inclusive(3, 5) as i32,
+            RearmArm::BurstGap,
+        );
     }
-    let jitter = rng.next_range_u32_inclusive(0, 2) as i32;
-    // Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`) runs after that draw
-    // and replaces the jitter (EAX, stored at `0x006FD0BB`) with
-    // `GetRangedRandomOrSingleValue(ROF.RandomDelay)`.
-    #[cfg(feature = "phobos")]
+    // Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`) replaces the stock
+    // random arm with `GetRangedRandomOrSingleValue(ROF.RandomDelay)` (EAX
+    // stored at `0x006FD0BB`): the replaced code is the draw itself, so a
+    // Phobos build takes exactly one jitter draw there, not the stock draw plus
+    // this one. `ROF.RandomDelay`'s `{0, 2}` default is the vanilla jitter.
     let jitter = match query.rof_random_delay {
         Some(range) if range.is_single() => range.low,
         Some(range) => rng.next_range_i32_inclusive(range.low, range.high),
-        None => jitter,
+        None => rng.next_range_u32_inclusive(0, 2) as i32,
     };
     // Phobos 0x006FD0B5 loads `ROF * AE` (C++ double) in place of the stock
     // int `ROF`. An identity factor loads the same exact value.
@@ -260,18 +318,26 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
             rof = X::ftol_i32_low_masked(X::div(X::load_i32(rof), multiplier));
         }
     }
-    rof
+    (rof, RearmArm::Full)
 }
+
+/// The duration [`get_rof_with_arm`] answers, for callers that do not store
+/// the rearm flags ([`RearmArm`]). Production callers take the tuple; the
+/// kernel tests below read the duration alone.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
+    get_rof_with_arm(query, rng).0
+}
+
 
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
-    /// Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`): after stock's
-    /// `RandomRanged(0, 2)`, a ranged `ROF.RandomDelay` draws the jitter again
-    /// and a single value replaces it without a draw.
-    #[cfg(feature = "phobos")]
+    /// Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`): a ranged
+    /// `ROF.RandomDelay` replaces the stock jitter draw with its own, and a
+    /// single value replaces it without a draw.
     #[test]
     fn rof_random_delay_replaces_the_stock_jitter() {
         use crate::rules::ini_value::PartialIntPair;
@@ -288,6 +354,7 @@ mod tests {
                 ae_rof: 1.0,
                 attached_rof: None,
                 rof_random_delay: Some(range),
+                force_full_rearm: false,
                 rof_ability: false,
                 veteran_rof: 1.0,
                 occupants: None,
@@ -299,15 +366,14 @@ mod tests {
             let value = get_rof(&query, &mut rng);
             (value, rng.logical_state())
         };
+        let seed = SimRng::new(9).logical_state();
         let mut expected = SimRng::new(9);
-        expected.next_range_u32_inclusive(0, 2);
-        let after_stock = expected.logical_state();
         let jitter = expected.next_range_i32_inclusive(10, 20);
 
         assert_eq!(
             rof(PartialIntPair::single(7)),
-            (47, after_stock),
-            "a single value replaces the jitter with no second draw"
+            (47, seed),
+            "a single value replaces the jitter with no draw"
         );
         assert_eq!(
             rof(PartialIntPair {
@@ -316,7 +382,7 @@ mod tests {
                 values: 2,
             }),
             (40 + jitter, expected.logical_state()),
-            "a range draws its own jitter after the stock draw"
+            "a range draws its own jitter, replacing the stock draw"
         );
     }
 
@@ -340,8 +406,8 @@ mod tests {
                 house_rof: NativeF64Bits::ONE,
                 ae_rof,
                 attached_rof: None,
-                #[cfg(feature = "phobos")]
                 rof_random_delay: None,
+                force_full_rearm: false,
                 rof_ability: false,
                 veteran_rof: 1.0,
                 occupants: None,
@@ -427,8 +493,8 @@ mod tests {
                     house_rof: NativeF64Bits::from_bits(house),
                     ae_rof: 1.0,
                     attached_rof: attached,
-                    #[cfg(feature = "phobos")]
                     rof_random_delay: None,
+                    force_full_rearm: false,
                     rof_ability: false,
                     veteran_rof: 1.0,
                     occupants: None,
@@ -470,6 +536,12 @@ mod tests {
                     .as_array()
                     .map_or((false, false), |pair| (pair[0] != 0, pair[1] != 0))
             };
+            // Phobos `TechnoClass_RearmDelay_BurstDelays` (`0x6FD05E`):
+            // `GetBurstDelay(0)` answers 0 with no draw even for an empty
+            // list, replacing the stock `RandomRanged(3, 5)` control rows.
+            if int("burst_index", 1) == 0 && int("burst", 1) > 0 {
+                continue;
+            }
             let class = int("class", 15);
             let (spark, spark_live) = pair("spark");
             let (fire, fire_live) = pair("fire");
@@ -506,8 +578,8 @@ mod tests {
                 house_rof: NativeF64Bits::from_bits(hex("house_bits", "3ff0000000000000")),
                 ae_rof: 1.0,
                 attached_rof: None,
-                #[cfg(feature = "phobos")]
                 rof_random_delay: None,
+                force_full_rearm: false,
                 rof_ability: (veteran && veteran_byte) || (elite && (veteran_byte || elite_byte)),
                 veteran_rof: f64::from_bits(hex("veteran_bits", "3fe3333340000000")),
                 occupants: (int("garrison", 0) != 0).then(|| int("occupants", 0)),
@@ -530,6 +602,116 @@ mod tests {
                 rng.native_state_hex(),
                 row["rng_after"].as_str().unwrap(),
                 "{input}"
+            );
+        }
+    }
+
+    /// Phobos `TechnoClass_RearmDelay_BurstDelays` (`0x6FD05E`): a weapon's
+    /// `Burst.Delays` answers each mid-burst index before the unit table and
+    /// the `RandomRanged(3, 5)` fallback, with no Scenario draw.
+    #[test]
+    fn burst_delays_answer_each_burst_index_before_the_stock_arm() {
+        let weapon = |text: &str| {
+            let ini = IniFile::from_str(&format!("[GUN]\nROF=40\nBurst=5\n{text}"));
+            WeaponType::from_ini_section("GUN", ini.section("GUN").unwrap())
+        };
+        fn query<'a>(
+            weapon: &'a WeaponType,
+            burst_index: i32,
+            unit_burst_delays: Option<[i32; 4]>,
+        ) -> RofQuery<'a> {
+            RofQuery {
+                building_ammo: None,
+                weapon: Some(weapon),
+                live: LiveParticles::default(),
+                burst_index,
+                unit_burst_delays,
+                house_rof: NativeF64Bits::ONE,
+                ae_rof: 1.0,
+                attached_rof: None,
+                rof_random_delay: None,
+                force_full_rearm: false,
+                rof_ability: false,
+                veteran_rof: 1.0,
+                occupants: None,
+                bunkered: false,
+                occupy_rof_multiplier: 1.0,
+                bunker_rof_multiplier: 1.0,
+            }
+        }
+        let rof = |weapon: &WeaponType, burst_index: i32, unit_burst_delays: Option<[i32; 4]>| {
+            let mut rng = SimRng::new(9);
+            let value = get_rof(&query(weapon, burst_index, unit_burst_delays), &mut rng);
+            (value, rng.logical_state())
+        };
+        let undrawn = || SimRng::new(9).logical_state();
+
+        let listed = weapon("Burst.Delays=7,9\n");
+        assert_eq!(
+            rof(&listed, 1, None),
+            (7, undrawn()),
+            "the first entry, with no draw"
+        );
+        assert_eq!(rof(&listed, 2, None), (9, undrawn()), "the second entry");
+        assert_eq!(
+            rof(&listed, 4, None),
+            (9, undrawn()),
+            "an index beyond the list uses its last entry"
+        );
+        assert_eq!(
+            rof(&weapon("Burst.Delays=0\n"), 1, None),
+            (0, undrawn()),
+            "zero is a delay the hook accepts"
+        );
+
+        let negative = weapon("Burst.Delays=7,-1\n");
+        assert_eq!(
+            rof(&negative, 2, Some([3, 4, 5, 6])),
+            (4, undrawn()),
+            "a -1 entry falls back to the stock unit table"
+        );
+        let mut expected = SimRng::new(9);
+        let draw = expected.next_range_u32_inclusive(3, 5) as i32;
+        assert_eq!(
+            rof(&negative, 2, None),
+            (draw, expected.logical_state()),
+            "a -1 entry with no unit table falls back to RandomRanged(3, 5)"
+        );
+    }
+
+    /// Phobos `TechnoClass_RearmDelay_BurstDelays` (`0x6FD05E`): burst index 0
+    /// takes `GetBurstDelay(0)` = 0 without a Scenario draw even when the
+    /// weapon authors no key; the stock kernel draws 3..=5 there.
+    #[test]
+    fn burst_index_zero_short_circuits_the_stock_arm_only_under_phobos() {
+        let ini = IniFile::from_str("[GUN]\nROF=40\nBurst=5\n");
+        let weapon = WeaponType::from_ini_section("GUN", ini.section("GUN").unwrap());
+        let query = RofQuery {
+            building_ammo: None,
+            weapon: Some(&weapon),
+            live: LiveParticles::default(),
+            burst_index: 0,
+            unit_burst_delays: None,
+            house_rof: NativeF64Bits::ONE,
+            ae_rof: 1.0,
+            attached_rof: None,
+            rof_random_delay: None,
+            force_full_rearm: false,
+            rof_ability: false,
+            veteran_rof: 1.0,
+            occupants: None,
+            bunkered: false,
+            occupy_rof_multiplier: 1.0,
+            bunker_rof_multiplier: 1.0,
+        };
+        let mut rng = SimRng::new(9);
+        let value = get_rof(&query, &mut rng);
+        {
+            assert_eq!(value, 0, "GetBurstDelay(0) answers 0");
+            assert_eq!(
+                rng.logical_state(),
+                SimRng::new(9).logical_state(),
+                "no Scenario draw"
             );
         }
     }

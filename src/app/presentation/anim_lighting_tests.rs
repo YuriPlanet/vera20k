@@ -146,6 +146,7 @@ fn overlay_sample_flushes_prior_sources_and_survives_later_relight() {
         false,
         anim.remap().as_ref(),
         expected,
+        0,
     );
     assert_eq!(
         (light.rows(), light.brightness()),

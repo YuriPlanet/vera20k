@@ -86,9 +86,10 @@ impl ProductionState {
         self.factories.pointer_expired(id)
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// The queue-trimming accessor Phobos `RemoveProduction` needs
+    /// (`[Phobos]` production removal; native TrimProduction queue drop).
     pub(crate) fn factories_mut(&mut self) -> &mut FactoryRegistry {
-        self.factories_mut_for_test()
+        &mut self.factories
     }
 
     #[cfg(any(test, feature = "test-support"))]

@@ -107,7 +107,7 @@ impl Simulation {
         // still reaches the announcement (`0x00443A89` -> `0x00443A2B`),
         // which the click owner plays. It also queues the following SELL.
         let redeploy_yard = object.construction_yard
-            && self.can_redeploy_construction_yard_from_input(entity, control);
+            && self.can_redeploy_construction_yard_from_input(entity, rules, control);
         Ok(if redeploy_yard {
             self.object_coords_cell(id)
         } else {

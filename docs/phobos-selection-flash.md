@@ -1,6 +1,6 @@
 # Optional Phobos selection flash
 
-Build with `--features phobos` to flash a unit briefly when the local player
+Phobos is in every build; turn it on from a game's data to flash a unit briefly when the local player
 selects it.
 
 ```ini
@@ -15,6 +15,11 @@ A selection flashes when both settings allow it: the client switch must be
 `yes` and the duration above 0, and the selected object must be controlled by
 the current player (`GetOwningHouse()->IsControlledByCurrentPlayer()`).
 Computer-owned units never flash.
+
+## Residuals
+
+Phobos reads `RA2MD.INI [Phobos] ShowFlashOnSelecting` directly; VERA imports that file into
+`VERA.INI` first, so a profile edited outside the game takes effect after the next import.
 
 ## Where VERA20K owns it
 

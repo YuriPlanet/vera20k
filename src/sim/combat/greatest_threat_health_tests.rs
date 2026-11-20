@@ -102,6 +102,7 @@ fn actual_scorer_consumes_live_signed_strength_and_masked_zero_division() {
             },
             ThreatReference::NullCoord,
             None,
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -151,6 +152,7 @@ fn distance_term_reads_the_weapon_range_in_leptons() {
                 target_distance: -10.0,
             },
             ThreatReference::NullCoord,
+            None,
             None,
         )
         .unwrap();

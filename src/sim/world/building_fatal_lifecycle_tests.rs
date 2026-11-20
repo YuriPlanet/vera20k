@@ -466,6 +466,7 @@ impl Fixture {
                 self.sim.power_states.get_mut(&house).unwrap(),
                 &self.sim.substrate.entities,
                 self.sim.houses[&house].base_projection().buildings(),
+                Some(self.sim.houses[&house].tracking()),
                 &self.rules,
                 &self.sim.interner,
                 self.sim.session.binary_frame(),

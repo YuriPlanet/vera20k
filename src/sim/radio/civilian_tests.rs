@@ -76,7 +76,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         }
         assert!(sim.substrate.entities.get(gate).unwrap().is_open_gate());
         assert_eq!(
-            sim.entry_click_action(man, plane, EntryBaseAction::Select, rules),
+            sim.entry_click_action(man, plane, EntryBaseAction::Select, false, rules),
             Some(EntryClickAction::Enter)
         );
         assert!(sim.apply_command(

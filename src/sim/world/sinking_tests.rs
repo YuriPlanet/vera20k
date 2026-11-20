@@ -11,12 +11,23 @@ use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
 
 fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nWake=WAKE1\n[VehicleTypes]\n0=TEST\n\
-         [TEST]\nStrength=800\nNaval=yes\nWeight=4\nCrewed=no\n\
-         Speed=4\nSpeedType=Float\nMovementZone=Water\n\
-         Locomotor={2BEA74E1-7CCA-11d3-BE14-00104B62A16C}\n",
-    ))
+    fixture_with("", "", true, relative_z)
+}
+
+fn fixture_with(
+    general_extra: &str,
+    type_extra: &str,
+    naval: bool,
+    relative_z: i32,
+) -> (Simulation, RuleSet, u64) {
+    let naval = if naval { "yes" } else { "no" };
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nWake=WAKE1\n{general_extra}\
+         [VehicleTypes]\n0=TEST\n\
+         [TEST]\nStrength=800\nNaval={naval}\nWeight=4\nCrewed=no\n\
+         Speed=4\nSpeedType=Float\nMovementZone=Water\n{type_extra}\n\
+         Locomotor={{2BEA74E1-7CCA-11d3-BE14-00104B62A16C}}\n",
+    )))
     .unwrap();
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[WAKE1]\nEnd=10\nRate=100\n"),
@@ -570,4 +581,63 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
     assert_eq!((hull.position.rx(), hull.position.ry()), (113, 59));
     assert_eq!(hull.body_frame_counter.get(), 0);
     assert!(hull.sinking.sound_edge_seen());
+}
+
+/// Phobos `UnitClass_Update_SinkSpeed` (`0x7364DC`): the UnitType nullable,
+/// else `[General] SinkSpeed=` (default 5), replaces the stock five-lepton
+/// step.
+#[test]
+fn phobos_sink_speed_replaces_the_stock_five_leptons() {
+    for (general, ty, expected) in [
+        ("", "", 203),
+        ("SinkSpeed=2\n", "", 206),
+        ("", "SinkSpeed=3\n", 205),
+        ("SinkSpeed=2\n", "SinkSpeed=3\n", 205),
+    ] {
+        let (mut sim, rules, id) = fixture_with(general, ty, true, 0);
+        sim.session.set_binary_frame_for_test(1);
+        let terminal =
+            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+        assert!(!terminal, "{general:?}{ty:?}");
+        let hull = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(
+            position_world_coord(&hull.position).z,
+            expected,
+            "{general:?}{ty:?}"
+        );
+    }
+}
+
+/// Phobos `UnitClass_ReceiveDamage_Sinkable` (`0x737DE2`): the type's
+/// `Sinkable`, else `[General] Sinkable`, overrides the stock type-property
+/// gate; unset keeps the stock behaviour.
+#[test]
+fn phobos_sinkable_overrides_the_type_property_gate() {
+    fn force_water(sim: &mut Simulation) {
+        let cell = sim
+            .resolved_terrain
+            .as_mut()
+            .expect("fixture terrain")
+            .cell_mut_for_test(113, 59)
+            .expect("unit cell");
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+    }
+    let (mut sim, rules, id) = fixture(0);
+    force_water(&mut sim);
+    assert!(
+        sim.unit_sinks_on_death(&rules, id),
+        "the stock naval, heavy, in-water hull sinks"
+    );
+    let (mut sim, rules, id) = fixture_with("", "Sinkable=no\n", true, 0);
+    force_water(&mut sim);
+    assert!(!sim.unit_sinks_on_death(&rules, id), "forced no");
+    let (mut sim, rules, id) = fixture_with("", "Sinkable=yes\n", false, 0);
+    force_water(&mut sim);
+    assert!(
+        sim.unit_sinks_on_death(&rules, id),
+        "forced yes skips the type-property gate"
+    );
+    let (mut sim, rules, id) = fixture_with("Sinkable=no\n", "", true, 0);
+    force_water(&mut sim);
+    assert!(!sim.unit_sinks_on_death(&rules, id), "global fallback");
 }

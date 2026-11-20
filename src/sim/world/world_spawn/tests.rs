@@ -3345,7 +3345,6 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
 /// which attaches the type's `AttachEffect.AttachTypes` list: each catalog
 /// name once, paired with its index's `DurationOverrides`/`Delays` and the
 /// documented defaults for an absent list.
-#[cfg(feature = "phobos")]
 #[test]
 fn map_spawn_attaches_the_type_attach_effect_list() {
     use crate::map::entities::parse_map_entities;
@@ -3492,4 +3491,95 @@ fn ares_turret_rot_sets_the_secondary_rate() {
     let rate = |rot| crate::sim::movement::FacingClass::new(0, rot).rot_per_frame();
     assert_eq!(entity.barrel_facing.unwrap().rot_per_frame(), rate(2));
     assert_eq!(entity.body_facing.rot_per_frame(), rate(5));
+}
+
+/// Phobos `DistributeTargetingFrame` (`Ext/Techno/Hooks.cpp:323-326`, hook
+/// `0x6F42F7` `TechnoClass_Init`): the init re-arms the construction-anchored
+/// targeting timer at `45 + RandomFactor` unless the owner is
+/// human-controlled while `DistributeTargetingFrame.AIOnly` (default yes)
+/// holds; the TechnoType `Nullable<bool>` overrides the `[General]` fallback
+/// (`Ext/TechnoType/Body.cpp:1080`).
+#[test]
+fn distribute_targeting_frame_arms_the_construction_timer() {
+    fn fixture(general: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\n{general}\n\
+             [InfantryTypes]\n0=E1\n1=OV\n\n\
+             [E1]\nStrength=100\nSpeed=4\nSight=8\n\n\
+             [OV]\nStrength=100\nSpeed=4\nSight=8\nDistributeTargetingFrame=no\n"
+        )))
+        .expect("distribute fixture rules parse")
+    }
+    fn spawn(sim: &mut Simulation, rules: &RuleSet, type_id: &str, owner: &str) -> GameEntity {
+        sim.construct_runtime_techno(
+            type_id,
+            owner,
+            6,
+            5,
+            0,
+            0,
+            rules,
+            TechnoConstructorInit::FreshScenario,
+        )
+        .expect("construct")
+        .expect("entity")
+    }
+    let mut sim = Simulation::with_seed(17);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let ai = sim.interner.intern("AiHouse");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            ai, 1, None, false, 0, 10,
+        ));
+    sim.houses
+        .reorder_for_test(&[sim.interner.get("Americans").unwrap(), ai]);
+    sim.session
+        .set_current_house_for_test(Some(sim.interner.get("Americans").unwrap()));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+
+    let rules = fixture("DistributeTargetingFrame=yes\n");
+    let unit = spawn(&mut sim, &rules, "E1", "AiHouse");
+    assert_eq!(
+        unit.passive_scan.timer().duration(),
+        (45 + unit.phobos_random_factor()) as u32,
+        "an AI house re-arms the timer at 45 + the init draw"
+    );
+    assert!(
+        (45..=60).contains(&(unit.passive_scan.timer().duration() as i32)),
+        "RandomFactor draws 0..=15"
+    );
+
+    let unit = spawn(&mut sim, &rules, "E1", "Americans");
+    assert_eq!(
+        unit.passive_scan.timer().duration(),
+        45,
+        "a human house keeps the vanilla anchor while AIOnly defaults on"
+    );
+
+    let rules = fixture("DistributeTargetingFrame=yes\nDistributeTargetingFrame.AIOnly=no\n");
+    let unit = spawn(&mut sim, &rules, "E1", "Americans");
+    assert_eq!(
+        unit.passive_scan.timer().duration(),
+        (45 + unit.phobos_random_factor()) as u32,
+        "AIOnly=no re-arms human-controlled houses too"
+    );
+
+    let rules = fixture("");
+    let unit = spawn(&mut sim, &rules, "E1", "AiHouse");
+    assert_eq!(
+        unit.passive_scan.timer().duration(),
+        45,
+        "the global defaults off; the vanilla anchor holds"
+    );
+
+    let rules = fixture("DistributeTargetingFrame=yes\n");
+    let unit = spawn(&mut sim, &rules, "OV", "AiHouse");
+    assert_eq!(
+        unit.passive_scan.timer().duration(),
+        45,
+        "the type's explicit no overrides the global yes"
+    );
 }

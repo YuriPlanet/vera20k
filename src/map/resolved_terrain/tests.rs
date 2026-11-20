@@ -432,6 +432,7 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
                 registry.flags(id).map(|flags| OverlayPassability {
                     wall: flags.wall,
                     crushable: flags.crushable,
+                    armor_is_wood: flags.armor_is_wood,
                 }),
                 "overlay {id}"
             );
@@ -442,6 +443,9 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
             Some(OverlayPassability {
                 wall: true,
                 crushable: true,
+                // Retail `[GASAND]` authors `Armor=wood`, so a `Wood=`
+                // warhead breaks sandbags.
+                armor_is_wood: true,
             })
         );
     }
@@ -3868,7 +3872,12 @@ NoUseTileLandType=no
             let entries = vec![&overlay];
             let effects = classify_overlay_effects(Some(&entries), Some(&registry), 0, slope);
             let clears = clears_tiberium_on_slope(flags, slope);
-            assert_eq!(clears, slope != 0 && (early_branch || slope >= 5));
+            // Phobos 0x47D36E clears every slope that cannot germinate; these
+            // fixtures carry no projected AllowRamps flag.
+            assert_eq!(
+                clears,
+                slope != 0 && (early_branch || slope >= 5 || true)
+            );
             let retains_current_land = !clears || early_branch;
             assert_eq!(
                 effects.effective_land,

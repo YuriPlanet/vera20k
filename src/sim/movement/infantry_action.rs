@@ -295,6 +295,23 @@ impl Simulation {
         } else {
             requested
         };
+        // Phobos `InfantryClass_DoAction_Water` (`Ext/Techno/Hooks.Misc.cpp:883-901`,
+        // hook 0x51D7E0): a type whose art sets `OnlyUseLandSequences=` — or
+        // whose unset key keeps `[General] OnlyUseLandSequences=` — returns
+        // SkipWaterSequences (0x51D842) and leaves every requested action
+        // unmapped. The water-state store and transition sound below are
+        // still on that path.
+        let only_land_sequences = rules
+            .object_by_handle(facts.handle)
+            .phobos_land_sequences
+            .only_land(rules.phobos_globals.only_use_land_sequences);
+        // Phobos `SecondaryFireSequenceLandOnly` (`Ext/Techno/Hooks.Misc.cpp:895`):
+        // the resolved yes keeps stock's SecondaryFire/Prone -> WetAttack
+        // remap; no leaves those requests on their land records.
+        let secondary_fire_land_only = rules
+            .object_by_handle(facts.handle)
+            .phobos_land_sequences
+            .secondary_fire_land_only(rules.phobos_globals.secondary_fire_sequence_land_only);
         if facts.movement_zone == MovementZone::AmphibiousDestroyer {
             //51D7B0: virtual+1B8 is Abstract41BEA0, signed physical XYZ/256
             // packed to two WORDs. Map5657A0 retains one canonical Cell,
@@ -310,7 +327,7 @@ impl Simulation {
                 dummy.land_type()
             };
             let on_land = !matches!(land, 2 | 6) || on_bridge;
-            if !on_land {
+            if !on_land && !only_land_sequences {
                 //51D7DE..51D83D: only these requested records remap. Native
                 // does not recheck the mapped record's count before admission.
                 requested = match requested {
@@ -320,7 +337,7 @@ impl Simulation {
                     10 => 19,
                     11 => 20,
                     12 => 21,
-                    4 | 8 => 22,
+                    4 | 8 if secondary_fire_land_only => 22,
                     other => other,
                 };
             }
@@ -665,6 +682,15 @@ impl Simulation {
         } else {
             false
         };
+        // Phobos `InfantryClass_DoingAI_DeployConvert_ResetFlags @ 0x520E75`:
+        // outside the Deploy (27) and Undeploy (31) sequences the conversion
+        // latches clear.
+        if !matches!(doing, DO_DEPLOY | 31)
+            && let Some(actor) = self.substrate.entities.get_mut(id)
+        {
+            actor.set_phobos_infantry_undeploy_converted(false);
+            actor.set_phobos_infantry_deploy_converted(false);
+        }
         //520E52: the landing tail runs even below the sequence's count.
         if self.substrate.entities.get(id).is_some_and(|actor| {
             actor

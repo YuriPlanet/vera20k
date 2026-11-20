@@ -100,13 +100,15 @@ pub(super) fn launch(
     ) {
         crate::sim::world::damage_consequences::admit_explosion_effect(sim, rules, effect);
     }
-    sim.combat_light_requests.emit(CombatLightRequest::Impact {
-        target_id: None,
-        damage: settings.damage,
-        warhead_ref,
-        coord: impact,
-        force_create: false,
-        flags: 0,
-    });
+    if crate::sim::combat::combat_light_chance_admits(sim, rules, warhead_ref) {
+        sim.combat_light_requests.emit(CombatLightRequest::Impact {
+            target_id: None,
+            damage: settings.damage,
+            warhead_ref,
+            coord: impact,
+            force_create: false,
+            flags: 0,
+        });
+    }
     true
 }

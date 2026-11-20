@@ -47,6 +47,12 @@ mod charge_native_tests;
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
+
+mod chaining;
+pub(crate) use chaining::ChainDepth;
+mod detonate;
+#[cfg(all(test, tests_sim_superweapon))]
+mod detonate_tests;
 pub(crate) mod drop_pod;
 #[cfg(all(test, tests_sim_superweapon))]
 mod drop_pod_tests;
@@ -54,6 +60,16 @@ mod emp_pulse;
 #[cfg(all(test, tests_sim_superweapon))]
 mod emp_pulse_tests;
 mod fire;
+pub(crate) mod launch_sw;
+#[cfg(all(test, tests_sim_superweapon))]
+mod launch_sw_tests;
+mod limbo;
+#[cfg(all(test, tests_sim_superweapon))]
+mod phobos_ai_chronoshift_tests;
+#[cfg(all(test, tests_sim_superweapon))]
+#[path = "phobos_convert_pairs_tests.rs"]
+mod phobos_convert_pairs_tests;
+pub(crate) use fire::launch_super_preserving_charge;
 mod firewall;
 #[cfg(all(test, tests_sim_superweapon))]
 mod firewall_tests;
@@ -73,7 +89,7 @@ pub(crate) mod nuke;
 #[cfg(all(test, tests_sim_superweapon))]
 mod nuke_tests;
 pub mod paradrop;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 mod phobos_techno_requirements_tests;
 mod protect;
 pub mod psychic_dominator;
@@ -83,6 +99,8 @@ pub mod psychic_reveal;
 mod sonar_pulse;
 mod spy_plane;
 mod two_stage;
+#[cfg(all(test, tests_sim_superweapon))]
+mod use_weeds_tests;
 pub use two_stage::PaidSuperWeaponSelection;
 
 /// A cell selected by the Ares selector has already followed its native
@@ -221,14 +239,17 @@ fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
     coords
 }
 
-/// `AnimClass::AnimClass @ 0x00421EA0` with the superweapons' row `(type,
-/// &coord, delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)` at
-/// a world coordinate (leptons) its caller computed: the invoke anims above,
-/// the Chronosphere's (`0x006CB431`, `0x006CC5C5..0x006CC674`), the Psychic
-/// Dominator's (`0x0053AEE5`, `0x0053B139`) and the Lightning Storm's clouds,
-/// bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`). An empty name
-/// or an art type that never bound constructs nothing.
-pub(super) fn spawn_super_anim(
+/// `AnimClass::AnimClass @ 0x00421EA0` with the `(type, &coord, delay 0,
+/// loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)` row at a world
+/// coordinate (leptons) its caller computed: the superweapons' invoke anims
+/// above, the Chronosphere's (`0x006CB431`, `0x006CC5C5..0x006CC674`), the
+/// Psychic Dominator's (`0x0053AEE5`, `0x0053B139`), the Lightning Storm's
+/// clouds, bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`) and the
+/// Tunnel locomotor's four dig/dig-out transitions (`0x00728F6F`,
+/// `0x00729360`, `0x00729459`, `0x00729A2F` — all the same row and the
+/// `RulesClass+0x294` / `[AudioVisual] Dig=` type). An empty name or an art
+/// type that never bound constructs nothing.
+pub(crate) fn spawn_super_anim(
     sim: &mut Simulation,
     rules: &RuleSet,
     anim_name: &str,
@@ -466,16 +487,12 @@ pub struct SuperWeaponInstance {
     /// HouseExt's per-definition launch pair (+88 vector), shared by grants
     /// and launches. Grant10022710 records the first recharge origin; successful
     /// Launch100226D0 replaces it. The existing Super remains the sole owner
-    /// across grant, revoke, snapshot restoration and charge changes. Only
-    /// Ares code writes the pair, so it stays 0 and unset in a game Ares
-    /// doesn't play in.
+    /// across grant, revoke, snapshot restoration and charge changes.
     ares_launch_count: i32,
     #[serde(rename = "ares_last_launch_frame")]
     ares_charge_origin_frame: Option<i32>,
     /// The building whose shot the native charge timer above is counting:
     /// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`,
-    /// `docs/superweapon-limit.md`). `None` while no such building exists or
-    /// the key is off, and then the timer is the house's one charge as in
     /// gamemd.
     #[serde(default)]
     charge_owner: Option<u64>,
@@ -551,6 +568,13 @@ impl SuperWeaponInstance {
     /// Charged (`SuperClass+0x6F`).
     pub fn is_ready(&self) -> bool {
         self.is_ready
+    }
+
+    /// `SuperClass::SetReadiness @ 0x006CB820`: a byte write to `+0x6F`, no
+    /// timer, ready-frame or animation change (the whole function is
+    /// `mov [ecx+0x6F], al; ret 4`).
+    pub(crate) fn set_readiness(&mut self, ready: bool) {
+        self.is_ready = ready;
     }
 
     /// Held for low power or by the user ([`Self::suspend`]).
@@ -1081,6 +1105,11 @@ impl SuperWeaponInstance {
         sw: &SuperWeaponType,
         current_frame: u32,
     ) -> bool {
+        if sw.use_weeds {
+            // Phobos `SuperClass_SetSWCharge_UseWeeds @ 0x6CC1E6`: the charge
+            // is tied to the weed store, so a scripted set does nothing.
+            return false;
+        }
         if !self.is_active || !(0..=100).contains(&percentage) {
             return false;
         }
@@ -1114,6 +1143,26 @@ impl SuperWeaponInstance {
     /// a running recharge keeping the time left; releasing restarts a stopped
     /// one. A charged Super holds too, and ClickFire refuses a stopped timer.
     /// Returns whether the hold changed.
+    /// Phobos's direct `SuperClass::IsSuspended` write
+    /// (`Ext/SWType/FireSuperWeapon.cpp:396`,
+    /// `Ext/Building/Hooks.cpp:180`). Unlike Ares's hold primitive this does
+    /// not check the Super's active/one-time/lose flags and leaves the paid
+    /// selection alone; the charge timer is paused/resumed to keep the
+    /// charge skip `IsSuspended` gives native.
+    pub(crate) fn phobos_set_suspended(&mut self, on: bool, current_frame: u32) {
+        if on == self.is_suspended {
+            return;
+        }
+        let mut timer = self.charge_timer();
+        if on {
+            timer.pause(current_frame as i32);
+        } else {
+            timer.resume(current_frame as i32);
+        }
+        self.store_charge_timer(timer);
+        self.is_suspended = on;
+    }
+
     pub(crate) fn suspend(&mut self, on: bool, manual_control: bool, current_frame: u32) -> bool {
         if !self.is_active || self.one_time || !self.can_lose || on == self.is_suspended {
             return false;
@@ -1445,6 +1494,73 @@ pub(crate) fn super_types_with_type(
         .map(String::as_str)
 }
 
+/// Phobos `HouseExt::GetAIChronoshiftSupers` (`Ext/House/Body.cpp:333-368`):
+/// the two Supers indices — positions in `[SuperWeaponTypes]`, which is the
+/// order of every house's Supers vector — that the computer's Chronoshift
+/// actions (`TMission::ChronoShiftToBuilding @ 0x006EFE60`, `ChronoShiftToTarget
+/// @ 0x006F0130`, whose Supers lookups Phobos replaces at `0x6EFEFB`,
+/// `0x6F0008`, `0x6F005F`, `0x6F01B0`, `0x6F02AD` and `0x6F0304`) fire.
+/// `[General] AIChronoSphereSW=` names the sphere and, when `AIChronoWarpSW=`
+/// is unset, that type's `SW.PostDependent` names the warp; `AIChronoWarpSW=`
+/// then replaces the warp. Unless both are held, the native loop over the
+/// house's Supers re-assigns each pointer from the last `Type=ChronoSphere` /
+/// `Type=ChronoWarp` entry it meets, so a scanned entry overwrites what the
+/// names chose — which is also the whole story without Phobos, where only that
+/// loop runs. A name matching no type is the read's unset index, so it counts
+/// as unfound here too.
+pub(crate) fn ai_chronoshift_super_indices(rules: &RuleSet) -> (Option<i32>, Option<i32>) {
+    let (globals_sphere, globals_warp) = {
+        let globals = &rules.phobos_globals;
+        let mut sphere = None;
+        let mut warp = super_index_of_type(rules, &globals.ai_chrono_warp_sw);
+        if !globals.ai_chrono_sphere_sw.is_empty() {
+            sphere = super_index_of_type(rules, &globals.ai_chrono_sphere_sw);
+            // `Ext/House/Body.cpp:343-349`: only an unset `AIChronoWarpSW`
+            // lets the sphere's `SW.PostDependent` name the warp.
+            if globals.ai_chrono_warp_sw.is_empty() {
+                let post = sphere
+                    .and_then(|index| rules.super_weapon(&rules.super_weapon_order[index as usize]))
+                    .map(|sw| sw.phobos_post_dependent.as_str());
+                if let Some(post) = post.filter(|name| !name.is_empty()) {
+                    warp = super_index_of_type(rules, post);
+                }
+            }
+        }
+        (sphere, warp)
+    };
+
+    if globals_sphere.is_some() && globals_warp.is_some() {
+        return (globals_sphere, globals_warp);
+    }
+    let mut scanned_sphere = None;
+    let mut scanned_warp = None;
+    for (index, name) in rules.super_weapon_order.iter().enumerate() {
+        match rules.super_weapon(name).map(|sw| sw.kind) {
+            Some(crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere) => {
+                scanned_sphere = Some(index as i32)
+            }
+            Some(crate::rules::superweapon_type::SuperWeaponKind::ChronoWarp) => {
+                scanned_warp = Some(index as i32)
+            }
+            _ => {}
+        }
+    }
+    (
+        scanned_sphere.or(globals_sphere),
+        scanned_warp.or(globals_warp),
+    )
+}
+
+/// The `[SuperWeaponTypes]` position of a Phobos `ValueableIdx` type name: an
+/// empty name is the read's unset index and matches no type
+/// (`SuperWeaponTypeClass::FindIndex @ Utilities/Enumerable.h:21`).
+fn super_index_of_type(rules: &RuleSet, name: &str) -> Option<i32> {
+    (!name.is_empty())
+        .then(|| rules.super_weapon_index(name))
+        .flatten()
+        .map(|index| index as i32)
+}
+
 /// `SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`: the first
 /// `[SuperWeaponTypes]` entry whose `Action=` (`+0xBC`) is `action`
 /// ([`SuperWeaponType::has_action`]), or none.
@@ -1558,6 +1674,11 @@ pub struct SuperTimerView {
     on_hold: bool,
     recharge_frames: i32,
     place: u32,
+    /// Phobos `ShowTimer.Percentage` (else `[AudioVisual]
+    /// SuperWeaponTimer.Percentage`): the line prints its elapsed share.
+    percentage: bool,
+    /// Phobos `ShowTimer.Priority`: the list's sort rank.
+    priority: i32,
     is_ready: bool,
 }
 
@@ -1578,8 +1699,18 @@ impl SuperTimerView {
             on_hold,
             recharge_frames,
             place,
+            percentage: false,
+            priority: 0,
             is_ready: false,
         }
+    }
+
+    /// The two Phobos `ShowTimer` decisions, for tests and fixtures.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_timer_options(mut self, percentage: bool, priority: i32) -> Self {
+        self.percentage = percentage;
+        self.priority = priority;
+        self
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1616,13 +1747,49 @@ impl SuperTimerView {
         self.place
     }
 
+    /// Phobos `ShowTimer.Percentage` resolved against the global.
+    pub fn percentage(self) -> bool {
+        self.percentage
+    }
+
     /// Fully charged and ready to fire (`+0x6F`).
     pub fn is_ready(self) -> bool {
         self.is_ready
     }
 }
 
-/// The timer list, in its order.
+/// The shown list's order: `SuperClass_Grant_ShowTimer` sorts by
+/// `ShowTimer.Priority` descending (`0x6CB5EB`), and `place` breaks the ties
+/// the native `std::sort` leaves unspecified. Without Phobos every type has
+/// priority 0, so the grant order alone decides.
+fn sort_timer_views(views: &mut [SuperTimerView]) {
+    views.sort_by_key(|view| (std::cmp::Reverse(view.priority), view.place));
+}
+
+/// `ShowTimer.Percentage`, else the `[AudioVisual]` global; no Phobos, no
+/// percentage lines.
+fn timer_percentage(sw: Option<&SuperWeaponType>, rules: &RuleSet) -> bool {
+    if let Some(sw) = sw {
+        return sw.phobos_show_timer_percentage(rules);
+    }
+    let _ = (sw, rules);
+    false
+}
+
+/// `ShowTimer.Priority`; 0 without Phobos.
+fn timer_priority(sw: Option<&SuperWeaponType>) -> i32 {
+    if let Some(sw) = sw {
+        return sw.phobos_show_timer_priority;
+    }
+    let _ = sw;
+    0
+}
+
+/// The timer list, in its order: Phobos `SuperClass_Grant_ShowTimer`
+/// (`0x6CB5EB`, `Ext/SWType/Hooks.cpp:36-50`) sorts the shown list by
+/// `ShowTimer.Priority` descending after each grant. The native `std::sort`
+/// comparator compares only priority; this ties equal priorities by the
+/// grant order (`place`) so the order stays deterministic.
 pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerView> {
     let frame = sim.session.binary_frame() as i32;
     let mut views: Vec<SuperTimerView> = sim
@@ -1633,21 +1800,22 @@ pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerVie
                 if !instance.is_active {
                     return None;
                 }
+                let sw = rules.super_weapon(sim.interner.resolve(instance.type_id));
                 Some(SuperTimerView {
                     owner,
                     sw_type: instance.type_id,
                     frames_left: instance.charge_remaining(frame),
                     on_hold: instance.is_suspended,
-                    recharge_frames: rules
-                        .super_weapon(sim.interner.resolve(instance.type_id))
-                        .map_or(0, |sw| instance.recharge_time(sw)),
+                    recharge_frames: sw.map_or(0, |sw| instance.recharge_time(sw)),
+                    percentage: timer_percentage(sw, rules),
+                    priority: timer_priority(sw),
                     place: instance.timer_place?,
                     is_ready: instance.is_ready,
                 })
             })
         })
         .collect();
-    views.sort_by_key(|view| view.place);
+    sort_timer_views(&mut views);
     views
 }
 
@@ -1750,6 +1918,69 @@ impl SuperWeaponView {
     }
 }
 
+/// Phobos `SuperClass_AnimStage_UseWeeds @ 0x6CBEF4` (`Ext/SWType/Hooks.cpp:94`):
+/// a ready `UseWeeds=` Super shows the newest stage; otherwise
+/// `UseWeeds.StorageTimer=` maps the weed ratio onto the 54 cameo stages and
+/// its absence parks the cameo at the not-ready stage. `None` leaves the
+/// stock AnimStage for a non-UseWeeds or inactive Super.
+fn use_weeds_anim_stage(
+    sw: &SuperWeaponType,
+    active: bool,
+    ready: bool,
+    total: i32,
+    weed_capacity: i32,
+) -> Option<i32> {
+    if !active || !sw.use_weeds {
+        return None;
+    }
+    if ready {
+        return Some(54);
+    }
+    if !sw.use_weeds_storage_timer {
+        return Some(0);
+    }
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    let amount = sw.use_weeds_amount.unwrap_or(weed_capacity);
+    let progress = X87::ftol_i32_low_masked(X87::div(
+        X87::mul(X87::load_i32(total), X87::load_i32(54)),
+        X87::load_i32(amount),
+    ));
+    Some(progress.min(54))
+}
+
+/// What the Phobos super tooltip prints besides the name and cost
+/// (`Misc/PhobosToolTip.cpp:155-215`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuperTooltipFacts {
+    /// `SuperClass::GetRechargeTime @ 0x006CC260`, the full charge time.
+    pub recharge_frames: i32,
+    /// `SW_Shots` and the owner's `HouseExt::SuperExts[].ShotCount`:
+    /// `(remaining, total)`. `None` while the type leaves the key unset.
+    pub shots: Option<(i32, i32)>,
+}
+
+/// The facts `PhobosToolTip::HelpText_Super` reads from `owner`'s live
+/// instance of `section`; `None` while the owner holds no such Super.
+pub fn super_tooltip_facts(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: &InternedId,
+    section: &str,
+) -> Option<SuperTooltipFacts> {
+    let sw = rules.super_weapon(section)?;
+    let type_id = sim.interner.get(section)?;
+    let instance = sim.super_weapons.get(owner)?.get(&type_id)?;
+    let shots = rules
+        .super_weapon_metadata(section)
+        .map(|metadata| metadata.availability().shots())
+        .filter(|total| *total > 0)
+        .map(|total| (total - instance.ares_launch_count, total));
+    Some(SuperTooltipFacts {
+        recharge_frames: instance.recharge_time(sw),
+        shots,
+    })
+}
+
 /// Query active superweapons for a specific owner (for sidebar rendering).
 pub fn superweapon_views_for_owner(
     sim: &Simulation,
@@ -1771,6 +2002,16 @@ pub fn superweapon_views_for_owner(
             continue;
         };
         let paid_source = paid_pair_source(rules, sw_type);
+        let money_type = financial_type(rules, sw_type);
+        let weeds_stage = use_weeds_anim_stage(
+            sw_type,
+            inst.is_active,
+            inst.is_ready,
+            sim.houses
+                .get(owner)
+                .map_or(0, |house| house.economy().owned_weed_total()),
+            rules.general.weed_capacity,
+        );
         let display = inst.sidebar_display(
             sw_type,
             current_frame,
@@ -1860,14 +2101,58 @@ pub(crate) fn tick_house_superweapon_instances(
             .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     for type_id in house_super_order(sim, rules, owner) {
         let sw = rules.super_weapon(sim.interner.resolve(type_id));
-        let (fade, ready, drain_ended) = {
+            let (fade, ready, drain_ended) = 'stock: {
             let instance = sim
                 .super_weapons
                 .instance_mut(&owner, &type_id)
                 .expect("selected retained Super");
             // The fade head precedes the granted/held/readiness gates.
             let fade = instance.step_fade();
+            // One frame of the per-building shots (Superweapon Limit), ready
+            // or not while the Super is granted and not held.
             instance.step_building_charges();
+            let sw = rules.super_weapon(sim.interner.resolve(type_id));
+            // Phobos `SuperClass_AI_UseWeeds @ 0x6CBD2C` replaces the timer
+            // body for a `UseWeeds=` Super.
+            if let Some(use_weeds) = sw
+                && use_weeds.use_weeds
+            {
+                match tick_use_weeds(
+                    &mut sim.houses,
+                    rules,
+                    owner,
+                    use_weeds,
+                    instance,
+                    current_frame,
+                ) {
+                    UseWeedsTick::Parked => break 'stock (fade, false, false),
+                    UseWeedsTick::Charged => {
+                        // Native jumps to the stock charged branch (6CBD73):
+                        // without UseChargeDrain it announces readiness; with
+                        // it the +0x7C drain state machine runs instead.
+                        let mut drain_ended = false;
+                        let ready = if use_weeds.use_charge_drain {
+                            if instance.charge_drain_state == 2 {
+                                instance.charge_drain_state = 0;
+                                instance.store_charge_timer(CdTimer::started(
+                                    current_frame as i32,
+                                    instance.recharge_time(use_weeds),
+                                ));
+                                drain_ended = true;
+                            } else {
+                                instance.charge_drain_state = 1;
+                                instance.is_ready = true;
+                            }
+                            false
+                        } else {
+                            instance.is_ready = true;
+                            instance.ready_tick = current_frame as i32;
+                            true
+                        };
+                        break 'stock (fade, ready, drain_ended);
+                    }
+                }
+            }
             let charge_drain = sw.is_some_and(|sw| sw.use_charge_drain);
             let running = instance.is_active
                 && (!instance.is_ready || charge_drain)
@@ -1950,6 +2235,55 @@ pub(crate) fn tick_house_superweapon_instances(
     }
 }
 
+/// Phobos `SuperClass_AI_UseWeeds @ 0x6CBD2C` (`Ext/SWType/Hooks.cpp:126`):
+/// a `UseWeeds=` Super ignores its recharge clock. Once the owner's house weed
+/// store holds `UseWeeds.Amount` rounds the whole amount is compared, the
+/// store gives what slot 0 holds, and the timer restarts at zero so the stock
+/// charged branch announces it. Below the amount the timer is parked at 15
+/// frames (at or above `UseWeeds.ReadinessAnimationPercentage` of the amount)
+/// or 915, and the cameo stage comes from the weed ratio instead.
+/// What this visit did, mapped to the native jump targets: 0x6CBD73 for a
+/// full store, otherwise the parked timer and no announcement.
+enum UseWeedsTick {
+    Parked,
+    Charged,
+}
+
+/// `SuperClass::AI`'s gates before `0x6CBD2C` exit a ready Super only when its
+/// type is not `UseChargeDrain`, so a draining type keeps visiting the store.
+fn tick_use_weeds(
+    houses: &mut crate::sim::houses::Houses,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+    instance: &mut SuperWeaponInstance,
+    current_frame: u32,
+) -> UseWeedsTick {
+    if !instance.is_active || instance.is_suspended || (instance.is_ready && !sw.use_charge_drain) {
+        return UseWeedsTick::Parked;
+    }
+    let now = current_frame as i32;
+    let amount = sw.use_weeds_amount.unwrap_or(rules.general.weed_capacity);
+    let total = houses
+        .get(&owner)
+        .map_or(0, |house| house.economy().owned_weed_total());
+    if total >= amount {
+        if let Some(house) = houses.get_mut(&owner) {
+            house.economy_mut().remove_weed_amount(amount);
+        }
+        instance.store_charge_timer(crate::sim::timer::CdTimer::started(now, 0));
+        return UseWeedsTick::Charged;
+    }
+    let ratio_threshold = sw.use_weeds_readiness_animation_percentage * f64::from(amount);
+    let duration = if f64::from(total) >= ratio_threshold {
+        15
+    } else {
+        915
+    };
+    instance.store_charge_timer(crate::sim::timer::CdTimer::started(now, duration));
+    UseWeedsTick::Parked
+}
+
 /// SuperClass_Update_DrainMoney100358A0's body for one running draining
 /// Super with `remaining` frames left: false when the House could not pay,
 /// which ends the drain. A ControlledByHuman House announces the refusal on
@@ -1979,7 +2313,7 @@ fn drain_money(
         }
         return false;
     }
-    money::settle(houses, owner, amount);
+    crate::sim::credit_income::transact_money(houses, owner, amount);
     true
 }
 
@@ -2213,7 +2547,6 @@ pub fn super_weapon_available(
     owner: InternedId,
     name: &str,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     if !phobos_tech_level_allows(sim, rules, owner, name) {
         return false;
     }
@@ -2258,7 +2591,6 @@ pub fn super_weapon_available(
             .is_some_and(|sw| aux_building_present(sim, rules, owner, sw))
     };
 
-    #[cfg(feature = "phobos")]
     let allowed = allowed && phobos_technos_allow(sim, rules, owner, name);
 
     allowed
@@ -2267,7 +2599,6 @@ pub fn super_weapon_available(
 /// `SW.TechLevel`: the owner's current TechLevel must reach the weapon's. The
 /// value is a plain minimum (`-1` is not special); `pHouse->TechLevel <
 /// SW_TechLevel` is the native test.
-#[cfg(feature = "phobos")]
 fn phobos_tech_level_allows(
     sim: &Simulation,
     rules: &RuleSet,
@@ -2285,7 +2616,6 @@ fn phobos_tech_level_allows(
 /// `SW.AuxTechnos`/`SW.NegTechnos`: owned technos that are present or in
 /// limbo (`HouseExt::CountOwnedPresentAndLimboed`), across every techno
 /// category.
-#[cfg(feature = "phobos")]
 fn phobos_technos_allow(sim: &Simulation, rules: &RuleSet, owner: InternedId, name: &str) -> bool {
     let Some(availability) = rules.phobos_super_weapon_metadata(name) else {
         return true;
@@ -2297,7 +2627,6 @@ fn phobos_technos_allow(sim: &Simulation, rules: &RuleSet, owner: InternedId, na
 /// Read HouseTracking's active plus Phobos limbo counters. Add_Tracking's
 /// owned count also includes unfinished factory products and omits present
 /// Insignificant types, so it cannot supply this predicate.
-#[cfg(feature = "phobos")]
 fn owned_techno_present(sim: &Simulation, rules: &RuleSet, owner: InternedId, id: &str) -> bool {
     use crate::map::entities::EntityCategory;
     use crate::rules::object_type::ObjectCategory;
@@ -2551,6 +2880,8 @@ fn finish_ares_launch(
     owner: InternedId,
     typ: InternedId,
     cell: (u16, u16),
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: crate::sim::world::FrameEffects<'_>,
 ) {
     use crate::rules::superweapon_type::AresSuperWeaponFlags as F;
     let frame = sim.session.binary_frame() as i32;
@@ -2559,7 +2890,7 @@ fn finish_ares_launch(
         .map_or(F::NONE, |sw| sw.kind.ares_flags());
     // 100226D0 counts the fired Super's shot before the PostClick switch.
     if let Some(instance) = sim.super_weapons.instance_mut(&owner, &typ) {
-        instance.record_ares_launch(frame);
+        instance.record_launch(frame);
     }
     let data = ares_launch_data_type(sim, rules, owner, typ);
     let data_name = sim.interner.resolve(data).to_owned();
@@ -2607,6 +2938,19 @@ fn finish_ares_launch(
     if !flags.has(F::NO_EVA) {
         sim.sound_events
             .emit(SimSoundEvent::AresSuperWeaponActivatedEva { sw_type: data });
+    }
+    // Phobos `SWTypeExt::Activate`'s tail also runs for Ares-handler kinds,
+    // whose launch arms returned before the common conversion tail.
+    if let Some(sw) = rules.super_weapon(sim.interner.resolve(data)) {
+        chaining::apply_phobos_launch_tail(
+            sim,
+            rules,
+            owner,
+            sw,
+            cell,
+            overlay_registry,
+            frame_effects,
+        );
     }
 }
 
@@ -2956,7 +3300,10 @@ fn grant_super(
     if !instance.apply_grant_state(sw, rules, session.binary_frame(), one_time, on_hold) {
         return false;
     }
-    instance.timer_place = (sw.show_timer && !passive).then_some(place);
+    // Phobos `SuperClass_AI_UseWeeds` clears the type's ShowTimer, so a
+    // UseWeeds Super never takes a sidebar timer slot.
+    let show_timer = sw.show_timer && !sw.use_weeds;
+    instance.timer_place = (show_timer && !passive).then_some(place);
     if !sw.manual_control {
         Simulation::release_super_anim(substrate, super_weapons, owner, type_id);
     }
@@ -3046,4 +3393,70 @@ pub(crate) fn trigger_grant_super(
             .can_lose = false;
     }
     true
+}
+
+#[cfg(all(test, tests_sim_superweapon))]
+mod show_timer_priority_tests {
+    use super::*;
+
+    /// `0x6CB5EB`: the shown list sorts by `ShowTimer.Priority` descending,
+    /// and the grant order breaks equal priorities.
+    #[test]
+    fn show_timer_priority_sorts_the_list_highest_first() {
+        let mut views = vec![
+            SuperTimerView::for_test(
+                InternedId::from_index(0),
+                InternedId::from_index(0),
+                0,
+                false,
+                100,
+                0,
+            )
+            .with_timer_options(false, 0),
+            SuperTimerView::for_test(
+                InternedId::from_index(0),
+                InternedId::from_index(1),
+                0,
+                false,
+                100,
+                1,
+            )
+            .with_timer_options(false, 2),
+            SuperTimerView::for_test(
+                InternedId::from_index(0),
+                InternedId::from_index(2),
+                0,
+                false,
+                100,
+                2,
+            )
+            .with_timer_options(false, 1),
+            SuperTimerView::for_test(
+                InternedId::from_index(0),
+                InternedId::from_index(3),
+                0,
+                false,
+                100,
+                3,
+            )
+            .with_timer_options(false, 2),
+        ];
+        sort_timer_views(&mut views);
+        let order: Vec<u32> = views.iter().map(|view| view.place()).collect();
+        assert_eq!(
+            order,
+            vec![1, 3, 2, 0],
+            "priority 2, 2, 1, 0 by grant order"
+        );
+    }
+}
+
+impl SuperWeaponInstance {
+        /// One accepted `SuperClass::Launch`: Ares's 100226D0 after an admitted
+        /// Activate, and the Phobos `FireSuperWeaponExt` tail's `ShotCount++`
+        /// (`Ext/SWType/FireSuperWeapon.cpp:45`) at the shared continuation.
+        fn record_launch(&mut self, frame: i32) {
+            self.ares_launch_count = self.ares_launch_count.wrapping_add(1);
+            self.ares_charge_origin_frame = Some(frame);
+        }
 }

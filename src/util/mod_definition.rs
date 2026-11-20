@@ -24,6 +24,9 @@ pub struct ResourceConfig {
     pub ini: IniRootConfig,
     pub archives: ArchiveNames,
     pub requires_ares: bool,
+    /// `[Extensions] Phobos=yes`: this mod's games play Phobos even when its
+    /// rules carry no Phobos key of their own (`rules::phobos_switch`).
+    pub requires_phobos: bool,
     /// The existing launcher catalog of an imported client folder, shared
     /// with the provider and retained if its archive stack is recovered.
     pub client_install: Option<Arc<ClientInstall>>,
@@ -64,6 +67,7 @@ pub struct ModDefinition {
     files: Option<IniRootConfig>,
     archives: ArchiveNames,
     requires_ares: bool,
+    requires_phobos: bool,
     explicit_loading: bool,
 }
 
@@ -159,6 +163,8 @@ impl ModDefinition {
                     };
                     if key == "ares" {
                         definition.requires_ares = required;
+                    } else if key == "phobos" {
+                        definition.requires_phobos = required;
                     } else if required {
                         return Err(format!(
                             "This build does not support required extension '{key}'. Use a compatible build or mod."
@@ -209,6 +215,7 @@ impl ModDefinition {
             ini: self.files.clone().unwrap_or_else(|| base.clone()),
             archives: self.archives.clone(),
             requires_ares: self.requires_ares,
+            requires_phobos: self.requires_phobos,
             client_install: None,
             mod_folder: None,
         }
@@ -244,6 +251,21 @@ mod tests {
             definition
                 .resources(&IniRootConfig::default())
                 .requires_ares
+        );
+    }
+
+    #[test]
+    fn a_manifest_declares_phobos_without_the_ares_requirement() {
+        let resources = ModDefinition::parse("[Extensions]\nPhobos=yes\n")
+            .unwrap()
+            .resources(&IniRootConfig::default());
+        assert!(resources.requires_phobos);
+        assert!(!resources.requires_ares);
+        assert!(
+            !ModDefinition::parse("[Extensions]\nPhobos=no\n")
+                .unwrap()
+                .resources(&IniRootConfig::default())
+                .requires_phobos
         );
     }
 }

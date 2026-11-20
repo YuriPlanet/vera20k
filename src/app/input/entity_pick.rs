@@ -759,6 +759,7 @@ pub(crate) fn compute_box_selection_snapshot(
         houses,
         interner,
         false,
+        false,
     )
 }
 
@@ -778,6 +779,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
     houses: Option<&HouseStates>,
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
+    priority_selection_filtering: bool,
 ) -> Option<SelectionMutation> {
     if !band_rect_contains_drawn_object(source, preflight_order, min_x, min_y, max_x, max_y) {
         return None;
@@ -795,6 +797,13 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
         houses,
         interner,
         require_playfield_membership,
+    );
+    let candidates = filter_low_selection_priority(
+        candidates,
+        source.entities(),
+        rules,
+        interner,
+        priority_selection_filtering,
     );
     if additive {
         // The native band callback only ever calls Select — there is no Deselect
@@ -1032,7 +1041,7 @@ fn type_select_candidates(
             {
                 return None;
             }
-            let dynamic = selection_dynamic_prefix(entity, entities, rules, interner)
+            let dynamic = selection_dynamic_prefix(entity, entities, rules, interner, true)
                 && type_is_selectable(type_id, rules)
                 && (!require_playfield_membership || entity.in_playfield());
             // The ID match's independent building arm (732C61..732C83)
@@ -1313,6 +1322,33 @@ fn matching_type_group(
         .collect()
 }
 
+/// Phobos `[Phobos] PrioritySelectionFiltering=` with `LowSelectionPriority=`
+/// (`Misc/Selection.cpp:58-73`, `:92`): once the band rectangle holds a
+/// selectable object that is *not* low priority, every low-priority candidate
+/// is skipped. Types the interner cannot resolve do not participate, the way
+/// `TechnoTypeExt::TryFetch` leaves a non-techno object unfiltered.
+fn filter_low_selection_priority(
+    candidates: Vec<u64>,
+    entities: &EntityStore,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    enabled: bool,
+) -> Vec<u64> {
+    let low_priority = |id: u64| -> Option<bool> {
+        let entity = entities.get(id)?;
+        let object = interner?.object_type(entity.type_ref(), rules?)?;
+        let low = object.phobos_techno_extras.low_selection_priority;
+        Some(low)
+    };
+    if !enabled || !candidates.iter().any(|&id| low_priority(id) == Some(false)) {
+        return candidates;
+    }
+    candidates
+        .into_iter()
+        .filter(|&id| low_priority(id) != Some(true))
+        .collect()
+}
+
 fn entities_in_rect(
     source: impl PickSource,
     encounter_order: &[u64],
@@ -1352,7 +1388,7 @@ fn entities_in_rect(
             ) {
                 return None;
             }
-            if !selection_dynamic_prefix(entity, entities, rules, interner) {
+            if !selection_dynamic_prefix(entity, entities, rules, interner, false) {
                 return None;
             }
             Some(entity.stable_id())
@@ -1405,13 +1441,21 @@ pub(crate) fn selection_dynamic_prefix(
     entities: &EntityStore,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
+    processing_id_matches: bool,
 ) -> bool {
     // BuildingClass::CanBeSelectedNow459C00 calls the existing type query
     // Is1x1WithUndeploy465D40 before the shared Techno6FC030 prefix below.
+    // Phobos's BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable hook
+    // at 0x465D40 answers true only while the type-select ID match runs
+    // (`ExtSelection::ProcessingIDMatches`), so the checks below still decide
+    // every building rather than admitting all of them outright.
     let building = entity.category() == EntityCategory::Structure;
     // Ares 3.0 10013CF0 (hook 0x00459C03): `MassSelectable=` overrides
     // that answer ([`ObjectType::band_selectable`]).
+    let id_match_lift =
+        processing_id_matches && rules.is_some_and(|rules| rules.building_type_selectable());
     if building
+        && !id_match_lift
         && !rules
             .zip(interner)
             .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
@@ -1716,6 +1760,10 @@ mod invisible_tests;
 #[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_band_owner_tests.rs"]
 mod band_owner_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "entity_pick_priority_tests.rs"]
+mod priority_tests;
 
 #[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_double_click_tests.rs"]

@@ -141,7 +141,7 @@ impl TypeHandleTable {
                 );
                 handle.map(|handle| rules.projectile_by_handle(handle))
             }
-            _ => rules.projectile(interner.resolve(id)),
+            _ => rules.projectile(interner.try_resolve(id)?),
         }
     }
 
@@ -164,7 +164,7 @@ impl TypeHandleTable {
                 );
                 handle.map(|handle| rules.warhead_by_handle(handle))
             }
-            _ => rules.warhead(interner.resolve(id)),
+            _ => rules.warhead(interner.try_resolve(id)?),
         }
     }
 
@@ -189,7 +189,7 @@ impl TypeHandleTable {
                 );
                 index
             }
-            _ => rules.type_array_index(category, interner.resolve(id)),
+            _ => rules.type_array_index(category, interner.try_resolve(id)?),
         }
     }
 
@@ -263,7 +263,7 @@ impl TypeHandleTable {
                 );
                 handle
             }
-            _ => rules.type_handle(interner.resolve(id)),
+            _ => rules.type_handle(interner.try_resolve(id)?),
         }
     }
 
@@ -282,6 +282,28 @@ impl TypeHandleTable {
 
 #[cfg(all(test, tests_sim_h_o))]
 mod tests {
+
+    /// An id this interner never produced — the shape of a fixture entity built
+    /// against another interner — names no type. `handle` used to reach
+    /// `StringInterner::resolve`, which panics for a foreign id, so the whole
+    /// caller (the hover-shutdown landing arm's per-cell pass) died instead of
+    /// answering "unknown type".
+    #[test]
+    fn a_foreign_id_names_no_type_instead_of_panicking() {
+        let rules = tiny_rules();
+        let mut interner = StringInterner::new();
+        let e1 = interner.intern("E1");
+        let table = TypeHandleTable::build(&rules, &interner);
+        // An empty interner asked for index 1: the exact shape that panicked
+        // ("the len is 0 but the index is 1") on the fall-through past the
+        // table's own row.
+        let foreign = StringInterner::new();
+        let foreign_id = InternedId::from_index(1);
+        assert_eq!(table.handle(&foreign, foreign_id, &rules), None);
+        assert!(table.object(&foreign, foreign_id, &rules).is_none());
+        // The table's own set still answers for the id it holds.
+        assert_eq!(table.handle(&interner, e1, &rules), rules.type_handle("E1"));
+    }
     use super::*;
     use crate::rules::ini_parser::IniFile;
 

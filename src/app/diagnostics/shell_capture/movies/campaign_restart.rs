@@ -233,7 +233,7 @@ impl RestartCapture {
             let projection = &mut state.match_state.match_presentation.sidebar_projection;
             projection.displayed_credits_or_seed(&owner, actual);
             let target = if actual == 0 { 1000 } else { 0 };
-            projection.advance_credits(&owner, target);
+            projection.advance_credits(&owner, target, 143, true);
             let displayed = projection.displayed_credits_or_seed(&owner, actual);
             ensure!(
                 displayed != actual,
@@ -314,7 +314,7 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .advance_credits(owner, *target);
+                    .advance_credits(owner, *target, 143, true);
             }
             let from_menu = target == RestartTarget::MenuDefeatReplayed;
             if from_menu {

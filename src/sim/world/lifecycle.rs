@@ -858,6 +858,12 @@ pub enum LifecycleOutput {
     ClearRedraw {
         stable_id: u64,
     },
+    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
+    /// Display membership. Presentation must re-resolve that object model
+    /// without pretending another object spawned or entered Display.
+    ObjectTypeChanged {
+        stable_id: u64,
+    },
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1360,7 +1366,6 @@ impl Simulation {
         // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
         // returns success before it).
         if techno_alive_on_entry {
-            #[cfg(feature = "phobos")]
             self.phobos_tracking_before_unlimbo(stable_id);
             self.house_added_to_game(stable_id, context.rules());
         }
@@ -1679,6 +1684,7 @@ impl Simulation {
         }
         Self::mark_ai_repairable_at_unlimbo(
             &self.session,
+            context.rules(),
             &mut self.substrate,
             &self.houses,
             stable_id,
@@ -1846,9 +1852,14 @@ impl Simulation {
     /// `BuildingClass::Unlimbo 0x00440B4F..0x00440B7A`, after the Techno
     /// Unlimbo and its alive gate: outside a campaign, a building of a house
     /// no human controls whose house type is not `MultiplayPassive=` becomes
-    /// AI-repairable (`+0x6CB`), whatever its map line said.
+    /// AI-repairable (`+0x6CB`), whatever its map line said. In a campaign
+    /// the Phobos hook (`Ext/Building/Hooks.cpp:316-331`, hook `0x440B4F`)
+    /// reaches the same vanilla owner checks only when the house's
+    /// `RepairBaseNodes` difficulty slot (or the `[Basic]` global) resolves
+    /// yes, and never for a map-created structure.
     fn mark_ai_repairable_at_unlimbo(
         session: &ScenarioSession,
+        rules: &RuleSet,
         substrate: &mut ObjectSubstrate,
         houses: &Houses,
         stable_id: u64,
@@ -1857,14 +1868,38 @@ impl Simulation {
             return;
         };
         let policy = session.rule_policy();
-        if entity.category() == EntityCategory::Structure
-            && policy.uses_managed_ai_base()
-            && houses.get(&entity.owner()).is_some_and(|house| {
-                !house.is_controlled_by_human(policy) && !house.multiplay_passive()
-            })
-            && let Some(entity) = substrate.entities.get_mut(stable_id)
-        {
-            entity.ai_sell_repair.make_repairable();
+        if entity.category() != EntityCategory::Structure {
+            return;
+        }
+        let Some(house) = houses.get(&entity.owner()) else {
+            return;
+        };
+        if !policy.uses_managed_ai_base() {
+            // Vanilla: a campaign building never takes the grant. Phobos
+            // admits it through the per-house/global flag, still skipping
+            // map-created structures.
+            {
+                if entity.created_from_map_file() {
+                    return;
+                }
+                // `RepairBaseNodes[GameOptionsClass::Instance.Difficulty]`:
+                // the session's player difficulty row.
+                let difficulty = session.campaign_house_difficulties().map_or(
+                    crate::sim::house_state::HouseDifficulty::default(),
+                    |(player, _)| player,
+                );
+                if !house.repair_base_nodes_for_difficulty(
+                    difficulty,
+                    rules.phobos_globals.repair_base_nodes,
+                ) {
+                    return;
+                }
+            }
+        }
+        if !house.is_controlled_by_human(policy) && !house.multiplay_passive() {
+            if let Some(entity) = substrate.entities.get_mut(stable_id) {
+                entity.ai_sell_repair.make_repairable();
+            }
         }
     }
 
@@ -2463,6 +2498,31 @@ impl Simulation {
         }
     }
 
+    /// Phobos `IsDestroyableObstacle`: `BuildingClass::Unlimbo` (`0x440D01`)
+    /// and `Limbo` (`0x445D87`) recompute the foundation cell classes and
+    /// zones of a type that sets the key. Navigation caches publish the same
+    /// result; during an initial load with no installed views the first full
+    /// rebuild derives it instead.
+    fn republish_destroyable_obstacle_navigation(&mut self, stable_id: u64, rules: &RuleSet) {
+        if self.path_grid.is_none() && self.zone_grid.is_none() {
+            return;
+        }
+        let flagged = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                entity.category() == EntityCategory::Structure
+                    && self
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| object.phobos_destroyable_obstacle)
+            });
+        if flagged {
+            let _ = self.rebuild_dynamic_navigation(rules);
+        }
+    }
+
     /// Mark(PUT) through the object's vt+0x124: `FootClass::Mark`
     /// ([`Simulation::foot_mark_put`]) for Infantry, Unit and Aircraft, the
     /// building transaction below for a Structure.
@@ -2491,6 +2551,19 @@ impl Simulation {
         let foundation = entity.type_facts.foundation().to_owned();
         let hidden_profile = entity.type_facts.building_hidden_occupancy();
         let current_cell = (entity.position.rx(), entity.position.ry());
+        // Phobos `MapClass_PlaceDown_BuildableTerrain` (`0x5684B1`,
+        // `Ext/TerrainType/Hooks.Passable.cpp:145-170`): a successful
+        // PlaceDown removes a buildable Terrain in the origin cell. This is
+        // the PlaceDown owner, so the ordinary production reveal and the
+        // foundation-clearing trigger path both take it exactly once.
+        if let Some(terrain_id) = self.terrain_objects.id_at(current_cell)
+            && self
+                .terrain_objects
+                .get(terrain_id)
+                .is_some_and(|terrain| terrain.can_be_built_on())
+        {
+            let _ = self.retire_non_entity_object(terrain_id, context);
+        }
         let (width, height) = foundation.dimensions();
         if let Some(layer) = layer {
             for &(rx, ry) in &cells {
@@ -2534,6 +2607,7 @@ impl Simulation {
         // Cell Recalc47D2B0 before returning. Keep the derived path view at
         // that boundary too; the marked structures remain its authority.
         self.publish_recalculated_cells(context.rules(), &cells);
+        self.republish_destroyable_obstacle_navigation(stable_id, context.rules());
         // BuildingMark43F738 moves its retained animations after PlaceDown
         // publishes the cells, before43F79B begins the smudge-clear scan.
         self.reposition_building_anim_slots(stable_id, context.rules());
@@ -2923,6 +2997,7 @@ impl Simulation {
         // This projects current marked owners, retaining overlapping or
         // still-marked dying structures; it adds no RNG/timer/detach work.
         self.publish_recalculated_cells(context.rules(), &cells);
+        self.republish_destroyable_obstacle_navigation(stable_id, context.rules());
         true
     }
 
@@ -2951,6 +3026,23 @@ impl Simulation {
             .get_mut(stable_id)
             .unwrap()
             .begin_bomb_fall();
+        // Phobos `ObjectClass_DropAsBomb_Track` (`0x5F4160`,
+        // `Ext/Techno/Hooks.cpp:1656-1670`): track the Techno that starts the
+        // fall so the AA auto-target scan can still see it.
+        if rules.phobos_globals.falling_down_targeting_fix
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    matches!(
+                        entity.category(),
+                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                    )
+                })
+        {
+            self.phobos_track_falling_down(stable_id);
+        }
         let foot = self
             .substrate
             .entities
@@ -3522,9 +3614,78 @@ impl Simulation {
         true
     }
 
+    /// Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`,
+    /// `Ext/TerrainType/Hooks.cpp:268-283`): the "dirty hack" latch that forces
+    /// the next draw through the crumbling arm. Unlike `terrain_start_crumble`
+    /// (`0x71BB2C`) it neither restarts the Stage nor plays `CrumblingSound`;
+    /// `TerrainClass_AI_Crumbling` (`0x71C812`) clears it while Health is above
+    /// zero, so it lasts exactly one AI visit.
+    pub(crate) fn terrain_latch_damaged_frame(&mut self, stable_id: u64) {
+        self.terrain_objects.set_crumbling(stable_id, true);
+        self.register_logic_object(stable_id);
+    }
+
     /// gamemd-derived: active YR `LogicClass__UnregisterObject @ 0x0055BAE0`
     /// gates removal on the object's membership flag, performs the first-match
     /// stable erase, then repairs that flag.
+    /// Phobos `LogicClass::Remove` for the damaged-redraw crumble latch.
+    pub(crate) fn terrain_remove_from_logic(&mut self, stable_id: u64) {
+        self.unregister_logic_object(stable_id);
+    }
+
+    /// Phobos `TerrainClass_TakeDamage_NowDead_Add` (`0x71BB2C`,
+    /// `Ext/TerrainType/Hooks.cpp:276-305`): a `HasCrumblingFrames=` tree
+    /// stays alive for its crumble sequence. IsCrumbling and Stage rate 2
+    /// (`Start_To_Crumble @ 0x0071C8E0`), Logic membership, then
+    /// `CrumblingSound` at the tree's coordinate.
+    pub(crate) fn terrain_start_crumble(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some((type_ref, coords)) = self
+            .terrain_objects
+            .get(stable_id)
+            .map(|terrain| (terrain.type_ref(), terrain.world_coord()))
+        else {
+            return;
+        };
+        let name = self.interner.resolve(type_ref).to_string();
+        let Some(terrain_type) = rules.terrain_object_type_case_insensitive(&name) else {
+            return;
+        };
+        self.terrain_objects.set_crumbling(stable_id, true);
+        let frames = rules.terrain_display_frame_count(&name).unwrap_or(0);
+        self.terrain_objects.start_crumble_animation(
+            stable_id,
+            frames,
+            self.session.binary_frame(),
+        );
+        self.register_logic_object(stable_id);
+        if let Some(sound) = &terrain_type.crumbling_sound {
+            self.sound_events
+                .emit(crate::sim::world::SimSoundEvent::voc_at_world_coord(
+                    sound.clone(),
+                    crate::sim::anim_class::AnimWorldCoord {
+                        x: coords.x,
+                        y: coords.y,
+                        z: coords.z,
+                    },
+                ));
+        }
+    }
+
+    /// The crumble sequence's end (`TerrainTypeExt::Remove`,
+    /// `Ext/TerrainType/Body.cpp:23-33`): UnInit the tree. The AI plays the
+    /// destroy effects before calling this.
+    pub(crate) fn terrain_crumble_finish(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let context = UninitContext::new(rules).with_effects(effects);
+        let retired = self.retire_non_entity_object(stable_id, context);
+        debug_assert!(retired);
+    }
+
     fn unregister_logic_object(&mut self, stable_id: u64) -> bool {
         let Some(kind) = self.classify_object(stable_id) else {
             return false;
@@ -3643,6 +3804,24 @@ impl Simulation {
     /// Particle62BB0E calls ObjectUnlimbo5F4EC0; GetLayer62D770 returns
     /// AIR (3), so Display4A9720 reaches the existing append owner5519B0.
     /// A particle is owned by its system and never joins global Logic.
+    /// A particle that enters the world: the Display Air layer registration
+    /// plus the `ObjectClass::Unlimbo` AlphaImage block its type may carry.
+    pub(crate) fn reveal_particle_with_alpha_shape(
+        &mut self,
+        particle: &crate::sim::particles::Particle,
+        rules: &RuleSet,
+    ) {
+        Self::reveal_particle(&mut self.substrate, particle.stable_id());
+        let kind = particle.type_id();
+        let alpha_image = rules.particle_type(kind).alpha_image.clone();
+        self.construct_particle_alpha_shape(
+            particle.stable_id(),
+            particle.coords().to_array(),
+            &alpha_image,
+            rules,
+        );
+    }
+
     pub(crate) fn reveal_particle(substrate: &mut ObjectSubstrate, stable_id: u64) {
         Self::submit_object_display(substrate, stable_id, DisplayLayer::AIR);
     }
@@ -4362,7 +4541,6 @@ impl Simulation {
         // therefore precedes the hooks inside that body; the Ares extension's
         // relative position is unobserved and kept as the AttachEffect branch
         // had it.
-        #[cfg(feature = "phobos")]
         self.limbo_phobos_attach_effects(
             stable_id,
             context.rules(),
@@ -4420,7 +4598,6 @@ impl Simulation {
                 context.effects(),
             );
             // 6F6BD1: Removed_From_Game, also only on the first Limbo.
-            #[cfg(feature = "phobos")]
             self.phobos_tracking_before_limbo(stable_id);
             self.house_removed_from_game(stable_id, context.rules(), context.effects());
             // Ares BuildingClass_Remove_Academy (hook 0x00445905 ->
@@ -4798,7 +4975,27 @@ impl Simulation {
             ];
             // `0x00442586`: the truncated length against 0x100.
             let far = d.iter().map(|v| v * v).sum::<i64>() >= 0x100 * 0x100;
-            if far && !helipad {
+            // Phobos `BuildingClass_ReceiveDamage_NoDestroyLink`
+            // (`Ext/Aircraft/Hooks.cpp:1072-1093`, hook `0x4425B6`, arm
+            // `0x44259D`): a helipad's linked aircraft whose type resolves
+            // `ExtendedAircraftMissions.FastScramble` takes the RUN_AWAY arm
+            // instead of the `Strength * 10` C4 kill, even when it sits within
+            // 0x100 of the building.
+            let fast_scramble = helipad
+                && self
+                    .substrate
+                    .entities
+                    .get(contact)
+                    .is_some_and(|contact| contact.category() == EntityCategory::Aircraft)
+                && self
+                    .substrate
+                    .entities
+                    .get(contact)
+                    .and_then(|contact| self.object_type(contact.type_ref(), rules))
+                    .is_some_and(|object| {
+                        rules.extended_aircraft_missions_for(object).fast_scramble
+                    });
+            if (far && !helipad) || fast_scramble {
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_lifecycle_for_test(LifecycleTestEvent::BuildingNowDeadRunAway {
                     building_id,
@@ -5031,8 +5228,12 @@ impl Simulation {
             listener.suspended_attack_target.target(),
             listener.archive_target(),
         ] {
-            if let Some(TargetKind::Entity(id)) = target {
-                name(id);
+            match target {
+                Some(TargetKind::Entity(id)) => name(id),
+                // A Bullet TarCom is cleared by the same pointer-expiry
+                // broadcast when the projectile uninitializes.
+                Some(TargetKind::Bullet(id)) => name(id),
+                _ => {}
             }
         }
         listener.radio_contacts.iter_live().for_each(&mut name);
@@ -5454,10 +5655,15 @@ impl Simulation {
         let Some(listener) = self.substrate.entities.get(listener_id) else {
             return;
         };
-        let current_target_matches = listener
-            .attack_target
-            .target()
-            .is_some_and(|target| matches!(target, TargetKind::Entity(id) if id == expired_id));
+        let current_target_matches =
+            listener
+                .attack_target
+                .target()
+                .is_some_and(|target| match target {
+                    TargetKind::Entity(id) => id == expired_id,
+                    TargetKind::Bullet(id) => id == expired_id,
+                    TargetKind::Cell(..) => false,
+                });
         let listener_owner = listener.owner();
         let mission_is_suspended =
             listener.mission.suspended() != crate::sim::mission::MissionId::NONE;
@@ -5576,10 +5782,14 @@ impl Simulation {
         // `+0x2B8` is cleared on an exact match under `allowClear` alone — the
         // same-owner exemption applies only to `+0x2B4`.
         let clear_suspended_target = allow_clear
-            && matches!(
-                listener.suspended_attack_target.target(),
-                Some(TargetKind::Entity(id)) if id == expired_id
-            );
+            && listener
+                .suspended_attack_target
+                .target()
+                .is_some_and(|target| match target {
+                    TargetKind::Entity(id) => id == expired_id,
+                    TargetKind::Bullet(id) => id == expired_id,
+                    TargetKind::Cell(..) => false,
+                });
         // Techno707AC2..707AD7 clears eight retained effect pointers on an
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.
@@ -6755,7 +6965,6 @@ impl Simulation {
             }
 
             self.run_represented_uninit_pre_hook(stable_id);
-            #[cfg(feature = "phobos")]
             self.phobos_tracking_begin_uninit(stable_id);
             // `ObjectClass::UnInit` kills a Techno's passengers with no attacker
             // (`0x005F660D`).
@@ -6833,7 +7042,6 @@ impl Simulation {
         self.substrate.pending_delete.queue_object(stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
-        #[cfg(feature = "phobos")]
         if kind == ObjectKind::Entity {
             self.phobos_tracking_end_uninit();
         }
@@ -7428,7 +7636,14 @@ impl Simulation {
                 }
                 entity.is_some()
             }
-            Some(ObjectKind::Anim) => self.substrate.anims.remove(stable_id).is_some(),
+            Some(ObjectKind::Anim) => {
+                let removed = self.substrate.anims.remove(stable_id);
+                if let Some(anim) = removed.as_ref() {
+                    // Phobos `AnimExt::~AnimExt` drops the firing-anim count.
+                    self.release_firing_anim_count(anim);
+                }
+                removed.is_some()
+            }
             Some(ObjectKind::ParticleSystem) => {
                 let system = self.substrate.particle_systems.finalize_remove(stable_id);
                 if let Some(system) = system.as_ref() {
@@ -7596,3 +7811,7 @@ mod watcher_tests;
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
 mod ares_prerequisite_lifecycle_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "building_ai_repairable_tests.rs"]
+mod building_ai_repairable_tests;

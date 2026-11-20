@@ -152,7 +152,7 @@ impl Simulation {
             state.grapple.delay = 0;
         }
         Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
-        self.grapple_wakes(victim, origin, rules);
+        self.grapple_wakes(owner, victim, origin, rules);
     }
 
     pub(super) fn parasite_grapple(
@@ -222,7 +222,47 @@ impl Simulation {
         match phase {
             0 => {
                 self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
-                let name = crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM;
+                // Phobos `ParasiteClass_AI_GrippleAnim` (`0x6298CC`,
+                // `Ext/Techno/Hooks.cpp:942-953`): the warhead's
+                // `Parasite.GrappleAnim` name (else the `[AudioVisual]`
+                // fallback, else `SQDG`) selects the held grapple animation.
+                // Both keys are `NullableIdx` reads, so an unknown declared
+                // name leaves the value unset and the next fallback applies.
+                let grapple_name = {
+                    let declared = |name: &str| {
+                        rules
+                            .anim_type_names
+                            .iter()
+                            .find(|valid| valid.eq_ignore_ascii_case(name))
+                            .map(String::as_str)
+                    };
+                    self.substrate
+                        .entities
+                        .get(owner)
+                        .and_then(|entity| {
+                            let object = self.object_type(entity.type_ref(), rules)?;
+                            let weapon = weapon_zero(rules, object, entity.veterancy.rank())?;
+                            rules.weapon_warhead(weapon).and_then(|warhead| {
+                                warhead
+                                    .phobos_parasite
+                                    .grapple_anim
+                                    .as_deref()
+                                    .and_then(declared)
+                            })
+                        })
+                        .or_else(|| {
+                            rules
+                                .phobos_globals
+                                .parasite_grapple_anim
+                                .as_deref()
+                                .and_then(declared)
+                        })
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| {
+                            crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM.to_string()
+                        })
+                };
+                let name = grapple_name.as_str();
                 // Lookup-only427CB0, not a factory creating an unknown type.
                 let anim = if rules.anim_type_names.contains(name) {
                     let type_id = self.interner.intern(name);
@@ -277,7 +317,7 @@ impl Simulation {
                 self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 self.grapple_splashes(victim, origin, rules);
                 if warhead.culling && self.grapple_cull_admitted(owner, victim, warhead, rules) {
-                    self.grapple_cull(owner, victim, rules, effects);
+                    self.grapple_cull(owner, victim, rules, registry, effects);
                     return;
                 }
                 let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
@@ -341,13 +381,36 @@ impl Simulation {
         }
     }
 
-    fn grapple_wakes(&mut self, victim: u64, origin: AnimWorldCoord, rules: &RuleSet) {
+    fn grapple_wakes(&mut self, owner: u64, victim: u64, origin: AnimWorldCoord, rules: &RuleSet) {
         let facing = self
             .substrate
             .entities
             .get(victim)
             .unwrap()
             .body_facing_current(self.session.binary_frame());
+        // Phobos `Wake.Grapple` (hook `0x629FA3`, `Ext/Techno/
+        // Hooks.Misc.cpp:395-400`) reads the predator's type, falling back
+        // through its native `Wake=` to `[General] Wake=`; an unknown name is
+        // a null pointer and takes the same fallback.
+        let wake_name = self
+            .substrate
+            .entities
+            .get(owner)
+            .and_then(|entity| self.entity_object_type(entity, rules))
+            .and_then(|object| {
+                {
+                    object
+                        .phobos_wake_grapple
+                        .clone()
+                        .or_else(|| object.wake.clone())
+                }
+            })
+            .filter(|name| {
+                rules
+                    .anim_type_names
+                    .contains(name.to_ascii_uppercase().as_str())
+            })
+            .unwrap_or_else(|| rules.general.wake.name.clone());
         for _ in 0..3 {
             let offset = [
                 self.scenario_rng.next_range_i32_inclusive(-180, 180),
@@ -359,7 +422,7 @@ impl Simulation {
                 y: origin.y.wrapping_add(y),
                 z: origin.z,
             };
-            self.spawn_grapple_effect(&rules.general.wake.name, position, 0, 0, rules);
+            self.spawn_grapple_effect(&wake_name, position, 0, 0, rules);
         }
     }
 
@@ -468,6 +531,7 @@ impl Simulation {
         owner: u64,
         victim: u64,
         rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
@@ -482,6 +546,17 @@ impl Simulation {
         let Some(target_type) = self.object_type(target.type_ref(), rules) else {
             return;
         };
+        // Phobos `ParasiteClass_UpdateSquid_SinkableBySquid` (`0x629C67`,
+        // `Ext/Unit/Hooks.Sinking.cpp:21-45`): a Unit victim sinks only under
+        // its `Sinkable.SquidGrab` (else `[General]`); otherwise it takes its
+        // own Strength as C4Warhead damage with defenses ignored. Non-units
+        // always sink.
+        let target_is_unit = target.category() == EntityCategory::Unit;
+        let target_strength = target_type.strength;
+        let sink = !target_is_unit
+            || target_type
+                .phobos_sinkable_squid_grab
+                .unwrap_or(rules.phobos_globals.sinkable_squid_grab);
         let source_cost = self.cost_of(source.owner(), source_type, rules);
         let target_cost = self.cost_of(target.owner(), target_type, rules);
         // Ares 10053AC0 resumes past this experience block (0x629C5D) when
@@ -505,13 +580,35 @@ impl Simulation {
                     rules.general.veteran_cap,
                 );
         }
+        // Phobos `ParasiteClass_UpdateSquid_SinkableBySquid` (`0x629C67`,
+        // `Ext/Unit/Hooks.Sinking.cpp:21-45`): a Unit victim sinks only under
+        // its `Sinkable.SquidGrab` (else `[General]`); otherwise it takes its
+        // own Strength as C4Warhead damage with defenses ignored. Non-units
+        // always sink.
         self.parasite_exit_unit(owner, rules, effects);
-        self.begin_living_ship_sinking(
-            victim,
-            crate::sim::world::LivingSinkTrigger::ParasiteCull,
-            rules,
-            effects,
-        );
+        if sink {
+            self.begin_living_ship_sinking(
+                victim,
+                crate::sim::world::LivingSinkTrigger::ParasiteCull,
+                rules,
+                effects,
+            );
+        } else {
+            let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
+            let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                victim,
+                target_strength,
+                0,
+                owner,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            );
+            self.commit_direct_damage_receiver(rules, registry, event, effects);
+        }
         self.reset_parasite_grapple(owner, rules);
         if let Some(source) = self.substrate.entities.get_mut(owner) {
             source.parasite.end_paralysis(self.session.binary_frame());

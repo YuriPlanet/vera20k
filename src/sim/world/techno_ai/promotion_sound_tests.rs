@@ -3,6 +3,7 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+use crate::sim::world::SimSoundEvent;
 use std::sync::Arc;
 
 const SOUNDS: &str = "[SoundList]\n0=GlobalVeteran\n1=GlobalElite\n2=HeroVeteran\n3=HeroElite\n";

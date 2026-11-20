@@ -760,3 +760,263 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
     let mover = sim.substrate.entities.get(1).unwrap();
     assert_eq!((mover.position.rx(), mover.position.ry()), (8, 9));
 }
+
+/// Warp-in weapon rules: a CLEG/CMON pair with `WARPWH` (30) and `MINWH` (11)
+/// over one `WARPH` warhead that admits its own source, so the arrived object
+/// takes the detonation's damage. `type_chrono_range_minimum` writes the
+/// TechnoType `ChronoRangeMinimum=` override (`None` leaves the type unset).
+fn warp_weapon_rules(
+    warp_in: &str,
+    min_range: &str,
+    use_distance_as_damage: bool,
+    chrono_range_minimum: i32,
+    type_chrono_range_minimum: Option<i32>,
+) -> RuleSet {
+    let type_chrono_line = type_chrono_range_minimum
+        .map(|value| format!("ChronoRangeMinimum={value}\n"))
+        .unwrap_or_default();
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nWarpOut=WARPOUT\nChronoRangeMinimum={chrono_range_minimum}\n\n\
+         [InfantryTypes]\n0=CLEG\n\n\
+         [VehicleTypes]\n0=CMON\n\n\
+         [WeaponTypes]\n0=WARPWH\n1=MINWH\n\
+         [WARPWH]\nDamage=30\nRange=5\nROF=20\nWarhead=WARPH\n\
+         [MINWH]\nDamage=11\nRange=5\nROF=20\nWarhead=WARPH\n\
+         [Warheads]\n0=WARPH\n\
+         [WARPH]\nCellSpread=0\nAllowDamageOnSelf=yes\n\n\
+         [CLEG]\nStrength=100\nSpeed=4\nSensorsSight=1\nSpeedType=Foot\n\
+         MovementZone=Infantry\nWarpInWeapon={warp_in}\n\
+         WarpInMinRangeWeapon={min_range}\n\
+         WarpInWeapon.UseDistanceAsDamage={use_distance_as_damage}\n\
+         {type_chrono_line}\n\
+         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\
+         WarpInWeapon={warp_in}\nWarpInMinRangeWeapon={min_range}\n\
+         WarpInWeapon.UseDistanceAsDamage={use_distance_as_damage}\n\
+         {type_chrono_line}\n\
+         [Clear]\nFoot=100%\n"
+    )))
+    .unwrap();
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[WARPOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n",
+    ));
+    art.bind_anim_frame_count_for_test("WARPOUT", 13);
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
+/// One production object turn of a warp armed from cell 5,5 to 8,9 with the
+/// stored `LastWarpDistance`; the arrived object's health is the observable.
+/// `type_chrono_range_minimum` is the arriving type's own threshold override.
+fn warp_in_health(
+    warp_in: &str,
+    min_range: &str,
+    use_distance_as_damage: bool,
+    chrono_range_minimum: i32,
+    distance_leptons: i32,
+    type_chrono_range_minimum: Option<i32>,
+) -> i32 {
+    let rules = warp_weapon_rules(
+        warp_in,
+        min_range,
+        use_distance_as_damage,
+        chrono_range_minimum,
+        type_chrono_range_minimum,
+    );
+    let mut sim = relocating_chrono_unit((8, 9));
+    install_destination_cells(&mut sim, &rules);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .teleport_state_for_test_mut()
+        .unwrap()
+        .set_warp_distance_leptons_for_test(distance_leptons);
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+        .unwrap();
+    let mover = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(
+        (mover.position.rx(), mover.position.ry()),
+        (8, 9),
+        "the warp landed"
+    );
+    mover.health.current()
+}
+
+/// Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim @ 0x719742`
+/// (`Ext/TechnoType/Hooks.Teleport.cpp:88-95`): the warp-in weapon detonates
+/// at the arrived object; below `[General] ChronoRangeMinimum`
+/// `WarpInMinRangeWeapon` replaces it, falling back to `WarpInWeapon` while
+/// unset.
+#[test]
+fn warp_in_weapon_picks_the_min_range_weapon_by_last_warp_distance() {
+    assert_eq!(
+        warp_in_health("WARPWH", "", false, 0, 1000, None),
+        70,
+        "WarpInWeapon detonates its 30 damage at the object"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 1000, None),
+        89,
+        "a short warp takes WarpInMinRangeWeapon's 11 damage"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "", false, 2000, 1000, None),
+        70,
+        "an unset min-range weapon falls back to WarpInWeapon"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 3000, None),
+        70,
+        "a warp at or above ChronoRangeMinimum keeps WarpInWeapon"
+    );
+}
+
+/// `WarpInWeapon.UseDistanceAsDamage` (`Ext/TechnoType/Body.cpp:873`): the
+/// detonation's damage is `distance / 256` instead of the weapon's `Damage=`.
+#[test]
+fn warp_in_weapon_use_distance_as_damage_divides_by_256() {
+    assert_eq!(
+        warp_in_health("WARPWH", "", true, 0, 1024, None),
+        96,
+        "1024 leptons deal 4 damage, not the weapon's 30"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "", true, 0, 255, None),
+        100,
+        "a fraction of a cell truncates to no damage"
+    );
+}
+
+/// Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim @ 0x719742`
+/// (`Ext/TechnoType/Hooks.Teleport.cpp:88-95`): the arriving type's own
+/// `ChronoRangeMinimum=` (`Nullable<int>`, `Ext/TechnoType/Body.cpp:865`)
+/// overrides the `[General]` threshold in the min-range weapon split.
+#[test]
+fn a_type_chrono_range_minimum_overrides_the_general_threshold() {
+    // Global 0 would keep `WARPWH`; the type's 2000 threshold puts the 1000
+    // lepton warp inside min range, so `MINWH` detonates.
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 0, 1000, Some(2000)),
+        89,
+        "the type threshold selects the min-range weapon"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 0, 1000, None),
+        70,
+        "without the type key the global 0 threshold keeps WarpInWeapon"
+    );
+}
+
+/// An absent type key falls back to the `[General]` threshold; a parsed
+/// `Some(0)` is a real override that never selects the min-range weapon, so
+/// absent and `Some(0)` are distinct.
+#[test]
+fn an_absent_type_key_keeps_the_general_threshold() {
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 1000, None),
+        89,
+        "absent type key uses the global 2000 threshold"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 3000, None),
+        70,
+        "at or above the global threshold keeps WarpInWeapon"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 1000, Some(0)),
+        70,
+        "Some(0) overrides the global 2000 and never selects min range"
+    );
+}
+
+/// Warp-animation rules: `[General] WarpOut` plus the type's `WarpIn`/
+/// `WarpOut` lists over one AnimType registry.
+fn warp_anim_rules(general_out: &str, warp_out: &str, warp_in: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nWarpOut={general_out}\n\n\
+         [Animations]\n0=WARPOUT\n1=TYPEOUT\n2=TYPEIN\n\n\
+         [VehicleTypes]\n0=CMON\n\
+         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\
+         WarpOut={warp_out}\nWarpIn={warp_in}\n\
+         [Clear]\nFoot=100%\n"
+    )))
+    .unwrap();
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[WARPOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n\
+         [TYPEOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n\
+         [TYPEIN]\nFlat=yes\nTranslucent=yes\nRate=120\n",
+    ));
+    for name in ["WARPOUT", "TYPEOUT", "TYPEIN"] {
+        art.bind_anim_frame_count_for_test(name, 13);
+    }
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
+/// The names of the warp anims the turn constructed, with cell, z and owner.
+fn warp_anims(
+    sim: &Simulation,
+) -> Vec<(String, u16, u16, u8, Option<crate::sim::intern::InternedId>)> {
+    let mut found: Vec<_> = sim
+        .anims()
+        .map(|(id, anim)| {
+            let (rx, ry, _, _, z) = anim.world_coord().to_cell_sub_z();
+            (
+                sim.interner.resolve(anim.type_id()).to_owned(),
+                rx,
+                ry,
+                z,
+                sim.anim(*id).and_then(|anim| anim.owner_house()),
+            )
+        })
+        .filter(|(name, ..)| matches!(name.as_str(), "WARPOUT" | "TYPEOUT" | "TYPEIN"))
+        .collect();
+    found.sort_by_key(|(name, rx, ry, z, _)| (name.clone(), *rx, *ry, *z));
+    found
+}
+
+/// Phobos `WarpOut`/`WarpIn`
+/// (`Ext/TechnoType/Hooks.Teleport.cpp:17-25,78-86`): the ordinary departure
+/// and arrival take their own type list instead of `[General] WarpOut`, and
+/// each spawned anim is owned by the teleporting object's house.
+#[test]
+fn warp_anim_lists_choose_each_endpoint_and_keep_the_object_house() {
+    let rules = warp_anim_rules("WARPOUT", "TYPEOUT", "TYPEIN");
+    let mut sim = relocating_chrono_unit((8, 9));
+    let owner = sim.substrate.entities.get(1).unwrap().owner();
+
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+        .unwrap();
+
+    assert_eq!(
+        warp_anims(&sim),
+        vec![
+            ("TYPEIN".to_owned(), 8, 9, 0, Some(owner)),
+            ("TYPEOUT".to_owned(), 5, 5, 2, Some(owner)),
+        ],
+        "WarpOut at the origin and WarpIn at the arrival, house-owned"
+    );
+}
+
+/// `ValueableVector<AnimTypeClass*>` drops an unresolvable token at read time
+/// (`Utilities/TemplateDef.h:1947-1953`, `Parser.h:187-195`): only the
+/// resolvable `TYPEIN` remains, so `RandomRanged(0, 0)` picks it; a list with
+/// no resolvable name keeps `[General] WarpOut` and draws nothing.
+#[test]
+fn warp_anim_lists_drop_unknown_names_before_the_draw() {
+    let rules = warp_anim_rules("WARPOUT", "MISSING", "MISSING,TYPEIN");
+    let mut sim = relocating_chrono_unit((8, 9));
+
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+        .unwrap();
+
+    let owner = sim.substrate.entities.get(1).unwrap().owner();
+    assert_eq!(
+        warp_anims(&sim),
+        vec![
+            ("TYPEIN".to_owned(), 8, 9, 0, Some(owner)),
+            ("WARPOUT".to_owned(), 5, 5, 2, None),
+        ],
+        "the unknown-only departure falls back to the general anim"
+    );
+}

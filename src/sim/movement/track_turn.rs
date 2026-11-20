@@ -230,7 +230,20 @@ impl Simulation {
         let moving = super::motion_query::is_moving(entity).unwrap_or(false);
         let mission = entity.mission.effective().known();
         // 4B08D1..4B08FD: Guard while not moving, or Unload, take the tail.
-        if (mission == Some(MissionType::Guard) && !moving) || mission == Some(MissionType::Unload)
+        // Phobos `DriveLocomotionClass::Process_CheckUnload` (`0x4B08EF`,
+        // `Ext/Techno/Hooks.Transport.cpp:560-574`) and its Ship twin
+        // (`0x69FFB6`): an Unload mission keeps processing while a passenger
+        // remains aboard, so an emptying transport can still be driven.
+        let unload_keeps_processing = mission == Some(MissionType::Unload)
+            && self
+                .entity_object_type(entity, rules)
+                .is_some_and(|object| object.passengers > 0)
+            && entity
+                .passenger_role
+                .cargo()
+                .is_some_and(|cargo| !cargo.passengers().is_empty());
+        if (mission == Some(MissionType::Guard) && !moving)
+            || (mission == Some(MissionType::Unload) && !unload_keeps_processing)
         {
             return false;
         }

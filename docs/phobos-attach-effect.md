@@ -1,6 +1,6 @@
 # Optional Phobos AttachEffect
 
-Build with `--features phobos` to register `[AttachEffectTypes]`, attach those
+Phobos is in every build; turn it on from a game's data to register `[AttachEffectTypes]`, attach those
 effects from warheads and TechnoTypes, and read the stat, weapon, tint,
 discard and critical-hit blocks each effect carries. Default builds have no
 attach vector, instance lifecycle or weapon trigger anywhere in the game.
@@ -60,7 +60,7 @@ DiscardOn.Missions=                 ; carrier enters one of these Missions
 DiscardOn.AIMissions=
 DiscardOn.LandTypes=
 DiscardOn.Sequences=
-LaserTrail.Type=                    ; reserved; no LaserTrail owner yet
+LaserTrail.Type=                    ; a [LaserTrailTypes] entry in artmd.ini
 ExpireWeapon=                       ; WeaponType fired when the effect ends;
                                     ; ExpireWeapon.TriggerOn=expire/remove/
                                     ; death/discard (comma-separated flags)
@@ -85,6 +85,26 @@ AttachEffect.InitialDelays=         ; per-list-position initial delay, frames
 AttachEffect.DurationOverrides=     ; per-list-position Duration override
 AttachEffect.RecreationDelays=      ; per-list-position re-create delay, frames
 ```
+
+Owner countries attach effects to every techno they create, and a changed
+owner attaches the new country's list when the switch allows it:
+
+```ini
+[COUNTRY]
+AttachEffect.AttachTypes=
+AttachEffect.Delays=                ; paired by index, same as a TechnoType
+AttachEffect.InitialDelays=
+AttachEffect.DurationOverrides=
+AttachEffect.RecreationDelays=
+AttachEffect.AttachOnOwnerChange=   ; Nullable, else [General] AttachEffects.AttachOnOwnerChange
+```
+
+`sim::attach_effect::attach_country_effects` owns both sites
+(`TechnoExt::InitializeAttachEffects`' second call at
+`Body.Internal.cpp:157`, and `House/Hooks.cpp:342-343`); the source object is
+the techno itself. Tests:
+`a_country_attach_types_list_attaches_at_creation`,
+`a_new_country_attaches_its_list_on_owner_change`.
 
 Warheads attach effects on detonation:
 
@@ -137,9 +157,18 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
   TechnoType-side `AttachEffect.*` lists above.
 - `sim/attach_effect.rs`: one instance's timing state and the per-frame AI
   walk — initial delay, re-creation delay, duration refresh, duration tick,
-  and the animation each effect shows (`AttachEffectClass::AI`).
+  and the animation each effect shows (`AttachEffectClass::AI`). It also owns
+  `TransferAttachedEffects` (`AttachEffectClass.cpp:1222..1333`), called by
+  `sim/world/world_spawn.rs` at Phobos' deploy (`0x739956`) and undeploy
+  (`0x44A03C`) hooks.
 - `sim/game_entity/attach_effect.rs`: the carrier-side attach sites
   (`CreateAndAttach` gate, stacking counts, source House).
+- `rules/phobos_laser_trail.rs` and the ART layer in `rules/art_data.rs`:
+  the `[LaserTrailTypes]` catalog, read from `artmd.ini` at rules load
+  (`LaserTrailTypeClass::LoadFromINI`, `Rules/Body.cpp:62`).
+- `sim/attach_effect.rs`: each effect's `LaserTrail` state (`LastLocation`) and
+  the per-frame segment emission into the existing LaserDraw lifecycle, driven
+  from the techno AI phase (`TechnoExt::UpdateLaserTrails`, `Body.Update.cpp:526`).
 - `sim/combat/world_receiver.rs`: damage-time arms — expire/revenge weapons
   on death (`0x702050`), reflect damage, and the per-target pass that runs
   AttachEffect lists and crit before the native area damage
@@ -154,15 +183,22 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
 
 ## Residuals
 
-- `LaserTrail.Type` is retained as the raw key text: VERA20K has no
-  LaserTrail catalog or trail owner yet, so no trail is drawn.
-- `AllowTransfer` is retained (`Nullable<bool>`, `AllowTransfer.Convert`
-  alongside) but no transfer site consumes it yet.
+- `LaserTrail.Type` draws `laser`, `ebolt` and `radbeam` entries. A laser
+  trail takes the type's `Color` through DrawBeamSpecial when the type is not
+  `IsHouseColor` or no House exists, and the House's laser colour when both
+  exist (native's `CurrentColor`).
+  `CloakVisible.DetectedOnly`, `DropPodOnly` and the global
+  `HideLaserTrailEffects` switch have no reader, and the trail update runs in
+  the shared techno AI phase rather than after the foot locomotor process.
+- `AllowTransfer` is consumed by the deploy (`(Un)DeploysInto`) conversions;
+  `AllowTransfer.Convert` stays unused because VERA ports no Ares type
+  conversion (`TechnoClass_ChangeType`). A transferred instance copies its
+  source state without native's constructor RNG draw
+  (`Duration.ApplyArmorMultOnTarget`).
 - `Duration.ApplyFirepowerMult` folds a firepower multiplier into the
   duration the way the reader stores it; `ArmorMultiplier` folds onto the
   target's armor the shared combat-stats owner already folds Ares
   attachments through.
-- The per-target pass runs only in the ordinary-damage arm of bullet
-  detonation and `DamageArea`; a warhead on a special arm (Ivan bomb, mind
-  control, temporal, locomotor, ...) skips its per-target effects and
-  prefix draws.
+- The per-target pass runs at the entry of `BulletClass_Detonate 0x46920B` and
+  `MapClass_DamageArea 0x489286`, before the special/ordinary arm split and the
+  native area damage, on Phobos' `getCellSpreadItemsExt` items.

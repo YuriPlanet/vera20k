@@ -183,7 +183,7 @@ impl Simulation {
             let cells = self.resolved_terrain.as_ref().map(|terrain| {
                 crate::map::resolved_terrain::NativeCellQuery::for_local_input(terrain, network)
             });
-            self.opening_view_on_player_technos(cells.as_ref())
+            self.opening_view_on_player_technos(input.rules, cells.as_ref())
         } else {
             None
         };

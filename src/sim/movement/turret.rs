@@ -68,15 +68,11 @@ pub fn facing_toward_target(
     world: &crate::sim::world::Simulation,
 ) -> Option<u16> {
     let (trx, try_, tsx, tsy) = crate::sim::combat::resolve_target_coords(target, world)?;
+    // 0x005F3DB0 calls GetCoords (vtable +0x48) on both objects; a Building
+    // answers its foundation centre, not the position anchor.
+    let (frx, fry, fsx, fsy) = crate::sim::combat::target_coords(entity);
     Some(facing_toward_lepton(
-        entity.position.rx(),
-        entity.position.ry(),
-        entity.position.sub_x(),
-        entity.position.sub_y(),
-        trx,
-        try_,
-        tsx,
-        tsy,
+        frx, fry, fsx, fsy, trx, try_, tsx, tsy,
     ))
 }
 
@@ -259,7 +255,19 @@ pub(crate) fn facing_update(
             // Native controls: turret_cadence.json idle_navcom_magnetron.
             let lifted_with_destination =
                 entity.lift.swap_active() && entity.navigation.nav_com().is_some();
-            if dwell_elapsed && !bunkered && !deployed_simple_deployer && !lifted_with_destination {
+            // Phobos `0x736B60` (`Ext/Unit/Hooks.DisallowMoving.cpp:69-75`):
+            // an unset `TurretResponse` falls back to `UnitExt::CannotMove`;
+            // `yes` keeps the idle return, `no` always skips it.
+            let skip_idle_return = match obj.and_then(|obj| obj.phobos_turret_response) {
+                Some(response) => !response,
+                None => cannot_move(entity, obj, world),
+            };
+            if dwell_elapsed
+                && !bunkered
+                && !deployed_simple_deployer
+                && !lifted_with_destination
+                && !skip_idle_return
+            {
                 out.turret_destination = Some(match nav_destination_facing(entity, world) {
                     Some(nav) => nav,
                     None => entity.body_facing_current(binary_frame),
@@ -289,6 +297,43 @@ pub(crate) fn turret_spin_destination(current: u16) -> u16 {
 /// The `+5` the idle-return comparison adds to `GuardAreaTargetingDelay`
 /// (`ADD EDX,0x5` at `0x00736B4B`), giving 41 frames in stock.
 const NATIVE_IDLE_TURRET_DWELL_BIAS: i64 = 5;
+
+/// Phobos `UnitExt::CannotMove` (`Ext/Unit/Body.cpp:193-220`): a Unit that
+/// cannot move, i.e. `Speed == 0`, or a `MovementRestrictedTo=` land that
+/// differs from its cell's (Tunnel is exempt, and a bridge's Water/Beach
+/// answers Road). A sourced locomotor answers false natively; VERA has no
+/// `LocomotorSource` state, and no path sets one.
+fn cannot_move(
+    entity: &GameEntity,
+    obj: Option<&crate::rules::object_type::ObjectType>,
+    world: &crate::sim::world::Simulation,
+) -> bool {
+    use crate::rules::terrain_rules::LandType;
+    let Some(obj) = obj else {
+        return false;
+    };
+    if obj.speed == 0 {
+        return true;
+    }
+    let Some(required) = obj.movement_restricted_to else {
+        return false;
+    };
+    let cell = crate::sim::cell_rect::get_cellclass_fallback(
+        world.resolved_terrain.as_ref(),
+        i32::from(entity.position.rx()),
+        i32::from(entity.position.ry()),
+    );
+    let Some(mut land) = LandType::from_index(cell.land_type()) else {
+        return true;
+    };
+    if land == LandType::Tunnel {
+        return false;
+    }
+    if entity.on_bridge() && matches!(land, LandType::Water | LandType::Beach) {
+        land = LandType::Road;
+    }
+    land != required
+}
 
 /// The idle turret's aim when a move order is live: the NavCom (`+0x5A4`,
 /// read at `0x00736BA3`) through `DirectionToTarget @ 0x005F3DB0`
@@ -359,6 +404,105 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// One idle-turret read through the production `facing_update` owner
+    /// (`0x00736B60`): the tank stands on cell `(5, 5)`, whose land type `land`
+    /// replaces the Clear default, and `on_bridge` is `UnitClass+0x140`'s deck
+    /// flag. `None` answers "the idle return was skipped".
+    fn turret_idle(
+        type_keys: &str,
+        land: crate::rules::terrain_rules::LandType,
+        on_bridge: bool,
+    ) -> Option<u16> {
+        use crate::rules::ini_parser::IniFile;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [TANK]\nStrength=300\nArmor=none\nTurret=yes\nPrimary=Gun\n{type_keys}\
+             [Gun]\nDamage=10\nROF=20\nRange=6\nWarhead=WH\n\
+             [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        )))
+        .unwrap();
+        let mut entity = GameEntity::test_default(1, "TANK", "Americans", 5, 5);
+        entity.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 5));
+        entity.set_on_bridge(on_bridge);
+        let mut cells: Vec<_> = (0..16)
+            .flat_map(|ry| {
+                (0..16).map(move |rx| crate::map::resolved_terrain::test_smudge_cell(rx, ry))
+            })
+            .collect();
+        cells[5 * 16 + 5].land_type = land.as_index();
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.interner = crate::sim::intern::test_interner();
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells),
+        );
+        facing_update(&entity, &sim, &rules, &sim.interner, 100).turret_destination
+    }
+
+    /// `0x00736B60` (`Ext/Unit/Hooks.DisallowMoving.cpp:74`): an isset key
+    /// answers `!TurretResponse` on its own, so on a hull that `CannotMove`
+    /// reports as movable `no` still holds the last aim while `yes` and the
+    /// unset key both take the idle return.
+    #[test]
+    fn turret_response_overrides_the_class_answer() {
+        use crate::rules::terrain_rules::LandType;
+        assert!(
+            turret_idle("Speed=6\n", LandType::Clear, false).is_some(),
+            "an unset key on a movable hull returns"
+        );
+        assert!(
+            turret_idle("Speed=6\nTurretResponse=yes\n", LandType::Clear, false).is_some(),
+            "yes keeps the idle return"
+        );
+        assert!(
+            turret_idle("Speed=6\nTurretResponse=no\n", LandType::Clear, false).is_none(),
+            "no holds the aim where the hull points"
+        );
+        assert!(
+            turret_idle("Speed=0\nTurretResponse=yes\n", LandType::Clear, false).is_some(),
+            "yes overrides CannotMove on a stationary hull"
+        );
+    }
+
+    /// The unset fallback is `UnitExt::CannotMove` (`Ext/Unit/Body.cpp:193-220`):
+    /// `Speed == 0`, or a `MovementRestrictedTo` land different from the
+    /// occupied cell's — `Tunnel` exempts, and on a bridge a `Water` deck reads
+    /// as `Road` (`:210-217`).
+    #[test]
+    fn the_unset_key_falls_back_to_cannot_move() {
+        use crate::rules::terrain_rules::LandType;
+        assert!(
+            turret_idle("Speed=0\n", LandType::Clear, false).is_none(),
+            "Speed == 0 is CannotMove"
+        );
+        assert!(
+            turret_idle(
+                "Speed=6\nMovementRestrictedTo=Road\n",
+                LandType::Water,
+                false
+            )
+            .is_none(),
+            "a Road-restricted hull on water cannot move"
+        );
+        assert!(
+            turret_idle(
+                "Speed=6\nMovementRestrictedTo=Road\n",
+                LandType::Water,
+                true
+            )
+            .is_some(),
+            "the same water cell reads as Road under a bridge deck"
+        );
+        assert!(
+            turret_idle(
+                "Speed=6\nMovementRestrictedTo=Road\n",
+                LandType::Tunnel,
+                false
+            )
+            .is_some(),
+            "a Tunnel cell never blocks the restriction"
+        );
     }
 
     #[test]

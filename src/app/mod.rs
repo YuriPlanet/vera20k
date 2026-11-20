@@ -73,6 +73,7 @@ mod handler;
 mod hidden_run;
 mod in_game;
 mod initialize;
+pub(crate) mod briefing_start;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;

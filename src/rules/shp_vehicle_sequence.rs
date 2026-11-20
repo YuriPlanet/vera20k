@@ -10,15 +10,18 @@
 //! layout. Original reader/postpass controls are in `mirage_disguise.json`.
 //!
 //! ## Dependency rules
-//! - Part of rules/ — depends only on rules/art_data, sim/animation.
+//! - Part of rules/ — depends only on rules/art_data, assets/asset_manager,
+//!   sim/animation.
 //! - Does NOT depend on sim/ game logic, render/, or any game module.
 
+use crate::assets::asset_manager::AssetManager;
 use crate::rules::animation_sequence::{
     FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet,
     ShpVehicleTurret,
 };
 use crate::rules::art_data::ArtEntry;
 use crate::rules::ini_parser::IniSection;
+use crate::rules::ruleset::RuleSet;
 
 /// UnitType7470D0/747620's retained ART layout, owned by the process-resident
 /// UnitType registry. ART is fixed, but Image/Turret and current reader defaults
@@ -168,8 +171,9 @@ fn implicit_standing_frames(firing_frames: u16) -> u16 {
 pub(crate) fn build_shp_vehicle_sequences(
     art: &ArtEntry,
     cadence: FootBodyCadence,
-    retained: Option<&UnitShpReadState>,
     has_turret: bool,
+    retained: Option<&UnitShpReadState>,
+    phobos: bool,
 ) -> SequenceSet {
     let mut set = SequenceSet::new();
     set.set_shp_vehicle_cadence(cadence);
@@ -314,21 +318,45 @@ pub(crate) fn build_shp_vehicle_sequences(
     }
 
     // A `Turret=yes` SHP Unit draws its turret from the body SHP at
-    // `WalkFrames * 8` (UnitClass SHP draw `0x0073CCF7..0x0073CD03`: the
-    // signed `WalkFrames` byte at UnitType `+0xE5C` times a literal 8, plus
-    // the heading frame). `Facings`, `StartWalkFrame` and the standing and
-    // firing blocks do not move it. `CYCL` (WalkFrames=22) starts at 176.
-    if has_turret {
-        let start = u32::from(walk_frames).wrapping_mul(8);
-        if let Ok(start_frame) = u16::try_from(start) {
+    // `WalkFrames * 8` with a 32-frame rotation (UnitClass SHP draw
+    // `0x0073CCF7..0x0073CD03`). Phobos `UnitTypeClass_ReadINI_TurretShape`
+    // (`0x747A2E`) instead starts the body-slice fallback at
+    // `WalkFrames * Facings` with one image per body facing
+    // (`Ext/Unit/Hooks.DrawIt.cpp:29-33`, `0x73C7AC`), and a voxel type keeps
+    // its VXL turret.
+    if phobos {
+        if retained.is_some() && has_turret && !art.voxel {
+            set.set_shp_vehicle_turret(ShpVehicleTurret {
+                start_frame: walk_frames.wrapping_mul(u16::from(facings)),
+                facings: u16::from(facings),
+                frame_count: u16::from(facings),
+            });
+        }
+    } else if has_turret {
+        if let Ok(start_frame) = u16::try_from(u32::from(walk_frames).wrapping_mul(8)) {
             set.set_shp_vehicle_turret(ShpVehicleTurret {
                 start_frame,
                 facings: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
+                frame_count: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
             });
         }
     }
 
     set
+}
+
+/// Phobos `UnitTypeClass_ReadINI_TurretShape` (`0x747A2E`,
+/// `Ext/TechnoType/Hooks.cpp:142-168`): a non-voxel turreted UnitType whose
+/// `<image>TUR.SHP` exists draws its turret from that separate shape. The
+/// type gate, the `ArtImageSwap` name and the file test all live here, so
+/// the renderer and the animation catalog ask the same question.
+pub fn shp_vehicle_turret_shape_file(
+    rules: &RuleSet,
+    assets: &AssetManager,
+    type_id: &str,
+) -> Option<String> {
+    let file = rules.unit_turret_shp_file(type_id)?;
+    assets.get_shared(&file).map(|_| file)
 }
 
 #[cfg(all(test, tests_rules_o_z))]
@@ -339,7 +367,7 @@ mod tests {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::ruleset::RuleSet;
 
-    const TEST_CADENCE: FootBodyCadence = FootBodyCadence {
+    pub(super) const TEST_CADENCE: FootBodyCadence = FootBodyCadence {
         walk_rate: 3,
         idle_rate: 1,
     };
@@ -463,7 +491,7 @@ mod tests {
         let ini = IniFile::from_str(&source);
         let mut native = UnitShpReadState::default();
         native.read_pass(ini.section_or_empty("IMAGE"), has_turret);
-        build_shp_vehicle_sequences(art, TEST_CADENCE, Some(&native), has_turret)
+        build_shp_vehicle_sequences(art, TEST_CADENCE, has_turret, Some(&native), false)
     }
 
     #[test]
@@ -479,6 +507,7 @@ mod tests {
             Some(ShpVehicleTurret {
                 start_frame: 176,
                 facings: 32,
+                frame_count: 32,
             })
         );
 
@@ -496,9 +525,13 @@ mod tests {
         );
     }
 
-    fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
+    pub(super) fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
         ArtEntry {
+            roof_production_anim: Default::default(),
+            phobos_fire_up_reset_in_retarget: true,
+            phobos_fire_up: -1,
             image: None,
+            phobos_turret_barrel: Default::default(),
             cameo: None,
             alt_cameo: None,
             cameo_pcx: None,
@@ -512,7 +545,7 @@ mod tests {
             frame_width: 30,
             frame_height: 30,
             voxel: false,
-            turret_offset: 0,
+            turret_offset: [0, 0, 0],
             y_draw_offset: 0,
             x_draw_offset: 0,
             building_anims: Vec::new(),
@@ -530,7 +563,9 @@ mod tests {
             secondary_fire_pixel_offset: None,
             primary_fire_dual_offset: false,
             is_anim_delayed_fire: false,
+            is_anim_delayed_burst: true,
             silo_damage: false,
+            refinery_use_normal_active_anim: false,
             delayed_fire_delay: 0,
             walk_frames: walk,
             firing_frames: firing,
@@ -542,6 +577,7 @@ mod tests {
             disable_voxel_cache: false,
             disable_shadow_cache: false,
             can_be_hidden: true,
+            aircraft_docking_dir_default_to_pose_dir: None,
             queueing_cell: [0, 0],
             pads: Vec::new(),
             damage_fire_offsets: Vec::new(),
@@ -553,6 +589,7 @@ mod tests {
             undeploy_frames: None,
             deployed_fire_frames: None,
             z_shape_point_move: (0, 0),
+            z_shape_point_move_on_buildup: false,
             normal_z_adjust: 0,
             building_double_thick: false,
         }
@@ -648,7 +685,7 @@ mod tests {
     fn an_aircraft_layout_past_u16_is_refused() {
         let mut art = make_art_entry(Some(3000), Some(1));
         art.shp_facings = 32;
-        let set = build_shp_vehicle_sequences(&art, TEST_CADENCE, None, false);
+        let set = build_shp_vehicle_sequences(&art, TEST_CADENCE, false, None, false);
         assert!(set.is_empty());
     }
 
@@ -668,6 +705,210 @@ mod tests {
         assert_eq!(
             set.get(&SequenceKind::Attack).expect("Attack").start_frame,
             104
+        );
+    }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+mod turret_shape_tests {
+    use super::tests::{TEST_CADENCE, make_art_entry};
+    use super::*;
+    use crate::assets::asset_manager::test_support::TestDirectory;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::RulesLayerStack;
+    use crate::rules::ruleset::RuleSet;
+
+    fn rules(global: &str) -> RuleSet {
+        let text = format!(
+            "[General]\n{global}\n\
+             [VehicleTypes]\n0=TANK\n1=TRUCK\n2=VOX\n\
+             [TANK]\nStrength=100\nTurret=yes\n\
+             [TRUCK]\nStrength=100\n\
+             [VOX]\nStrength=100\nTurret=yes\n"
+        );
+        let art = IniFile::from_str("[TANK]\nImage=HULL\n[TRUCK]\n[VOX]\nVoxel=yes\n");
+        let processed = RulesLayerStack::new(IniFile::from_str(&text))
+            .process_with_fixed_art(&art)
+            .unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    /// Phobos `UnitTypeClass_ReadINI_TurretShape` (`Ext/TechnoType/Hooks.cpp:
+    /// 142-168`): `<image>TUR.SHP` for a non-voxel turreted Vehicle; the base
+    /// tracks the body's effective image (the ART `Image=` redirect is already
+    /// applied by VERA's SHP source resolution, so `ArtImageSwap` changes no
+    /// name).
+    #[test]
+    fn the_turret_shp_name_tracks_the_body_image_and_gates_non_voxel_turrets() {
+        for (global, expected) in [
+            ("", "TANKTUR"),
+            ("ArtImageSwap=yes", "HULLTUR"),
+            ("ArtImageSwap=no", "TANKTUR"),
+        ] {
+            let rules = rules(global);
+            let expected_file = format!("{expected}.SHP");
+            assert_eq!(
+                rules.unit_turret_shp_id("TANK").as_deref(),
+                Some(expected),
+                "{global:?}"
+            );
+            assert_eq!(
+                rules.unit_turret_shp_file("TANK").as_deref(),
+                Some(expected_file.as_str()),
+                "{global:?}"
+            );
+            assert_eq!(rules.unit_turret_shp_file("TRUCK"), None, "no Turret=");
+            assert_eq!(rules.unit_turret_shp_file("VOX"), None, "Voxel=yes");
+        }
+    }
+
+    fn turret_set(walk: u16, facings: u8, voxel: bool, has_turret: bool) -> SequenceSet {
+        let mut native = UnitShpReadState::default();
+        let source = format!("[IMAGE]\nWalkFrames={walk}\nFacings={facings}\n");
+        native.read_pass(
+            IniFile::from_str(&source).section_or_empty("IMAGE"),
+            has_turret,
+        );
+        let mut art = make_art_entry(Some(walk), None);
+        art.voxel = voxel;
+        build_shp_vehicle_sequences(&art, TEST_CADENCE, has_turret, Some(&native), true)
+    }
+
+    /// The turret block starts at `WalkFrames * Facings`, one image per
+    /// facing, and only exists for a non-voxel turret type.
+    #[test]
+    fn the_turret_sequence_starts_at_walk_frames_times_facings() {
+        let set = turret_set(4, 8, false, true);
+        let turret = set.shp_vehicle_turret().expect("turret layout");
+        assert_eq!(turret.start_frame, 32);
+        assert_eq!(turret.frame_count, 8);
+        assert_eq!(turret.facings, 8);
+
+        assert!(
+            turret_set(4, 8, false, false)
+                .shp_vehicle_turret()
+                .is_none(),
+            "a type without Turret= has no turret layout"
+        );
+        assert!(
+            turret_set(4, 8, true, true).shp_vehicle_turret().is_none(),
+            "a voxel unit draws its VXL turret instead"
+        );
+    }
+
+    /// Facings from the body still drive one turret image per facing; a body
+    /// with six facings keeps a six-image block and the resolver uses slot 0
+    /// (the same rule the body frame resolver applies off eight facings).
+    #[test]
+    fn a_non_octant_body_keeps_one_turret_image_per_body_facing() {
+        let set = turret_set(4, 6, false, true);
+        let turret = set.shp_vehicle_turret().expect("turret layout");
+        assert_eq!(turret.start_frame, 24);
+        assert_eq!(turret.frame_count, 6);
+        assert_eq!(turret.facings, 6);
+    }
+
+    /// One loose root holding the named shapes. `FileSystem::LoadSHPFile`
+    /// decides on the file's presence alone, so the bytes are never decoded
+    /// here.
+    fn stage(root: &TestDirectory, names: &[&str]) -> AssetManager {
+        for name in names {
+            std::fs::write(root.path().join(*name), [0_u8; 8]).expect("stage turret SHP");
+        }
+        AssetManager::from_loose_root_for_test(root.path())
+    }
+
+    /// Phobos `UnitTypeClass_ReadINI_TurretShape` (`0x747A2E`,
+    /// `Ext/TechnoType/Hooks.cpp:142-168`) with the file present: the turret
+    /// image comes from the separate shape's frame 0, while the body keeps
+    /// the start of its own `Walk` block.
+    #[test]
+    fn a_vehicle_with_a_turret_file_draws_frame_zero() {
+        let root = TestDirectory::new("phobos-turret-shape-present");
+        let assets = stage(&root, &["TANKTUR.SHP"]);
+        let rules = rules("");
+        let shape = shp_vehicle_turret_shape_file(&rules, &assets, "TANK");
+        assert_eq!(shape.as_deref(), Some("TANKTUR.SHP"));
+
+        let set = turret_set(5, 8, false, true);
+        assert_eq!(
+            set.shp_vehicle_turret().expect("turret layout").start_frame,
+            40
+        );
+        // The body keeps drawing its own Walk block, whose 40-frame extent
+        // ends where the body-slice turret block starts.
+        assert_eq!(
+            set.get(&SequenceKind::Walk)
+                .expect("walk block")
+                .start_frame,
+            0
+        );
+        let body_frame =
+            crate::sim::animation::resolve_shp_vehicle_body_frame(&set, 0, 0, -1, 0, true, false)
+                .expect("body image");
+        assert!(
+            body_frame < 40,
+            "the body stays inside its Walk block: {body_frame}"
+        );
+        let turret_frame =
+            crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, shape.is_some())
+                .expect("turret image");
+        assert!(
+            turret_frame < 8,
+            "the separate shape's eight-frame block: {turret_frame}"
+        );
+        assert_eq!(
+            crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, false),
+            Some(40 + turret_frame),
+            "the body slice would hold the same facing at WalkFrames * Facings"
+        );
+    }
+
+    /// Without the file the type keeps drawing the body shape's
+    /// `WalkFrames * Facings` turret block (`0x73C7AC`).
+    #[test]
+    fn a_vehicle_without_a_turret_file_keeps_the_body_slice() {
+        let root = TestDirectory::new("phobos-turret-shape-absent");
+        let assets = stage(&root, &[]);
+        let rules = rules("");
+        assert_eq!(shp_vehicle_turret_shape_file(&rules, &assets, "TANK"), None);
+
+        let set = turret_set(5, 8, false, true);
+        let turret = set.shp_vehicle_turret().expect("turret layout");
+        assert_eq!(turret.start_frame, 40);
+        let body_slice = crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, false)
+            .expect("body turret image");
+        assert_eq!(
+            body_slice,
+            40 + crate::sim::animation::resolve_shp_vehicle_turret_frame(&set, 64, true)
+                .expect("frame-0 block"),
+            "one image per body facing past the body's WalkFrames * Facings"
+        );
+    }
+
+    /// `[General] ArtImageSwap` (`Phobos.INI.cpp:262`, `0x52D21F`, default no)
+    /// moves the looked-up stem to the ART `Image=` redirect.
+    #[test]
+    fn art_image_swap_moves_the_looked_up_name() {
+        let root = TestDirectory::new("phobos-turret-shape-swap");
+        let assets = stage(&root, &["TANKTUR.SHP", "HULLTUR.SHP"]);
+        assert_eq!(
+            shp_vehicle_turret_shape_file(&rules(""), &assets, "TANK").as_deref(),
+            Some("TANKTUR.SHP")
+        );
+        assert_eq!(
+            shp_vehicle_turret_shape_file(&rules("ArtImageSwap=yes"), &assets, "TANK").as_deref(),
+            Some("HULLTUR.SHP")
+        );
+
+        // Only the type's own stem exists: the swap-enabled lookup misses.
+        let body_root = TestDirectory::new("phobos-turret-shape-swap-miss");
+        let body_assets = stage(&body_root, &["TANKTUR.SHP"]);
+        assert_eq!(
+            shp_vehicle_turret_shape_file(&rules("ArtImageSwap=yes"), &body_assets, "TANK"),
+            None
         );
     }
 }

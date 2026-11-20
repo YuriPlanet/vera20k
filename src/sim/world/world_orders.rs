@@ -617,7 +617,7 @@ impl Simulation {
         let vehicle = crate::sim::combat::vehicle_like(
             target.category(),
             target_type.non_vehicle,
-            target_type.is_1x1_with_undeploy(),
+            target_type.is_vehicle(),
             || {
                 if let Some(terrain) = self.resolved_terrain.as_ref() {
                     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
@@ -838,9 +838,16 @@ impl Simulation {
         &self,
         actor_id: u64,
         target_id: u64,
+        force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
-        self.unit_building_click_action_with(&self.control_projection(), actor_id, target_id, rules)
+        self.unit_building_click_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            force_fire,
+            rules,
+        )
     }
 
     fn unit_building_click_action_with(
@@ -848,10 +855,29 @@ impl Simulation {
         control: &ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
+        force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
+        // Phobos `UnitClass_WhatAction_Grinding` (`0x740134`,
+        // `Ext/Building/Hooks.Grinding.cpp:98-160`): with the force-fire key
+        // and an armed Unit the hook continues past the building arm.
+        if force_fire
+            && self
+                .object_type(actor.type_ref(), rules)
+                .is_some_and(|object| {
+                    combat::combat_weapon::is_armed(
+                        actor,
+                        object,
+                        &self.substrate.entities,
+                        rules,
+                        &self.interner,
+                    )
+                })
+        {
+            return None;
+        }
         if actor.category() != EntityCategory::Unit
             || !control.can_order(actor.owner())
             || !combat::combat_weapon::is_ally_by_object(
@@ -862,9 +888,18 @@ impl Simulation {
             )
             || target.is_warped_out()
             || target.category() != EntityCategory::Structure
-            || crate::sim::radio::receive::can_load_query(self, target_id, actor_id, rules)
-                != crate::sim::radio::RadioResponse::Roger
         {
+            return None;
+        }
+        let target_type = self.object_type(target.type_ref(), rules)?;
+        if crate::sim::radio::receive::can_load_query(self, target_id, actor_id, rules)
+            != crate::sim::radio::RadioResponse::Roger
+        {
+            // Phobos answers NoEnter for a refused grinder even though the
+            // stock answer leaves Select.
+            if target_type.grinding {
+                return Some(EntryClickAction::NoEnter);
+            }
             return None;
         }
         if self.object_type(actor.type_ref(), rules)?.movement_zone
@@ -872,8 +907,14 @@ impl Simulation {
         {
             return Some(EntryClickAction::NoEnter);
         }
-        Some(if self.object_type(target.type_ref(), rules)?.grinding {
-            EntryClickAction::Grind
+        Some(if target_type.grinding {
+            {
+                if self.can_grind_techno(target_id, actor_id, rules) {
+                    EntryClickAction::Grind
+                } else {
+                    EntryClickAction::NoEnter
+                }
+            }
         } else {
             EntryClickAction::Enter
         })
@@ -938,9 +979,17 @@ impl Simulation {
         actor_id: u64,
         target_id: u64,
         base: EntryBaseAction,
+        force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
-        self.entry_click_action_with(&self.control_projection(), actor_id, target_id, base, rules)
+        self.entry_click_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            base,
+            force_fire,
+            rules,
+        )
     }
 
     pub fn entry_click_action_with(
@@ -949,6 +998,7 @@ impl Simulation {
         actor_id: u64,
         target_id: u64,
         base: EntryBaseAction,
+        force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
@@ -956,8 +1006,15 @@ impl Simulation {
         let select = base == EntryBaseAction::Select;
         match actor.category() {
             EntityCategory::Unit => {
-                let building = if select {
-                    self.unit_building_click_action_with(control, actor_id, target_id, rules)
+                // Phobos runs the Unit building arm for a `Grinding=` target
+                // under any base action (`Hooks.Grinding.cpp:119`).
+                let target_obj = self.object_type(target.type_ref(), rules)?;
+                let ask_building = select
+                    || (target.category() == EntityCategory::Structure && target_obj.grinding);
+                let building = if ask_building {
+                    self.unit_building_click_action_with(
+                        control, actor_id, target_id, force_fire, rules,
+                    )
                 } else {
                     None
                 };
@@ -974,24 +1031,39 @@ impl Simulation {
                     return Some(action);
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
-                (select
-                    && target.category() == EntityCategory::Structure
-                    && target_obj.grinding
-                    && control.can_order(actor.owner())
-                    && !target_obj.is_1x1_with_undeploy())
-                .then(|| {
-                    // The delegated form of the 0x0051F0AF ownership check
-                    // keeps the infantry and its Grinder in the same House.
-                    if actor.owner() == target.owner()
-                        && control
-                            .local_command_house()
-                            .is_some_and(|player| control.can_order_from(target.owner(), player))
-                    {
+                if target.category() != EntityCategory::Structure || !target_obj.grinding {
+                    return None;
+                }
+                // Phobos `InfantryClass_WhatAction_Grinding` (`0x51F0AF`,
+                // `Hooks.Grinding.cpp:68-89`): an allied, not warped-out
+                // grinder answers the type gates under any base action when
+                // `Grinding.AllowAllies=yes`, otherwise only on Select. The
+                // stock row below keeps its own current-player owner gate.
+                if control.can_order(actor.owner())
+                    && !target.is_warped_out()
+                    && !target_obj.is_1x1_with_undeploy()
+                    && combat::combat_weapon::is_ally_by_object(
+                        Some(&self.house_alliances),
+                        &self.interner,
+                        target.owner(),
+                        actor.owner(),
+                    )
+                    && (target_obj.phobos_grinding.allow_allies || select)
+                {
+                    return Some(if self.can_grind_techno(target_id, actor_id, rules) {
                         EntryClickAction::Grind
                     } else {
                         EntryClickAction::NoEnter
-                    }
-                })
+                    });
+                }
+                (select && self.house_is_human_player(actor.owner()) && !target_obj.is_vehicle())
+                    .then(|| {
+                        if self.session.current_house() == Some(target.owner()) {
+                            EntryClickAction::Grind
+                        } else {
+                            EntryClickAction::NoEnter
+                        }
+                    })
             }
             EntityCategory::Aircraft => {
                 // The Tote rung (`0x00417D06..0x00417D75`) for base Select.
@@ -1189,6 +1261,18 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
+        // Phobos hook `0x740015` (`Ext/Unit/Hooks.Unload.cpp:86-88`) jumps to
+        // `0x7400F0`, past the first-passenger land/height test (`0x7400A1`),
+        // for a transport whose `Deploy.*` cursor gate admits it.
+        {
+            let live = entity
+                .passenger_role
+                .cargo()
+                .map_or(0, |cargo| cargo.passengers().len());
+            if object.phobos_deploy.cursor_skips_passengers(live) {
+                return false;
+            }
+        }
         if object.is_simple_deployer
             || object.passengers <= 0
             || entity.bunker.link().installed_in().is_some()
@@ -1205,32 +1289,39 @@ impl Simulation {
             return false;
         };
         let terrain = self.resolved_terrain.as_ref();
-        let stranded = terrain
-            .zip(self.object_type(first.type_ref(), rules))
-            .is_some_and(|(terrain, passenger)| {
-                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                let coord =
-                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-                let land = cells.land_type(cells.lookup_world(coord.x, coord.y));
-                land != i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
-                    && u8::try_from(land)
-                        .ok()
-                        .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
-                        .is_some_and(|row| {
-                            // UnitWhatAction7400A1..7400BE: first passenger,
-                            // strictly below the native double1% threshold.
-                            row.cost_for_speed_type(passenger.speed_type)
-                                .is_some_and(|cost| {
-                                    matches!(
+        // Phobos `AmphibiousUnload` (hook `0x7400B5`,
+        // `Ext/Techno/Hooks.Transport.cpp:632-644`): the low-cost land refusal
+        // yields to the transport type's key, else `[General]`. Water already
+        // passed through, which the native hook keeps.
+        // `ObjectType::amphibious_unload` owns that precedence.
+        let amphibious_unload = object.amphibious_unload(rules);
+        let stranded = !amphibious_unload
+            && terrain
+                .zip(self.object_type(first.type_ref(), rules))
+                .is_some_and(|(terrain, passenger)| {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                    let coord =
+                        crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                    let land = cells.land_type(cells.lookup_world(coord.x, coord.y));
+                    land != i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
+                        && u8::try_from(land)
+                            .ok()
+                            .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
+                            .is_some_and(|row| {
+                                // UnitWhatAction7400A1..7400BE: first passenger,
+                                // strictly below the native double1% threshold.
+                                row.cost_for_speed_type(passenger.speed_type)
+                                    .is_some_and(|cost| {
+                                        matches!(
                                         crate::rules::terrain_rules::compare_speed_to_one_percent(
                                             cost
                                         ),
                                         crate::util::native_x87::MaskedX87Ordering::Less
                                             | crate::util::native_x87::MaskedX87Ordering::Unordered
                                     )
-                                })
-                        })
-            });
+                                    })
+                            })
+                });
         stranded
             || (object.speed_type != SpeedType::Hover
                 && crate::sim::movement::air_movement::current_fly_height(entity, terrain) != 0)
@@ -1329,6 +1420,7 @@ impl Simulation {
     pub fn can_redeploy_construction_yard_from_input(
         &self,
         yard: &GameEntity,
+        rules: &RuleSet,
         control: Option<&ControlProjection<'_>>,
     ) -> bool {
         self.session
@@ -1336,6 +1428,7 @@ impl Simulation {
             .allows_construction_yard_redeploy()
             && self.construction_yard_redeploy_core_gate(
                 yard,
+                rules,
                 self.owner_is_human(yard.owner())
                     || control.is_some_and(|view| view.has_delegated_full_control(yard.owner())),
             )
@@ -1400,13 +1493,31 @@ impl Simulation {
                 return true;
             }
             if object.construction_yard
-                && !self.can_redeploy_construction_yard_from_input(actor, control)
+                && !self.can_redeploy_construction_yard_from_input(actor, rules, control)
             {
+                return false;
+            }
+            // Phobos `NoManualMove` zeroes the `UndeploysInto` this tail reads
+            // (`BuildingClass_CanPlayerMove @ 0x44F62B`, the fall-through tail
+            // of 44F5C0; hook `0x44F62B` -> `0x44F631` forces ECX 0,
+            // `Ext/Techno/Hooks.cpp:790-798`). The rally-line (455DA0) and
+            // ConYard/MCV-redeploy arms above stay native, so a factory with a
+            // rally line and a yard under `MCVRedeploy` keep answering true.
+            if object.phobos_no_manual_move {
                 return false;
             }
             return crate::sim::production::undeploy_target(rules, &object.id).is_some();
         }
         if !player_actor(actor.owner()) || actor.bunker.link().installed_in().is_some() {
+            return false;
+        }
+        // Phobos `NoManualMove` settles the whole predicate for a non-building
+        // (`TechnoClass_CanPlayerMove @ 0x700C40`: Owner->IsHumanPlayer at
+        // `0x50B6F0`, then the hooked virtual at `0x700C58` -> `0x700C62`
+        // returns false, `Ext/Techno/Hooks.cpp:778-784`). Every player order
+        // path that asks vt+0xA0 — Move, Stop, Deploy, the attack rung — sees
+        // the same false the native hook produces; AI missions never ask it.
+        if object.phobos_no_manual_move {
             return false;
         }
         if object.spawned
@@ -1643,6 +1754,13 @@ impl Simulation {
             return Some(if !full {
                 EngineerBuildingAction::Repair(true)
             } else if object.grinding {
+                // Phobos `InfantryClass_WhatAction_Grinding_Engineer`
+                // (`0x51E63A`, `Hooks.Grinding.cpp:91-105`): the grinder
+                // action asks the type gates; a refusal is NoGRepair (0x20),
+                // `Repair(false)` here.
+                if !self.can_grind_techno(target_id, actor_id, rules) {
+                    return Some(EngineerBuildingAction::Repair(false));
+                }
                 EngineerBuildingAction::EnterGrinder
             } else {
                 EngineerBuildingAction::Repair(false)
@@ -1970,7 +2088,7 @@ impl Simulation {
             && target.category() == EntityCategory::Structure
             && self
                 .object_type(target.type_ref(), rules)
-                .is_some_and(|object| object.is_1x1_with_undeploy())
+                .is_some_and(|object| object.is_vehicle())
         {
             return InfantryPerCellBuildingAdmission::UndeployBuilding;
         }
@@ -2249,7 +2367,7 @@ impl Simulation {
             }
             let mut changed = false;
             if repair {
-                crate::sim::production::engineer_repair(self, rules, building_id);
+                crate::sim::production::engineer_repair(self, rules, building_id, engineer_id);
             } else if capturable {
                 //519F44 re-reads the Building Tag and raises Entered again;
                 //do not deduplicate the earlier519B53 call.519F4F then reads
@@ -2389,6 +2507,10 @@ impl Simulation {
                 .map(|infantry| infantry.owner())
             {
                 self.infiltrate_building(building_id, owner, rules);
+                // Phobos's `BuildingClass_InfiltratedBy_Wrapper @ 0x51A00B`
+                // (`Ext/Building/Body.cpp:662-671`) runs `HandleInfiltrate`
+                // after the base function.
+                self.phobos_handle_infiltrate(building_id, owner, rules, registry, frame_effects);
             }
             true
         } else {

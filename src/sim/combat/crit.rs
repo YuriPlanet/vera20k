@@ -1,39 +1,37 @@
 //! Phobos warhead critical hits and the per-target warhead pass that carries
 //! them.
 //!
-//! Native identity: `WarheadTypeExt::Detonate`'s per-target prefix and pass
-//! (`src/Ext/WarheadType/Detonate.cpp:156..199`), `DetonateOnOneUnit`
+//! Native identity: `WarheadTypeExt::Detonate`'s early `TransactMoney` block
+//! (`src/Ext/WarheadType/Detonate.cpp:102..111`), its `LaunchSW` block
+//! (`:121..150`, `superweapon::launch_sw`) and its per-target
+//! prefix and pass (`156..199`), `DetonateOnOneUnit`
 //! (`201..275`), `GetCritChance`/`ApplyCrit` (`525..608`, `735..778`), called
 //! from the `BulletClass_Detonate @ 0x46920B` and `MapClass_DamageArea
-//! @ 0x489286` hooks. The pass runs before the native area damage, so a hit
-//! it kills is already gone when the main warhead dispatches.
+//! @ 0x489286` hooks. Both hooks run at the entry of those routines, before
+//! the special/ordinary arm split and before the native area damage: the pass
+//! visits its own `getCellSpreadItemsExt` collection, so it runs even for a
+//! special arm (IvanBomb, MindControl, Temporal, Locomotor, ...) and before
+//! SpawnShrapnel's draws.
 //!
 //! RESIDUALS:
-//! - The pass runs only in the ordinary-damage arm of the bullet detonation
-//!   and in `MapClass::DamageArea`; Phobos runs it before the whole bullet arm
-//!   chain (`0x46920B`). A warhead with a special arm (IvanBomb, MindControl,
-//!   Temporal, Locomotor, ...) therefore skips its per-target effects and the
-//!   prefix draws.
-//! - Of `PossibleCellSpreadDetonate`'s members VERA reads only the
-//!   AttachEffect lists. A warhead that sets only an unread member
-//!   (`RemoveDisguise`, `Shield.*`, `Convert.*`, `ReturnWarhead`, `Taunt`, ...)
-//!   skips the two buffer draws native makes per detonation, shifting the
-//!   scenario stream; the members' own effects are not ported.
-//! - `Detonate`'s earlier per-house arms (`CreateGap`, `Reveal`,
-//!   `TransactMoney`, `SpawnsCrate.Types`' `RandomDouble`, `LaunchSW`) and
-//!   `InterceptBullets` are not ported; a warhead with `SpawnsCrate.Types`
-//!   misses one draw before this prefix.
-//! - The per-target list reuses the area receiver collection instead of
-//!   Phobos' own `getCellSpreadItemsExt` walk, which also reads the
-//!   `AircraftTracker` for airborne items; membership and order can differ
-//!   (no airborne phase, different cell-list filters). During a Harvester
-//!   Truce the receiver collection leaves out `HarvesterUnit=` units
-//!   (`0x00489710`), which Phobos' walk keeps, so they miss crits and
-//!   AttachEffects. Because that collection
-//!   happens after SpawnShrapnel, the pass also runs after the shrapnel
-//!   draws, where native runs it first.
+//! - `PossibleCellSpreadDetonate` is reproduced member-for-member (see the gate
+//!   in [`detonate`]), so a warhead setting only a member whose effect is not
+//!   ported still draws the two buffers. Those unported arms are
+//!   `IvanBomb.Detonate`'s fused-bomb detonation, `RemoveMindControl`'s silent
+//!   flag, the shield respawn/self-healing timers and `BuildingSell`'s refund;
+//!   the remaining members are ported and applied.
+//! - `Detonate`'s `InterceptBullets` arm is not ported, so a warhead that
+//!   sets it misses that arm. The other earlier per-house arms run here:
+//!   `CreateGap` (`Simulation::apply_warhead_create_gap`), `Reveal`
+//!   (`Detonate.cpp:82-100`, including its `Detonate.cpp:88` gate) and
+//!   `SpawnsCrate.Types`' `RandomDouble`; `TransactMoney`
+//!   (`apply_transact_money`) and `LaunchSW` (`superweapon::launch_sw`)
+//!   are also ported.
 //! - `CanAffectTarget`'s `AffectsAbovePercent`/`AffectsBelowPercent`,
 //!   `AffectsVeterancy` and `AffectsInvokerOnly` gates are unread and pass.
+//! - The pass's `getCellSpreadItemsExt` walk carries the warhead's
+//!   `CellSpread.Cylinder` flag; in the helper that flag alters only the
+//!   ground-Structure cell-center and aircraft distances.
 //! - `Crit.Warhead`'s full detonation creates a projectile with no
 //!   `Projectile=` type, so the default bullet type's `Cluster` is not read.
 //! - `Crit.ExtraDamage.ApplyFirepowerMult` reads the owner's live multiplier;
@@ -42,15 +40,24 @@
 //!   invoker on this branch).
 //! - `Crit.SuppressWhenIntercepted` is read but VERA tracks no intercepted
 //!   bullet, so the bullet's `false` value never suppresses.
-//! - `Crit.AffectsTarget` treats every building as a plain building; native's
-//!   `IsStrange` split has no VERA reader.
 //! - `ApplyPerTargetEffectsOnDetonate=no`: native skips this prefix and runs
 //!   `DetonateOnOneUnit` from `TechnoClass::ReceiveDamage` for every target
 //!   that receives non-zero damage, with the attacker's house. VERA keeps the
 //!   pass here on the same targets with per-target dice and no prefix draws,
 //!   so the targets and the order against the receivers differ.
+//! - Phobos gates its `MapClass_DamageArea` hook on a per-`WarheadTypeExt`
+//!   latch, `InDamageArea`: `true` from the constructor
+//!   (`Ext/WarheadType/Body.h:537`), set `false` right after the bullet hook's
+//!   own `Detonate` (`Hooks.cpp:18..19`) so the native area damage the same
+//!   bullet triggers does not run the pass a second time, and set back `true`
+//!   at `BulletClass_Logics_Extras` (`0x469AA4`,
+//!   `Ext/Bullet/Hooks.DetonateLogics.cpp:556`) for the detonations that
+//!   follow. VERA has no per-type latch: every direct area call runs the pass,
+//!   so a warhead detonated both by a bullet and by an `DamageArea` reached
+//!   from that same detonation can visit its targets twice. Porting the latch
+//!   would add cross-call mutable state to a type projection; no retail
+//!   warhead is known to reach both paths.
 
-use super::combat_aoe::AreaDamageReceiver;
 use super::effects::DeathEffects;
 use super::receiver_call::EntityDamageEvent;
 use super::world_receiver::{
@@ -63,6 +70,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::rules::warhead_type::WarheadType;
 use crate::sim::combat::veterancy::{VeterancyRank, has_weapon_ability};
+use crate::sim::credit_income::transact_money;
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::{
     ProjectileCoord, ProjectileDetonation, ProjectileDetonationReason, ProjectilePayload,
@@ -77,18 +85,22 @@ pub(crate) struct CritRoll {
     chance: f64,
     buffer: f64,
     per_target: bool,
+    /// `ReturnWarhead_RandomBuffer`: drawn once per detonation unless
+    /// `ReturnWarhead.ApplyChancePerTarget` is set.
+    return_buffer: f64,
 }
 
-/// `WarheadTypeExt::Detonate`'s per-target prefix and pass
-/// (`Detonate.cpp:156..199`): `Crit_CurrentChance = GetCritChance(owner)`;
+/// `WarheadTypeExt::Detonate`: the early `TransactMoney` block
+/// (`Detonate.cpp:102..111`, [`apply_transact_money`]), then the per-target
+/// prefix and pass (`Detonate.cpp:156..199`): `Crit_CurrentChance = GetCritChance(owner)`;
 /// when the warhead has a per-target effect or a chance, the crit and
 /// `ReturnWarhead` buffers and `Crit.ActiveChanceAnims`; then
-/// `DetonateOnOneUnit` on every collected receiver of a cell-spread warhead,
-/// or on `intended_target` (the bullet's target, or `DamageAreaTarget`) within
-/// 64 leptons of `impact`. `source_house` is the hook's house; a direct
-/// `DamageArea` without one takes the owner's (`0x489286`). Returns
-/// `Crit_Active`, which the damage-animation selection reads.
-#[cfg(feature = "phobos")]
+/// `DetonateOnOneUnit` on every `getCellSpreadItemsExt` item of a cell-spread
+/// warhead, or on `intended_target` (the bullet's target, or `DamageAreaTarget`)
+/// within 64 leptons of `impact`. `source_house` is the hook's house; a direct
+/// `DamageArea` without one takes the owner's (`0x489286`). `damage` is the
+/// firing bullet's Health for the PenetratesTransport arm, 0 without a
+/// bullet. Returns `Crit_Active`, which the damage-animation selection reads.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn detonate(
     world: &mut Simulation,
@@ -101,22 +113,163 @@ pub(crate) fn detonate(
     source_house: Option<InternedId>,
     impact: ProjectileCoord,
     intended_target: Option<u64>,
-    receivers: &[AreaDamageReceiver],
+    // The firing bullet's Health (`WarheadTypeExt::Detonate`'s `damage`); 0
+    // for the pure `MapClass::DamageArea` call, which carries no bullet.
+    damage: i32,
+    // `bulletWasIntercepted`: the detonating bullet has the Intercepted
+    // status, which `Crit.SuppressWhenIntercepted` can veto.
+    intercepted: bool,
     effects: &mut DeathEffects,
 ) -> bool {
     let crit = &warhead.crit;
     let globals = rules.crit_globals();
-    let house = source_house.or_else(|| {
+    // `DetonateOnOneUnit`'s crit gate: `Crit_CurrentChance > 0 &&
+    // (!Crit_SuppressWhenIntercepted.Get(global) || !bulletWasIntercepted)`.
+    let suppress_crit = intercepted
+        && crit
+            .suppress_when_intercepted
+            .unwrap_or(globals.suppress_when_intercepted());
+    // `RemoveMindControl` can hand the detonation a different House for the
+    // arms that follow (`Detonate.cpp:206-208`), so the local is mutable.
+    let mut house = source_house.or_else(|| {
         world
             .substrate
             .entities
             .get(source_id)
             .map(|source| source.owner())
     });
+    // `WarheadTypeExt::Detonate`'s CreateGap block (`Detonate.cpp:51-80`):
+    // before Reveal, a positive radius conceals for enemies of the firing
+    // house; a negative value reshrouds every non-allied house.
+    if warhead.create_gap != 0
+        && let Some(owner) = house
+    {
+        let context = crate::sim::world::UninitContext::new(rules);
+        let _ = world.apply_warhead_create_gap(
+            owner,
+            [impact.x, impact.y, impact.z],
+            warhead.create_gap,
+            rules,
+            context,
+        );
+    }
+    // `WarheadTypeExt::Detonate`'s Reveal block (`Detonate.cpp:82-100`): a
+    // positive radius reveals for the firing house on the client maps its
+    // RevealArea gate admits, but only behind `Detonate.cpp:88`'s gate on the
+    // current player; a negative value reveals the whole map for that house.
+    // It runs before TransactMoney.
+    if warhead.reveal != 0
+        && let Some(owner) = house
+    {
+        if warhead.reveal < 0 {
+            world.reveal_map_for_owner(owner, rules);
+        } else if world.warhead_reveal_admits_current_player(owner) {
+            let config = world.sight_reveal_config(rules);
+            let viewers = crate::sim::vision::direct_reveal_viewers(
+                world.house_alliances.as_map(),
+                owner,
+                &config,
+                &world.interner,
+                &world.fog_viewers(),
+            );
+            if !viewers.is_empty() {
+                let radius = warhead.reveal.clamp(0, i32::from(u16::MAX)) as u16;
+                let cell = ((impact.x / 256) as u16, (impact.y / 256) as u16);
+                let context = crate::sim::world::UninitContext::new(rules);
+                let notification = world.session.current_house();
+                for final_pass in [false, true] {
+                    let _ = world.reveal_area(
+                        &viewers,
+                        cell,
+                        impact.z,
+                        radius,
+                        None,
+                        final_pass,
+                        &config,
+                        context,
+                        crate::sim::vision::MapRevealProjection::Transient,
+                        notification,
+                    );
+                }
+            }
+        }
+    }
+    // `WarheadTypeExt::Detonate`'s `TransactMoney` block runs before the crit
+    // prefix and regardless of whether this warhead can crit
+    // (`Ext/WarheadType/Detonate.cpp:102-111`).
+    apply_transact_money(
+        world,
+        rules,
+        warhead,
+        house,
+        source_id,
+        impact,
+        run.effects(),
+    );
+    // `WarheadTypeExt::Detonate`'s SpawnsCrate block (`Detonate.cpp:113-118`):
+    // after TransactMoney and before LaunchSW, one Scenario draw picks a
+    // weighted crate and `PlacePowerupCrate` drops it at the impact cell.
+    apply_spawns_crate(
+        world,
+        rules,
+        overlay_registry,
+        warhead,
+        house,
+        impact,
+        run.effects(),
+    );
+    // `WarheadTypeExt::Detonate`'s LaunchSW block (`Detonate.cpp:121-150`):
+    // after the TransactMoney block and before the crit prefix.
+    crate::sim::superweapon::launch_sw::apply_on_detonation(
+        world,
+        rules,
+        house,
+        impact,
+        warhead,
+        overlay_registry,
+        run.effects(),
+    );
     let chance = get_crit_chance(world, rules, warhead, source_id);
-    // `PossibleCellSpreadDetonate`, of which VERA reads the AttachEffect lists.
+    // `PossibleCellSpreadDetonate` (`Ext/WarheadType/Body.cpp`'s
+    // "List all Warheads here that respect CellSpread", read by
+    // `WarheadTypeExt::Detonate`): `RemoveDisguise`, `RemoveMindControl`,
+    // `Shield.Break`/`Respawn.Duration`/`SelfHealing.Duration`/
+    // `AttachTypes`/`RemoveTypes`/`RemoveAll`, `Convert.*`, the AttachEffect
+    // lists, `ChangeOwner`, `BuildingSell`, `BuildingUndeploy`,
+    // `ReverseEngineer`, `ReturnWarhead`, `PenetratesTransport.Level`,
+    // `Taunt`, `Ammo` and `IvanBomb.Detonate`. That list, or a live
+    // `Crit_CurrentChance`, is the only way into `DetonateOnOneUnit` and thus
+    // into the pass's two buffer draws: a warhead whose every member is off
+    // draws nothing.
     let attach = !warhead.attach_effect.is_empty();
-    if !(attach || chance > 0.0) {
+    let penetrates = warhead.phobos_penetrates_transport.level > 0;
+    let shield_modifiers = warhead.shield.has_per_target_modifier();
+    let convert_pairs = !warhead.phobos_convert_pairs.is_empty();
+    let return_warhead = warhead
+        .phobos_return_warhead
+        .warhead
+        .as_deref()
+        .is_some_and(|name| rules.warhead(name).is_some());
+    let change_owner = warhead.phobos_change_owner;
+    // The remaining members. `IvanBomb.Detonate` is one: its fused bombs are
+    // not ported, but the member still draws the two buffers native makes.
+    // `CanKill` and the `Prevent*Escape` arms are not members — they run in
+    // ReceiveDamage and the death arms, so they never force this loop.
+    let warhead_extras = warhead.phobos_extras.has_per_target_effect()
+        || warhead.ammo != 0
+        || warhead.remove_disguise
+        || warhead.reverse_engineer
+        || warhead.taunt
+        || warhead.phobos_ivan_bomb_detonate;
+    if !(attach
+        || penetrates
+        || chance > 0.0
+        || shield_modifiers
+        || convert_pairs
+        || return_warhead
+        || change_owner
+        || warhead_extras)
+    {
         return false;
     }
     let on_detonate = warhead
@@ -126,16 +279,17 @@ pub(crate) fn detonate(
         chance,
         buffer: 0.0,
         per_target: true,
+        return_buffer: 0.0,
     };
     if on_detonate {
         roll.per_target = crit.apply_chance_per_target(globals);
         if !roll.per_target {
             roll.buffer = world.scenario_rng.random_double();
         }
-        // `ReturnWarhead_RandomBuffer`: drawn for every such detonation, read
-        // only by the unported `ApplyReturnWarhead`.
+        // `ReturnWarhead_RandomBuffer`: drawn for every such detonation and
+        // read by [`apply_return_warhead`]'s shared-dice arm.
         if !crit.return_warhead_apply_chance_per_target(globals) {
-            world.scenario_rng.random_double();
+            roll.return_buffer = world.scenario_rng.random_double();
         }
         // One random pick per detonation, even when every target later fails a
         // gate: `CreateRandomAnim` draws before it constructs.
@@ -151,9 +305,208 @@ pub(crate) fn detonate(
     }
     let invoker = (source_id != 0).then_some(source_id);
     let mut active = false;
-    for target_id in detonation_targets(world, warhead, impact, intended_target, receivers) {
-        if !can_detonate_on(world, rules, warhead, house, target_id) {
+    for target_id in detonation_targets(world, rules, warhead, impact, intended_target) {
+        if !can_detonate_on(world, rules, warhead, house, target_id, invoker) {
             continue;
+        }
+        // Phobos `WarheadTypeExt::ExtData::ApplyRemoveMindControl`
+        // (`Detonate.cpp:207-208,477-486`): first, because it changes the
+        // target's House for every arm below. The freed target keeps the owner
+        // `FreeUnit` restored, and that House replaces the detonation's own.
+        if warhead.phobos_extras.remove_mind_control
+            && let Some(controller) = world
+                .substrate
+                .entities
+                .get(target_id)
+                .and_then(|target| target.mind_control.controller())
+        {
+            let silent = warhead
+                .phobos_extras
+                .mind_control_silent(rules.phobos_globals.remove_mind_control_silent);
+            world.free_unit_with_sound(
+                controller,
+                target_id,
+                rules,
+                overlay_registry,
+                run.effects(),
+                !silent,
+            );
+            house = world
+                .substrate
+                .entities
+                .get(target_id)
+                .map(|target| target.owner());
+        }
+        // Phobos `WarheadTypeExt::ExtData::ApplyOwnerChange`
+        // (`Detonate.cpp:207-211,488-522`): after RemoveMindControl and
+        // before ApplyConvert, the firing House takes the target; a
+        // `SetAsMindControl` capture respects psionic immunity, an existing
+        // mind-control link, and may ring the new capture.
+        if warhead.phobos_change_owner {
+            apply_change_owner(
+                world,
+                rules,
+                overlay_registry,
+                warhead,
+                house,
+                target_id,
+                run.effects(),
+            );
+        }
+        // Phobos `WarheadTypeExt::ApplyConvert` (`Detonate.cpp:215,669-678`):
+        // before the PenetratesTransport arm, a Foot target converts through
+        // the first applicable pair.
+        world.phobos_apply_type_convert_pairs(
+            target_id,
+            &warhead.phobos_convert_pairs,
+            house,
+            rules,
+            run.effects(),
+        );
+        // Phobos `WarheadTypeExt::ExtData::ApplyBuildingUndeploy`
+        // (`Detonate.cpp:213-214,266-352`): after `RemoveMindControl`,
+        // `ChangeOwner` and `ApplyConvert`, a hit building is sold, else
+        // packed up into its `UndeploysInto=` unit.
+        if warhead.phobos_extras.building_sell || warhead.phobos_extras.building_undeploy {
+            super::building_sell::apply(
+                world,
+                rules,
+                overlay_registry,
+                warhead,
+                target_id,
+                run.effects(),
+            );
+        }
+        // `DetonateOnOneUnit`'s `ApplyAmmoModifier(pTarget)`
+        // (`Detonate.cpp:221-222,923-932`): before RemoveDisguise, the delta
+        // clamps into `0..type->Ammo`.
+        if warhead.ammo != 0 {
+            let max_ammo = world
+                .substrate
+                .entities
+                .get(target_id)
+                .and_then(|target| world.interner.object_type(target.type_ref(), rules))
+                .map_or(0, |object| object.ammo);
+            if let Some(ammo) = world
+                .substrate
+                .entities
+                .get_mut(target_id)
+                .and_then(|target| target.ammo_mut())
+            {
+                ammo.apply_warhead_delta(warhead.ammo, max_ammo);
+            }
+        }
+        // `DetonateOnOneUnit`'s `ApplyRemoveDisguise(pTarget)`
+        // (`Detonate.cpp:224-225,466-475`): after the one-time Ammo arm and
+        // before ReverseEngineer/ReturnWarhead. Infantry clears the `Disguised`
+        // flag only; a Unit also clears the recorded identity.
+        if warhead.remove_disguise {
+            let frame = world.session.binary_frame() as u32;
+            if let Some(target) = world.substrate.entities.get_mut(target_id)
+                && target
+                    .disguise
+                    .as_ref()
+                    .is_some_and(|disguise| disguise.is_disguised())
+            {
+                if target.category() == EntityCategory::Unit {
+                    target.disguise_mut(frame).clear_unit();
+                } else {
+                    target.disguise_mut(frame).clear_flag();
+                }
+            }
+        }
+        // `DetonateOnOneUnit`'s `ApplyReverseEngineer(pHouse, pTarget)`
+        // (`Detonate.cpp:227-228,260-264`): after the one-time Ammo and
+        // RemoveDisguise arms and before ReturnWarhead. A firing house that is
+        // not `MultiplayPassive` records the victim's type through Ares'
+        // HouseExt::ExtData::ReverseEngineer (10022360), which only exists
+        // with Ares.
+        if warhead.reverse_engineer
+            && let Some(owner) = house
+            && !world
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.multiplay_passive())
+            && let Some(type_ref) = world
+                .substrate
+                .entities
+                .get(target_id)
+                .map(|target| target.type_ref())
+            && let Some(victim_type) = world.object_type(type_ref, rules)
+        {
+            world.ares_reverse_engineer_house(owner, victim_type, rules);
+        }
+        // `DetonateOnOneUnit`'s `ApplyReturnWarhead(pHouse, pTarget, pOwner)`
+        // (`Detonate.cpp:229-231`): after the displacement arms and before
+        // `PenetratesTransport`.
+        super::phobos_return_warhead::apply(
+            world,
+            run,
+            rules,
+            overlay_registry,
+            warhead,
+            roll.return_buffer,
+            on_detonate,
+            house,
+            source_id,
+            target_id,
+            effects,
+        );
+        // `DetonateOnOneUnit`'s PenetratesTransport arm (`Detonate.cpp:233`):
+        // before the attach-effect and crit blocks, the shot reaches the
+        // target's passengers. Shields resolve inside the passenger receiver.
+        super::penetrates_transport::apply(
+            world,
+            run,
+            rules,
+            overlay_registry,
+            warhead,
+            warhead_ref,
+            source_id,
+            house,
+            target_id,
+            damage,
+            impact,
+            effects,
+        );
+        // `DetonateOnOneUnit`'s Taunt arm (`Detonate.cpp:236-237`): after the
+        // penetrate/displacement effects and before the shield modifiers, a
+        // hit target is ordered to `Mission::Attack` the firing techno.
+        if warhead.taunt && source_id != 0 {
+            let _ = world.override_mission_on_damage_response(
+                target_id,
+                source_id,
+                rules,
+                run.effects(),
+            );
+        }
+        // `DetonateOnOneUnit`'s `IvanBombDetonate(pOwner, pTarget)` arm
+        // (`Detonate.cpp:239-240`): right after the Taunt arm and before the
+        // shield modifiers, the bombs the target carries have their fuse cut
+        // to the current frame.
+        if warhead.phobos_ivan_bomb_detonate {
+            world.phobos_ivan_bomb_detonate(
+                target_id,
+                (source_id != 0).then_some(source_id),
+                warhead,
+            );
+        }
+        // `DetonateOnOneUnit`'s `ApplyShieldModifiers(pTarget)`
+        // (`Detonate.cpp:240`): after the PenetratesTransport arm and before
+        // the attach-effect and crit blocks, so the receiver's damage hits
+        // the removed, replaced or reconfigured shield.
+        let shield_shots =
+            crate::sim::shield::apply_shield_modifiers(world, rules, warhead, target_id);
+        if !shield_shots.is_empty() {
+            // `FireWeaponAtSelf`'s `WeaponTypeExt::DetonateAt` shot: the break
+            // weapon detonates on the shield owner inside the per-target
+            // pass, committed through this run.
+            let detonations = world.shield_break_detonations(shield_shots, rules);
+            let commit = commit_projectiles(world, run, &detonations, rules, overlay_registry);
+            effects.append(commit.effects);
+            effects
+                .under_attack_events
+                .extend(commit.under_attack_events);
         }
         if attach {
             world.apply_warhead_attach_effects(
@@ -167,6 +520,7 @@ pub(crate) fn detonate(
             );
         }
         if chance > 0.0
+            && !suppress_crit
             && apply_one(
                 world,
                 run,
@@ -187,16 +541,80 @@ pub(crate) fn detonate(
     active
 }
 
+/// Phobos `WarheadTypeExt::Detonate`'s `TransactMoney` block
+/// (`Ext/WarheadType/Detonate.cpp:102-111`): `pHouse->TransactMoney(amount)`
+/// on the decided house — the bullet owner's house, else `FirerHouse` for the
+/// `BulletClass_Detonate @ 0x46920B` hook, or the passed source house for
+/// `MapClass_DamageArea @ 0x489286`. The credits go to the firing house, not
+/// the target's: Phobos documents the key as "warheads can now give credits to
+/// its owner at impact". `HouseClass::TransactMoney` is the YRpp wrapper over
+/// `Add_Credits @ 0x004F9950` for a positive amount and `Spend_Money
+/// @ 0x004F9790` for a negative one.
+///
+/// With `TransactMoney.Display` the label is `FlyingStrings::AddMoneyString(
+/// amount, nullptr, pHouse, Houses, coords, Offset)`: `nullptr` source, so no
+/// visual-character test; `coords` is the firer's `Location` under `AtFirer`
+/// when the firer is known, otherwise the impact point.
+fn apply_transact_money(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    warhead: &WarheadType,
+    house: Option<InternedId>,
+    firer_id: u64,
+    impact: ProjectileCoord,
+    effects: crate::sim::world::FrameEffects<'_>,
+) {
+    let settings = &warhead.transact_money;
+    if settings.amount == 0 {
+        return;
+    }
+    let Some(house) = house else {
+        return;
+    };
+    transact_money(&mut world.houses, house, settings.amount);
+    if !settings.display {
+        return;
+    }
+    let coord = if settings.display_at_firer && firer_id != 0 {
+        world
+            .substrate
+            .entities
+            .get(firer_id)
+            .map_or(impact, |firer| {
+                let location = crate::sim::movement::ground_pose::object_location(
+                    firer,
+                    world.resolved_terrain.as_ref(),
+                );
+                ProjectileCoord::new(location.x, location.y, location.z)
+            })
+    } else {
+        impact
+    };
+    effects.emit_bounty_text(
+        world,
+        rules,
+        crate::sim::flying_text::BountyText {
+            entity_id: None,
+            amount: settings.amount,
+            coord,
+            z_offset: 0,
+            display_to: Some(settings.display_houses),
+            display_owner: Some(house),
+            pixel_offset: settings.display_offset,
+        },
+    );
+}
+
 /// `DetonateOnOneUnit`'s target gate (`Detonate.cpp:203..207`): a live,
 /// placed, non-sinking target not being warped out, then
 /// `WarheadTypeExt::CanTargetHouse` and `CanAffectTarget`.
-#[cfg(feature = "phobos")]
 fn can_detonate_on(
     world: &Simulation,
     rules: &RuleSet,
     warhead: &WarheadType,
     house: Option<InternedId>,
     target_id: u64,
+    invoker: Option<u64>,
 ) -> bool {
     let Some(target) = world.substrate.entities.get(target_id) else {
         return false;
@@ -212,21 +630,33 @@ fn can_detonate_on(
     if !crate::sim::shield::can_target_house(warhead, house, target.owner(), world) {
         return false;
     }
-    can_affect_target(world, rules, warhead, target)
+    can_affect_target(world, rules, warhead, target, invoker)
 }
 
-/// `WarheadTypeExt::CanAffectTarget` (`WarheadType/Body.cpp:37..57`) past
-/// its unread threshold gates: with `EffectsRequireVerses`, the
-/// `AffectsAir`/`AffectsGround` split on `IsInAir` (`0x005F6B90`) and a
-/// non-zero `GetWarheadVersusArmor`. Under Ares that is the raw Verses;
-/// without it `GetTotalDamage(100, WH, armor, 0) / 100`.
-#[cfg(feature = "phobos")]
-fn can_affect_target(
+/// `WarheadTypeExt::CanAffectTarget` (`WarheadType/Body.cpp:37..57`): the
+/// health, veterancy and invoker trigger gates, then with
+/// `EffectsRequireVerses` the `AffectsAir`/`AffectsGround` split on `IsInAir`
+/// (`0x005F6B90`) and a non-zero `GetWarheadVersusArmor`. Under Ares that is
+/// the raw Verses; without it `GetTotalDamage(100, WH, armor, 0) / 100`.
+pub(crate) fn can_affect_target(
     world: &Simulation,
     rules: &RuleSet,
     warhead: &WarheadType,
     target: &crate::sim::game_entity::GameEntity,
+    invoker: Option<u64>,
 ) -> bool {
+    let object = world.interner.object_type(target.type_ref(), rules);
+    if !super::warhead_triggers_allow(
+        warhead,
+        target,
+        object,
+        invoker,
+        rules
+            .phobos_globals
+            .affects_invoker_only_ignore_invoker_state,
+    ) {
+        return false;
+    }
     if !warhead.effects_require_verses {
         return true;
     }
@@ -254,6 +684,7 @@ fn can_affect_target(
             0,
             world.session.no_damage(),
             rules.combat_damage.max_damage,
+            warhead.apply_modifiers_on_negative_damage(rules),
         ) != 0
     }
 }
@@ -261,7 +692,6 @@ fn can_affect_target(
 /// `WarheadTypeExt::GetCritChance` (`Detonate.cpp:745..791`): zero for a
 /// warhead that cannot crit, else its `Crit.Chance`, the `CRITCHANCE` rank
 /// ability's `VeteranCritChance` and the AttachEffect fold.
-#[cfg(feature = "phobos")]
 fn get_crit_chance(
     world: &Simulation,
     rules: &RuleSet,
@@ -321,8 +751,7 @@ fn get_crit_chance(
     chance + extra_chance
 }
 
-#[cfg(feature = "phobos")]
-fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> bool {
+pub(crate) fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> bool {
     match rank {
         VeterancyRank::Rookie => false,
         VeterancyRank::Veteran => object.phobos_abilities().has(slot, false),
@@ -332,7 +761,6 @@ fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> 
 
 /// One `ApplyCrit`: dice, immunity/health/house/cell/techno gates in native
 /// order, then the crit's animations and damage.
-#[cfg(feature = "phobos")]
 #[allow(clippy::too_many_arguments)]
 fn apply_one(
     world: &mut Simulation,
@@ -418,7 +846,14 @@ fn apply_one(
     if !cell_eligible(land, crit.affects_target(), None, false) {
         return false;
     }
-    if !techno_eligible(target.category(), crit.affects_target()) {
+    if !techno_eligible(
+        target.category(),
+        crit.affects_target(),
+        world
+            .interner
+            .object_type(target.type_ref(), rules)
+            .is_some_and(|object| object.is_vehicle()),
+    ) {
         return false;
     }
 
@@ -439,7 +874,89 @@ fn apply_one(
     applied
 }
 
-#[cfg(feature = "phobos")]
+fn apply_spawns_crate(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    warhead: &WarheadType,
+    house: Option<InternedId>,
+    impact: ProjectileCoord,
+    effects: crate::sim::world::FrameEffects<'_>,
+) {
+    // `Detonate.cpp:49` encloses the SpawnsCrate block in `if (pHouse)`: a
+    // house-less detonation draws nothing and places nothing.
+    let Some(_house) = house else {
+        return;
+    };
+    let settings = &warhead.phobos_spawns_crate;
+    if settings.types.is_empty() {
+        return;
+    }
+    let dice = world.scenario_rng.random_double();
+    let Some(index) = super::phobos_extra_warheads::choose_one_weighted(dice, &settings.weights)
+    else {
+        return;
+    };
+    let Some(&powerup) = settings.types.get(index) else {
+        return;
+    };
+    let Some(registry) = overlay_registry else {
+        return;
+    };
+    let cell = (
+        crate::util::lepton::lepton_to_cell(impact.x)
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+        crate::util::lepton::lepton_to_cell(impact.y)
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+    );
+    if let Err(error) =
+        crate::sim::crates::place_crate(world, rules, registry, cell, Some(powerup as u8), effects)
+    {
+        log::debug!("SpawnsCrate placement failed: {error}");
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_change_owner(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    warhead: &WarheadType,
+    house: Option<InternedId>,
+    target_id: u64,
+    effects: crate::sim::world::FrameEffects<'_>,
+) {
+    let Some(house) = house else {
+        return;
+    };
+    let is_mind_control = warhead.phobos_change_owner_set_as_mind_control;
+    let immune = {
+        let Some(target) = world.substrate.entities.get(target_id) else {
+            return;
+        };
+        let psionic = is_mind_control
+            && world
+                .object_type(target.type_ref(), rules)
+                .is_some_and(|object| object.immune_to_psionics);
+        psionic || target.mind_control.is_mind_controlled()
+    };
+    if immune {
+        return;
+    }
+    world.change_owner_with_rules(target_id, house, rules, overlay_registry, effects);
+    if is_mind_control {
+        // `MindControlledByAUnit` is Techno+0x2C4, VERA's
+        // `MindControlLink::permanent`; `IsMindControlled` and the capture
+        // admission read it, so a second `SetAsMindControl` hit refuses.
+        if let Some(target) = world.substrate.entities.get_mut(target_id) {
+            target.mind_control.mark_permanent_control();
+        }
+        if let Some(anim) = warhead.phobos_change_owner_mind_control_anim.as_deref() {
+            world.attach_control_ring(target_id, anim, rules);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn crit_effects(
     world: &mut Simulation,
@@ -573,8 +1090,7 @@ fn crit_effects(
 /// `TechnoExt::GetCurrentFirepowerMultiplier`: `Techno+0x158`-adjacent
 /// `FirepowerMultiplier`, the house bias, the FIREPOWER rank stage and an
 /// occupiable building's `OccupyDamageMultiplier=`.
-#[cfg(feature = "phobos")]
-fn current_firepower_multiplier(
+pub(crate) fn current_firepower_multiplier(
     world: &Simulation,
     rules: &RuleSet,
     entity: &crate::sim::game_entity::GameEntity,
@@ -609,7 +1125,6 @@ fn current_firepower_multiplier(
 /// `explicitEmptyCells = true`, `None` when it does not; `bridge_land` is
 /// `considerBridgesLand && ContainsBridge()`, which reads a bridged water cell
 /// as land.
-#[cfg(feature = "phobos")]
 pub(crate) fn cell_eligible(
     land: Option<LandType>,
     allowed: AffectedTarget,
@@ -634,10 +1149,13 @@ pub(crate) fn cell_eligible(
 }
 
 /// `EnumFunctions::IsTechnoEligible` with `considerAircraftSeparately =
-/// false`: the content flags split by class, aircraft under the Unit bit and
-/// buildings under the Building bit.
-#[cfg(feature = "phobos")]
-pub(crate) fn techno_eligible(category: EntityCategory, allowed: AffectedTarget) -> bool {
+/// false`: the content flags split by class, aircraft under the Unit bit, and
+/// a 1x1-with-undeploy building (`IsStrange`) under the Unit bit too.
+pub(crate) fn techno_eligible(
+    category: EntityCategory,
+    allowed: AffectedTarget,
+    strange_building: bool,
+) -> bool {
     if allowed == AffectedTarget::ALL {
         return true;
     }
@@ -647,6 +1165,7 @@ pub(crate) fn techno_eligible(category: EntityCategory, allowed: AffectedTarget)
             EntityCategory::Unit | EntityCategory::Aircraft => {
                 allowed.contains(AffectedTarget::UNIT)
             }
+            EntityCategory::Structure if strange_building => allowed.contains(AffectedTarget::UNIT),
             EntityCategory::Structure => allowed.contains(AffectedTarget::BUILDING),
         };
     }
@@ -655,7 +1174,6 @@ pub(crate) fn techno_eligible(category: EntityCategory, allowed: AffectedTarget)
 
 /// `AnimExt::CreateRandomAnim` (`Ext/Anim/Body.cpp:407..432`): one random
 /// entry constructed at the coordinates, owned by the firing house.
-#[cfg(feature = "phobos")]
 fn spawn_anim_at_world_coord(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -671,7 +1189,6 @@ fn spawn_anim_at_world_coord(
     spawn_anim_at_coord(world, rules, name, world_coord, owner_house);
 }
 
-#[cfg(feature = "phobos")]
 fn spawn_anim_at_coord(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -693,25 +1210,27 @@ fn spawn_anim_at_coord(
     }
 }
 
-/// The targets `DetonateOnOneUnit` visits for this detonation: every collected
-/// entity receiver in order for a cell-spread warhead, else the intended target
-/// within 64 leptons of the impact (Ares' quarter-cell tolerance).
-#[cfg(feature = "phobos")]
+/// The targets `DetonateOnOneUnit` visits for this detonation: every item of
+/// Phobos' `getCellSpreadItemsExt` walk for a cell-spread warhead, else the
+/// intended target within 64 leptons of the impact (Ares' quarter-cell
+/// tolerance).
 fn detonation_targets(
     world: &Simulation,
+    rules: &RuleSet,
     warhead: &WarheadType,
     impact: ProjectileCoord,
     intended_target: Option<u64>,
-    receivers: &[AreaDamageReceiver],
 ) -> Vec<u64> {
     if warhead.cell_spread_f64 > 0.0 {
-        return receivers
-            .iter()
-            .filter_map(|receiver| match receiver {
-                AreaDamageReceiver::Entity(event) => Some(event.target_id),
-                AreaDamageReceiver::Terrain(_) => None,
-            })
-            .collect();
+        // `getCellSpreadItemsExt(..., includeInAir = true,
+        // CellSpread_Cylinder)` (`Ext/WarheadType/Detonate.cpp:174-175`).
+        return super::phobos_airburst::cell_spread_technos(
+            world,
+            rules,
+            impact,
+            warhead.cell_spread_f64,
+            warhead.phobos_cell_spread_cylinder,
+        );
     }
     intended_target
         .filter(|&id| {
@@ -729,3 +1248,7 @@ fn detonation_targets(
         .into_iter()
         .collect()
 }
+
+#[cfg(all(test, tests_sim_combat_a_c))]
+#[path = "remove_mind_control_tests.rs"]
+mod tests;

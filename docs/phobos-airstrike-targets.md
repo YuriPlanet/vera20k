@@ -1,6 +1,6 @@
 # Optional Phobos airstrike target eligibility
 
-Build with `--features phobos` to choose which types an `Airstrike=` warhead
+Phobos is in every build; turn it on from a game's data to choose which types an `Airstrike=` warhead
 may designate, independently of `CanC4=`, and to let the aircraft follow a
 non-building target instead of the cell it stood on.
 
@@ -48,6 +48,12 @@ Phobos.
   target is a building. Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)`
   ("Allow airstrike flare draw to foot") skips that gate, so the line reaches
   a foot target as well.
+
+## Residuals
+
+The designation cursor answers `AllowAirstrike` from the same eligibility helper, but it does not
+apply the C4 clause the weapon choice uses for a secondary-only building; native's cursor is the same
+way, so this is a cursor-versus-fire asymmetry rather than a port gap.
 
 ## Where VERA20K owns it
 

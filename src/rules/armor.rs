@@ -40,12 +40,16 @@ impl ArmorId {
 /// Native armor-name lookup772A50: ASCII case-insensitive, unknown names map
 /// to None0. ReadString owns trimming/capacity before this lookup.
 pub fn armor_index(name: &str) -> ArmorId {
-    ArmorId::from_index(
-        RETAIL_ARMOR_NAMES
-            .iter()
-            .position(|candidate| candidate.eq_ignore_ascii_case(name))
-            .unwrap_or(0),
-    )
+    try_armor_index(name).unwrap_or(ArmorId::NONE)
+}
+
+/// [`armor_index`] without the unknown-name fallback, for readers where a
+/// failed lookup retains the current value (Phobos `Nullable<ArmorType>`).
+pub fn try_armor_index(name: &str) -> Option<ArmorId> {
+    RETAIL_ARMOR_NAMES
+        .iter()
+        .position(|candidate| candidate.eq_ignore_ascii_case(name))
+        .map(ArmorId::from_index)
 }
 
 /// A call-local immutable projection of one warhead/armor interaction.

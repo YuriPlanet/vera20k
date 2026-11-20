@@ -1037,12 +1037,17 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };
-        let Some(strength) = self
+        let Some((strength, damaged_speed)) = self
             .substrate
             .entities
             .get(id)
             .and_then(|actor| self.interner.object_type(actor.type_ref(), rules))
-            .map(|object| object.strength)
+            .map(|object| {
+                (
+                    object.strength,
+                    super::track_speed::damaged_speed_factor(object, rules),
+                )
+            })
         else {
             return;
         };
@@ -1058,6 +1063,7 @@ impl Simulation {
             &terrain_speed,
             (cell.0 as u16, cell.1 as u16),
             road,
+            damaged_speed,
         );
     }
 

@@ -339,6 +339,7 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
         rules,
         None,
         crate::sim::world::FrameEffects::default(),
+        true,
     );
     let ids = sim.voxel_anims().ids();
     assert!(!ids.is_empty(), "stock HARV death must admit its TIREs");

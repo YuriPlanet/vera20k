@@ -58,6 +58,9 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+    /// Phobos `SurfaceExt::BlurRect`'s GPU pass, built on first use against
+    /// the composition's format; the tooltip draw owns its gate and rect.
+    pub(crate) tooltip_blur: Option<crate::render::tooltip_blur::TooltipBlurRenderer>,
     /// The finished terrain layer, kept while its inputs hold still.
     pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,
     /// gamemd's Z-buffer row seed, which lives as long as its Z buffer: one

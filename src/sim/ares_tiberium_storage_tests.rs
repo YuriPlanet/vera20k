@@ -185,3 +185,88 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
     assert_eq!(house_stored(&sim, rival), 20);
     assert_eq!(stored(&sim, spare), 20);
 }
+
+/// Phobos `[General] Storage.TiberiumIndex` (`Ext/Rules/Body.cpp:109`,
+/// constructor `-1` `Body.h:568`; `Ext/House/Hooks.cpp:61-79`, hook
+/// `0x73E474`): a `Refinery.UseStorage` deposit converts to the storage
+/// type by the two types' values before the house store sees it; `-1`
+/// keeps the original type and amount.
+#[test]
+fn the_storage_tiberium_index_converts_the_deposit_type() {
+    let rules_with = |index: Option<i32>| {
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Tiberiums]\n0=Riparius\n1=Cruentus\n[Riparius]\nValue=25\n[Cruentus]\nValue=50\n\
+             [BuildingTypes]\n0=REFN\n[REFN]\nStrength=900\nRefinery=yes\nStorage=10\n\
+             Refinery.UseStorage=yes\n",
+        ))
+        .unwrap();
+        if let Some(index) = index {
+            rules.phobos_globals.storage_tiberium_index = index;
+        }
+        rules
+    };
+    let scene = |rules: &RuleSet| {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
+        let refinery = sim
+            .spawn_object("REFN", "Americans", 4, 4, 0, rules)
+            .unwrap();
+        (sim, owner, refinery)
+    };
+
+    let rules = rules_with(Some(1));
+    let (mut sim, owner, refinery) = scene(&rules);
+    deposit(&mut sim, &rules, refinery, 10);
+    let store = sim.ares_ledger_store(refinery).unwrap();
+    assert_eq!(store.total_amount(), 5, "25/50 turns ten bales into five");
+    assert_eq!(store.amounts()[0].bits(), 0.0f32.to_bits());
+    assert_eq!(store.amounts()[1].bits(), 5.0f32.to_bits());
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
+
+    let rules = rules_with(None);
+    let (mut sim, _owner, refinery) = scene(&rules);
+    deposit(&mut sim, &rules, refinery, 10);
+    let store = sim.ares_ledger_store(refinery).unwrap();
+    assert_eq!(
+        (store.total_amount(), store.amounts()[1].bits()),
+        (10, 0.0f32.to_bits()),
+        "the -1 constructor keeps the original index"
+    );
+
+    let rules = rules_with(Some(0));
+    let (mut sim, _owner, refinery) = scene(&rules);
+    deposit(&mut sim, &rules, refinery, 10);
+    let store = sim.ares_ledger_store(refinery).unwrap();
+    assert_eq!(
+        store.amounts()[0].bits(),
+        10.0f32.to_bits(),
+        "the same storage type keeps the amount"
+    );
+}
+
+/// Phobos `Storage.TiberiumIndex` conversion math (`Ext/Building/Body.cpp:
+/// 77-94`): the deposit converts in binary32 by the two types' values.
+#[test]
+fn the_storage_conversion_uses_the_binary32_value_ratio() {
+    use crate::util::native_x87::NativeF32Bits;
+    let bits = |amount: f32| NativeF32Bits::from_bits(amount.to_bits());
+    assert_eq!(
+        super::phobos_storage_conversion(bits(10.0), 25, 50).bits(),
+        5.0f32.to_bits()
+    );
+    assert_eq!(
+        super::phobos_storage_conversion(bits(10.0), 50, 50).bits(),
+        10.0f32.to_bits()
+    );
+    assert_eq!(
+        super::phobos_storage_conversion(bits(10.0), 75, 50).bits(),
+        15.0f32.to_bits()
+    );
+    // A float conversion keeps the half bale; an integer ratio would not.
+    assert_eq!(
+        super::phobos_storage_conversion(bits(7.0), 25, 50).bits(),
+        3.5f32.to_bits()
+    );
+}

@@ -664,15 +664,17 @@ pub(super) fn ground_strike(
             && let Some(warhead) = rules.warhead(name)
         {
             let warhead_ref = sim.interner.intern(name);
-            sim.combat_light_requests
-                .emit(crate::sim::combat::CombatLightRequest::Impact {
-                    target_id: None,
-                    damage,
-                    warhead_ref,
-                    coord: coordinate,
-                    force_create: false,
-                    flags: 0,
-                });
+            if crate::sim::combat::combat_light_chance_admits(sim, rules, warhead_ref) {
+                sim.combat_light_requests
+                    .emit(crate::sim::combat::CombatLightRequest::Impact {
+                        target_id: None,
+                        damage,
+                        warhead_ref,
+                        coord: coordinate,
+                        force_create: false,
+                        flags: 0,
+                    });
+            }
             bridge_changed = crate::sim::combat::world_receiver::apply_area_damage(
                 sim,
                 rules,

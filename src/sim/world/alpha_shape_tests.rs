@@ -47,7 +47,7 @@ fn a_loaded_alpha_image_glows_from_unlimbo_until_the_purge_after_expiry() {
     // bias, less half the 61x31 canvas.
     assert_eq!(
         sim.alpha_shapes().collect::<Vec<_>>(),
-        [([-30, 135], "GLOW")]
+        [([-30, 135], "GLOW", false)]
     );
 
     let lamp = sim

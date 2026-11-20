@@ -220,6 +220,18 @@ pub struct WeaponType {
     pub is_laser: bool,
     /// Weapon fires a disk-shaped laser (Vortex) (+0x14a).
     pub disk_laser: bool,
+    /// Phobos `DiskLaser.Radius=` (`Ext/WeaponType/Body.cpp:86`,
+    /// `Valueable<double>` constructed at `DiskLaserClass::Radius` = 240 at
+    /// `Ext/WeaponType/Body.h:28,123`): the ring radius a disk laser fired by
+    /// this weapon draws. `DiskLaser_Circle` (hook `0x4A757B`,
+    /// `Ext/WeaponType/Hooks.DiskLaserRadius.cpp:27-42`) rebuilds the
+    /// 16-point table when the value differs from the last applied radius.
+    /// Phobos `ProjectileRange.ApplyModifiers=` (`Ext/WeaponType/Body.cpp:88`,
+    /// `Nullable<bool>` unset at `Body.h:30,125`): whether a `Ranged=`
+    /// projectile's initial range folds `GetRangeWithModifiers`; unset takes
+    /// `[CombatDamage] ProjectileRange.ApplyModifiers` (default true).
+    pub phobos_projectile_range_apply_modifiers: Option<bool>,
+    pub phobos_disk_laser_radius: f64,
     /// Weapon draws a visible line to target (+0x14b).
     pub is_line: bool,
     /// Weapon fires a thicker laser beam (+0x14c).
@@ -274,31 +286,254 @@ pub struct WeaponType {
     /// Phobos `ROF.RandomDelay` (`WeaponType/Body.cpp:134`,
     /// `Nullable<PartialVector2D<int>>`): this weapon's full-rearm jitter
     /// range; `None` inherits `[CombatDamage]`.
-    #[cfg(feature = "phobos")]
     pub rof_random_delay: Option<crate::rules::ini_value::PartialIntPair>,
+    /// Phobos `WeaponTypeExt::Burst_Delays` (`Ext/WeaponType/Body.cpp:120`,
+    /// `ValueableVector<int>` declared at `Body.h:52`, default empty at
+    /// `Body.h:147`): one rearm delay per burst shot, consumed by
+    /// [`Self::phobos_burst_delay`] through the `0x6FD05E` GetROF hook.
+    pub phobos_burst_delays: Vec<i32>,
+    /// Phobos `WeaponTypeExt::Burst_FireWithinSequence`
+    /// (`Ext/WeaponType/Body.cpp:121`, declared `Body.h:53`, default false
+    /// `Body.h:148`): an infantry firing sequence fires the burst's later shots
+    /// at cumulative-delay frames (`world_fire`'s admission) instead of one per
+    /// frame. The unit arm of the same hook is gated on `UnitTypeExt::FireUp`,
+    /// which VERA does not read yet.
+    pub phobos_burst_fire_within_sequence: bool,
+    /// Phobos `WeaponTypeExt::Burst_NoDelay` (`Ext/WeaponType/Body.cpp:122`,
+    /// `Valueable<bool>`, default false): an infantry or vehicle firer empties
+    /// the whole burst in one frame instead of one shot per frame. Only the
+    /// `InfantryClass::Fire_AG` and `UnitClass::Fire_AG` firing paths read it
+    /// (hooks `0x5209EE` / `0x736F67`), and only when `Burst` is above 1.
+    pub phobos_burst_no_delay: bool,
+    /// Phobos `WeaponTypeExt::DelayedFire_Duration` (`Ext/WeaponType/Body.cpp:189`,
+    /// `Nullable<PartialVector2D<int>>`, game frames). A key authored with no
+    /// parsable field stays unset, which is what `Nullable::Read` leaves. The
+    /// `isset` state also drives the `Burst.NoDelay` compatibility gate
+    /// ([`Self::delayed_fire_allows_burst_repeat`]); the value itself is consumed
+    /// by the `0x6FDDC0` gate (`src/Ext/Techno/Hooks.Firing.cpp:638-693`) as the
+    /// delay timer's duration.
+    pub(crate) phobos_delayed_fire_duration: Option<crate::rules::ini_value::PartialIntPair>,
+    /// Phobos `WeaponTypeExt::DelayedFire_OnlyOnInitialBurst` (`Body.cpp:197`,
+    /// `Valueable<bool>` declared at `Body.h:105`, default false at `Body.h:201`):
+    /// the second half of that gate.
+    pub(crate) phobos_delayed_fire_only_on_initial_burst: bool,
+    /// The other nine `DelayedFire.*` keys, read by
+    /// `WeaponTypeExt::LoadFromINIFile` (`src/Ext/WeaponType/Body.cpp:190-199`),
+    /// declared at `Body.h:98-107` and defaulted at `Body.h:194-203`; serialized
+    /// at `Body.cpp:299-309`. All are consumed by the `0x6FDDC0` gate
+    /// (`src/Ext/Techno/Hooks.Firing.cpp:638-693`) and its animation helpers
+    /// (`src/Ext/Techno/Body.cpp:658-697`).
+    ///
+    /// `DelayedFire_SkipInTransport` (`Body.cpp:190`, `Body.h:98`, default
+    /// false): `TechnoClass_FireAt_BeforeTruelyFire @ 0x6FDDC0` suppresses the
+    /// delay for a firer whose `TechnoClass+0x11C` Transporter is set.
+    pub(crate) phobos_delayed_fire_skip_in_transport: bool,
+    /// `DelayedFire_Animation` (`Body.cpp:191`, `Body.h:99`, `Valueable<AnimTypeClass*>`,
+    /// default null): the wind-up anim. A blank value sets null; a non-type
+    /// token such as `none` fails the native parse and keeps the prior value.
+    /// VERA reads the merged section once from the constructor's null, so both
+    /// spellings end at null here.
+    pub(crate) phobos_delayed_fire_animation: Option<String>,
+    /// `DelayedFire_OpenToppedAnimation` (`Body.cpp:192`, `Body.h:100`,
+    /// `Nullable<AnimTypeClass*>`, default unset): an open-topped override.
+    /// `none`/`<none>`/`<default>` clear the nullable (leave it unset), which
+    /// the `0x6FDDC0` gate answers by falling back to `Animation`.
+    pub(crate) phobos_delayed_fire_open_topped_animation: Option<String>,
+    /// `DelayedFire_AnimIsAttached` (`Body.cpp:193`, `Body.h:101`, default
+    /// true): `TechnoExt::CreateDelayedFireAnim` (`Body.cpp:671-697`) only
+    /// calls `SetOwnerObject @ 0x00424B50` and registers
+    /// `CurrentDelayedFireAnim` when this is set.
+    pub(crate) phobos_delayed_fire_anim_is_attached: bool,
+    /// `DelayedFire_CenterAnimOnFirer` (`Body.cpp:194`, `Body.h:102`, default
+    /// false): `Body.cpp:677-680` short-circuits the FLH path with
+    /// `GetCenterCoords()`.
+    pub(crate) phobos_delayed_fire_center_anim_on_firer: bool,
+    /// `DelayedFire_RemoveAnimOnNoDelay` (`Body.cpp:195`, `Body.h:103`, default
+    /// false): `TechnoExt::ResetDelayedFireTimer @ 0x6FDDC0`
+    /// (`Body.cpp:658-669`) force-destroys the tracked anim on reset; only
+    /// stored on the AnimExt of an attached anim (`Body.cpp:691-695`), so it
+    /// is inert when `AnimIsAttached` is false.
+    pub(crate) phobos_delayed_fire_remove_anim_on_no_delay: bool,
+    /// `DelayedFire_PauseFiringSequence` (`Body.cpp:196`, `Body.h:104`, default
+    /// false): `0x6FDDC0` (`Hooks.Firing.cpp:658-662`) yields to
+    /// `TechnoExt::HandleDelayedFireWithPauseSequence` (`Body.cpp:699-750`),
+    /// whose `UnitClass_AI @ 0x736480` hook freezes the firing-sequence frame.
+    pub(crate) phobos_delayed_fire_pause_firing_sequence: bool,
+    /// `DelayedFire_AnimOffset` (`Body.cpp:198`, `Body.h:106`,
+    /// `Nullable<CoordStruct>`, default unset): `Forward,Lateral,Height`
+    /// **replaces** the weapon FLH at `Hooks.Firing.cpp:680-681`.
+    pub(crate) phobos_delayed_fire_anim_offset: Option<[i32; 3]>,
+    /// `DelayedFire_AnimOnTurret` (`Body.cpp:199`, `Body.h:107`, default true):
+    /// passed as `isOnTurret` to `TechnoExt::GetFLHAbsoluteCoords`
+    /// (`Body.Internal.cpp:80-89`).
+    pub(crate) phobos_delayed_fire_anim_on_turret: bool,
     /// Phobos `WeaponTypeExt::CanTargetHouses` (`AffectedHouse::All` default),
     /// read for `Splits.UseWeaponTargeting`.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_can_target_houses: crate::rules::phobos_shields::AffectedHouse,
     /// Phobos `CanTarget`, `CanTarget.MinHealth`/`MaxHealth` and
     /// `CanTargetVeterancy`, read for `Splits.UseWeaponTargeting`.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_weapon_targeting: crate::rules::phobos_airburst::PhobosWeaponTargeting,
     /// Phobos `WeaponTypeExt::Laser_IsSingleColor` (`IsSingleColor=`): a
     /// simulated child laser draws one color instead of the inner/outer pair.
-    #[cfg(feature = "phobos")]
     pub phobos_laser_is_single_color: bool,
     /// Phobos `WeaponTypeExt::LaserThickness` (`LaserThickness=`,
     /// constructor default 3): a simulated child laser's line count.
-    #[cfg(feature = "phobos")]
     pub phobos_laser_thickness: i32,
+    /// Phobos `WeaponTypeExt::LaserZAdjust` (`Ext/WeaponType/Body.cpp:130`,
+    /// `Nullable<int>`, unset inherits `[AudioVisual] LaserZAdjust`, default
+    /// 0): added to the LaserZap zAdjust (`0x6FD3FD`,
+    /// `Misc/Hooks.LaserDraw.cpp:51-58`).
+    pub phobos_laser_z_adjust: Option<i32>,
+    /// Phobos `WeaponTypeExt::EBoltZAdjust` (`Ext/WeaponType/Body.cpp:131`,
+    /// `Nullable<int>`, unset inherits `[AudioVisual] EBoltZAdjust`, default
+    /// 0): added to the electric-bolt zAdjust (`Ext/EBolt/Hooks.cpp:215`).
+    pub phobos_ebolt_z_adjust: Option<i32>,
+    /// Phobos `EBoltZAdjust.ClampInitialDepthForBuilding=`
+    /// (`Ext/WeaponType/Body.cpp:132`, `Nullable<bool>` unset at
+    /// `Body.h:62,157`): the weapon's override of the
+    /// `[AudioVisual] EBoltZAdjust.ClampInitialDepthForBuilding` clamp for a
+    /// building's bolt.
+    pub phobos_ebolt_clamp_initial_depth_for_building: Option<bool>,
+    /// Phobos `WeaponTypeExt::Bolt_Duration` (`Ext/WeaponType/Body.cpp:101`,
+    /// `Valueable<int>`, constructor `Body.h:131` stores 17): the EBolt
+    /// lifetime exponent; `EBoltExt::CreateEBolt` stores
+    /// `1 << (clamp(value, 1, 31) - 1)` (`Ext/EBolt/Body.cpp:30`).
+    pub phobos_bolt_duration: i32,
+    /// Phobos `WeaponTypeExt::Bolt_Arcs` (`Ext/WeaponType/Body.cpp:100`,
+    /// `Valueable<int>`, constructor `Body.h` stores 8):
+    /// `EBoltExt::CreateEBolt` copies it to the bolt (`Ext/EBolt/Body.cpp:29`)
+    /// and `EBolt_DrawArcs` stops the subdivision at that plot index.
+    pub phobos_bolt_arcs: i32,
+    /// Phobos `WeaponTypeExt::Bolt_FollowFLH` (`Ext/WeaponType/Body.cpp:102`,
+    /// `Nullable<bool>`): whether the bolt follows its firer's FLH; unset
+    /// follows only a Unit (`Ext/EBolt/Hooks.cpp:113`).
+    pub phobos_bolt_follow_flh: Option<bool>,
     /// Phobos `WeaponTypeExt::Beam_IsHouseColor` (`Beam.IsHouseColor=`): a
     /// simulated child radiation beam takes the firing House's laser color.
-    #[cfg(feature = "phobos")]
     pub phobos_beam_is_house_color: bool,
+    /// Phobos `LaserPositionUpdate` (`Valueable<PositionFollow>`, default
+    /// none): which ends of this weapon's lasers follow their live objects.
+    pub laser_position_update: crate::rules::phobos_laser_tracking::PositionFollow,
+    /// Phobos `LaserPositionUpdate.StopOnFirerConvert` (`Nullable<bool>`):
+    /// stop following the firer once its TechnoType changes; `None` inherits
+    /// `[AudioVisual]`.
+    pub laser_position_update_stop_on_firer_convert: Option<bool>,
+    /// Phobos `WeaponTypeExt` ExtraWarheads (`Ext/WeaponType/Body.cpp:139-166`):
+    /// warheads detonated after this weapon's own at the same impact.
+    pub phobos_extra_warheads: crate::rules::phobos_extra_warheads::PhobosExtraWarheads,
+    /// Phobos `KeepRange=` (`Valueable<Leptons>`, `Ext/WeaponType/Body.cpp:179`):
+    /// the distance a rearming Infantry/Unit keeps; positive is a minimum
+    /// range, negative a maximum one.
+    pub phobos_keep_range: i32,
+    /// `KeepRange.AllowAI=` (`Nullable<bool>`): AI-house gate, else `[General]`.
+    pub phobos_keep_range_allow_ai: Option<bool>,
+    /// `KeepRange.AllowPlayer=` (`Nullable<bool>`): human-house gate.
+    pub phobos_keep_range_allow_player: Option<bool>,
+    /// `KeepRange.EarlyStopFrame=` (`Nullable<int>`): the rearm remainder
+    /// below which KeepRange stops applying.
+    pub phobos_keep_range_early_stop: Option<i32>,
+    /// Phobos `WeaponTypeExt` strafing keys (`Ext/WeaponType/Body.cpp:108-112`,
+    /// declarations `Body.h:40-44`): the round's shot count, burst simulation,
+    /// per-shot ammo, Target-to-cell switch and end delay. Read by the
+    /// `AircraftClass::Mission_Attack` hooks and `AircraftExt::FireWeapon`;
+    /// unset booleans fall back to `[General] Strafing.*`.
+    pub(crate) phobos_strafing: crate::rules::phobos_strafing::PhobosStrafingRules,
+    /// Phobos `AmbientDamage.Warhead=` (`Nullable<WarheadTypeClass*>`,
+    /// `Ext/WeaponType/Body.cpp:167`): the warhead the railgun and blast-wave
+    /// ambient damage uses; unset keeps the weapon's own warhead.
+    pub phobos_ambient_damage_warhead: Option<String>,
+    /// Phobos `AmbientDamage.IgnoreTarget=` (`Nullable<bool>`): leave the
+    /// primary target out of the ambient-damage list; unset uses the fixed
+    /// `[General] AmbientDamage.IgnoreTarget=`.
+    pub phobos_ambient_damage_ignore_target: Option<bool>,
+    /// Phobos `CanTarget.IronCurtained=` (`Nullable<bool>`,
+    /// `Ext/WeaponType/Body.cpp:118`): this weapon's override for shooting an
+    /// iron-curtained target; `None` falls back to the human/AI
+    /// `[CombatDamage]` global (`Ext/Techno/Hooks.Firing.cpp:367`).
+    pub phobos_can_target_iron_curtained: Option<bool>,
+    /// Phobos `AutoTarget.IronCurtained=` (`Nullable<bool>`, `:119`): this
+    /// weapon's override for retaliating at or auto-acquiring an
+    /// iron-curtained target (`Hooks.Firing.cpp:1246`,
+    /// `Hooks.Targeting.cpp:63`).
+    pub phobos_auto_target_iron_curtained: Option<bool>,
+    /// Phobos `FeedbackWeapon`, `VisualScatter`,
+    /// `AttackNoThreatBuildings`, `TurretRecoil.Suppress` and
+    /// `ChargeTurret.Delays` (`Ext/WeaponType/Body.cpp:124`, `:133`, `:206`,
+    /// `:138`, `:135`); see [`crate::rules::phobos_weapon_extras`].
+    pub(crate) phobos_extras: crate::rules::phobos_weapon_extras::PhobosWeaponExtras,
+    /// Phobos `IvanBomb.Visibility=` (`Nullable<AffectedHouse>`,
+    /// `Ext/WeaponType/Body.cpp:103`): the per-weapon override of the
+    /// `[AudioVisual] IvanIconVisibility` icon gate
+    /// (`Ext/WeaponType/Hooks.Bomb.cpp:38-77`, hook `0x438D44`).
+    pub phobos_ivan_bomb_visibility: Option<crate::rules::phobos_shields::AffectedHouse>,
+    /// Phobos `CylinderRangefinding=` (`Nullable<bool>`,
+    /// `Ext/WeaponType/Body.cpp:207`): this weapon's direct range is measured
+    /// in the plan; an unset value falls back to `[General]`
+    /// (`Ext/Techno/Hooks.Firing.cpp:1265-1274`).
+    pub phobos_cylinder_rangefinding: Option<bool>,
+    /// Phobos `WeaponTypeExt::KickOutPassengers` (`Nullable<bool>`, unset;
+    /// `Ext/WeaponType/Body.cpp:183`, `Body.h:91,186`): with a passenger
+    /// aboard, a firing aircraft still drops one (`AircraftClass::Fire_At`
+    /// `0x415EEE`) only when this key, else
+    /// `[General] AircraftWeapon.KickOutPassengers=`, is yes.
+    pub phobos_kick_out_passengers: Option<bool>,
 }
 
 impl WeaponType {
+    /// Phobos `FeedbackWeapon=` (`Ext/WeaponType/Body.cpp:124`): the weapon
+    /// also detonated at the firer after a shot.
+    pub fn phobos_feedback_weapon(&self) -> Option<&str> {
+        self.phobos_extras.feedback_weapon.as_deref()
+    }
+
+    /// Phobos `VisualScatter=` (`:133`), default `no`.
+    pub fn phobos_visual_scatter(&self) -> bool {
+        self.phobos_extras.visual_scatter
+    }
+
+    /// Phobos `TurretRecoil.Suppress=` (`Ext/WeaponType/Body.cpp:138`).
+    pub fn phobos_turret_recoil_suppress(&self) -> bool {
+        self.phobos_extras.turret_recoil_suppress
+    }
+
+    /// Phobos `Anim.Update=` (`Ext/WeaponType/Body.cpp:208`) over
+    /// `[AudioVisual] FiringAnim.Update=` (`Ext/Rules/Body.cpp:548`): a
+    /// muzzle anim from this weapon's `Anim=` list keeps following its
+    /// firer every frame (`Ext/Anim/Hooks.cpp:714-740`).
+    pub fn phobos_anim_update(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.phobos_extras
+            .anim_update
+            .unwrap_or(rules.phobos_globals.firing_anim_update)
+    }
+
+    /// Phobos `FireOnce.ResetSequence=` (`Ext/WeaponType/Body.cpp:137`).
+    pub fn phobos_fire_once_reset_sequence(&self) -> bool {
+        self.phobos_extras.fire_once_reset_sequence
+    }
+
+    /// Phobos `OmniFire.TurnToTarget=` resolved against `[General]`
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp:79`, hook `0x736E6E`).
+    pub fn phobos_omni_fire_turn_to_target(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.phobos_extras
+            .omni_fire_turn_to_target
+            .unwrap_or(rules.phobos_globals.omni_fire_turn_to_target)
+    }
+
+    /// Phobos `AreaFire.Target=` (`Ext/WeaponType/Body.cpp:123`).
+    pub fn phobos_area_fire_target(&self) -> crate::rules::phobos_weapon_extras::AreaFireTarget {
+        self.phobos_extras.area_fire_target
+    }
+
+    /// Phobos `AttackNoThreatBuildings=` (`:206`) resolved against the
+    /// human/AI `[General]` pair.
+    pub fn phobos_attack_no_threat_buildings(
+        &self,
+        rules: &crate::rules::ruleset::RuleSet,
+        human: bool,
+    ) -> bool {
+        self.phobos_extras.attack_no_threat_buildings(rules, human)
+    }
+
     /// The weapon's warhead and projectile as its RuleSet resolved them;
     /// reads go through `RuleSet::weapon_warhead`/`weapon_projectile`, which
     /// check the resolving set.
@@ -332,18 +567,54 @@ impl WeaponType {
     }
 
     /// Phobos `CanTargetHouses=`, default `AffectedHouse::All`.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn can_target_houses(&self) -> crate::rules::phobos_shields::AffectedHouse {
         self.phobos_can_target_houses
     }
 
+    /// Phobos `WeaponTypeExt`'s five `Strafing.*` keys.
+    pub(crate) const fn phobos_strafing(
+        &self,
+    ) -> &crate::rules::phobos_strafing::PhobosStrafingRules {
+        &self.phobos_strafing
+    }
+
     /// Phobos `CanTarget`, health range and `CanTargetVeterancy`, defaults
     /// `All`/`0.0`/`1.0`/`All`.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn weapon_targeting(
         &self,
     ) -> crate::rules::phobos_airburst::PhobosWeaponTargeting {
         self.phobos_weapon_targeting
+    }
+
+    /// Phobos `WeaponTypeExt::GetBurstDelay`
+    /// (`Ext/WeaponType/Body.cpp:62-74`): burst index 0 answers 0 before the
+    /// list is consulted; a list longer than the index answers entry
+    /// `index - 1`; a shorter non-empty list answers its last entry; an empty
+    /// list answers -1. The length compare casts the index to `unsigned`, so a
+    /// negative index only matches the last-entry arm. The `0x6FD05E` hook
+    /// takes the answer only when it is not negative
+    /// (`Ext/Techno/Hooks.Firing.cpp:1158`), which is what `Some` mirrors.
+    pub(crate) fn phobos_burst_delay(&self, burst_index: i32) -> Option<i32> {
+        let delays = &self.phobos_burst_delays;
+        let delay = if burst_index == 0 {
+            0
+        } else if delays.len() > burst_index as u32 as usize {
+            delays[burst_index as usize - 1]
+        } else if let Some(last) = delays.last() {
+            *last
+        } else {
+            -1
+        };
+        (delay >= 0).then_some(delay)
+    }
+
+    /// The second clause both `Burst.NoDelay` hooks test alongside the key:
+    /// `!DelayedFire_Duration.isset() || DelayedFire_OnlyOnInitialBurst`
+    /// (`src/Ext/Unit/Hooks.Firing.cpp:125`,
+    /// `src/Ext/Infantry/Hooks.Firing.cpp:189`).
+    pub(crate) const fn delayed_fire_allows_burst_repeat(&self) -> bool {
+        self.phobos_delayed_fire_duration.is_none()
+            || self.phobos_delayed_fire_only_on_initial_burst
     }
 
     pub(crate) fn ammo_cost(&self) -> i32 {
@@ -371,13 +642,9 @@ impl WeaponType {
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         // Phobos `WeaponTypeExt::RadType` read; absent (and every build
         // without the capability) binds the default radiation type.
-        #[cfg(feature = "phobos")]
         let rad_type = section.read_name("RadType", 0x80).map(str::to_owned);
-        #[cfg(not(feature = "phobos"))]
-        let rad_type = None;
         // `WeaponTypeExt::LoadFromINIFile`'s AttachEffect gates. A missing key
         // keeps the constructor's empty list / false.
-        #[cfg(feature = "phobos")]
         let (
             attach_effect_required_types,
             attach_effect_disallowed_types,
@@ -389,7 +656,6 @@ impl WeaponType {
             name_list(section, "AttachEffect.RequiredGroups"),
             name_list(section, "AttachEffect.DisallowedGroups"),
         );
-        #[cfg(feature = "phobos")]
         let (
             attach_effect_required_min_counts,
             attach_effect_required_max_counts,
@@ -409,12 +675,9 @@ impl WeaponType {
                 .read_int_list("AttachEffect.DisallowedMaxCounts")
                 .unwrap_or_default(),
         );
-        #[cfg(feature = "phobos")]
         let attach_effect_check_on_firer = section.read_bool("AttachEffect.CheckOnFirer", false);
-        #[cfg(feature = "phobos")]
         let attach_effect_ignore_from_same_source =
             section.read_bool("AttachEffect.IgnoreFromSameSource", false);
-        #[cfg(feature = "phobos")]
         let (
             attach_effect_required_any,
             attach_effect_disallowed_any,
@@ -437,38 +700,6 @@ impl WeaponType {
                 |current, raw| AffectedHouse::parse(raw).unwrap_or(current),
             ),
             section.read_bool("AttachEffect.SameSourceOnly", false),
-        );
-        #[cfg(not(feature = "phobos"))]
-        let (
-            attach_effect_required_any,
-            attach_effect_disallowed_any,
-            attach_effect_required_houses,
-            attach_effect_disallowed_houses,
-            attach_effect_same_source_only,
-        ) = (false, true, AffectedHouse::ALL, AffectedHouse::ALL, false);
-        #[cfg(not(feature = "phobos"))]
-        let (
-            attach_effect_required_types,
-            attach_effect_disallowed_types,
-            attach_effect_required_groups,
-            attach_effect_disallowed_groups,
-            attach_effect_required_min_counts,
-            attach_effect_required_max_counts,
-            attach_effect_disallowed_min_counts,
-            attach_effect_disallowed_max_counts,
-            attach_effect_check_on_firer,
-            attach_effect_ignore_from_same_source,
-        ) = (
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            false,
-            false,
         );
         Self {
             id: id.to_string(),
@@ -528,25 +759,27 @@ impl WeaponType {
             laser_duration: i32::from(section.read_int("LaserDuration", 10) as i8),
             rad_level: section.read_int("RadLevel", 0),
             rad_type,
-            #[cfg(feature = "phobos")]
             phobos_can_target_houses: crate::rules::phobos_shields::read_affected_house(
                 section,
                 "CanTargetHouses",
                 crate::rules::phobos_shields::AffectedHouse::ALL,
             ),
-            #[cfg(feature = "phobos")]
             phobos_weapon_targeting: crate::rules::phobos_airburst::read_weapon_targeting(section),
             // Phobos `Valueable<T>` reads through the shared Ares parser: a
             // failed conversion keeps the constructor's value.
-            #[cfg(feature = "phobos")]
             phobos_laser_is_single_color: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_bool("IsSingleColor", false)
             }),
-            #[cfg(feature = "phobos")]
             phobos_laser_thickness: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_int("LaserThickness", 3)
             }),
-            #[cfg(feature = "phobos")]
+            phobos_laser_z_adjust: section.read_phobos_nullable_int("LaserZAdjust", None),
+            phobos_ebolt_z_adjust: section.read_phobos_nullable_int("EBoltZAdjust", None),
+            phobos_ebolt_clamp_initial_depth_for_building: section
+                .read_phobos_nullable_bool("EBoltZAdjust.ClampInitialDepthForBuilding", None),
+            phobos_bolt_duration: section.read_int("Bolt.Duration", 17),
+            phobos_bolt_arcs: section.read_int("Bolt.Arcs", 8),
+            phobos_bolt_follow_flh: section.read_phobos_nullable_bool("Bolt.FollowFLH", None),
             phobos_beam_is_house_color: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_bool("Beam.IsHouseColor", false)
             }),
@@ -596,6 +829,9 @@ impl WeaponType {
             charges: section.read_bool("Charges", false),
             is_laser: section.read_bool("IsLaser", false),
             disk_laser: section.read_bool("DiskLaser", false),
+            phobos_disk_laser_radius: section.read_double("DiskLaser.Radius", 240.0),
+            phobos_projectile_range_apply_modifiers: section
+                .read_phobos_nullable_bool("ProjectileRange.ApplyModifiers", None),
             is_line: section.read_bool("IsLine", false),
             is_big_laser: section.read_bool("IsBigLaser", false),
             is_house_color: section.read_bool("IsHouseColor", false),
@@ -623,7 +859,6 @@ impl WeaponType {
             attach_effect_required_houses,
             attach_effect_disallowed_houses,
             attach_effect_same_source_only,
-            #[cfg(feature = "phobos")]
             rof_random_delay: Some(crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_partial_int_pair(
                     "ROF.RandomDelay",
@@ -635,13 +870,106 @@ impl WeaponType {
                 )
             }))
             .filter(|range| range.values > 0),
+            laser_position_update: section.read_string_with(
+                "LaserPositionUpdate",
+                2048,
+                crate::rules::phobos_laser_tracking::PositionFollow::None,
+                |current, raw| {
+                    crate::rules::phobos_laser_tracking::PositionFollow::parse(raw)
+                        .unwrap_or(current)
+                },
+            ),
+            laser_position_update_stop_on_firer_convert: section
+                .read_phobos_nullable_bool("LaserPositionUpdate.StopOnFirerConvert", None),
+            phobos_extra_warheads:
+                crate::rules::phobos_extra_warheads::PhobosExtraWarheads::from_section(section),
+            phobos_keep_range: section.read_phobos_leptons("KeepRange", 0),
+            phobos_keep_range_allow_ai: section
+                .read_phobos_nullable_bool("KeepRange.AllowAI", None),
+            phobos_keep_range_allow_player: section
+                .read_phobos_nullable_bool("KeepRange.AllowPlayer", None),
+            phobos_keep_range_early_stop: section
+                .read_phobos_nullable_int("KeepRange.EarlyStopFrame", None),
+            phobos_strafing: crate::rules::phobos_strafing::PhobosStrafingRules::from_section(
+                section,
+            ),
+            phobos_ambient_damage_warhead: section.read_phobos_nullable_with(
+                "AmbientDamage.Warhead",
+                None,
+                |raw| Some(raw.to_owned()),
+            ),
+            phobos_ambient_damage_ignore_target: section
+                .read_phobos_nullable_bool("AmbientDamage.IgnoreTarget", None),
+            phobos_can_target_iron_curtained: section
+                .read_phobos_nullable_bool("CanTarget.IronCurtained", None),
+            phobos_auto_target_iron_curtained: section
+                .read_phobos_nullable_bool("AutoTarget.IronCurtained", None),
+            phobos_extras: crate::rules::phobos_weapon_extras::PhobosWeaponExtras::from_section(
+                section,
+            ),
+            phobos_ivan_bomb_visibility: section
+                .read_name("IvanBomb.Visibility", 0x20)
+                .and_then(crate::rules::phobos_shields::AffectedHouse::parse),
+            phobos_cylinder_rangefinding: section
+                .read_phobos_nullable_bool("CylinderRangefinding", None),
+            phobos_kick_out_passengers: section
+                .read_phobos_nullable_bool("KickOutPassengers", None),
+            phobos_burst_delays: section
+                .read_ares_int_list("Burst.Delays")
+                .unwrap_or_default(),
+            phobos_burst_fire_within_sequence: section
+                .read_ares_bool("Burst.FireWithinSequence", false),
+            phobos_burst_no_delay: section.read_ares_bool("Burst.NoDelay", false),
+            phobos_delayed_fire_duration: {
+                let unset = crate::rules::ini_value::PartialIntPair {
+                    low: 0,
+                    high: 0,
+                    values: 0,
+                };
+                let read = section.read_ares_partial_int_pair("DelayedFire.Duration", unset);
+                (read.values > 0).then_some(read)
+            },
+            phobos_delayed_fire_only_on_initial_burst: section
+                .read_ares_bool("DelayedFire.OnlyOnInitialBurst", false),
+            // The remaining `DelayedFire.*` reads (`Body.cpp:190-199`).
+            // `Valueable<bool>` keeps the constructor default on an absent or
+            // rejected read; `AnimIsAttached`/`AnimOnTurret` default true.
+            phobos_delayed_fire_skip_in_transport: section
+                .read_ares_bool("DelayedFire.SkipInTransport", false),
+            // `Valueable<AnimTypeClass*>`: a present type name resolves, `none`
+            // and `<none>` answer the factory's null (no `isset` flag to clear).
+            phobos_delayed_fire_animation: section
+                .read_type_name("DelayedFire.Animation", 0x100)
+                .map(str::to_owned),
+            // `Nullable<AnimTypeClass*>::Read<false, false>`: `<default>`,
+            // `none` and `<none>` clear the nullable to "unset"; a resolved
+            // name sets it. VERA models "unset" as `None` (fall back to
+            // `Animation`) and a set name as `Some`.
+            phobos_delayed_fire_open_topped_animation: section.read_phobos_nullable_with(
+                "DelayedFire.OpenToppedAnimation",
+                None,
+                |raw| Some(raw.to_owned()),
+            ),
+            phobos_delayed_fire_anim_is_attached: section
+                .read_ares_bool("DelayedFire.AnimIsAttached", true),
+            phobos_delayed_fire_center_anim_on_firer: section
+                .read_ares_bool("DelayedFire.CenterAnimOnFirer", false),
+            phobos_delayed_fire_remove_anim_on_no_delay: section
+                .read_ares_bool("DelayedFire.RemoveAnimOnNoDelay", false),
+            phobos_delayed_fire_pause_firing_sequence: section
+                .read_ares_bool("DelayedFire.PauseFiringSequence", false),
+            // `Nullable<CoordStruct>`: a complete `Forward,Lateral,Height`
+            // scan, the same reader as `weapon_offsets::nullable_flh`.
+            phobos_delayed_fire_anim_offset: section
+                .read_int_fields_complete::<3>("DelayedFire.AnimOffset", 2048),
+            phobos_delayed_fire_anim_on_turret: section
+                .read_ares_bool("DelayedFire.AnimOnTurret", true),
         }
     }
 }
 
 /// A Phobos name list: `ReadString(2048)`, `strtok(",")`, tokens kept as the
 /// factory would resolve them. Absent keys leave the constructor's empty list.
-#[cfg(feature = "phobos")]
 fn name_list(section: &IniSection, key: &str) -> Vec<String> {
     section
         .read_list(key, 0x800)
@@ -705,6 +1033,98 @@ mod tests {
                 if ares_way { 0 } else { 1 }
             );
         }
+    }
+
+    /// Phobos `Burst.NoDelay`: the constructor's false default, then the key
+    /// through the production reader, including a later pass that says no.
+    #[test]
+    fn burst_no_delay_reads_with_a_false_default() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let base = "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=Slow\nSecondary=Fast\n\
+                    [Slow]\nDamage=1\nBurst=3\n\
+                    [Fast]\nDamage=1\nBurst=3\nBurst.NoDelay=yes\n";
+        let rules = RuleSet::from_ini(&IniFile::from_str(base)).unwrap();
+        assert!(
+            !rules.weapon("Slow").unwrap().phobos_burst_no_delay,
+            "the absent key keeps the constructor default"
+        );
+        assert!(
+            rules.weapon("Fast").unwrap().phobos_burst_no_delay,
+            "yes is read"
+        );
+
+        // A later rules pass can turn it on for a weapon the base left unset.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(base));
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[Slow]\nBurst.NoDelay=yes\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert!(rules.weapon("Slow").unwrap().phobos_burst_no_delay);
+
+        // `no` is a value, not a cleared field: the pass that authored it reads
+        // false.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(base));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Fast]\nBurst.NoDelay=no\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert!(!rules.weapon("Fast").unwrap().phobos_burst_no_delay);
+    }
+
+    /// Phobos `Burst.Delays=` (`Ext/WeaponType/Body.cpp:120`): a
+    /// `ValueableVector<int>` read through the production layers. An absent key
+    /// keeps the constructor's empty list, a present value replaces it, a token
+    /// that does not convert is skipped, and a value with no usable token
+    /// replaces with empty.
+    #[test]
+    fn burst_delays_reads_a_sparse_int_list() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let base = "[VehicleTypes]\n0=A\n1=B\n2=C\n\
+                    [A]\nPrimary=Absent\nSecondary=Set\n\
+                    [B]\nPrimary=Skip\nSecondary=Tokenless\n\
+                    [C]\nPrimary=Empty\n\
+                    [Absent]\nDamage=1\n\
+                    [Set]\nDamage=1\nBurst.Delays=4,0\n\
+                    [Skip]\nDamage=1\nBurst.Delays=4,x,0\n\
+                    [Tokenless]\nDamage=1\nBurst.Delays=,,,\n\
+                    [Empty]\nDamage=1\nBurst.Delays=\n";
+        let rules = RuleSet::from_ini(&IniFile::from_str(base)).unwrap();
+        assert_eq!(
+            rules.weapon("Absent").unwrap().phobos_burst_delays,
+            Vec::<i32>::new(),
+            "the absent key keeps the constructor's empty list"
+        );
+        assert_eq!(rules.weapon("Set").unwrap().phobos_burst_delays, vec![4, 0]);
+        assert_eq!(
+            rules.weapon("Skip").unwrap().phobos_burst_delays,
+            vec![4, 0],
+            "a token that does not convert is skipped"
+        );
+        assert_eq!(
+            rules.weapon("Tokenless").unwrap().phobos_burst_delays,
+            Vec::<i32>::new(),
+            "a present value with no usable token replaces with empty"
+        );
+        assert_eq!(
+            rules.weapon("Empty").unwrap().phobos_burst_delays,
+            Vec::<i32>::new(),
+            "an empty value read keeps the constructor's empty list"
+        );
+
+        // A later pass that authors the key replaces the base list.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(base));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Set]\nBurst.Delays=7\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(rules.weapon("Set").unwrap().phobos_burst_delays, vec![7]);
     }
 
     /// Retail `RevealOnFire=` through the production reader: the constructor's
@@ -902,7 +1322,6 @@ mod tests {
 
     /// Phobos `WeaponTypeExt` AttachEffect gates: the constructor's empty
     /// lists and false switches, then every key through the production reader.
-    #[cfg(feature = "phobos")]
     #[test]
     fn attach_effect_gate_keys_read_with_their_defaults() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
@@ -1251,5 +1670,71 @@ mod tests {
         assert_eq!(rules.weapon("NoKey").unwrap().minimum_range_leptons, 0);
         assert_eq!(range("Unset"), 0, "-1 keeps the constructor zero");
         assert_eq!(range("Kept"), 3 * 256, "-1 keeps the earlier pass's range");
+    }
+
+    /// Phobos `CanTarget.IronCurtained`/`AutoTarget.IronCurtained` on a
+    /// weapon (`Nullable<bool>`) and their `[CombatDamage]` fallbacks
+    /// (`Ext/WeaponType/Body.cpp:118-119`, `Ext/Rules/Body.cpp:437-439`).
+    #[test]
+    fn iron_curtained_targeting_keys_read_with_their_fallbacks() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n\
+             [UNIT]\nStrength=100\nPrimary=Plain\nSecondary=Locked\n\
+             [Plain]\nDamage=1\n\
+             [Locked]\nDamage=1\nCanTarget.IronCurtained=no\nAutoTarget.IronCurtained=yes\n\
+             [CombatDamage]\nCanTarget.IronCurtained=no\nAutoTarget.IronCurtained=no\n",
+        ))
+        .expect("curtain targeting rules");
+        assert!(!rules.phobos_globals.can_target_iron_curtained);
+        assert!(
+            !rules.phobos_globals.can_target_ai_iron_curtained,
+            "the absent AI global keeps the stock refusal"
+        );
+        assert!(!rules.phobos_globals.auto_target_iron_curtained);
+        let plain = rules.weapon("Plain").unwrap();
+        assert_eq!(plain.phobos_can_target_iron_curtained, None);
+        assert_eq!(plain.phobos_auto_target_iron_curtained, None);
+        let locked = rules.weapon("Locked").unwrap();
+        assert_eq!(locked.phobos_can_target_iron_curtained, Some(false));
+        assert_eq!(locked.phobos_auto_target_iron_curtained, Some(true));
+
+        let defaults = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nStrength=100\nPrimary=Gun\n[Gun]\nDamage=1\n",
+        ))
+        .expect("default curtain rules");
+        assert!(defaults.phobos_globals.can_target_iron_curtained);
+        assert!(!defaults.phobos_globals.can_target_ai_iron_curtained);
+        assert!(defaults.phobos_globals.auto_target_iron_curtained);
+    }
+
+    /// Phobos `AmbientDamage.Warhead` / `.IgnoreTarget` on a weapon and the
+    /// `[General] AmbientDamage.IgnoreTarget` fallback
+    /// (`Ext/WeaponType/Body.cpp:167`, `Ext/Rules/Body.cpp:268`).
+    #[test]
+    fn ambient_damage_keys_read_with_their_fallbacks() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n\
+             [UNIT]\nStrength=100\nPrimary=Gun\n\
+             [Gun]\nDamage=1\nAmbientDamage=10\n\
+             AmbientDamage.Warhead=AltWH\nAmbientDamage.IgnoreTarget=no\n\
+             [Warheads]\n0=WH\n1=AltWH\n[WH]\n[AltWH]\n\
+             [General]\nAmbientDamage.IgnoreTarget=yes\n",
+        ))
+        .expect("ambient damage rules");
+        let gun = rules.weapon("Gun").unwrap();
+        assert_eq!(gun.phobos_ambient_damage_warhead.as_deref(), Some("AltWH"));
+        assert_eq!(gun.phobos_ambient_damage_ignore_target, Some(false));
+        assert!(rules.phobos_globals.ambient_damage_ignore_target);
+
+        let defaults = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nStrength=100\nPrimary=Gun\n[Gun]\nDamage=1\n",
+        ))
+        .expect("default ambient rules");
+        let gun = defaults.weapon("Gun").unwrap();
+        assert_eq!(gun.phobos_ambient_damage_warhead, None);
+        assert_eq!(gun.phobos_ambient_damage_ignore_target, None);
+        assert!(!defaults.phobos_globals.ambient_damage_ignore_target);
     }
 }

@@ -247,7 +247,6 @@ pub(crate) struct PreparedSidebarOrder {
     factory_links: HashMap<InternedId, CameoFactoryLink>,
     prediction_categories: HashSet<ProductionCategory>,
     active_tab: SidebarTab,
-    #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
 }
 
@@ -259,7 +258,6 @@ pub(crate) fn loaded_active_tab(order: Option<&PreparedSidebarOrder>) -> Sidebar
     order.map_or_else(SidebarTab::default_active_tab, |order| order.active_tab)
 }
 
-#[cfg(feature = "phobos")]
 impl PreparedSidebarOrder {
     /// Phobos `ScenarioExt::SWSidebar_Enable` carried with the local envelope.
     pub(crate) fn sw_sidebar_expanded(&self) -> bool {
@@ -1335,8 +1333,18 @@ impl SidebarProjectionState {
     /// Returns the step's [`CreditTick`]: `Some(CreditTick { counting_up })`
     /// when the displayed value changed (native sets `animating(+0xA) = 1` and
     /// `counting_up(+0x9) = step > 0` at `0x004A2740..0x004A2751` only on a
-    /// changed step), `None` otherwise.
-    pub(crate) fn advance_credits(&mut self, owner: &str, actual: i32) -> Option<CreditTick> {
+    /// changed step), `None` otherwise. `max_step` is Phobos
+    /// `CreditsIndicator.MaxStep` (`0x4A2729`): above zero it caps the step, at
+    /// or below it removes the upper bound. `smooth` is `CreditsIndicator.
+    /// Smooth` (`0x4A26E8`): off snaps straight to the balance with no step or
+    /// tick cue.
+    pub(crate) fn advance_credits(
+        &mut self,
+        owner: &str,
+        actual: i32,
+        max_step: i32,
+        smooth: bool,
+    ) -> Option<CreditTick> {
         use std::collections::hash_map::Entry;
 
         let mut entry = match self.displayed_credits.entry(owner.to_string()) {
@@ -1350,12 +1358,27 @@ impl SidebarProjectionState {
         if *displayed == actual {
             return None;
         }
+        if !smooth {
+            // `0x4A26EE` with Phobos's jump to `0x4A26F0`: the balance is
+            // stored directly and neither the animating byte nor a tick cue is
+            // set.
+            *displayed = actual;
+            return None;
+        }
 
         // gamemd `CreditsClass::AI / FUN_004A2600 @ 0x004A2600`:
-        // |actual-displayed| / 8, clamped to [1, 143]. The stored 1/3 value
-        // does not delay this call's step (SIDEBAR_SYSTEM_GHIDRA_REPORT §30).
+        // |actual-displayed| / 8, floored at 1 (`0x4A2721..0x4A2727`), then
+        // capped at 143 (`0x4A2729..0x4A2730`) — Phobos replaces that cap with
+        // min(step, MaxStep) and skips it when MaxStep is not positive. The
+        // stored 1/3 value does not delay this call's step
+        // (SIDEBAR_SYSTEM_GHIDRA_REPORT §30).
         let difference = (i64::from(actual) - i64::from(*displayed)).unsigned_abs();
-        let step = (difference / 8).clamp(1, 143) as i32;
+        let step = (difference / 8).max(1);
+        let step = if max_step > 0 {
+            step.min(u64::try_from(max_step).unwrap_or(u64::MAX))
+        } else {
+            step
+        } as i32;
         let before = *displayed;
         let counting_up = actual > *displayed;
         if counting_up {
@@ -1443,6 +1466,7 @@ fn object_cameo(
         object.category,
         ObjectCategory::Vehicle | ObjectCategory::Aircraft
     );
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
     Some(Cameo {
         id: CameoId::Object(id),
         tab: SidebarTab::for_category(crate::sim::production::category_for_object(object)),
@@ -1453,6 +1477,8 @@ fn object_cameo(
             naval: vehicle && object.naval,
             tech_level: sim.object_tech_level(object),
             cost,
+            internal_name: object.id.clone(),
+            sort_by_internal_name,
             name: crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf),
         },
     })
@@ -1465,11 +1491,15 @@ fn super_cameo(
     id: InternedId,
 ) -> Option<Cameo> {
     let kind = rules.super_weapon(sim.interner().try_resolve(id)?)?;
+    // Phobos `TabIndex` (`Ext/SWType/Hooks.cpp:245-258`, `0x6ABC9D`): the
+    // cameo goes to the tab its type names, which defaults to strip 1.
+    let tab = crate::ui::sidebar::SidebarTab::for_sw_tab_index(kind.phobos_tab_index.index());
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
-        tab: crate::ui::sidebar::SidebarTab::Defense,
+        tab,
         available: true,
-        key: super_weapon_cameo_key(kind, csf),
+        key: super_weapon_cameo_key(kind, csf, sort_by_internal_name),
     })
 }
 
@@ -1478,9 +1508,12 @@ fn super_cameo(
 pub(crate) fn super_weapon_cameo_key(
     kind: &crate::rules::superweapon_type::SuperWeaponType,
     csf: Option<&crate::assets::csf_file::CsfFile>,
+    sort_by_internal_name: bool,
 ) -> CameoKey {
     CameoKey::SuperWeapon {
         recharge_frames: kind.recharge_time_frames,
+        internal_name: kind.id.clone(),
+        sort_by_internal_name,
         name: crate::assets::csf_file::type_ui_name(kind.ui_name.as_deref(), csf),
     }
 }
@@ -1497,7 +1530,6 @@ pub(crate) fn prepare_saved_order(
     let Some(saved) = saved else {
         return Ok(None);
     };
-    #[cfg(feature = "phobos")]
     let sw_sidebar_expanded = saved.sw_sidebar_expanded();
     let (flash_deadlines, redraw_until) = {
         let (deadlines, redraw_until) = saved.flash();
@@ -1633,7 +1665,6 @@ pub(crate) fn prepare_saved_order(
         factory_links,
         prediction_categories,
         active_tab,
-        #[cfg(feature = "phobos")]
         sw_sidebar_expanded,
     }))
 }
@@ -1850,6 +1881,8 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
@@ -1941,6 +1974,8 @@ mod tests {
             naval: false,
             tech_level: 1,
             cost: 300,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "changed comparison key".into(),
         };
         projection.reconcile_cameos(owner, &[repriced], 3, &[], false);
@@ -2016,6 +2051,8 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
@@ -2082,6 +2119,8 @@ mod tests {
                             naval: false,
                             tech_level: 0,
                             cost: 0,
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             name: String::new(),
                         },
                     })
@@ -2172,7 +2211,9 @@ mod tests {
                         considered_aircraft: false,
                         naval: false,
                         tech_level: 0,
-                        cost: 100,
+                        cost: 0,
+                        internal_name: String::new(),
+                        sort_by_internal_name: false,
                         name: String::new(),
                     },
                 })
@@ -2221,98 +2262,85 @@ mod tests {
 
     #[test]
     fn installing_another_sim_reseeds_the_cameo_strip_silently() {
-        for ares_way in [false, true] {
-            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
-            let a = InternedId::from_index(1);
-            let b = InternedId::from_index(2);
-            let owner = InternedId::from_index(3);
-            let candidate = |id| Cameo {
-                id: CameoId::Object(id),
-                tab: SidebarTab::Building,
-                available: true,
-                key: CameoKey::Techno {
-                    own_side: true,
-                    considered_aircraft: false,
-                    naval: false,
-                    tech_level: 0,
-                    cost: 100,
-                    name: String::new(),
-                },
-            };
-            let mut projection = SidebarProjectionState::default();
-            // Sim A: the first projection seeds silently, growth speaks.
-            assert!(
-                !projection
-                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
-                    .build_inserted()
-            );
-            assert!(
-                !projection
-                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
-                    .build_inserted()
-            );
-            projection.apply_lifecycle_output(
-                &LifecycleOutput::SidebarRecalculated { owner },
-                Some(owner),
-                ares_way,
-            );
-            assert!(
-                projection
-                    .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
-                    .build_inserted()
-            );
-            projection.apply_lifecycle_output(
-                &LifecycleOutput::SidebarRecalculated { owner },
-                Some(owner),
-                ares_way,
-            );
-            assert!(
-                !projection
-                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
-                    .build_inserted()
-            );
-            projection.apply_lifecycle_output(
-                &LifecycleOutput::SidebarRecalculated { owner },
-                Some(owner),
-                ares_way,
-            );
-            assert!(
-                projection
-                    .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
-                    .build_inserted()
-            );
-            // Sim B with a different pre-placed base: without the reset its
-            // first refresh would read `b`-less/`a`-less strips as insertions.
-            projection.reset_cameo_seed();
-            assert!(
-                !projection
-                    .reconcile_fixture(owner, &[candidate(b)], 3, false)
-                    .build_inserted(),
-                "the first refresh after a sim install is the init window"
-            );
-            projection.apply_lifecycle_output(
-                &LifecycleOutput::SidebarRecalculated { owner },
-                Some(owner),
-                ares_way,
-            );
-            assert!(
-                projection
-                    .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
-                    .build_inserted()
-            );
-            assert!(
-                !projection
-                    .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3, false)
-                    .build_inserted()
-            );
-            // Leaving the match still clears the seed.
-            projection.replace_view(None);
-            assert!(
-                !projection
-                    .reconcile_fixture(owner, &[candidate(a)], 3, false)
-                    .build_inserted()
-            );
-        }
+        let a = InternedId::from_index(1);
+        let b = InternedId::from_index(2);
+        let owner = InternedId::from_index(3);
+        let candidate = |id| Cameo {
+            id: CameoId::Object(id),
+            tab: SidebarTab::Building,
+            available: true,
+            key: CameoKey::Techno {
+                own_side: true,
+                considered_aircraft: false,
+                naval: false,
+                tech_level: 0,
+                cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
+                name: String::new(),
+            },
+        };
+        let mut projection = SidebarProjectionState::default();
+        // Sim A: the first projection seeds silently, growth speaks.
+        assert!(
+            !projection
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
+                .build_inserted()
+        );
+        assert!(
+            !projection
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
+                .build_inserted()
+        );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
+        assert!(
+            projection
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
+                .build_inserted()
+        );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
+        assert!(
+            !projection
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
+                .build_inserted()
+        );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
+        assert!(
+            projection
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
+                .build_inserted()
+        );
+        // Sim B with a different pre-placed base: without the reset its
+        // first refresh would read `b`-less/`a`-less strips as insertions.
+        projection.reset_cameo_seed();
+        assert!(
+            !projection
+                .reconcile_fixture(owner, &[candidate(b)], 3, false)
+                .build_inserted(),
+            "the first refresh after a sim install is the init window"
+        );
+        projection
+            .apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner), false);
+        assert!(
+            projection
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
+                .build_inserted()
+        );
+        assert!(
+            !projection
+                .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3, false)
+                .build_inserted()
+        );
+        // Leaving the match still clears the seed.
+        projection.replace_view(None);
+        assert!(
+            !projection
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
+                .build_inserted()
+        );
     }
 
     /// TabClass::LoadSHPs 0x006D02B0 zeroes the counter on every fresh
@@ -2325,12 +2353,51 @@ mod tests {
         projection.start_scenario_credits_counter(Some("Americans"));
         assert_eq!(projection.displayed_credits_or_seed("Americans", 10_000), 0);
         assert_eq!(
-            projection.advance_credits("Americans", 10_000),
+            projection.advance_credits("Americans", 10_000, 143, true),
             Some(CreditTick { counting_up: true })
         );
         assert_eq!(
             projection.displayed_credits_for_test("Americans"),
             Some(0x8F)
+        );
+    }
+
+    /// Phobos `CreditsIndicator.MaxStep` (`0x4A2729`) and `.Smooth`
+    /// (`0x4A26E8`): the step cap is configurable — a value at or below zero
+    /// removes it — and smoothing off snaps to the balance with no tick cue.
+    #[test]
+    fn phobos_credits_indicator_step_cap_and_smooth() {
+        let mut capped = SidebarProjectionState::default();
+        capped.displayed_credits_or_seed("Americans", 0);
+        assert_eq!(
+            capped.advance_credits("Americans", 10_000, 10, true),
+            Some(CreditTick { counting_up: true })
+        );
+        assert_eq!(capped.displayed_credits_for_test("Americans"), Some(10));
+
+        let mut unbounded = SidebarProjectionState::default();
+        unbounded.displayed_credits_or_seed("Americans", 0);
+        assert!(
+            unbounded
+                .advance_credits("Americans", 10_000, 0, true)
+                .is_some()
+        );
+        assert_eq!(
+            unbounded.displayed_credits_for_test("Americans"),
+            Some(1_250),
+            "difference / 8 without the 143 cap"
+        );
+
+        let mut smooth_off = SidebarProjectionState::default();
+        smooth_off.displayed_credits_or_seed("Americans", 0);
+        assert_eq!(
+            smooth_off.advance_credits("Americans", 10_000, 143, false),
+            None,
+            "snapping plays no tick cue"
+        );
+        assert_eq!(
+            smooth_off.displayed_credits_for_test("Americans"),
+            Some(10_000)
         );
     }
 
@@ -2343,19 +2410,25 @@ mod tests {
         let ticks = vec!["CreditUp".to_string(), "CreditDown".to_string()];
         let mut projection = SidebarProjectionState::default();
         // First observation seeds silently.
-        assert_eq!(projection.advance_credits("Americans", 100), None);
+        assert_eq!(
+            projection.advance_credits("Americans", 100, 143, true),
+            None
+        );
         // Counting up.
-        let up = projection.advance_credits("Americans", 900);
+        let up = projection.advance_credits("Americans", 900, 143, true);
         assert_eq!(up, Some(CreditTick { counting_up: true }));
         assert_eq!(credit_tick_sound(&ticks, up.unwrap()), Some("CreditUp"));
         // Counting down.
-        let down = projection.advance_credits("Americans", 0);
+        let down = projection.advance_credits("Americans", 0, 143, true);
         assert_eq!(down, Some(CreditTick { counting_up: false }));
         assert_eq!(credit_tick_sound(&ticks, down.unwrap()), Some("CreditDown"));
         // Settle, then no change → no tick.
-        while projection.advance_credits("Americans", 0).is_some() {}
+        while projection
+            .advance_credits("Americans", 0, 143, true)
+            .is_some()
+        {}
         assert_eq!(projection.displayed_credits_for_test("Americans"), Some(0));
-        assert_eq!(projection.advance_credits("Americans", 0), None);
+        assert_eq!(projection.advance_credits("Americans", 0, 143, true), None);
         // A list shorter than two names never plays.
         let short = vec!["CreditUp".to_string()];
         assert_eq!(
@@ -2372,7 +2445,7 @@ mod tests {
     fn saved_credits_replace_warm_and_cold_counters_without_an_ai_step() {
         let mut saved = SidebarProjectionState::default();
         saved.displayed_credits_or_seed("Americans", 1000);
-        saved.advance_credits("Americans", 0);
+        saved.advance_credits("Americans", 0, 143, true);
         let display = saved.saved_credits_counter("Americans");
         assert_ne!(display, Some(1000), "save during the counter's animation");
 
@@ -2389,9 +2462,15 @@ mod tests {
             cold.displayed_credits_or_seed("Americans", 1000),
             display.unwrap()
         );
-        let next_tick = saved.advance_credits("Americans", 1000);
-        assert_eq!(warm.advance_credits("Americans", 1000), next_tick);
-        assert_eq!(cold.advance_credits("Americans", 1000), next_tick);
+        let next_tick = saved.advance_credits("Americans", 1000, 143, true);
+        assert_eq!(
+            warm.advance_credits("Americans", 1000, 143, true),
+            next_tick
+        );
+        assert_eq!(
+            cold.advance_credits("Americans", 1000, 143, true),
+            next_tick
+        );
         assert_eq!(
             warm.saved_credits_counter("Americans"),
             saved.saved_credits_counter("Americans")

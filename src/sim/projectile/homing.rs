@@ -582,6 +582,8 @@ mod tests {
                 high_root: false,
                 voxel_downward: None,
                 building_pitch_height: None,
+                arcing_fix: false,
+                lobber: false,
             })
             .unwrap();
             assert_eq!(

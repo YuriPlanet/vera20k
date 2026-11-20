@@ -101,6 +101,7 @@ enum PoseTiltKey {
         roll: u32,
     },
     Jumpjet([u32; 2]),
+    JumpjetTilt([u32; 2]),
     Rocket(u32),
     Ground {
         angles: [u32; 2],
@@ -128,6 +129,7 @@ impl From<PoseTilt> for PoseTiltKey {
                 roll: roll.to_bits(),
             },
             PoseTilt::Jumpjet(angles) => Self::Jumpjet(angles.map(f32::to_bits)),
+            PoseTilt::JumpjetTilt(angles) => Self::JumpjetTilt(angles.map(f32::to_bits)),
             PoseTilt::Rocket(pitch) => Self::Rocket(pitch.to_bits()),
             PoseTilt::Ground(pose) => Self::Ground {
                 angles: pose.angles.map(f32::to_bits),

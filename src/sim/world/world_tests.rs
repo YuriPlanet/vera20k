@@ -601,6 +601,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         IVec3::ZERO,
         rules.particle_type(ParticleTypeId(0)),
         &mut sim,
+        &rules,
     );
     sim.substrate.particle_systems.insert({
         let mut system =
@@ -697,8 +698,211 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
         jumpjet, speed, 10
     ));
     assert_eq!(
-        super::wake_anchor_for(jumpjet, speed, false, sim.resolved_terrain.as_ref(), 10),
+        super::wake_anchor_for(
+            jumpjet,
+            speed,
+            false,
+            true,
+            sim.resolved_terrain.as_ref(),
+            10
+        ),
         None
+    );
+}
+
+/// Phobos `MakesWake=` (`Ext/TechnoType/Body.cpp:1070`, `Nullable<bool>`)
+/// over each locomotor's `[AudioVisual] *MakesWake=` global
+/// (`Ext/Rules/Body.cpp:543-546`, ctor no/yes/yes/yes): `no` skips the wake
+/// entirely, an authored `yes` re-enables a global-disabled locomotor, and a
+/// Drive/Hover boat still wakes on the 10th frame and a Ship on the 8th.
+#[test]
+fn makes_wake_gates_each_locomotor_wake() {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Kind {
+        Drive,
+        Ship,
+    }
+    fn scene(global: &str, boat_keys: &str, kind: Kind) -> (Simulation, RuleSet) {
+        let (locomotor, family, cadence) = match kind {
+            Kind::Drive => (
+                "{4A582741-9839-11d1-B709-00A024DDAFD1}",
+                crate::sim::movement::track_process::TrackFamily::Drive,
+                10,
+            ),
+            Kind::Ship => (
+                "{2BEA74E1-7CCA-11d3-BE14-00104B62A16C}",
+                crate::sim::movement::track_process::TrackFamily::Ship,
+                8,
+            ),
+        };
+        let ini = IniFile::from_str(&format!(
+            "[General]
+Wake=WAKE1
+             [AudioVisual]
+{global}             [InfantryTypes]
+[VehicleTypes]
+0=BOAT
+[AircraftTypes]
+[BuildingTypes]
+             [BOAT]
+Strength=300
+Armor=heavy
+Speed=6
+MovementZone=Water
+             SpeedType=Float
+Naval=yes
+{boat_keys}             Locomotor={locomotor}
+"
+        ));
+        let art = IniFile::from_str(
+            "[WAKE1]
+Layer=ground
+YSortAdjust=-288
+Rate=120
+",
+        );
+        let mut rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("wake rules parse");
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules.bind_anim_frame_count_for_test("WAKE1", 15);
+        let mut sim = Simulation::new();
+        let id = sim
+            .spawn_object("BOAT", "Americans", 0, 0, 64, &rules)
+            .expect("spawn boat");
+        let boat = sim.substrate.entities.get_mut(id).expect("boat");
+        let ahead = crate::sim::components::DriveCoord {
+            x: 256 + 128,
+            y: 128,
+            z: 0,
+        };
+        let runtime = boat.locomotor.as_mut().unwrap();
+        assert!(runtime.ensure_installed_track_state());
+        assert!(runtime.store_track_destination(family, Some(ahead)));
+        assert!(runtime.store_track_head(family, Some(ahead)));
+        boat.foot_speed
+            .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
+        let mut terrain = water_terrain(3, 1);
+        for cell in terrain.cells_mut_for_test() {
+            cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        }
+        sim.resolved_terrain = Some(terrain);
+        sim.session.set_binary_frame_for_test(cadence);
+        (sim, rules)
+    }
+    let wakes = |sim: &Simulation| {
+        sim.logic_order()
+            .iter()
+            .filter(|id| {
+                sim.anim(**id)
+                    .is_some_and(|anim| sim.interner.resolve(anim.type_id()) == "WAKE1")
+            })
+            .count()
+    };
+    for (global, boat_keys, kind, expected) in [
+        // Drive: global default keeps the wake; the type's no and a global no
+        // both skip it; an authored yes beats the global no.
+        ("", "", Kind::Drive, 1),
+        (
+            "",
+            "MakesWake=no
+",
+            Kind::Drive,
+            0,
+        ),
+        (
+            "DriveLocomotorMakesWake=no
+",
+            "",
+            Kind::Drive,
+            0,
+        ),
+        (
+            "DriveLocomotorMakesWake=no
+",
+            "MakesWake=yes
+",
+            Kind::Drive,
+            1,
+        ),
+        // Ship's own 8th-frame gate obeys the same key.
+        ("", "", Kind::Ship, 1),
+        (
+            "",
+            "MakesWake=no
+",
+            Kind::Ship,
+            0,
+        ),
+        (
+            "ShipLocomotionClassMakesWake=no
+",
+            "",
+            Kind::Ship,
+            0,
+        ),
+        (
+            "ShipLocomotionClassMakesWake=no
+",
+            "MakesWake=yes
+",
+            Kind::Ship,
+            1,
+        ),
+    ] {
+        let (mut sim, rules) = scene(global, boat_keys, kind);
+        sim.spawn_wakes_for_frame(&rules);
+        assert_eq!(
+            wakes(&sim),
+            expected,
+            "{global:?} {boat_keys:?} kind {:?}",
+            kind as u8
+        );
+    }
+}
+
+/// The resolver behind [`super::spawn_wakes_for_frame`]: each locomotor kind
+/// takes its own `[AudioVisual]` global, a type value wins over it, and a
+/// kind with no native wake hook stays true.
+#[test]
+fn makes_wake_resolves_each_locomotor_global_and_type_override() {
+    use crate::rules::locomotor_type::LocomotorKind;
+
+    let defaults = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]
+",
+    ))
+    .unwrap();
+    let resolve = |typed, kind| super::resolves_makes_wake(typed, kind, &defaults);
+    assert!(!resolve(None, Some(LocomotorKind::Walk)), "Walk ctor no");
+    assert!(resolve(None, Some(LocomotorKind::Drive)), "Drive ctor yes");
+    assert!(resolve(None, Some(LocomotorKind::Hover)), "Hover ctor yes");
+    assert!(resolve(None, Some(LocomotorKind::Ship)), "Ship ctor yes");
+    assert!(
+        resolve(None, Some(LocomotorKind::Jumpjet)),
+        "no native MakesWake hook"
+    );
+
+    let flipped = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]
+WalkLocomotorMakesWake=yes
+DriveLocomotorMakesWake=no
+         HoverLocomotionClassMakesWake=no
+ShipLocomotionClassMakesWake=no
+",
+    ))
+    .unwrap();
+    let resolve = |typed, kind| super::resolves_makes_wake(typed, kind, &flipped);
+    assert!(resolve(None, Some(LocomotorKind::Walk)));
+    assert!(!resolve(None, Some(LocomotorKind::Drive)));
+    assert!(!resolve(None, Some(LocomotorKind::Hover)));
+    assert!(!resolve(None, Some(LocomotorKind::Ship)));
+    assert!(
+        resolve(Some(true), Some(LocomotorKind::Ship)),
+        "type yes wins"
+    );
+    assert!(
+        !resolve(Some(false), Some(LocomotorKind::Walk)),
+        "type no wins"
     );
 }
 
@@ -3474,6 +3678,7 @@ fn sonic_fire_event(
     )
     .coord;
     SimFireEvent {
+        firing_anim: None,
         attacker_id,
         weapon_slot: crate::sim::combat::combat_weapon::WeaponSlot::Primary,
         weapon_id: sim.interner.intern("SonicZap"),
@@ -3885,7 +4090,6 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
 /// holds no target.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -7271,6 +7475,68 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
     );
 }
 
+/// Phobos `[General] UnitPowerDrain`: the active Infantry/Unit/Aircraft
+/// counts fold their type `Power=` after the building roster
+/// (`Ext/House/Hooks.cpp:34-58`), and the cameo readout reports the same
+/// value for the local player (`Misc/PhobosToolTip.cpp:70-80`).
+#[test]
+fn unit_power_drain_folds_active_counts_into_the_house_totals() {
+    use crate::sim::combat::Health;
+
+    let ini_str: &str = "\
+[General]\nUnitPowerDrain=yes\n\n\
+[VehicleTypes]\n0=CHARGER\n1=DRAINER\n\n\
+[BuildingTypes]\n\n\
+[InfantryTypes]\n\n\
+[AircraftTypes]\n\n\
+[CHARGER]\nStrength=100\nArmor=none\nPower=25\n\
+[DRAINER]\nStrength=100\nArmor=none\nPower=-50\n";
+    let ini = IniFile::from_str(ini_str);
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(""))
+        .expect("unit power rules parse");
+    let mut sim = Simulation::new();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.input_delay_ticks = 0;
+    let grid = PathGrid::test_all_passable(64, 64);
+    let _ = (
+        crate::sim::intern::test_intern("CHARGER"),
+        crate::sim::intern::test_intern("DRAINER"),
+        crate::sim::intern::test_intern("Americans"),
+    );
+    sim.interner = crate::sim::intern::test_interner();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    for (id, kind, rx) in [(1u64, "CHARGER", 10u16), (2u64, "DRAINER", 12u16)] {
+        let mut unit = GameEntity::test_default_of_category(
+            id,
+            kind,
+            "Americans",
+            rx,
+            10,
+            EntityCategory::Unit,
+        );
+        unit.health = Health::new(100);
+        sim.substrate.entities.insert(unit);
+        sim.house_added_to_game(id, &rules);
+    }
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
+    assert_eq!(sim.power_states[&owner].total_output(), 25);
+    assert_eq!(sim.power_states[&owner].total_drain(), 50);
+    assert_eq!(
+        sim.cameo_power_delta(&rules, owner, rules.object("DRAINER").unwrap()),
+        -50,
+        "the tooltip's unit arm reads the type Power"
+    );
+    assert_eq!(
+        sim.cameo_power_delta(&rules, owner, rules.object("CHARGER").unwrap()),
+        25
+    );
+}
+
 /// Combat-death counterpart: a structure killed in combat in the object pass
 /// lives in the Dying window through the factory sweep and is freed only by the
 /// single end-of-tick drain. Its repair took its step in the building's own
@@ -9914,4 +10180,225 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     assert_eq!(sim.next_stable_object_id(), stable_cursor);
     assert_eq!(sim.live_object_order_snapshot(), [id]);
     sim.debug_assert_logic_membership_consistent();
+}
+
+/// Phobos `AmbientDamage.Warhead` (`0x75F39D`) and `.IgnoreTarget`
+/// (`0x75F415`) on the blast wave: the override warhead's Verses scales the
+/// ambient hit, and the wave's Target object can be skipped; the `[General]`
+/// fallback is the per-weapon default.
+#[test]
+fn phobos_wave_ambient_damage_reads_the_warhead_and_ignore_target() {
+    fn wave_rules(weapon_keys: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
+             [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
+             [TARGET]\nStrength=100\nArmor=wood\n\n\
+             [SonicZap]\nDamage=4\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\n\
+             Warhead=SonicWH\nIsSonic=yes\n{weapon_keys}\n\n\
+             [Sonic]\nLevel=yes\n\n\
+             [SonicWH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
+        )))
+        .expect("Phobos Sonic Wave fixture")
+    }
+    const ALT: &str = "[AltWH]\nWood=yes\n\
+        Verses=50%,50%,50%,50%,50%,50%,50%,50%,50%,50%,50%\n\
+        [Warheads]\n0=SonicWH\n1=AltWH\n";
+    for (keys, target_health) in [
+        (
+            format!("AmbientDamage=10\nAmbientDamage.Warhead=AltWH\n{ALT}"),
+            95,
+        ),
+        (
+            format!(
+                "AmbientDamage=10\nAmbientDamage.Warhead=AltWH\n\
+                 AmbientDamage.IgnoreTarget=yes\n{ALT}"
+            ),
+            100,
+        ),
+    ] {
+        let rules = wave_rules(&keys);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E7);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .expect("dolphin");
+        let receiver = sim
+            .spawn_object("TARGET", "Russians", 7, 10, 0, &rules)
+            .expect("receiver");
+        let target = sim
+            .spawn_object("TARGET", "Russians", 12, 10, 0, &rules)
+            .expect("target");
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
+        admit_test_wave(&mut sim, &rules, &event);
+        let wave_id = sim.active_wave_links[&dolphin];
+        // The wave's recorded cells cover the receiver and the Target object.
+        let request = crate::sim::wave::WaveDamageRequest {
+            wave_id,
+            firer_id: dolphin,
+            recorded_cells: vec![
+                crate::sim::wave::WaveRecordedCell::real(7, 10),
+                crate::sim::wave::WaveRecordedCell::real(12, 10),
+            ],
+            wave_z: 0,
+            target: Some(TargetKind::Entity(target)),
+            ares_weapon: None,
+        };
+        sim.commit_logic_wave_damage_request(&rules, None, &request, FrameEffects::default());
+        let health =
+            |sim: &Simulation, id| sim.substrate.entities.get(id).unwrap().health.current();
+        assert_eq!(
+            health(&sim, receiver),
+            95,
+            "the override warhead's 50% Verses scales the ambient hit"
+        );
+        assert_eq!(health(&sim, target), target_health);
+    }
+}
+
+/// Phobos `AmbientDamage.IgnoreTarget` (`0x75F415`) compares the same
+/// ObjectClass pointer, so a Terrain target is skipped like a Techno one.
+#[test]
+fn phobos_wave_ambient_damage_ignore_target_skips_a_terrain_target() {
+    fn wave_terrain_rules(ignore: bool) -> RuleSet {
+        let ignore = if ignore {
+            "AmbientDamage.IgnoreTarget=yes\n"
+        } else {
+            ""
+        };
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=DLPH\n\n\
+             [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
+             [TerrainTypes]\n0=TREE\n\n\
+             [TREE]\nStrength=100\nArmor=wood\n\n\
+             [SonicZap]\nDamage=4\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\n\
+             Warhead=SonicWH\nIsSonic=yes\nAmbientDamage=10\n\
+             AmbientDamage.Warhead=AltWH\n{ignore}\n\n\
+             [Sonic]\nLevel=yes\n\n\
+             [SonicWH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n\n\
+             [AltWH]\nWood=yes\n\
+             Verses=50%,50%,50%,50%,50%,50%,50%,50%,50%,50%,50%\n\n\
+             [Warheads]\n0=SonicWH\n1=AltWH\n",
+        )))
+        .expect("Phobos wave Terrain fixture")
+    }
+    for (ignore, terrain_health) in [(false, 95), (true, 100)] {
+        let rules = wave_terrain_rules(ignore);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E8);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .expect("dolphin");
+        let terrain_id = sim.substrate.allocate_stable_id();
+        let state = crate::sim::terrain_object::TerrainObjectState::for_test(
+            terrain_id,
+            sim.interner.intern("TREE"),
+            12,
+            10,
+        );
+        {
+            let store = sim.terrain_objects_mut_for_test();
+            store.insert_constructed(state, false);
+            store.add_to_cell(terrain_id, (12, 10));
+        }
+        let aim = sim
+            .spawn_object("DLPH", "Americans", 20, 20, 64, &rules)
+            .expect("aim");
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, aim);
+        admit_test_wave(&mut sim, &rules, &event);
+        let wave_id = sim.active_wave_links[&dolphin];
+        sim.waves
+            .get_mut(wave_id)
+            .expect("admitted wave")
+            .set_target_ref_for_test(Some(TargetKind::Entity(terrain_id)));
+        let request = crate::sim::wave::WaveDamageRequest {
+            wave_id,
+            firer_id: dolphin,
+            recorded_cells: vec![crate::sim::wave::WaveRecordedCell::real(12, 10)],
+            wave_z: 0,
+            target: Some(TargetKind::Entity(terrain_id)),
+            ares_weapon: None,
+        };
+        sim.commit_logic_wave_damage_request(&rules, None, &request, FrameEffects::default());
+        assert_eq!(
+            sim.terrain_objects.objects()[&terrain_id].health(),
+            terrain_health,
+            "the wave skip compares the Terrain target pointer too"
+        );
+    }
+}
+
+/// Ares `WaveClass_DamageCell_Wall` (1005D7A0, hook `0x75F46E`) gates the
+/// wall hit on the weapon's own `Warhead=`, which the Phobos ambient override
+/// (`0x75F39D`) must not replace.
+#[test]
+fn phobos_wave_wall_damage_gate_reads_the_weapon_warhead() {
+    // The wall gate is Ares `WaveClass_DamageCell_Wall`: the fixture names an
+    // Ares-only weapon key (`ProjectileRange`, at its default) so the game
+    // reads as an Ares game.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    fn wall_rules(weapon_warhead: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=DLPH\n1=AIM\n\n\
+             [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
+             [AIM]\nStrength=100\nArmor=wood\n\n\
+             [SonicZap]\nDamage=4\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\n\
+             Warhead={weapon_warhead}\nIsSonic=yes\nAmbientDamage=10\n\
+             ProjectileRange=100000\n\
+             AmbientDamage.Warhead={override_warhead}\n\n\
+             [Sonic]\nLevel=yes\n\n\
+             [RAILWH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n\n\
+             [ALTWH]\nWood=yes\nWall=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n\n\
+             [Warheads]\n0=RAILWH\n1=ALTWH\n",
+            override_warhead = if weapon_warhead == "RAILWH" {
+                "ALTWH"
+            } else {
+                "RAILWH"
+            },
+        )))
+        .expect("Phobos wave wall fixture")
+    }
+    for (weapon_warhead, wall_destroyed) in [("RAILWH", false), ("ALTWH", true)] {
+        let rules = wall_rules(weapon_warhead);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E9);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .expect("dolphin");
+        let aim = sim
+            .spawn_object("AIM", "Americans", 20, 20, 0, &rules)
+            .expect("aim");
+        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=FENCE\n[FENCE]\nWall=yes\nStrength=4\n"),
+            None,
+        );
+        let wall = overlays.id_for_name("FENCE").expect("wall overlay");
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(12, 10, wall, 0);
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, aim);
+        admit_test_wave(&mut sim, &rules, &event);
+        let request = crate::sim::wave::WaveDamageRequest {
+            wave_id: sim.active_wave_links[&dolphin],
+            firer_id: dolphin,
+            recorded_cells: vec![crate::sim::wave::WaveRecordedCell::real(12, 10)],
+            wave_z: 0,
+            target: None,
+            ares_weapon: None,
+        };
+        sim.commit_logic_wave_damage_request(
+            &rules,
+            Some(&overlays),
+            &request,
+            FrameEffects::default(),
+        );
+        let intact = sim.overlay_grid.as_ref().unwrap().cell(12, 10).overlay_id;
+        assert_eq!(
+            intact.is_none(),
+            wall_destroyed,
+            "weapon Warhead={weapon_warhead} gates the wall hit"
+        );
+    }
 }

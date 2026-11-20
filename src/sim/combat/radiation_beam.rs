@@ -111,7 +111,7 @@ pub(crate) fn create(
         &super::fire_coord::FireSource::of_entity(source),
         object,
         flh_index,
-        (source.weapon_burst.index() & 1) as u8,
+        source.weapon_burst.index() as u8,
         Default::default(),
     )
     .coord;
@@ -121,6 +121,7 @@ pub(crate) fn create(
         source,
         from,
         super::fire_coord::EffectDepthProjection::ChangedY,
+        true,
     );
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;

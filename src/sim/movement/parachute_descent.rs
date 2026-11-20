@@ -24,6 +24,17 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 
+/// What a landing cell answered: `CellClass::IsClearToMove`'s verdict for the
+/// mover's `SpeedType`/`MovementZone` and the cell's own `ContainsBridge()`
+/// (`+0x140 & 0x100`), which both Phobos arms copy into `OnBridge`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LandingCellVerdict {
+    /// The `IsClearToMove` answer.
+    pub clear: bool,
+    /// `pCell->ContainsBridge()`.
+    pub on_bridge: bool,
+}
+
 /// Begin parachute descent for an entity at world Z `drop_z` (leptons).
 /// Returns `true` on success.
 ///
@@ -74,7 +85,14 @@ impl crate::sim::world::Simulation {
         let old_layer = self.entity_display_layer(id, rules);
         let landed = self.advance_fall(id, rules.general.parachute_max_fall_rate, rules, effects);
         let mut changed = false;
+        // `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
+        // `OnParachuted` for every falling-down Techno, before the `IsABomb`
+        // gate, so an unflagged later landing cannot keep it.
+        let mut on_parachuted = false;
         if landed {
+            {
+                on_parachuted = self.take_on_parachuted(id);
+            }
             changed =
                 self.per_cell_process(id, super::PerCellReason::Arrival, rules, registry, effects)?;
             Self::wind_down_parachute_anim(&mut self.substrate, id);
@@ -123,10 +141,38 @@ impl crate::sim::world::Simulation {
             .map(|e| e.health.current())
         {
             //5F402B copies current Health+6C into a local packet (not Strength).
+            //
+            // Phobos `ObjectClass_Update_FallingDown_ToDead` (hook `0x5F4021`,
+            // `Ext/Techno/Hooks.cpp:1014-1090`) reads and clears
+            // `TechnoExt::HoverShutdown` inside this arm and lets the
+            // `HoverDrownable` answer pick the damage. The drowning arm takes
+            // the whole current health (`:1033-1036`); the surviving arm runs
+            // the `FallingDownDamage` model below.
+            let damage = {
+                let took_shutdown = self.take_hover_shutdown(id);
+                if took_shutdown && self.hover_drowns(id, rules) {
+                    // The drowning arm keeps the whole current-Health packet
+                    // (`Ext/Techno/Hooks.cpp:1033-1036`).
+                    health
+                } else if !self.landing_cell_clear(id, rules) {
+                    // `IsClearToMove` fails before the ratio block: the whole
+                    // current Health goes (`:1043-1055`).
+                    health
+                } else if on_parachuted {
+                    // `if (!onParachuted)` gates the EMP arm and the whole
+                    // ratio block (`:1067-1084`): the packet stays 0, so the
+                    // landing deals no `FallingDownDamage` at all.
+                    0
+                } else {
+                    // A shutdown over a non-drowning cell falls through into the
+                    // same ratio block the canopy arm uses (`:1062-1084`).
+                    self.phobos_falling_damage(id, health, rules)
+                }
+            };
             let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
             let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
                 id,
-                health,
+                damage,
                 0,
                 crate::sim::combat::RAD_NO_ATTACKER,
                 None,
@@ -139,6 +185,240 @@ impl crate::sim::world::Simulation {
             self.commit_direct_damage_receiver(rules, registry, hit, effects);
         }
         Ok((landed, changed))
+    }
+
+    /// Phobos `TechnoExt::HoverShutdown`: the landing arm owns the single read
+    /// and the clear (`Ext/Techno/Hooks.cpp:1026-1027`).
+    fn take_hover_shutdown(&mut self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get_mut(id)
+            .is_some_and(|entity| entity.take_hover_shutdown())
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1030-1031`: the landing arm reads and clears
+    /// `TechnoExt::OnParachuted` on every falling-down Techno.
+    fn take_on_parachuted(&mut self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get_mut(id)
+            .is_some_and(|entity| entity.take_on_parachuted())
+    }
+
+    /// `HoverDrownable.Get(RulesExt::Global()->HoverDrownable)`
+    /// (`Ext/Techno/Hooks.cpp:1031`): the type's own value, else
+    /// `[General] HoverDrownable`.
+    fn hover_drowns(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| {
+                self.interner.try_resolve(entity.type_ref())?;
+                self.interner.object_type(entity.type_ref(), rules)
+            })
+            .is_none_or(|object| {
+                object
+                    .phobos_hover_drown
+                    .drowns(rules.phobos_globals.hover_drownable)
+            })
+    }
+
+    /// The landing arm's ratio packet (`Ext/Techno/Hooks.cpp:1062-1084`): an
+    /// EMP-locked unit whose `FallingDownDamage.AllowEMP` (type else
+    /// `[CombatDamage]`, default `true`) refuses keeps the vanilla
+    /// full-current-Health packet; otherwise the ratio is the type's
+    /// `FallingDownDamage.Water` on a bridge-less water or beach cell, else
+    /// the type's `FallingDownDamage`, else the `[CombatDamage]` global. A
+    /// negative ratio takes that fraction of the current Health, one of at
+    /// most 1.0 that fraction of `Strength`, and a larger one is absolute;
+    /// each tier truncates into the `int` packet.
+    fn phobos_falling_damage(
+        &self,
+        id: u64,
+        health: i32,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> i32 {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return health;
+        };
+        // A fixture entity may carry an id this interner never produced; it then
+        // has no type keys, which is the pre-existing whole-health packet.
+        if self.interner.try_resolve(entity.type_ref()).is_none() {
+            return health;
+        }
+        let type_rules = self.interner.object_type(entity.type_ref(), rules);
+        let allow_emp = type_rules
+            .as_ref()
+            .and_then(|object| object.phobos_falling_down_damage_allow_emp)
+            .unwrap_or(rules.combat_damage.falling_down_damage_allow_emp);
+        if !allow_emp && entity.emp_remaining() > 0 {
+            return health;
+        }
+        let strength = self.object_strength(id, rules).unwrap_or(health);
+        let ratio = if self.landing_in_water(id) {
+            type_rules
+                .as_ref()
+                .and_then(|object| {
+                    object
+                        .phobos_falling_down_damage_water
+                        .or(object.phobos_falling_down_damage)
+                })
+                .unwrap_or(rules.combat_damage.falling_down_damage)
+        } else {
+            type_rules
+                .as_ref()
+                .and_then(|object| object.phobos_falling_down_damage)
+                .unwrap_or(rules.combat_damage.falling_down_damage)
+        };
+        if ratio < 0.0 {
+            (f64::from(health) * -ratio) as i32
+        } else if ratio <= 1.0 {
+            (f64::from(strength) * ratio) as i32
+        } else {
+            ratio as i32
+        }
+    }
+
+    /// The landing cell is water or beach and carries no bridge deck
+    /// (`Ext/Techno/Hooks.cpp:1059-1061`: `!onBridge && (Water || Beach)`).
+    fn landing_in_water(&self, id: u64) -> bool {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::rules::terrain_rules::LandType;
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        let land = cells.land_type(cell);
+        (land == i32::from(LandType::Water.as_index())
+            || land == i32::from(LandType::Beach.as_index()))
+            && cells.flags(cell) & 0x100 == 0
+    }
+
+    /// `CellClass::IsClearToMove(pType->SpeedType, true, true, -1,
+    /// pType->MovementZone, -1, pCell->ContainsBridge())`
+    /// (`Ext/Techno/Hooks.cpp:1043-1055`): the cell a falling unit lands on
+    /// must admit it. VERA reads the two arms that decide it here — the cell's
+    /// reduced `ZoneType` against the mover's `MovementZone`
+    /// (`MOVEMENT_ZONE_PASSABILITY`, the matrix the zone flood-fill uses) and
+    /// the `LandType` row's speed for the mover's `SpeedType` (a zero row is
+    /// impassable) — plus the deck plane the hook's `onBridge` argument
+    /// selects.
+    ///
+    /// `onBridge` is the cell's `ContainsBridge()` (`+0x140 & 0x100`), and
+    /// with level `-1` it moves the whole call onto the deck
+    /// (`0x0048353C..0x0048354E`): the deck occupation byte
+    /// (`AltOccupationFlags+0x128`) replaces the ground one and the land half
+    /// is skipped outright (`0x004835DE..0x004835F4`). So a mover may land on
+    /// a bridge deck over water its own `SpeedType` could never cross, which
+    /// the two ground arms would refuse. Both ignore flags are set, so
+    /// `0x00483558..0x00483572` masks the byte with `0xE0` then `0x5F` and
+    /// leaves only `0x40`.
+    ///
+    /// A cell outside the playfield is not clear. An unknown cell, type or
+    /// `SpeedType` answers clear so the pre-existing ratio packet stands.
+    fn landing_cell_clear(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.landing_cell_verdict(id, rules)
+            .is_some_and(|verdict| verdict.clear)
+    }
+
+    /// [`Self::landing_cell_clear`] plus the two facts Phobos's type-change arm
+    /// (`Ext/Foot/Body.cpp:772-785`) needs: `None` when `TryGetCellAt` finds no
+    /// `CellClass` at the object's coordinate (the arm then takes its else
+    /// branch), otherwise the `IsClearToMove` answer and the cell's
+    /// `ContainsBridge()` it copies into `OnBridge`.
+    pub(crate) fn landing_cell_verdict(
+        &self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<LandingCellVerdict> {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::rules::locomotor_type::SpeedType;
+        use crate::sim::occupancy::RawCellKey;
+
+        let unknown = Some(LandingCellVerdict {
+            clear: true,
+            on_bridge: false,
+        });
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return unknown;
+        };
+        if self.interner.try_resolve(entity.type_ref()).is_none() {
+            return unknown;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return unknown;
+        };
+        if object.speed_type == SpeedType::Invalid {
+            return unknown;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return unknown;
+        };
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        let (rx, ry) = cells.coord(cell);
+        let (Ok(rx), Ok(ry)) = (u16::try_from(rx), u16::try_from(ry)) else {
+            return unknown;
+        };
+        let Some(resolved) = terrain.cell(rx, ry) else {
+            return unknown;
+        };
+        if resolved.outside_playfield {
+            return None;
+        }
+        let contains_bridge = crate::sim::cell_rect::canonical_cell_ref(terrain, cell)
+            .bridge_flags_0x1180()
+            & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+            != 0;
+        if contains_bridge {
+            let deck = self.substrate.raw_cell_occupation.bits_at(
+                RawCellKey::Real(rx, ry),
+                crate::sim::movement::locomotor::MovementLayer::Bridge,
+            );
+            return Some(LandingCellVerdict {
+                clear: (deck & 0xE0) & 0x5F == 0,
+                on_bridge: true,
+            });
+        }
+        if !crate::sim::pathfinding::passability::is_passable_for_zone(
+            resolved.zone_type,
+            object.movement_zone,
+        ) {
+            return Some(LandingCellVerdict {
+                clear: false,
+                on_bridge: false,
+            });
+        }
+        let clear = terrain
+            .land_speed_costs(i32::from(resolved.land_type))
+            .cost_for_speed_type(object.speed_type)
+            // An unbound row (no rules bound to the grid) is unknown, not a
+            // zero row: answer clear so the ratio packet stands.
+            .is_none_or(|bits| f32::from_bits(bits.bits()) > 0.0);
+        Some(LandingCellVerdict {
+            clear,
+            on_bridge: false,
+        })
+    }
+
+    /// The type's `Strength=`, the ratio model's base for a ratio up to 1.0
+    /// (`Ext/Techno/Hooks.cpp:1082`).
+    fn object_strength(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> Option<i32> {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| {
+                self.interner.try_resolve(entity.type_ref())?;
+                self.interner.object_type(entity.type_ref(), rules)
+            })
+            .map(|object| object.strength)
     }
 
     /// Construct the falling object's canopy.
@@ -340,6 +620,30 @@ fn parachute_anim_name<'r>(
             .as_deref()
             .or(rules.general.parachute_shp.as_deref())
     }
+}
+
+/// Phobos parabombs' descent rate (`Ext/Bullet/Hooks.cpp:128-137`).
+///
+/// ```text
+/// fallRate = ParabombFallRate - Parachuted.FallRate
+/// if (fallRate < Parachuted.MaxFallRate.Get([General] ParachuteMaxFallRate))
+///     fallRate = that cap
+/// ParabombFallRate = fallRate      // persisted on BulletExt
+/// ```
+///
+/// `Parachuted.FallRate=` is therefore the per-frame **acceleration** (a
+/// positive step subtracted from a rate that is negative while descending)
+/// and `Parachuted.MaxFallRate=` / `[General] ParachuteMaxFallRate` the
+/// **terminal** rate — a lower bound in signed terms, i.e. the fastest the
+/// canopy is allowed to fall. This is the same step/cap shape
+/// [`crate::sim::object_fall::ObjectFallState::advance_rate`] uses for a
+/// parachuting object; only the owners of `step` and `cap` differ.
+///
+/// The bullet's accumulated rate starts at `0` (`BulletExt::ParabombFallRate`
+/// `Ext/Bullet/Body.h:61`), so the first frame computes `0 - step` and the
+/// cap brings it up to the terminal rate whenever the step is positive.
+pub fn parachuted_bullet_rate(current: i32, step: i32, cap: i32) -> i32 {
+    current.wrapping_sub(step).max(cap)
 }
 
 impl crate::sim::world::Simulation {
@@ -735,5 +1039,439 @@ mod canopy_tests {
         );
         let rules = RuleSet::from_rules_layers(&layers).unwrap();
         assert_eq!(rules.general.vehicle_parachute, None);
+    }
+
+    /// Phobos `ObjectClass_Update_FallingDown_ToDead` (hook `0x5F4021`,
+    /// `Ext/Techno/Hooks.cpp:1014-1043`): only the `IsABomb` arm reads and
+    /// clears `TechnoExt::HoverShutdown`, and `HoverDrownable` then picks the
+    /// damage packet.
+    #[test]
+    fn only_the_bomb_landing_arm_takes_the_hover_shutdown() {
+        fn land(bomb: bool) -> bool {
+            let rules = RuleSet::from_ini(&IniFile::from_str(
+                "[General]\nHoverDrownable=no\n[InfantryTypes]\n0=E1\n[E1]\nStrength=125\n",
+            ))
+            .expect("rules");
+            let mut sim = Simulation::new();
+            sim.interner = crate::sim::intern::test_interner();
+            let id = sim.substrate.allocate_stable_id();
+            let mut entity = GameEntity::test_default(id, "E1", "Americans", 10, 11);
+            entity.lifecycle.set_in_limbo_for_test(false);
+            entity.health.set_for_test(5000);
+            // Grounded, so the first frame is the landing frame.
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            if bomb {
+                entity.begin_bomb_fall();
+            } else {
+                entity.begin_parachute_fall(0);
+            }
+            entity.mark_hover_shutdown();
+            sim.substrate.entities.insert(entity);
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            sim.substrate
+                .entities
+                .get(id)
+                .expect("bomb landing retains the member")
+                .hover_shutdown()
+        }
+
+        assert!(!land(true), "the bomb arm reads and clears the flag");
+        assert!(
+            land(false),
+            "a canopy landing is not a bomb and never reads it"
+        );
+    }
+}
+
+/// `Ext/Bullet/Hooks.cpp:128-137`: the parabomb rate is the step/cap shape,
+/// with the step subtracted and the cap a signed lower bound.
+#[cfg(all(test, tests_sim_movement))]
+mod parabomb_rate_tests {
+    use super::parachuted_bullet_rate;
+
+    /// Native: `fallRate = ParabombFallRate - Parachuted.FallRate;` then
+    /// `if (fallRate < maxFallRate) fallRate = maxFallRate;` with
+    /// `ParabombFallRate` starting at `0` (`Ext/Bullet/Body.h:61`). A step of
+    /// 1 therefore walks the rate one lepton per frame until it reaches the
+    /// cap, and the cap holds it there.
+    #[test]
+    fn the_accumulated_rate_reaches_the_cap_and_stays_there() {
+        let mut rate = 0;
+        let frames: Vec<i32> = (0..8)
+            .map(|_| {
+                rate = parachuted_bullet_rate(rate, 1, -7);
+                rate
+            })
+            .collect();
+        assert_eq!(frames, [-1, -2, -3, -4, -5, -6, -7, -7]);
+    }
+
+    /// A slower step walks the rate down to the cap one frame at a time.
+    #[test]
+    fn a_small_step_reaches_the_cap_late() {
+        let mut rate = 0;
+        let frames: Vec<i32> = (0..5)
+            .map(|_| {
+                rate = parachuted_bullet_rate(rate, 3, -7);
+                rate
+            })
+            .collect();
+        assert_eq!(frames, [-3, -6, -7, -7, -7]);
+    }
+
+    /// The native `if (fallRate < maxFallRate) fallRate = maxFallRate;` is a
+    /// signed maximum: a rate already above (less negative than) the cap
+    /// keeps its step, while only a rate below the cap is raised to it. The
+    /// cap is not applied to the step before the subtraction.
+    #[test]
+    fn the_cap_is_the_only_brake() {
+        assert_eq!(
+            parachuted_bullet_rate(-4, 1, -7),
+            -5,
+            "a rate above the cap is not raised to it"
+        );
+        assert_eq!(
+            parachuted_bullet_rate(-6, 1, -7),
+            -7,
+            "the step lands exactly on the cap"
+        );
+        assert_eq!(
+            parachuted_bullet_rate(-8, 1, -7),
+            -7,
+            "a rate below the cap is raised to it"
+        );
+        assert_eq!(
+            parachuted_bullet_rate(-8, 1, -100),
+            -9,
+            "a deeper cap leaves the step unchanged"
+        );
+    }
+
+    /// The native expression is `ParabombFallRate - Parachuted.FallRate` in
+    /// `int` arithmetic; `wrapping_sub` keeps that overflow behaviour. An
+    /// overflow can wrap the rate above the cap, which the maximum then keeps.
+    #[test]
+    fn the_step_subtracts_with_native_int_overflow() {
+        assert_eq!(
+            parachuted_bullet_rate(i32::MIN, 1, i32::MIN),
+            i32::MAX,
+            "i32::MIN - 1 wraps to i32::MAX, above the i32::MIN cap"
+        );
+        assert_eq!(parachuted_bullet_rate(0, i32::MIN, i32::MIN), i32::MIN);
+    }
+}
+
+#[cfg(all(test, tests_sim_movement))]
+mod falling_damage_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::combat::Health;
+    use crate::sim::world::Simulation;
+
+    fn scene(type_keys: &str, global: &str, water: bool) -> (Simulation, RuleSet, u64) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[VehicleTypes]
+0=FALLER
+             [FALLER]
+Strength=1000
+Armor=none
+Speed=4
+{type_keys}             [CombatDamage]
+{global}"
+        ));
+        let rules = RuleSet::from_ini(&ini).expect("falling rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 3);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim
+            .spawn_object("FALLER", "Americans", 10, 10, 0, &rules)
+            .expect("faller");
+        sim.entities_mut_for_test().get_mut(id).unwrap().health = Health::new(400);
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+            let mut cell = crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
+            if water && (x, y) == (10, 10) {
+                cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+            }
+            cell
+        }));
+        (sim, rules, id)
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1014-1090`: a negative ratio takes that fraction
+    /// of the current health, a ratio up to 1.0 that fraction of Strength and
+    /// a value above 1.0 is absolute; the type key falls back to the global.
+    #[test]
+    fn the_three_falling_damage_tiers_match_the_hook() {
+        let (sim, rules, id) = scene(
+            "FallingDownDamage=0.5
+",
+            "",
+            false,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            500,
+            "positive ratio uses Strength"
+        );
+        let (sim, rules, id) = scene(
+            "FallingDownDamage=-0.5
+",
+            "",
+            false,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            200,
+            "negative takes that fraction of the current health"
+        );
+        let (sim, rules, id) = scene(
+            "",
+            "FallingDownDamage=0.25
+",
+            false,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            250,
+            "the global fallback"
+        );
+        let (sim, rules, id) = scene(
+            "FallingDownDamage.Water=2
+",
+            "FallingDownDamage=0.25
+",
+            true,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            2,
+            "water selects the type Water value, absolute above 1.0"
+        );
+    }
+
+    /// `FallingDownDamage.AllowEMP=no`: an EMP-locked unit keeps the vanilla
+    /// full-current-Health packet.
+    #[test]
+    fn emp_allow_emp_no_keeps_the_full_health_packet() {
+        let (mut sim, rules, id) = scene(
+            "FallingDownDamage.AllowEMP=no
+FallingDownDamage=0.5
+",
+            "",
+            false,
+        );
+        sim.entities_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .set_emp_remaining_for_test(30);
+        assert_eq!(sim.phobos_falling_damage(id, 400, &rules), 400);
+    }
+
+    /// A hover unit that shut down over a **non-drowning** cell falls through
+    /// into the same ratio block as the canopy arm
+    /// (`Ext/Techno/Hooks.cpp:1038-1084`): the shutdown arm is only the
+    /// `HoverDrownable` answer, not a whole-`Strength` packet of its own.
+    #[test]
+    fn a_non_drowning_hover_shutdown_takes_the_falling_down_ratio() {
+        fn landing(keys: &str, global: &str) -> (Option<i32>, bool) {
+            let (mut sim, rules, id) = scene(keys, global, false);
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            entity.begin_bomb_fall();
+            entity.mark_hover_shutdown();
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            let health = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.health.current());
+            let cleared = sim
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| !entity.hover_shutdown());
+            (health, cleared)
+        }
+
+        // Strength=1000, current Health=400, so 0.25 is a 250 packet while the
+        // default ratio (1.0) packets the whole Strength and kills the unit.
+        // The arena carries no `[C4]`, so name and declare one: an unresolved
+        // warhead zeroes the packet and would hide the arm.
+        let c4 = "C4Warhead=C4
+[Warheads]
+0=C4
+[C4]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+        let (health, cleared) = landing(
+            "HoverDrownable=no
+FallingDownDamage=0.25
+",
+            c4,
+        );
+        assert!(cleared, "the landing arm reads and clears the flag");
+        assert_eq!(health, Some(150), "the ratio scales the packet");
+        let (health, _) = landing(
+            "HoverDrownable=no
+",
+            c4,
+        );
+        assert!(
+            health.is_none_or(|current| current <= 0),
+            "the default ratio is 1.0, which still kills: {health:?}"
+        );
+    }
+
+    /// `if (!onParachuted)` (`Ext/Techno/Hooks.cpp:1067-1084`): a Techno issued
+    /// as a parachute fall (`FootClass_Paradrop`, `:1907`) lands with a 0
+    /// packet, so neither the EMP arm nor the ratio runs. The flag is read and
+    /// cleared on that landing (`:1030-1031`), before the `IsABomb` gate.
+    #[test]
+    fn a_parachuted_landing_skips_the_falling_down_ratio() {
+        const C4: &str = "C4Warhead=C4
+[Warheads]
+0=C4
+[C4]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+        fn landing(parachuted: bool) -> (Option<i32>, bool) {
+            let (mut sim, rules, id) = scene("FallingDownDamage=0.25\n", C4, false);
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            entity.begin_bomb_fall();
+            if parachuted {
+                entity.mark_on_parachuted();
+            }
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            let health = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.health.current());
+            let cleared = sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .is_none_or(|entity| !entity.take_on_parachuted());
+            (health, cleared)
+        }
+
+        let (health, cleared) = landing(true);
+        assert!(cleared, "the landing arm reads and clears the flag");
+        assert_eq!(
+            health,
+            Some(400),
+            "the 0.25 ratio (a 100 packet) is skipped, so the 400 stands"
+        );
+        let (health, _) = landing(false);
+        assert_eq!(health, Some(150), "without the flag the ratio still runs");
+    }
+
+    /// `CellClass::IsClearToMove(SpeedType, true, true, -1, MovementZone, -1,
+    /// onBridge)` (`Ext/Techno/Hooks.cpp:1043-1055`): a landing cell the mover's
+    /// `MovementZone` cannot pass takes the whole current Health before the
+    /// ratio block runs, so a low `FallingDownDamage` cannot save it.
+    #[test]
+    fn a_blocked_landing_cell_takes_the_whole_health_packet() {
+        const C4: &str = "C4Warhead=C4
+[Warheads]
+0=C4
+[C4]
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+        fn land(zone: Option<u8>) -> (bool, Option<i32>) {
+            // Water cell with the type's Water ratio set low: the ratio packet
+            // would leave 300 of 400, the blocked arm takes all of it.
+            let (mut sim, rules, id) = scene(
+                "FallingDownDamage.Water=0.1
+",
+                C4,
+                true,
+            );
+            if let Some(zone) = zone {
+                sim.resolved_terrain
+                    .as_mut()
+                    .expect("scene grid")
+                    .cell_mut_for_test(10, 10)
+                    .expect("water cell")
+                    .zone_type = zone;
+            }
+            let clear = sim.landing_cell_clear(id, &rules);
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.position.set_exact_z_leptons_for_test(Some(0));
+            entity.begin_bomb_fall();
+            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+                .expect("landing arm");
+            let health = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.health.current());
+            (clear, health)
+        }
+
+        // Reduced ZoneType 4 is the Water column, which only the water rows of
+        // `MOVEMENT_ZONE_PASSABILITY` pass; a Normal mover never does.
+        let (clear, health) = land(Some(4));
+        assert!(
+            !clear,
+            "the water column is not clear for MovementZone Normal"
+        );
+        assert!(
+            health.is_none_or(|current| current <= 0),
+            "the whole current Health goes: {health:?}"
+        );
+        // The same cell with its ground class left as authored: clear, so the
+        // type's Water ratio applies.
+        let (clear, health) = land(None);
+        assert!(clear, "a ground-classed cell is clear");
+        assert_eq!(health, Some(300), "0.1 of Strength 1000 is a 100 packet");
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1043-1055` passes `pCell->ContainsBridge()`, and
+    /// with level `-1` that moves the whole check onto the deck
+    /// (`0x0048353C..0x0048354E`, land half skipped at `0x004835DE`): the water
+    /// ground under the deck stops refusing the landing, and only the deck
+    /// occupation byte survives the two ignore masks (`0xE0`, then `0x5F`,
+    /// leaving `0x40`).
+    #[test]
+    fn a_bridge_deck_landing_reads_the_deck_plane_not_the_water_ground() {
+        let (mut sim, rules, id) = scene("", "", true);
+        // Reduced ZoneType 4 is the Water column, which the ground arms refuse
+        // for a Normal mover; the same cell with the Clear column is admitted.
+        {
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .expect("scene grid")
+                .cell_mut_for_test(10, 10)
+                .expect("water cell");
+            cell.zone_type = 4;
+        }
+        assert!(
+            !sim.landing_cell_clear(id, &rules),
+            "the water ground refuses the landing off a bridge"
+        );
+        sim.resolved_terrain
+            .as_mut()
+            .expect("scene grid")
+            .cell_mut_for_test(10, 10)
+            .expect("water cell")
+            .bridge_facts
+            .raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        assert!(
+            sim.landing_cell_clear(id, &rules),
+            "the deck plane admits the same landing"
+        );
+        // A structure on the deck is the one bit both ignore masks leave.
+        sim.substrate.raw_cell_occupation.mark_deck(10, 10, 0x40);
+        assert!(
+            !sim.landing_cell_clear(id, &rules),
+            "an occupied deck refuses the landing"
+        );
     }
 }

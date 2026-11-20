@@ -280,6 +280,7 @@ pub(crate) fn shp_visitor<'a>(
                 rules,
                 sim.session().binary_frame(),
                 observer,
+                false,
             )
         } else {
             std::borrow::Cow::Borrowed(
@@ -648,6 +649,7 @@ pub(crate) fn shp_visitor<'a>(
             palette_light,
             sim,
             rules,
+            entity.place.airstrike_tint_active,
             crate::app::presentation::lighting::TechnoDraw::Shape,
         );
         let colour_word = match rules {
@@ -976,7 +978,7 @@ pub(crate) fn shp_visitor<'a>(
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas
             {
-                let turret_offset = art_entry.map_or(0, |art| art.turret_offset);
+                let turret_offset = art_entry.map_or(0, |art| art.turret_offset[0]);
                 // TechnoClass::Draw's curtain arm (`0x0070678D..0x007067E2`)
                 // and BuildingClass::Draw's colour word (`0x0043DC1C..
                 // 0x0043DDF1`, DrawBody's) on the voxel cache blit.
@@ -987,6 +989,7 @@ pub(crate) fn shp_visitor<'a>(
                         selected_palette_light(),
                         sim,
                         rules,
+                        entity.place.airstrike_tint_active,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
                     );
                 emit_building_turret_vxl(
@@ -1917,6 +1920,7 @@ fn emit_building_anims(
             i32::from(art.frame_count.unwrap_or(0)),
             detail_level,
             draw_runtime,
+            false,
         ) else {
             continue;
         };
@@ -1994,6 +1998,7 @@ fn emit_building_anims(
                     false,
                     instance.remap().as_ref(),
                     1000,
+                    crate::app::presentation::lighting::alt_palette_default_scheme(rules),
                 ),
             )
         };
@@ -2162,6 +2167,7 @@ fn emit_unit_terrain_body(
         palette_light,
         sim,
         Some(&runtime.resources.rules),
+        entity.place.airstrike_tint_active,
         crate::app::presentation::lighting::TechnoDraw::Shape,
     );
     let depth = compute_sprite_depth_params(
@@ -2376,6 +2382,7 @@ mod tests {
         let turret = ShpVehicleTurret {
             start_frame: 176,
             facings: SHP_TURRET_FACING_FRAMES,
+            frame_count: SHP_TURRET_FACING_FRAMES,
         };
         assert_eq!(super::shp_turret_frame(turret, 0), 180, "heading 0");
         assert_eq!(

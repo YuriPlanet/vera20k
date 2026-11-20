@@ -499,6 +499,19 @@ pub(crate) struct AoECollector {
     /// [`crate::sim::scenario_session::ScenarioSession::truce_harvester_types`]:
     /// the `HarvesterUnit=` types while ScenarioFlags bit 0x800 is set.
     truce_harvesters: Vec<crate::sim::intern::InternedId>,
+    /// `[CombatDamage] AdjacentWallDamage=`, resolved once at collection
+    /// start (`CellClass_DamageWall_AdjacentWallDamage @ 0x480EA8`,
+    /// `Ext/Cell/Hooks.cpp:5-11`, `Ext/Rules/Body.cpp:443`).
+    adjacent_wall_damage: i32,
+    /// Phobos `MergeBuildingDamage.Get(RulesExt::Global()->MergeBuildingDamage)`
+    /// (`Ext/WarheadType/Hooks.cpp:414`), resolved once at collection start.
+    merge_building_damage: bool,
+    /// `Game::F2I(CellSpread * Unsorted::LeptonsPerCell)`, the merge loop's
+    /// own threshold (`Ext/WarheadType/Hooks.cpp:426`).
+    merge_spread_leptons: i32,
+    /// Phobos `CellSpread.Cylinder` (hook family `0x489430..`), resolved once
+    /// at collection start: the distance tests ignore Z.
+    cylinder: bool,
     pub result: AoEDamageResult,
 }
 
@@ -576,10 +589,7 @@ impl AoECollector {
         // Retail's airborne phase admits the source unconditionally. Phobos
         // `MapClass_DamageArea_AirDamageSelfFix @ 0x00489416` applies the same
         // DamageSelf/AllowDamageOnSelf rule there (CrushWarhead does not).
-        #[cfg(feature = "phobos")]
         let air_source_admitted = source_damage_self || rules.allow_damage_on_self_for(warhead);
-        #[cfg(not(feature = "phobos"))]
-        let air_source_admitted = true;
 
         let cell_spread = warhead.cell_spread_f64;
 
@@ -638,6 +648,7 @@ impl AoECollector {
                     i32::from(impact_rx as i16),
                     i32::from(impact_ry as i16),
                 );
+                let cylinder = warhead.phobos_cell_spread_cylinder;
                 for entity_id in entities.airborne_in_query_order(
                     &center,
                     cell_spread::whole_cells(cell_spread),
@@ -667,6 +678,7 @@ impl AoECollector {
                         air_source_admitted,
                         rules,
                         interner,
+                        cylinder,
                     );
                 }
             }
@@ -678,11 +690,19 @@ impl AoECollector {
             base_damage,
             origin,
             ground_source_admitted,
+            adjacent_wall_damage: crate::sim::overlay_grid::adjacent_wall_damage_for(rules),
             spread_leptons,
             exact_impact,
             native_occupancy: native_occupancy.is_some(),
             ares: rules.ares(),
             truce_harvesters,
+            merge_building_damage: warhead
+                .phobos_extras
+                .merges_building_damage(rules.phobos_globals.merge_building_damage),
+            cylinder: warhead.phobos_cell_spread_cylinder,
+            merge_spread_leptons: crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                cell_spread * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32),
+            ),
             result,
         })
     }
@@ -742,6 +762,7 @@ impl AoECollector {
             target,
             initial_wall,
             self.base_damage,
+            self.adjacent_wall_damage,
             warhead,
             layer_context,
             cell_prelude,
@@ -782,6 +803,14 @@ impl AoECollector {
         let (rx, ry) = cell
             .real_coord
             .expect("native real cell has its canonical coordinate");
+        // Phobos `CellSpread.Cylinder` (hook family `0x489430..`): every
+        // DamageArea distance test replaces the detonation Z with the
+        // victim's, so only the planar separation remains.
+        let cylinder = {
+            {
+                self.cylinder
+            }
+        };
         let mut terrain_inserted = self.selected_layer() != MovementLayer::Ground;
         if let Some(cell_occ) = occupancy.get(rx, ry) {
             for occupant in cell_occ.iter_layer(self.selected_layer()) {
@@ -801,6 +830,7 @@ impl AoECollector {
                         self.spread_leptons,
                         self.base_damage,
                         self.origin.warhead_ref,
+                        cylinder,
                     );
                     terrain_inserted = true;
                 }
@@ -822,6 +852,7 @@ impl AoECollector {
                     self.ground_source_admitted,
                     self.origin.warhead_ref,
                     &self.truce_harvesters,
+                    cylinder,
                 );
             }
         }
@@ -839,6 +870,7 @@ impl AoECollector {
                 self.spread_leptons,
                 self.base_damage,
                 self.origin.warhead_ref,
+                cylinder,
             );
         }
     }
@@ -850,6 +882,16 @@ impl AoECollector {
         warhead: &WarheadType,
     ) -> AoEDamageResult {
         if self.native_occupancy {
+            limit_records_per_object(&mut self.result, warhead, self.ares);
+            if self.merge_building_damage {
+                merge_building_records(
+                    &mut self.result,
+                    entities,
+                    warhead,
+                    self.merge_spread_leptons,
+                    self.base_damage,
+                );
+            }
             limit_records_per_object(&mut self.result, warhead, self.ares);
             return finalize_receiver_isolation_metadata(self.result, warhead);
         }
@@ -871,6 +913,11 @@ impl AoECollector {
                 continue;
             }
 
+            let cylinder = {
+                {
+                    self.cylinder
+                }
+            };
             push_entity_aoe_damage(
                 &mut self.result,
                 entities,
@@ -889,9 +936,20 @@ impl AoECollector {
                 self.ground_source_admitted,
                 self.origin.warhead_ref,
                 &self.truce_harvesters,
+                cylinder,
             );
         }
 
+        limit_records_per_object(&mut self.result, warhead, self.ares);
+        if self.merge_building_damage {
+            merge_building_records(
+                &mut self.result,
+                entities,
+                warhead,
+                self.merge_spread_leptons,
+                self.base_damage,
+            );
+        }
         limit_records_per_object(&mut self.result, warhead, self.ares);
         finalize_receiver_isolation_metadata(self.result, warhead)
     }
@@ -974,6 +1032,117 @@ pub(super) fn limit_records_per_object(
     }
 }
 
+/// Phobos `MergeBuildingDamage` (`Ext/WarheadType/Hooks.cpp:410-487`): one
+/// area detonation damages a building once.
+///
+/// The vanilla sweep appends one record per foundation cell a spread cell
+/// holds, so a 3x3 building inside a 2-cell spread takes nine receiver calls.
+/// Phobos first sums each building's own distance multiplier over its records
+/// (`:426-445`) and then issues a single call carrying
+/// `F2I(baseDamage * sum)` at distance 0 (`:447-478`), keeping the sign when
+/// the product truncates to zero.
+///
+/// The native loop re-checks aliveness, `InvisibleInGame`, health, the map and
+/// limbo state before that call; VERA leaves those to the receiver, which
+/// already refuses a dead or limboed building, so a merged record that would
+/// have been skipped only wastes the walk.
+///
+/// RESIDUAL: native runs the merged building pass as its own loop after the
+/// object sweep; VERA rewrites the first record in place so the receiver order
+/// (and every other record's position) is untouched. Only the relative order
+/// of a building's damage against another object's in the same transaction
+/// differs, which nothing in the receiver observes.
+fn merge_building_records(
+    result: &mut AoEDamageResult,
+    entities: &EntityStore,
+    warhead: &WarheadType,
+    spread_leptons: i32,
+    base_damage: i32,
+) {
+    let is_building = |event: &EntityDamageEvent| {
+        entities
+            .get(event.target_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+    };
+    // `const auto percentDifference = 1.0 - pWH->PercentAtMax;` (`:427`).
+    let percent_difference = 1.0 - warhead.percent_at_max_f64;
+    let spread = f64::from(spread_leptons);
+    let mut sums: Vec<(u64, f64)> = Vec::new();
+    for receiver in &result.receivers {
+        let AreaDamageReceiver::Entity(event) = receiver else {
+            continue;
+        };
+        if !is_building(event) {
+            continue;
+        }
+        // `if (group->Distance > cellSpread) continue;` (`:430-431`).
+        // Phobos' `Distance` is whole cells; VERA's lepton field truncates to
+        // the same cells before the comparison.
+        let distance_cells = (event.distance_leptons / 256) as f64;
+        if distance_cells > spread_leptons as f64 / 256.0 {
+            continue;
+        }
+        // `(cellSpread && percentDifference) ? 1.0 - (percentDifference *
+        // group->Distance / cellSpread) : 1.0` (`:434-436`).
+        let multiplier = if spread_leptons != 0 && percent_difference != 0.0 {
+            1.0 - (percent_difference * f64::from(event.distance_leptons) / spread)
+        } else {
+            1.0
+        };
+        // `MapBuildings[pBuilding] += multiplier > 0 ? multiplier : 0;`
+        // (`:437`).
+        let add = if multiplier > 0.0 { multiplier } else { 0.0 };
+        match sums.iter_mut().find(|(id, _)| *id == event.target_id) {
+            Some((_, sum)) => *sum += add,
+            None => sums.push((event.target_id, add)),
+        }
+    }
+    if sums.is_empty() {
+        return;
+    }
+    let mut emitted: Vec<u64> = Vec::new();
+    result.receivers.retain_mut(|receiver| {
+        let AreaDamageReceiver::Entity(event) = receiver else {
+            return true;
+        };
+        if !is_building(event) {
+            return true;
+        }
+        let Some((_, sum)) = sums.iter().find(|(id, _)| *id == event.target_id) else {
+            return true;
+        };
+        if emitted.contains(&event.target_id) {
+            return false;
+        }
+        emitted.push(event.target_id);
+        // `Game::F2I(baseDamage * MapBuildings[pBuilding])` and the sign
+        // fallback (`:466-469`).
+        let mut receive =
+            crate::util::native_x87::X87Chop53::ftol_f64_low_masked(f64::from(base_damage) * sum);
+        if receive == 0 && base_damage != 0 {
+            receive = base_damage.signum();
+        }
+        // `ReceiveDamage(&receiveDamage, 0, ...)` (`:471`): the multiplier is
+        // already folded in, so the record carries no distance.
+        let mut merged = *event;
+        merged.damage = receive;
+        merged.distance_leptons = 0;
+        *event = merged;
+        true
+    });
+    #[cfg(any(test, feature = "test-support"))]
+    {
+        result.hits = result
+            .receivers
+            .iter()
+            .filter_map(|receiver| match receiver {
+                AreaDamageReceiver::Entity(event) => Some(*event),
+                AreaDamageReceiver::Terrain(_) => None,
+            })
+            .collect();
+    }
+}
+
 #[cfg(any(test, feature = "test-support"))]
 /// Geometry-only fixture driver sharing the production collection cursor.
 /// Full-world Restore callbacks are owned by world_receiver::collect_area.
@@ -1020,6 +1189,7 @@ fn route_wall_before_cell_objects(
     target: WallPointerTarget,
     initial_wall: Option<(bool, bool)>,
     raw_damage: i32,
+    adjacent_damage: i32,
     warhead: &WarheadType,
     context: &mut AoELayerContext<'_>,
     cell_prelude: &mut Option<&mut dyn AoECellPrelude>,
@@ -1056,6 +1226,7 @@ fn route_wall_before_cell_objects(
             context.terrain.as_deref_mut(),
             target,
             routed_damage,
+            adjacent_damage,
             rng,
             Some(&mut host),
         )
@@ -1142,6 +1313,7 @@ fn push_airborne_aoe_damage(
     source_self_admitted: bool,
     rules: &RuleSet,
     interner: &StringInterner,
+    cylinder: bool,
 ) {
     // Phobos `MapClass_DamageArea_AirDamageSelfFix @ 0x00489416`: the airborne
     // phase skips its own source unless DamageSelf or AllowDamageOnSelf admits
@@ -1166,10 +1338,17 @@ fn push_airborne_aoe_damage(
     let target = crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
     let impact_point = impact.world_point(impact_rx, impact_ry);
     let (impact_x, impact_y) = (impact_point.x, impact_point.y);
-    let raw_distance_leptons = distance_3d_leptons(
-        [impact_x, impact_y, impact.z_leptons],
-        [target.x, target.y, target.z],
-    );
+    let raw_distance_leptons = if cylinder {
+        distance_3d_leptons(
+            [impact_x, impact_y, target.z],
+            [target.x, target.y, target.z],
+        )
+    } else {
+        distance_3d_leptons(
+            [impact_x, impact_y, impact.z_leptons],
+            [target.x, target.y, target.z],
+        )
+    };
     if i64::from(raw_distance_leptons) > spread_leptons {
         return;
     }
@@ -1230,6 +1409,7 @@ fn push_entity_aoe_damage(
     source_self_admitted: bool,
     warhead_ref: crate::sim::intern::InternedId,
     truce_harvesters: &[crate::sim::intern::InternedId],
+    cylinder: bool,
 ) {
     // Apply_area_damage's selected ground/deck list excludes the source object
     // unless its type opts into DamageSelf, the warhead is Rules.CrushWarhead,
@@ -1279,13 +1459,22 @@ fn push_entity_aoe_damage(
         [location.x, location.y, location.z]
     };
     let distance_leptons = if entity.category() == EntityCategory::Structure && center_cell {
-        let height_above_cell = impact.z_leptons.wrapping_sub(target_xyz[2]);
-        if height_above_cell <= BUILDING_CENTER_HEIGHT_ALLOWANCE_LEPTONS {
+        // The cylinder hooks replace the detonation Z in the same stack slot
+        // this branch reads, so the center record's height allowance sees a
+        // zero difference and admits the building unconditionally.
+        if cylinder {
             0
         } else {
-            distance_3d_leptons([impact_x, impact_y, impact.z_leptons], target_xyz)
-                .wrapping_sub(BUILDING_CENTER_HEIGHT_ALLOWANCE_LEPTONS)
+            let height_above_cell = impact.z_leptons.wrapping_sub(target_xyz[2]);
+            if height_above_cell <= BUILDING_CENTER_HEIGHT_ALLOWANCE_LEPTONS {
+                0
+            } else {
+                distance_3d_leptons([impact_x, impact_y, impact.z_leptons], target_xyz)
+                    .wrapping_sub(BUILDING_CENTER_HEIGHT_ALLOWANCE_LEPTONS)
+            }
         }
+    } else if cylinder {
+        distance_3d_leptons([impact_x, impact_y, target_xyz[2]], target_xyz)
     } else {
         distance_3d_leptons([impact_x, impact_y, impact.z_leptons], target_xyz)
     };
@@ -1318,6 +1507,7 @@ fn push_terrain_aoe_damage(
     spread_leptons: i64,
     base_damage: i32,
     warhead_ref: crate::sim::intern::InternedId,
+    cylinder: bool,
 ) {
     let Some(view) = terrain_objects else {
         return;
@@ -1331,10 +1521,17 @@ fn push_terrain_aoe_damage(
         }
         let impact_point = impact.world_point(impact_rx, impact_ry);
         let target_coord = object.world_coord();
-        let distance_leptons = distance_3d_leptons(
-            [impact_point.x, impact_point.y, impact.z_leptons],
-            [target_coord.x, target_coord.y, target_coord.z],
-        );
+        let distance_leptons = if cylinder {
+            distance_3d_leptons(
+                [impact_point.x, impact_point.y, target_coord.z],
+                [target_coord.x, target_coord.y, target_coord.z],
+            )
+        } else {
+            distance_3d_leptons(
+                [impact_point.x, impact_point.y, impact.z_leptons],
+                [target_coord.x, target_coord.y, target_coord.z],
+            )
+        };
         if i64::from(distance_leptons) > spread_leptons {
             continue;
         }
@@ -2259,13 +2456,7 @@ mod tests {
         }
 
         // Retail admits the airborne source unconditionally.
-        #[cfg(not(feature = "phobos"))]
-        {
-            assert_eq!(run(false, "BlastWH"), vec![1]);
-            assert_eq!(run(true, "BlastWH"), vec![1]);
-        }
 
-        #[cfg(feature = "phobos")]
         {
             assert!(
                 run(false, "BlastWH").is_empty(),
@@ -3633,7 +3824,6 @@ mod tests {
 
         // Phobos `Explosion_Damage_DamageSelf @ 0x004896EC` skips the source
         // exclusion, so a DamageSelf=no source still collects its own hit.
-        #[cfg(feature = "phobos")]
         {
             let (allow_ids, _, allow_hp) = run(false, "SelfWH");
             assert_eq!(allow_ids, vec![1, 2, 3]);
@@ -4033,6 +4223,221 @@ mod tests {
         assert_eq!(target.berserk.timer(), 300);
         assert_eq!(target.attack_target.target(), Some(TargetKind::Entity(1)));
         assert_eq!(target.mission.queued(), MissionId::NONE);
+    }
+
+    /// Phobos `TechnoClass_ReceiveDamage_Psychedelic` (`0x701D6B`,
+    /// `Ext/WarheadType/Hooks.cpp:678-696`): the hit's damage combines with
+    /// the existing `BerzerkDurationLeft` through the warhead's
+    /// `Psychedelic.StackingMode`, else `[CombatDamage]`'s. A non-positive
+    /// result jumps to `StopBerzerk` (`0x701DBA`), which skips the flag write,
+    /// team removal, target clear and Hunt.
+    #[test]
+    fn psychedelic_stacking_combines_the_time_and_stops_a_non_positive_one() {
+        let ini = IniFile::from_str(
+            "[CombatDamage]\nPsychedelic.StackingMode=add\n\
+             [VehicleTypes]\n0=CAOS\n1=TARGET\n\
+             [Warheads]\n0=PsychGas\n1=PsychGasSub\n\
+             [CAOS]\nStrength=100\n\
+             [TARGET]\nStrength=1000\nArmor=heavy\nImmuneToPsionics=no\n\
+             [PsychGas]\nCellSpread=0\nPercentAtMax=1\nPsychedelic=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [PsychGasSub]\nCellSpread=0\nPercentAtMax=1\nPsychedelic=yes\n\
+             Psychedelic.StackingMode=subtract\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("Psychedelic stacking fixture");
+        let gas = rules.warhead("PsychGas").unwrap().clone();
+        let sub = rules.warhead("PsychGasSub").unwrap().clone();
+        assert_eq!(
+            rules.combat_damage.phobos_psychedelic_stacking_mode,
+            crate::rules::phobos_stacking_mode::StackingMode::Add
+        );
+        assert_eq!(
+            sub.phobos_psychedelic_stacking_mode,
+            Some(crate::rules::phobos_stacking_mode::StackingMode::Subtract)
+        );
+
+        let mut interner = test_interner();
+        let yuri = interner.intern("YuriHouse");
+        let soviet = interner.intern("SovietHouse");
+        let caos = interner.intern("CAOS");
+        let target_type = interner.intern("TARGET");
+        let gas_ref = interner.intern("PsychGas");
+        let sub_ref = interner.intern("PsychGasSub");
+        let mut entities = EntityStore::new();
+        let mut source = GameEntity::test_default(1, "CAOS", "YuriHouse", 1, 1);
+        source.set_owner_for_test(yuri);
+        source.set_type_ref_for_test(caos);
+        entities.insert(source);
+        for (id, rx, ry) in [(2, 5, 5), (3, 6, 6)] {
+            let mut target = GameEntity::test_default(id, "TARGET", "SovietHouse", rx, ry);
+            target.set_owner_for_test(soviet);
+            target.set_type_ref_for_test(target_type);
+            target.health.set_for_test(1000);
+            entities.insert(target);
+        }
+
+        let mut occupancy = OccupancyGrid::new();
+        prepend_ground(&mut occupancy, 5, 5, 2);
+        prepend_ground(&mut occupancy, 6, 6, 3);
+        let mut terrain = crate::map::resolved_terrain::test_grid(12, 12, test_terrain_cell);
+        let mut commit = ReceiverCommit::new();
+        let mut hit = |entities: &mut EntityStore,
+                       occupancy: &mut OccupancyGrid,
+                       terrain: &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
+                       cell: (u16, u16),
+                       damage: i32,
+                       warhead: &WarheadType,
+                       warhead_ref: crate::sim::intern::InternedId,
+                       commit: &mut ReceiverCommit| {
+            let aoe = apply_aoe_damage(
+                entities,
+                cell.0,
+                cell.1,
+                damage,
+                warhead,
+                &rules,
+                &mut interner,
+                (1, Some(yuri), warhead_ref),
+                native_lists(occupancy, terrain, None),
+            );
+            commit.run(
+                &aoe.hits,
+                entities,
+                occupancy,
+                &rules,
+                &mut interner,
+                terrain,
+            );
+            aoe.hits.iter().map(|hit| hit.target_id).collect::<Vec<_>>()
+        };
+
+        // The global `add` mode combines the second hit with the first time.
+        assert_eq!(
+            hit(
+                &mut entities,
+                &mut occupancy,
+                &mut terrain,
+                (5, 5),
+                100,
+                &gas,
+                gas_ref,
+                &mut commit,
+            ),
+            vec![2]
+        );
+        let target = entities.get(2).unwrap();
+        assert!(target.berserk.is_active());
+        assert_eq!(target.berserk.timer(), 100);
+        assert_eq!(
+            target.mission.queued(),
+            MissionId::from_known(MissionType::Hunt)
+        );
+        {
+            let target = entities.get_mut(2).unwrap();
+            target
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(1)));
+            target.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_known(MissionType::Guard),
+                suspended: MissionId::NONE,
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(0),
+            });
+        }
+        hit(
+            &mut entities,
+            &mut occupancy,
+            &mut terrain,
+            (5, 5),
+            100,
+            &gas,
+            gas_ref,
+            &mut commit,
+        );
+        let target = entities.get(2).unwrap();
+        assert!(target.berserk.is_active());
+        assert_eq!(target.berserk.timer(), 200, "add: 100 + 100");
+        assert_eq!(
+            target.attack_target.target(),
+            Some(TargetKind::Entity(1)),
+            "an already-berserk hit does not clear the target"
+        );
+        assert_eq!(target.mission.queued(), MissionId::NONE);
+
+        // The warhead's `subtract` overrides the global. A fresh target gets
+        // 0 - 300: the flag stays clear, and the target/Hunt block is skipped.
+        {
+            let fresh = entities.get_mut(3).unwrap();
+            fresh
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(1)));
+            fresh.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_known(MissionType::Guard),
+                suspended: MissionId::NONE,
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(0),
+            });
+        }
+        assert_eq!(
+            hit(
+                &mut entities,
+                &mut occupancy,
+                &mut terrain,
+                (6, 6),
+                300,
+                &sub,
+                sub_ref,
+                &mut commit,
+            ),
+            vec![3]
+        );
+        let fresh = entities.get(3).unwrap();
+        assert!(
+            !fresh.berserk.is_active(),
+            "StopBerzerk leaves the flag clear"
+        );
+        assert_eq!(fresh.berserk.timer(), -300, "0 - 300 is written");
+        assert_eq!(
+            fresh.attack_target.target(),
+            Some(TargetKind::Entity(1)),
+            "StopBerzerk skips the target clear"
+        );
+        assert_eq!(fresh.mission.queued(), MissionId::NONE, "and Hunt");
+
+        // On an already-berserk target a non-positive result keeps the flag
+        // set; the next AI update tick clears the expired time.
+        assert_eq!(
+            hit(
+                &mut entities,
+                &mut occupancy,
+                &mut terrain,
+                (5, 5),
+                300,
+                &sub,
+                sub_ref,
+                &mut commit,
+            ),
+            vec![2]
+        );
+        let target = entities.get_mut(2).unwrap();
+        assert!(
+            target.berserk.is_active(),
+            "the flag write is skipped, not cleared"
+        );
+        assert_eq!(target.berserk.timer(), -100, "200 - 300");
+        assert_eq!(target.attack_target.target(), Some(TargetKind::Entity(1)));
+        assert_eq!(target.mission.queued(), MissionId::NONE);
+        assert!(target.berserk.count_down());
+        assert_eq!(target.berserk, Default::default());
     }
 
     /// A rocket's DamageArea (`0x006632BB`) passes a live source and a NULL
@@ -5010,6 +5415,7 @@ mod tests {
                 adjacent.distance_leptons,
                 false,
                 rules.combat_damage.max_damage,
+                false,
             ),
             75,
             "the captured per-object distance produces the exact shared-kernel falloff at commit"
@@ -5282,3 +5688,7 @@ mod tests {
         assert_eq!(sim.state_hash(), before_hash);
     }
 }
+
+#[cfg(all(test, tests_sim_combat_a_c))]
+#[path = "aoe_merge_building_tests.rs"]
+mod merge_building_tests;

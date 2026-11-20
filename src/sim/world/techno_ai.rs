@@ -19,6 +19,7 @@ mod building_missile;
 mod building_missions;
 mod building_retaliation;
 mod foot_patrol;
+mod interceptor;
 pub(crate) use building_missions::AresPrismForwarding;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
@@ -172,6 +173,14 @@ impl Simulation {
                 .map(|coords| ProjectileCoord::new(coords.x, coords.y, coords.z))
             }
             Some(TargetKind::Cell(rx, ry)) => Some(self.wave_cell_target_position(rx, ry)),
+            Some(target @ TargetKind::Bullet(..)) => {
+                crate::sim::movement::ground_pose::target_get_target_coords(
+                    target,
+                    self,
+                    self.resolved_terrain.as_ref(),
+                )
+                .map(|coords| ProjectileCoord::new(coords.x, coords.y, coords.z))
+            }
             None => None,
         };
         let target_is_unit = match wave.target_ref() {
@@ -374,6 +383,14 @@ impl Simulation {
         ctx: ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
+        // Phobos `BulletClass_AI` 0x4666F7 interceptor block and the
+        // 0x4668BD Inviso skip, before the stock AI prefix.
+        if self.bullet_interceptor_pretick(id, rules, ctx) {
+            return outcome;
+        }
+        // Phobos `BulletClass_AI`'s trail block (`Ext/Bullet/Hooks.cpp:99..126`),
+        // inside the same 0x4666F7 hook and before the stock movement.
+        self.update_projectile_laser_trails(id, rules);
         // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
         if rules.ares()
             && let Some(bullet) = self.projectiles.get(id)
@@ -460,9 +477,55 @@ impl Simulation {
         let entities = &self.substrate.entities;
         let interner = &self.interner;
         let house_alliances = &self.house_alliances;
+        // Phobos `PhobosTrajectory.cpp:436-608`: a bullet carrying a
+        // trajectory runs its own `OnAI`/velocity/hit checks instead of the
+        // stock arms. The detonations keep the normal projectile boundary.
+        if self
+            .projectiles
+            .get(id)
+            .is_some_and(|projectile| projectile.has_phobos_trajectory())
+        {
+            let trajectory = self.step_phobos_trajectory(id, rules, ctx.overlay_registry);
+            // The shared trajectory trail hook runs after `OnAI` with the
+            // bullet's current Location and Velocity
+            // (`PhobosTrajectory.cpp:502..531`); a detonation returned by
+            // `OnAI` jumps to the stock Detonate path before that hook.
+            if trajectory.detonations.is_empty()
+                && trajectory.extra_detonations.is_empty()
+                && !trajectory.expired
+            {
+                self.update_trajectory_laser_trails(id, rules);
+            }
+            outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
+                rules,
+                ctx.overlay_registry,
+                &trajectory.extra_detonations,
+                ctx.effects,
+            );
+            outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
+                rules,
+                ctx.overlay_registry,
+                &trajectory.detonations,
+                ctx.effects,
+            );
+            outcome.bridge_state_changed |= self.commit_direct_damage_events(
+                rules,
+                ctx.overlay_registry,
+                &trajectory.direct_damage,
+                ctx.effects,
+            );
+            if trajectory.expired || !trajectory.detonations.is_empty() {
+                let retired = self.retire_non_entity_object(
+                    id,
+                    super::UninitContext::new(rules).with_effects(ctx.effects),
+                );
+                debug_assert!(retired);
+            }
+            return outcome;
+        }
         let collision_world = super::projectile_collision::ProjectileCollisionWorld {
             terrain,
-            dummy: &shared_cell_dummy,
+            dummy: shared_cell_dummy.clone(),
             occupancy,
             entities,
             terrain_objects: self.terrain_objects.objects(),
@@ -689,7 +752,6 @@ impl Simulation {
         // `BuildingClass_AI_Radiation @ 0x43FB23` follows that edge sample and
         // runs for every live building each frame. Phobos owns the branch;
         // retail leaves buildings untouched by radiation.
-        #[cfg(feature = "phobos")]
         if self
             .substrate
             .entities
@@ -784,6 +846,45 @@ impl Simulation {
 
         let category = entity.category();
         techno_ai_shell(self, id, category, rules, ctx, &mut outcome);
+        // Phobos `FootClass_AI`'s tail (`src/Ext/Techno/Hooks.cpp:42-47`,
+        // hook `0x4DA54E`): `UpdateTiberiumEater`, `AmmoAutoConvertActions`,
+        // then `HealthAutoConvertActions`, before the follower count ages
+        // (`UpdateWarpInDelay` is not ported).
+        if category != EntityCategory::Structure {
+            self.phobos_update_tiberium_eater(id, rules, ctx.overlay_registry, ctx.effects);
+            self.phobos_ammo_auto_convert(id, rules, ctx.effects);
+            self.phobos_health_auto_convert(id, rules, ctx.effects);
+        }
+        // Phobos `FootClass_AI`'s tail (`src/Ext/Techno/Hooks.cpp:50-51`,
+        // hook `0x4DA54E`): the follower count ages by one per frame, so a
+        // leader that stopped being followed frees its slots again.
+        if category != EntityCategory::Structure
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+            && entity.phobos_attack_move_follower_temp_count() != 0
+        {
+            let count = entity.phobos_attack_move_follower_temp_count();
+            entity.set_phobos_attack_move_follower_temp_count(count - 1);
+        }
+        // `UnitClass_AI` hook `0x736480`, after `FootClass::AI`: Phobos
+        // `DepletedAmmoActions` queues Unload inside the auto-deploy band and
+        // cancels it outside. Native never reaches the hook for a warped-out
+        // or AI-frozen object, whose shell returned first.
+        if category == EntityCategory::Unit
+            && let Some(entity) = self.substrate.entities.get(id)
+            && !entity.ai_frozen()
+            && !entity.is_warped_out()
+        {
+            // `UnitClass_AI` hook `0x736480` runs UpdateKeepTargetOnMove
+            // before DepletedAmmoActions.
+            crate::sim::keep_target_on_move::update_keep_target_on_move(
+                self,
+                id,
+                rules,
+                ctx.overlay_registry,
+                ctx.effects,
+            );
+            crate::sim::unit_simple_deploy::depleted_ammo_actions(self, id, rules);
+        }
         outcome
     }
 
@@ -908,7 +1009,6 @@ fn techno_ai_shell(
     // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
     // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused
     // visit or the normal recovery visit after this frame's warp update.
-    #[cfg(feature = "phobos")]
     crate::sim::shield::tick(sim, id, rules);
     if temporal_frozen {
         return;
@@ -948,9 +1048,10 @@ fn techno_ai_shell(
         sim.substrate.infantry_health_reset(id);
     }
     // `TechnoClass_AI @ 0x6F9E50+0x5 -> TechnoExt::OnEarlyUpdate ->
-    // ApplyMindControlRangeLimit`, after the leaf's own steps and before the
-    // common Techno body's estimated-health recover.
-    #[cfg(feature = "phobos")]
+    // ApplySpawnLimitRange`, then ApplyMindControlRangeLimit, after the
+    // leaf's own steps and before the common Techno body's estimated-health
+    // recover.
+    sim.apply_spawn_limit_range(id, rules, ctx.overlay_registry, ctx.effects);
     sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, ctx.effects);
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
@@ -1060,6 +1161,9 @@ fn techno_ai_shell(
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
             techno_common_post(sim, id, rules, ctx.effects);
+            // Phobos `BuildingClass_AI` hook `0x43FE69`: the periodic
+            // `DisplayIncome` label, right after `TechnoClass_AI`.
+            crate::sim::building_display_income::display_income_string(sim, id, rules, ctx.effects);
             // Ares BuildingClass_Update_SensorArray10016E30 (hook43FE69),
             // after Update's IsAlive test.
             if rules.ares() && ai_alive(&sim.substrate, id) {
@@ -1267,6 +1371,10 @@ fn techno_ai_shell(
                 return;
             }
             techno_common_post(sim, id, rules, ctx.effects);
+            // Phobos `AircraftClass_Update_UnlandableDamage`
+            // (`Ext/Aircraft/Hooks.cpp:735-794`, hook `0x414DA8`, after
+            // FootClass_Update).
+            aircraft_unlandable_damage_step(sim, id, rules, ctx);
         }
     }
 }
@@ -1285,42 +1393,51 @@ fn techno_ai_shell(
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
 /// Ares replaces this whole block (`Simulation::update_ares_veterancy`).
-fn veterancy_promotion_step(
-    interner: &mut StringInterner,
-    substrate: &mut ObjectSubstrate,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    sound_events: &mut FrameChannel<SimSoundEvent>,
-    id: u64,
-    rules: &RuleSet,
-) {
-    let Some(entity) = substrate
-        .entities
-        .get_mut_if(id, |entity| entity.veterancy.rank_changed())
-    else {
+fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    use crate::sim::combat::veterancy::LEVEL_UNSAMPLED;
+    use crate::sim::combat::veterancy::Promotion;
+
+    // `previous` and `level` feed the Phobos promotion-animation arm only.
+    let (previous, promotion, level, owner, type_id, world) = {
+        let terrain = sim.resolved_terrain.as_ref();
+        let Some(entity) = sim.substrate.entities.get_mut(id) else {
+            return;
+        };
+        let previous = entity.veterancy.rank_cache();
+        let promotion = entity
+            .veterancy
+            .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer);
+        (
+            previous,
+            promotion,
+            entity.veterancy.rank_cache(),
+            entity.owner(),
+            // The promoted object's type is already interned on the entity;
+            // carry it out so the accessibility line can name the game's own
+            // object without a second lookup or a guessed translation.
+            // Transient fact only.
+            entity.type_ref(),
+            crate::sim::anim_class::AnimWorldCoord::from(
+                crate::sim::movement::ground_pose::object_location(entity, terrain),
+            ),
+        )
+    };
+    // Phobos `TechnoClass_AI_PromoteAnim @ 0x6FA07A` (`Ext/Techno/Hooks.cpp:
+    // 158-170`) replaces the promotion block's `GetRemainingLevel` call, so it
+    // runs on every sampled rank change — demotions included — before the
+    // stock sound and flash arms.
+    if previous != LEVEL_UNSAMPLED && level != previous {
+        show_promote_anim(sim, rules, id, owner, level);
+    }
+    let Some(promotion) = promotion else {
         return;
     };
-    let Some(promotion) = entity
-        .veterancy
-        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)
-    else {
-        return;
-    };
-    let owner = entity.owner();
-    // The promoted object's type is already interned on the entity; carry it
-    // out so the accessibility line can name the game's own object without a
-    // second lookup or a guessed translation. Transient fact only.
-    let type_id = entity.type_ref();
-    let world = crate::sim::movement::ground_pose::object_location(entity, terrain).into();
     let sound = match promotion {
-        crate::sim::combat::veterancy::Promotion::Elite => {
-            rules.general.upgrade_elite_sound.as_deref()
-        }
-        crate::sim::combat::veterancy::Promotion::Veteran => {
-            rules.general.upgrade_veteran_sound.as_deref()
-        }
+        Promotion::Elite => rules.general.upgrade_elite_sound.as_deref(),
+        Promotion::Veteran => rules.general.upgrade_veteran_sound.as_deref(),
     };
-    let sound_id = sound.map(|name| interner.intern(name));
-    sound_events.emit(super::SimSoundEvent::UnitPromoted {
+    let sound_id = sound.map(|name| sim.interner.intern(name));
+    sim.sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
         type_id,
@@ -1328,6 +1445,22 @@ fn veterancy_promotion_step(
         eva: None,
     });
 }
+
+/// Phobos `TechnoExt::ShowPromoteAnim` (`Ext/Techno/Body.Visuals.cpp:863-874`)
+/// from the `TechnoClass_AI_PromoteAnim @ 0x6FA07A` hook
+/// (`Ext/Techno/Hooks.cpp:158-170`).
+///
+/// The type's list replaces the global `[AudioVisual]` list of its tier when
+/// non-empty. The veteran list plays only at `Rank::Veteran` (the native
+/// `GetRemainingLevel == 1`); the `else if` fires the elite list for every
+/// other tier, including a demotion to Rookie, and also for a Veteran
+/// crossing whose veteran list is empty. One
+/// `AnimExt::CreateRandomAnim` (`RandomRanged(0, size - 1)`) spawns at
+/// `GetCenterCoords()` with the object as owner-object and its owner House.
+///
+/// RESIDUAL: the anim sits at `GetCoords` (`object_get_coords`) instead of
+/// `GetCenterCoords`'s centre-height point — visual only, the same residual
+/// as the delayed-fire `CenterAnimOnFirer` arm.
 
 /// The house self-heal pulse of `TechnoClass::AI_Update`, read from the
 /// disassembly. It is a second, independent heal beside [`self_heal_step`]'s
@@ -1367,30 +1500,227 @@ fn house_self_heal_step(
     session: &ScenarioSession,
     substrate: &mut ObjectSubstrate,
     houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
     resolved_terrain: &Option<ResolvedTerrainGrid>,
     id: u64,
     rules: &RuleSet,
 ) {
-    house_heal_arm(
+    // Phobos `TechnoClass_AI_SelfHealGain` (0x6FA793,
+    // `Ext/Techno/Hooks.cpp:146-155`) replaces the two stock arms with one
+    // type-resolved pass; unset keys reproduce the stock classification.
+    phobos_apply_gained_self_heal(
         interner,
         session,
         substrate,
         houses,
+        house_alliances,
         resolved_terrain,
         id,
         rules,
-        false,
     );
-    house_heal_arm(
+}
+
+/// `TechnoExt::ApplyGainedSelfHeal` (`Ext/Techno/Body.Update.cpp:591-705`):
+/// the TechnoType's `SelfHealGainType`, else the stock classification
+/// (Infantry, organic Unit -> Infantry; other Unit -> Units; everything else
+/// -> NoHeal), picks the frame gate, house count and amount. The Phobos caps
+/// clamp the count; `GainSelfHealFromPlayerControl`/`FromAllies` add other
+/// houses' counts. The healed object's damage particle retires on the same
+/// crossing condition the stock unit arm uses.
+#[allow(clippy::too_many_arguments)]
+fn phobos_apply_gained_self_heal(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    id: u64,
+    rules: &RuleSet,
+) {
+    use crate::rules::phobos_self_heal::SelfHealGainType;
+
+    let globals = &rules.phobos_globals;
+    let Some(entity) = substrate.entities.get(id) else {
+        return;
+    };
+    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    let owner = entity.owner();
+    if !crate::sim::self_heal::multiplay_passive_allowed(
+        houses,
+        owner,
+        globals.gain_self_heal_allow_multiplay_passive,
+    ) {
+        return;
+    }
+    let health = entity.health.current();
+    let deficit = object.strength.wrapping_sub(health);
+    if health == 0 || deficit <= 0 {
+        return;
+    }
+    let kind = crate::sim::self_heal::gain_kind(
+        entity.category(),
+        object.organic,
+        object.phobos_self_heal_gain_type,
+    );
+    if kind == SelfHealGainType::NoHeal {
+        return;
+    }
+    let infantry = kind == SelfHealGainType::Infantry;
+    let frames = if infantry {
+        rules.general.self_heal_infantry_frames
+    } else {
+        rules.general.self_heal_unit_frames
+    };
+    let frame = session.binary_frame() as i32;
+    let remainder = frame.checked_rem(frames).unwrap_or_else(|| {
+        panic!(
+            "native House self-heal IDIV fault at 006FA7EE/006FA8E2: frame={frame} period={frames}"
+        )
+    });
+    if remainder != 0 {
+        return;
+    }
+    let amount_key = if infantry {
+        rules.general.self_heal_infantry_amount
+    } else {
+        rules.general.self_heal_unit_amount
+    };
+    let cap = if infantry {
+        globals.infantry_gain_self_heal_cap
+    } else {
+        globals.units_gain_self_heal_cap
+    };
+    let count = phobos_self_heal_source_count(
         interner,
         session,
-        substrate,
         houses,
-        resolved_terrain,
-        id,
-        rules,
-        true,
+        house_alliances,
+        owner,
+        infantry,
+        cap,
+        globals.gain_self_heal_from_player_control,
+        globals.gain_self_heal_from_allies,
     );
+    let amount = amount_key.wrapping_mul(count);
+    if amount == 0 {
+        return;
+    }
+    let amount = if amount >= deficit { deficit } else { amount };
+    let was_damaged = crate::sim::pathfinding::terrain_speed::is_at_or_below_condition_yellow(
+        health,
+        object.strength,
+        rules.general.condition_yellow,
+    );
+    if let Some(entity) = substrate.entities.get_mut(id) {
+        entity.health.heal(amount);
+    }
+    if was_damaged {
+        // Phobos' tail retires the damage particle above ConditionYellow or
+        // below -10 leptons. VERA derives the building's damaged art from
+        // live health, so no explicit ToggleDamagedAnims mark is kept.
+        Simulation::retire_damage_smoke_after_self_heal(
+            interner,
+            substrate,
+            resolved_terrain,
+            id,
+            rules,
+        );
+    }
+}
+
+/// The healed house count `ApplyGainedSelfHeal` multiplies the amount by: the
+/// owner's counter plus, under `GainSelfHealFromPlayerControl` (campaign) and
+/// `GainSelfHealFromAllies`, other eligible houses. A set Phobos cap clamps
+/// the sum with its `.max(1)` lower bound, as the native clamp does. The
+/// self-heal marker's `hasSelfHeal` display query asks this same scan, so a
+/// drawn marker always corresponds to a heal source.
+#[allow(clippy::too_many_arguments)]
+fn phobos_self_heal_source_count(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
+    owner: crate::sim::intern::InternedId,
+    infantry: bool,
+    cap: Option<i32>,
+    from_player_control: bool,
+    from_allies: bool,
+) -> i32 {
+    let heal_count = |house: &crate::sim::house_state::HouseState| {
+        if infantry {
+            house.self_heal_infantry()
+        } else {
+            house.self_heal_units()
+        }
+    };
+    let mut count = houses.get(&owner).map_or(0, heal_count);
+    let cap_active = cap.is_some();
+    let cap = cap.unwrap_or(0).max(1);
+    if cap_active && count >= cap {
+        return cap;
+    }
+    let is_campaign = session.uses_campaign_world();
+    let from_player = from_player_control
+        && is_campaign
+        && houses
+            .get(&owner)
+            .is_some_and(|house| house.is_human() || house.player_control());
+    if from_player || from_allies {
+        for &house_id in houses.order() {
+            if house_id == owner {
+                continue;
+            }
+            let Some(house) = houses.get(&house_id) else {
+                continue;
+            };
+            let eligible = (from_player && (house.is_human() || house.player_control()))
+                || (from_allies
+                    && (!is_campaign || (!house.is_human() && !house.player_control()))
+                    && house_alliances.is_allied(interner, house_id, owner));
+            if eligible {
+                count = count.wrapping_add(heal_count(house));
+                if cap_active && count >= cap {
+                    count = cap;
+                    break;
+                }
+            }
+        }
+    }
+    count
+}
+
+impl Simulation {
+    /// `TechnoExt::DrawSelfHealPips`' `hasSelfHeal` display query
+    /// (`Ext/Techno/Body.Visuals.cpp:31-63`): whether any house source would
+    /// heal this owner at all. It runs the heal owner's own scan, so a drawn
+    /// self-heal marker always has a matching source. Read-only.
+    pub fn phobos_self_heal_sources_active(
+        &self,
+        owner: crate::sim::intern::InternedId,
+        infantry: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        let globals = &rules.phobos_globals;
+        let cap = if infantry {
+            globals.infantry_gain_self_heal_cap
+        } else {
+            globals.units_gain_self_heal_cap
+        };
+        phobos_self_heal_source_count(
+            &self.interner,
+            &self.session,
+            &self.houses,
+            &self.house_alliances,
+            owner,
+            infantry,
+            cap,
+            globals.gain_self_heal_from_player_control,
+            globals.gain_self_heal_from_allies,
+        ) > 0
+    }
 }
 
 /// One arm of [`house_self_heal_step`]. `infantry` selects the hospital arm:
@@ -1416,6 +1746,7 @@ fn house_self_heal_step(
 /// `bl` is built at `0x006FA79A..0x006FA7B0` (`ebp` is zeroed at `0x006F9E58`):
 /// it is set when `Health >= Type+0xA0` (`0x006FA7A2`, `jl` past the set) or when
 /// `Health == 0` (`0x006FA7AC`), and either arm leaves before its heal block.
+/// Phobos builds replace both arms with [`phobos_apply_gained_self_heal`].
 fn house_heal_arm(
     interner: &StringInterner,
     session: &ScenarioSession,
@@ -1560,6 +1891,115 @@ fn self_heal_step(
         id,
         rules,
     );
+}
+
+/// Phobos `AircraftClass_Update_UnlandableDamage`
+/// (`Ext/Aircraft/Hooks.cpp:735-794`, hook `0x414DA8`, after
+/// `FootClass::Update`): an alive, AirportBound aircraft that is no airstrike
+/// loses health while it is in the air and cannot land.
+///
+/// The hook reads `ExtendedAircraftMissions_UnlandDamage.Get(Global())` on
+/// every frame:
+/// - `> 0`: every fourth frame, chosen by
+///   `(CurrentFrame - LastFireBulletFrame + UniqueID) & 3 == 0`, it takes that
+///   much damage from the `[CombatDamage] C4Warhead=` at itself with no
+///   attacker (`ReceiveDamage(&damage, 0, C4Warhead, nullptr, true, false,
+///   nullptr)`; VERA's receiver flags keep `ignore_defenses` and clear the
+///   second call flag to match those arguments);
+/// - `< 0` **and** the master switch resolved on: `Crash(nullptr)`, which is
+///   the kill-while-unlandable arm. A negative value with the master off is
+///   stock behaviour (nothing here).
+///
+/// An aircraft holding a `DockNowHeadingTo` (`Aircraft+0x6CC`, VERA's
+/// [`TechnoAmmo::dock`](crate::sim::ammo::TechnoAmmo::dock)) takes neither
+/// damage arm (`:762`).
+///
+/// RESIDUAL: the hook's other arms are not ported. With the master switch on
+/// it first re-targets an aircraft whose `ArchiveTarget` lies farther than
+/// `GetGuardRange(1) * 1.1` from it (clear Target, set destination to the
+/// archive) and calls `TryNearestDockBuilding(&Type->Dock, 0, 0)`; with the
+/// switch off, the positive-damage arm refuses the damage when that dock search
+/// answers; and an Area-Guarding aircraft holding a `DockNowHeadingTo` with a
+/// `MissionStatus` clears its archive and enters idle mode. Trigger:
+/// `ExtendedAircraftMissions=yes` (or a positive UnlandDamage with the switch
+/// off) for an AirportBound aircraft in the air. Effect: the guard-return
+/// redirect, the dock-search refusal and the Area-Guard idle exit are missing,
+/// so VERA can damage an aircraft Phobos would send to a dock first, and does
+/// not pull a distant Area-Guard aircraft back to its archive cell. Frequency:
+/// only for a mod that turns the switch on or sets a positive UnlandDamage;
+/// the retail defaults (switch `no`, damage `0`) are dormant.
+fn aircraft_unlandable_damage_step(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if entity.health.current() <= 0 || entity.airstrike_link().is_some() {
+        return;
+    }
+    let Some(object) = sim.entity_object_type(entity, rules) else {
+        return;
+    };
+    // `pType->AirportBound`, and `!pThis->IsALoaner` (VERA has no IsALoaner
+    // writer: the Phobos `IsALoaner=` type key is a separate key and the
+    // native field stays false).
+    if !object.airport_bound {
+        return;
+    }
+    // `if (pThis->DockNowHeadingTo)` (`:762-770`): an aircraft already heading
+    // to a dock (`Aircraft+0x6CC`, `TechnoAmmo::dock`) takes neither damage
+    // arm. Only an Area-Guarding one with a `MissionStatus` clears its
+    // archive and enters idle mode there; VERA lacks that arm (residual).
+    if entity.ammo().and_then(|ammo| ammo.dock()).is_some() {
+        return;
+    }
+    let flags = rules.extended_aircraft_missions_for(object);
+    if flags.unland_damage == 0 {
+        return;
+    }
+    if !crate::sim::movement::air_movement::is_high_flying(
+        entity,
+        sim.resolved_terrain.as_ref(),
+        Some((rules, &sim.interner)),
+    ) {
+        return;
+    }
+    let frame = sim.session.binary_frame() as i32;
+    let damage = flags.unland_damage;
+    if damage > 0 {
+        // `(Unsorted::CurrentFrame - LastFireBulletFrame + UniqueID) & 0x3`.
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let last_fire = entity.last_fire_frame.frame() as i32;
+        let tick = frame
+            .wrapping_sub(last_fire)
+            .wrapping_add(entity.native_unique_id());
+        if tick & 0x3 != 0 {
+            return;
+        }
+        let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            return;
+        };
+        let warhead = sim.interner.intern(&warhead.id);
+        let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            id,
+            damage,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            warhead,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        );
+        sim.commit_direct_damage_receiver(rules, ctx.overlay_registry, event, ctx.effects);
+    } else if flags.master {
+        // `pThis->Crash(nullptr)`, guarded by the master switch.
+        sim.foot_crash(id, None, rules, ctx.effects);
+    }
 }
 
 /// `AircraftClass::AI @ 0x00414D2C..0x00414D4B`: a Target whose vt+0x54
@@ -1768,8 +2208,26 @@ fn techno_common_steps(
     }
     // Phobos `TechnoExt::UpdateAttachEffects` (Body.Update.cpp:895): one AI
     // phase and the animation check for every AttachEffect on this object.
-    #[cfg(feature = "phobos")]
     sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
+    // Phobos `TechnoExt::OnEarlyUpdate -> EatPassengers`
+    // (`Ext/Techno/Body.Update.cpp:19`): after `UpdateAttachEffects` and
+    // before `CheckDeathConditions`.
+    crate::sim::passenger_deletion::eat_passengers(sim, rules, id, effects);
+    // Phobos `TechnoExt::OnEarlyUpdate -> UpdateLastTargetCrd`
+    // (`Ext/Techno/Body.Update.cpp:24`): after the EMP/rearm passes and
+    // `EatPassengers`, before `CheckDeathConditions`; keeps the
+    // `ExtraThreatCoefficient.DistanceToLastTarget` coordinate.
+    sim.update_phobos_extra_threat_last_target(id, rules);
+    // Phobos `TechnoExt::OnEarlyUpdate -> CheckDeathConditions`
+    // (`Ext/Techno/Body.Update.cpp:26`): after `UpdateAttachEffects`, which this
+    // body has just run. Native's early return skips the `ApplyInterceptor`
+    // step that follows.
+    let check_death_returns = sim.check_auto_death(id, rules, overlay_registry, effects);
+    // Phobos `TechnoExt::OnEarlyUpdate -> ApplyInterceptor`
+    // (`Ext/Techno/Body.Update.cpp:33`), the last early-update step.
+    if !check_death_returns {
+        sim.apply_interceptor(id, rules, overlay_registry, effects);
+    }
     if rules.ares() {
         sim.update_ares_operator_operability(id, rules, effects);
         // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
@@ -1833,17 +2291,10 @@ fn techno_common_steps(
         // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
         sim.update_ares_veterancy(id, false, true, rules, effects);
     } else if !quiet {
-        veterancy_promotion_step(
-            &mut sim.interner,
-            &mut sim.substrate,
-            sim.resolved_terrain.as_ref(),
-            &mut sim.sound_events,
-            id,
-            rules,
-        );
+        veterancy_promotion_step(sim, id, rules);
     }
     if !quiet {
-        crate::sim::credit_income::drain_common_step(sim, id, rules);
+        crate::sim::credit_income::drain_common_step(sim, id, rules, effects);
     }
     // Techno6FA224..6FA244: only a valid loaded main VXL reaches
     // RockingUpdate70B570 and its immediate Alive guard. This precedes
@@ -2346,6 +2797,7 @@ fn techno_after_acquisition(
             &sim.session,
             &mut sim.substrate,
             &sim.houses,
+            &sim.house_alliances,
             &sim.resolved_terrain,
             id,
             rules,
@@ -2616,7 +3068,15 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, effects: F
             entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
         })
     {
-        entity.tick_native_stage(now);
+        // Phobos TechnoClass_AI_AnimationPaused (`0x6FABC4`, hook size 6 ->
+        // `0x6FAC31`): a paused `DelayedFire.PauseFiringSequence` skips only
+        // this generic Stage block; the flash/particle/EMP tail below still
+        // runs. Unit's separate firing counter is frozen by
+        // `animation::tick_unit_firing_counter`.
+        let paused = entity.phobos_delayed_fire_sequence_paused();
+        if !paused {
+            entity.tick_native_stage(sim.session.binary_frame() as i32);
+        }
     }
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
@@ -2625,6 +3085,16 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, effects: F
     // before EMP. Its simulation discovery prelude is independent of radar
     // presentation, viewport admission and rendering cadence.
     sim.update_techno_discovery_from_shroud(id);
+    // Phobos `TechnoExt::OnEarlyUpdate -> UpdateRecountBurst`
+    // (`Ext/Techno/Body.Update.cpp:22,544-566`): between the AttachEffect /
+    // EatPassengers / range-limit steps and `UpdateRearmInEMPState`, a stale
+    // burst index recounts here.
+    crate::sim::combat::burst::update_phobos_recount_burst(sim, id, rules);
+    // Phobos `TechnoExt::OnEarlyUpdate -> UpdateRearmInEMPState`
+    // (`Ext/Techno/Body.Update.cpp:23,866-880`), after the AttachEffect update
+    // this visit ran in `techno_common_steps` and before the Ares EMP
+    // recovery tick below, which decrements the counter the predicate reads.
+    sim.update_rearm_in_emp_state(id, rules);
     // Installed Ares6FAF0D ->10053DF0, after the ordinary Techno tail.
     // No global frame sweep: limbo/skipped/dead visits never reach this slot.
     if rules.ares() {
@@ -6311,6 +6781,154 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             "the destination lies in the mover's zone (rx {rx})"
         );
     }
+
+    /// Phobos `TechnoExt::UpdateRearmInEMPState`
+    /// (`Ext/Techno/Body.Update.cpp:866-880`): `NoRearm.UnderEMP=yes` /
+    /// `NoReload.UnderEMP=yes` hold a running rearm and Techno Reload timer
+    /// across EMP'd visits (`StartTime++` per visit), while `=no` lets them
+    /// count. The `Deactivated` half of the predicate holds too.
+    #[test]
+    fn no_rearm_under_emp_holds_running_timers() {
+        let rules_for = |keys: &str| {
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TNK\n[TNK]\nStrength=100\n{keys}"
+            )))
+            .unwrap()
+        };
+        let held_rules = rules_for("NoRearm.UnderEMP=yes\nNoReload.UnderEMP=yes\n");
+        let mut sim = Simulation::new();
+        let mut entity =
+            GameEntity::test_default_of_category(1, "TNK", "Americans", 2, 2, EntityCategory::Unit);
+        entity.set_type_ref_for_test(sim.interner.intern("TNK"));
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 50));
+        entity.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(10, 40));
+        entity.set_emp_remaining_for_test(3);
+        sim.substrate.entities.insert(entity);
+        sim.session.set_binary_frame_for_test(20);
+        techno_common_post(&mut sim, 1, &held_rules, FrameEffects::empty());
+        let (rearm_after_first, reload_after_first) = {
+            let after_first = sim.substrate.entities.get(1).unwrap();
+            (
+                after_first.rearm_timer.remaining(20),
+                after_first.ammo_reload_timer().remaining(20),
+            )
+        };
+        assert_eq!(
+            rearm_after_first, 41,
+            "the visit's StartTime++ holds the rearm at one frame later"
+        );
+        assert_eq!(reload_after_first, 31);
+        sim.session.set_binary_frame_for_test(21);
+        techno_common_post(&mut sim, 1, &held_rules, FrameEffects::empty());
+        let (rearm_after_second, reload_after_second) = {
+            let after_second = sim.substrate.entities.get(1).unwrap();
+            (
+                after_second.rearm_timer.remaining(21),
+                after_second.ammo_reload_timer().remaining(21),
+            )
+        };
+        assert_eq!(
+            rearm_after_second, rearm_after_first,
+            "the second visit holds the timer still again"
+        );
+        assert_eq!(reload_after_second, reload_after_first);
+        // `=no` counts: the same fixture loses a frame per visit.
+        let counting_rules = rules_for("NoRearm.UnderEMP=no\nNoReload.UnderEMP=no\n");
+        let mut sim = Simulation::new();
+        let mut entity =
+            GameEntity::test_default_of_category(1, "TNK", "Americans", 2, 2, EntityCategory::Unit);
+        entity.set_type_ref_for_test(sim.interner.intern("TNK"));
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 50));
+        entity.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(10, 40));
+        entity.set_emp_remaining_for_test(3);
+        sim.substrate.entities.insert(entity);
+        sim.session.set_binary_frame_for_test(20);
+        techno_common_post(&mut sim, 1, &counting_rules, FrameEffects::empty());
+        sim.session.set_binary_frame_for_test(21);
+        techno_common_post(&mut sim, 1, &counting_rules, FrameEffects::empty());
+        let counted = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(counted.rearm_timer.remaining(21), 39);
+        assert_eq!(counted.ammo_reload_timer().remaining(21), 29);
+        // The `Deactivated` half of the native predicate holds the timers too.
+        let mut sim = Simulation::new();
+        let mut entity =
+            GameEntity::test_default_of_category(1, "TNK", "Americans", 2, 2, EntityCategory::Unit);
+        entity.set_type_ref_for_test(sim.interner.intern("TNK"));
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 50));
+        entity.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(10, 40));
+        entity.set_emp_remaining_for_test(0);
+        entity.deactivated.set_for_test(true);
+        sim.substrate.entities.insert(entity);
+        sim.session.set_binary_frame_for_test(20);
+        techno_common_post(&mut sim, 1, &held_rules, FrameEffects::empty());
+        let deactivated = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(deactivated.rearm_timer.remaining(20), 41);
+        assert_eq!(deactivated.ammo_reload_timer().remaining(20), 31);
+    }
+
+    /// The `[General]` fallback (`Ext/Rules/Body.cpp:383`): an unset type key
+    /// takes the global's value, and with the retail `false` default the
+    /// timers keep counting.
+    #[test]
+    fn unset_no_rearm_under_emp_falls_back_to_the_global() {
+        let held_rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nNoRearm.UnderEMP=yes\n\n[VehicleTypes]\n0=TNK\n[TNK]\nStrength=100\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let mut entity =
+            GameEntity::test_default_of_category(1, "TNK", "Americans", 2, 2, EntityCategory::Unit);
+        entity.set_type_ref_for_test(sim.interner.intern("TNK"));
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 50));
+        entity.set_emp_remaining_for_test(3);
+        sim.substrate.entities.insert(entity);
+        sim.session.set_binary_frame_for_test(20);
+        techno_common_post(&mut sim, 1, &held_rules, FrameEffects::empty());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .rearm_timer
+                .remaining(20),
+            41,
+            "the global holds the rearm when the type key is unset"
+        );
+        // The retail default global is false: the same unset type counts.
+        let default_rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TNK\n[TNK]\nStrength=100\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let mut entity =
+            GameEntity::test_default_of_category(1, "TNK", "Americans", 2, 2, EntityCategory::Unit);
+        entity.set_type_ref_for_test(sim.interner.intern("TNK"));
+        entity
+            .rearm_timer
+            .set_for_test(crate::sim::timer::CdTimer::started(10, 50));
+        entity.set_emp_remaining_for_test(3);
+        sim.substrate.entities.insert(entity);
+        sim.session.set_binary_frame_for_test(20);
+        techno_common_post(&mut sim, 1, &default_rules, FrameEffects::empty());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .rearm_timer
+                .remaining(20),
+            40,
+            "the false default leaves the countdown running"
+        );
+    }
 }
 
 #[cfg(all(test, tests_sim_world_techno))]
@@ -6353,5 +6971,59 @@ use super::bridge_test_evidence;
 mod promotion_sound_tests;
 
 #[cfg(all(test, tests_sim_world_techno))]
+#[path = "techno_ai/promote_anim_tests.rs"]
+mod promote_anim_tests;
+
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/surface_conversion_tests.rs"]
 mod surface_conversion_tests;
+
+/// Phobos `TechnoExt::ShowPromoteAnim` (`Ext/Techno/Body.Visuals.cpp:863-874`)
+/// from the `TechnoClass_AI_PromoteAnim @ 0x6FA07A` hook
+/// (`Ext/Techno/Hooks.cpp:158-170`).
+///
+/// The type's list replaces the global `[AudioVisual]` list of its tier when
+/// non-empty. The veteran list plays only at `Rank::Veteran` (the native
+/// `GetRemainingLevel == 1`); the `else if` fires the elite list for every
+/// other tier, including a demotion to Rookie, and also for a Veteran
+/// crossing whose veteran list is empty. One
+/// `AnimExt::CreateRandomAnim` (`RandomRanged(0, size - 1)`) spawns at
+/// `GetCenterCoords()` with the object as owner-object and its owner House.
+///
+/// RESIDUAL: the anim sits at `GetCoords` (`object_get_coords`) instead of
+/// `GetCenterCoords`'s centre-height point — visual only, the same residual
+/// as the delayed-fire `CenterAnimOnFirer` arm.
+fn show_promote_anim(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    owner: crate::sim::intern::InternedId,
+    level: i8,
+) {
+    use crate::sim::combat::veterancy::LEVEL_VETERAN;
+
+    let (chosen, world) = {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let promote = &object.phobos_promote;
+        let veteran = promote.veteran_animation(&rules.phobos_globals.promote_veteran_animation);
+        let elite = promote.elite_animation(&rules.phobos_globals.promote_elite_animation);
+        let chosen = if level == LEVEL_VETERAN && !veteran.is_empty() {
+            veteran
+        } else if !elite.is_empty() {
+            elite
+        } else {
+            return;
+        };
+        let world = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        );
+        (chosen.to_vec(), world)
+    };
+    sim.spawn_random_owned_anim(rules, &chosen, world.into(), owner, Some(id), Some(id));
+}

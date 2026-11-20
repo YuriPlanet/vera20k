@@ -119,7 +119,7 @@ impl Simulation {
                 .get(&building.owner())
                 .is_some_and(|state| state.overpowers(&object.id));
         if object.overpowerable {
-            Self::sample_tesla_charge(substrate, power_states, id);
+            Self::sample_tesla_charge(interner, substrate, power_states, id, rules);
         }
         if battery {
             substrate
@@ -133,47 +133,66 @@ impl Simulation {
     }
 
     /// The stock Overpowerable block (4400F9..440196): prune changed
-    /// chargers, then sample +661.
-    fn sample_tesla_charge(substrate: &mut ObjectSubstrate, power_states: &PowerStates, id: u64) {
+    /// chargers, then sample +661 with the Phobos
+    /// `Overpower.KeepOnline`/`.ChargeWeapon` thresholds
+    /// (`Ext/Building/Hooks.cpp:914-955`) over the summed
+    /// `ElectricAssaultLevel`s. Without the feature the stock target-only
+    /// prune, thresholds (2, 1) and one level per charger hold.
+    fn sample_tesla_charge(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        power_states: &PowerStates,
+        id: u64,
+        rules: &RuleSet,
+    ) {
         let building = substrate.entities.get(id).unwrap();
         let count = building.building.tesla_charge.chargers.len();
+        let mut over_power = 0_i32;
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.
         for index in (0..count).rev() {
-            let charger = substrate
-                .entities
-                .get(id)
-                .unwrap()
-                .building
-                .tesla_charge
-                .chargers[index];
-            if !substrate
-                .entities
-                .get(charger)
-                .is_some_and(|entity| entity.attack_target.target() == Some(TargetKind::Entity(id)))
-            {
-                substrate
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .building
-                    .tesla_charge
-                    .chargers
-                    .remove(index);
+            let charger = substrate.entities.get(id).unwrap().building.tesla_charge.chargers[index];
+            let valid_target = substrate.entities.get(charger).is_some_and(|entity| {
+                entity.attack_target.target() == Some(TargetKind::Entity(id))
+            });
+            // Phobos (`Ext/Building/Hooks.cpp:924-930`) also drops a charger
+            // whose slot-1 weapon, warhead or `ElectricAssault` is missing;
+            // the stock body's compare at 0x44011F tests only the target.
+            let level = valid_target
+                .then(|| Self::electric_assault_level(interner, substrate, rules, charger))
+                .flatten();
+            match level {
+                Some(level) => over_power = over_power.wrapping_add(level),
+                None => {
+                    substrate
+                        .entities
+                        .get_mut(id)
+                        .unwrap()
+                        .building
+                        .tesla_charge
+                        .chargers
+                        .remove(index);
+                }
             }
         }
         let building = substrate.entities.get(id).unwrap();
-        let count = building.building.tesla_charge.chargers.len();
-        let overpowered = count >= 3
-            || (count >= 1
-                && building.building_online()
-                && power_states.get(&building.owner()).is_none_or(|power| {
-                    let (output, drain) = power.effective_totals();
-                    X87::compare(
-                        crate::sim::power_system::native_power_ratio(output, drain),
-                        X87::load_f64(NativeF64Bits::ONE),
-                    ) == MaskedX87Ordering::Equal
-                }));
+        let object = interner.object_type(building.type_ref(), rules).unwrap();
+        let charge = object.overpower_charge_weapon;
+        let overpowered = if charge < 0 {
+            false
+        } else {
+            let keep = object.overpower_keep_online;
+            over_power >= keep.wrapping_add(charge)
+                || (over_power >= charge
+                    && building.building_online()
+                    && power_states.get(&building.owner()).is_none_or(|power| {
+                        let (output, drain) = power.effective_totals();
+                        X87::compare(
+                            crate::sim::power_system::native_power_ratio(output, drain),
+                            X87::load_f64(NativeF64Bits::ONE),
+                        ) == MaskedX87Ordering::Equal
+                    }))
+        };
         if building.building.tesla_charge.overpowered != overpowered {
             substrate
                 .entities
@@ -183,6 +202,65 @@ impl Simulation {
                 .tesla_charge
                 .overpowered = overpowered;
         }
+    }
+
+    /// The slot-1 weapon's `ElectricAssaultLevel` when the charger validates for
+    /// the overpower sample (`Ext/Building/Hooks.cpp:914-932`): the weapon, its
+    /// warhead and `ElectricAssault` must all exist.
+    pub(crate) fn electric_assault_level(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        rules: &RuleSet,
+        charger: u64,
+    ) -> Option<i32> {
+        let entity = substrate.entities.get(charger)?;
+        let object = interner.object_type(entity.type_ref(), rules)?;
+        let weapon = crate::sim::combat::combat_weapon::get_weapon(
+            entity,
+            object,
+            1,
+            &substrate.entities,
+            rules,
+            interner,
+        )?;
+        let warhead = rules.weapon_warhead(weapon)?;
+        warhead
+            .electric_assault
+            .then_some(warhead.electric_assault_level)
+    }
+
+    /// The power gate's laxer sum (`Ext/Building/Hooks.cpp:970-981`): every
+    /// slot-1 weapon with a warhead adds its `ElectricAssaultLevel`.
+    pub(crate) fn power_charger_level_sum(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        rules: &RuleSet,
+        chargers: &[u64],
+    ) -> i32 {
+        let mut sum = 0_i32;
+        for &charger in chargers {
+            let Some(entity) = substrate.entities.get(charger) else {
+                continue;
+            };
+            let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+                continue;
+            };
+            let Some(weapon) = crate::sim::combat::combat_weapon::get_weapon(
+                entity,
+                object,
+                1,
+                &substrate.entities,
+                rules,
+                interner,
+            ) else {
+                continue;
+            };
+            let Some(warhead) = rules.weapon_warhead(weapon) else {
+                continue;
+            };
+            sum = sum.wrapping_add(warhead.electric_assault_level);
+        }
+        sum
     }
 
     /// Foot Guard/AreaGuard adjacency. Both callers retain their own idle

@@ -186,6 +186,13 @@ impl Simulation {
         if !self.substrate.entities.contains(target) {
             return false;
         }
-        self.ares_apply_perma_mc(target, house, rules, overlay_registry, effects)
+        // Phobos `PermaMC_FreeUnit_SetContext` (`Misc/Hooks.Ares.cpp:120-124`):
+        // the replaced victim's `FreeUnit` silent flag is the warhead's
+        // `RemoveMindControl.Silent=` else
+        // `[AudioVisual] MindControl.Permanent.ReplaceSilent=`.
+        let free_silent = warhead
+            .phobos_extras
+            .mind_control_silent(rules.phobos_globals.mind_control_permanent_replace_silent);
+        self.ares_apply_perma_mc(target, house, rules, overlay_registry, effects, free_silent)
     }
 }

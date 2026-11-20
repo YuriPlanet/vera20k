@@ -38,6 +38,9 @@ use std::sync::Arc;
 pub enum InfantryDeathSequence {
     Die1,
     Die2,
+    Die3,
+    Die4,
+    Die5,
 }
 
 impl InfantryDeathSequence {
@@ -60,7 +63,22 @@ impl InfantryDeathSequence {
         match self {
             Self::Die1 => SequenceKind::Die1,
             Self::Die2 => SequenceKind::Die2,
+            Self::Die3 => SequenceKind::Die3,
+            Self::Die4 => SequenceKind::Die4,
+            Self::Die5 => SequenceKind::Die5,
         }
+    }
+
+    /// Phobos hook `0x518505`'s `Die(x) = x + 10` numbering (1..=5).
+    pub(crate) fn from_die_number(value: i32) -> Option<Self> {
+        Some(match value {
+            1 => Self::Die1,
+            2 => Self::Die2,
+            3 => Self::Die3,
+            4 => Self::Die4,
+            5 => Self::Die5,
+            _ => return None,
+        })
     }
 }
 
@@ -560,6 +578,7 @@ impl Simulation {
         inf_death: i32,
         house: Option<crate::sim::intern::InternedId>,
         inf_death_anim: Option<&str>,
+        not_human_death_sequence: i32,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
@@ -603,6 +622,25 @@ impl Simulation {
         };
         let arm = self.infantry_death_arm(entity, inf_death, rules);
         let entity_owner = entity.owner();
+        // Phobos hook `0x518505` facts, read before the entity borrow ends.
+        let (not_human_paradrop_falling, not_human_random) = (
+            entity.is_falling_down()
+                && entity
+                    .mission_leaf
+                    .as_infantry()
+                    .is_some_and(|leaf| leaf.doing() == DO_PARADROP),
+            self.object_type(entity.type_ref(), rules)
+                .and_then(|object| object.phobos_not_human_random_death_sequence)
+                .unwrap_or(rules.phobos_globals.not_human_random_death_sequence),
+        );
+        let victim_house = entity_owner;
+        let ares_anim = inf_death_anim.filter(|_| {
+            matches!(arm, InfantryDeathArm::Table(_))
+                && crate::sim::movement::air_movement::current_fly_height(
+                    entity,
+                    self.resolved_terrain.as_ref(),
+                ) < 10
+        });
         let ares_anim = if rules.ares() {
             inf_death_anim.filter(|_| {
                 matches!(arm, InfantryDeathArm::Table(_))
@@ -632,11 +670,38 @@ impl Simulation {
                 }
             }
             InfantryDeathArm::NotHuman => {
-                self.begin_infantry_death_sequence(id, InfantryDeathSequence::Die1, rules, effects);
-                if inf_death == VIRUS_INF_DEATH {
-                    self.emit_inline_virus_particle(rules, location, house, entity_owner);
+                {
+                    // `InfantryClass_ReceiveDamage_NotHuman` (`0x518505`,
+                    // `Ext/Techno/Hooks.ReceiveDamage.cpp:308-345`): a
+                    // falling paradrop death explodes as InfantryExplode;
+                    // otherwise Die1, a random Die1..Die5 when the type or
+                    // `[General]` asks, then the warhead's Die1..Die5.
+                    if not_human_paradrop_falling {
+                        return InfantryDeathPostlude {
+                            id,
+                            location,
+                            house,
+                            victim_house,
+                            recipe: ReceiverDeathRecipe::ExternalAnim(INFANTRY_EXPLODE_INF_DEATH),
+                        };
+                    }
+                    let mut sequence = InfantryDeathSequence::Die1;
+                    if not_human_random {
+                        let raw = self.scenario_rng.next_range_i32_inclusive(11, 15);
+                        sequence = InfantryDeathSequence::from_die_number(raw - 10)
+                            .unwrap_or(InfantryDeathSequence::Die1);
+                    }
+                    if not_human_death_sequence > 0 {
+                        sequence =
+                            InfantryDeathSequence::from_die_number(not_human_death_sequence.min(5))
+                                .unwrap_or(InfantryDeathSequence::Die1);
+                    }
+                    self.begin_infantry_death_sequence(id, sequence, rules, effects);
+                    if inf_death == VIRUS_INF_DEATH {
+                        self.emit_inline_virus_particle(rules, location, house, entity_owner);
+                    }
+                    ReceiverDeathRecipe::Sequence
                 }
-                ReceiverDeathRecipe::Sequence
             }
             InfantryDeathArm::Table(_) if ares_anim.is_some() => {
                 ReceiverDeathRecipe::AresInfDeathAnim(ares_anim.unwrap_or_default().to_owned())
@@ -1042,5 +1107,107 @@ mod dead_body_tests {
             compared += 1;
         }
         assert_eq!(compared, 61);
+    }
+}
+
+#[cfg(all(test, tests_sim_world_c_o))]
+mod not_human_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn scene(type_keys: &str, general: &str) -> (Simulation, RuleSet, u64) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[InfantryTypes]\n0=E1\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [E1]\nImage=GI\nStrength=100\nSpeed=4\nNotHuman=yes\n{type_keys}\
+             [General]\n{general}"
+        ));
+        let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        let registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+        rules.install_art_data(registry);
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let id = sim
+            .spawn_object("E1", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        (sim, rules, id)
+    }
+
+    /// The chosen death action (`Die(x)` = `x + 10`) of a `NotHuman=`
+    /// infantryman killed with `warhead_sequence`.
+    pub(super) fn die_action(type_keys: &str, general: &str, warhead_sequence: i32) -> (i32, bool) {
+        let (mut sim, rules, id) = scene(type_keys, general);
+        let mut expected = sim.scenario_rng.clone();
+        expected.next_range_i32_inclusive(11, 15);
+        let _ = sim.begin_infantry_receiver_death(
+            id,
+            0,
+            None,
+            None,
+            warhead_sequence,
+            &rules,
+            None,
+            FrameEffects::default(),
+        );
+        let doing = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission_leaf
+            .as_infantry()
+            .map(|leaf| leaf.doing())
+            .unwrap_or(-1);
+        (
+            doing,
+            sim.scenario_rng.logical_state() == expected.logical_state(),
+        )
+    }
+
+    /// Default death: `Die1` and no draw. A warhead sequence picks
+    /// `min(x, 5)`.
+    #[test]
+    fn not_human_defaults_to_die1_and_the_warhead_overrides() {
+        assert_eq!(die_action("", "", -1).0, 11);
+        assert_eq!(die_action("", "", 3).0, 13);
+        assert_eq!(die_action("", "", 9).0, 15, "clamped to Die5");
+    }
+
+    /// The type key or the `[General]` fallback turns the death into one
+    /// scenario `RandomRanged(Die1, Die5)` draw.
+    #[test]
+    fn random_death_sequence_draws_once() {
+        let (doing, one_draw) = die_action("NotHuman.RandomDeathSequence=yes\n", "", -1);
+        assert!((11..=15).contains(&doing));
+        assert!(one_draw, "one scenario draw");
+        let (doing, one_draw) = die_action("", "NotHuman.RandomDeathSequence=yes\n", -1);
+        assert!((11..=15).contains(&doing));
+        assert!(one_draw);
+        assert_eq!(die_action("", "", -1), (11, false), "defaults stay dry");
+    }
+}
+
+#[cfg(all(test, tests_sim_world_c_o))]
+mod not_human_precedence_tests {
+    use super::not_human_tests::die_action;
+
+    /// A type-level `no` beats a `[General] yes`, and the random draw still
+    /// happens before a warhead override.
+    #[test]
+    fn type_no_beats_global_yes_and_warhead_override_keeps_the_draw() {
+        assert_eq!(
+            die_action(
+                "NotHuman.RandomDeathSequence=no\n",
+                "NotHuman.RandomDeathSequence=yes\n",
+                -1
+            ),
+            (11, false)
+        );
+        let (doing, one_draw) = die_action("NotHuman.RandomDeathSequence=yes\n", "", 4);
+        assert_eq!(doing, 14);
+        assert!(
+            one_draw,
+            "the random draw still happens before the override"
+        );
     }
 }

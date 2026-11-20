@@ -302,6 +302,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
             false,
             None,
             brightness,
+            0,
         ),
         PaletteLight::new([1000; 3], 1, brightness, true)
     );
@@ -318,12 +319,64 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
                 crate::sim::intern::InternedId::default()
             )),
             brightness,
+            0,
         ),
         expected
     );
     assert_eq!(
-        anim_palette_light(&lights.grid, (0, 0), None, false, None, brightness),
+        anim_palette_light(&lights.grid, (0, 0), None, false, None, brightness, 0),
         PaletteLight::plain(53, brightness)
+    );
+    // `AltPalette.ApplyLighting=yes` steps `0x4232E2`'s scheme index by one
+    // (`Ext/Anim/Hooks.cpp:632-645`): `0x68C710` registers each `[Colors]`
+    // entry as a one-shade scheme (`0x6277D7`) and a 53-shade one (`0x627849`),
+    // so the step switches the anim to the fully shaded rows.
+    let lit = ArtRegistry::from_ini(&IniFile::from_str(
+        "[ALT]\nAltPalette=yes\nAltPalette.ApplyLighting=yes\n",
+    ));
+    assert_eq!(
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            lit.anim_runtime_config("ALT"),
+            false,
+            None,
+            brightness,
+            0,
+        )
+        .rows(),
+        53,
+        "ApplyLighting selects the scheme one index later: 53 rows"
+    );
+    // The global default index is a `ColorScheme::Array` index, not a `[Colors]`
+    // entry, so its own parity decides the rows the key-off anim draws with.
+    assert_eq!(
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            art.anim_runtime_config("ALT"),
+            false,
+            None,
+            brightness,
+            1,
+        )
+        .rows(),
+        53,
+        "AnimRemapDefaultColorScheme=1 already lands on the 53-row half"
+    );
+    assert_eq!(
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            lit.anim_runtime_config("ALT"),
+            false,
+            None,
+            brightness,
+            1,
+        )
+        .rows(),
+        1,
+        "ApplyLighting steps an odd default index back onto the one-shade half"
     );
     //555E50 constructs a new Convert with Storm RGB even though the
     // preceding normal operation switched existing Converts out of Ion.
@@ -395,7 +448,6 @@ fn ambient_action_relights_no_cell_before_the_fade() {
 /// A radiation site's bound type drives the field's cell light: the same
 /// scene lights purple for a `255,0,255` type and green for the default one.
 /// Phobos builds only: other builds never read `[RadiationTypes]`.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
     let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
@@ -460,7 +512,6 @@ fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
 /// effect with a tint ORs its `Tint.Color` word and sums
 /// `Tint.Intensity * 1000`, filtered by `Tint.VisibleToHouses` against the
 /// current player's Owner/Allies/Enemies bucket.
-#[cfg(feature = "phobos")]
 #[test]
 fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
     let ini = IniFile::from_str(
@@ -513,7 +564,6 @@ fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
 /// `Tint.Cumulative`: stacked instances of one cumulative effect sum their
 /// colour channels and intensities before a single tint; without it the type
 /// tints once with its own colour.
-#[cfg(feature = "phobos")]
 #[test]
 fn cumulative_effect_tint_stacks_by_type_or_once() {
     let scene = |extra: &str| {
@@ -563,7 +613,6 @@ fn cumulative_effect_tint_stacks_by_type_or_once() {
 
 /// Phobos `ApplyCustomTintValues` selects the viewer's shield-tint bucket and
 /// `Drawing::RGB_To_Int` packs `Tint.Color` as RGB565.
-#[cfg(feature = "phobos")]
 #[test]
 fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
     use crate::rules::phobos_shields::AffectedHouse;
@@ -600,7 +649,6 @@ fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
 
 /// Phobos `TechnoClass_InvulnerabilityIntensity_Adjust` (`0x70E475`): the
 /// configured extra intensity scales by 1000 and is added by kind.
-#[cfg(feature = "phobos")]
 #[test]
 fn curtain_extra_tint_reads_the_audio_visual_globals() {
     use crate::sim::superweapon::invulnerability::InvulnKind;
@@ -623,4 +671,70 @@ fn curtain_extra_tint_reads_the_audio_visual_globals() {
         0
     );
     assert_eq!(super::curtain_extra_tint(Some(&rules), None), 0);
+}
+
+/// Phobos `UseRetintFix` (`Ext/TAction/Hooks.cpp:68-107`): a normal retint
+/// deactivates and reactivates every active light source, so their cells
+/// re-sample with the new normal RGB instead of keeping the old Convert.
+#[test]
+fn use_retint_fix_relights_active_light_sources_after_a_normal_retint() {
+    let terrain =
+        crate::map::resolved_terrain::test_grid(3, 1, crate::map::resolved_terrain::test_flat_cell);
+    let mut lights = MatchLighting::default();
+    lights.dimensions = [3, 1];
+    lights.detail_level = 2;
+    for x in 0..3 {
+        lights.heights.insert((x, 0), 0);
+    }
+    lights.set_use_retint_fix(true);
+    let lamp = crate::map::lighting::radiation_point_light(1, 0, 512, 200, [0; 3]);
+    lights.apply_events(
+        &terrain,
+        &[LightingEvent::Building {
+            id: 42,
+            source: Some(lamp),
+        }],
+    );
+    let before = lights.grid.cell_light_at((1, 0)).unwrap().profile_id;
+    assert_eq!(lights.grid.palette_rgb(before), [1000; 3]);
+    lights.apply_events(
+        &terrain,
+        &[global(
+            PaletteUpdate::Normal([1200, 800, 600]),
+            ScenarioLightingState::default(),
+        )],
+    );
+    let after = lights.grid.cell_light_at((1, 0)).unwrap().profile_id;
+    assert_eq!(lights.grid.palette_rgb(after), [1200, 800, 600]);
+}
+
+/// Phobos `GetLevelIntensity` (`Ext/Techno/Hooks.Tint.cpp:27-45`): the blit
+/// intensity from the scenario level, the height in level steps, the
+/// multiplier and the cell scalar.
+#[test]
+fn air_unit_level_light_scales_the_height_and_takes_the_cell_scalar() {
+    // Aircraft: two levels above the cell, multiplier 1, level 50, cell 800.
+    assert_eq!(
+        super::air_unit_level_brightness(50, 208, false, false, 1.0, 800),
+        900
+    );
+    assert_eq!(
+        super::air_unit_level_brightness(50, 208, false, false, 0.0, 800),
+        800
+    );
+    // Jumpjet on a bridge: current level 5 - 4, and the cell gains 4*level.
+    assert_eq!(
+        super::air_unit_level_brightness(50, 520, true, true, 0.5, 800),
+        25 + 800 + 200
+    );
+    // Without the bridge the full five levels take the half multiplier.
+    assert_eq!(
+        super::air_unit_level_brightness(50, 520, true, false, 0.5, 800),
+        125 + 800
+    );
+    // `static_cast<int>` truncates toward zero.
+    assert_eq!(
+        super::air_unit_level_brightness(50, -52, false, false, 1.0, 0),
+        -25
+    );
 }

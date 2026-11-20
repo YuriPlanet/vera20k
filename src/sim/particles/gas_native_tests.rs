@@ -174,6 +174,7 @@ fn gas_system_motion_lifetime_replacement_and_rng_match_original_histories() {
                 IVec3::ZERO,
                 rules.particle_type(kind),
                 &mut sim,
+                &rules,
             );
             p.motion = std::array::from_fn(|i| bits(&prior["direction_bits"][i]));
             p.velocity = bits(&prior["velocity_bits"]);
@@ -239,4 +240,64 @@ fn one_and_three_explicit_gas_births_match_original_constructors_and_rng() {
             case["cursor_after"].as_u64().unwrap() as u32
         );
     }
+}
+
+/// Phobos `Gas.MaxDriftSpeed=` (`Ext/ParticleType/Body.cpp:22`,
+/// constructor 2): the Gas AI's per-pass Velocity.X/Y clamp uses the type's
+/// value instead of the stock ±2 (`ParticleClass_Gas_AI_DriftSpeed`, hook
+/// `0x62BE30`, `Ext/ParticleType/Hooks.cpp:4-30`).
+#[test]
+fn the_gas_drift_clamp_uses_the_particle_types_max_speed() {
+    use crate::rules::ini_parser::IniFile;
+    let drift_after = |keys: &str| {
+        let ini = IniFile::from_str(&format!(
+            "[Particles]\n0=CLOUD\n[ParticleSystems]\n0=CLOUDSYS\n\
+             [CLOUD]\nBehavesLike=Gas\nMaxDC=0\n{keys}\n\
+             [CLOUDSYS]\nBehavesLike=Gas\nSpawns=CLOUD\nSpawnsNumber=1\n"
+        ));
+        let rules = RuleSet::from_ini(&ini).expect("gas drift rules");
+        let kind = rules.p_type_id_by_name("CLOUD").expect("particle type");
+        let mut sim = Simulation::with_seed(1);
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+            32,
+            32,
+            test_flat_cell,
+        ));
+        sim.session.set_binary_frame_for_test(2);
+        let mut p = Particle::new(
+            kind,
+            IVec3::new(10 * 256, 10 * 256, 0),
+            IVec3::ZERO,
+            rules.particle_type(kind),
+            &mut sim,
+            &rules,
+        );
+        p.drift_x = 7;
+        p.drift_y = -4;
+        // The clamp is native-gated on the 1/8 drift draw (`0x62BD9D`), so
+        // pick a state whose first draw is zero and whose axis draw picks X,
+        // leaving Y untouched for an exact assertion.
+        let seed = (0..100_000u64)
+            .find(|seed| {
+                let mut rng = SimRng::new(*seed);
+                rng.next_raw_abs_modulo(8) == 0 && rng.next_raw_abs_modulo(2) == 0
+            })
+            .expect("a seed with a zero drift draw");
+        sim.scenario_rng = SimRng::new(seed);
+        crate::sim::particles::gas::tick_particle(
+            &mut p,
+            &mut sim,
+            &rules,
+            None,
+            None,
+            UninitContext::new(&rules),
+        );
+        [p.drift_x, p.drift_y]
+    };
+    assert_eq!(drift_after(""), [2, -2], "the constructor's ±2 bound");
+    assert_eq!(
+        drift_after("Gas.MaxDriftSpeed=5\n"),
+        [5, -4],
+        "the keyed bound; the untouched Y stays inside it"
+    );
 }

@@ -15,6 +15,11 @@ pub struct LocalVariable {
     pub name: String,
     /// No second token leaves the Scenario's prior value unchanged.
     pub initially_set: Option<bool>,
+    /// The second token's raw `atoi` (`Ext/Scenario/Body.cpp:55-61`
+    /// `ReadVariables`: `var.Value = atoi(pState)`, absent leaves 0) — the
+    /// Phobos extended variable's initial `Value`, which the banner's
+    /// `CSF.VariableFormat` prints.
+    pub initial_value: Option<i32>,
 }
 
 pub type LocalVariableMap = HashMap<u32, LocalVariable>;
@@ -37,18 +42,24 @@ pub fn parse_local_variables(ini: &IniFile) -> LocalVariableMap {
         };
         let mut tokens = strtok(section.read_name(key, 0x80).unwrap_or(""), &[',']);
         let name = tokens.next().unwrap_or("").to_string();
-        let initially_set = tokens.next().map(|value| crt_atoi(value) != 0);
+        let initial_value = tokens.next().map(|value| crt_atoi(value));
+        let initially_set = initial_value.map(|value| value != 0);
         // ReadLocal689C14 skips the value write when the token is absent.
         // Different INI keys can alias one atoi slot within this same pass.
         let variable = locals.entry(index).or_insert(LocalVariable {
             index,
             name: String::new(),
             initially_set: None,
+            initial_value: None,
         });
         variable.name = name;
-        if initially_set.is_some() {
-            variable.initially_set = initially_set;
+        if let Some(value) = initial_value {
+            variable.initially_set = Some(value != 0);
         }
+        // `ReadVariables` (`Ext/Scenario/Body.cpp:58-61`): the Phobos map
+        // entry always exists for an authored slot; a missing token writes
+        // literal zero.
+        variable.initial_value = Some(initial_value.unwrap_or(0));
     }
 
     if !locals.is_empty() {
@@ -75,6 +86,7 @@ mod tests {
                 index: 0,
                 name: "BridgeFixed".to_string(),
                 initially_set: Some(true),
+                initial_value: Some(1),
             })
         );
         assert_eq!(
@@ -83,6 +95,7 @@ mod tests {
                 index: 7,
                 name: "SpyEntered".to_string(),
                 initially_set: Some(false),
+                initial_value: Some(0),
             })
         );
     }

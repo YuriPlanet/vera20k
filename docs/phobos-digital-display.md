@@ -1,6 +1,6 @@
 # Optional Phobos DigitalDisplay
 
-Build with `--features phobos` to register `[DigitalDisplayTypes]` and show
+Phobos is in every build; turn it on from a game's data to register `[DigitalDisplayTypes]` and show
 numeric unit information near the health bar. The feature follows Phobos
 `DigitalDisplayTypeClass` (`src/New/Type/DigitalDisplayTypeClass.{h,cpp}`) and
 `TechnoExt::ProcessDigitalDisplays`/`GetValuesForDisplay`
@@ -144,10 +144,17 @@ The catalog and every per-type binding are hashed under
 
 ## Residuals
 
-- `HealthBar.Permanent=` is not ported. Its `0x6F5E37` hook keeps the
-  disguise checks, adds a shroud test and `HealthBar.Permanent.PipScale`; until
-  that lands, only hovered or selected technos show displays and
-  `ShowType=idle` never draws.
+- `HealthBar.Permanent=` **is ported** in the presentation admission
+  (`src/app/presentation/ui_overlays.rs:127 health_bar_drawable`,
+  `health_strip_visibility` at `:164` takes the hovered arm when the key is set,
+  keeps the disguise checks, and `HealthBar.Permanent.PipScale=` lifts the pip
+  call's hover/selection test; test
+  `phobos_health_bar_hide_and_permanent_reach_the_admission`). An idle techno of
+  a `Permanent=yes` type therefore reaches `ProcessDigitalDisplays`, so
+  `ShowType=idle` draws. Residual: native's permanent arm also adds a shroud
+  test (`IsShroudedByHouse`) that VERA's admission omits — the shroud plane still
+  blacks the body out, but a `PipScale` strip can be emitted for a cell the
+  viewer cannot see.
 - `Shape=` gains `.shp` when the name lacks it, as Phobos's SHP reader does,
   but a later pass naming a file that fails to load replaces the earlier image
   instead of keeping it.

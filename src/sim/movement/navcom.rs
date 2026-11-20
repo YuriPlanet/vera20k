@@ -964,6 +964,13 @@ impl crate::sim::world::Simulation {
         if nonnull && holds {
             self.release_locomotor(id, true, rules, registry, frame_effects);
         }
+        // Phobos `FootClass_SetDestination_OpenToppedFireWhileMoving`
+        // (hook `0x4D9510`, `Ext/Techno/Hooks.Transport.cpp:933-1000`): an
+        // admitted non-null destination on an `OpenTopped` Unit that carries
+        // passengers drops the links its passengers cannot keep while moving.
+        if nonnull {
+            self.phobos_open_topped_release_locks(id, rules, registry, frame_effects);
+        }
         true
     }
 

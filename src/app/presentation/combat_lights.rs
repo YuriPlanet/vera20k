@@ -186,6 +186,7 @@ pub(crate) fn materialize_combat_lights(
     interner: &StringInterner,
     detail_level: u32,
     detail: &mut DetailState,
+    hide_light_flash_effects: bool,
 ) -> Vec<CombatLight> {
     impacts
         .into_iter()
@@ -206,6 +207,12 @@ pub(crate) fn materialize_combat_lights(
                 flags,
                 ..
             } => {
+                // Phobos `[Phobos] HideLightFlashEffects=` (`DoFlash @ 0x48A62E`
+                // skips to `0x48A6FA`, `Misc/Hooks.LightEffects.cpp:51-56`):
+                // the impact makes no light. Sparks are a separate native path.
+                if hide_light_flash_effects {
+                    return None;
+                }
                 // Flash48A620..48A65A queries mutable55AF60 before Bright,
                 // including calls that produce no light. Force bypasses only
                 // Bright; creation's low-nibble bypass differs from Draw's E.
@@ -214,14 +221,44 @@ pub(crate) fn materialize_combat_lights(
                     let minimum = detail.minimum_frame_rate();
                     detail.frame_rate() >= minimum
                 };
-                if !fps_admitted && flags & 0xF == 0 {
+                let warhead = rules.and_then(|rules| rules.warhead(interner.resolve(warhead_ref)));
+                // Phobos `CombatLightDetailLevel.CheckColored=`
+                // (`Ext/Rules/Body.cpp:405`, warhead `Ext/WarheadType/Body.cpp:342`,
+                // `DoFlash_CombatLightOptions @ 0x48A62E`,
+                // `Misc/Hooks.LightEffects.cpp:66-96`): the `bitmask & 0xF`
+                // bypass of the detail check only applies while this is off.
+                let check_colored = warhead.map_or_else(
+                    || {
+                        rules.is_some_and(|rules| {
+                            rules.phobos_globals.combat_light_detail_level_check_colored
+                        })
+                    },
+                    |warhead| {
+                        warhead
+                            .phobos_extras
+                            .combat_light_check_colored(rules.is_some_and(|rules| {
+                                rules.phobos_globals.combat_light_detail_level_check_colored
+                            }))
+                    },
+                );
+                let flags_bypass = flags & 0xF != 0 && !check_colored;
+                if !fps_admitted && !flags_bypass {
                     return None;
                 }
-                let warhead = rules.and_then(|rules| rules.warhead(interner.resolve(warhead_ref)));
                 if !force_create && !warhead.is_some_and(|warhead| warhead.bright) {
                     return None;
                 }
                 let override_size = warhead.map_or(0.0, |warhead| warhead.combat_light_size_f64);
+                // Phobos `[Warhead] CLIsBlack=` (`Ext/WarheadType/Body.cpp:344`,
+                // `Misc/Hooks.LightEffects.cpp:79-80`): after the caller's mask
+                // has decided the admission above, `DoFlash` writes
+                // `SpotlightFlags::NoColor` into the light it creates.
+                let flags = match warhead {
+                    Some(warhead) if warhead.phobos_extras.cl_is_black => {
+                        crate::sim::combat::NO_COLOR_SPOTLIGHT_FLAGS
+                    }
+                    _ => flags,
+                };
                 Some(CombatLight {
                     coord,
                     stage: 0,
@@ -264,6 +301,12 @@ mod tests {
     use crate::rules::ruleset::DetailRules;
     use crate::sim::world::Simulation;
 
+    /// Phobos `CombatLightDetailLevel.CheckColored=` (`Ext/Rules/Body.cpp:405`,
+    /// warhead `Ext/WarheadType/Body.cpp:342`) at `DoFlash_CombatLightOptions`
+    /// (`0x48A62E`, `Misc/Hooks.LightEffects.cpp:66-96`): with the key off (the
+    /// default) a light whose colour channels are partly disabled still flashes
+    /// when the detail check fails; with it on that bypass is refused. The
+    /// warhead key overrides the `[AudioVisual]` global.
     /// `ParticleSystemClass::DrawIt @ 0x0062E280` with `ParticleCap=0`: the
     /// zero divide gives +inf, clamped to 1.0, so the light is full size.
     #[test]
@@ -272,6 +315,53 @@ mod tests {
     }
 
     #[test]
+    fn combat_light_check_colored_gates_the_low_nibble_bypass() {
+        let admission = |ini: &str, flags: u32| {
+            let rules = RuleSet::from_ini(&IniFile::from_str(ini)).unwrap();
+            let mut sim = Simulation::new();
+            let mut detail = DetailState::default();
+            let request = CombatLightRequest::Impact {
+                target_id: None,
+                damage: 10,
+                warhead_ref: sim.intern("WH"),
+                coord: ProjectileCoord::new(0, 0, 0),
+                force_create: false,
+                flags,
+            };
+            materialize_combat_lights(
+                vec![request],
+                Some(&rules),
+                sim.interner(),
+                0,
+                &mut detail,
+                false,
+            )
+            .len()
+        };
+
+        // A bright warhead whose mask has channel bits set: the default
+        // `CheckColored=no` keeps the native low-nibble bypass.
+        let plain = "[Warheads]\n0=WH\n[WH]\nBright=yes\n";
+        assert_eq!(admission(plain, 0x1), 1);
+        assert_eq!(admission(plain, 0x0), 0, "no bits: no bypass");
+
+        // The warhead's own key turns the bypass off.
+        let warhead_on = "[Warheads]\n0=WH\n[WH]\nBright=yes\n\
+                          CombatLightDetailLevel.CheckColored=yes\n";
+        assert_eq!(admission(warhead_on, 0x1), 0);
+        // An explicit `no` keeps it even against a `yes` global.
+        let warhead_off = "[AudioVisual]\nCombatLightDetailLevel.CheckColored=yes\n\
+                           [Warheads]\n0=WH\n[WH]\nBright=yes\n\
+                           CombatLightDetailLevel.CheckColored=no\n";
+        assert_eq!(admission(warhead_off, 0x1), 1);
+
+        // Without a warhead the `[AudioVisual]` global decides.
+        assert_eq!(admission(warhead_on, 0x1), 0);
+        let global_on = "[AudioVisual]\nCombatLightDetailLevel.CheckColored=yes\n\
+             [Warheads]\n0=WH\n[WH]\nBright=yes\n";
+        assert_eq!(admission(global_on, 0x1), 0);
+    }
+
     fn welding_immediate_light_size_stage_and_admission_match_original_system_draw() {
         let native = crate::render::tactical_compat::welding_tests::native();
         let stage_bytes =
@@ -498,6 +588,7 @@ mod tests {
                 &interner,
                 detail,
                 &mut detail_with_frame_rate(60),
+                false,
             );
             let expected = &case["first_logic_visit"]["state"]["lights"];
             assert_eq!(
@@ -584,6 +675,66 @@ mod tests {
         }
     }
 
+    /// Phobos `[Warhead] CLIsBlack=` (`Ext/WarheadType/Body.cpp:344`,
+    /// `Misc/Hooks.LightEffects.cpp:79-80`): the flash keeps the caller's mask
+    /// for its own admission but the light it writes carries
+    /// `SpotlightFlags::NoColor`.
+    #[test]
+    fn a_black_combat_light_warhead_overrides_only_the_record_flags() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Warheads]\n0=BLACK\n1=PLAIN\n\
+             [BLACK]\nBright=yes\nCLIsBlack=yes\n\
+             [PLAIN]\nBright=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let mut detail = detail_with_frame_rate(60);
+        for (name, caller_flags, expected) in
+            [("BLACK", 0, 0x1), ("BLACK", 2, 0x1), ("PLAIN", 2, 2)]
+        {
+            let request = CombatLightRequest::Impact {
+                target_id: None,
+                damage: 100,
+                warhead_ref: sim.intern(name),
+                coord: ProjectileCoord::new(0, 0, 0),
+                force_create: false,
+                flags: caller_flags,
+            };
+            let lights = materialize_combat_lights(
+                vec![request],
+                Some(&rules),
+                sim.interner(),
+                2,
+                &mut detail,
+                false,
+            );
+            assert_eq!(lights.len(), 1, "{name} at {caller_flags}");
+            assert_eq!(lights[0].flags, expected, "{name} at {caller_flags}");
+        }
+        // The admission still reads the caller's mask: a black warhead whose
+        // caller supplied none is dropped below the frame-rate minimum.
+        let mut slow = detail_with_frame_rate(1);
+        let request = CombatLightRequest::Impact {
+            target_id: None,
+            damage: 100,
+            warhead_ref: sim.intern("BLACK"),
+            coord: ProjectileCoord::new(0, 0, 0),
+            force_create: false,
+            flags: 0,
+        };
+        assert!(
+            materialize_combat_lights(
+                vec![request],
+                Some(&rules),
+                sim.interner(),
+                2,
+                &mut slow,
+                false
+            )
+            .is_empty()
+        );
+    }
+
     #[test]
     fn map_lighting_transylv_large_flash_keeps_original_non_bright_c4_no_light_result() {
         let Some(fixture) =
@@ -638,6 +789,7 @@ mod tests {
                     sim.interner(),
                     2,
                     &mut detail_with_frame_rate(60),
+                    false,
                 )
                 .len(),
                 row["light_constructor_calls"].as_u64().unwrap() as usize
@@ -672,6 +824,7 @@ mod tests {
                 sim.interner(),
                 input["detail"].as_u64().unwrap() as u32,
                 &mut detail,
+                false,
             );
             assert_eq!(
                 serde_json::json!(
@@ -712,6 +865,7 @@ mod tests {
                 sim.interner(),
                 input["detail"].as_u64().unwrap() as u32,
                 &mut detail,
+                false,
             )
             .is_empty()
         );
@@ -734,6 +888,48 @@ mod tests {
             serde_json::json!(omitted_flash.minimum_frame_rate()),
             history["without_flash_next_threshold"]
         );
+    }
+
+    /// Phobos `[Phobos] HideLightFlashEffects=` (read default false,
+    /// `Phobos.INI.cpp:111`; `Misc/Hooks.LightEffects.cpp:51-56` returns
+    /// `SkipFlash` `0x48A6FA` from `DoFlash` `0x48A62E`): the impact builds no
+    /// light, while the separate Spark request still becomes one.
+    #[test]
+    fn hide_light_flash_effects_drops_the_impact_light_only() {
+        let rules =
+            RuleSet::from_ini(&IniFile::from_str("[Warheads]\n0=WH\n[WH]\nBright=yes\n")).unwrap();
+        let mut sim = Simulation::with_seed(0);
+        let impact = |sim: &mut Simulation| CombatLightRequest::Impact {
+            target_id: None,
+            damage: 100,
+            warhead_ref: sim.intern("WH"),
+            coord: ProjectileCoord::new(0, 0, 0),
+            force_create: false,
+            flags: 0,
+        };
+        let spark = || CombatLightRequest::Spark {
+            coord: ProjectileCoord::new(0, 0, 0),
+            base_size: 40,
+        };
+        let shown = materialize_combat_lights(
+            vec![impact(&mut sim), spark()],
+            Some(&rules),
+            sim.interner(),
+            2,
+            &mut detail_with_frame_rate(60),
+            false,
+        );
+        assert_eq!(shown.len(), 2);
+        let hidden = materialize_combat_lights(
+            vec![impact(&mut sim), spark()],
+            Some(&rules),
+            sim.interner(),
+            2,
+            &mut detail_with_frame_rate(60),
+            true,
+        );
+        assert_eq!(hidden.len(), 1);
+        assert_eq!(hidden[0].base_size, 40);
     }
 }
 

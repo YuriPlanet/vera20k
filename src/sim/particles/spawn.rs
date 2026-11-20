@@ -760,7 +760,7 @@ pub(super) fn spawn_particle(
         return false;
     };
     let pt = rules.particle_type(pt_id);
-    let particle = Particle::new(pt_id, coords, target_coords, pt, sim);
+    let particle = Particle::new(pt_id, coords, target_coords, pt, sim, rules);
     sys.particles.push(particle);
     true
 }
@@ -914,6 +914,7 @@ mod tests {
             IVec3::new(512, 256, 0),
             rules.particle_type(kind),
             &mut sim,
+            &rules,
         );
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }

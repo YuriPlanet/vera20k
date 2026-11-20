@@ -25,6 +25,9 @@ pub(crate) struct AircraftShadowPose {
     pub world_z: i32,
     pub facing: u8,
     pub slope: u8,
+    /// `GetHeight()` in leptons at the draw, the numerator of Phobos'
+    /// `ShadowSizeCharacteristicHeight=` scale (`Ext/TechnoType/Hooks.MatrixOp.cpp:930,961`).
+    pub height_leptons: i32,
 }
 
 pub(crate) fn pose(
@@ -92,6 +95,7 @@ pub(crate) fn pose(
         } else {
             cell.ramp
         },
+        height_leptons: height,
     })
 }
 

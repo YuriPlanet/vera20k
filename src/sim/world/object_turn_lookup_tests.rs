@@ -83,7 +83,7 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
 /// pointer, so moving it into every build costs the seldom part 8 bytes.
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "phobos", feature = "debug-tools"))
+    not(feature = "debug-tools")
 ))]
 #[test]
 fn the_object_record_stays_under_its_ceiling() {

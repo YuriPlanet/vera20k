@@ -279,7 +279,6 @@ pub(crate) fn curtain_object(
         EntityCategory::Infantry => {
             // Phobos redirects `InfantryClass::IronCurtain` to the Foot path
             // and lets `IronCurtain.Effect` decide: kill, curtain or nothing.
-            #[cfg(feature = "phobos")]
             {
                 let Some(object) = sim
                     .substrate
@@ -319,17 +318,6 @@ pub(crate) fn curtain_object(
                     }
                 }
             }
-            #[cfg(not(feature = "phobos"))]
-            receive_strength_as_c4(
-                sim,
-                rules,
-                overlay_registry,
-                id,
-                None,
-                house,
-                true,
-                frame_effects,
-            )
         }
         EntityCategory::Unit | EntityCategory::Aircraft => {
             foot_iron_curtain(sim, rules, overlay_registry, id, duration, frame_effects)
@@ -378,7 +366,6 @@ fn foot_iron_curtain(
         return;
     };
     if organic {
-        #[cfg(feature = "phobos")]
         {
             let Some(object) = sim
                 .substrate
@@ -407,20 +394,6 @@ fn foot_iron_curtain(
                 // block below, as the hook's MakeInvulnerable arm does.
                 (crate::rules::invulnerability_rules::IronCurtainEffect::Invulnerable, _) => {}
             }
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            receive_strength_as_c4(
-                sim,
-                rules,
-                overlay_registry,
-                id,
-                None,
-                None,
-                false,
-                frame_effects,
-            );
-            return;
         }
     }
     if let Some(eater) = sim
@@ -457,7 +430,6 @@ fn foot_iron_curtain(
 /// `IronCurtain.Effect`/`ForceShield.Effect` override, else the
 /// `[CombatDamage]` default, and the kill warhead the type/global pair
 /// supplies (else `C4Warhead=`).
-#[cfg(feature = "phobos")]
 fn organic_curtain_outcome(
     rules: &RuleSet,
     object: &crate::rules::object_type::ObjectType,

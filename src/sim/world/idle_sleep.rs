@@ -291,9 +291,9 @@ impl Simulation {
     }
 
     /// Whether an extension's per-visit steps, which this module has not
-    /// sorted, can run in this game: Ares plays, or the build carries Phobos.
+    /// sorted, can run in this game: Ares plays, or Phobos plays.
     pub(super) fn extension_steps_unsorted(&self, rules: &RuleSet) -> bool {
-        rules.ares() || crate::rules::PHOBOS_ENABLED
+        rules.ares() || rules.phobos()
     }
 
     /// The frame plain idle building `id` may sleep until and its owner
@@ -419,13 +419,10 @@ impl Simulation {
     /// frame FootClass::AI applies it (`0x004DA554..0x004DA629`).
     fn infantry_disturbed(&self, id: u64, rules: &RuleSet) -> bool {
         // With the Phobos capability nothing sleeps.
-        #[cfg(feature = "phobos")]
         let radiation = {
             let _ = rules;
             true
         };
-        #[cfg(not(feature = "phobos"))]
-        let radiation = crate::sim::combat::world_receiver::radiation_reaches_foot(self, rules, id);
         radiation
             || self
                 .substrate

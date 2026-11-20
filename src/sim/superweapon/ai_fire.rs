@@ -197,9 +197,7 @@ pub(crate) fn try_fire(
             continue;
         }
         // Reject extension-gated types before target search can consume RNG.
-        if (ares || cfg!(feature = "phobos"))
-            && !super::super_weapon_available(sim, rules, owner, &sw.id)
-        {
+        if (ares || rules.phobos()) && !super::super_weapon_available(sim, rules, owner, &sw.id) {
             continue;
         }
         if ares
@@ -592,6 +590,8 @@ fn find_team_target(
     let target = match target {
         crate::sim::combat::TargetKind::Entity(target) => target,
         crate::sim::combat::TargetKind::Cell(x, y) => return (x as i16, y as i16),
+        // A bullet is not a rally candidate.
+        crate::sim::combat::TargetKind::Bullet(..) => return NO_CELL,
     };
     let Some(entity) = sim.substrate.entities.get(target) else {
         return NO_CELL;

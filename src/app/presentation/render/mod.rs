@@ -477,8 +477,21 @@ pub(crate) fn render_game(
                 .is_some_and(|house| house.is_defeated()),
         };
         let rules = &rt.resources.rules;
+        // `0x005F5053` skips a light-flash particle AlphaImage when
+        // `[Phobos] HideLightFlashEffects=` is on, and again when
+        // `[AudioVisual] LightFlashAlphaImageDetailLevel=` exceeds
+        // `GameOptions.DetailLevel`. VERA models no detail level, so only the
+        // first half applies here; the second is a recorded residual. Both are
+        // client decisions: the simulation owns neither.
+        let hide_light_flash_effects = state
+            .match_state
+            .match_presentation
+            .hide_light_flash_effects;
         shroud_buf.set_alpha_shapes(view.simulation().alpha_shapes().filter_map(
-            |(origin, image)| {
+            |(origin, image, light_flash)| {
+                if light_flash && hide_light_flash_effects {
+                    return None;
+                }
                 Some(crate::render::shroud_buffer::AlphaShapeDraw {
                     origin,
                     image: rules.alpha_image(image)?.clone(),
@@ -658,7 +671,6 @@ pub(crate) fn render_game(
         .map(|runtime| &runtime.resources.rules)
         .or(state.frontend.frontend_rules.as_ref());
     let show_power_plant_enhancer_range = {
-        #[cfg(feature = "phobos")]
         {
             rules.is_some_and(|rules| rules.power_plant_enhancer.show_range)
                 && state
@@ -666,9 +678,13 @@ pub(crate) fn render_game(
                     .match_presentation
                     .show_power_plant_enhancer_range
         }
-        #[cfg(not(feature = "phobos"))]
+    };
+    // The [Phobos] client and [AudioVisual] rules halves of the designator
+    // range rings; the armed [SuperWeaponType] half is checked in build.
+    let show_designator_range = {
         {
-            false
+            rules.is_some_and(|rules| rules.phobos_globals.show_designator_range)
+                && state.match_state.match_presentation.show_designator_range
         }
     };
     let match_presentation = &mut state.match_state.match_presentation;
@@ -681,6 +697,7 @@ pub(crate) fn render_game(
         armed_building.as_deref(),
         cursor_cell,
         show_power_plant_enhancer_range,
+        show_designator_range,
         match_presentation.target_lines.unit_action_lines_enabled(),
         &mut match_presentation.placement_range_pulse,
         &mut match_presentation.superweapon_range_pulse,
@@ -923,6 +940,13 @@ pub(crate) fn render_game(
             viewport_rect: &sidebar.viewport_rect,
             smooth_chrome: sidebar.smooth_chrome,
             smooth_command_bar: sidebar.smooth_command_bar,
+            software_cursor: ui.software_cursor_draw,
+            tooltip_blur_rects: state
+                .match_state
+                .match_presentation
+                .tooltip_blur_rects
+                .clone(),
+            tooltip_blur_size: state.match_state.match_presentation.tooltip_blur_size,
         },
     );
     let finished = render_started.map(|_| Instant::now());
@@ -1080,24 +1104,59 @@ fn upload_to_gpu(
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
     let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
+    // Phobos `TacticalClass_Render_Banner` (`0x6D4B25`): the trigger banners
+    // draw after the timer lines, before the outcome draw.
+    let (banner_fill, banner_text) =
+        crate::app::presentation::banners::build_banner_instances(state);
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
     let (outcome_shape, outcome_text) = verdict
         .map(|kind| crate::app::presentation::outcome_banner::instances(state, kind))
         .unwrap_or_default();
-    let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
+    let rendered_verdict =
+        verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
     let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
         crate::app::input::tooltips::build_tooltip_instances(state);
-    // The layout edit mode's outlines and names share the tooltip's lanes:
-    // over the whole frame, sidebar included.
+    // Phobos `ToolTipBlur` (`Misc/PhobosToolTip.cpp:439`): the fill quads'
+    // rects and the resolved `ToolTip.Background.BlurSize` — side first over
+    // the `[AudioVisual]` global; the switch off or a zero size keeps
+    // native's no-op.
     {
-        let (fills, borders, texts) = crate::app::input::layout_edit::instances(state);
-        tooltip_fill.extend(fills);
-        tooltip_border.extend(borders);
-        tooltip_text.extend(texts);
+        let rects: Vec<[f32; 4]> = if state.match_state.match_presentation.tool_tip_blur {
+            tooltip_fill
+                .iter()
+                .map(|quad| {
+                    [
+                        quad.position[0],
+                        quad.position[1],
+                        quad.size[0],
+                        quad.size[1],
+                    ]
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let size = state.rules().map_or(0.0, |rules| {
+            let side = state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .and_then(|runtime| Some(runtime.simulation.session().scenario_side()))
+                .unwrap_or(0);
+            f32::from_bits(
+                rules
+                    .side_tool_tip_blur_size(side)
+                    .unwrap_or(rules.phobos_globals.tool_tip_background_blur_size)
+                    .bits(),
+            )
+        });
+        let presentation = &mut state.match_state.match_presentation;
+        presentation.tooltip_blur_rects = rects;
+        presentation.tooltip_blur_size = size;
     }
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
@@ -1258,7 +1317,6 @@ fn upload_to_gpu(
     pool.upload_strokes("ground_strokes", &ui.ground_strokes);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
-    #[cfg(feature = "phobos")]
     pool.upload("placement_ghost", &ui.placement_ghost);
     pool.upload_strokes("factory_rally_first", &ui.factory_rally_first);
     pool.upload_strokes("target_lines", &ui.target_line);
@@ -1286,7 +1344,6 @@ fn upload_to_gpu(
     pool.upload_following("sidebar_label_text", &sidebar.label_text, text_camera);
     pool.upload_following("sidebar_cameo_overlay", &sidebar.cameo_overlay, ui_camera);
     pool.upload_following("sidebar_text", &sidebar.text, text_camera);
-    #[cfg(feature = "phobos")]
     {
         pool.upload("sw_sidebar_chrome", &sidebar.sw_sidebar_chrome);
         pool.upload("sw_sidebar_cameo", &sidebar.sw_sidebar_cameo);
@@ -1297,6 +1354,8 @@ fn upload_to_gpu(
     }
     pool.upload("message_text", &message_text);
     pool.upload("message_fill", &message_fill);
+    pool.upload("banner_fill", &banner_fill);
+    pool.upload("banner_text", &banner_text);
     pool.upload("outcome_shape", &outcome_shape);
     pool.upload("outcome_text", &outcome_text);
     pool.upload("tooltip_fill", &tooltip_fill);

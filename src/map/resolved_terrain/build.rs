@@ -409,7 +409,11 @@ impl ResolvedTerrainGrid {
                     if native_allocated.as_ref().is_some_and(|mask| !mask[index]) {
                         continue;
                     }
-                    terrain_objects.insert(cell, kind.raw_occupation_bits(snow_theater));
+                    // A passable Terrain contributes no occupation or zone
+                    // class (Phobos 0x483DDF).
+                    if !kind.passable() {
+                        terrain_objects.insert(cell, kind.raw_occupation_bits(snow_theater));
+                    }
                 }
             }
         }

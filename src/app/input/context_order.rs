@@ -217,6 +217,45 @@ fn object_attack_is_admitted(
         actor.owner(),
         target.owner(),
     );
+    let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
+        return false;
+    };
+    // The ladder is lazy: the ordinary enemy path answers at the disguise
+    // rung below, and only the Phobos underground gate and the friend-fire
+    // rows need the selected weapon.
+    #[allow(unused_mut)]
+    let mut selected_weapon = || {
+        let cells = sim
+            .resolved_terrain()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+        combat_weapon::select_weapon_against_in_query(
+            rules,
+            actor,
+            kind,
+            &combat_weapon::attacker_facts(actor, kind),
+            Some(&TargetKind::Entity(target_id)),
+            sim,
+            sim.interner(),
+            cells.as_ref(),
+            Some(sim.house_alliances()),
+        )
+        .and_then(|(_, weapon)| weapon)
+    };
+    // Phobos `TechnoClass_MouseOverObject_AttackUnderGround` (`0x70023B`,
+    // `Ext/Techno/Hooks.cpp:1497-1511`): an object that is not surfaced
+    // (`IsSurfaced()`) answers Attack only when the selected weapon's
+    // projectile has `AU`; otherwise the rung falls to the tail
+    // (`0x70056C`). The force-fire key returns earlier (`0x700048..0x700072`),
+    // so this gate is unforced-only, like the rest of this admission.
+    if crate::sim::world::entity_is_underground(target)
+        && !selected_weapon().as_ref().is_some_and(|selected| {
+            rules
+                .weapon_projectile(selected.weapon)
+                .is_some_and(|projectile| projectile.au)
+        })
+    {
+        return false;
+    }
     //70025D..70030F: this is the firing blink, not the reacquisition timer.
     let disguise_admitted = rules.general.attack_cursor_on_disguise
         || sim
@@ -245,27 +284,10 @@ fn object_attack_is_admitted(
     if !allied && disguise_admitted {
         return true;
     }
-    let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
-        return false;
-    };
     if kind.attacks_friendlies() {
         return true;
     }
-    let cells = sim
-        .resolved_terrain()
-        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
-    let weapon = combat_weapon::select_weapon_against_in_query(
-        rules,
-        actor,
-        kind,
-        &combat_weapon::attacker_facts(actor, kind),
-        Some(&TargetKind::Entity(target_id)),
-        sim,
-        sim.interner(),
-        cells.as_ref(),
-        Some(sim.house_alliances()),
-    )
-    .and_then(|(_, weapon)| weapon);
+    let weapon = selected_weapon();
     let ivan_transport = weapon
         .as_ref()
         .is_some_and(|weapon| weapon.warhead.ivan_bomb)
@@ -383,6 +405,21 @@ fn attack_action_with(
     forced: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> AttackAction {
+    let actor = sim.entities().get(actor_id);
+    let human = actor.is_some_and(|actor| control.can_order(actor.owner()));
+    // TechnoClass::What_Action 0x7002E9 (`Ext/TerrainType/Hooks.Passable.cpp:25-44`):
+    // a current player's controllable Techno answers Move over a passable
+    // Terrain unless force-firing. The hook sits inside the base function, so
+    // it preempts every class tail below.
+    if !forced
+        && human
+        && let Some(actor) = actor
+        && !actor.deactivated.is_offline()
+        && let TargetKind::Entity(target_id) = *target
+        && sim.terrain_object_is_passable(target_id)
+    {
+        return AttackAction::Move;
+    }
     let mut action = base_action(
         sim,
         control,
@@ -398,7 +435,6 @@ fn attack_action_with(
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return action;
     };
-    let human = control.can_order(actor.owner());
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,
         kind,
@@ -667,6 +703,9 @@ fn base_action(
                         && object_target_is_legal(sim, rules, actor_id, *target_id)))
         }
         TargetKind::Cell(..) => human,
+        // A Phobos interceptor bullet is never a click target: commands and
+        // MEGAMISSION cannot encode it, so the client admits nothing.
+        TargetKind::Bullet(..) => false,
     };
     // TechnoClass::What_Action_OnObject's tail (`0x0070056C..0x007005E6`):
     // Select over an object the player may select that is not selected,
@@ -979,6 +1018,7 @@ fn armed_action_with(
             rules,
             sim.interner(),
         ),
+        TargetKind::Bullet(..) => false,
     };
     armed.then(|| {
         attack_action_with(
@@ -1062,6 +1102,7 @@ pub(crate) fn resolved_unit_in_range(
     let techno = match *target {
         TargetKind::Entity(id) => sim.entities().get(id),
         TargetKind::Cell(..) => None,
+        TargetKind::Bullet(..) => return false,
     };
     let target = match techno {
         Some(entity) => crate::sim::combat::MaplessTarget::Techno(entity),
@@ -1467,6 +1508,9 @@ fn attack_branch_orders(
                             }
                         }
                     }
+                    // A Phobos interceptor bullet is AI-only and cannot be
+                    // carried by a Command.
+                    TargetKind::Bullet(..) => continue,
                 };
                 queued.push(payload);
             }
@@ -1649,6 +1693,19 @@ fn emit_resolved_order_voice(state: &mut AppState, speaker_id: u64, queued: &[Co
             target_ry,
             ..
         } => Some(TargetKind::Cell(*target_rx, *target_ry)),
+        // Phobos `TechnoClass_ClickedMission_VoiceSpecialAttack` (`0x6FFD4C`)
+        // reads the clicked Eaten building (`pTarget`, here Destination).
+        Command::MegaMission {
+            mission: crate::sim::mission::MissionType::Eaten,
+            destination,
+            ..
+        } => *destination,
+        // A Move click over an object commits that object as the actor's
+        // Destination (`Simulation::object_move_click`); Phobos'
+        // TechnoClass_ResponseMove_Pickup reads it back through
+        // `pAircraft->Destination` (`Ext/Techno/Hooks.cpp:1376`). VoiceAttack
+        // keeps the attack arms above; VoiceMove ignores it otherwise.
+        Command::MoveToObject { target_id, .. } => Some(TargetKind::Entity(*target_id)),
         _ => None,
     };
     emit_entity_order_voice(state, speaker_id, voice_field, target);
@@ -1685,6 +1742,7 @@ fn emit_entity_order_voice(
                     &mut runtime.simulation,
                     &runtime.resources.rules,
                     speaker_id,
+                    target,
                     state.match_state.input.selection_voice_enabled,
                 )
         {
@@ -2129,6 +2187,9 @@ fn move_click_command(
             entity_id,
             target_id,
         },
+        // A bullet is never a click destination (commands cannot encode it);
+        // never fabricate one from its id.
+        TargetKind::Bullet(..) => Command::Stop { entity_id },
     }
 }
 
@@ -3094,6 +3155,7 @@ pub(crate) fn try_queue_context_order(
                 (target_rx, target_ry),
                 modifier,
                 force_move_key,
+                planning,
             );
             queued.extend(
                 orders
@@ -3116,6 +3178,7 @@ pub(crate) fn try_queue_context_order(
                 (target_rx, target_ry),
                 modifier,
                 force_move_key,
+                planning,
             ) {
                 BuildingClick::Select => return false,
                 BuildingClick::Nothing => return true,
@@ -4030,10 +4093,30 @@ pub(super) fn is_simple_deploy_unit(
     entity.category() == EntityCategory::Unit && object.is_simple_deployer
 }
 
+/// Phobos `UnitClass_MouseOverObject_SkipPassengers`
+/// (`Ext/Unit/Hooks.Unload.cpp:86-88`, hook `0x740015`): the self cursor skips
+/// the empty-transport block when `Deploy.SkipPassengerUnload` is set, or
+/// `Deploy.NoPassenger` holds with no live passengers (no `MissionStatus` test).
+/// Builds without Phobos always answer false.
+fn phobos_cursor_skips_passengers(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> bool {
+    {
+        let live = entity
+            .passenger_role
+            .cargo()
+            .map_or(0, |cargo| cargo.passengers().len());
+        object.phobos_deploy.cursor_skips_passengers(live)
+    }
+}
+
 /// Infantry51EC14..51EC9F blocks Doing27..31 only when Type+6C4
 /// (UndeployDelay) > -1; Type+6A8 (DeployFireWeapon) is unrelated.
 /// Unit740015..74003F blocks an empty mobile transport outside a tank bunker
-/// (`+0x2E4`, `0x00740023`). Both answer NoDeploy30 rather than a self
+/// (`+0x2E4`, `0x00740023`); Phobos hook `0x740015`
+/// (`Ext/Unit/Hooks.Unload.cpp:86-88`) skips that block for a transport whose
+/// `Deploy.*` passenger gate admits it. Both answer NoDeploy30 rather than a self
 /// action. The D-key's receiver is separate.
 fn self_deploy_is_blocked(
     entity: &crate::sim::game_entity::GameEntity,
@@ -4050,6 +4133,7 @@ fn self_deploy_is_blocked(
             && !object.is_simple_deployer
             && entity.bunker.link().installed_in().is_none()
             && !object.no_manual_unload()
+            && !phobos_cursor_skips_passengers(entity, object)
             && entity
                 .passenger_role()
                 .cargo()
@@ -4739,7 +4823,14 @@ fn entry_action_with(
     {
         return None;
     }
-    sim.entry_click_action_with(control, actor_id, target_id, base, rules)
+    sim.entry_click_action_with(
+        control,
+        actor_id,
+        target_id,
+        base,
+        modifier == OrderModifier::ForceFire,
+        rules,
+    )
 }
 
 /// The selected objects whose action over a friendly object is Enter, Grind
@@ -5043,7 +5134,6 @@ fn infantry_attack_action_with(
     // `CanC4` for a building and to targetable for every other kind, while
     // `InvisibleInGame` still refuses a building.
     if weapon.mig_attack_cursor {
-        #[cfg(feature = "phobos")]
         let air_strike = target.is_some_and(|target| {
             sim.interner()
                 .object_type(target.type_ref(), rules)
@@ -5051,14 +5141,6 @@ fn infantry_attack_action_with(
                     let building = target.category() == EntityCategory::Structure;
                     object.allows_airstrike(building) && !(building && object.invisible_in_game)
                 })
-        });
-        #[cfg(not(feature = "phobos"))]
-        let air_strike = target.is_some_and(|target| {
-            target.category() == EntityCategory::Structure
-                && sim
-                    .interner()
-                    .object_type(target.type_ref(), rules)
-                    .is_some_and(|building| building.can_c4 && !building.invisible_in_game)
         });
         return Some(if air_strike {
             InfantryAttackAction::AirStrike
@@ -5134,7 +5216,7 @@ fn infantry_c4_action_with(
     }
     let building = sim.interner().object_type(target.type_ref(), rules)?;
     // Building virtual+80: 457620 -> BuildingType465D40, not invulnerability.
-    if building.is_1x1_with_undeploy() {
+    if building.is_vehicle() {
         return None;
     }
     Some(if building.can_c4 && !building.invisible_in_game {
@@ -5527,7 +5609,7 @@ pub(super) fn building_cell_orders(
         // BuildingClass::Active_Click_With_Cell @ 0x004436F0:
         // 0x0044377A skips both orders even when the yard has a rally line.
         if object.construction_yard
-            && !sim.can_redeploy_construction_yard_from_input(entity, Some(&control))
+            && !sim.can_redeploy_construction_yard_from_input(entity, rules, Some(&control))
         {
             continue;
         }
@@ -5589,6 +5671,7 @@ fn building_selection_click(
     cell: (u16, u16),
     modifier: OrderModifier,
     force_move_key: bool,
+    planning: bool,
 ) -> BuildingClick {
     let context_actions_enabled = matches!(
         modifier,
@@ -5634,6 +5717,7 @@ fn building_selection_click(
         cell,
         modifier,
         force_move_key,
+        planning,
     );
     // Over a Terrain object a building that does not answer Move answers 0,
     // which selects nothing (a tree is no object to select).
@@ -5661,7 +5745,15 @@ fn building_click_orders(
     cell: (u16, u16),
     modifier: OrderModifier,
     force_move_key: bool,
+    planning: bool,
 ) -> (Vec<Command>, bool) {
+    // `0x4AE95E` skips a building's non-Attack `CellClickedAction` in planning
+    // mode. The hook sits in the ground-cell loop; the object loop
+    // (`0x4AE844`) and the self-click rung are unchanged, and Attack receivers
+    // were already taken out of `selected` before this owner runs.
+    if planning && hover.is_none() && terrain.is_none() {
+        return (Vec::new(), false);
+    }
     let guard_area = modifier == OrderModifier::GuardArea;
     match hover.filter(|target| target.kind != HoverTargetKind::HiddenEnemy) {
         Some(target)
@@ -9489,6 +9581,100 @@ mod tests {
             );
         }
     }
+
+    /// Phobos `TechnoClass_WhatAction_PassableTerrain` (`0x7002E9`,
+    /// `Ext/TerrainType/Hooks.Passable.cpp:25-44`): a current player's
+    /// controllable Techno answers Move over a passable Terrain object unless
+    /// force-firing; the class tails never run for that answer.
+    #[test]
+    fn a_passable_terrain_answers_move_for_the_player_unless_forced() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::terrain_object::TerrainObjectState;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nTerrain.IsPassable=yes\n\
+             [TerrainTypes]\n0=TREE\n1=ROCK\n\
+             [VehicleTypes]\n0=MTNK\n\
+             [TREE]\nStrength=100\nTemperateOccupationBits=7\n\
+             [ROCK]\nStrength=100\nTemperateOccupationBits=7\nIsPassable=no\n\
+             [MTNK]\nStrength=300\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        for (name, human) in [("Americans", true), ("Russians", false)] {
+            let id = sim.intern(name);
+            sim.houses_mut_for_test()
+                .register(crate::sim::house_state::HouseState::new(
+                    id, 0, None, human, 0, 10,
+                ));
+        }
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        let house = sim.interner().get("Americans");
+        sim.session_mut_for_test().set_current_house_for_test(house);
+        *sim.playfield_bounds_mut_for_test() = Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -100,
+            off_100: -100,
+            off_104: 200,
+            off_108: 200,
+        });
+
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 4, 5, 0, &rules)
+            .unwrap();
+        let enemy = sim
+            .spawn_object("MTNK", "Russians", 4, 8, 0, &rules)
+            .unwrap();
+
+        let put_terrain = |sim: &mut Simulation, id: u64, name: &str, cell: (u16, u16)| {
+            let ty = rules
+                .terrain_object_type_case_insensitive(name)
+                .expect("terrain type")
+                .clone();
+            let type_ref = sim.intern(name);
+            let state = TerrainObjectState::new(id, type_ref, cell, &ty, false, None);
+            sim.terrain_objects_mut_for_test()
+                .objects_mut_for_test()
+                .insert(id, state);
+        };
+        put_terrain(&mut sim, 900, "TREE", (6, 5));
+        put_terrain(&mut sim, 901, "ROCK", (6, 8));
+        assert!(
+            sim.terrain_object_is_passable(900),
+            "the global projects onto the live object"
+        );
+        assert!(!sim.terrain_object_is_passable(901));
+
+        let action = |sim: &Simulation, actor, terrain, forced| {
+            attack_action(
+                sim,
+                &rules,
+                actor,
+                &TargetKind::Entity(terrain),
+                forced,
+                None,
+            )
+        };
+
+        assert_eq!(action(&sim, tank, 900, false), AttackAction::Move);
+        // Force-fire keeps the stock answer (`isForceFire` skips the hook).
+        assert_ne!(action(&sim, tank, 900, true), AttackAction::Move);
+        // Another house's actor is not the current player.
+        assert_ne!(action(&sim, enemy, 900, false), AttackAction::Move);
+        // A non-passable Terrain keeps the stock answer.
+        assert_ne!(action(&sim, tank, 901, false), AttackAction::Move);
+        // An offline (uncontrollable) player's actor keeps it too.
+        sim.entities_mut_for_test()
+            .get_mut_for_test(tank)
+            .unwrap()
+            .deactivated
+            .set_for_test(true);
+        assert_ne!(action(&sim, tank, 900, false), AttackAction::Move);
+    }
 }
 
 #[cfg(all(test, tests_app_input_a_c))]
@@ -9693,6 +9879,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
 
+#[cfg(all(test, tests_app_input_a_c))]
+#[path = "phobos_attack_underground_tests.rs"]
+mod phobos_attack_underground_tests;
+
+#[cfg(all(test, tests_app_input_a_c))]
 #[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_cursor_contract_tests.rs"]
 mod cursor_contract_tests;

@@ -9,8 +9,10 @@
 
 use crate::map::playfield::{PlayfieldBounds, local_to_packed_cell};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::ini_value::PhobosEdgeType;
 use crate::sim::cell_rect::cell_is_in_playfield_height_aware;
 use crate::sim::rng::SimRng;
+use crate::util::lepton::{CELL_CENTER_LEPTON_I32, LEPTONS_PER_CELL_I32, lepton_to_cell_packed};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edge {
@@ -58,6 +60,76 @@ impl Edge {
             _ => None,
         }
     }
+}
+
+/// `AircraftExt::PickEdgeCellForPlane` (`Ext/Aircraft/Body.cpp:85-126`), the
+/// Phobos override of the four `PickCellOnEdge` callers (`SendSpyPlanes`
+/// `0x65EB2D`, `SendAirstrike` `0x65E881`, `SendParadrop` `0x65E6DB` and
+/// `AircraftClass::Mission_Retreat` `0x415A7A`, `Ext/House/Hooks.cpp:352-454`):
+/// the type's `SpawnFromEdge=`/`RetreatToEdge=` else its `[General]` mode.
+/// `Owner` keeps the edge the caller passed; `Random` spends one
+/// `Scenario RandomRanged(North, West)` draw (`:114-116`); `Closest` picks on
+/// `Edge::None` around the destination cell scattered by two
+/// `RandomRanged(-5, 5)` draws (`:95-109`), which [`Edge`]'s four values cannot
+/// express (RESIDUAL: such a type keeps its `Owner` pick).
+pub(crate) fn edge_for_mode(
+    mode: crate::rules::ini_value::PhobosEdgeType,
+    owned: Edge,
+    scenario_rng: &mut SimRng,
+) -> Edge {
+    use crate::rules::ini_value::PhobosEdgeType;
+    match mode {
+        PhobosEdgeType::Random => {
+            let index = scenario_rng.next_range_i32_inclusive(0, 3).max(0);
+            Edge::from_index(u8::try_from(index).unwrap_or(0)).unwrap_or(owned)
+        }
+        PhobosEdgeType::Owner | PhobosEdgeType::Closest => owned,
+    }
+}
+
+/// Phobos `SpawnDistanceFromTarget=` placement
+/// (`Ext/Aircraft/Body.cpp:61-69`): `GeneralUtils::CalculateCoordsFromDistance`
+/// (`Utilities/GeneralUtils.cpp:215-222`) returns the point `distance`
+/// leptons from `target` on the `GetDirectionBetweenCoords` (`:205-213`)
+/// line of the picked edge cell, and the cell that point falls in replaces
+/// the edge cell. A negative distance inverts the side.
+///
+/// The port keeps both quantizations the original applies: the direction
+/// passes through a `DirStruct` (`SetRadian<65536>` truncates into the
+/// `short` word, `GetRadian<65536>` reads it back) before `Math::Pi` is
+/// added, and the final `static_cast<int>` truncates towards zero. `libm`
+/// keeps `atan2`/`cos`/`sin` identical on every target; native calls the
+/// CRT, so an ulp-level difference is a recorded deviation.
+pub(crate) fn spawn_distance_cell(
+    edge_cell: (u16, u16),
+    target_leptons: (i32, i32),
+    distance: i32,
+) -> (u16, u16) {
+    let edge = (
+        i32::from(edge_cell.0 as i16)
+            .wrapping_mul(LEPTONS_PER_CELL_I32)
+            .wrapping_add(CELL_CENTER_LEPTON_I32),
+        i32::from(edge_cell.1 as i16)
+            .wrapping_mul(LEPTONS_PER_CELL_I32)
+            .wrapping_add(CELL_CENTER_LEPTON_I32),
+    );
+    // Game degrees: `(atan - HalfPi) * 180/pi - 90` degrees back to radians.
+    const GAME_DEGREES_TO_RADIANS: f64 = std::f64::consts::PI / 180.0;
+    let atan = libm::atan2(
+        f64::from(edge.1.wrapping_sub(target_leptons.1)),
+        f64::from(target_leptons.0.wrapping_sub(edge.0)),
+    );
+    let radians = ((atan - std::f64::consts::FRAC_PI_2) / GAME_DEGREES_TO_RADIANS - 90.0)
+        * GAME_DEGREES_TO_RADIANS;
+    // C++ `(short)` narrowing keeps the low word of the truncated value.
+    let raw = (radians / std::f64::consts::TAU * 65536.0) as i32 as i16;
+    let radians = f64::from(raw) * (std::f64::consts::TAU / 65536.0) + std::f64::consts::PI;
+    let x = (f64::from(target_leptons.0) + libm::cos(radians) * f64::from(distance)) as i32;
+    let y = (f64::from(target_leptons.1) - libm::sin(radians) * f64::from(distance)) as i32;
+    (
+        lepton_to_cell_packed(x) as u16,
+        lepton_to_cell_packed(y) as u16,
+    )
 }
 
 /// Find the paradrop carrier spawn/exit cell along a MapClass edge.
