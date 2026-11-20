@@ -341,7 +341,7 @@ pub fn skirmish_modes_from_selected_ini(
     roster_ini: &IniFile,
     source: &str,
 ) -> Result<Vec<SkirmishGameMode>, SkirmishModeLoadError> {
-    let modes = parse_mpmodes_ini_with_overrides(roster_ini, |name| {
+    let mut modes = parse_mpmodes_ini_with_overrides(roster_ini, |name| {
         let Some((data, override_source)) = assets.get_with_source(name) else {
             log::warn!(
                 "Skirmish MPMode override {name} is missing; using native constructor defaults"
@@ -363,6 +363,19 @@ pub fn skirmish_modes_from_selected_ini(
             })
             .ok()
     });
+    if let Some(client) = assets.client_install() {
+        modes.retain_mut(|mode| {
+            // The native mode supplies gameplay policy. The client list
+            // tells us which of those modes can use its supplied maps.
+            mode.random_maps_allowed = false;
+            mode.class.policy().lists_in_skirmish
+                && client.maps.iter().any(|map| {
+                    map.game_modes
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
+                })
+        });
+    }
 
     if modes.is_empty() {
         Err(SkirmishModeLoadError::EmptyRoster {

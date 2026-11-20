@@ -354,10 +354,13 @@ pub(crate) fn resources_for(
     base: &IniRootConfig,
     setting: AresSetting,
 ) -> Result<(ResourceConfig, AresSetting), String> {
-    let resources = active.map_or_else(
-        || ResourceConfig::from_ini(base.clone()),
-        |active| active.definition.resources(base),
-    );
+    let resources = match active {
+        Some(active) => {
+            crate::assets::asset_manager::mod_resources(&active.dir, &active.definition, base)
+                .map_err(|error| format!("{}: {error}", active.title))?
+        }
+        None => ResourceConfig::from_ini(base.clone()),
+    };
     let setting = resources
         .effective_ares(setting)
         .map_err(|error| match active {

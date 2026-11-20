@@ -199,7 +199,19 @@ Skirmish keeps your saved choices where the selected game supports them. A saved
 faction that the current rules do not offer comes back as **Random**.
 
 The folder name is only the choice saved by the menu. Its loading rules come from
-`mod.ini`; no particular mod name selects special behavior.
+`mod.ini` or the files the mod already ships.
+
+An extracted CnCNet client folder can go straight into `Mods`. Put the folder
+containing `Resources/ClientDefinitions.ini` and the game archives there, then
+choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
+complete renamed Rules, Art and AI family in its numbered MIX files. A folder
+that ships the Ares DLL and its injection list uses VERA's own Ares reader.
+
+This import opens offline Skirmish with the supported maps and modes. It applies
+their plain mode INIs and uses VERA's game options. Client-only forced settings,
+random maps, campaigns specific to the client, and multiplayer through the
+imported catalog are outside this path. An explicit loading section in
+`mod.ini` takes precedence over discovery.
 
 The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
 the file beside the program if there is none yet. You can write the line yourself:

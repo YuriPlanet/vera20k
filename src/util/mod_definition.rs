@@ -3,7 +3,9 @@
 //! This is a VERA UTF-8 manifest, not a gamemd INI. The same bounded reader
 //! serves the Mods page, game startup and launch probes on every platform.
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
+
+use crate::assets::client_install::ClientInstall;
 
 use super::archive_names::ArchiveNames;
 use super::ares_launch::AresSetting;
@@ -21,6 +23,9 @@ pub struct ResourceConfig {
     pub ini: IniRootConfig,
     pub archives: ArchiveNames,
     pub requires_ares: bool,
+    /// The existing launcher catalog of an imported client folder, shared
+    /// with the provider and retained if its archive stack is recovered.
+    pub client_install: Option<Arc<ClientInstall>>,
 }
 
 impl ResourceConfig {
@@ -56,6 +61,7 @@ pub struct ModDefinition {
     files: Option<IniRootConfig>,
     archives: ArchiveNames,
     requires_ares: bool,
+    explicit_loading: bool,
 }
 
 impl ModDefinition {
@@ -93,6 +99,8 @@ impl ModDefinition {
                 if section == "files" {
                     definition.files.get_or_insert_with(stock_files);
                 }
+                definition.explicit_loading |=
+                    matches!(section.as_str(), "files" | "archives" | "extensions");
                 continue;
             }
             let Some((key, value)) = line.split_once('=') else {
@@ -198,7 +206,13 @@ impl ModDefinition {
             ini: self.files.clone().unwrap_or_else(|| base.clone()),
             archives: self.archives.clone(),
             requires_ares: self.requires_ares,
+            client_install: None,
         }
+    }
+
+    /// Even an empty loading section is an explicit choice of its defaults.
+    pub fn declares_loading(&self) -> bool {
+        self.explicit_loading
     }
 }
 

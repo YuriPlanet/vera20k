@@ -671,7 +671,7 @@ impl App {
                     ares_setting,
                     &resources.archives,
                 )
-                .and_then(|assets| assets.with_ini_roots(&resources.ini))
+                .and_then(|assets| assets.with_resource_config(&resources))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
@@ -852,7 +852,11 @@ impl App {
                         log::warn!("Could not list Skirmish scenario records: {err:#}");
                         Vec::new()
                     });
-                let skirmish_scenario_records = if skirmish_scenario_records.is_empty() {
+                let skirmish_scenario_records = if skirmish_scenario_records.is_empty()
+                    && startup_asset_manager
+                        .as_ref()
+                        .is_none_or(|assets| assets.client_install().is_none())
+                {
                     scenario_sources::list_available_maps()
                 .unwrap_or_else(|err| {
                     log::warn!("Could not list fallback maps: {:#}", err);

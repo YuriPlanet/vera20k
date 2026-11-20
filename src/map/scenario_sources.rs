@@ -73,6 +73,30 @@ pub fn list_skirmish_scenario_records_with_assets(
 ) -> Result<Vec<SkirmishScenarioRecord>> {
     let mut records = Vec::new();
 
+    if let (Some(client), Some(root)) = (assets.client_install(), assets.mod_dir()) {
+        // A client catalog owns this folder's scenarios. The retail PKT is
+        // unrelated and can list maps with the wrong rules for this game.
+        for map in &client.maps {
+            let Some(ini) = read_map_ini_for_metadata(&root.join(&map.file_name)) else {
+                continue;
+            };
+            let mut record = SkirmishScenarioRecord::concrete_from_ini(
+                records.len(),
+                SkirmishScenarioSource::ClientCatalog,
+                &map.file_name,
+                &ini,
+            );
+            if let Some(name) = &map.display_name {
+                record.display_name.clone_from(name);
+            }
+            record.game_modes.clone_from(&map.game_modes);
+            record.min_players = map.min_players;
+            record.max_players = map.max_players;
+            records.push(record);
+        }
+        return Ok(records);
+    }
+
     if let Some(pkt) = assets
         .get_ref(assets.ini_roots().map_catalog())
         .and_then(|bytes| IniFile::from_bytes(bytes).ok())

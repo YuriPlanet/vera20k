@@ -228,7 +228,7 @@ pub(crate) fn load_process_sources(
         ares_setting,
         &resources.archives,
     )
-    .and_then(|assets| assets.with_ini_roots(&resources.ini))
+    .and_then(|assets| assets.with_resource_config(&resources))
     .context("could not load the game archives")?;
     let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
         .with_resources(resources)

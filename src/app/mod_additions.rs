@@ -80,6 +80,58 @@ pub(crate) struct MapAdditions {
 }
 
 impl MapAdditions {
+    /// Paste the selected client mode's code into the authored map through
+    /// the same merge as other additions. The client may also ask for map
+    /// object replacement or another mode-dependent INI. Those are not a
+    /// plain INI merge and must not be silently ignored.
+    pub(crate) fn client_mode(
+        assets: &crate::assets::asset_manager::AssetManager,
+        map: &str,
+        mode: &str,
+    ) -> Result<Option<Self>, String> {
+        let Some(client) = assets.client_install() else {
+            return Ok(None);
+        };
+        if !client.maps.iter().any(|entry| {
+            entry.file_name.eq_ignore_ascii_case(map)
+                && entry
+                    .game_modes
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(mode))
+        }) {
+            return Ok(None);
+        }
+        let Some(path) = client
+            .modes
+            .iter()
+            .find(|entry| entry.name.eq_ignore_ascii_case(mode))
+            .and_then(|entry| entry.map_code.as_deref())
+        else {
+            return Ok(None);
+        };
+        let file = read_file(path)
+            .map_err(|error| format!("Could not read map code from {}: {error}", path.display()))?;
+        if [
+            "GameModeIncludes",
+            "ReplaceMapAircraft",
+            "ReplaceMapInfantry",
+            "ReplaceMapUnits",
+            "ReplaceMapStructures",
+            "ReplaceMapTerrain",
+        ]
+        .iter()
+        .any(|section| file.section(section).is_some())
+        {
+            return Err(format!(
+                "The {mode} mode uses map code this build cannot apply. Choose another mode."
+            ));
+        }
+        Ok(Some(Self {
+            names: vec![path.display().to_string()],
+            files: vec![file],
+        }))
+    }
+
     /// The additions of the mod in `dir`; `None` when the folder holds none,
     /// holds another file the game reads (see the module), or cannot be
     /// listed. `roots` are the INI files this game reads under names

@@ -148,7 +148,7 @@ fn open_mod_manager_with_config_loader(
 ) -> Result<AssetManager, String> {
     let base = resolve_ini_config(explicit, load)?;
     let definition = crate::util::mod_definition::ModDefinition::read(mod_dir)?;
-    let resources = definition.resources(&base);
+    let resources = crate::assets::asset_manager::mod_resources(mod_dir, &definition, &base)?;
     let mut manager = AssetManager::with_mod_and_ares(
         root,
         Some(mod_dir),
@@ -156,7 +156,7 @@ fn open_mod_manager_with_config_loader(
         resources.effective_ares(ares)?,
         &resources.archives,
     )
-    .and_then(|assets| assets.with_ini_roots(&resources.ini))
+    .and_then(|assets| assets.with_resource_config(&resources))
     .map_err(|error| format!("could not load mod {}: {error}", mod_dir.display()))?;
     if all_mixes {
         manager
@@ -185,6 +185,80 @@ mod tests {
     use crate::asset_tools::verb_ini::{IniOptions, IniQuery};
     use crate::assets::asset_manager::test_support::audio_test_install;
     use crate::map::source::test_support::TestDirectory;
+
+    #[test]
+    fn an_extracted_client_folder_supplies_skirmish_maps_and_mode_code() {
+        let install = audio_test_install("asset-client-catalog");
+        let mod_dir = TestDirectory::new("extracted-client");
+        for dir in ["Resources", "INI/Map Code", "Maps/Standard"] {
+            std::fs::create_dir_all(mod_dir.path().join(dir)).unwrap();
+        }
+        for (file, data) in [
+            (
+                "Resources/ClientDefinitions.ini",
+                "[Settings]\nMPMapsPath=INI\\maps.ini\n",
+            ),
+            (
+                "INI/maps.ini",
+                "[GameModes]\n0=Standard\n[Standard]\nCustomIniPath=INI\\Standard.ini\n\
+                 [MultiMaps]\n0=Maps\\Standard\\delta\n\
+                 [Maps\\Standard\\delta]\nDescription=(2) River Delta\nGameModes=Standard\nMaxPlayers=2\n",
+            ),
+            ("INI/Map Code/Standard.ini", "[General]\nTeamRetaliate=no\n"),
+            (
+                "Maps/Standard/delta.map",
+                "[Map]\nSize=0,0,25,25\nLocalSize=1,4,23,18\nTheater=TEMPERATE\n\
+                 [Waypoints]\n0=10005\n1=20015\n",
+            ),
+            (
+                "MPModesMD.ini",
+                "[Battle]\n1=GUI:Battle,STT:ModeBattle,MPBattleMD.ini,standard,true\n\
+                 [FreeForAll]\n2=GUI:FreeForAll,STT:ModeFreeForAll,MPFreeForAllMD.ini,freeforall,true\n",
+            ),
+            ("Ares.dll", ""),
+            ("Ares.dll.inj", ""),
+        ] {
+            mod_dir.write(file, data.as_bytes());
+        }
+        let mut assets = open_mod_manager(
+            install.path(),
+            mod_dir.path(),
+            false,
+            Some(&IniRootConfig::default()),
+            AresSetting::Auto,
+        )
+        .unwrap();
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap();
+        let records = crate::map::scenario_sources::list_skirmish_scenario_records_with_assets(
+            install.path(),
+            &mut assets,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(assets.ares_setting(), AresSetting::On);
+        assert_eq!(modes.len(), 1);
+        let [map] = records.as_slice() else {
+            panic!("expected the single catalog map, got {}", records.len());
+        };
+        assert_eq!(map.file_name, "Maps/Standard/delta.map");
+        assert_eq!(map.display_name, "(2) River Delta");
+        assert!(crate::map::skirmish_scenarios::record_matches_mode(
+            map, &modes[0]
+        ));
+        let code = crate::app::mod_additions::MapAdditions::client_mode(
+            &assets,
+            &map.file_name,
+            &modes[0].map_filter,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            !code.files()[0]
+                .section_or_empty("General")
+                .read_bool("TeamRetaliate", true)
+        );
+    }
 
     #[test]
     fn metadata_only_mod_keeps_the_host_ini_configuration() {

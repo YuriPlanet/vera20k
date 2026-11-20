@@ -16,10 +16,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::assets::audio_bag::AudioIndex;
+use crate::assets::client_install::ClientInstall;
 use crate::assets::error::AssetError;
 use crate::assets::mix_archive::{MixArchive, SharedBytes};
 use crate::assets::mix_hash::mix_hash;
 use crate::util::archive_names::ArchiveNames;
+use crate::util::ini_roots::{IniProfile, IniRootConfig};
+use crate::util::mod_definition::{ModDefinition, ResourceConfig};
 
 #[cfg(all(test, tests_assets))]
 #[path = "asset_manager_ares_sidebar_tests.rs"]
@@ -353,6 +356,7 @@ pub struct AssetManager {
     /// takes the place of the installation's file of the same name. `None`
     /// is the original game.
     mod_dir: Option<PathBuf>,
+    client_install: Option<Arc<ClientInstall>>,
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
@@ -385,6 +389,7 @@ impl Clone for AssetManager {
             active_sidebar_archives: self.active_sidebar_archives.clone(),
             ra2_dir: self.ra2_dir.clone(),
             mod_dir: self.mod_dir.clone(),
+            client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
         }
     }
@@ -492,7 +497,54 @@ pub fn holds_master_archives(dir: &Path) -> bool {
         .all(|name| crate::util::case_insensitive_path::find(dir, name).is_some())
 }
 
+/// Use the selected folder's authored loader settings when it has them.
+/// A conventional launcher folder can describe itself with its existing
+/// client catalog and a complete numbered archive family.
+pub fn mod_resources(
+    dir: &Path,
+    definition: &ModDefinition,
+    base: &IniRootConfig,
+) -> Result<ResourceConfig, String> {
+    let mut resources = definition.resources(base);
+    if definition.declares_loading() {
+        return Ok(resources);
+    }
+    let Some(client) = ClientInstall::read(dir)? else {
+        return Ok(resources);
+    };
+    if let Some((ini, archives)) = super::numbered_mod_resources::discover(dir)? {
+        if base.profile != IniProfile::Custom {
+            resources.ini = ini;
+        }
+        resources.archives = archives;
+    }
+    let has_file = |name| {
+        crate::util::case_insensitive_path::find(dir, name)
+            .is_some_and(crate::util::file_system::is_file)
+    };
+    // The Windows launcher uses this pair to inject the extension. Its
+    // presence selects VERA's own Ares reader, with no executable load.
+    resources.requires_ares = has_file("ares.dll") && has_file("ares.dll.inj");
+    resources.client_install = Some(Arc::new(client));
+    Ok(resources)
+}
+
 impl AssetManager {
+    pub fn with_client_install(mut self, client: Option<Arc<ClientInstall>>) -> Self {
+        self.client_install = client;
+        self
+    }
+
+    pub fn client_install(&self) -> Option<&ClientInstall> {
+        self.client_install.as_deref()
+    }
+
+    /// Bind the same resolved mod inputs in startup, probes and asset tools.
+    pub fn with_resource_config(self, config: &ResourceConfig) -> Result<Self, AssetError> {
+        self.with_client_install(config.client_install.clone())
+            .with_ini_roots(&config.ini)
+    }
+
     /// Consume a newly assembled provider, then freeze one root choice before
     /// consumers receive it. This never mounts an archive or changes a winner.
     pub fn with_ini_roots(
@@ -593,6 +645,7 @@ impl AssetManager {
             active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
             mod_dir: mod_dir.map(Path::to_path_buf),
+            client_install: None,
             ares_setting: Default::default(),
         })
     }
@@ -2810,6 +2863,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -2896,6 +2950,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -2972,6 +3027,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -3016,6 +3072,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -3058,6 +3115,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -3101,6 +3159,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -3139,6 +3198,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
@@ -3198,6 +3258,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            client_install: None,
             ares_setting: Default::default(),
         };
         manager.rebuild_indexes();

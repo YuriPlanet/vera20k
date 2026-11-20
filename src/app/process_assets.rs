@@ -159,6 +159,10 @@ impl ProcessAssets {
         self
     }
 
+    pub(crate) fn uses_client_catalog(&self) -> bool {
+        self.resources.client_install.is_some()
+    }
+
     pub(crate) fn with_personal_rules(
         mut self,
         rules: crate::rules::personal_rules::PersonalRules,
@@ -344,7 +348,8 @@ impl ProcessAssets {
             self.media_archive_mode,
             self.ares_setting,
             &self.resources.archives,
-        )?;
+        )?
+        .with_client_install(self.resources.client_install.clone());
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
