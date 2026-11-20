@@ -71,9 +71,18 @@ pub(crate) fn save(directory: &Path, lobby: &str, account: Remembered) -> io::Re
     write(directory, &accounts)
 }
 
-/// Forget the account remembered on `lobby`, returning it.
-pub(crate) fn forget(directory: &Path, lobby: &str) -> io::Result<Option<Remembered>> {
+/// Forget the sign-in on `lobby`, optionally only if it belongs to the named account.
+pub(crate) fn forget(
+    directory: &Path,
+    lobby: &str,
+    only_name: Option<&str>,
+) -> io::Result<Option<Remembered>> {
     let mut accounts = read(directory)?;
+    if let (Some(expected), Some(held)) = (only_name, accounts.get(lobby))
+        && !held.name.eq_ignore_ascii_case(expected)
+    {
+        return Ok(None);
+    }
     let forgotten = accounts.remove(lobby);
     if forgotten.is_some() {
         write(directory, &accounts)?;
@@ -146,7 +155,14 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
-        assert_eq!(forget(directory.path(), LOBBY).unwrap(), Some(tanya()));
+        assert_eq!(
+            forget(directory.path(), LOBBY, Some("Boris")).unwrap(),
+            None
+        );
+        assert_eq!(
+            forget(directory.path(), LOBBY, Some("tAnYa")).unwrap(),
+            Some(tanya())
+        );
         assert_eq!(load(directory.path(), LOBBY), None);
         assert!(load(directory.path(), "https://staging.test").is_some());
         assert!(!format!("{:?}", tanya()).contains(TOKEN));

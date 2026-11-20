@@ -2,7 +2,7 @@
 //! the page's own sign-in form, a username with an optional password, and
 //! its popups: Create Account and the mailed code that confirms it, Forgot
 //! Password's username and then its code and new password, and Delete
-//! Account's username and password. gamemd has no such dialog; the popups
+//! Account's username or email and password. gamemd has no such dialog; the popups
 //! use the online Create Game box's art, field column, checkbox rows and
 //! buttons.
 
@@ -43,19 +43,25 @@ pub(crate) fn valid_password(password: &str) -> bool {
         && password.bytes().all(|byte| (0x20..=0x7E).contains(&byte))
 }
 
-/// The lobby's email shape: `x@y.z`, at most 254 characters, no spaces.
+/// The online account service's email rule, for the printable ASCII its edit accepts.
 pub(crate) fn valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
     };
     email.len() <= EMAIL_LIMIT
-        && email.bytes().all(email_byte)
-        && !local.is_empty()
-        && !domain.contains('@')
-        && domain
-            .split_once('.')
-            .is_some_and(|(host, top)| !host.is_empty() && !top.is_empty())
-        && !domain.ends_with('.')
+        && (1..=64).contains(&local.len())
+        && local
+            .bytes()
+            .all(|byte| email_byte(byte) && !br#""<>(),;:\[]"#.contains(&byte))
+        && domain.contains('.')
+        && domain.split('.').all(|label| {
+            let bytes = label.as_bytes();
+            bytes.first().is_some_and(u8::is_ascii_alphanumeric)
+                && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
+                && bytes
+                    .iter()
+                    .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        })
 }
 
 fn name_byte(byte: u8) -> bool {
@@ -92,12 +98,12 @@ pub(crate) enum AccountRequest {
         password: String,
     },
     Delete {
-        name: String,
+        identifier: String,
         password: String,
     },
 }
 
-/// Never shows a password or code.
+/// Never shows an email, password or code.
 impl std::fmt::Debug for AccountRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (kind, name) = match self {
@@ -105,7 +111,7 @@ impl std::fmt::Debug for AccountRequest {
             Self::Verify { name, .. } => ("Verify", name),
             Self::Forgot { name } => ("Forgot", name),
             Self::Reset { name, .. } => ("Reset", name),
-            Self::Delete { name, .. } => ("Delete", name),
+            Self::Delete { .. } => return f.write_str("AccountRequest::Delete { .. }"),
         };
         f.debug_struct("AccountRequest")
             .field("kind", &kind)
@@ -117,6 +123,7 @@ impl std::fmt::Debug for AccountRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FieldKind {
     Name,
+    NameOrEmail,
     Email,
     Password,
     Confirm,
@@ -127,7 +134,7 @@ impl FieldKind {
     fn limit(self) -> usize {
         match self {
             Self::Name => NAME_LIMIT,
-            Self::Email => EMAIL_LIMIT,
+            Self::Email | Self::NameOrEmail => EMAIL_LIMIT,
             Self::Password | Self::Confirm => PASSWORD_LIMIT,
             Self::Code => CODE_LENGTH,
         }
@@ -139,7 +146,7 @@ impl FieldKind {
         };
         match self {
             Self::Name => name_byte(byte),
-            Self::Email => email_byte(byte),
+            Self::Email | Self::NameOrEmail => email_byte(byte),
             Self::Password | Self::Confirm => (0x20..=0x7E).contains(&byte),
             Self::Code => byte.is_ascii_digit(),
         }
@@ -212,14 +219,12 @@ pub(crate) enum AccountFormAction {
     Close,
 }
 
-/// What a request the lobby accepted gives the form's owner.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AccountDone {
-    SignIn(AccountSignIn),
-    /// The account is deleted; the form stays open to say so.
-    Deleted {
-        name: String,
-    },
+/// A successful account operation. Deletion identifies which local sign-in to forget
+/// even if the player has closed the form that sent the request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AccountSuccess {
+    Accepted,
+    Deleted(String),
 }
 
 /// Sign in to this account with this password.
@@ -392,6 +397,14 @@ impl WolAccountForm {
         }
     }
 
+    pub(crate) fn forget_deleted_sign_in(&mut self, name: &str) {
+        self.remembered_name
+            .take_if(|known| known.eq_ignore_ascii_case(name));
+        if self.text(FieldKind::Name).eq_ignore_ascii_case(name) {
+            *self = Self::sign_in("", self.remembered_name.as_deref());
+        }
+    }
+
     fn sign_in_status(&self) -> StatusText {
         StatusText::new(if self.remembered {
             "VERA:SignInRemembered"
@@ -483,7 +496,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Delete,
             vec![
-                AccountField::new(FieldKind::Name, "VERA:Username"),
+                AccountField::new(FieldKind::NameOrEmail, "VERA:UsernameOrEmail"),
                 AccountField::new(FieldKind::Password, "VERA:Password"),
             ],
             StatusText::new("VERA:DeletePrompt"),
@@ -570,8 +583,14 @@ impl WolAccountForm {
                     password,
                 })
             }
-            FormKind::Delete => (valid_name(&name) && valid_password(&password))
-                .then_some(AccountRequest::Delete { name, password }),
+            FormKind::Delete => {
+                let identifier = self.text(FieldKind::NameOrEmail);
+                ((valid_name(&identifier) || valid_email(&identifier)) && valid_password(&password))
+                    .then_some(AccountRequest::Delete {
+                        identifier,
+                        password,
+                    })
+            }
             FormKind::SignIn | FormKind::Deleted => None,
         }
     }
@@ -682,10 +701,10 @@ impl WolAccountForm {
                         self.password = password.clone();
                     }
                     AccountRequest::Reset { password, .. } => self.password = password.clone(),
-                    AccountRequest::Forgot { name } | AccountRequest::Delete { name, .. } => {
+                    AccountRequest::Forgot { name } => {
                         self.name = name.clone();
                     }
-                    AccountRequest::Verify { .. } => {}
+                    AccountRequest::Verify { .. } | AccountRequest::Delete { .. } => {}
                 }
                 self.busy = true;
                 self.set_status(StatusText::new("VERA:ContactingOnline"));
@@ -755,13 +774,19 @@ impl WolAccountForm {
     /// form into the code's, and Forgot's into the code and new password's;
     /// a confirmed code or reset gives the sign-in; a deletion leaves the
     /// form saying so; a refusal shows the lobby's message.
-    pub(crate) fn answered(&mut self, answer: Result<(), String>) -> Option<AccountDone> {
+    pub(crate) fn answered(
+        &mut self,
+        answer: Result<AccountSuccess, String>,
+    ) -> Option<AccountSignIn> {
         self.busy = false;
         self.buttons = ShellButtonInteraction::default();
-        if let Err(message) = answer {
-            self.set_message(message);
-            return None;
-        }
+        let success = match answer {
+            Ok(success) => success,
+            Err(message) => {
+                self.set_message(message);
+                return None;
+            }
+        };
         match self.kind {
             FormKind::Register => {
                 *self = Self::verify(
@@ -775,18 +800,17 @@ impl WolAccountForm {
                 *self = Self::reset(std::mem::take(&mut self.name));
                 None
             }
-            FormKind::Verify | FormKind::Reset => Some(AccountDone::SignIn(AccountSignIn {
+            FormKind::Verify | FormKind::Reset => Some(AccountSignIn {
                 name: self.name.clone(),
                 password: std::mem::take(&mut self.password),
-            })),
+            }),
             FormKind::Delete => {
-                self.kind = FormKind::Deleted;
-                self.fields.clear();
-                let status = StatusText::with("VERA:AccountDeleted", &[("name", &self.name)]);
-                self.set_status(status);
-                Some(AccountDone::Deleted {
-                    name: self.name.clone(),
-                })
+                if let AccountSuccess::Deleted(name) = success {
+                    self.kind = FormKind::Deleted;
+                    self.fields.clear();
+                    self.set_status(StatusText::with("VERA:AccountDeleted", &[("name", &name)]));
+                }
+                None
             }
             FormKind::SignIn | FormKind::Deleted => None,
         }
@@ -864,7 +888,7 @@ mod tests {
         };
         assert_eq!(name, "Tanya");
         assert!(!form.ok_enabled(), "OK waits for the answer");
-        assert_eq!(form.answered(Ok(())), None);
+        assert_eq!(form.answered(Ok(AccountSuccess::Accepted)), None);
         assert_eq!(form.kind, FormKind::Verify);
         form.insert_text("12a345");
         assert!(!form.ok_enabled(), "a code has six digits");
@@ -880,11 +904,11 @@ mod tests {
         assert_eq!(form.status, "Wrong code.");
         form.activate(FORM_OK);
         assert_eq!(
-            form.answered(Ok(())),
-            Some(AccountDone::SignIn(AccountSignIn {
+            form.answered(Ok(AccountSuccess::Accepted)),
+            Some(AccountSignIn {
                 name: "Tanya".into(),
                 password: "s3cret-pw".into(),
-            }))
+            })
         );
     }
 
@@ -899,7 +923,7 @@ mod tests {
                 name: "Tanya".into()
             }))
         );
-        assert_eq!(form.answered(Ok(())), None);
+        assert_eq!(form.answered(Ok(AccountSuccess::Accepted)), None);
         assert_eq!(form.kind, FormKind::Reset);
         type_into(&mut form, &["123456", "n3w-password", "n3w-password"]);
         assert!(matches!(
@@ -907,12 +931,25 @@ mod tests {
             Some(AccountFormAction::Send(AccountRequest::Reset { .. }))
         ));
         assert_eq!(
-            form.answered(Ok(())),
-            Some(AccountDone::SignIn(AccountSignIn {
+            form.answered(Ok(AccountSuccess::Accepted)),
+            Some(AccountSignIn {
                 name: "Tanya".into(),
                 password: "n3w-password".into(),
-            }))
+            })
         );
+    }
+
+    #[test]
+    fn delete_accepts_a_long_registration_email_and_keeps_it_out_of_debug_output() {
+        assert!(!valid_email("x@-invalid.example"));
+        assert!(!valid_email(&format!("{}@example.com", "x".repeat(65))));
+        let email = format!("{}+alias@example.com", "a".repeat(50));
+        let mut form = WolAccountForm::delete("");
+        type_into(&mut form, &[&email, "correct-password"]);
+        assert_eq!(form.fields[0].text(), email);
+        let action = form.activate(FORM_OK).expect("valid email and password");
+        assert!(!format!("{action:?} {form:?}").contains(&email));
+        assert!(!format!("{action:?} {form:?}").contains("correct-password"));
     }
 
     #[test]
@@ -928,7 +965,7 @@ mod tests {
         assert_eq!(
             form.edit_key(WolEditKey::Enter),
             Some(AccountFormAction::Send(AccountRequest::Delete {
-                name: "Tanya".into(),
+                identifier: "Tanya".into(),
                 password: "short-pw".into(),
             }))
         );
@@ -939,10 +976,8 @@ mod tests {
         );
         form.activate(FORM_OK);
         assert_eq!(
-            form.answered(Ok(())),
-            Some(AccountDone::Deleted {
-                name: "Tanya".into()
-            })
+            form.answered(Ok(AccountSuccess::Deleted("Tanya".into()))),
+            None
         );
         assert!(form.fields.is_empty() && form.ok_enabled());
         // No field takes the keys; OK closes.

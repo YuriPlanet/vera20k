@@ -31,7 +31,7 @@ use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
 use crate::ui::chat_translation::{ChatLanguage, ChatReply, only_repeats, without_note};
-use crate::ui::wol_account::AccountRequest;
+use crate::ui::wol_account::{AccountRequest, AccountSuccess};
 use crate::ui::wol_chat::WolChatLine;
 
 // The deployment sets this at build time; a runtime override supports staging.
@@ -129,6 +129,9 @@ pub(crate) fn lobby_get(_path: &str, _if_none_match: Option<&str>) -> Result<Lob
 #[derive(Default)]
 pub(crate) struct OnlineCleanup {
     retired: Option<RetiredService>,
+    /// Deletions completed while a visit was closing. The main thread still
+    /// clears local sign-ins, without forwarding an old reply to a new form.
+    deleted_accounts: Vec<(String, String)>,
     // Reset per retirement and set by that owner's exact logout
     // acknowledgement, unlike a deadline stop. It never controls retries.
     logout_acknowledged: bool,
@@ -184,6 +187,15 @@ impl OnlineCleanup {
                     return None;
                 }
             };
+            if let http::Response::AccountAnswered {
+                answer: Ok(AccountSuccess::Deleted(name)),
+                ..
+            } = response
+            {
+                self.deleted_accounts
+                    .push((retired.service.lobby.clone(), name));
+                continue;
+            }
             if retired.service.stopping.load(Ordering::Acquire) {
                 continue;
             }
@@ -325,12 +337,6 @@ pub(super) struct LiveService {
     lobby: String,
     /// The current sign-in sends this computer's remembered sign-in.
     signing_in_remembered: bool,
-    /// The latest account request: an answer to an earlier one, whose popup
-    /// was cancelled, is dropped.
-    account_attempt: u64,
-    /// The pending Delete Account request's attempt and name. Its answer
-    /// forgets this computer's sign-in of the name, popup or not.
-    deleting: Option<(u64, String)>,
     /// VERA: the match this game watches, from its `watch_started` until it
     /// leaves with `unwatch`.
     watching: Option<Watching>,
@@ -747,8 +753,6 @@ impl LiveService {
             ladder_lookup: None,
             lobby,
             signing_in_remembered: false,
-            account_attempt: 0,
-            deleting: None,
             watching: None,
         }
     }
@@ -1334,6 +1338,9 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     crate::app::lan_service::poll_online_retirement(state);
     let relay_pending = crate::app::lan_service::online_retirement_pending(state);
     let cleanup_deadline = state.frontend.online_cleanup.poll(Instant::now());
+    for (lobby, name) in std::mem::take(&mut state.frontend.online_cleanup.deleted_accounts) {
+        forget_deleted_account(state, &lobby, &name);
+    }
     if state
         .frontend
         .wol
@@ -1890,7 +1897,7 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     let Some(dir) = settings else {
         return;
     };
-    match account::forget(dir, &service.lobby) {
+    match account::forget(dir, &service.lobby, None) {
         Ok(Some(remembered)) => {
             let _ = service.requests.send(http::Request::ForgetSignIn {
                 name: remembered.name,
@@ -1902,38 +1909,32 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     }
 }
 
-fn send_account_request(service: &mut LiveService, request: AccountRequest) {
-    service.account_attempt = service.account_attempt.wrapping_add(1);
-    if let AccountRequest::Delete { name, .. } = &request {
-        service.deleting = Some((service.account_attempt, name.clone()));
-    }
-    let _ = service.requests.send(http::Request::Account {
-        attempt: service.account_attempt,
-        request,
-    });
-}
-
-/// The lobby answered account request `attempt`. A deletion it accepted
-/// took the account's remembered sign-ins with it, so this computer's
-/// sign-in of that name goes too, even when its popup closed meanwhile;
-/// another account's stays.
-fn account_answered(
-    settings: Option<&std::path::Path>,
-    service: &mut LiveService,
-    attempt: u64,
-    answer: &Result<(), String>,
-) {
-    let Some((_, name)) = service.deleting.take_if(|(sent, _)| *sent == attempt) else {
-        return;
-    };
-    let Some(dir) = settings.filter(|_| answer.is_ok()) else {
-        return;
-    };
-    if account::load(dir, &service.lobby)
-        .is_some_and(|remembered| remembered.name.eq_ignore_ascii_case(&name))
-        && let Err(error) = account::forget(dir, &service.lobby)
+/// The lobby has deleted this account. Forget only credentials and profile
+/// entries that still name it, even if the original form has closed.
+fn forget_deleted_account(state: &mut AppState, lobby: &str, name: &str) {
+    if let Some(dir) = settings_dir(state)
+        && let Err(error) = account::forget(dir, lobby, Some(name))
     {
         log::warn!("Could not forget the deleted account's sign-in: {error}");
+    }
+    if state
+        .persistence
+        .options_profile
+        .online_name
+        .eq_ignore_ascii_case(name)
+    {
+        remember_online_name(state, "");
+    }
+    let globals = &mut state.frontend.wol_account;
+    if globals.nickname.eq_ignore_ascii_case(name) {
+        globals.nickname.clear();
+        globals.password.clear();
+        globals.remember = false;
+    }
+    if let Some(super::WolPage::Login(login)) =
+        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+    {
+        login.account_deleted(name);
     }
 }
 
@@ -1997,7 +1998,11 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             service.sign_in(nickname, credential);
         }
-        WolServiceRequest::Account(request) => send_account_request(service, request),
+        WolServiceRequest::Account { attempt, request } => {
+            let _ = service
+                .requests
+                .send(http::Request::Account { attempt, request });
+        }
         WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
@@ -2909,8 +2914,15 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
-            account_answered(settings_dir(state), service, attempt, &answer);
-            if attempt == service.account_attempt {
+            if let Ok(AccountSuccess::Deleted(name)) = &answer {
+                forget_deleted_account(state, &service.lobby, name);
+            }
+            if state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.account_attempt == attempt)
+            {
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
@@ -4694,33 +4706,19 @@ mod completion_tests {
     }
 
     #[test]
-    fn a_deleted_account_forgets_its_sign_in_even_after_its_popup_closed() {
-        let directory = crate::map::source::test_support::TestDirectory::new("live-delete");
-        let settings = Some(directory.path());
-        let (mut service, _input, _output) = control_service(None);
-        remember_sign_in(settings, &service, "Tanya", "A".repeat(43));
-        let delete = |name: &str| AccountRequest::Delete {
-            name: name.into(),
-            password: "s3cret-pw".into(),
-        };
-        send_account_request(&mut service, delete("Boris"));
-        let boris = service.account_attempt;
-        account_answered(settings, &mut service, boris, &Ok(()));
-        assert!(
-            account::load(directory.path(), &service.lobby).is_some(),
-            "another account's sign-in stays"
-        );
-        send_account_request(&mut service, delete("tanya"));
-        let tanya = service.account_attempt;
-        // Cancelled, then Forgot Password sent: the deletion's answer still counts.
-        send_account_request(
-            &mut service,
-            AccountRequest::Forgot {
-                name: "Tanya".into(),
-            },
-        );
-        account_answered(settings, &mut service, tanya, &Ok(()));
-        assert_eq!(account::load(directory.path(), &service.lobby), None);
+    fn a_completed_deletion_survives_closing_its_online_visit() {
+        let (service, _input, output) = control_service(None);
+        let lobby = service.lobby.clone();
+        let mut cleanup = OnlineCleanup::default();
+        cleanup.retire(service, Instant::now());
+        output
+            .send(http::Response::AccountAnswered {
+                attempt: 1,
+                answer: Ok(AccountSuccess::Deleted("Tanya".into())),
+            })
+            .unwrap();
+        cleanup.poll(Instant::now());
+        assert_eq!(cleanup.deleted_accounts, [(lobby, "Tanya".to_owned())]);
     }
 
     /// A lobby from before the Ranked game choice refuses the field, so a
