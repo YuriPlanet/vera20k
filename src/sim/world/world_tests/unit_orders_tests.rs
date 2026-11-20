@@ -59,13 +59,13 @@ fn item83_final_select_allows_caller_admitted_nonlocal_entity() {
         sim.substrate
             .entities
             .get(mine)
-            .is_some_and(|e| e.selection.is_selected())
+            .is_some_and(|e| e.seldom.selection.is_selected())
     );
     assert!(
         sim.substrate
             .entities
             .get(theirs)
-            .is_some_and(|e| e.selection.is_selected())
+            .is_some_and(|e| e.seldom.selection.is_selected())
     );
 }
 
@@ -94,7 +94,7 @@ fn test_select_command_rejects_limbo_object() {
         !sim.substrate
             .entities
             .get(cargo)
-            .is_some_and(|e| e.selection.is_selected()),
+            .is_some_and(|e| e.seldom.selection.is_selected()),
         "an in-limbo object has no map presence to select"
     );
 }
@@ -124,6 +124,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .selection
             .is_selected(),
         "entering warp-out does not retroactively remove an existing selection"
@@ -141,6 +142,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .selection
             .is_selected()
     );
@@ -149,6 +151,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .entities
             .get(wingman)
             .unwrap()
+            .seldom
             .selection
             .is_selected()
     );
@@ -166,6 +169,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .selection
             .is_selected(),
         "an ordinary replacement still deselects an omitted warp-out member"
@@ -193,6 +197,7 @@ fn event33_select_command_raises_tags_once_in_payload_order_after_admission() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
     }
@@ -242,6 +247,7 @@ fn event33_select_command_raises_tags_once_in_payload_order_after_admission() {
             .entities
             .get(refused)
             .unwrap()
+            .seldom
             .selection
             .is_selected()
     );
@@ -806,7 +812,7 @@ fn test_undeploy_conyard_spawns_mcv() {
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
     if let Some(e) = sim.substrate.entities.get_mut(mcv) {
-        e.selection.set_selected_for_test(true);
+        e.seldom.selection.set_selected_for_test(true);
     }
     let deploy_cmd = cmd_envelope(&sim, "Americans", 1, Command::DeployMcv { entity_id: mcv });
     let _ = sim.advance_tick(&[deploy_cmd], Some(&rules), None, None, 33);
@@ -824,7 +830,7 @@ fn test_undeploy_conyard_spawns_mcv() {
     // Clear building_up so we can undeploy (can't undeploy during construction).
     if let Some(e) = sim.substrate.entities.get_mut(yard_id) {
         e.finish_building_construction_for_test();
-        e.selection.set_selected_for_test(true);
+        e.seldom.selection.set_selected_for_test(true);
     }
 
     // Undeploy the ConYard: Sell's stage 0 and stage 1 visits, then the
@@ -872,7 +878,13 @@ fn test_undeploy_conyard_spawns_mcv() {
         .entities
         .values()
         .filter(|e| e.type_ref() == amcv_id)
-        .map(|e| (e.position.rx(), e.position.ry(), e.selection.is_selected()))
+        .map(|e| {
+            (
+                e.position.rx(),
+                e.position.ry(),
+                e.seldom.selection.is_selected(),
+            )
+        })
         .collect();
     assert_eq!(mcvs.len(), 1, "Exactly one MCV should exist after undeploy");
     let (rx, ry, selected) = mcvs[0];

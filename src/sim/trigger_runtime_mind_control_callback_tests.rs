@@ -90,7 +90,7 @@ fn mind_control_event6_destroy_target_refreshes_bullet_but_retains_tag_actor() {
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.health.current(), 0);
     assert!(!victim.is_object_alive());
-    assert_eq!(victim.mind_control.controller(), None);
+    assert_eq!(victim.seldom.mind_control.controller(), None);
     assert!(
         sim.substrate
             .entities
@@ -205,7 +205,7 @@ fn mind_control_cell_and_null_targets_do_not_raise_nearby_object_tags() {
         let nearby = sim.substrate.entities.get(nearby).unwrap();
         assert_eq!(nearby.owner(), houses[2]);
         assert_eq!(nearby.health.current(), 100);
-        assert_eq!(nearby.mind_control.controller(), None);
+        assert_eq!(nearby.seldom.mind_control.controller(), None);
         assert!(
             sim.substrate
                 .entities
@@ -254,7 +254,7 @@ fn mind_control_sound_keeps_pre_capture_house_and_original_raw_location() {
 
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.owner(), houses[0]);
-    assert_eq!(victim.mind_control.controller(), Some(source));
+    assert_eq!(victim.seldom.mind_control.controller(), Some(source));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
     let sounds: Vec<_> = sim
         .sound_events

@@ -86,6 +86,7 @@ impl AegisScene {
             .entities
             .get(self.aegis)
             .unwrap()
+            .seldom
             .weapon_burst
             .radial_index()
     }
@@ -96,6 +97,7 @@ impl AegisScene {
             .entities
             .get(self.aegis)
             .unwrap()
+            .seldom
             .weapon_burst
             .index()
     }
@@ -319,6 +321,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst;
     restored
         .world
@@ -326,6 +329,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get_mut(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst
         .take_radial_index(10);
     assert_ne!(
@@ -339,6 +343,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get_mut(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst = saved_burst;
     assert_eq!(hash, restored.world.state_hash());
     for shot in 5..12 {

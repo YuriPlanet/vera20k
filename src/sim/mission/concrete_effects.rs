@@ -383,6 +383,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 .entities
                 .get_mut(prepared.receiver)
                 .unwrap()
+                .seldom
                 .tesla_charger
                 .clear();
         }
@@ -700,7 +701,7 @@ pub(crate) fn represented_assign_target_admitted(
     //SpawnOwner. A NULL request skips the arm (0x006FCDF3 jumps to the
     // store) and keeps the ammo.
     let requested = if requested.is_some()
-        && entity.type_facts.spawned_non_missile_aircraft()
+        && entity.seldom.type_facts.spawned_non_missile_aircraft()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.ammo_mut()
         && ammo.current() != 0
@@ -721,7 +722,7 @@ pub(crate) fn represented_assign_target_admitted(
         // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
         // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
         if !ares {
-            entity.weapon_burst.reset();
+            entity.seldom.weapon_burst.reset();
         }
     }
     // The store (`0x006FCF3E`).
@@ -857,7 +858,7 @@ impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
             requested,
             mission_current: entity.mission.current(),
             suspended_mission: entity.mission.suspended(),
-            archived_target: entity.suspended_attack_target.target(),
+            archived_target: entity.seldom.suspended_attack_target.target(),
             archived_destination: entity.navigation.suspended_nav_com(),
         });
         if entity.attack_target.target() != requested {

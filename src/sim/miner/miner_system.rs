@@ -271,7 +271,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
         return;
     }
     let (rx, ry) = (entity.position.rx(), entity.position.ry());
-    let in_contact = !entity.radio_contacts.is_empty();
+    let in_contact = !entity.seldom.radio_contacts.is_empty();
     let Some(refinery) = sim
         .substrate
         .occupancy
@@ -1205,7 +1205,7 @@ fn scan_docking_type(
         if entity.death.is_dying() || entity.health.current() == 0 {
             continue;
         }
-        if !wide && !entity.radio_contacts.has_free_or(requester) {
+        if !wide && !entity.seldom.radio_contacts.has_free_or(requester) {
             continue;
         }
         // `BuildingClass::GetCoords @ 0x00447AC0`: foundation centre, the

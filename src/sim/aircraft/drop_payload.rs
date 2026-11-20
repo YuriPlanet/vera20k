@@ -462,9 +462,9 @@ fn paradrop(
         .get_mut(passenger)
         .is_some_and(|rider| {
             if rider.category() == EntityCategory::Infantry {
-                rider.sub_cell.hold(spot);
+                rider.seldom.sub_cell.hold(spot);
             } else {
-                rider.sub_cell.release();
+                rider.seldom.sub_cell.release();
             }
             rider.passenger_role_mut().clear_carrier_relation();
             rider.on_bridge()
@@ -511,7 +511,7 @@ fn land_tail(
         && let Some(entity) = sim.substrate.entities.get_mut(passenger)
     {
         entity.passenger_role_mut().clear_transporter();
-        entity.on_carryall.set(false);
+        entity.seldom.on_carryall.set(false);
     }
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {
         return;
@@ -540,7 +540,7 @@ fn land_tail(
     let frame = sim.session.binary_frame() as i32;
     if let Some(plane_entity) = sim.substrate.entities.get_mut(plane) {
         plane_entity.mission_leaf.restore_paradrop_passes();
-        plane_entity.rearm_timer.start(frame, 0);
+        plane_entity.seldom.rearm_timer.start(frame, 0);
     }
 }
 
@@ -1215,6 +1215,7 @@ mod tests {
         let plane = sim.substrate.entities.get_mut(aircraft_id).unwrap();
         plane.mission_leaf.set_paradrop_passes_for_test(-2);
         plane
+            .seldom
             .rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(3, 40));
 
@@ -1232,7 +1233,7 @@ mod tests {
             5
         );
         assert_eq!(
-            plane.rearm_timer.timer(),
+            plane.seldom.rearm_timer.timer(),
             crate::sim::timer::CdTimer::started(77, 0)
         );
         assert_eq!(ammo(&sim, aircraft_id), 3);
@@ -1240,7 +1241,7 @@ mod tests {
         assert!(passenger.lifecycle.object_alive());
         assert!(!passenger.lifecycle.in_limbo());
         assert!(passenger.lifecycle.cell_marked());
-        assert!(passenger.in_logic_vector.is_member());
+        assert!(passenger.seldom.in_logic_vector.is_member());
         assert_eq!((passenger.position.rx(), passenger.position.ry()), (51, 20));
         let sub_cell = passenger
             .sub_cell()
@@ -1285,6 +1286,7 @@ mod tests {
                 .entities
                 .get_mut(passenger_id)
                 .unwrap()
+                .seldom
                 .discovery
                 .set_discovered_by_current_house_for_test(true);
             sim.substrate
@@ -1299,6 +1301,7 @@ mod tests {
                 .entities
                 .get(aircraft_id)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .timer();
 
@@ -1317,7 +1320,7 @@ mod tests {
                 plane.mission_leaf.as_aircraft().unwrap().paradrop_passes(),
                 2
             );
-            assert_eq!(plane.rearm_timer.timer(), rearm);
+            assert_eq!(plane.seldom.rearm_timer.timer(), rearm);
             let passenger = sim.substrate.entities.get(passenger_id).unwrap();
             assert_eq!(
                 passenger.passenger_role().inside_transport_id(),
@@ -1325,8 +1328,13 @@ mod tests {
             );
             assert!(!passenger.is_falling_down());
             assert!(passenger.lifecycle.object_alive() && passenger.lifecycle.in_limbo());
-            assert!(!passenger.lifecycle.cell_marked() && !passenger.in_logic_vector.is_member());
-            assert_eq!(passenger.discovery.discovered_by_current_house(), human);
+            assert!(
+                !passenger.lifecycle.cell_marked() && !passenger.seldom.in_logic_vector.is_member()
+            );
+            assert_eq!(
+                passenger.seldom.discovery.discovered_by_current_house(),
+                human
+            );
             assert!(
                 !sim.substrate
                     .occupancy
@@ -1515,7 +1523,7 @@ mod tests {
             assert_eq!(passenger.passenger_role().inside_transport_id(), Some(1));
             assert!(passenger.lifecycle.in_limbo());
             assert_eq!(passenger.lifecycle.cell_marked(), post_attach);
-            assert!(!passenger.in_logic_vector.is_member());
+            assert!(!passenger.seldom.in_logic_vector.is_member());
             assert!(!passenger.is_falling_down());
             assert_eq!(
                 passenger.locomotor.as_ref().unwrap().layer(),
@@ -1573,7 +1581,10 @@ mod tests {
                 assert_eq!(cargo.total_size(), 3);
                 let passenger = sim.substrate.entities.get(2).unwrap();
                 assert!(passenger.is_falling_down());
-                assert!(passenger.lifecycle.cell_marked() && passenger.in_logic_vector.is_member());
+                assert!(
+                    passenger.lifecycle.cell_marked()
+                        && passenger.seldom.in_logic_vector.is_member()
+                );
                 assert!(!passenger.passenger_role().is_inside_transport());
                 assert_eq!(chute_sounds(&sim).len(), 1);
             }

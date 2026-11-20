@@ -81,7 +81,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        let Some(amount) = actor.ares.bounty_display.take_ready(
+        let Some(amount) = actor.seldom.ares.bounty_display.take_ready(
             frame,
             force,
             rules.bounty_rules().display_delay(),
@@ -197,7 +197,11 @@ pub(crate) fn award(
     //1004336B..1004338A redirects only the displayed sum for missiles.
     // Funds still go to this incoming attacker's live House.
     let display_actor = if attacker_type.missile_spawn {
-        attacker.spawn_owner_id.owner().unwrap_or(attacker_id)
+        attacker
+            .seldom
+            .spawn_owner_id
+            .owner()
+            .unwrap_or(attacker_id)
     } else {
         attacker_id
     };
@@ -212,7 +216,7 @@ pub(crate) fn award(
         house.economy_mut().spend_money(amount.wrapping_neg());
     }
     if display && let Some(actor) = entities.get_mut(display_actor) {
-        actor.ares.bounty_display.queue(amount);
+        actor.seldom.ares.bounty_display.queue(amount);
     }
 }
 
@@ -373,6 +377,7 @@ mod tests {
             .entities
             .get(hunter)
             .unwrap()
+            .seldom
             .ares
             .bounty_display
             .clone();

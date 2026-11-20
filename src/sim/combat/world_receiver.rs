@@ -1374,7 +1374,7 @@ fn commit_entity(
             .get(target_id)
             .is_some_and(|target| {
                 target.category() == EntityCategory::Unit
-                    && target.selection.is_selected()
+                    && target.seldom.selection.is_selected()
                     && world.session.current_house() == Some(target.owner())
             })
         {
@@ -1487,7 +1487,7 @@ fn commit_entity(
                 .entities
                 .get(target_id)
                 .filter(|target| target.category() == EntityCategory::Structure)
-                .map(|target| target.radio_contacts.iter_live().collect::<Vec<_>>())
+                .map(|target| target.seldom.radio_contacts.iter_live().collect::<Vec<_>>())
         } else {
             None
         };
@@ -1767,7 +1767,7 @@ fn commit_entity(
             // shared RecordTheKill receiver before the PostMortem Destroy hook. Native retains no killer on the
             // restored object: a fresh null-source timer expiry must stay
             // uncredited, while a later sourced lethal hit captures anew.
-            target.kill_record.clear();
+            target.seldom.kill_record.clear();
             target
                 .building
                 .pending_c4_detonation
@@ -1930,7 +1930,7 @@ fn commit_entity(
         }
 
         if latch_hostile_hit && let Some(target) = world.substrate.entities.get_mut(target_id) {
-            target.ai_sell_repair.hit_by_enemy();
+            target.seldom.ai_sell_repair.hit_by_enemy();
         }
 
         if let Some((category, state)) = smoke_maintenance
@@ -3044,7 +3044,8 @@ fn finish_concrete_death(
                 .entities
                 .get(dead_id)
                 .is_some_and(|aircraft| {
-                    aircraft.selection.is_selected() && world.owner_is_human(aircraft.owner())
+                    aircraft.seldom.selection.is_selected()
+                        && world.owner_is_human(aircraft.owner())
                 });
             let dying = crate::sim::crew_survival::DyingTransport {
                 attacker: killing_attacker(world, damage_events, dead_id),

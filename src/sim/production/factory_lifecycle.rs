@@ -1538,7 +1538,7 @@ pub(crate) fn validate_restored_factory_state(
                 "constructed identity has the wrong concrete category",
             ));
         }
-        if entity.spawn_owner_id.owner().is_some() || entity.slave.owner().is_some() {
+        if entity.seldom.spawn_owner_id.owner().is_some() || entity.seldom.slave.owner().is_some() {
             return Err(fail(owner, "factory root is itself a manager child"));
         }
         // Factory admission validates retained identity and membership, without
@@ -1546,7 +1546,7 @@ pub(crate) fn validate_restored_factory_state(
         // validates the object's lifecycle handoff.
         if !entity.lifecycle.in_limbo()
             || entity.lifecycle.cell_marked()
-            || entity.in_logic_vector.is_member()
+            || entity.seldom.in_logic_vector.is_member()
         {
             return Err(fail(
                 owner,

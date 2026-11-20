@@ -268,7 +268,7 @@ impl AresReloadHost for WorldReload<'_> {
 
     fn timers(&mut self) -> &mut DockReloadTimers {
         match self.sim.substrate.entities.get_mut(self.dock) {
-            Some(building) => &mut building.ares.ares_dock_reload_timers,
+            Some(building) => &mut building.seldom.ares.ares_dock_reload_timers,
             None => &mut self.detached_timers,
         }
     }
@@ -280,7 +280,7 @@ impl ReloadHost for WorldReload<'_> {
             .substrate
             .entities
             .get(self.dock)
-            .map_or(0, |building| building.radio_contacts.capacity())
+            .map_or(0, |building| building.seldom.radio_contacts.capacity())
     }
 
     fn contact(&mut self, slot: usize) -> Option<u64> {
@@ -288,7 +288,7 @@ impl ReloadHost for WorldReload<'_> {
             .substrate
             .entities
             .get(self.dock)
-            .and_then(|building| building.radio_contacts.slot(slot))
+            .and_then(|building| building.seldom.radio_contacts.slot(slot))
     }
 
     fn roger(&mut self, contact: u64, message: RadioMessage) -> bool {

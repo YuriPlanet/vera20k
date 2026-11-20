@@ -673,7 +673,7 @@ impl Simulation {
             TargetKind::Entity(building),
             None,
         );
-        let burst_index = planter.weapon_burst.index();
+        let burst_index = planter.seldom.weapon_burst.index();
         let live = planter.live_particles();
         let rof = crate::sim::combat::world_fire::snapshot_get_rof(
             scenario_rng,
@@ -688,7 +688,7 @@ impl Simulation {
         );
         let frame = session.binary_frame() as i32;
         if let Some(planter) = substrate.entities.get_mut(id) {
-            planter.rearm_timer.start(frame, rof);
+            planter.seldom.rearm_timer.start(frame, rof);
         }
     }
 }

@@ -326,10 +326,10 @@ impl Scene {
                 ]
             );
             assert_eq!(
-                entity.radio_contacts.capacity(),
+                entity.seldom.radio_contacts.capacity(),
                 int(&native["radio_capacity"]) as usize
             );
-            assert!(entity.radio_contacts.is_empty());
+            assert!(entity.seldom.radio_contacts.is_empty());
             // Setup/origin ctor words precede the imported RNG boundary.
             // Only newly constructed filler words are numerical outputs here.
             if entity.native_unique_id() > origin_cursor {

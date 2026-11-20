@@ -1036,7 +1036,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             );
             assert!(retained.lifecycle.object_alive());
             assert!(!retained.lifecycle.in_limbo());
-            assert!(retained.in_logic_vector.is_member());
+            assert!(retained.seldom.in_logic_vector.is_member());
             assert!(!sim.substrate.pending_delete.contains_object(&ship));
             assert!(
                 !retained.lifecycle.cell_marked(),
@@ -1111,7 +1111,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 repeat["losses"]
             );
             assert!(!retained.lifecycle.cell_marked());
-            assert!(retained.in_logic_vector.is_member());
+            assert!(retained.seldom.in_logic_vector.is_member());
             for (stream, rng) in [
                 ("main", sim.main_rng.native_state_hex()),
                 ("scenario", sim.scenario_rng.native_state_hex()),
@@ -1140,6 +1140,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                     .entities
                     .get(ship)
                     .unwrap()
+                    .seldom
                     .in_logic_vector
                     .is_member()
             );

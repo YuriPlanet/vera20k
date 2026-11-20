@@ -1026,7 +1026,7 @@ fn break_depot_contact(
         .substrate
         .entities
         .get(unit_id)
-        .is_some_and(|unit| unit.radio_contacts.contains(depot_id));
+        .is_some_and(|unit| unit.seldom.radio_contacts.contains(depot_id));
     if linked {
         let _ = radio::transmit(
             sim,
@@ -1202,7 +1202,7 @@ pub(crate) fn depot_owns_enter(sim: &Simulation, rules: &RuleSet, id: u64) -> bo
     let Some(unit) = sim.substrate.entities.get(id) else {
         return false;
     };
-    if let Some(contact) = unit.radio_contacts.slot(0) {
+    if let Some(contact) = unit.seldom.radio_contacts.slot(0) {
         return {
             sim.substrate
                 .entities
@@ -1420,7 +1420,7 @@ fn construction_yard_repair(sim: &mut Simulation, rules: &RuleSet, yard: u64) ->
                 building.mission.set_handler_state(2);
             }
         }
-        2 if building.radio_contacts.is_empty() => {
+        2 if building.seldom.radio_contacts.is_empty() => {
             let _ = sim.mission_queue_exact(
                 yard,
                 MissionId::from_known(MissionType::Guard),
@@ -1491,7 +1491,7 @@ pub(crate) fn mission_repair(
         .known()
         .unwrap_or(MissionType::Repair);
     let rate = rules.mission_control.rate_frames(current);
-    let contact = building.radio_contacts.slot(0);
+    let contact = building.seldom.radio_contacts.slot(0);
     let now = sim.session.binary_frame();
     let Some(unit) = contact else {
         // State1's no-contact arm44C0BD retains the current idle animations
@@ -1861,6 +1861,7 @@ mod tests {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(object.foundation.clone().into());
         let (width, height) = object.foundation.dimensions();
@@ -2059,6 +2060,7 @@ mod tests {
                 .entities
                 .get(DEPOT)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -2285,6 +2287,7 @@ mod tests {
             .entities
             .get_mut(DEPOT)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("3x3".to_string().into());
         for y in DEPOT_RY..DEPOT_RY + 3 {
@@ -2449,7 +2452,7 @@ mod tests {
         sim.uninit_with_rules(DEPOT, &rules);
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.pending_entry(), Some(pending));
-        assert!(!unit.radio_contacts.contains(DEPOT));
+        assert!(!unit.seldom.radio_contacts.contains(DEPOT));
         sim.substrate
             .entities
             .get_mut(1)
@@ -2701,12 +2704,12 @@ mod tests {
         sim.substrate
             .entities
             .get(tank)
-            .is_some_and(|e| e.radio_contacts.contains(DEPOT))
+            .is_some_and(|e| e.seldom.radio_contacts.contains(DEPOT))
             && sim
                 .substrate
                 .entities
                 .get(DEPOT)
-                .is_some_and(|d| d.radio_contacts.contains(tank))
+                .is_some_and(|d| d.seldom.radio_contacts.contains(tank))
     }
 
     fn servicing(sim: &Simulation, tank: u64) -> bool {
@@ -2762,11 +2765,11 @@ mod tests {
         }
         let depot = sim.substrate.entities.get(DEPOT).unwrap();
         assert_eq!(
-            depot.radio_contacts.capacity(),
+            depot.seldom.radio_contacts.capacity(),
             1,
             "NumberOfDocks default 1"
         );
-        assert_eq!(depot.radio_contacts.len(), 1);
+        assert_eq!(depot.seldom.radio_contacts.len(), 1);
         tick_units(&mut sim, &rules);
         for tank in 2..=3 {
             let pending = sim.substrate.entities.get(tank).unwrap().pending_entry();
@@ -3001,6 +3004,7 @@ mod tests {
                 .entities
                 .get(DEPOT)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -3454,9 +3458,9 @@ mod tests {
         let contacts = |sim: &mut Simulation, add: bool| {
             let yard = sim.substrate.entities.get_mut(DEPOT).unwrap();
             if add {
-                yard.radio_contacts.insert(1).unwrap();
+                yard.seldom.radio_contacts.insert(1).unwrap();
             } else {
-                yard.radio_contacts.remove(1).unwrap();
+                yard.seldom.radio_contacts.remove(1).unwrap();
             }
         };
         contacts(&mut sim, true);

@@ -236,7 +236,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         cloak["depth"] = input["progress"].clone();
         cloak["recloak_delay"] = json!({"start_frame": signed(&input["recloak"][0]), "duration": signed(&input["recloak"][1])});
         actor.cloak = Some(Box::new(serde_json::from_value(cloak).unwrap()));
-        actor.rearm_timer.set_for_test(CdTimer::from_raw(
+        actor.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
             signed(&input["rearm"][0]),
             signed(&input["rearm"][1]),
         ));

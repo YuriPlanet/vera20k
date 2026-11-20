@@ -399,6 +399,7 @@ fn is_cell_harvestable(
             .substrate
             .entities
             .get(id)?
+            .seldom
             .discovery
             .owned_by_current_house()
         && let Some(viewer) = sim.session.current_house()

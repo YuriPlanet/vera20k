@@ -104,7 +104,7 @@ pub(crate) fn mission_unload(
         return 1;
     };
     // A 0x0073DEE0: without any radio contact the unload is abandoned.
-    if entity.radio_contacts.is_empty() {
+    if entity.seldom.radio_contacts.is_empty() {
         sim.unit_enter_idle_mode(id, rules, false, effects);
         set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
         stop_if_moving(&mut sim.substrate, id);
@@ -312,6 +312,7 @@ pub(crate) fn per_cell_release_dock_contact(
                 .is_some_and(|miner| miner.unload_active);
         let dock = armed
             && entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| sim.substrate.entities.get(contact))
@@ -358,7 +359,7 @@ fn set_unload_latch(
     if let Some(miner) = entity.miner.as_mut() {
         miner.unload_active = true;
     }
-    entity.display_type_override.image = image;
+    entity.seldom.display_type_override.image = image;
 }
 
 /// Drop Unit+0x6D1: the ordinary image returns. The StageClass keeps
@@ -373,7 +374,7 @@ pub(crate) fn clear_unload_latch(substrate: &mut ObjectSubstrate, id: u64) -> bo
     };
     let was_set = miner.unload_active;
     miner.unload_active = false;
-    entity.display_type_override.image = None;
+    entity.seldom.display_type_override.image = None;
     was_set
 }
 

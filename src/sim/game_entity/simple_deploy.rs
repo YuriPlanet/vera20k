@@ -28,50 +28,53 @@ impl GameEntity {
     }
 
     pub fn deploy_anim(&self) -> Option<AnimId> {
-        self.deploy_attachment.deploy_anim
+        self.seldom.deploy_attachment.deploy_anim
     }
 
     ///739BDC/739DC0 retain the constructed Anim until pointer expiry.
     pub(crate) fn retain_deploy_anim(&mut self, anim: AnimId) {
-        self.deploy_attachment.deploy_anim = Some(anim);
+        self.seldom.deploy_attachment.deploy_anim = Some(anim);
     }
 
     /// Techno710410 (710443..71044E) /70794C clear only the matching pointer.
     pub(crate) fn expire_deploy_anim(&mut self, anim: AnimId) {
-        if self.deploy_attachment.deploy_anim == Some(anim) {
-            self.deploy_attachment.deploy_anim = None;
+        if self.seldom.deploy_attachment.deploy_anim == Some(anim) {
+            self.seldom.deploy_attachment.deploy_anim = None;
         }
     }
 
     /// Techno destructor6F467F takes the retained animation for UnInit.
     pub(crate) fn take_deploy_anim(&mut self) -> Option<AnimId> {
-        self.deploy_attachment.deploy_anim.take()
+        self.seldom.deploy_attachment.deploy_anim.take()
     }
 
     pub fn landing_for_deploy(&self) -> bool {
-        self.deploy_attachment.landing_for_deploy
+        self.seldom.deploy_attachment.landing_for_deploy
     }
 
     /// The deploy's landing request (`0x00739B2C`).
     pub(crate) fn request_landing_for_deploy(&mut self) {
-        self.deploy_attachment.landing_for_deploy = true;
+        self.seldom.deploy_attachment.landing_for_deploy = true;
     }
 
     /// The Jumpjet's clear of the landing request: its touchdown
     /// (`0x0054CA75`) and `Move_To`'s lift (`0x0054B46D`).
     pub(crate) fn clear_landing_for_deploy(&mut self) {
-        self.deploy_attachment.landing_for_deploy = false;
+        self.seldom.deploy_attachment.landing_for_deploy = false;
     }
 
     /// A fixture's landing request.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_landing_for_deploy(&mut self, landing: bool) {
-        self.deploy_attachment.landing_for_deploy = landing;
+        self.seldom.deploy_attachment.landing_for_deploy = landing;
     }
 
     pub(crate) fn hash_deploy_attachment(&self, hasher: &mut impl Hasher) {
-        self.deploy_attachment.deploy_anim.hash(hasher);
-        self.deploy_attachment.landing_for_deploy.hash(hasher);
+        self.seldom.deploy_attachment.deploy_anim.hash(hasher);
+        self.seldom
+            .deploy_attachment
+            .landing_for_deploy
+            .hash(hasher);
     }
 
     #[cfg(any(test, feature = "test-support"))]

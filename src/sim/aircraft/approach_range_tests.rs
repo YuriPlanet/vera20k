@@ -93,6 +93,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
             );
             if building {
                 target
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(foundation.name.to_owned().into());
                 assert_eq!(

@@ -1360,7 +1360,7 @@ fn a_jumpjet_below_its_floor_sees_from_its_location_z() {
     let mut store = EntityStore::new();
     let mut entity = GameEntity::test_default(1, "JUMPJET", "Americans", 30, 30);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.sight.set_vision_range_for_test(1);
+    entity.seldom.sight.set_vision_range_for_test(1);
     entity.position.set_z_for_test(4);
     entity.position.set_exact_z_leptons_for_test(Some(208));
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
@@ -2042,7 +2042,7 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
     );
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.position.put_location(coord);
-    entity.sight.stamp_type_sight(amcv.sight);
+    entity.seldom.sight.stamp_type_sight(amcv.sight);
     world.substrate.entities.insert(entity);
     seat_fixture_clients(&mut world, &HouseAllianceMap::new(), &[]);
     let config = default_config();
@@ -2117,6 +2117,7 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .sight
         .stamp_type_sight(0);
     world.update_object_sight_in_view(1, 0, None, &config, None, context);

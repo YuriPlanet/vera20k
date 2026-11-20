@@ -217,11 +217,12 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             {
                 let dock = entity.ammo().unwrap().dock().expect("product's dock");
                 assert_eq!(dock, producer, "first exit retains its actual factory");
-                assert!(entity.radio_contacts.contains(producer));
+                assert!(entity.seldom.radio_contacts.contains(producer));
                 assert!(
                     sim.entities()
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .contains(id)
                 );
@@ -280,8 +281,8 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
                 .dock()
                 .and_then(|dock| sim.entities().get(dock))
                 .is_some_and(|dock| {
-                    entity.radio_contacts.contains(dock.stable_id())
-                        && dock.radio_contacts.contains(harrier)
+                    entity.seldom.radio_contacts.contains(dock.stable_id())
+                        && dock.seldom.radio_contacts.contains(harrier)
                         && dock.owner() == owners[0]
                         && sim
                             .object_type(dock.type_ref(), &runtime.resources.rules)

@@ -669,17 +669,18 @@ impl EntityStore {
         let stored = self.len();
         self.touched.note(stable_id, stored);
         for entity in self.entities.iter_mut().filter_map(Option::as_deref_mut) {
-            if entity.has_live_contact_with(stable_id) || entity.tether.partner() == Some(stable_id)
+            if entity.has_live_contact_with(stable_id)
+                || entity.seldom.tether.partner() == Some(stable_id)
             {
                 self.touched.note(entity.stable_id(), stored);
             }
             entity.clear_live_contact_with(stable_id);
             // Drop a dangling tether to the departing entity (the BREAK
             // cascade a limbo'd dock partner would otherwise miss).
-            entity.tether.forget(stable_id);
+            entity.seldom.tether.forget(stable_id);
             if entity.stable_id() == stable_id {
-                entity.radio_contacts.clear_all();
-                entity.tether.release();
+                entity.seldom.radio_contacts.clear_all();
+                entity.seldom.tether.release();
             }
         }
     }
@@ -2160,15 +2161,15 @@ mod tests {
 
         store.clear_radio_contacts_for(1);
 
-        assert!(store.get(1).unwrap().radio_contacts.is_empty());
-        assert!(store.get(2).unwrap().radio_contacts.is_empty());
+        assert!(store.get(1).unwrap().seldom.radio_contacts.is_empty());
+        assert!(store.get(2).unwrap().seldom.radio_contacts.is_empty());
     }
 
     #[test]
     fn clear_radio_contacts_preserves_remaining_order() {
         let mut store = EntityStore::new();
         let mut entity = make_entity(1);
-        entity.radio_contacts.set_capacity(4); // hold more than one contact
+        entity.seldom.radio_contacts.set_capacity(4); // hold more than one contact
         entity.mark_live_contact_with(2);
         entity.mark_live_contact_with(3);
         entity.mark_live_contact_with(4);
@@ -2178,7 +2179,7 @@ mod tests {
         store.clear_radio_contacts_for(3);
 
         // Removal nulls slot 1 in place (no compaction): 2 and 4 keep their slots.
-        let contacts = &store.get(1).unwrap().radio_contacts;
+        let contacts = &store.get(1).unwrap().seldom.radio_contacts;
         assert_eq!(contacts.len(), 2);
         assert!(contacts.contains(2) && contacts.contains(4) && !contacts.contains(3));
         assert_eq!(contacts.find_slot(2), Some(0));

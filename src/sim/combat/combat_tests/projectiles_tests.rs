@@ -848,8 +848,8 @@ fn gsi_08_06_a_failed_arc_launch_skips_the_rest_of_the_shot() {
             result.projectile_spawns.len(),
             result.consequences.fire_events().len(),
             rng.logical_state() != rng_before,
-            shooter.rearm_timer.timer() != before.rearm_timer.timer(),
-            shooter.weapon_burst.index() != before.weapon_burst.index(),
+            shooter.seldom.rearm_timer.timer() != before.seldom.rearm_timer.timer(),
+            shooter.seldom.weapon_burst.index() != before.seldom.weapon_burst.index(),
             shooter.last_fire_frame != before.last_fire_frame,
         )
     };

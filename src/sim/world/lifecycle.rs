@@ -1053,7 +1053,7 @@ impl crate::sim::world::ObjectSubstrate {
     pub(crate) fn begin_receiver_kill_record(&mut self, id: u64) {
         if let Some(entity) = self.entities.get_mut(id) {
             debug_assert_eq!(entity.health.current(), 0);
-            entity.kill_record.clear();
+            entity.seldom.kill_record.clear();
         }
     }
 }

@@ -395,7 +395,7 @@ fn area_guard_uses_pending_selection_array_before_simulation_membership_commits(
         f.sim
             .entities()
             .values()
-            .all(|actor| !actor.selection.is_selected())
+            .all(|actor| !actor.seldom.selection.is_selected())
     );
     let selected = selected_stable_ids_in_order(Some(&f.sim), Some(&f.rules), &pending_order, true);
     assert_eq!(selected, pending_order);
@@ -430,7 +430,7 @@ fn area_guard_uses_pending_selection_array_before_simulation_membership_commits(
         f.sim
             .entities()
             .values()
-            .all(|actor| !actor.selection.is_selected()),
+            .all(|actor| !actor.seldom.selection.is_selected()),
         "issuing Guard never commits selection"
     );
 }

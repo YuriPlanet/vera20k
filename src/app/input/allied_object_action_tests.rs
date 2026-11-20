@@ -68,6 +68,7 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
     sim.fog_mut_for_test().reveal_all_for_owner(owner);
     sim.entity_mut_for_test(actor)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     (sim, actor, target)
@@ -665,6 +666,7 @@ fn a_building_over_another_selected_building_does_nothing() {
         .unwrap();
     sim.entity_mut_for_test(other)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     let selected = [pillbox, other];
@@ -815,7 +817,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
         let tree = sim.intern("TREE01");
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, Some(tree), None);
-        sim.entity_mut_for_test(target).unwrap().disguise = Some(disguise);
+        sim.entity_mut_for_test(target).unwrap().seldom.disguise = Some(disguise);
         assert_eq!(
             attack_action(
                 &sim,
@@ -1075,6 +1077,6 @@ fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
     let tree = sim.intern("TREE01");
     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
     disguise.acquire(0, Some(tree), None);
-    sim.entity_mut_for_test(target).unwrap().disguise = Some(disguise);
+    sim.entity_mut_for_test(target).unwrap().seldom.disguise = Some(disguise);
     assert_eq!(action(&sim), AttackAction::Attack);
 }

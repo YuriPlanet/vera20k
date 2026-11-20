@@ -181,7 +181,7 @@ fn fixture(row: &Value, owner_type: &str, unread_mission: Option<i64>) -> Option
     entity
         .attack_target
         .set_for_test(target(int(&state["current_target"]))?);
-    entity.mega_mission = mega_mission(state, unread_mission)?;
+    entity.seldom.mega_mission = mega_mission(state, unread_mission)?;
     sim.substrate.entities.insert(entity);
     let target_type = sim.interner.intern("U00");
     for id in 2..=4 {
@@ -338,7 +338,13 @@ fn mega_mission_bodies_match_the_original_rows() {
                 let Some(mut sim) = fixture(row, &format!("{letter}00"), None) else {
                     continue;
                 };
-                let mega = &mut sim.substrate.entities.get_mut(OWNER).unwrap().mega_mission;
+                let mega = &mut sim
+                    .substrate
+                    .entities
+                    .get_mut(OWNER)
+                    .unwrap()
+                    .seldom
+                    .mega_mission;
                 let expired = match int(&input["expired_pointer"]) {
                     TARGET_A => 2,
                     TARGET_B => 3,

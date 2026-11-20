@@ -160,7 +160,7 @@ fn permanent_mind_control_captures_and_skips_the_area_damage() {
     shoot(&mut sim, &rules, firer, target, 100);
     let captured = sim.entities().get(target).unwrap();
     assert_eq!(captured.owner(), sim.entities().get(firer).unwrap().owner());
-    assert!(captured.mind_control.permanent());
+    assert!(captured.seldom.mind_control.permanent());
     assert_eq!(captured.health.current(), 1000);
 
     let immune = self::rules("MindControl.Permanent=yes\n", "ImmuneToPsionics=yes\n", "");
@@ -211,6 +211,7 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
         .entities()
         .get(target)
         .unwrap()
+        .seldom
         .ares
         .ares_disable_weapons;
     assert_eq!(timer.remaining(sim.session.binary_frame() as i32), 40);
@@ -244,6 +245,7 @@ fn sonar_duration_extends_the_sonar_timer() {
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .sonar_timer
             .remaining(frame)
@@ -254,6 +256,7 @@ fn sonar_duration_extends_the_sonar_timer() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .ares
         .sonar_timer
         .start(sim.session.binary_frame() as i32, 90);

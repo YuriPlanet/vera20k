@@ -99,7 +99,7 @@ fn firing_fixture(case: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         signed(&words[3]),
         signed(&words[4]),
     ));
-    actor.rearm_timer.set_for_test(CdTimer::from_raw(
+    actor.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
         signed(&before["rearm_timer_words"][0]),
         signed(&before["rearm_timer_words"][2]),
     ));
@@ -277,8 +277,8 @@ fn assert_source(fixture: &SuppliedFootFixture, expected: &Value, name: &str) {
     );
     assert_eq!(
         (
-            actor.rearm_timer.start_frame(),
-            actor.rearm_timer.duration()
+            actor.seldom.rearm_timer.start_frame(),
+            actor.seldom.rearm_timer.duration()
         ),
         (
             signed(&expected["rearm_timer_words"][0]),

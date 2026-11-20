@@ -479,7 +479,8 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
                 EntityCategory::Structure,
             );
             // Construction stamps the type's `Foundation=2x2`.
-            pad.type_facts
+            pad.seldom
+                .type_facts
                 .set_foundation_for_test("2x2".to_string().into());
             pad.lifecycle.set_in_limbo_for_test(false);
             sim.substrate.entities.insert(pad);
@@ -504,7 +505,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         }
         plane.set_category_for_test(EntityCategory::Aircraft);
         // The RadioClass constructor's one contact slot (`0x0065A764`).
-        plane.radio_contacts.set_capacity(1);
+        plane.seldom.radio_contacts.set_capacity(1);
         plane.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1);
         plane
             .mission
@@ -580,7 +581,10 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
     let (sim, edge) = exit("HARR", true, true);
     let plane = sim.substrate.entities.get(1).unwrap();
     assert_eq!(plane.mission.current().known(), Some(MissionType::Enter));
-    assert!(plane.radio_contacts.contains(2), "HELLO linked the dock");
+    assert!(
+        plane.seldom.radio_contacts.contains(2),
+        "HELLO linked the dock"
+    );
     assert_eq!(
         plane.navigation.nav_com(),
         Some(NavTargetRef::Object { id: 2 }),

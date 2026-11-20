@@ -18,7 +18,7 @@ fn custom_foundation_mark_navigation_outline_restore_and_uninit() {
         let entity = sim.entities().get(id).unwrap();
         assert!(entity.lifecycle.cell_marked());
         assert_eq!(
-            entity.type_facts.foundation(),
+            entity.seldom.type_facts.foundation(),
             &rules.object("CUSTOM_TEST").unwrap().foundation
         );
         let occupied: Vec<_> = row["installed"]["cells"]
@@ -95,7 +95,13 @@ fn custom_foundation_mark_navigation_outline_restore_and_uninit() {
         restored.install_resolved_terrain_for_new_map(terrain);
         restored.rebuild_dynamic_navigation(&rules);
         assert_eq!(
-            restored.entities().get(id).unwrap().type_facts.foundation(),
+            restored
+                .entities()
+                .get(id)
+                .unwrap()
+                .seldom
+                .type_facts
+                .foundation(),
             &rules.object("CUSTOM_TEST").unwrap().foundation
         );
         for &(x, y) in &occupied {

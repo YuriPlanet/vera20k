@@ -493,6 +493,7 @@ fn damage_fire_fixture_with_offsets(
         false,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("4x4".to_string().into());
     sim.substrate.entities.insert(building);

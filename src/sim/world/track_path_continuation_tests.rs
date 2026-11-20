@@ -32,11 +32,11 @@ use serde_json::{Value, json};
 /// contact's power latch; no unit service-phase adapter remains.
 fn depot_is_servicing(sim: &Simulation, depot: u64, unit: u64) -> bool {
     sim.substrate.entities.get(depot).is_some_and(|building| {
-        building.radio_contacts.contains(unit)
+        building.seldom.radio_contacts.contains(unit)
             && building.mission.current().known() == Some(MissionType::Repair)
             && building.mission.handler_state() == 2
     }) && sim.substrate.entities.get(unit).is_some_and(|contact| {
-        contact.radio_contacts.contains(depot)
+        contact.seldom.radio_contacts.contains(depot)
             && contact
                 .locomotor
                 .as_ref()
@@ -496,6 +496,7 @@ fn depot_release_and_pad_entry_route_through_find_path() {
                 .entities
                 .get(first)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(depot)
         {
@@ -585,7 +586,7 @@ fn teleporter_bound_for_its_refinery(
         e.locomotor.as_ref().map(|loco| loco.active_kind()),
         Some(LocomotorKind::Drive)
     );
-    e.radio_contacts.set_slot(0, refinery);
+    e.seldom.radio_contacts.set_slot(0, refinery);
     // Facing the route's east words, so a clear step is taken in the call.
     e.body_facing = FacingClass::with_rate_of(2 << 13, &e.body_facing);
     sim.session.set_binary_frame_for_test(100);
@@ -812,7 +813,7 @@ fn a_teleporter_and_a_hover_unit_are_serviced_at_a_depot() {
             let teleport = e.locomotor.as_ref().is_some_and(|loco| {
                 loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Teleport
             });
-            if serviced && !e.radio_contacts.contains(depot) && !on_footprint && teleport {
+            if serviced && !e.seldom.radio_contacts.contains(depot) && !on_footprint && teleport {
                 left = true;
                 break;
             }

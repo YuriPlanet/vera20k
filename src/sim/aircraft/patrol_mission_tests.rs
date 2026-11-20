@@ -295,7 +295,10 @@ fn patrol_scan_preserves_the_aircraft_class_mask_and_clears_empty_scan_latch() {
         let entity = sim.substrate.entities.get_mut(plane).unwrap();
         entity.mission.set_handler_state(2);
         if narrow {
-            entity.foot_retarget_after_stop.mark_stopped_cannot_fire();
+            entity
+                .seldom
+                .foot_retarget_after_stop
+                .mark_stopped_cannot_fire();
         }
         super::super::dispatch_mission(&mut sim, plane, &rules, ObjectAiCtx::default());
         let entity = sim.substrate.entities.get(plane).unwrap();
@@ -304,7 +307,7 @@ fn patrol_scan_preserves_the_aircraft_class_mask_and_clears_empty_scan_latch() {
         assert_eq!(entity.attack_target.target(), None);
         assert_eq!(entity.navigation.nav_com(), destination);
         assert!(
-            !entity.foot_retarget_after_stop.get(),
+            !entity.seldom.foot_retarget_after_stop.get(),
             "completed empty Foot scan clears688"
         );
     }
@@ -379,12 +382,13 @@ fn spent_patrol_flies_home_lands_reloads_and_guards() {
         }
         entered |= entity.mission.current().known() == Some(MissionType::Enter);
         landed_linked |= crate::sim::movement::air_movement::current_fly_height(entity, None) == 0
-            && entity.radio_contacts.contains(dock)
+            && entity.seldom.radio_contacts.contains(dock)
             && sim
                 .substrate
                 .entities
                 .get(dock)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(plane);
         if landed_linked

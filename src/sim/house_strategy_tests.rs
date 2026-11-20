@@ -611,7 +611,7 @@ fn all_to_hunt_matches_native() {
                 .lifecycle
                 .set_in_limbo_for_test(flag(&techno["limbo"]));
             if flag(&techno["permanent"]) {
-                entity.mind_control =
+                entity.seldom.mind_control =
                     crate::sim::capture_manager::MindControlLink::permanent_for_test();
             }
             slots.push((slot as i32, id, health));

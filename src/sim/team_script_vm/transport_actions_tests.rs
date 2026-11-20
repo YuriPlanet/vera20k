@@ -355,7 +355,13 @@ impl Fixture {
     /// `id`'s first radio contact, which an infantryman's Enter destination
     /// setter HELLOs (`0x0051ACD4`).
     fn contact(&self, id: u64) -> Option<u64> {
-        self.sim.substrate.entities.get(id)?.radio_contacts.slot(0)
+        self.sim
+            .substrate
+            .entities
+            .get(id)?
+            .seldom
+            .radio_contacts
+            .slot(0)
     }
 
     fn cargo(&self, transport: u64) -> Vec<u64> {
@@ -846,7 +852,7 @@ impl OracleTeam {
                 .mission
                 .set_current_for_test(MissionId::from_raw(int(&member["mission"])), 0);
             if flag(&member["radio"]) {
-                entity.radio_contacts.insert(zone);
+                entity.seldom.radio_contacts.insert(zone);
             }
             entity.set_archive_target(flag(&member["archive"]).then_some(ORACLE_ARCHIVE));
             entity
@@ -963,13 +969,14 @@ impl OracleTeam {
                 && sent_to_member;
             assert!(
                 entity
+                    .seldom
                     .radio_contacts
                     .iter_live()
                     .all(|contact| contact == self.zone),
                 "{at}: the zone's infantryman is the only contact"
             );
             assert_eq!(
-                entity.radio_contacts.contains(self.zone),
+                entity.seldom.radio_contacts.contains(self.zone),
                 had_contact && !breaks,
                 "{at}: contact with the zone"
             );
@@ -978,7 +985,7 @@ impl OracleTeam {
             // left; movement and boarding integration is covered by
             // transport_unload.
             let pending_entry = if member["class"] == "unit"
-                && entity.radio_contacts.is_empty()
+                && entity.seldom.radio_contacts.is_empty()
                 && mission[index] == Some(MissionType::Enter as i32)
             {
                 destination[index]

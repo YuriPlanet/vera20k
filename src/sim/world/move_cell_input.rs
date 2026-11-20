@@ -657,6 +657,7 @@ impl Simulation {
                     .get(target_id)
                     .is_some_and(|target| {
                         target
+                            .seldom
                             .disguise
                             .as_ref()
                             .is_some_and(|disguise| disguise.is_disguised())
@@ -1022,6 +1023,7 @@ impl Simulation {
     fn worn_as_terrain(&self, viewer: InternedId, target: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(target).is_some_and(|target| {
             target
+                .seldom
                 .disguise
                 .as_ref()
                 .filter(|disguise| disguise.is_disguised())

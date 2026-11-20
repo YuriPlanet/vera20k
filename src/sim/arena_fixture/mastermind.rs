@@ -260,7 +260,7 @@ impl MindScene {
                 let captive = self.sim.entities().get(id).unwrap();
                 assert!(captive.lifecycle.object_alive() && captive.health.current() > 0);
                 assert_eq!(captive.owner(), owner);
-                assert_eq!(captive.mind_control.controller(), Some(self.mind));
+                assert_eq!(captive.seldom.mind_control.controller(), Some(self.mind));
                 assert!(
                     fired_at.contains(&id),
                     "real selected FireAt must precede CaptureUnit"

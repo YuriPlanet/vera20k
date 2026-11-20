@@ -139,7 +139,7 @@ impl Simulation {
         };
         if !below(rules.general.condition_yellow)
             || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
-            || entity.spark_particle_system.system().is_some()
+            || entity.seldom.spark_particle_system.system().is_some()
         {
             return;
         }
@@ -191,7 +191,7 @@ impl Simulation {
             rules,
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.spark_particle_system.bind(system);
+            entity.seldom.spark_particle_system.bind(system);
         }
     }
 
@@ -488,7 +488,7 @@ impl Simulation {
             .health
             .compare_ratio(object.strength, rules.general.condition_yellow)
             == crate::util::native_x87::MaskedX87Ordering::Greater;
-        let current_system = entity.damage_smoke_system_id.system();
+        let current_system = entity.seldom.damage_smoke_system_id.system();
 
         if above_yellow {
             self.substrate.retire_attached_damage_smoke(stable_id);
@@ -549,7 +549,7 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.damage_smoke_system_id.system = Some(system_id);
+            entity.seldom.damage_smoke_system_id.system = Some(system_id);
         }
     }
 
@@ -693,7 +693,7 @@ impl crate::sim::world::ObjectSubstrate {
         let system_id = self
             .entities
             .get(stable_id)
-            .and_then(|entity| entity.damage_smoke_system_id.system());
+            .and_then(|entity| entity.seldom.damage_smoke_system_id.system());
         if let Some(system_id) = system_id
             && let Some(system) = self.particle_systems.get_mut(system_id)
         {
@@ -967,6 +967,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system();
             assert_eq!(
@@ -1031,6 +1032,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .set_for_test(Some(system_id));
             let before_rng = sim.scenario_rng.logical_state();
@@ -1049,6 +1051,7 @@ mod tests {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system(),
                 Some(system_id)

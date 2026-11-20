@@ -42,6 +42,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(particle_id));
     sim.set_logic_order_for_test(vec![particle_id, entity_id]);
@@ -72,6 +73,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
             .entities
             .get(entity_id)
             .expect("entity")
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -110,6 +112,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(particle_id)
@@ -558,7 +561,10 @@ fn gsi_17_03_reference_fixture() -> (Simulation, Gsi1703Ids) {
     sim.substrate.entities.insert(parent_entity);
 
     let mut child_entity = GameEntity::test_default(child, "HORNET", "AMERICANS", 2, 1);
-    child_entity.spawn_owner_id.set_for_test(Some(parent));
+    child_entity
+        .seldom
+        .spawn_owner_id
+        .set_for_test(Some(parent));
     sim.substrate.entities.insert(child_entity);
     sim.substrate
         .entities
@@ -650,6 +656,7 @@ fn gsi_17_03_each_spawn_and_projectile_pointer_role_must_resolve_atomically() {
                     .entities
                     .get_mut(ids.child)
                     .unwrap()
+                    .seldom
                     .spawn_owner_id
                     .set_for_test(Some(9_999));
                 ("EntityStore", ids.child, "spawn_owner_id")
@@ -726,6 +733,7 @@ fn gsi_17_03_null_and_cell_reference_forms_need_no_object_identity() {
         .entities
         .get_mut(ids.child)
         .unwrap()
+        .seldom
         .spawn_owner_id
         .set_for_test(None);
     let projectile = sim.projectiles.get_mut(ids.projectile).unwrap();
@@ -1117,6 +1125,7 @@ fn gsi_17_03_repeated_aliases_do_not_imply_reciprocal_spawn_ownership() {
         .entities
         .get_mut(ids.child)
         .unwrap()
+        .seldom
         .spawn_owner_id
         .set_for_test(Some(ids.target));
 
@@ -1140,6 +1149,7 @@ fn gsi_17_03_repeated_aliases_do_not_imply_reciprocal_spawn_ownership() {
             .entities
             .get(ids.child)
             .unwrap()
+            .seldom
             .spawn_owner_id
             .owner(),
         Some(ids.target)

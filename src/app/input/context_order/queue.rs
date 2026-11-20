@@ -84,7 +84,7 @@ pub(super) fn left_release(
                 && sim
                     .entities()
                     .get(id)
-                    .is_some_and(|object| !object.selection.is_selected())
+                    .is_some_and(|object| !object.seldom.selection.is_selected())
         }),
     };
     if selects {

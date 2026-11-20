@@ -1105,6 +1105,7 @@ fn a_gi_selected_with_the_ifv_boards_it_when_the_ifv_is_clicked() {
     for id in [gi, ifv] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }

@@ -1255,6 +1255,7 @@ fn getcoords_xy_is_the_location_or_a_buildings_foundation_centre() {
         ("not-a-native-foundation", raw),
     ] {
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test(foundation.to_string().into());
         assert_eq!(

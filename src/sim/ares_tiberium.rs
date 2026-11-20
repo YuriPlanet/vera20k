@@ -49,7 +49,7 @@ fn stored_bales(entity: &GameEntity) -> impl Iterator<Item = &CargoBale> {
         .as_ref()
         .map_or(&[][..], |miner| miner.cargo())
         .iter()
-        .chain(entity.slave.cargo())
+        .chain(entity.seldom.slave.cargo())
 }
 
 /// [`crate::sim::tiberium::tiberium_cell_view`] for an Ares tiberium effect.

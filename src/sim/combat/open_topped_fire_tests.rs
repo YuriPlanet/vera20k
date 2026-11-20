@@ -771,7 +771,9 @@ fn retail_battle_fortress_permitted_stock_riders_emit_their_weapons() {
                         .substrate
                         .entities
                         .get(target_id)
-                        .is_some_and(|victim| victim.mind_control.controller() == Some(rider))
+                        .is_some_and(|victim| {
+                            victim.seldom.mind_control.controller() == Some(rider)
+                        })
                     {
                         break;
                     }
@@ -780,7 +782,7 @@ fn retail_battle_fortress_permitted_stock_riders_emit_their_weapons() {
                 let sim = fortress.scenario.sim();
                 let victim = sim.substrate.entities.get(target_id).unwrap();
                 assert_eq!(
-                    victim.mind_control.controller(),
+                    victim.seldom.mind_control.controller(),
                     Some(rider),
                     "{kind} captures through its own manager"
                 );

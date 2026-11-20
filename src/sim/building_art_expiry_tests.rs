@@ -194,10 +194,10 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     let count = case["contact_count"]
         .as_u64()
         .unwrap_or(contacts.as_array().unwrap().len() as u64) as usize;
-    entity.radio_contacts = crate::sim::radio::contacts::Contacts::with_capacity(count);
+    entity.seldom.radio_contacts = crate::sim::radio::contacts::Contacts::with_capacity(count);
     for (i, pointer) in contacts.as_array().unwrap().iter().take(count).enumerate() {
         if pointer.as_u64().unwrap() != 0 {
-            entity.radio_contacts.set_slot(i, contact);
+            entity.seldom.radio_contacts.set_slot(i, contact);
         }
     }
     // Negative native vector counts have no equivalent valid Rust vector;

@@ -489,7 +489,7 @@ impl BlockerFacts {
             rotating: b.body_facing.is_rotating(frame),
             warped_out: b.is_warped_out(),
             fully_cloaked: b.cloak.as_ref().is_some_and(|s| s.is_fully_cloaked()),
-            disguised: b.disguise.as_ref().is_some_and(|s| s.is_disguised()),
+            disguised: b.seldom.disguise.as_ref().is_some_and(|s| s.is_disguised()),
             open_gate: b.is_open_gate(),
             bunker_occupied: b.bunker.occupant().is_some(),
             foot_occupation: b.foot_occupation_enabled(),

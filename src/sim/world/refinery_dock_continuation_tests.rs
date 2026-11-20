@@ -173,11 +173,13 @@ fn fixture(row: &Value) -> Scene {
         let contact = before[contact].as_str().map(|n| s.id(n));
         let peer = if id == s.miner { s.refinery } else { s.miner };
         let e = s.sim.substrate.entities.get_mut(id).unwrap();
-        e.radio_contacts.clear_all();
+        e.seldom.radio_contacts.clear_all();
         if let Some(contact) = contact {
-            e.radio_contacts.set_slot(0, contact);
+            e.seldom.radio_contacts.set_slot(0, contact);
         }
-        e.tether.set_for_test((before[tether] == 1).then_some(peer));
+        e.seldom
+            .tether
+            .set_for_test((before[tether] == 1).then_some(peer));
     }
     if let Some(slots) = case["actual_slots"].as_array() {
         // These native controls supply an actual vector independently of the
@@ -193,6 +195,7 @@ fn fixture(row: &Value) -> Scene {
             .entities
             .get_mut(s.refinery)
             .unwrap()
+            .seldom
             .radio_contacts = serde_json::from_value(json!({"slots": slots})).unwrap();
     }
     {
@@ -358,6 +361,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .map_or(Value::Null, |id| s.name(id)),
@@ -373,6 +377,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .tether
                     .partner()
                     .is_some()
@@ -414,6 +419,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 .entities
                 .get(s.refinery)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .has_free_or(s.miner),
             step["returned"]["admitted"].as_bool().unwrap(),
@@ -650,6 +656,7 @@ fn compare_contact_vector(s: &Scene, native: &Value, context: &str) {
         .entities
         .get(s.refinery)
         .unwrap()
+        .seldom
         .radio_contacts;
     let slots: Vec<_> = (0..contacts.capacity())
         .map(|index| contacts.slot(index).map_or(Value::Null, |id| s.name(id)))
@@ -762,9 +769,9 @@ fn independent_pending_entry_survives_save_load_and_changes_the_state_hash() {
         .sim;
     let unit = restored.substrate.entities.get(s.miner).unwrap();
     assert_eq!(unit.pending_entry(), Some(s.other));
-    assert!(unit.radio_contacts.contains(s.refinery));
+    assert!(unit.seldom.radio_contacts.contains(s.refinery));
     let building = restored.substrate.entities.get(s.refinery).unwrap();
-    assert!(building.radio_contacts.contains(s.miner));
+    assert!(building.seldom.radio_contacts.contains(s.miner));
     assert_eq!(
         building.mission.current(),
         MissionId::from_known(crate::sim::mission::MissionType::Repair)

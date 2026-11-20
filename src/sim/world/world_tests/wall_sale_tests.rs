@@ -61,6 +61,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .weapon_burst
             .complete_shot(2);
     }
@@ -85,7 +86,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
         );
         assert_eq!(actor.mission.suspended(), MissionId::NONE);
         assert_eq!(
-            actor.weapon_burst.index(),
+            actor.seldom.weapon_burst.index(),
             1,
             "4FD018 calls70D4A0: Restore replaces the wall target before the conditional NULL setter"
         );

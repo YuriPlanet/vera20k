@@ -859,7 +859,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             "{name}: original nested call count"
         );
         if result.is_some() {
-            assert_eq!(placed.radio_contacts.slot(0), Some(labels[receiver]));
+            assert_eq!(placed.seldom.radio_contacts.slot(0), Some(labels[receiver]));
         }
         let location = ground_pose::position_world_coord(&placed.position);
         assert_eq!(
@@ -992,7 +992,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         entity.lifecycle.in_limbo(),
         "Strip emits PLACE before Unlimbo"
     );
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     let factory = sim
         .production
         .factories()
@@ -1331,7 +1331,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     let vehicle_entity = sim.substrate.entities.get(vehicle_id).unwrap();
     assert!(vehicle_entity.lifecycle.in_limbo());
     assert!(!vehicle_entity.lifecycle.cell_marked());
-    assert!(!vehicle_entity.in_logic_vector.is_member());
+    assert!(!vehicle_entity.seldom.in_logic_vector.is_member());
     assert!(!vehicle_entity.in_playfield());
     assert_eq!(vehicle_entity.techno_ctor_random_word(), mtnk_word);
 
@@ -1354,7 +1354,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     let e1_entity = sim.substrate.entities.get(e1_id).unwrap();
     assert!(e1_entity.lifecycle.in_limbo());
     assert!(!e1_entity.lifecycle.cell_marked());
-    assert!(!e1_entity.in_logic_vector.is_member());
+    assert!(!e1_entity.seldom.in_logic_vector.is_member());
     assert!(!e1_entity.in_playfield());
     assert_eq!(e1_entity.techno_ctor_random_word(), e1_word);
 
@@ -1487,7 +1487,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                 .unwrap()
         );
         assert!(building.lifecycle.in_limbo() && !building.lifecycle.cell_marked());
-        assert!(!building.in_logic_vector.is_member());
+        assert!(!building.seldom.in_logic_vector.is_member());
         if control["input"]["equal_sample_control"] == true {
             // Same isolated health-sampling rung as the native equality control;
             // a held product receives no normal AI turn.
@@ -2411,6 +2411,7 @@ fn only_a_busy_airfield_refuses_its_type() {
             .entities
             .get_mut(building)
             .unwrap()
+            .seldom
             .radio_contacts;
         contacts.set_capacity(1);
         contacts.insert(contact);
@@ -2710,7 +2711,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
             Some(NavTargetRef::cell(dock.0, dock.1))
         );
         assert!(!unit.has_live_contact_with(1));
-        assert_eq!(unit.tether.partner(), None);
+        assert_eq!(unit.seldom.tether.partner(), None);
         if human {
             assert_eq!(unit.mission.queued().known(), Some(MissionType::Move));
             assert_eq!(unit.archive_target(), None);

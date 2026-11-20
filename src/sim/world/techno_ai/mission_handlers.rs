@@ -370,7 +370,7 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.tesla_charger.is_active())
+                .is_some_and(|entity| entity.seldom.tesla_charger.is_active())
                 && let Some(target) = super::target_scan::direct_greatest_threat(
                     sim,
                     rules,
@@ -384,6 +384,7 @@ pub(crate) fn dispatch_foot_mission(
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .tesla_charger
                     .clear();
             }
@@ -1106,7 +1107,7 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     let object = sim.entity_object_type(entity, rules);
     let area_guard = if !human && !teamed {
         house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
-            && entity.slave.owner().is_none()
+            && entity.seldom.slave.owner().is_none()
             && object.is_some_and(|object| {
                 crate::sim::combat::combat_weapon::is_armed(
                     entity,
@@ -1154,7 +1155,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return saved_base_return;
         };
-        if entity.mega_mission.is_attack_move() {
+        if entity.seldom.mega_mission.is_attack_move() {
             return saved_base_return;
         }
         if entity.mission.effective().known() != Some(MissionType::Deliberate)
@@ -1923,6 +1924,7 @@ fn evaluate_foot_rescue(
             .entities
             .get_mut(id)
             .expect("Rescue receiver")
+            .seldom
             .foot_retarget_after_stop
             .clear_for_rescue();
         let archive = sim
@@ -2281,7 +2283,7 @@ fn foot_building_entry_head(
     mission: MissionType,
     ctx: super::ObjectAiCtx<'_>,
 ) -> Option<MissionHandlerEvaluation> {
-    let latches = sim.substrate.entities.get(id)?.building_entry;
+    let latches = sim.substrate.entities.get(id)?.seldom.building_entry;
     if latches.should_enter_absorber() {
         let _ = sim.foot_enter_bio_reactor(id, rules, ctx.effects);
     } else if latches.should_enter_occupiable() {
@@ -2375,6 +2377,7 @@ pub(super) fn evaluate_foot_guard_cadence(
     let queue = guard_queues_sabotage(sim, id, rules).then_some(MissionType::Sabotage);
     let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {
         entity
+            .seldom
             .rearm_timer
             .remaining(sim.session.binary_frame() as i32)
     });
@@ -2934,6 +2937,7 @@ mod guard_rearm_tests {
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
             entity.set_owner_for_test(sim.interner.intern("Americans"));
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     field("rearm_start"),
@@ -3001,6 +3005,7 @@ mod guard_rearm_tests {
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
             entity.set_owner_for_test(sim.interner.intern("Americans"));
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     field("start"),

@@ -1099,8 +1099,13 @@ fn network_high_discovery_bits_survive_observer_and_early_player_removal() {
     let saved = crate::util::save_codec::serialize(&left.simulation).unwrap();
     let restored: Simulation = crate::util::save_codec::deserialize(&saved).unwrap();
     assert_eq!(
-        restored.entities().get(ids[0]).unwrap().discovery,
-        left.simulation.entities().get(ids[0]).unwrap().discovery,
+        restored.entities().get(ids[0]).unwrap().seldom.discovery,
+        left.simulation
+            .entities()
+            .get(ids[0])
+            .unwrap()
+            .seldom
+            .discovery,
     );
     for viewer in [last, observer] {
         assert!(restored.techno_discovered_by_viewer(ids[0], viewer));
@@ -1152,7 +1157,7 @@ fn network_trigger_and_reveal_to_all_lifecycle_update_both_logical_maps() {
             .unwrap();
         let camera = sim.entities().get(id).unwrap();
         assert!(rules.object("CAMERA").unwrap().reveal_to_all);
-        assert_eq!(camera.sight.range(), 3);
+        assert_eq!(camera.seldom.sight.range(), 3);
         assert!(camera.in_playfield());
         assert!(camera.building_art.actually_placed());
         assert!(sim.fog.sight_is_latched(id, host));

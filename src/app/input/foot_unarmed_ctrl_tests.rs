@@ -33,10 +33,12 @@ fn scene(rules: &RuleSet, selected_target: bool) -> (Simulation, u64, u64) {
         .unwrap();
     sim.entity_mut_for_test(miner)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(selected_target);
     (sim, miner, enemy)

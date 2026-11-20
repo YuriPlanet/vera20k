@@ -93,6 +93,7 @@ fn delegated_mission_only_unit_cannot_be_selected() {
         .entities
         .get_mut(101)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     assert!(!sim.can_select_object(101, &rules));
@@ -315,6 +316,7 @@ fn network_match_selection_raises_no_selected_tag_event() {
                 .entities
                 .get(42)
                 .unwrap()
+                .seldom
                 .selection
                 .is_selected()
         );
@@ -673,15 +675,16 @@ fn area_guard_clears_suspended_references_and_keeps_the_ordered_post() {
             dispatch_timer: before_timer,
         });
         actor
+            .seldom
             .suspended_attack_target
             .set_for_test(Some(combat::TargetKind::Entity(2)));
         actor
             .navigation
             .set_suspended_nav_com_for_test(Some(NavTargetRef::cell(12, 12)));
         actor.set_archive_target(Some(combat::TargetKind::Cell(5, 5)));
-        actor.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
-            crate::sim::combat::TargetKind::Cell(12, 12),
-        ));
+        actor.seldom.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(
+            Some(crate::sim::combat::TargetKind::Cell(12, 12)),
+        );
 
         assert!(sim.apply_command(
             "Americans",
@@ -706,11 +709,11 @@ fn area_guard_clears_suspended_references_and_keeps_the_ordered_post() {
             MissionId::from_known(MissionType::Attack)
         );
         assert_eq!(actor.mission.dispatch_timer(), before_timer);
-        assert!(actor.suspended_attack_target.target().is_none());
+        assert!(actor.seldom.suspended_attack_target.target().is_none());
         assert!(actor.navigation.suspended_nav_com().is_none());
         assert!(actor.attack_target.target().is_none());
         assert!(
-            !actor.mega_mission.is_attack_move(),
+            !actor.seldom.mega_mission.is_attack_move(),
             "Assign_Target_Command answers Area Guard with Clear_All_TarCom"
         );
         assert_eq!(actor.archive_target(), post);
@@ -930,6 +933,7 @@ fn bunker_click_query_preserves_seek_while_target_builds_up_or_is_sold() {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             Some(3),
@@ -940,6 +944,7 @@ fn bunker_click_query_preserves_seek_while_target_builds_up_or_is_sold() {
                 .entities
                 .get(3)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             Some(1),
@@ -959,7 +964,7 @@ fn installed_bunker_fixture() -> (Simulation, RuleSet) {
     spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
     crate::sim::docking::bunker_link::install_bunker_link(&mut sim, 2, 1, &rules);
     let unit = sim.substrate.entities.get_mut(1).unwrap();
-    unit.radio_contacts.set_slot(0, 2);
+    unit.seldom.radio_contacts.set_slot(0, 2);
     unit.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
     (sim, rules)
@@ -990,7 +995,7 @@ fn eject_bunker_record_queues_unload_instead_of_releasing_at_command_time() {
     assert_eq!(unit.mission.queued().known(), Some(MissionType::Unload));
     // Event9 `0x004C77E4` breaks contact 0 before the null destination
     // (`0x004C77F8`) and null target (`0x004C7804`) setters.
-    assert_eq!(unit.radio_contacts.slot(0), None);
+    assert_eq!(unit.seldom.radio_contacts.slot(0), None);
     assert!(unit.navigation.nav_com().is_none());
     assert!(unit.attack_target.target().is_none());
 }
@@ -1117,6 +1122,7 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
         .entities
         .get_mut(2)
         .unwrap()
+        .seldom
         .type_facts
         .set_foundation_for_test(
             retail
@@ -1176,11 +1182,12 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
         .set_current_for_test(MissionId::from_known(MissionType::Enter), 0);
     unit.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
-    unit.radio_contacts.set_slot(0, 2);
+    unit.seldom.radio_contacts.set_slot(0, 2);
     sim.substrate
         .entities
         .get_mut(2)
         .unwrap()
+        .seldom
         .radio_contacts
         .set_slot(0, 1);
     assert!(sim.unit_dock_now(1, &rules, None, FrameEffects::default()));
@@ -1258,7 +1265,7 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
     let unit = sim.substrate.entities.get(1).unwrap();
     assert_eq!(unit.bunker.link(), BunkerLink::Installed(2));
     assert!(
-        unit.in_logic_vector.is_member(),
+        unit.seldom.in_logic_vector.is_member(),
         "install preserves LogicVector membership"
     );
     assert!(!unit.lifecycle.in_limbo());
@@ -1321,7 +1328,7 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
     let unit = sim.substrate.entities.get(1).unwrap();
     assert_eq!(unit.bunker.link(), BunkerLink::None);
     assert!(
-        unit.in_logic_vector.is_member(),
+        unit.seldom.in_logic_vector.is_member(),
         "occupant stays active on eject"
     );
     assert!(!unit.lifecycle.in_limbo());

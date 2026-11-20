@@ -356,6 +356,7 @@ fn rof_multiplier_scales_the_running_rearm_timer_on_initialization() {
             .entities
             .get_mut(target)
             .unwrap()
+            .seldom
             .rearm_timer
             .start(frame, 30);
 
@@ -364,6 +365,7 @@ fn rof_multiplier_scales_the_running_rearm_timer_on_initialization() {
             sim.entities()
                 .get(target)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .remaining(frame),
             30,
@@ -374,6 +376,7 @@ fn rof_multiplier_scales_the_running_rearm_timer_on_initialization() {
             sim.entities()
                 .get(target)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .remaining(frame),
             expected,

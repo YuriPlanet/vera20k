@@ -239,7 +239,7 @@ impl Simulation {
             .substrate
             .entities
             .get(foot)
-            .and_then(|entity| entity.mind_control.controller())
+            .and_then(|entity| entity.seldom.mind_control.controller())
         {
             self.free_unit(controller, foot, rules, registry, effects);
         }

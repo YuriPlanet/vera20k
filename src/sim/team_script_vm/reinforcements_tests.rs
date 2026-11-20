@@ -864,11 +864,15 @@ fn infantry_reinforcement_building_exits_release_contacts_and_skip_the_review_ri
             .find(|entity| entity.category() == EntityCategory::Infantry)
             .unwrap();
         assert!(!member.lifecycle.in_limbo(), "{kind}");
-        assert!(member.radio_contacts.is_empty(), "{kind}: member BREAK");
+        assert!(
+            member.seldom.radio_contacts.is_empty(),
+            "{kind}: member BREAK"
+        );
         assert!(
             sim.entities()
                 .get(building)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty(),
             "{kind}: producer BREAK"
@@ -938,20 +942,27 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
         (true, None)
     );
     let producer = sim.entities().get(building).unwrap();
-    assert_eq!(producer.radio_contacts.slot(0), None);
+    assert_eq!(producer.seldom.radio_contacts.slot(0), None);
     let retained = producer
+        .seldom
         .radio_contacts
         .slot(1)
         .expect("the first new member retains its slot1 contact");
     assert_ne!(retained, old_contact);
     assert_eq!(
-        sim.entities().get(retained).unwrap().radio_contacts.slot(0),
+        sim.entities()
+            .get(retained)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .slot(0),
         Some(building)
     );
     assert!(
         sim.entities()
             .get(old_contact)
             .unwrap()
+            .seldom
             .radio_contacts
             .is_empty()
     );
@@ -968,7 +979,7 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
         members
             .iter()
             .filter(|member| member.stable_id() != retained)
-            .all(|member| member.radio_contacts.is_empty())
+            .all(|member| member.seldom.radio_contacts.is_empty())
     );
 }
 
@@ -1079,8 +1090,20 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
         FrameEffects::default(),
     );
     let before = sim.entities().len();
-    let producer_contacts = sim.entities().get(building).unwrap().radio_contacts.clone();
-    let member_contacts = sim.entities().get(contact).unwrap().radio_contacts.clone();
+    let producer_contacts = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .seldom
+        .radio_contacts
+        .clone();
+    let member_contacts = sim
+        .entities()
+        .get(contact)
+        .unwrap()
+        .seldom
+        .radio_contacts
+        .clone();
     assert!(producer_contacts.first_free().is_none());
     let team_type = sim.interner.get("TT").unwrap();
     let (returned, review) = sim.spawn_team_reinforcements(
@@ -1097,11 +1120,11 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
     assert_eq!(review, None);
     assert_eq!(sim.entities().len(), before);
     assert_eq!(
-        sim.entities().get(building).unwrap().radio_contacts,
+        sim.entities().get(building).unwrap().seldom.radio_contacts,
         producer_contacts
     );
     assert_eq!(
-        sim.entities().get(contact).unwrap().radio_contacts,
+        sim.entities().get(contact).unwrap().seldom.radio_contacts,
         member_contacts
     );
 }

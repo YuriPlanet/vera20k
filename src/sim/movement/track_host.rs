@@ -1451,7 +1451,9 @@ impl Simulation {
         // SlaveOwner, not Team (+5D4). The same-cell comparison calls
         // virtual+48 on both owners and truncates signed leptons /256.
         let archived = self.substrate.entities.get(id).and_then(|entity| {
-            if entity.category() != EntityCategory::Infantry || entity.slave.owner().is_some() {
+            if entity.category() != EntityCategory::Infantry
+                || entity.seldom.slave.owner().is_some()
+            {
                 return None;
             }
             let target = entity.archive_target()?;
@@ -1519,7 +1521,7 @@ impl Simulation {
         };
         //738990..7389AB: a resumed attack-move (HaveMegaMission, vt+0x4AC)
         // or Wait28 suppresses the Unit tail after Foot.
-        if entity.mega_mission.is_attack_move()
+        if entity.seldom.mega_mission.is_attack_move()
             || entity.mission.effective().known() == Some(MissionType::Deliberate)
         {
             return saved_base_return;
@@ -1603,7 +1605,7 @@ impl Simulation {
             && !miner
             && !armed
             && !unloads
-            && (entity.mcv_deploy_pending.is_pending()
+            && (entity.seldom.mcv_deploy_pending.is_pending()
                 || current == Some(MissionType::AreaGuard)
                 || (current == Some(MissionType::Unload) && deploys_into))
         {
@@ -1652,7 +1654,7 @@ impl Simulation {
                 (position.y / 256) as i16 as u16,
             );
             actor.mission.current().raw() == 7
-                && actor.radio_contacts.slot(0).is_some_and(|contact| {
+                && actor.seldom.radio_contacts.slot(0).is_some_and(|contact| {
                     self.substrate
                         .entities
                         .get(contact)
@@ -1756,7 +1758,7 @@ fn unit_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> MissionTy
         });
     if wide
         && sim.team_script_vm.team_for_member(id).is_none()
-        && entity.slave.owner().is_none()
+        && entity.seldom.slave.owner().is_none()
         && entity.slave_manager.is_none()
         && entity.bunker.link().installed_in().is_none()
     {
@@ -1802,7 +1804,7 @@ fn harvester_idle_selection(
     skip_human_land_check: bool,
 ) -> Option<MissionType> {
     let entity = sim.substrate.entities.get(id)?;
-    if !entity.radio_contacts.is_empty() {
+    if !entity.seldom.radio_contacts.is_empty() {
         return None;
     }
     let current = entity.mission.current().known();

@@ -160,6 +160,7 @@ fn dont_score_victims_book_no_kill_no_loss_and_no_points() {
         .set_dont_score_for_test(true);
     // Retained attribution does not bypass the victim's DontScore gate.
     victim
+        .seldom
         .kill_record
         .set_killed_by_for_test(Some(killer_owner));
 

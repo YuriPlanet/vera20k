@@ -82,7 +82,8 @@ fn player_scatter_event_gates_and_rng_prefix_match_native_gi() {
                 .set_object_alive_for_test(actor["alive"].as_u64().unwrap() != 0);
             man.lifecycle
                 .set_in_limbo_for_test(actor["limbo"].as_u64().unwrap() != 0);
-            man.tether
+            man.seldom
+                .tether
                 .set_for_test((actor["tether"].as_u64().unwrap() != 0).then_some(9));
             let mut loco = LocomotorState::for_test_kind(LocomotorKind::Walk);
             loco.set_walk_destination(

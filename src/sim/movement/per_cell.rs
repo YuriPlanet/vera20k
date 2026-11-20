@@ -125,7 +125,7 @@ impl Simulation {
             if !matches!(unit.mission.effective().known(), Some(MissionType::Enter | MissionType::Patrol)) {
                 return None;
             }
-            let contact = unit.radio_contacts.slot(0)?;
+            let contact = unit.seldom.radio_contacts.slot(0)?;
             let building = self.substrate.entities.get(contact)?;
             if building.category() != EntityCategory::Structure { return None; }
             let at = super::ground_pose::object_get_coords(unit, self.resolved_terrain.as_ref());
@@ -168,13 +168,13 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.tether.partner().is_none()
+        if entity.seldom.tether.partner().is_none()
             || entity.mission.effective()
                 != crate::sim::mission::MissionId::from_known(MissionType::Enter)
         {
             return false;
         }
-        let Some(contact) = entity.radio_contacts.slot(0) else {
+        let Some(contact) = entity.seldom.radio_contacts.slot(0) else {
             return false;
         };
         let (x, y) = (entity.position.rx(), entity.position.ry());
@@ -683,7 +683,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        if unit.tether.partner().is_none() {
+        if unit.seldom.tether.partner().is_none() {
             return;
         }
         let nav_com = unit.navigation.nav_com();
@@ -693,7 +693,7 @@ impl Simulation {
         };
         let mission = unit.mission.effective().known();
         if mission == Some(MissionType::Enter)
-            && (nav_techno.is_none() || nav_techno == unit.radio_contacts.slot(0))
+            && (nav_techno.is_none() || nav_techno == unit.seldom.radio_contacts.slot(0))
         {
             return;
         }
@@ -722,7 +722,7 @@ impl Simulation {
         }
         //73A8CF saves Contact0 before the synchronous transmit73A93D. The
         // radio8 owner can clear the live slot and both tether bytes inside it.
-        let contact = unit.radio_contacts.slot(0);
+        let contact = unit.seldom.radio_contacts.slot(0);
         if !at_destination
             && contact.is_some_and(|contact| self.is_weapons_factory(contact, rules))
             && self.substrate.occupancy.first_building_on_layer(
@@ -1114,7 +1114,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|entity| entity.tether.partner().is_some())
+                    .is_some_and(|entity| entity.seldom.tether.partner().is_some())
             {
                 radio::transmit_to_contact(
                     self,
@@ -1243,7 +1243,7 @@ impl Simulation {
         let idle = entity.mission.queued() == MissionId::NONE
             && entity.navigation.nav_com().is_none()
             && entity.attack_target.target().is_none()
-            && entity.radio_contacts.is_empty();
+            && entity.seldom.radio_contacts.is_empty();
         if idle {
             self.infantry_enter_idle_mode(id, rules, registry, effects);
         }
@@ -1555,7 +1555,7 @@ impl Simulation {
             return false;
         };
         if (transport.position.rx(), transport.position.ry()) != cell
-            || !unit.radio_contacts.contains(transport.stable_id())
+            || !unit.seldom.radio_contacts.contains(transport.stable_id())
             || self
                 .object_type(transport.type_ref(), rules)
                 .is_none_or(|object| object.passengers <= 0)
@@ -2064,6 +2064,7 @@ mod discovery_tests {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         };

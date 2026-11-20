@@ -1135,7 +1135,7 @@ pub fn can_dock_occupier_garrison(
             return false;
         }
         // `0x00457D98`: `TechnoClass::IsMindControlled`.
-        !passenger.mind_control.is_mind_controlled()
+        !passenger.seldom.mind_control.is_mind_controlled()
     }
 }
 
@@ -1358,7 +1358,7 @@ pub(crate) fn board_passenger(
         .substrate
         .entities
         .get(pax_id)
-        .and_then(|pax| pax.mind_control.controller())
+        .and_then(|pax| pax.seldom.mind_control.controller())
     {
         sim.free_unit(controller, pax_id, rules, registry, effects);
     }
@@ -1574,7 +1574,7 @@ pub fn add_garrison_occupant(
     if sim.houses.get(&owner).is_some_and(|house| house.is_human())
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
     {
-        pax.building_entry.clear_occupy_seeks();
+        pax.seldom.building_entry.clear_occupy_seeks();
     }
     Ok(true)
 }
@@ -1607,6 +1607,7 @@ fn receive_gunner(
     // 74643A..746460 samples the donor before moving its manager. Native
     // tests nonzero, including a paused signed duration, rather than >0.
     let donor_rearming = passenger
+        .seldom
         .rearm_timer
         .remaining(session.binary_frame() as i32)
         != 0;
@@ -1720,6 +1721,7 @@ impl Simulation {
         // 746502..746528 samples the IFV before transfer/LetGo. The receiving
         // passenger's current burst/rank/House are read after LetGo below.
         let donor_rearming = transport
+            .seldom
             .rearm_timer
             .remaining(self.session.binary_frame() as i32)
             != 0;
@@ -1770,7 +1772,7 @@ fn rearm_transferred_gunner(
     let Some(actor) = substrate.entities.get_mut(receiver) else {
         return;
     };
-    let burst_index = actor.weapon_burst.advance();
+    let burst_index = actor.seldom.weapon_burst.advance();
     let actor = substrate.entities.get(receiver).unwrap();
     let Some(object) = interner.object_type(actor.type_ref(), rules) else {
         return;
@@ -1807,7 +1809,7 @@ fn rearm_transferred_gunner(
     );
     let frame = session.binary_frame() as i32;
     if let Some(actor) = substrate.entities.get_mut(receiver) {
-        actor.rearm_timer.start(frame, rof);
+        actor.seldom.rearm_timer.start(frame, rof);
     }
 }
 

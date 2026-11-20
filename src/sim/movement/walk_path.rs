@@ -241,7 +241,7 @@ impl Simulation {
                 current.y.wrapping_sub(destination.y),
                 current.z.wrapping_sub(destination.z),
             ) < rules.general.close_enough;
-            if close && actor.tether.partner().is_none() {
+            if close && actor.seldom.tether.partner().is_none() {
                 self.assign_null_destination(
                     id,
                     rules,

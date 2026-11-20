@@ -70,6 +70,7 @@ impl RocketHost for RocketProcessHost<'_> {
     }
     fn spawn_owner_is_elite(&self) -> bool {
         self.owner()
+            .seldom
             .spawn_owner_id
             .owner()
             .and_then(|spawner| self.sim.substrate.entities.get(spawner))

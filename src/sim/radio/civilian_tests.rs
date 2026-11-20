@@ -101,7 +101,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         let head = head_at_gate(&sim).expect("ordinary Enter commits a Walk head in the open gate");
         let actor = sim.substrate.entities.get(man).unwrap();
         assert_eq!(actor.mission.current().known(), Some(MissionType::Enter));
-        assert_eq!(actor.radio_contacts.slot(0), Some(plane));
+        assert_eq!(actor.seldom.radio_contacts.slot(0), Some(plane));
         assert_eq!(
             actor.navigation.nav_com(),
             Some(NavTargetRef::object(plane))
@@ -118,7 +118,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         assert_eq!(sim.scenario_rng.state(), expected_rng.state());
         let actor = sim.substrate.entities.get(man).unwrap();
         assert_eq!(actor.mission.current().known(), Some(MissionType::Enter));
-        assert_eq!(actor.radio_contacts.slot(0), Some(plane));
+        assert_eq!(actor.seldom.radio_contacts.slot(0), Some(plane));
         assert_eq!(actor.locomotor.as_ref().unwrap().step_head(), Some(head));
         assert_eq!(actor.navigation.nav_com(), Some(NavTargetRef::cell(15, 15)));
         take_transmit_log();

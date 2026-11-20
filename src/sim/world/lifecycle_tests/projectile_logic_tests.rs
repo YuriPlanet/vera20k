@@ -470,6 +470,7 @@ fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -560,6 +561,7 @@ fn substrate_registration_and_removal_dispatch_is_order_identical() {
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -971,6 +973,7 @@ fn gsi_05_04_building_get_coords_uses_foundation_center_cell() {
         let target = sim.substrate.entities.get_mut(target_id).unwrap();
         target.set_type_ref_for_test(gapowr);
         target
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
     }
@@ -1171,6 +1174,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.health.set_for_test(10);

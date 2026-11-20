@@ -199,7 +199,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return true;
         };
-        let state = entity.ares.powered_by.get_or_insert(PoweredBySource::new());
+        let state = entity
+            .seldom
+            .ares
+            .powered_by
+            .get_or_insert(PoweredBySource::new());
         if frame.wrapping_sub(state.last_scan) < SCAN_INTERVAL {
             return true;
         }
@@ -209,6 +213,7 @@ impl Simulation {
             return true;
         }
         entity
+            .seldom
             .ares
             .powered_by
             .as_mut()
@@ -225,6 +230,7 @@ impl Simulation {
         let has_power = busy || self.powered_by_source_online(id, rules);
         let entity = self.substrate.entities.get_mut(id).expect("same object");
         entity
+            .seldom
             .ares
             .powered_by
             .as_mut()
@@ -323,7 +329,11 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.powered_unit)
         {
-            return entity.ares.powered_by.is_none_or(PoweredBySource::powered);
+            return entity
+                .seldom
+                .ares
+                .powered_by
+                .is_none_or(PoweredBySource::powered);
         }
         // No second building registry: the existing House+6C order.
         self.houses.get(&entity.owner()).is_some_and(|house| {

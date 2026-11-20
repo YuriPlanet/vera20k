@@ -98,7 +98,7 @@ impl Simulation {
             if !requested.contains(&id)
                 && let Some(e) = self.substrate.entities.get_mut(id)
             {
-                e.selection.deselect();
+                e.seldom.selection.deselect();
             }
         }
         // Iterate the original payload, not the membership set: source order is
@@ -180,7 +180,7 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| {
-                entity.discovery.discovered_by_current_house()
+                entity.seldom.discovery.discovered_by_current_house()
                     || self
                         .control_projection()
                         .native_current_player(entity.owner())
@@ -210,9 +210,9 @@ impl Simulation {
     /// (0x005F4503..0x005F4513). The app owns the retained input ledger.
     pub(crate) fn object_deselect(&mut self, stable_id: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && entity.selection.is_selected()
+            && entity.seldom.selection.is_selected()
         {
-            entity.selection.deselect();
+            entity.seldom.selection.deselect();
             self.lifecycle_outputs
                 .emit(super::super::LifecycleOutput::FollowReleased { stable_id });
         }
@@ -263,7 +263,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(stable_id)
-                .is_some_and(|e| e.selection.is_selected())
+                .is_some_and(|e| e.seldom.selection.is_selected())
         {
             return false;
         }
@@ -272,7 +272,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .values()
-                .find(|entity| entity.selection.is_selected())
+                .find(|entity| entity.seldom.selection.is_selected())
                 .map(|entity| entity.stable_id());
             if first.is_some_and(|first| self.select_unselects_all(first, stable_id)) {
                 for id in self.substrate.entities.keys_sorted() {
@@ -283,7 +283,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return false;
         };
-        entity.selection.select();
+        entity.seldom.selection.select();
         if logic {
             self.lifecycle_outputs
                 .emit(super::super::LifecycleOutput::ObjectSelected { stable_id });

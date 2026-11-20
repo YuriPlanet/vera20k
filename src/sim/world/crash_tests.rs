@@ -207,8 +207,14 @@ fn lifted_aircraft_impact_uses_two_c4_blasts_and_unlifted_notice_is_empty() {
         if lifted {
             let entity = sim.substrate.entities.get_mut(falling).unwrap();
             entity.lift.set_swap_active_for_test(true);
-            entity.drop_credit.set_being_manipulated_for_test(true);
-            entity.drop_credit.set_manipulated_by_for_test(Some(holder));
+            entity
+                .seldom
+                .drop_credit
+                .set_being_manipulated_for_test(true);
+            entity
+                .seldom
+                .drop_credit
+                .set_manipulated_by_for_test(Some(holder));
         }
         let next_id = sim.next_stable_object_id();
         assert!(!sim.jumpjet_crash_impact(falling, &rules, None, FrameEffects::default()));
@@ -279,7 +285,10 @@ fn aircraft_lift_notice_damage_matches_original_controls() {
             .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap() as i32));
         entity.lift.set_swap_active_for_test(lifted);
         if input["credit"].as_bool().unwrap() {
-            entity.drop_credit.set_manipulated_by_for_test(Some(holder));
+            entity
+                .seldom
+                .drop_credit
+                .set_manipulated_by_for_test(Some(holder));
         }
         sim.add_entity_occupancy(falling);
         let calls = row["calls"].as_array().unwrap();
@@ -381,7 +390,10 @@ fn aircraft_drop_landing_uses_original_wheel_controls() {
         entity.position.set_exact_z_leptons_for_test(Some(5));
         entity.set_foot_occupation_enabled(false);
         entity.lift.set_swap_active_for_test(true);
-        entity.drop_credit.set_being_manipulated_for_test(true);
+        entity
+            .seldom
+            .drop_credit
+            .set_being_manipulated_for_test(true);
         entity.crash.set_crashing_for_test(true);
         let locomotor = entity.locomotor.as_mut().unwrap();
         assert!(locomotor.begin_piggyback_linked(
@@ -2268,7 +2280,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 crash_frame = Some(frame);
                 assert!(height > 0, "shot down in the air");
                 assert_eq!(entity.health.current(), 0);
-                assert_eq!(entity.kill_record.killer(), Some(russians));
+                assert_eq!(entity.seldom.kill_record.killer(), Some(russians));
                 assert_eq!(entity.ammo().map(|ammo| ammo.current()), Some(1));
                 assert_eq!(
                     entity
@@ -2593,7 +2605,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 wreck.crash_frame = Some(frame);
                 assert!(height > 0, "{id} shot down in the air");
                 assert_eq!(entity.health.current(), 0);
-                assert_eq!(entity.kill_record.killer(), Some(russians));
+                assert_eq!(entity.seldom.kill_record.killer(), Some(russians));
                 if id == nighthawk {
                     riders_killed_by_crash = Some(sim.houses[&russians].stats().units_killed());
                     assert!(

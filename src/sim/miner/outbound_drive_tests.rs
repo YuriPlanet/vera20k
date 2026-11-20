@@ -261,7 +261,7 @@ fn spawn_stock_miner(
     assert!(entity.lifecycle.object_alive());
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(entity.in_logic_vector.is_member());
+    assert!(entity.seldom.in_logic_vector.is_member());
     assert!(sim.live_object_order_snapshot().contains(&id));
     assert_eq!(
         entity.miner.as_ref().expect("miner component").kind,
@@ -339,7 +339,7 @@ fn spawn_stock_refinery(
     assert!(entity.lifecycle.object_alive());
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(entity.in_logic_vector.is_member());
+    assert!(entity.seldom.in_logic_vector.is_member());
     assert!(sim.live_object_order_snapshot().contains(&id));
     id
 }
@@ -800,7 +800,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
         .expect("Drive runtime");
     assert_eq!(entity.miner_state().unwrap(), MinerState::ReturnToRefinery);
     assert!(
-        !entity.radio_contacts.contains(refinery_id),
+        !entity.seldom.radio_contacts.contains(refinery_id),
         "beyond HarvesterTooFarDistance the return sends no HELLO"
     );
     assert_eq!(
@@ -948,7 +948,7 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         );
         // The far return sends no HELLO; it stages at the QueueingCell.
         let entity = sim.substrate.entities.get(miner_id).expect("miner");
-        assert!(!entity.radio_contacts.contains(refinery_id));
+        assert!(!entity.seldom.radio_contacts.contains(refinery_id));
         (sim, miner_id)
     };
 
@@ -1055,8 +1055,8 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
                 .clone(),
             miner.cargo.clone(),
             *entity.native_stage(),
-            entity.radio_contacts.clone(),
-            entity.tether.partner(),
+            entity.seldom.radio_contacts.clone(),
+            entity.seldom.tether.partner(),
         )
     };
     let refinery_contacts_before = sim
@@ -1064,6 +1064,7 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
         .entities
         .get(refinery_id)
         .expect("GAREFN")
+        .seldom
         .radio_contacts
         .clone();
     let sound_count_before = sim.sound_events.len();
@@ -1091,13 +1092,14 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     );
     assert_eq!(miner.cargo, cargo_before);
     assert_eq!(timers_after, timers_before);
-    assert_eq!(entity.radio_contacts, miner_contacts_before);
-    assert_eq!(entity.tether.partner(), dock_entered_before);
+    assert_eq!(entity.seldom.radio_contacts, miner_contacts_before);
+    assert_eq!(entity.seldom.tether.partner(), dock_entered_before);
     assert_eq!(
         sim.substrate
             .entities
             .get(refinery_id)
             .expect("GAREFN")
+            .seldom
             .radio_contacts,
         refinery_contacts_before,
     );
@@ -1371,7 +1373,7 @@ fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
             assert_eq!(locomotor.active_kind(), LocomotorKind::Teleport);
             assert!(locomotor.piggyback().is_none(), "the arrival Drive ended");
             assert_eq!(e.navigation.nav_com(), None);
-            assert_eq!(e.radio_contacts.slot(0), Some(refinery_id));
+            assert_eq!(e.seldom.radio_contacts.slot(0), Some(refinery_id));
         }
         if e.miner.as_ref().expect("miner comp").cargo.is_empty() {
             deposited_at = Some(tick);
@@ -1403,7 +1405,7 @@ fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
     assert!(m.cargo.is_empty());
     assert!(!m.unload_active);
     assert!(
-        e.radio_contacts.is_empty(),
+        e.seldom.radio_contacts.is_empty(),
         "OVER_OUT at the end of the unload"
     );
     assert!(

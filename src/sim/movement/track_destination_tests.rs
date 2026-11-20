@@ -223,7 +223,8 @@ fn actor(input: &Value) -> GameEntity {
         .set_nav_com_aux_for_test(Some(NavTargetRef::cell(0, 0)));
     e.navigation
         .set_nav_com_for_test((input["same_nav"] == true).then(|| NavTargetRef::cell(11, 10)));
-    e.setter_force_reassign
+    e.seldom
+        .setter_force_reassign
         .set_for_test(input["force_reassign"] == true);
     e.navigation.set_nav_queue_for_test(vec![
         NavTargetRef::cell(11, 10);
@@ -362,7 +363,7 @@ fn compare(e: &GameEntity, row: &Value) {
         ("retries", json!(p.retries_left())),
         (
             "force_reassign",
-            json!(u8::from(e.setter_force_reassign.is_raised())),
+            json!(u8::from(e.seldom.setter_force_reassign.is_raised())),
         ),
     ] {
         assert_eq!(actual, row[key], "{key}: {row}");
@@ -484,6 +485,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                 rank => panic!("unexpected native rank {rank}"),
             }
             entity
+                .seldom
                 .setter_force_reassign
                 .set_for_test(step["forced"] == true);
             let retained_before =
@@ -520,7 +522,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                     "head": [head.x, head.y, head.z],
                     "nav": nav,
                     "nav_queue": entity.navigation.nav_queue().len(),
-                    "force_reassign": u8::from(entity.setter_force_reassign.is_raised()),
+                    "force_reassign": u8::from(entity.seldom.setter_force_reassign.is_raised()),
                     "movement_timer": [
                         path.movement_timer().start_frame(), path.movement_timer().duration(),
                     ],

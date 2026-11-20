@@ -132,9 +132,10 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.set_cell_marked_for_test(false);
         if category == EntityCategory::Unit {
-            entity.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(
-                Some(crate::sim::combat::TargetKind::Cell(2, 0)),
-            );
+            entity.seldom.mega_mission =
+                crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
+                    crate::sim::combat::TargetKind::Cell(2, 0),
+                ));
         } else {
             entity
                 .attack_target
@@ -238,10 +239,10 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                 assert!(!entity.passive_scan.acquired());
                 assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
                 assert_eq!(
-                    entity.mega_mission.destination(),
+                    entity.seldom.mega_mission.destination(),
                     Some(crate::sim::combat::TargetKind::Cell(2, 0))
                 );
-                assert!(entity.mega_mission.is_attack_move());
+                assert!(entity.seldom.mega_mission.is_attack_move());
             } else {
                 assert!(entity.passive_scan.acquired());
                 assert!(matches!(

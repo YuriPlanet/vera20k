@@ -80,7 +80,7 @@ fn mission_state(actor: &crate::sim::game_entity::GameEntity) -> Value {
         "queued":actor.mission.queued().raw(),"status":actor.mission.handler_state(),
         "mission_visit_count":actor.mission.ai_counter(),
         "dispatch":[dispatch.start_frame(),dispatch.delay()],
-        "rearm":[actor.rearm_timer.start_frame(),actor.rearm_timer.duration()]})
+        "rearm":[actor.seldom.rearm_timer.start_frame(),actor.seldom.rearm_timer.duration()]})
 }
 
 fn passive_scan_state(actor: &crate::sim::game_entity::GameEntity) -> Value {
@@ -187,7 +187,7 @@ fn paid_snapshot(
             "health":actor.health.current(),"mission":actor.mission.current().raw(),
             "queued":actor.mission.queued().raw(),
             "dispatch":[dispatch.start_frame(),dispatch.delay()],
-            "rearm":[actor.rearm_timer.start_frame(),actor.rearm_timer.duration()]},
+            "rearm":[actor.seldom.rearm_timer.start_frame(),actor.seldom.rearm_timer.duration()]},
         "nav_cell":nav(actor.navigation.nav_com()),
         "drive_destination":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.destination())),
         "drive_head":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.head_to())),

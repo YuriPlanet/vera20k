@@ -332,6 +332,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
         .entities
         .get_mut(tanks[0])
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
 
@@ -351,7 +352,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     let guard = MissionId::from_known(MissionType::Guard);
     for id in tanks {
         let tank = sim.substrate.entities.get(id).unwrap();
-        assert!(!tank.selection.is_selected());
+        assert!(!tank.seldom.selection.is_selected());
         assert!([tank.mission.current(), tank.mission.queued()].contains(&guard));
         assert!(!sim.techno_player_controllable(id, &rules));
         assert!(!sim.techno_is_active(id, &rules));

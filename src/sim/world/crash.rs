@@ -467,7 +467,7 @@ impl Simulation {
         };
         // `0x0054D097..0x0054D0A7`: after the notice, the drop's credit goes.
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.drop_credit.forget();
+            entity.seldom.drop_credit.forget();
         }
         bridge_state_changed
     }
@@ -529,7 +529,7 @@ impl Simulation {
             )),
         ))
         .max(0);
-        let attacker = entity.drop_credit.manipulated_by().unwrap_or(id);
+        let attacker = entity.seldom.drop_credit.manipulated_by().unwrap_or(id);
         let coords = crate::sim::movement::ground_pose::object_get_coords(
             entity,
             self.resolved_terrain.as_ref(),

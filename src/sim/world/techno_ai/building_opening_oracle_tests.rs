@@ -295,7 +295,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         .collect();
     assert_eq!(json!(slots), frame["slots"], "{context}: retained slots");
     assert!(
-        entity.radio_contacts.slot(0).is_none(),
+        entity.seldom.radio_contacts.slot(0).is_none(),
         "{context}: contact cleanup"
     );
 }

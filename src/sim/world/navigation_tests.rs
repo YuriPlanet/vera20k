@@ -254,7 +254,7 @@ fn assert_retained_roles(sim: &Simulation, parent_id: u64, upgrade_id: u64, held
     if let Some(upgrade) = sim.substrate.entities.get(upgrade_id) {
         assert!(!upgrade.lifecycle.object_alive());
         assert!(upgrade.lifecycle.in_limbo() && !upgrade.lifecycle.cell_marked());
-        assert!(!upgrade.in_logic_vector.is_member());
+        assert!(!upgrade.seldom.in_logic_vector.is_member());
     }
     let held = sim.substrate.entities.get(held_id).unwrap();
     assert!(held.lifecycle.in_limbo() && !held.lifecycle.cell_marked());
@@ -484,6 +484,7 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
         );
         structure.set_type_ref_for_test(sim.interner.intern("YARD"));
         structure
+            .seldom
             .type_facts
             .set_foundation_for_test(rules.object("YARD").unwrap().foundation.clone().into());
         sim.substrate.entities.insert(structure);

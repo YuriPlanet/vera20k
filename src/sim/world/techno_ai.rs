@@ -171,7 +171,7 @@ impl Simulation {
             let object = self.interner.object_type(entity.type_ref(), rules)?;
             // GetFLH(0, null) still mirrors by the owner's current burst
             // parity (+0x3B8, `0x006F3C82`), as FireAt's own call does.
-            let burst_index = (entity.weapon_burst.index() & 1) as u8;
+            let burst_index = (entity.seldom.weapon_burst.index() & 1) as u8;
             Some(
                 crate::sim::combat::fire_coord::fire_coordinate(
                     self,

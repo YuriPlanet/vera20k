@@ -345,7 +345,10 @@ impl Simulation {
                     warp.set_state(4);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    entity.chrono_warp_delay.store(rules.general.chrono_delay);
+                    entity
+                        .seldom
+                        .chrono_warp_delay
+                        .store(rules.general.chrono_delay);
                 }
             }
             4 => {
@@ -392,7 +395,7 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     super::teleport_movement::teleport_stop_moving(entity);
                     // `0x00719AEE`/`0x00719AF7`: the drop and warp credits go.
-                    entity.drop_credit.forget();
+                    entity.seldom.drop_credit.forget();
                     entity.set_archive_target(None);
                 }
                 self.assign_null_destination(id, rules, registry, ctx.effects);
@@ -1022,8 +1025,8 @@ impl Simulation {
         );
         let Some((killer, house)) = self.substrate.entities.get(id).map(|entity| {
             (
-                entity.drop_credit.manipulated_by(),
-                entity.drop_credit.warped_by_house(),
+                entity.seldom.drop_credit.manipulated_by(),
+                entity.seldom.drop_credit.warped_by_house(),
             )
         }) else {
             return;

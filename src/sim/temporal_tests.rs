@@ -2421,7 +2421,7 @@ fn a_warped_foot_without_a_navcom_skips_the_null_setter() {
         assert!(tank.navigation.nav_com().is_none());
         tank.navigation
             .push_nav_queue_for_test(NavTargetRef::cell(9, 16));
-        tank.setter_force_reassign.set_for_test(true);
+        tank.seldom.setter_force_reassign.set_for_test(true);
     }
     assert!(
         sim.temporal_ai_prologue(
@@ -2433,7 +2433,10 @@ fn a_warped_foot_without_a_navcom_skips_the_null_setter() {
         "frozen"
     );
     let tank = entity(&sim, tank);
-    assert!(tank.setter_force_reassign.is_raised(), "no setter call");
+    assert!(
+        tank.seldom.setter_force_reassign.is_raised(),
+        "no setter call"
+    );
     assert_eq!(tank.navigation.nav_queue(), vec![NavTargetRef::cell(9, 16)]);
 }
 
@@ -2779,6 +2782,7 @@ fn native_initiate_warp_corpus() {
                 .entities
                 .get_mut(target)
                 .unwrap()
+                .seldom
                 .radio_contacts;
             contacts.set_capacity(2);
             let slot = factory["slot"].as_u64().unwrap_or(0) as usize;
@@ -2834,6 +2838,7 @@ fn native_initiate_warp_corpus() {
             .entities
             .get_mut(target)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         if flag("gattling") {
@@ -2925,7 +2930,7 @@ fn native_initiate_warp_corpus() {
             "{name}: the original decays the victim by one tick"
         );
         assert_eq!(
-            !entity(&sim, target).selection.is_selected(),
+            !entity(&sim, target).seldom.selection.is_selected(),
             native("deselect"),
             "{name}: Deselect"
         );
@@ -3391,7 +3396,7 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
     let target = spawn(&mut sim, &rules, "HTNK", "Russians", 20, 20);
     let attacker = spawn(&mut sim, &rules, "CLEG", "Americans", 22, 20);
     sim.update_ares_radar_jammer(target, &rules);
-    assert!(!entity(&sim, target).ares.radar_jam.is_default());
+    assert!(!entity(&sim, target).seldom.ares.radar_jam.is_default());
     chain(&mut sim, &rules, target, &[attacker], 1_000_000);
     sim.temporal_update_head(
         attacker,
@@ -3399,7 +3404,7 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    assert!(entity(&sim, target).ares.radar_jam.is_default());
+    assert!(entity(&sim, target).seldom.ares.radar_jam.is_default());
 }
 
 /// A tank with no head of its own that is neither warped out nor warping in

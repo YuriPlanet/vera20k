@@ -111,7 +111,7 @@ pub(crate) fn create(
         &super::fire_coord::FireSource::of_entity(source),
         object,
         flh_index,
-        (source.weapon_burst.index() & 1) as u8,
+        (source.seldom.weapon_burst.index() & 1) as u8,
         Default::default(),
     )
     .coord;

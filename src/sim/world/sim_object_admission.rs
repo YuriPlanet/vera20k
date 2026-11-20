@@ -245,7 +245,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .values()
-                    .filter(|entity| entity.in_logic_vector.is_member())
+                    .filter(|entity| entity.seldom.in_logic_vector.is_member())
                     .count(),
                 ObjectKind::Anim => self
                     .substrate
@@ -321,12 +321,12 @@ impl Simulation {
                     entity.stable_id()
                 );
                 debug_assert!(
-                    !entity.in_logic_vector.is_member(),
+                    !entity.seldom.in_logic_vector.is_member(),
                     "dead entity {} must leave LogicVector before alive clear",
                     entity.stable_id()
                 );
                 debug_assert!(
-                    entity.kill_record.is_recorded(),
+                    entity.seldom.kill_record.is_recorded(),
                     "dead entity {} must close its kill record before alive clear",
                     entity.stable_id()
                 );

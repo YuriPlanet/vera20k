@@ -133,6 +133,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
             .entities()
             .get(reactor)
             .unwrap()
+            .seldom
             .selection
             .is_selected()
     );

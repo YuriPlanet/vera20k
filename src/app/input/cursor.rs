@@ -2780,7 +2780,7 @@ mod tests {
         sim.session_mut_for_test().set_current_house_for_test(house);
         // 4. Mark the SEAL as selected (mirrors clicking it in-game).
         if let Some(e) = sim.entity_mut_for_test(seal_id) {
-            e.selection.set_selected_for_test(true);
+            e.seldom.selection.set_selected_for_test(true);
         }
 
         // 5. Construct the hover descriptor the runtime would build when
@@ -2840,7 +2840,7 @@ mod tests {
             .expect("Refinery spawned");
 
         if let Some(e) = sim.entity_mut_for_test(miner_id) {
-            e.selection.set_selected_for_test(true);
+            e.seldom.selection.set_selected_for_test(true);
         }
         // What_Action's Enter is a human player's (House `0x0050B6F0`).
         sim.session_mut_for_test().set_game_mode(
@@ -3195,6 +3195,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             // Active rearm never belongs to WhatAction's control/range gate.
             sim.entity_mut_for_test(actor)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::started(0, 999));
             let x = if case["in_range"].as_bool().unwrap() {
@@ -3502,7 +3503,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             let occupant = sim.entities().get(gi).unwrap();
             assert!(occupant.lifecycle.in_limbo());
             assert!(!occupant.lifecycle.cell_marked());
-            assert!(!occupant.in_logic_vector.is_member());
+            assert!(!occupant.seldom.in_logic_vector.is_member());
             assert!(!sim.live_object_order_snapshot().contains(&gi));
             assert_eq!(
                 occupant.passenger_role().inside_transport(),
@@ -3549,13 +3550,13 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     actor.building_body_state(),
                     actor.queued_building_body_state(),
                     actor.passenger_role().cargo(),
-                    actor.rearm_timer.timer(),
+                    actor.seldom.rearm_timer.timer(),
                     actor.passive_scan.timer(),
                     actor.passive_scan.acquired(),
                     actor.ai_frozen(),
                     actor.lifecycle.object_alive(),
                     actor.lifecycle.in_limbo(),
-                    actor.in_logic_vector.is_member(),
+                    actor.seldom.in_logic_vector.is_member(),
                     actor.health.current(),
                     sim.building_operational_state(house, &rules),
                 )

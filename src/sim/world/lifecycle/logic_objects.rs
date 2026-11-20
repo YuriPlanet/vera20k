@@ -116,7 +116,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(stable_id)
-                .is_some_and(|entity| entity.in_logic_vector.is_member()),
+                .is_some_and(|entity| entity.seldom.in_logic_vector.is_member()),
         }
     }
 
@@ -172,7 +172,7 @@ impl Simulation {
             }
             ObjectKind::Entity => {
                 if let Some(entity) = substrate.entities.get_mut(stable_id) {
-                    entity.in_logic_vector.mark(member);
+                    entity.seldom.in_logic_vector.mark(member);
                 }
             }
         }

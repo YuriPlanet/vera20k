@@ -53,6 +53,7 @@ fn frame(sim: &Simulation, id: u64) -> u32 {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .ares
         .ares_firestorm_wall
         .frame()

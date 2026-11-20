@@ -379,7 +379,7 @@ fn apply_one(
     }) {
         return false;
     }
-    if target.shield.as_ref().is_some_and(|state| {
+    if target.seldom.shield.as_ref().is_some_and(|state| {
         state.is_active()
             && rules
                 .shield_type(state.type_name())

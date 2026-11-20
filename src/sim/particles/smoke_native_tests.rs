@@ -232,7 +232,10 @@ fn install_system(
                     z: c.z,
                 });
             if category == EntityCategory::Structure {
-                entity.type_facts.set_foundation_for_test("2x2".into());
+                entity
+                    .seldom
+                    .type_facts
+                    .set_foundation_for_test("2x2".into());
             }
         }
         sim.substrate.entities.insert(entity);
@@ -276,6 +279,7 @@ fn install_system(
             .entities
             .get_mut(owner)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(id));
         if !input["moved_owner_coords"].is_null() {
@@ -388,6 +392,7 @@ fn assert_system(sim: &Simulation, id: u64, owner: Option<u64>, expected: &Value
                 .entities
                 .get(owner)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system()
                 == Some(id),

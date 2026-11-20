@@ -1056,7 +1056,7 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
             json!(prior["marked"] == 1)
         );
         assert_eq!(
-            json!(entity.in_logic_vector.is_member()),
+            json!(entity.seldom.in_logic_vector.is_member()),
             prior["logic_registered"]
         );
         assert!(world.voxel_anims().iter().next().is_none() && world.anims().next().is_none());

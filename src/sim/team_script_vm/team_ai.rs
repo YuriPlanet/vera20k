@@ -960,6 +960,7 @@ mod tests {
             .entities
             .get_mut(hornet)
             .expect("aircraft")
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(true);
         sim.fog = crate::sim::vision::FogState::new(33, 33);

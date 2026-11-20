@@ -330,6 +330,7 @@ fn ares_emp_takes_a_charging_prism_supporter_out_of_its_network() {
         sim.entities()
             .get(supporter)
             .unwrap()
+            .seldom
             .ares
             .ares_prism
             .support_target()

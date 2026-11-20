@@ -31,6 +31,7 @@ impl Fixture {
             .entities
             .get_mut(coil)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
         let troopers = std::array::from_fn(|i| {
@@ -210,7 +211,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
         .unwrap()
         .health
         .current();
-    let rearm = f.sim.substrate.entities.get(a).unwrap().rearm_timer;
+    let rearm = f.sim.substrate.entities.get(a).unwrap().seldom.rearm_timer;
     for source in [a, b, c, a] {
         f.hit(source, f.coil);
     }
@@ -236,7 +237,10 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
         .substrate
         .electric_assault_detonation(a, Some(f.coil), f.rules.ares());
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
-    assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
+    assert_eq!(
+        f.sim.substrate.entities.get(a).unwrap().seldom.rearm_timer,
+        rearm
+    );
 
     let tank = f
         .sim
@@ -440,6 +444,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
         .entities
         .get_mut(f.troopers[0])
         .unwrap()
+        .seldom
         .tesla_charger
         .active = true;
     let bytes = GameSnapshot::save(&f.sim, 0, 0, "Tesla", 0);
@@ -461,6 +466,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .entities
             .get(f.troopers[0])
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -545,6 +551,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.troopers[0])
         .unwrap()
+        .seldom
         .tesla_charger
         .active = true;
     assert_ne!(latch, f.sim.state_hash());
@@ -591,6 +598,7 @@ fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
             .entities
             .get(foot)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -641,6 +649,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
             .entities
             .get(a)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -649,6 +658,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
         .entities
         .get_mut(a)
         .unwrap()
+        .seldom
         .tesla_charger
         .active = true;
     f.sim
@@ -666,6 +676,7 @@ fn infantry_same_target_clears_intent_but_deployment_refusal_preserves_it() {
             .entities
             .get(a)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -683,6 +694,7 @@ fn guard_and_area_guard_queue_charging_before_their_normal_cadence() {
             .entities
             .get_mut(source)
             .unwrap()
+            .seldom
             .rearm_timer
             .start(now as i32, 7);
         let rng = f.sim.scenario_rng.logical_state();
@@ -692,7 +704,7 @@ fn guard_and_area_guard_queue_charging_before_their_normal_cadence() {
             actor.attack_target.target(),
             Some(TargetKind::Entity(f.coil))
         );
-        assert!(actor.tesla_charger.is_active());
+        assert!(actor.seldom.tesla_charger.is_active());
         assert_eq!(
             actor.mission.queued(),
             MissionId::from_known(MissionType::Attack)
@@ -744,6 +756,7 @@ fn charging_attack_keeps_its_coil_until_a_direct_enemy_scan_succeeds() {
             .entities
             .get(source)
             .unwrap()
+            .seldom
             .tesla_charger
             .is_active()
     );
@@ -766,7 +779,7 @@ fn charging_attack_keeps_its_coil_until_a_direct_enemy_scan_succeeds() {
         source.attack_target.target(),
         Some(TargetKind::Entity(enemy))
     );
-    assert!(!source.tesla_charger.is_active());
+    assert!(!source.seldom.tesla_charger.is_active());
     assert_eq!(
         source.passive_scan.timer(),
         passive.timer(),
@@ -808,7 +821,7 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
     assert!(actor.attack_target.target().is_none());
     // Infantry51BBEF calls its concrete +3C8 setter, whose reached tail
     // clears +68E at51B33F before the frozen object returns from AI.
-    assert!(!actor.tesla_charger.is_active());
+    assert!(!actor.seldom.tesla_charger.is_active());
     crate::sim::world::Simulation::update_tesla_charge(
         &f.sim.interner,
         &mut f.sim.substrate,

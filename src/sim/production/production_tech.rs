@@ -81,7 +81,7 @@ fn append_construction_options(
     if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
         || disabled
-        || !building.discovery.discovered_by_current_house()
+        || !building.seldom.discovery.discovered_by_current_house()
         || !building.building_online()
     {
         return;

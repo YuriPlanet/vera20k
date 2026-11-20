@@ -229,7 +229,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.tether.partner().is_some())
+            .is_some_and(|entity| entity.seldom.tether.partner().is_some())
         {
             crate::sim::radio::transmit_to_contact(
                 self,

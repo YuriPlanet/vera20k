@@ -187,7 +187,10 @@ pub(crate) fn place(
     entity.set_on_bridge(bridge);
     if latch {
         let owner = entity.owner();
-        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
+        entity
+            .seldom
+            .drop_credit
+            .set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()

@@ -288,7 +288,7 @@ impl Simulation {
         //The original requested sequence was checked above; do not recheck
         //Carry's count after remapping. The slave owner retains the only cargo.
         let mut requested = if requested == DO_WALK
-            && actor.slave.owner().is_some()
+            && actor.seldom.slave.owner().is_some()
             && self.slave_is_full(id, rules)
         {
             DO_CARRY
@@ -854,7 +854,7 @@ impl Simulation {
             .get(id)
             .ok_or("the recovery's infantryman disappeared")?;
         if super::motion_query::is_moving(actor) != Some(false)
-            || actor.tether.partner().is_some()
+            || actor.seldom.tether.partner().is_some()
             || !actor.in_playfield()
             || self.foot_can_reach_navigation_cell(id, destination, rules)?
         {

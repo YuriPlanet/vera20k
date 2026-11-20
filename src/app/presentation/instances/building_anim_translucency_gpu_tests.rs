@@ -335,7 +335,7 @@ impl SlotScene {
                 actor.attack_target,
                 actor.navigation,
                 actor.locomotor,
-                actor.rearm_timer,
+                actor.seldom.rearm_timer,
                 actor.last_fire_frame.frame(),
                 actor.body_facing_byte(sim.session().binary_frame()),
                 actor.infantry_sprite_pose()

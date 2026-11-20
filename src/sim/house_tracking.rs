@@ -1023,8 +1023,8 @@ impl HouseTracking {
         }
         if let Some(value) = facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total =
-                total.wrapping_add(value.priced(factors, entity.ares.factory_plant_multiplier));
+            *total = total
+                .wrapping_add(value.priced(factors, entity.seldom.ares.factory_plant_multiplier));
         }
         let dont_score = facts.dont_score();
         let counts = match entity.category() {
@@ -1071,8 +1071,8 @@ impl HouseTracking {
         }
         if let Some(value) = facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total =
-                total.wrapping_sub(value.priced(factors, entity.ares.factory_plant_multiplier));
+            *total = total
+                .wrapping_sub(value.priced(factors, entity.seldom.ares.factory_plant_multiplier));
         }
         if facts.dont_score() {
             return;

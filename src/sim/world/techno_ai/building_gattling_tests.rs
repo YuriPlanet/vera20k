@@ -565,6 +565,7 @@ fn building_fire_finishes_before_the_mission_returns() {
             .entities
             .get(building)
             .unwrap()
+            .seldom
             .rearm_timer
             .remaining(FRAME as i32)
             > 0,
@@ -848,6 +849,7 @@ fn gattling_cadence_matches_the_original() {
                     .entities
                     .get_mut(building)
                     .unwrap()
+                    .seldom
                     .rearm_timer
                     .start((base + k as i64) as i32, ROF[weapon]);
             }

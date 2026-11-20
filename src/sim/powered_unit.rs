@@ -309,8 +309,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.tether.partner().is_some()
-            && let Some(contact) = entity.radio_contacts.slot(0)
+        if entity.seldom.tether.partner().is_some()
+            && let Some(contact) = entity.seldom.radio_contacts.slot(0)
             && self.substrate.occupancy.first_building_on_layer(
                 entity.position.rx(),
                 entity.position.ry(),
@@ -367,7 +367,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let selected = entity.selection.is_selected();
+        let selected = entity.seldom.selection.is_selected();
         let focus =
             (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
         self.techno_deactivate(id, rules, effects);

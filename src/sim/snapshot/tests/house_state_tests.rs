@@ -95,6 +95,7 @@ fn naval_build_const_order_and_membership_roundtrip_with_hash() {
         .entities
         .get_mut(9)
         .unwrap()
+        .seldom
         .type_facts
         .set_build_const_eligible_for_test(true);
 
@@ -120,6 +121,7 @@ fn naval_build_const_order_and_membership_roundtrip_with_hash() {
         .entities
         .get_mut(9)
         .unwrap()
+        .seldom
         .type_facts
         .set_build_const_eligible_for_test(false);
     assert_ne!(
@@ -131,6 +133,7 @@ fn naval_build_const_order_and_membership_roundtrip_with_hash() {
         .entities
         .get_mut(9)
         .unwrap()
+        .seldom
         .type_facts
         .set_build_const_eligible_for_test(true);
     assert_eq!(sim.state_hash(), ordered_hash);
@@ -149,6 +152,7 @@ fn naval_build_const_order_and_membership_roundtrip_with_hash() {
             .entities
             .get(9)
             .unwrap()
+            .seldom
             .type_facts
             .build_const_eligible()
     );
@@ -191,9 +195,16 @@ fn gsi_04_05_base_plan_and_building_facts_roundtrip_current_snapshot() {
         5,
         false,
     );
-    entity.type_facts.set_base_plan_type_index_for_test(2);
-    entity.type_facts.set_base_plan_is_defense_for_test(true);
     entity
+        .seldom
+        .type_facts
+        .set_base_plan_type_index_for_test(2);
+    entity
+        .seldom
+        .type_facts
+        .set_base_plan_is_defense_for_test(true);
+    entity
+        .seldom
         .type_facts
         .set_base_plan_has_undeploy_target_for_test(true);
     sim.substrate.entities.insert(entity);
@@ -213,9 +224,14 @@ fn gsi_04_05_base_plan_and_building_facts_roundtrip_current_snapshot() {
         -8
     );
     let restored_entity = restored.substrate.entities.get(1).unwrap();
-    assert_eq!(restored_entity.type_facts.base_plan_type_index(), 2);
-    assert!(restored_entity.type_facts.base_plan_is_defense());
-    assert!(restored_entity.type_facts.base_plan_has_undeploy_target());
+    assert_eq!(restored_entity.seldom.type_facts.base_plan_type_index(), 2);
+    assert!(restored_entity.seldom.type_facts.base_plan_is_defense());
+    assert!(
+        restored_entity
+            .seldom
+            .type_facts
+            .base_plan_has_undeploy_target()
+    );
     assert_eq!(restored.state_hash(), expected_hash);
 }
 
@@ -233,13 +249,16 @@ fn gsi_04_05_house_and_techno_base_defense_state_roundtrip_with_hash() {
     let mut responder =
         crate::sim::game_entity::GameEntity::test_default(1, "E1", "Computer1", 4, 5);
     responder
+        .seldom
         .base_defense_response
         .set_recruitable_a_for_test(false);
     responder
+        .seldom
         .base_defense_response
         .set_recruitable_b_for_test(true);
     responder.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(9)));
     responder
+        .seldom
         .base_defense_response
         .set_cooldown_for_test(crate::sim::timer::CdTimer::started(-11, 225));
     sim.substrate.entities.insert(responder);
@@ -347,7 +366,7 @@ fn gsi_04_05_house_and_techno_base_defense_state_roundtrip_with_hash() {
         crate::sim::timer::CdTimer::started(12, 106)
     );
     let restored_responder = restored.substrate.entities.get(1).unwrap();
-    let response = restored_responder.base_defense_response;
+    let response = restored_responder.seldom.base_defense_response;
     assert!(!response.recruitable_a());
     assert!(response.recruitable_b());
     assert_eq!(
@@ -470,7 +489,7 @@ fn wave_active_inactive_dummy_links_roundtrip_with_identical_hash() {
             5,
             false,
         );
-        entity.in_logic_vector.set_for_test(true);
+        entity.seldom.in_logic_vector.set_for_test(true);
         sim.substrate.entities.insert(entity);
         sim.substrate
             .logic

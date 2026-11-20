@@ -430,6 +430,7 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     sim.with_object_placement_scope(|sim| {
@@ -977,7 +978,7 @@ fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
     let [plane] = spy_planes(&sim)[..] else {
         panic!("one retail Spy Plane");
     };
-    assert!(sim.entities().get(plane).unwrap().sight.is_zero());
+    assert!(sim.entities().get(plane).unwrap().seldom.sight.is_zero());
     let mut witness = None;
     for _ in 0..1000 {
         step(&mut sim, &rules);
@@ -999,6 +1000,7 @@ fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
         sim.entities()
             .get(plane)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house(),
         "native Human callback requires Techno41B"

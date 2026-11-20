@@ -64,7 +64,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     assert!(
         object.death.is_dying() && object.lifecycle.in_limbo() && !object.lifecycle.object_alive()
     );
-    assert!(!object.in_logic_vector.is_member());
+    assert!(!object.seldom.in_logic_vector.is_member());
     assert!(!saved.occupancy().contains_entity(2, 1, victim));
     assert_eq!(
         saved

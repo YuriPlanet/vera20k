@@ -297,7 +297,7 @@ impl Fixture {
             for (rx, ry) in crate::sim::crew_survival::foundation_cells(
                 entity.position.rx(),
                 entity.position.ry(),
-                entity.type_facts.foundation(),
+                entity.seldom.type_facts.foundation(),
             ) {
                 sim.substrate.raw_cell_occupation.clear_ground(
                     rx,
@@ -392,6 +392,7 @@ impl Fixture {
                     ),
                 });
             actor
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     int(&attacker["rearm_timer"][0]),
@@ -728,8 +729,8 @@ impl Fixture {
         );
         assert_eq!(
             [
-                attacker.rearm_timer.start_frame(),
-                attacker.rearm_timer.duration()
+                attacker.seldom.rearm_timer.start_frame(),
+                attacker.seldom.rearm_timer.duration()
             ],
             [
                 int(&expected["rearm_timer"][0]),
@@ -743,7 +744,7 @@ impl Fixture {
             "{boundary}: firing timestamp"
         );
         assert_eq!(
-            attacker.weapon_burst.index(),
+            attacker.seldom.weapon_burst.index(),
             int(&expected["burst_index"]),
             "{boundary}: retained burst"
         );

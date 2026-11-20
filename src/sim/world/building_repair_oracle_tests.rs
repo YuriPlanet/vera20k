@@ -463,9 +463,11 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         .has_been_captured
         .set_for_test(flag("captured", false));
     building
+        .seldom
         .ai_sell_repair
         .set_ai_repairable_for_test(flag("ai_repairable", true));
     building
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(flag("attacked", false));
     building
@@ -506,6 +508,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(smoke));
         smoke

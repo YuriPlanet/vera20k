@@ -1028,6 +1028,7 @@ fn an_infected_unit_cannot_load_bunker_or_deploy() {
         .entities
         .get_mut(mcv)
         .unwrap()
+        .seldom
         .mcv_deploy_pending
         .set_for_test(true);
     assert!(!arena.sim.deploy_mcv(
@@ -1043,6 +1044,7 @@ fn an_infected_unit_cannot_load_bunker_or_deploy() {
             .entities
             .get(mcv)
             .unwrap()
+            .seldom
             .mcv_deploy_pending
             .is_pending()
     );
@@ -1160,6 +1162,7 @@ fn the_reselect_memo_stays_out_of_the_peer_hash() {
             .entities
             .get_mut(dog)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(selected);
         arena.attack(dog, gi);

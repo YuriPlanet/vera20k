@@ -200,7 +200,7 @@ fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
         .veterancy
         .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     if input["flag_3d4"].as_bool().unwrap_or(false) {
-        owner.mission_only.mark();
+        owner.seldom.mission_only.mark();
     }
     if input["carryall_target"].as_bool().unwrap_or(false) {
         owner

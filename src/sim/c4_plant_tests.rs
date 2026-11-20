@@ -370,8 +370,8 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         .frames();
     assert!((12..=13).contains(&flash), "flash {flash}");
     let planter = sim.substrate.entities.get(tanya).unwrap();
-    assert_eq!(planter.rearm_timer.start_frame(), planted as i32);
-    assert!((3..=5).contains(&planter.rearm_timer.duration()));
+    assert_eq!(planter.seldom.rearm_timer.start_frame(), planted as i32);
+    assert!((3..=5).contains(&planter.seldom.rearm_timer.duration()));
     assert_eq!(planter.navigation.nav_com(), None, "the planter stopped");
     assert!(
         (16..18).contains(&planter.position.rx()) && (10..12).contains(&planter.position.ry()),
@@ -680,8 +680,8 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     let planter = sim.substrate.entities.get(second).unwrap();
     assert_eq!(
         (
-            planter.rearm_timer.start_frame(),
-            planter.rearm_timer.duration()
+            planter.seldom.rearm_timer.start_frame(),
+            planter.seldom.rearm_timer.duration()
         ),
         (sim.session.binary_frame() as i32, rof)
     );
@@ -731,7 +731,7 @@ fn a_sold_or_curtained_building_takes_no_charge() {
         );
         assert_eq!(target.flashing.frames(), 0, "curtained {curtained}");
         let planter = sim.substrate.entities.get(tanya).unwrap();
-        assert_eq!(planter.rearm_timer.duration(), rof);
+        assert_eq!(planter.seldom.rearm_timer.duration(), rof);
         assert_eq!(sim.scenario_rng.logical_state(), after);
     }
 }

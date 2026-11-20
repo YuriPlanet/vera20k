@@ -1704,6 +1704,7 @@ fn wall_cleanup_preserves_neighbor_targets_until_an_explicit_outer_sweep() {
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
     restored
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Cell(8, 8)));
     entities.insert(restored);
@@ -1864,7 +1865,7 @@ fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
         listener
             .attack_target
             .set_for_test(Some(TargetKind::Cell(8, 8)));
-        listener.suspended_attack_target.set_for_test(saved);
+        listener.seldom.suspended_attack_target.set_for_test(saved);
         listener.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Attack),
             suspended: MissionId::from_known(MissionType::Guard),

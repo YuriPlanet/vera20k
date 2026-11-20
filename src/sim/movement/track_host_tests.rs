@@ -179,12 +179,15 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
                 8,
                 EntityCategory::Structure,
             );
-            building.type_facts.set_foundation_for_test("3x3".into());
-            building.radio_contacts.set_capacity(3);
+            building
+                .seldom
+                .type_facts
+                .set_foundation_for_test("3x3".into());
+            building.seldom.radio_contacts.set_capacity(3);
             for id in [100, 101, if contacted { 1 } else { 102 }] {
-                building.radio_contacts.insert(id);
+                building.seldom.radio_contacts.insert(id);
             }
-            building.radio_contacts.remove(101);
+            building.seldom.radio_contacts.remove(101);
             sim.substrate.entities.insert(building);
             sim.interner = crate::sim::intern::test_interner();
             let mover = sim.substrate.entities.get_mut(1).unwrap();
@@ -226,6 +229,7 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
                             .entities
                             .get_mut(2)
                             .unwrap()
+                            .seldom
                             .radio_contacts
                             .clear_all();
                     }
@@ -1169,7 +1173,10 @@ fn per_cell_partner_fixture(
     );
     producer.set_type_ref_for_test(sim.intern(partner));
     producer.set_owner_for_test(owner);
-    producer.type_facts.set_foundation_for_test("1x1".into());
+    producer
+        .seldom
+        .type_facts
+        .set_foundation_for_test("1x1".into());
     producer.set_on_bridge(producer_on_bridge);
     producer.lifecycle.set_object_alive_for_test(true);
     producer.lifecycle.set_in_limbo_for_test(false);
@@ -1279,8 +1286,8 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
     );
     for id in [1, 2] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.radio_contacts.slot(0), None);
-        assert_eq!(entity.tether.partner(), None);
+        assert_eq!(entity.seldom.radio_contacts.slot(0), None);
+        assert_eq!(entity.seldom.tether.partner(), None);
     }
     let unit = sim.substrate.entities.get(1).unwrap();
     assert_eq!(unit.mission.current().known(), Some(MissionType::Unload));
@@ -1483,6 +1490,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             (!sends_clearance).then_some(2),
@@ -1493,6 +1501,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             (!sends_clearance).then_some(1),
@@ -1586,7 +1595,10 @@ fn computer_product_at_factory_exit() -> (Simulation, RuleSet) {
     house.set_base_center_for_test(Some((20, 20)));
     sim.houses.insert_for_test(house);
     let producer = sim.substrate.entities.get_mut(2).unwrap();
-    producer.type_facts.set_foundation_for_test("5x3".into());
+    producer
+        .seldom
+        .type_facts
+        .set_foundation_for_test("5x3".into());
     producer.position.put_location(DriveCoord::cell(6, 9, 0));
     sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -1763,7 +1775,10 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
             );
             if middle_row_underneath {
                 let producer = sim.substrate.entities.get_mut(2).unwrap();
-                producer.type_facts.set_foundation_for_test("1x2".into());
+                producer
+                    .seldom
+                    .type_facts
+                    .set_foundation_for_test("1x2".into());
                 producer.position.put_location(DriveCoord::cell(10, 9, 0));
                 sim.substrate.occupancy =
                     crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -1827,8 +1842,8 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
             );
             for id in [1, 2] {
                 let entity = sim.substrate.entities.get(id).unwrap();
-                assert_eq!(entity.radio_contacts.slot(0), None);
-                assert_eq!(entity.tether.partner(), None);
+                assert_eq!(entity.seldom.radio_contacts.slot(0), None);
+                assert_eq!(entity.seldom.tether.partner(), None);
             }
             assert_eq!(
                 sim.rng_state(),
@@ -1853,7 +1868,7 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(true);
-            entity.weapon_burst.complete_shot(2);
+            entity.seldom.weapon_burst.complete_shot(2);
             entity
                 .navigation
                 .set_nav_com_for_test(has_destination.then(|| NavTargetRef::cell(12, 10)));
@@ -1863,7 +1878,7 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index through the NULL target.
             assert_eq!(
-                entity.weapon_burst.index(),
+                entity.seldom.weapon_burst.index(),
                 i32::from(has_destination || rules.ares_form())
             );
             assert_eq!(entity.passive_scan.acquired(), has_destination);
@@ -1969,10 +1984,10 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             "unit_nav_aux": nav(unit.navigation.nav_com_aux()),
             "unit_archive": target(unit.archive_target()),
             "pending_entry": name(unit.pending_entry()),
-            "unit_contacts": (0..unit.radio_contacts.capacity()).map(|n| name(unit.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "building_contacts": (0..building.radio_contacts.capacity()).map(|n| name(building.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "unit_tether": u8::from(unit.tether.partner().is_some()),
-            "building_tether": u8::from(building.tether.partner().is_some()),
+            "unit_contacts": (0..unit.seldom.radio_contacts.capacity()).map(|n| name(unit.seldom.radio_contacts.slot(n))).collect::<Vec<_>>(),
+            "building_contacts": (0..building.seldom.radio_contacts.capacity()).map(|n| name(building.seldom.radio_contacts.slot(n))).collect::<Vec<_>>(),
+            "unit_tether": u8::from(unit.seldom.tether.partner().is_some()),
+            "building_tether": u8::from(building.seldom.tether.partner().is_some()),
             "building_mission": building.mission.current().raw(),
             "building_queued": building.mission.queued().raw(),
             "status": building.mission.handler_state(),
@@ -2156,14 +2171,16 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                 ai_counter: 0,
                 dispatch_timer: MissionDispatchTimer::from_raw(-1, 0),
             });
-            entity.radio_contacts.clear_all();
+            entity.seldom.radio_contacts.clear_all();
             entity
+                .seldom
                 .radio_contacts
                 .set_capacity(before[contacts].as_array().unwrap().len());
             if before[contacts][0].is_string() {
-                entity.radio_contacts.insert(peer);
+                entity.seldom.radio_contacts.insert(peer);
             }
             entity
+                .seldom
                 .tether
                 .set_for_test((integer(&before[tether]) != 0).then_some(peer));
         }
@@ -2618,7 +2635,10 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
         let (mut sim, rules) = factory_per_cell_fixture(true, false, "Harvester=yes");
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let producer = sim.substrate.entities.get_mut(2).unwrap();
-        producer.type_facts.set_foundation_for_test("5x3".into());
+        producer
+            .seldom
+            .type_facts
+            .set_foundation_for_test("5x3".into());
         producer.position.put_location(DriveCoord::cell(6, 9, 0));
         sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -2701,7 +2721,7 @@ fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
             Some((8, Some(1)))
         );
         let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.tether.partner(), None);
+        assert_eq!(unit.seldom.tether.partner(), None);
         assert_eq!(unit.archive_target(), None);
         if archive.is_some() {
             assert_eq!(unit.mission.current().known(), Some(MissionType::Harvest));
@@ -2876,7 +2896,8 @@ fn the_unit_guard_pick_follows_house_iq_team_and_type() {
         let unit = sim.substrate.entities.get_mut(id).unwrap();
         match link {
             "slave" => {
-                unit.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(id + 1), vec![]);
+                unit.seldom.slave =
+                    crate::sim::slave_manager::SlaveLink::for_test(Some(id + 1), vec![]);
             }
             "slave_manager" => {
                 unit.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
@@ -2932,7 +2953,7 @@ fn a_unit_at_rest_on_a_cell_centre_breaks_its_radio_link() {
             .spawn_object("GAWEAP", "Americans", 20, 20, 0, &rules)
             .unwrap();
         let unit = sim.substrate.entities.get_mut(id).unwrap();
-        unit.radio_contacts.insert(factory);
+        unit.seldom.radio_contacts.insert(factory);
         if case == "off_centre" || case == "raised" {
             unit.position.put_location(DriveCoord {
                 x: 10 * 256 + if case == "raised" { 128 } else { 129 },
@@ -2995,7 +3016,7 @@ fn a_mission_only_transport_with_passengers_selects_unload() {
         ));
         let unit = sim.substrate.entities.get_mut(id).unwrap();
         if case != "commanded" {
-            unit.mission_only.mark();
+            unit.seldom.mission_only.mark();
         }
         if case != "empty" {
             unit.passenger_role_mut_for_test()
@@ -3057,7 +3078,7 @@ fn a_unit_entering_a_bunker_ahead_of_it_queues_nothing() {
         if on_bunker {
             unit.position.put_location(DriveCoord::cell(14, 9, 0));
         }
-        unit.radio_contacts.insert(bunker);
+        unit.seldom.radio_contacts.insert(bunker);
         unit.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Enter),
             suspended: MissionId::NONE,
@@ -3631,7 +3652,7 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
             ally.set_category_for_test(EntityCategory::Unit);
             let mut enemy = GameEntity::test_default(3, "E1", "Russians", x, y);
             enemy.set_category_for_test(EntityCategory::Infantry);
-            enemy.crushable_facts.set_crushable_for_test(true);
+            enemy.seldom.crushable_facts.set_crushable_for_test(true);
             for mut entity in [ally, enemy] {
                 entity.lifecycle.set_object_alive_for_test(true);
                 entity.lifecycle.set_in_limbo_for_test(false);

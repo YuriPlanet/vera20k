@@ -102,13 +102,13 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(stable_id)
-                    .map_or(0, |entity| entity.radio_contacts.capacity());
+                    .map_or(0, |entity| entity.seldom.radio_contacts.capacity());
                 for slot in 0..capacity {
                     if let Some(contact) = self
                         .substrate
                         .entities
                         .get(stable_id)
-                        .and_then(|entity| entity.radio_contacts.slot(slot))
+                        .and_then(|entity| entity.seldom.radio_contacts.slot(slot))
                         .filter(|&contact| !allied_with(self, contact))
                     {
                         crate::sim::radio::transmit(
@@ -134,7 +134,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(stable_id)
-                    .and_then(|entity| entity.radio_contacts.slot(0))
+                    .and_then(|entity| entity.seldom.radio_contacts.slot(0))
                     .filter(|&contact| all || !allied_with(self, contact))
                 {
                     crate::sim::radio::transmit(

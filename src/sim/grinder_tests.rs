@@ -112,7 +112,7 @@ fn script60_uses_only_own_grinders_and_releases_members_only_on_success() {
         Some(NavTargetRef::object(grinder))
     );
     assert_eq!(foot.mission.queued().known(), Some(MissionType::Eaten));
-    assert!(!foot.building_entry.seeking());
+    assert!(!foot.seldom.building_entry.seeking());
 }
 
 #[test]

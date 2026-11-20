@@ -536,8 +536,8 @@ fn mission_factory_unload(
     let ticks = object.deploy_time_ticks;
     let naval = object.naval;
     let phase = entity.door_phase();
-    let contact = entity.radio_contacts.slot(0);
-    let tethered = entity.tether.partner().is_some();
+    let contact = entity.seldom.radio_contacts.slot(0);
+    let tethered = entity.seldom.tether.partner().is_some();
     let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     let track = crate::sim::movement::factory_exit_track_coordinate(location, object);
     let damaged = requested_damage_state(
@@ -822,7 +822,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         //on ROGER queue Repair and return 1 with no Scenario draw. Each
         //NEED_MOVE runs the contact's receivers, so the scan walks the
         //contacts as they stood when it began.
-        let contacts: Vec<_> = depot.radio_contacts.iter_live().collect();
+        let contacts: Vec<_> = depot.seldom.radio_contacts.iter_live().collect();
         for contact in contacts {
             let Some(unit) = sim.substrate.entities.get(contact) else {
                 continue;
@@ -892,7 +892,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| !entity.radio_contacts.is_empty())
+            .is_some_and(|entity| !entity.seldom.radio_contacts.is_empty())
     {
         use crate::sim::radio::{RadioMessage, RadioResponse, transmit_to_contact};
         if transmit_to_contact(sim, id, RadioMessage::QueryReloaded, rules, ctx.effects)
@@ -1408,7 +1408,7 @@ fn prism_arm(
         &fire_coord::FireSource::of_entity(master),
         obj,
         0,
-        (master.weapon_burst.index() & 1) as u8,
+        (master.seldom.weapon_burst.index() & 1) as u8,
         crate::rules::flh::Flh::default(),
     )
     .coord;
@@ -1458,7 +1458,7 @@ fn prism_supporter(
         };
         let admitted = candidate.lifecycle.object_alive()
             && candidate.type_ref() == master.type_ref()
-            && candidate.rearm_timer.remaining(now) == 0
+            && candidate.seldom.rearm_timer.remaining(now) == 0
             && candidate.building.pending_building_fire.remaining_ticks() == 0
             && candidate.drain.draining_me().is_none()
             && candidate.mission.effective() != attack
@@ -1576,6 +1576,7 @@ fn stock_delayed_fire(
                 .expect("live support source");
             entity.building.prism_support_count.reset();
             entity
+                .seldom
                 .rearm_timer
                 .start(now, rules.general.prism_support.delay);
         }
