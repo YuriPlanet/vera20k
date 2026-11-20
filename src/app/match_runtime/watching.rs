@@ -136,6 +136,21 @@ fn follow_next(state: &mut AppState) {
     else {
         return;
     };
+    switch_view(state, next);
+}
+
+/// A launcher's watcher (docs/spawn.md "Watching") is none of the players: it
+/// starts on the observer's sidebar, with the whole map, as Tab's stop after
+/// the last player, and Tab goes on from there.
+pub(crate) fn begin_on_observers_view(state: &mut AppState) {
+    switch_view(state, View::Observer);
+    log::info!(
+        "Watching from the observer's view: whole map {}",
+        whole_map(state)
+    );
+}
+
+fn switch_view(state: &mut AppState, next: View) {
     let Some(runtime) = state
         .match_state
         .sim_runtime

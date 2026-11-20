@@ -567,16 +567,14 @@ impl SequencedSession {
         }
         let local_source = match player_source {
             Some(source) => source,
-            // A watcher's game follows one player: the one source of the
-            // match its roster holds as no peer.
             None => {
-                let followed = cert.sources_mask & !roster_mask(&houses);
-                let source = followed.trailing_zeros() as usize;
-                if followed.count_ones() != 1 || source >= houses.len() {
-                    return Err(StartupError::InvalidAdmission.into());
+                let (source, seat) = watched_source(cert.sources_mask, roster_mask(&houses))
+                    .filter(|&(source, _)| usize::from(source) < houses.len())
+                    .ok_or(StartupError::InvalidAdmission)?;
+                if seat {
+                    houses[usize::from(source)] = Some(local_house);
                 }
-                houses[source] = Some(local_house);
-                source as u8
+                source
             }
         };
         let mask = roster_mask(&houses);
@@ -1998,6 +1996,25 @@ fn watch_turn(fps: u16, delay_seconds: u32) -> u32 {
     released + 2 * (u32::from(fps) * WATCH_PULL_INTERVAL_MS / 1000).max(1)
 }
 
+/// The source a watcher's game follows (relay README "Watchers"), from the
+/// match's `sources_mask` and the sources its connections hold as peers, and
+/// whether this game takes that source's seat. A roster that lacks one source
+/// is a player's own view of the match (a lobby watch, or a launcher's watcher
+/// spawn.ini, docs/spawn.md "Watching"): the watcher stands in that seat. A
+/// roster that holds every source watches a match of several sources from
+/// no seat and follows the first. Any other roster is not this match's.
+fn watched_source(sources_mask: u32, roster: u32) -> Option<(u8, bool)> {
+    if roster & !sources_mask != 0 {
+        return None;
+    }
+    let missing = sources_mask & !roster;
+    match missing.count_ones() {
+        1 => Some((missing.trailing_zeros() as u8, true)),
+        0 if sources_mask != 0 => Some((sources_mask.trailing_zeros() as u8, false)),
+        _ => None,
+    }
+}
+
 fn roster_mask(houses: &[Option<i8>; MAX_PEERS as usize]) -> u32 {
     houses
         .iter()
@@ -2862,6 +2879,29 @@ mod pace_tests {
         );
         assert!(status(&mut session, 0, 0b011).is_empty());
         assert!(status(&mut session, 0b100, 0b111).is_empty());
+    }
+}
+
+#[cfg(all(test, tests_net))]
+mod watched_source_tests {
+    use super::watched_source;
+
+    /// A roster lacking one source takes that seat; one holding every source
+    /// follows the first from no seat; any other is refused.
+    #[test]
+    fn a_watcher_follows_the_missing_seat_or_every_source_from_none() {
+        assert_eq!(watched_source(0b111, 0b110), Some((0, true)));
+        // One person against AI: the roster holds no other source.
+        assert_eq!(watched_source(0b1, 0), Some((0, true)));
+        assert_eq!(watched_source(0b111, 0b101), Some((1, true)));
+        assert_eq!(watched_source(0b110, 0b110), Some((1, false)));
+    }
+
+    #[test]
+    fn a_watcher_refuses_a_roster_that_is_not_its_matchs() {
+        assert_eq!(watched_source(0b111, 0b100), None);
+        assert_eq!(watched_source(0b011, 0b111), None);
+        assert_eq!(watched_source(0, 0), None);
     }
 }
 

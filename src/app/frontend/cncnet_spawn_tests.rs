@@ -583,6 +583,102 @@ fn two_player_relay_file_admits_the_grant_in_canonical_source_order() {
     assert_eq!(relay.service_url, "http://127.0.0.1:8080");
 }
 
+/// A `[Relay]` section holding a watch ticket of match 1111… with the
+/// match's own certificate (docs/spawn.md "Watching").
+fn watch_relay_section(sources_mask: u32) -> String {
+    use crate::net::udp::{OrderingCertificate, RelayWatchTicket, test_support::SecretKey};
+    use base64::Engine;
+    let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let key = SecretKey::new([9; 32]);
+    let ticket = RelayWatchTicket {
+        room: [0x11; 16],
+        expires: 300,
+        nonce: [3; 16],
+        watcher: [0x44; 16],
+        delay_seconds: 0,
+    }
+    .sign(&key)
+    .unwrap();
+    let certificate = OrderingCertificate {
+        room: [0x11; 16],
+        sources_mask,
+        tick_hz: 45,
+        expires: 86400,
+        pacing: Default::default(),
+        ordered_alone: false,
+    }
+    .sign(&key)
+    .unwrap();
+    format!(
+        "[Relay]\nAddress=203.0.113.5:5000\nMatchId=11111111-1111-1111-1111-111111111111\n\
+         PlayerId=44444444-4444-4444-4444-444444444444\nTicket={}\nPacketKey={}\nPayloadKey={}\n\
+         OrderingCertificate={}\nServiceUrl=https://match.example.com/\nToken=watch-secret\n",
+        encode(&ticket),
+        encode(&[5; 32]),
+        encode(&[7; 32]),
+        encode(&certificate)
+    )
+}
+
+/// A watcher's spawn.ini is the lowest source's own file with a watch
+/// ticket (docs/spawn.md "Watching"): it parses to that player's session,
+/// AI included, and a watcher's relay spawn, whose bearer only renews.
+#[test]
+fn a_watchers_file_is_the_first_players_with_a_watch_ticket() {
+    let ai = "[HouseHandicaps]\nMulti3=1\n[HouseCountries]\nMulti3=3\n[HouseColors]\nMulti3=6\n";
+    let two_and_ai = network_spawn(2, 0, &format!("{ai}{}", watch_relay_section(0b11))).replacen(
+        "[Settings]\n",
+        "[Settings]\nAIPlayers=1\n",
+        1,
+    );
+    // One person against AI, which the relay orders alone (docs/spawn.md).
+    let one_and_ai = network_spawn(
+        1,
+        0,
+        &format!(
+            "{}{}",
+            ai.replace("Multi3", "Multi2"),
+            watch_relay_section(0b1)
+        ),
+    )
+    .replacen("[Settings]\n", "[Settings]\nAIPlayers=1\n", 1);
+    for (text, humans, ai) in [
+        (one_and_ai, 1, 1),
+        (two_and_ai.clone(), 2, 1),
+        (network_spawn(2, 0, &watch_relay_section(0b11)), 2, 0),
+    ] {
+        let network = parse_network(&text);
+        assert_eq!(network.session.local_player_index, 0);
+        assert_eq!(network.session.humans.len(), humans);
+        assert_eq!(network.session.opponents.len(), ai);
+        let SpawnTransport::Relay(relay) = network.transport else {
+            panic!("relay transport")
+        };
+        assert!(relay.watch);
+        assert_eq!(relay.token, "watch-secret");
+        assert_eq!(relay.resume, None);
+        assert_eq!(relay.grant.payload_key, [7; 32]);
+        assert!(relay.grant.federation.is_none());
+    }
+    // A player's file is no watcher's.
+    let SpawnTransport::Relay(player) =
+        parse_network(&network_spawn(2, 0, &relay_section(0, 0b11))).transport
+    else {
+        panic!("relay transport")
+    };
+    assert!(!player.watch);
+    // A watcher joins one relay as no returning player, of its own match,
+    // whose certificate names every human.
+    for broken in [
+        format!("{two_and_ai}Federation=AAAA\n"),
+        format!("{two_and_ai}ResumePings=0,0\nResumeCursor=4\n"),
+        two_and_ai.replacen("MatchId=11111111", "MatchId=33333333", 1),
+        network_spawn(2, 0, &watch_relay_section(0b111)),
+    ] {
+        assert!(SpawnRequest::parse(&broken).is_err(), "{broken}");
+    }
+}
+
 #[test]
 fn four_player_direct_files_agree_on_one_session_with_house_teams() {
     // Sources 0+2 and 1+3 are teams; each file keys them by its own houses.
@@ -1056,14 +1152,20 @@ fn network_spectators_watch_without_ai_start_or_team() {
             .collect::<Vec<_>>(),
         observers
     );
-    for broken in [
-        network_spawn(
+    // A spectator may watch AI play beside the players.
+    let with_ai = parse_network(
+        &network_spawn(
             3,
             0,
             "[IsSpectator]\nMulti3=Yes\n[HouseHandicaps]\nMulti4=1\n\
              [HouseCountries]\nMulti4=3\n[HouseColors]\nMulti4=6\n",
         )
         .replacen("[Settings]\n", "[Settings]\nAIPlayers=1\n", 1),
+    )
+    .session;
+    assert!(with_ai.humans[2].is_observer());
+    assert_eq!(with_ai.opponents.len(), 1);
+    for broken in [
         network_spawn(2, 0, "[IsSpectator]\nMulti2=Yes\n"),
         network_spawn(
             3,
