@@ -553,8 +553,8 @@ impl WolCapture {
         );
         let requests = setup_requests(state);
         let users: Vec<String> = crate::app::shell_wol::lobby::member_names(state)
-            .into_iter()
             .rev()
+            .map(str::to_owned)
             .collect();
         ensure!(
             users.len() == 2

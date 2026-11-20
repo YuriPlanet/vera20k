@@ -1164,3 +1164,38 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
         1
     );
 }
+
+/// A placed sprite waits for its upload as the resident cache's pixels
+/// themselves, not a second copy of them.
+#[test]
+fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
+    let atlas = UnitAtlas::from_test_sprites(vec![CachedUnitSprite {
+        key: UnitSpriteKey {
+            type_id: "staged".into(),
+            turret_index: 0,
+            facing: 0,
+            layer: VxlLayer::Body,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        },
+        pixels: vec![1, 2, 3, 4],
+        width: 2,
+        height: 2,
+        offset_x: 0.,
+        offset_y: 0.,
+        native_draw_bounds: None,
+        shadow_center: None,
+        pool_bytes: 0,
+    }]);
+    let resident = atlas.resident.borrow();
+    let [pending] = resident.uploads.as_slice() else {
+        panic!("one sprite placed, one upload staged");
+    };
+    let staged = pending.texels.bytes(&resident.rendered_cache);
+    assert_eq!(staged, [1, 2, 3, 4]);
+    assert!(std::ptr::eq(
+        staged,
+        resident.rendered_cache[0].pixels.as_slice()
+    ));
+}

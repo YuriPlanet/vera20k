@@ -610,8 +610,7 @@ impl TacticalCaptureSession {
         {
             let rendered = MapSidebarObservation::from_view(
                 output
-                    .sidebar_view
-                    .as_ref()
+                    .drawn_sidebar_view(state)
                     .context("requested sidebar draw is absent")?,
             )?;
             ensure!(
@@ -649,7 +648,8 @@ impl TacticalCaptureSession {
         validate_loaded_resources(state)?;
         let unit_atlas =
             unit_atlas_statistics(state.match_state.match_presentation.unit_atlas.as_ref())?;
-        let ready = output.sidebar_view.is_some()
+        let sidebar_drawn = output.drawn_sidebar_view(state).is_some();
+        let ready = sidebar_drawn
             && !state.match_state.paused()
             && !state.main_menu_dialog_open()
             && !state.diag.debug_show_pathgrid
@@ -691,7 +691,7 @@ impl TacticalCaptureSession {
             frame_wall_mean_ms.is_finite() && frame_wall_mean_ms >= 0.0,
             "map observation frame wall mean is invalid"
         );
-        let mut render = json!({"ready": ready, "sidebar_view_present": output.sidebar_view.is_some(),
+        let mut render = json!({"ready": ready, "sidebar_view_present": sidebar_drawn,
             "instance_counts": super::super::super::evidence::RenderInstanceCountEvidence::from_counts(output.instance_counts)?,
             "internal_extent": [state.render_width(), state.render_height()],
             "surface_extent": [state.renderer.gpu.config.width, state.renderer.gpu.config.height],

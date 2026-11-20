@@ -53,9 +53,8 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             let lobby = lobby_mut(state).expect("checked");
             if let (Step::ListingLobbies { .. }, Runner::QuickMatch) = (&lobby.step, lobby.runner) {
                 lobby.step = Step::Ready;
-                let lobbies = lobby.lobbies.clone();
                 close_wait(state);
-                super::quick_match::lobbies_listed(state, &lobbies);
+                super::quick_match::lobbies_listed(state);
             } else if let (Step::ListingLobbies { .. }, Runner::Buddy) = (&lobby.step, lobby.runner)
             {
                 lobby.step = Step::Ready;

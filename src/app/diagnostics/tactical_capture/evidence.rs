@@ -377,17 +377,16 @@ pub(crate) struct SidebarRenderEvidence {
 impl SidebarRenderEvidence {
     pub(crate) fn from_render_output(
         output: &GameRenderOutput,
+        sidebar_view: Option<&crate::ui::sidebar::SidebarView>,
         minimap_aperture: Rect,
         radar_content_insets: [u32; 4],
         render_extent: [u32; 2],
     ) -> Result<Self> {
-        let sidebar_panel = output
-            .sidebar_view
-            .as_ref()
+        let sidebar_panel = sidebar_view
             .map(|view| RenderRectEvidence::from_rect(view.panel_rect))
             .transpose()?;
         Ok(Self {
-            sidebar_view_present: output.sidebar_view.is_some(),
+            sidebar_view_present: sidebar_view.is_some(),
             sidebar_panel,
             minimap_aperture: ApertureEvidence::from_rect(minimap_aperture, render_extent)?,
             radar_content_insets,

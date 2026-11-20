@@ -23,7 +23,6 @@ use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
 use crate::render::surface_line::SurfaceStroke;
-use crate::ui::sidebar::SidebarView;
 use crate::util::time::{Duration, Instant};
 #[path = "ferry_lines.rs"]
 mod ferry_lines;
@@ -146,7 +145,9 @@ pub(super) struct SidebarInstances {
     pub viewport_rect: Vec<SpriteInstance>,
     pub content_boundary: Vec<SpriteInstance>,
     pub radar_anim: Vec<SpriteInstance>,
-    pub view: Option<SidebarView>,
+    /// The revision of the retained sidebar view these instances drew,
+    /// `None` when none drew.
+    pub view_revision: Option<u64>,
 }
 
 impl SidebarInstances {
@@ -1392,7 +1393,16 @@ fn build_placement_ghost(
 
 /// Build sidebar UI instances: chrome, cameos, text, minimap, viewport rect, radar animation.
 pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances {
-    let view = current_sidebar_view(state).cloned();
+    // Nothing below changes the retained view; the minimap build and the
+    // font raster switches write other fields, so the view is read again
+    // after each instead of being copied.
+    let view_revision = current_sidebar_view(state).map(|_| {
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .view_revision()
+    });
     let minimap_rect = active_minimap_screen_rect(state);
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
     let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(state);
@@ -1403,7 +1413,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // SidebarClass::BlitToScreen @ 0x006A70E0 translates that retained surface
     // to the right-sidebar destination without changing the copied extent.
     // The live view panel is the corresponding outer UI-scaled screen frame.
-    let sidebar_surface = view.as_ref().map(|view| {
+    let sidebar_surface = current_sidebar_view(state).map(|view| {
         [
             view.panel_rect.x,
             view.panel_rect.y,
@@ -1462,8 +1472,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         (Vec::new(), Vec::new(), Vec::new())
     };
 
+    let view = current_sidebar_view(state);
     let mut chrome = view
-        .as_ref()
         .map(|v| build_sidebar_chrome_instances(state, v))
         .unwrap_or_default();
     // The pictures of the buttons the side's layout adds to the sidebar draw
@@ -1477,14 +1487,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         ],
     ));
     // The observer's strip draws over the strip's tiles from the same atlas.
-    if let Some(v) = view.as_ref() {
+    if let Some(v) = view {
         chrome.extend(
             crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
         );
     }
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
-        .as_ref()
         .map(|_| build_command_bar_instances(state))
         .unwrap_or_default();
     // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
@@ -1542,12 +1551,10 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         crate::render::sidebar_text::native_radar_outline_color(theme)
     };
     let cameo_layers = view
-        .as_ref()
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
         .unwrap_or_default();
     #[cfg(feature = "phobos")]
     let sw_sidebar = view
-        .as_ref()
         .map(|_| {
             crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
         })
@@ -1558,18 +1565,15 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             .raster()
             .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
     );
+    let view = current_sidebar_view(state);
     let mut text_layers = view
-        .as_ref()
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
         .unwrap_or_default();
     // Credits counter shares the GAME.FNT sidebar-text layer: gamemd draws it
     // with the same BitFont on the sidebar surface, in the same packed side
     // text colour as the cameo labels.
     let layout_spec = state.match_state.match_presentation.sidebar_layout_spec;
-    if let Some(v) = view
-        .as_ref()
-        .filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money))
-    {
+    if let Some(v) = view.filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money)) {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
         text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
@@ -1665,7 +1669,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         viewport_rect,
         content_boundary,
         radar_anim,
-        view,
+        view_revision,
     }
 }
 
