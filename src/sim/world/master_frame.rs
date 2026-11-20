@@ -1325,7 +1325,7 @@ impl Simulation {
         // animation advancement remains in the live-object scheduler, which
         // owns the single pending-delete drain above.
         if frame_committed {
-            let game_options = self.session.game_options().clone();
+            let game_options = *self.session.game_options();
             let binary_frame = self.session.binary_frame();
             let (entities, interner) = self.entities_mut_and_interner();
             animation::tick_non_dying_animations(

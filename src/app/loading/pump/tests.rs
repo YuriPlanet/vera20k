@@ -178,6 +178,69 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
 }
 
 #[test]
+fn authored_campaign_replay_uses_campaign_prefix_and_no_stock_seats() {
+    use crate::app::loading::fresh_scenario::{FreshScenarioFamily, FreshStartupProvenance};
+    use crate::app::match_bootstrap::{MatchSeed, MatchSeedSource};
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let dir =
+        crate::map::source::test_support::TestDirectory::new("authored-campaign-replay-summary");
+    let manifest_path = dir.path().join("campaign.ini");
+    std::fs::write(
+        &manifest_path,
+        b"[Stage Opening]\nMap=open.map\n[Roles Opening]\nLead=Americans\nWing=Americans\n[Grants Opening]\nWing.Russians=UnitsOnly",
+    ).unwrap();
+    let manifest = CampaignManifest::load(&manifest_path).unwrap();
+    let start =
+        AuthoredCampaignStart::from_stage(&manifest.stages[0], 0, 2, Default::default()).unwrap();
+    let policy = start.rule_policy();
+    let logical_map = "campaigns/test/open.map";
+    let local_map = dir
+        .path()
+        .join("relocated.map")
+        .to_string_lossy()
+        .into_owned();
+    let startup = LoadingStartup::AuthoredCampaignReplay {
+        start: Box::new(start),
+        logical_map: logical_map.into(),
+        local_map: local_map.clone(),
+        map_sha256: crate::util::sha256::sha256_hex(b"campaign scenario fixture"),
+        seed: MatchSeed {
+            value: 31,
+            source: MatchSeedSource::SavedScenario,
+            seed_authority_certifying: false,
+        },
+        native_id_prefix: 15,
+        game_mode: ScenarioGameMode::Wol,
+        game_speed: 4,
+    };
+    let source = crate::map::source::LoadedMapSource::Loose {
+        cache_lease: Default::default(),
+        path: local_map.clone().into(),
+        payload_len: 32,
+        source_sha256: crate::util::sha256::sha256_hex(b"campaign scenario fixture"),
+    };
+    let initial = MapLoadInitial::from_test_map_source(prefix_test_map(&[]), source);
+    let context = FreshScenarioLoadContextDescriptor::admit(
+        &startup,
+        initial.map_data(),
+        initial.map_source(),
+        &mut None,
+    )
+    .unwrap();
+    assert_eq!(context.family(), FreshScenarioFamily::Campaign);
+    assert_eq!(context.startup_provenance(), FreshStartupProvenance::Replay);
+    assert_eq!(context.match_seed(), 31);
+    assert!(startup.launch_session().is_none());
+    assert_eq!(startup.match_spec().rules(), policy);
+    assert_eq!(startup.authored_campaign_speed(), Some(4));
+    assert_eq!(startup.selected_map_file(), logical_map);
+    assert_eq!(startup.physical_map_file(), local_map);
+}
+
+#[test]
 #[ignore = "slow; retail warm/cold ordered online startup"]
 fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
     cold_and_warm_rules_share_world_and_agreement_identity(
@@ -225,7 +288,7 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         session.set_network_start_seed(73).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
     }
-    let startup = session.freeze_network_start(73).unwrap();
+    let startup = session.freeze_network_start(73, None).unwrap();
     let LoadingStartup::Network(admitted) = &startup else {
         unreachable!()
     };
@@ -344,7 +407,7 @@ fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback(
         .unwrap();
     session.set_network_start_seed(77).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
-    let startup = session.freeze_network_start(77).unwrap();
+    let startup = session.freeze_network_start(77, None).unwrap();
     let loading = LoadingSession::from_request(LoadingRequest::network(startup));
     assert_eq!(
         loading.failure_policy(),
@@ -425,7 +488,7 @@ fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_load
         .accept_network_setup(launch, false, Some(7), false)
         .unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
-    let startup = session.freeze_network_start(0xabc123).unwrap();
+    let startup = session.freeze_network_start(0xabc123, None).unwrap();
     let request = LoadingRequest::network(startup);
     let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
         prefix_test_map(&[(0, 20, 24), (1, 42, 46)]),
@@ -2332,7 +2395,7 @@ fn network_load_with_remote_peer(
         .unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
     let mut result = super::super::transitions::fallback_map_load_result();
-    result.scenario.startup = session.freeze_network_start(1).unwrap();
+    result.scenario.startup = session.freeze_network_start(1, None).unwrap();
     result.scenario.simulation = Some(sim);
     (session, result, local, peer)
 }
@@ -2410,7 +2473,7 @@ fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
         .unwrap();
     session.set_network_start_seed(77).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
-    let startup = session.freeze_network_start(77).unwrap();
+    let startup = session.freeze_network_start(77, None).unwrap();
     let crate::app::match_bootstrap::LoadingStartup::Network(accepted) = &startup else {
         panic!("a frozen network start");
     };

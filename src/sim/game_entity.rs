@@ -3648,7 +3648,7 @@ impl GameEntity {
     /// `TechnoClass::AI_Update`'s `+0xC4` increment (`0x006FA646`) once per
     /// visit. A sleeping building's relight sample (`0x00450A47`) is current
     /// (`BuildingArt::tint_sample_is_current`), which its visits keep as it is.
-    pub(crate) fn settle_sleep(&self, owed: u32) {
+    pub(crate) fn settle_sleep(&mut self, owed: u32) {
         self.mission.add_owed_ai_visits(owed);
     }
 

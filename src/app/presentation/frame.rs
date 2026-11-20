@@ -91,6 +91,9 @@ pub(crate) struct ObjectRecord {
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
+    /// Copied as the object keeps it: only a Structure that wrote its art
+    /// copies the allocation, and every other record carries one pointer
+    /// instead of the art inline.
     pub(crate) building_art: crate::util::sparse::Sparse<crate::sim::building_art::BuildingArt>,
     pub(crate) animation: Option<crate::sim::animation::Animation>,
     pub(crate) miner: Option<Miner>,
@@ -596,14 +599,14 @@ impl ObjectRecord {
             is_voxel: entity.is_voxel(),
             on_bridge: entity.on_bridge(),
             ion_blast_lift: entity.ion_blast_lift_pixels(),
-            position: entity.position.clone(),
-            body_facing: entity.body_facing.clone(),
-            body_frame_counter: entity.body_frame_counter.clone(),
-            unit_firing_counter: entity.unit_firing_counter.clone(),
+            position: entity.position,
+            body_facing: entity.body_facing,
+            body_frame_counter: entity.body_frame_counter,
+            unit_firing_counter: entity.unit_firing_counter,
             unit_death_counter: entity.unit_death_counter,
-            turret_anim_frame: entity.turret_anim_frame.clone(),
-            health: entity.health.clone(),
-            veterancy: entity.veterancy.clone(),
+            turret_anim_frame: entity.turret_anim_frame,
+            health: entity.health,
+            veterancy: entity.veterancy,
             flashing: Flashing {
                 frames: entity.flashing.frames(),
             },
@@ -613,7 +616,7 @@ impl ObjectRecord {
             repairing: Repairing {
                 on: entity.building.repairing.is_on(),
             },
-            lifecycle: entity.lifecycle.clone(),
+            lifecycle: entity.lifecycle,
             locomotor: entity.locomotor.as_ref().map(|locomotor| {
                 LocomotorView::of(locomotor, || {
                     let type_name = at.sim.interner().resolve(entity.type_ref());
@@ -623,9 +626,9 @@ impl ObjectRecord {
             navigation: Navigation {
                 nav_com: entity.navigation.nav_com(),
             },
-            last_fire_frame: entity.last_fire_frame.clone(),
+            last_fire_frame: entity.last_fire_frame,
             building_art: entity.building_art.clone(),
-            animation: entity.animation.clone(),
+            animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
                 harvesting: miner.harvesting(),
             }),
@@ -637,8 +640,8 @@ impl ObjectRecord {
             spawn_manager: entity.spawn_manager.as_deref().map(|manager| SpawnManager {
                 docked: manager.count_docked_spawns(),
             }),
-            invulnerability: entity.invulnerability.clone(),
-            airstrike_tint: entity.airstrike_tint.clone(),
+            invulnerability: entity.invulnerability,
+            airstrike_tint: entity.airstrike_tint,
             temporal: Temporal {
                 warped: entity.temporal.is_warped(),
             },
@@ -657,11 +660,11 @@ impl ObjectRecord {
             tether: Tether {
                 partner: entity.tether.partner().is_some(),
             },
-            disguise: entity.disguise.clone(),
+            disguise: entity.disguise,
             display_type_override: DisplayTypeOverride {
                 image: entity.display_type_override.image(),
             },
-            selection: entity.selection.clone(),
+            selection: entity.selection,
             applied_fraction: entity.foot_speed.native_applied_fraction(),
             // Only an Aircraft can be a Carryall.
             drawn_cargo: (entity.category() == EntityCategory::Aircraft)

@@ -356,7 +356,7 @@ pub struct AssetManager {
     /// had been copied on top of the installation directory: a file here
     /// takes the place of the installation's file of the same name. `None`
     /// is the original game.
-    mod_dir: Option<PathBuf>,
+    mod_dir: Option<crate::util::mod_package::ModFolder>,
     client_install: Option<Arc<ClientInstall>>,
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
@@ -502,11 +502,12 @@ pub fn holds_master_archives(dir: &Path) -> bool {
 /// A conventional launcher folder can describe itself with its existing
 /// client catalog and a complete numbered archive family.
 pub fn mod_resources(
-    dir: &Path,
+    dir: &crate::util::mod_package::ModFolder,
     definition: &ModDefinition,
     base: &IniRootConfig,
 ) -> Result<ResourceConfig, String> {
     let mut resources = definition.resources(base);
+    resources.mod_folder = Some(dir.clone());
     if definition.declares_loading() {
         return Ok(resources);
     }
@@ -531,19 +532,22 @@ pub fn mod_resources(
 }
 
 impl AssetManager {
-    pub fn with_client_install(mut self, client: Option<Arc<ClientInstall>>) -> Self {
-        self.client_install = client;
-        self
-    }
-
     pub fn client_install(&self) -> Option<&ClientInstall> {
         self.client_install.as_deref()
     }
 
+    /// Keep the selected package's files and catalog for the manager's lifetime.
+    pub fn with_mod_sources(mut self, config: &ResourceConfig) -> Self {
+        if let Some(folder) = &config.mod_folder {
+            self.mod_dir = Some(folder.clone());
+        }
+        self.client_install = config.client_install.clone();
+        self
+    }
+
     /// Bind the same resolved mod inputs in startup, probes and asset tools.
     pub fn with_resource_config(self, config: &ResourceConfig) -> Result<Self, AssetError> {
-        self.with_client_install(config.client_install.clone())
-            .with_ini_roots(&config.ini)
+        self.with_mod_sources(config).with_ini_roots(&config.ini)
     }
 
     /// Consume a newly assembled provider, then freeze one root choice before
@@ -648,7 +652,8 @@ impl AssetManager {
             active_theater_archives: Vec::new(),
             active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
-            mod_dir: mod_dir.map(Path::to_path_buf),
+            mod_dir: mod_dir
+                .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
         })

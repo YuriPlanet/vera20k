@@ -108,15 +108,15 @@ pub(super) fn launch(
 ) -> bool {
     let Some(config) = rules
         .super_weapon_metadata(&sw.id)
-        .map(|metadata| metadata.launch().drop_pod().clone())
+        .map(|metadata| metadata.launch().drop_pod())
     else {
         return false;
     };
     let globals = rules.ares_drop_pod();
     let types = if config.types.is_empty() {
-        globals.types.clone()
+        &globals.types
     } else {
-        config.types
+        &config.types
     };
     let minimum = config.minimum.unwrap_or(globals.minimum);
     let maximum = config.maximum.unwrap_or(globals.maximum);

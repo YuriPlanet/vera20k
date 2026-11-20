@@ -442,7 +442,8 @@ pub(crate) struct PresentationManifest {
 
 /// Build the voxel and SHP sprite atlases, and the palette set, for a fully
 /// constructed simulation. A load builds them once; sprites the world needs
-/// later go onto the atlases' growth pages.
+/// later go onto the atlases' growth pages. Fails when the map's data cannot
+/// build the sprite atlas.
 pub(crate) fn build_presentation_manifest(
     sim: &Simulation,
     asset_manager: &AssetManager,
@@ -454,7 +455,7 @@ pub(crate) fn build_presentation_manifest(
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
-) -> PresentationManifest {
+) -> anyhow::Result<PresentationManifest> {
     prepare_presentation_manifest(
         sim,
         asset_manager,

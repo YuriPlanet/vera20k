@@ -567,6 +567,7 @@ impl App {
             game_config
                 .as_ref()
                 .map(|config| config.paths.settings_dir()),
+            options_profile.graphics_api.backend(),
         );
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let gpu = match GpuContext::new(
@@ -574,6 +575,7 @@ impl App {
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
             backends,
+            crate::app::persistence::startup_backend::starting,
         ) {
             // The API the start record asks for has no adapter here (DirectX
             // 12 on a Windows without it): the default set; the record stays.
@@ -586,6 +588,7 @@ impl App {
                     event_loop.owned_display_handle(),
                     capture || hidden_spawn_window,
                     wgpu::Backends::PRIMARY,
+                    crate::app::persistence::startup_backend::starting,
                 )?
             }
             result => result?,
@@ -668,6 +671,11 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         terrain_draw_renderer.set_gpu_timer(gpu.timer.clone());
+        if gpu.shared_memory_graphics() {
+            terrain_draw_renderer.set_passes_per_submission(
+                crate::render::terrain_draw::SHARED_MEMORY_PASSES_PER_SUBMISSION,
+            );
+        }
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
         let performance_overlay =
             crate::app::diagnostics::performance_overlay::PerformanceOverlay::new(
@@ -815,7 +823,6 @@ impl App {
                 )
                 .with_resources(resources)
                 .with_personal_rules(personal_rules)
-                .with_mod_dir(mods.dir().map(Path::to_path_buf))
                 .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
             // Phobos parses `uimd.ini` once right after the archive mount
@@ -1160,6 +1167,7 @@ impl App {
                     commander_feedback: Default::default(),
                     chrono_screen: Default::default(),
                     scenario_pause: Default::default(),
+                    narrative_sync: Default::default(),
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,
@@ -1392,6 +1400,7 @@ impl App {
                 screen_presentation:
                     crate::render::screen_presentation::ScreenPresentationPass::new(),
                 terrain_draw_renderer,
+                pass_log: Default::default(),
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),
                 depth_view,
                 shell_surface_presenter,

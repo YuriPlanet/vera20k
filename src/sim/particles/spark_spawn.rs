@@ -119,7 +119,7 @@ pub(super) fn spark_spawn_pass(
         // Null (<none>) retains the existing safety skip for native's invalid
         // array[-1] route. Missing HoldsWhat binds a real empty-named type.
         if let Some(particle_type_id) = holds_what {
-            let particle_type = rules.particle_type(particle_type_id).clone();
+            let particle_type = rules.particle_type(particle_type_id);
 
             // (3) Three shared draws, taken unconditionally at `0x0062E8EF`,
             // `0x0062E903` and `0x0062E90E`. Native divides them (crossed: the

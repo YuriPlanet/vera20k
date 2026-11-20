@@ -110,7 +110,7 @@ fn production_scenario_mode_reads_stay_behind_admission() {
         "sim/world/shroud_refresh.rs",
         "sim/world/world_spawn.rs",
     ];
-    const LEGACY_READ_COUNT: usize = 17;
+    const LEGACY_READ_COUNT: usize = 16;
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut forbidden = Vec::new();
@@ -516,6 +516,9 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // A received map's case-folded name check; a file it finds is
                 // kept only when it holds the same verified bytes.
                 "map/source.rs",
+                // Mod import scans a dropped folder or archive's parts before a
+                // match; the catalog it builds is the same whatever their order.
+                "util/mod_package.rs",
             ],
         ),
         (

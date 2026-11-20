@@ -63,7 +63,10 @@ fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
         };
         PreparedSpriteAtlas::Raster(work, empty_upload(true))
     };
-    let expected = prepare().finish(&gpu.device, &gpu.queue, &batch).unwrap();
+    let expected = prepare()
+        .finish(&gpu.device, &gpu.queue, &batch)
+        .unwrap()
+        .unwrap();
     let mut pending = prepare()
         .start_loading(&gpu.device, &gpu.queue, &batch)
         .unwrap();
@@ -357,10 +360,64 @@ fn make_shp_key(type_id: &str, facing: u8) -> ShpSpriteKey {
     }
 }
 
+/// A map-load raster whose required cell-drawer frame has no source is the
+/// load's error, which names the animation.
 #[test]
-#[should_panic(expected = "required initial sprite failed")]
-fn required_initial_build_failure_remains_fail_fast() {
-    abandon_sprite_atlas_refresh(true, "required initial sprite failed");
+fn a_map_load_raster_missing_a_required_frame_is_an_error() {
+    let work = ShpRasterWork {
+        keys: vec![ShpRasterKey {
+            key: make_shp_key("MISSING", 0),
+            source: 0,
+            palette: 0,
+            infantry: false,
+            required: true,
+        }],
+        sources: vec![None],
+        render_palettes: vec![Palette::from_rgb(|i| [i, i, i])],
+        rows: ShpPalettes::default(),
+        harvest_overlay: None,
+        max_rows: 8192,
+    };
+    let failure = empty_upload(true)
+        .drawn(work.render())
+        .err()
+        .expect("a missing required frame abandons the build");
+    assert!(failure.contains("[MISSING]"), "{failure}");
+}
+
+/// A map-load build whose map binds a terrain animation with no SHP is
+/// abandoned with a message, before any GPU work.
+#[test]
+fn a_map_load_build_missing_a_cell_drawer_shp_is_abandoned() {
+    let ini = crate::rules::ini_parser::IniFile::from_str("[General]\nDamageFireTypes=\n");
+    let mut rules = RuleSet::from_ini(&ini).expect("rules");
+    let directory = StoredFrameTestDirectory::new();
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.bind_scheduler_anim_assets(&["NO_SHP_FALLS".into()], &assets, "TEM", "TEMPERATE");
+    rules.replace_art_registry_for_test(art);
+    let prepared = prepare_sprite_atlas(
+        8192,
+        &crate::sim::entity_store::EntityStore::new(),
+        &assets,
+        &Palette::from_rgb(|i| [i, i, i]),
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+        &HouseColorMap::new(),
+        &[],
+        &HashSet::new(),
+        &HashSet::from(["NO_SHP_FALLS".to_string()]),
+        &HashSet::new(),
+        None,
+        None,
+        None,
+    );
+    let PreparedSpriteAtlas::Abandoned(failure) = prepared else {
+        panic!("a map load with a missing cell-drawer SHP is abandoned");
+    };
+    assert!(failure.contains("[NO_SHP_FALLS]"), "{failure}");
 }
 
 /// One placed object of `type_id` owned by "Americans", and the interner
@@ -3740,7 +3797,7 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
         panic!("a palette overflow is found while drawing");
     };
     assert!(
-        upload.drawn(work.render()).is_none(),
+        upload.drawn(work.render()).is_err(),
         "palette overflow abandons the refresh"
     );
     let old = colored;

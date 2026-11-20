@@ -416,9 +416,13 @@ pub(crate) fn shp_visitor<'a>(
         // The construction animation's stage is the Buildup frame drawn; the
         // shared body_frame owner applies the gate and sale reflections.
         let make_frame = |selling: bool| {
-            let make_key: String = format!("{}_MAKE", type_str);
-            let total_make_frames: u16 =
-                atlas.make_frame_counts.get(&make_key).copied().unwrap_or(0);
+            // A name this short stays inline: the per-frame key allocates nothing.
+            let make_key = smol_str::format_smolstr!("{type_str}_MAKE");
+            let total_make_frames: u16 = atlas
+                .make_frame_counts
+                .get(make_key.as_str())
+                .copied()
+                .unwrap_or(0);
             if total_make_frames == 0 {
                 return (0, None);
             }
@@ -464,7 +468,7 @@ pub(crate) fn shp_visitor<'a>(
             }
             _ => None,
         };
-        let (shp_frame, make_type_id): (u16, Option<String>) = if is_building_up {
+        let (shp_frame, make_type_id): (u16, Option<smol_str::SmolStr>) = if is_building_up {
             make_frame(false)
         } else if is_building_down {
             make_frame(true)
@@ -478,7 +482,7 @@ pub(crate) fn shp_visitor<'a>(
                     };
                     (
                         frame,
-                        unopened_buildup.then(|| format!("{}_MAKE", type_str)),
+                        unopened_buildup.then(|| smol_str::format_smolstr!("{type_str}_MAKE")),
                     )
                 }
                 _ => {

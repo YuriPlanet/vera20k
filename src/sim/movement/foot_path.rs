@@ -178,18 +178,10 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
     }
     fn prepare_search_markers(
         &self,
-    ) -> Result<
-        Option<(
-            u8,
-            std::cell::Ref<'_, crate::sim::pathfinding::SearchMarkerOverlay>,
-        )>,
-        String,
-    > {
+    ) -> Result<Option<(u8, &crate::sim::pathfinding::SearchMarkerOverlay)>, String> {
         Ok(Some(self.markers.prepare()))
     }
-    fn prepared_search_markers(
-        &self,
-    ) -> Option<std::cell::Ref<'_, crate::sim::pathfinding::SearchMarkerOverlay>> {
+    fn prepared_search_markers(&self) -> Option<&crate::sim::pathfinding::SearchMarkerOverlay> {
         self.markers.prepared()
     }
     fn is_passive_unit(&self) -> bool {

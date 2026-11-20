@@ -8,6 +8,8 @@ lang: tr
 
 [Svenska](../sv/) · [简体中文](../zh-CN/) · [Deutsch](../de/) · [العربية](../ar/) · [Русский](../ru/) · [ไทย](../th/) · **Türkçe** · [English](../)
 
+[Harekât bildirimleri](campaign-manifest.md)
+
 Red Alert 2: Yuri's Revenge — Rust ile sıfırdan yeniden yazıldı.
 
 Bu sayfa kodun kısa bir haritasıdır. Kodla çelişirse doğru olan koddur. Her modülün başındaki `//!` yorumu, modülün ne yaptığını ve nelere bağımlı olabileceğini açıklar.

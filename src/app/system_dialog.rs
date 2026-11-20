@@ -99,6 +99,10 @@ fn show_crash(what: String) {
     let (lost_device, retry) = {
         let lost = crate::render::gpu::lost_device();
         let retry = lost.and_then(|_| crate::app::persistence::startup_backend::record_loss());
+        if lost.is_none() {
+            // A panic on a working device is not the graphics API's fault.
+            crate::app::persistence::startup_backend::forget_start();
+        }
         (lost, retry)
     };
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -154,6 +158,9 @@ pub(crate) fn report_startup_failure(error: &anyhow::Error) {
             ),
         );
     } else {
+        // Not the graphics API's failure: the next start keeps it.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        crate::app::persistence::startup_backend::forget_start();
         show_fatal(
             &crate::i18n::tr("VERA:StartFailedTitle"),
             &format!("{error:#}\n\n{}", log_note()),

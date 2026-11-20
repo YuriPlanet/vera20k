@@ -526,9 +526,9 @@ fn retail_drone_firing_counter_and_frames_match_original() {
     }
 }
 
-/// The frame-end step looks up only the classes built with an Animation: the
-/// infantry and buildings beside an SHP unit are never read, and the unit's
-/// sequence steps as before.
+/// The frame-end step walks the store's slots: no entity is looked up by id,
+/// the infantry and buildings beside an SHP unit are never handed out, and
+/// the unit's sequence steps as before.
 #[test]
 fn the_frame_end_step_reads_only_units_and_aircraft() {
     use crate::map::entities::EntityCategory;
@@ -556,6 +556,7 @@ fn the_frame_end_step_reads_only_units_and_aircraft() {
     let sequences = std::collections::BTreeMap::from([("DRON".to_string(), set)]);
 
     let (before, _) = store.lookups();
+    let handed_out = store.hand_outs();
     tick_non_dying_animations(
         &mut store,
         &sequences,
@@ -566,7 +567,12 @@ fn the_frame_end_step_reads_only_units_and_aircraft() {
     );
     let (after, _) = store.lookups();
 
-    assert_eq!(after - before, 2, "the unit is read, then borrowed");
+    assert_eq!(after - before, 0, "no entity is looked up by id");
+    assert_eq!(
+        store.hand_outs() - handed_out,
+        1,
+        "only the unit is handed out"
+    );
     let unit = store.get(10).unwrap();
     assert_eq!(unit.animation.as_ref().unwrap().frame_index(), 1);
 }

@@ -487,8 +487,8 @@ impl Simulation {
                 crusher.mover_facts.regular_crusher(),
                 crusher.mover_facts.omni_crusher(),
             );
-            let kills = super::bump_crush::select_crush_victims(
-                &[victim],
+            if !super::bump_crush::crushes(
+                victim,
                 &self.substrate.entities,
                 id,
                 &self.house_alliances,
@@ -496,8 +496,7 @@ impl Simulation {
                 (coord.x, coord.y),
                 capability,
                 self.session.binary_frame(),
-            );
-            if !kills.contains(&victim) {
+            ) {
                 continue;
             }
             if ares {
@@ -1982,13 +1981,21 @@ impl Simulation {
     ) {
         //6F5140..6F516C runs for PlayerPtr on every native client. Use
         //each represented human's retained admission and own ground plane.
+        let due = |sim: &Self, viewer| {
+            !sim.techno_discovered_by_viewer(id, viewer) && sim.fog.is_ground_open(viewer, rx, ry)
+        };
+        // Usually no map is due; only a discovery can change the answer for
+        // a later map, so the lists the loop needs are taken only then.
+        if !self
+            .each_represented_player_map()
+            .any(|viewer| due(self, viewer))
+        {
+            return;
+        }
         for viewer in self.represented_player_maps() {
-            if self.techno_discovered_by_viewer(id, viewer)
-                || !self.fog.is_ground_open(viewer, rx, ry)
-            {
-                continue;
+            if due(self, viewer) {
+                self.discover_techno(id, viewer, context);
             }
-            self.discover_techno(id, viewer, context);
         }
     }
 

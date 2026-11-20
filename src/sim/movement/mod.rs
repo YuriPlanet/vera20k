@@ -37,7 +37,7 @@ use crate::map::entities::EntityCategory;
 #[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::entity_store::EntityStore;
@@ -191,7 +191,8 @@ pub(super) struct MoverSnapshot {
     pub movement_zone: MovementZone,
     pub omni_crusher: bool,
     pub regular_crusher: bool,
-    pub locomotor: Option<locomotor::LocomotorState>,
+    /// The installed locomotor's active kind.
+    pub locomotor_kind: Option<LocomotorKind>,
     /// Native AStar hierarchy admission reads the stored TechnoClass+0x3D5
     /// byte. False under live MapClass authority bypasses hierarchy and runs
     /// the plain cell A*; headless fixtures without authority retain hierarchy.

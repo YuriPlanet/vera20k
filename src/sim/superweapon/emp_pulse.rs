@@ -55,7 +55,7 @@ pub(super) fn launch(
 ) -> bool {
     let Some(emp) = rules
         .super_weapon_metadata(&sw.id)
-        .map(|metadata| metadata.launch().emp_pulse().clone())
+        .map(|metadata| metadata.launch().emp_pulse())
     else {
         return true;
     };

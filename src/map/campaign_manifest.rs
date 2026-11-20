@@ -18,6 +18,9 @@ use crate::util::sha256::sha256_hex;
 /// Limits both desktop streams and browser-imported manifests before parsing.
 pub const MAX_CAMPAIGN_MANIFEST_BYTES: usize = 64 * 1024;
 
+/// A campaign source index must fit in the nonnegative range of a signed byte.
+pub const MAX_CAMPAIGN_PLAYERS: u8 = i8::MAX as u8 + 1;
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{file}:{line} [{section}] {key}: {problem}. {hint}", file = .file.display())]
 pub struct ManifestError {
@@ -46,6 +49,9 @@ pub struct CampaignStage {
     pub id: String,
     pub map: String,
     pub map_sha256: Option<String>,
+    /// Optional room admission bounds for playing connections.
+    pub min_players: Option<u8>,
+    pub max_players: Option<u8>,
     pub rule_policy: RulePolicy,
     /// Role declaration order supplies the stable zero-based source index.
     pub roles: Vec<CampaignRole>,
@@ -245,7 +251,7 @@ impl CampaignManifest {
         for section in sections.iter().filter(|s| s.kind == SectionKind::Roles) {
             let stage = section.stage(path, &indices, &mut stages)?;
             for entry in &section.entries {
-                if stage.roles.len() > i8::MAX as usize {
+                if stage.roles.len() >= usize::from(MAX_CAMPAIGN_PLAYERS) {
                     return Err(section.error(
                         path,
                         *entry,
@@ -359,7 +365,9 @@ impl CampaignStage {
             id: section.id.to_owned(),
             map: String::new(),
             map_sha256: None,
-            rule_policy: RulePolicy::stock_campaign(),
+            min_players: None,
+            max_players: None,
+            rule_policy: RulePolicy::stock_campaign().with_counts_player_control_as_human(false),
             roles: Vec::new(),
             grants: Vec::new(),
             routes: BTreeMap::new(),
@@ -405,6 +413,38 @@ impl CampaignStage {
                     stage.map_sha256 = Some(digest);
                     stage.map_digest_location = Some(Location::new(section, entry));
                 }
+                "minplayers" | "maxplayers" => {
+                    let count = entry
+                        .value
+                        .parse::<u8>()
+                        .ok()
+                        .filter(|&count| (1..=MAX_CAMPAIGN_PLAYERS).contains(&count))
+                        .ok_or_else(|| {
+                            section.error(
+                                path,
+                                entry,
+                                "invalid player count",
+                                "Enter a whole number between 1 and 128",
+                            )
+                        })?;
+                    if key == "minplayers" {
+                        stage.min_players = Some(count);
+                    } else {
+                        stage.max_players = Some(count);
+                    }
+                    if stage
+                        .min_players
+                        .zip(stage.max_players)
+                        .is_some_and(|(min, max)| min > max)
+                    {
+                        return Err(section.error(
+                            path,
+                            entry,
+                            "MinPlayers exceeds MaxPlayers",
+                            "Set MinPlayers at or below MaxPlayers",
+                        ));
+                    }
+                }
                 "title" => stage.title.read(&key, entry, section, path)?,
                 _ if key.starts_with("title.") => stage.title.read(&key, entry, section, path)?,
                 _ => {
@@ -412,7 +452,7 @@ impl CampaignStage {
                         path,
                         entry,
                         "unknown stage key",
-                        "Use Map, MapSha256, Title or Title.<locale>",
+                        "Use Map, MapSha256, MinPlayers, MaxPlayers, Title or Title.<locale>",
                     ));
                 }
             }
@@ -499,6 +539,14 @@ impl CampaignStage {
                 entry,
                 "invalid branch name",
                 "Use an identifier such as Win or Retry",
+            ));
+        }
+        if entry.key.eq_ignore_ascii_case("Retry") && !entry.value.eq_ignore_ascii_case(&self.id) {
+            return Err(section.error(
+                path,
+                entry,
+                "Retry must restart the current stage",
+                "Name the current stage or use a different branch name",
             ));
         }
         let index = indices
@@ -834,32 +882,11 @@ fn house_name(value: &str) -> bool {
 }
 
 fn relative_map_name(value: &str) -> bool {
-    !value
-        .chars()
-        .any(|ch| ch.is_control() || matches!(ch, '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*'))
-        && value.split('/').all(|part| {
-            !part.is_empty()
-                && !part.starts_with(' ')
-                && !part.ends_with(['.', ' '])
-                && !windows_device_name(part)
-        })
-}
-
-fn windows_device_name(component: &str) -> bool {
-    let stem = component.split('.').next().unwrap_or_default().trim_end();
-    let stem = stem.to_ascii_uppercase();
-    matches!(
-        stem.as_str(),
-        "CON" | "CONIN$" | "CONOUT$" | "PRN" | "AUX" | "NUL"
-    ) || stem
-        .strip_prefix("COM")
-        .or_else(|| stem.strip_prefix("LPT"))
-        .is_some_and(|digit| {
-            matches!(
-                digit,
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
-            )
-        })
+    crate::map::source::is_logical_name(value)
+        && !value.contains(['\\', '<', '>', '"', '|', '?', '*'])
+        && value
+            .split('/')
+            .all(|part| !part.starts_with(' ') && !part.ends_with(['.', ' ']))
 }
 
 fn boolean(value: &str) -> Option<bool> {
@@ -960,7 +987,13 @@ fn read_rule(
         "allowsconstructionyardredeploy" => RulePolicy::with_allows_construction_yard_redeploy,
         "allowsidleobjectsleep" => RulePolicy::with_allows_idle_object_sleep,
         "allowsownerlessterrainlogic" => RulePolicy::with_allows_ownerless_terrain_logic,
-        "countsplayercontrolashuman" => RulePolicy::with_counts_player_control_as_human,
+        "countsplayercontrolashuman" => {
+            return match boolean(raw) {
+                Some(false) => Ok(policy.with_counts_player_control_as_human(false)),
+                Some(true) => Err("Use No. Assign human-controlled Houses in [Roles <stage>]"),
+                None => Err("Choose No for an authored multiplayer campaign"),
+            };
+        }
         "usescountrydifficultybiases" => RulePolicy::with_uses_country_difficulty_biases,
         "skipslocalplayerauthoredbuildings" => {
             RulePolicy::with_skips_local_player_authored_buildings
@@ -1012,7 +1045,11 @@ mod tests {
         assert_eq!(manifest.stage_index("Closing"), None);
         let stage = manifest.stage("opening").unwrap();
         assert_eq!(stage.map, "maps/opening.map");
-        assert_eq!(stage.rule_policy, RulePolicy::stock_campaign());
+        assert_eq!(
+            stage.rule_policy,
+            RulePolicy::stock_campaign().with_counts_player_control_as_human(false)
+        );
+        assert_eq!((stage.min_players, stage.max_players), (None, None));
         assert_eq!(manifest.title("en"), "demo");
         assert_eq!(stage.title("en"), "Opening");
         assert!(stage.roles.is_empty() && stage.grants.is_empty() && stage.routes.is_empty());
@@ -1024,7 +1061,7 @@ mod tests {
         let manifest = CampaignManifest::read(
             FILE,
             "[Campaign]\nTitle=Series\nTitle.de=Reihe\n\
-             [Stage Opening]\nMap=open.map\nTitle=Zulu\nTitle.de=Anfang\n\
+             [Stage Opening]\nMap=open.map\nTitle=Zulu\nTitle.de=Anfang\nMinPlayers=1\nMaxPlayers=2\n\
              [Grants Opening]\nLEAD.Soviet=FullControl\nSupport.Soviet=UnitsOnly\nLead.Neutral=UnitsOnly\n\
              [Rules Opening]\nAllowWinTags=Ignore\nAiBase=ReplaceUnavailableNodes\nUsesMatchCrates=Yes\n\
              [Routes OPENING]\nWin=closing\nRetry=opening\n\
@@ -1038,10 +1075,12 @@ mod tests {
         assert_eq!(
             stage.rule_policy,
             RulePolicy::stock_campaign()
+                .with_counts_player_control_as_human(false)
                 .with_allow_win_tags(AllowWinTagsPolicy::Ignore)
                 .with_ai_base(AiBasePolicy::ReplaceUnavailableNodes)
                 .with_uses_match_crates(true)
         );
+        assert_eq!((stage.min_players, stage.max_players), (Some(1), Some(2)));
         assert_eq!(
             stage
                 .roles
@@ -1086,6 +1125,17 @@ mod tests {
     }
 
     #[test]
+    fn retry_cannot_point_to_another_stage() {
+        let text = b"[Stage Opening]\nMap=open.map\n[Stage Closing]\nMap=close.map\n[Routes Opening]\nRetry=closing\n";
+        let error = CampaignManifest::read(FILE, text.as_slice()).unwrap_err();
+        assert_eq!(
+            (error.section.as_str(), error.key.as_str(), error.line),
+            ("Routes Opening", "Retry", 6)
+        );
+        assert!(error.problem.contains("current stage"));
+    }
+
+    #[test]
     fn oversized_reader_stops_at_the_first_byte_over_the_shared_limit() {
         let total = MAX_CAMPAIGN_MANIFEST_BYTES as u64 * 2;
         let mut input = std::io::repeat(b' ').take(total);
@@ -1114,7 +1164,17 @@ mod tests {
         );
         assert_eq!(error.hint, "Add this role to [Roles <stage>]");
 
-        for unsafe_path in ["../open.map", "/open.map", "C:/open.map", "maps/CON.map"] {
+        let overlong = format!("{}.map", "a".repeat(1021));
+        for unsafe_path in [
+            "../open.map",
+            "/open.map",
+            "C:/open.map",
+            "maps/CON.map",
+            "maps/CONIN$.map",
+            "maps/COM0.map",
+            "maps/LPT0.map",
+            &overlong,
+        ] {
             let text = format!("[Stage Opening]\nMap={unsafe_path}\n");
             let error = CampaignManifest::read(FILE, text.as_bytes()).unwrap_err();
             assert_eq!(
@@ -1123,6 +1183,37 @@ mod tests {
             );
             assert_eq!(error.problem, "unsafe map path");
         }
+    }
+
+    #[test]
+    fn authored_campaign_roles_cannot_enable_map_player_control() {
+        let prefix = "[Stage Opening]\nMap=open.map\n[Rules Opening]\n";
+        let refused = format!("{prefix}CountsPlayerControlAsHuman=Yes\n");
+        let error = CampaignManifest::read(FILE, refused.as_bytes()).unwrap_err();
+        assert_eq!(
+            (error.section.as_str(), error.key.as_str(), error.line),
+            ("Rules Opening", "CountsPlayerControlAsHuman", 4)
+        );
+        assert!(error.hint.contains("[Roles <stage>]"));
+
+        let allowed = format!("{prefix}CountsPlayerControlAsHuman=No\n");
+        let manifest = CampaignManifest::read(FILE, allowed.as_bytes()).unwrap();
+        assert!(
+            !manifest.stages[0]
+                .rule_policy
+                .counts_player_control_as_human()
+        );
+    }
+
+    #[test]
+    fn player_bounds_fail_at_the_declaration_that_invalidates_them() {
+        let error = CampaignManifest::read(
+            FILE,
+            b"[Stage Opening]\nMap=open.map\nMaxPlayers=2\nMinPlayers=3\n".as_slice(),
+        )
+        .unwrap_err();
+        assert_eq!((error.key.as_str(), error.line), ("MinPlayers", 4));
+        assert_eq!(error.hint, "Set MinPlayers at or below MaxPlayers");
     }
 
     #[test]

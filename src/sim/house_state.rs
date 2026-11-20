@@ -2142,7 +2142,7 @@ impl HouseState {
     pub(crate) fn initialize_scenario_parameters(
         &mut self,
         read: crate::map::houses::ScenarioHouseParameters,
-        campaign_difficulty: Option<HouseDifficulty>,
+        campaign_player_difficulty: Option<HouseDifficulty>,
         general: Option<&crate::rules::ruleset::GeneralRules>,
     ) {
         self.tech_level = read.tech_level;
@@ -2154,8 +2154,7 @@ impl HouseState {
         };
         self.economy.initialize_scenario_credits(
             read.credits,
-            campaign_difficulty,
-            self.player_control,
+            campaign_player_difficulty,
             general.map_or(0, |g| g.campaign_money_delta_easy),
             general.map_or(0, |g| g.campaign_money_delta_hard),
         );

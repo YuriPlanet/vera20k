@@ -365,7 +365,7 @@ impl MindScene {
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
             self.sim.resolved_terrain.clone().unwrap(),
-            self.sim.terrain_speed_config().clone(),
+            *self.sim.terrain_speed_config(),
             &self.rules,
         );
         loaded.resolve_type_handles(&self.rules);

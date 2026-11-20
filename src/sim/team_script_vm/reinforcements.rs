@@ -411,9 +411,9 @@ impl Simulation {
                 self.substrate
                     .entities
                     .get_mut(member)
-                    .unwrap()
+                    .expect("constructed member")
                     .ammo_mut()
-                    .unwrap()
+                    .expect("concrete Foot constructor retains Ammo")
                     .add(-1);
             }
             let mut cell = (initial.x / 256, initial.y / 256);
@@ -488,7 +488,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(member)
-                .unwrap()
+                .expect("placed reinforcement member")
                 .locomotor
                 .as_mut()
                 .expect("a placed Foot has its constructed locomotor");
@@ -499,13 +499,17 @@ impl Simulation {
             {
                 log::warn!("Chrono reinforcement Move_To: {error}");
             }
-            let entity = self.substrate.entities.get_mut(member).unwrap();
+            let entity = self
+                .substrate
+                .entities
+                .get_mut(member)
+                .expect("placed reinforcement member");
             entity
                 .locomotor
                 .as_mut()
-                .unwrap()
+                .expect("a placed Foot has its constructed locomotor")
                 .teleport_runtime_mut()
-                .unwrap()
+                .expect("begin_piggyback installed the Teleport locomotor")
                 .arm_chrono(ChronoWarp::reinforcement(coord, frame));
             entity
                 .chrono_warp_delay
@@ -524,14 +528,14 @@ impl Simulation {
             self.substrate
                 .entities
                 .get_mut(member)
-                .unwrap()
+                .expect("placed reinforcement member")
                 .locomotor
                 .as_mut()
-                .unwrap()
+                .expect("a placed Foot has its constructed locomotor")
                 .teleport_runtime_mut()
-                .unwrap()
+                .expect("begin_piggyback installed the Teleport locomotor")
                 .chrono_mut()
-                .unwrap()
+                .expect("arm_chrono armed the reinforcement warp")
                 .set_pending_state(3);
             let _ = self.substrate.mission_commence_exact(member, frame);
         }
@@ -630,7 +634,7 @@ impl Simulation {
         self.substrate
             .entities
             .get_mut(plane)
-            .unwrap()
+            .expect("constructed carrier plane")
             .mission_only
             .mark();
         let spawn_cell = if metadata.use_transport_origin {
@@ -700,7 +704,10 @@ impl Simulation {
                     .entities
                     .get(member)
                     .expect("constructed Team member");
-                let size = self.object_type(entity.type_ref(), rules).unwrap().size;
+                let size = self
+                    .object_type(entity.type_ref(), rules)
+                    .expect("resolved member type")
+                    .size;
                 (member, size)
             })
             .collect();
@@ -905,8 +912,15 @@ impl Simulation {
                 let cargo_members: Vec<_> = members
                     .iter()
                     .map(|&member| {
-                        let entity = self.substrate.entities.get(member).unwrap();
-                        let size = self.object_type(entity.type_ref(), rules).unwrap().size;
+                        let entity = self
+                            .substrate
+                            .entities
+                            .get(member)
+                            .expect("constructed Team member");
+                        let size = self
+                            .object_type(entity.type_ref(), rules)
+                            .expect("resolved member type")
+                            .size;
                         (member, size)
                     })
                     .collect();
@@ -926,7 +940,7 @@ impl Simulation {
                     self.substrate
                         .entities
                         .get_mut(transport)
-                        .unwrap()
+                        .expect("constructed transport")
                         .mission_only
                         .mark();
                 }

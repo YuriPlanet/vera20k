@@ -1050,6 +1050,8 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
         | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        ShellMessageBoxPurpose::ModImport(_) => atlas.ra2_dialog_background,
         ShellMessageBoxPurpose::Notice
         | ShellMessageBoxPurpose::ModRestart(_)
         | ShellMessageBoxPurpose::ModFiles(_) => atlas.ra2_dialog_background,
@@ -1129,6 +1131,50 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
                 }),
         );
     }
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    for button in crate::app::shell_mod_import::preview_buttons(state, layout) {
+        let pressed = pressed == Some(button.id);
+        buttons.push(shell_paint::ModalButton {
+            rect: button.rect,
+            pressed,
+            enabled: button.enabled,
+        });
+        labels.push(PaintLabel {
+            text: crate::i18n::tr(button.label).into(),
+            rect: layout.scale.derive_rect(button.rect, |rect| {
+                owner_draw_button_label_rect(rect, pressed)
+            }),
+            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            rgb: if button.enabled {
+                SHELL_TEXT_RGB_ENABLED
+            } else {
+                shell_paint::SHELL_TEXT_RGB_DISABLED
+            },
+            path_a_reveal: None,
+        });
+    }
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    let import_parts = crate::app::shell_mod_import::visible_parts(state).map(|parts| {
+        use crate::ui::shell::list::ListMetrics;
+        let metrics = ListMetrics::scaled(layout.scale);
+        let geometry = parts.geometry(crate::app::shell_mod_import::list_rect(layout), metrics);
+        let font = &state.renderer.bit_font;
+        for (visible, name) in parts.rows.iter().skip(parts.top).take(geometry.visible_rows).enumerate() {
+            let row = geometry.row(visible);
+            let rect = layout.scale.derive_rect(row, |row| {
+                RectPx::new(row.x + 4, row.y, row.w - 8, row.h)
+            });
+            let text = font.truncate_to_width(name, layout.scale.base_rect(rect).w.max(0) as u32);
+            labels.push(PaintLabel {
+                text,
+                rect,
+                align: ShellAlign::V_CENTER,
+                rgb: SHELL_TEXT_RGB_ENABLED,
+                path_a_reveal: None,
+            });
+        }
+        (parts, geometry)
+    });
     let menu = message_box.menu_settings().map(|settings| {
         let controls = shell_layout::shell_menu_settings_layout(
             shell_layout::shell_screen_size(state),
@@ -1173,6 +1219,19 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
             notes.top(),
             None,
             notes.pressed_part(),
+            true,
+            layout.scale,
+        );
+    }
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    if let Some((parts, geometry)) = import_parts {
+        crate::app::frontend::skirmish_shell_render::paint_list(
+            &mut draw.sprites,
+            atlas,
+            geometry,
+            parts.top,
+            parts.selected,
+            parts.scroll.pressed_part(),
             true,
             layout.scale,
         );

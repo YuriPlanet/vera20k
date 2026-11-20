@@ -11,6 +11,7 @@ use super::archive_names::ArchiveNames;
 use super::ares_launch::AresSetting;
 use super::file_system;
 use super::ini_roots::{IniProfile, IniRootConfig, IniRoots};
+use super::mod_package::ModFolder;
 
 const MANIFEST: &str = "mod.ini";
 const FILE_LIMIT: u64 = 64 * 1024;
@@ -26,6 +27,8 @@ pub struct ResourceConfig {
     /// The existing launcher catalog of an imported client folder, shared
     /// with the provider and retained if its archive stack is recovered.
     pub client_install: Option<Arc<ClientInstall>>,
+    /// The selected files, kept alive if this launch assembled package parts.
+    pub mod_folder: Option<ModFolder>,
 }
 
 impl ResourceConfig {
@@ -207,6 +210,7 @@ impl ModDefinition {
             archives: self.archives.clone(),
             requires_ares: self.requires_ares,
             client_install: None,
+            mod_folder: None,
         }
     }
 

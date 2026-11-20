@@ -16,12 +16,57 @@ const SEED: u32 = 19;
 const BATTLE_MAP: &str = "XMP03T4.MAP";
 
 #[test]
+fn map_houses_blueprint_round_trips_difficulty_without_recording_local_source() {
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
+    use crate::sim::scenario_session::{LocalViewIdentity, ScenarioDescriptor, ScenarioSession};
+
+    let directory = TestDirectory::new("campaign-blueprint");
+    directory.write(
+        "campaign.ini",
+        b"[Stage Opening]\nMap=OPEN.MAP\n[Roles Opening]\nLead=Americans\nWing=Americans\n[Grants Opening]\nWing.Russians=UnitsOnly",
+    );
+    let manifest = CampaignManifest::load(&directory.path().join("campaign.ini")).unwrap();
+    let launch =
+        AuthoredCampaignStart::from_stage(&manifest.stages[0], 0, 2, Default::default()).unwrap();
+    let mut session = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
+    session.install_admission(ScenarioGameMode::Wol, None, launch.rule_policy());
+    session.install_shared_house_sources(vec![0, 0], Some(1));
+    session
+        .initialize_campaign_startup(
+            launch.difficulty(),
+            launch.mission_counter(),
+            None,
+            0,
+            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            None,
+        )
+        .unwrap();
+    let blueprint = MatchStartBlueprint::capture(
+        ReplayLaunchInput::MapHouses(&launch),
+        &session,
+        Default::default(),
+    )
+    .unwrap();
+    let encoded = serde_json::to_value(&blueprint).unwrap();
+    assert_eq!(encoded["kind"], "campaign");
+    assert_eq!(encoded["map_houses"]["difficulty"], 2);
+    let decoded: MatchStartBlueprint = serde_json::from_value(encoded).unwrap();
+    decoded.validate().unwrap();
+    assert_eq!(decoded.map_houses(), Some(&launch));
+    assert_eq!(
+        decoded.admitted().local_view_identity(),
+        &LocalViewIdentity::default()
+    );
+}
+
+#[test]
 #[ignore = "slow; real campaign maps, player-save restoration and independent replay construction"]
 fn map_house_campaign_manifest_loads_carry_and_replays_each_frame() {
     use crate::headless_scenario::{check_campaign_stage, load_campaign_stage};
     use crate::map::campaign_manifest::{CampaignManifest, ManifestError};
     use crate::sim::control_authority::ControlScope;
-    use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
+    use crate::sim::scenario_bootstrap::{AuthoredCampaignLaunch, AuthoredCampaignStart};
     use crate::sim::snapshot::{GameSnapshot, PlayerSaveCells};
     use crate::sim::world::SnapshotProcessState;
 
@@ -60,6 +105,15 @@ House.Russians=Credits,Difficulty
 Win=Finale
 [Stage Finale]
 Map={map_name}
+[Roles Finale]
+Lead=Americans
+Wing=Americans
+[Grants Finale]
+Lead.Russians=FullControl
+Wing.Russians=UnitsOnly
+Lead.YuriCountry=UnitsOnly
+[Rules Finale]
+AllowsManualAlliances=Yes
 "#
     );
     directory.write("campaign.ini", manifest.as_bytes());
@@ -101,8 +155,16 @@ Map={map_name}
     assert_eq!(report.manifest_sha256, manifest.digest);
 
     let stage = manifest.stage("Opening").unwrap();
-    let opening = AuthoredCampaignStart::from_stage(stage, 0, Default::default()).unwrap();
-    let mut previous = load_campaign_stage(&retail, map_path, SEED, &opening, None).unwrap();
+    let opening = AuthoredCampaignStart::from_stage(stage, 0, 1, Default::default()).unwrap();
+    fn client(start: &AuthoredCampaignStart) -> AuthoredCampaignLaunch<'_> {
+        AuthoredCampaignLaunch {
+            start,
+            mode: ScenarioGameMode::Wol,
+            local_source: Some(1),
+        }
+    }
+    let mut previous =
+        load_campaign_stage(&retail, map_path, SEED, client(&opening), None, None, None).unwrap();
     let american = previous.sim().interner().get("Americans").unwrap();
     let soviet = previous.sim().interner().get("Russians").unwrap();
     let yuri = previous.sim().interner().get("YuriCountry").unwrap();
@@ -124,13 +186,29 @@ Map={map_name}
         .save_stage_carry_over(&stage.carry_over)
         .unwrap();
     assert!(!carry.is_empty());
-    let launch = AuthoredCampaignStart::from_stage(stage, 0, carry).unwrap();
-    let mut scene = load_campaign_stage(&retail, map_path, SEED, &launch, None).unwrap();
+    let finale = stage.routes["win"];
+    assert_eq!(manifest.stages[finale].id, "Finale");
+    let launch =
+        AuthoredCampaignStart::from_stage(&manifest.stages[finale], finale, 2, carry).unwrap();
+    let scene = load_campaign_stage(
+        &retail,
+        map_path,
+        SEED,
+        client(&launch),
+        None,
+        Some(4),
+        None,
+    )
+    .unwrap();
     let sim = scene.sim();
     assert!(
         sim.session().uses_campaign_world() && sim.session().execution_topology().is_lockstep()
     );
     assert!(sim.session().rule_policy().allows_manual_alliances());
+    assert_eq!(
+        sim.session().local_view_identity().shared_house_source,
+        Some(1)
+    );
     let primary = sim.houses().index_of(american).unwrap();
     assert_eq!(
         sim.session()
@@ -156,9 +234,24 @@ Map={map_name}
     }
     let terrain_template = sim.resolved_terrain().unwrap().clone();
 
-    let log = ReplayRunner::record_campaign_stage(&mut scene, &launch, 8).unwrap();
+    let mut recording = AuthoredReplay::record_loaded(
+        scene,
+        ReplayLaunchInput::MapHouses(&launch),
+        Default::default(),
+    );
+    recording.frame(&[]);
+    let boundary = recording.scene.sim().session().tick();
+    recording.service(ScenarioServiceInput::Pause);
+    assert!(recording.scene.sim().session().scenario_paused());
+    recording.service(ScenarioServiceInput::Resume);
+    assert_eq!(recording.scene.sim().session().tick(), boundary);
+    for _ in 1..8 {
+        recording.frame(&[]);
+    }
+    recording.log.finish(recording.scene.sim());
+    let scene = recording.scene;
     let mut encoded = Vec::new();
-    log.write_json(&mut encoded).unwrap();
+    recording.log.write_json(&mut encoded).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
     let blueprint = &json["startup"]["blueprint"];
     assert_eq!(blueprint["kind"], "campaign");
@@ -224,11 +317,11 @@ impl AuthoredReplay {
         map_path: &str,
         mut descriptor: MatchLaunchDescriptor,
         mode: ScenarioGameMode,
-        mut options: ReplayStartOptions,
+        options: ReplayStartOptions,
     ) -> Self {
         let launch = descriptor.session().clone();
         descriptor.set_personal_rules(options.personal_rules.clone());
-        let mut scene = load_with_launch_and_ini(
+        let scene = load_with_launch_and_ini(
             root,
             map_path,
             SEED,
@@ -239,6 +332,14 @@ impl AuthoredReplay {
             None,
         )
         .unwrap();
+        Self::record_loaded(scene, ReplayLaunchInput::Slots(&launch), options)
+    }
+
+    fn record_loaded(
+        mut scene: HeadlessScenario,
+        launch: ReplayLaunchInput<'_>,
+        mut options: ReplayStartOptions,
+    ) -> Self {
         let sim = &mut scene.runtime.simulation;
         sim.batch_path_searches();
         sim.batch_target_scans();
@@ -265,7 +366,7 @@ impl AuthoredReplay {
         options.every_frame_network = lockstep;
         let startup = ReplayStartup::capture(
             &scene.runtime,
-            ReplayLaunchInput::Slots(&launch),
+            launch,
             &scene.source,
             scene.map.ini.content_hash(),
             TICK_MS,

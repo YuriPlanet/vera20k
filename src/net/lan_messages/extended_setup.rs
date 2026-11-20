@@ -5,6 +5,8 @@
 
 use super::{LAN_MESSAGE_LEN, SessionScope};
 
+pub mod campaign;
+
 pub const MAGIC: &[u8; 4] = b"VS31";
 pub const MAX_BYTES: usize = 32 * 1024;
 const HEADER: usize = 37;

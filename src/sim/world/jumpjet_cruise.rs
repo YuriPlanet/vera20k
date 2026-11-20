@@ -880,8 +880,8 @@ impl Simulation {
         };
         let location = crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        self.represented_player_maps()
-            .into_iter()
+        // Usually no map is due, and an empty collect allocates nothing.
+        self.each_represented_player_map()
             .filter(|&player| {
                 !self.techno_discovered_by_viewer(id, player)
                     && entity.owner() != player

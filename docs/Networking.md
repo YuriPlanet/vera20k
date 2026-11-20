@@ -101,6 +101,9 @@ folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so 
 refused as on any rules difference. The effective file, catalog, archive and extension
 declarations from `mod.ini` also take part in this agreement; its display metadata does
 not. These choices are frozen at startup and reused when the asset manager is rebuilt.
+For [mods distributed in parts](modding.md#mods-distributed-in-parts), the check
+compares the assembled files. ZIPs and extracted folders with the same files
+and loading declarations give the same agreement.
 No packet fields change: released builds still meet the existing build check, a mixed
 room cannot start, and a rollback uses that build's loading rules and agreement.
 A mod that adds INI files to every map
@@ -207,6 +210,16 @@ differences are refused. This changes no messages: older builds are
 refused by the existing build check. Saved custom sound references use a new automatic
 snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
 and save layout.
+
+The modern online lobby shows the room title, its published team format and
+the map name, separated by ` - `. A running match uses the teams it started
+with. For example, two teams of four on Heck Freezes Over can appear as
+`Friday Night - 4v4 - Heck Freezes Over`. While the host is still seating
+players, the format can read “Teams forming”. A room's capacity includes
+spectators, so it cannot determine team size. Hovering or selecting a row
+shows its details below the scrollable list. They distinguish seated
+spectators from people watching through the relay. Large lineups keep the
+full matchup in the title and show the number of teams in the details. See the [lobby protocol](lobby-protocol.md#room-list-summaries).
 
 The online lobby asks for its game list, and the matches to watch with it, every
 5 seconds while it is the front window, so a game someone creates shows up within
@@ -449,6 +462,8 @@ caught up; local orders given until then are dropped, and effects and voices sta
 silent. The relay refuses a different world, build or rules as an agreement mismatch.
 Abort Mission during this replay leaves as it does while Reconnecting.
 
+### Diagnostic replays
+
 Authored matches record reconstructible JSON replays in `replays/`,
 offline skirmishes against computer players included.
 A replay is written when its match ends or the game closes, and also when an
@@ -457,14 +472,19 @@ internal error (a panic) closes the game; the folder keeps the newest 20.
 playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
 accepted launch and replays the production frame transaction without connecting
-to the lobby. Startup version, rules, map bytes, seed and initial state must match;
-recorded state hashes are checked during playback. Generated maps, campaigns and
-restored mid-match segments currently lack standalone replay startup; a skirmish or
-network match that cannot be recorded says why in the log. `--replay-verify` loads no mod,
-so it refuses a match played with one as a rules mismatch.
-Replay version 4 regenerates shared planning events through the simulation at
-their original frame phases. Earlier JSON logs remain readable for inspection;
-playback requires the current version to avoid executing old internal events twice.
+to the lobby. Startup version, rules, map bytes, seed and initial state must
+match. Playback checks the recorded state hashes. Keep a Multiplayer Campaign
+map at its recorded logical path under `campaigns/<series>/`. When names
+collide, the loader chooses an installed copy by the recorded digest. For
+recordings with a bare map filename, the launcher can use an exact SHA-256
+match from the replay directory or its parent. Generated maps, solo campaigns and
+restored mid-match segments lack standalone diagnostic startup.
+`--replay-verify` uses retail rules.
+
+Diagnostic JSON checks the log and startup versions before decoding the body.
+Save a new recording after upgrading from an incompatible version. The
+standalone native replay format has its own compatibility rules. [Campaign
+replay commands](campaign-manifest.md#replay-a-played-stage)
 
 Fresh LAN and online games also seed the bridge-repair MapGen RNG from the
 agreed match seed, instead of retaining each player's earlier random-map or
@@ -825,9 +845,11 @@ it ([lobby protocol](lobby-protocol.md#watching)). The lobby lists only matches 
 watcher's own version with two or more people in them, one of them playing, or, to a
 game that signed in with `Vera-Watch-AI: 1`, where only AI play while everyone in the
 room watches; on a relay that lets watchers in,
-and never one from a room with a password, a clan room, a generated map or a co-op
-mission: a watcher's game cannot yet rebuild their starts. Create Game starts Watching
-on Live. The host can also choose a two-minute delay or turn Watching off. The next
+and never one from a room with a password, a clan room, a generated map or a
+stock Co-op mission. Authored campaign watching requires a WOL lobby that
+advertises `campaign_rooms` and forwards the campaign recipe in
+`watch_started`. The viewer uses the installed series and validates its
+content. Create Game starts Watching on Live. The host can also choose a two-minute delay or turn Watching off. The next
 room uses the host's last confirmed choice in the same session. Quick Match and ranked
 games always have a two-minute viewing delay.
 
@@ -846,8 +868,9 @@ advertises support. Other clients keep local play for a lone observer until
 they advertise it too.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
-watcher's game downloads the map as a guest does, checks that its version and rules
-digest are the players', and joins the relay as a watcher (`live_service::prepare_watch`,
+watcher's game prepares the map as a guest does and checks that its version and rules
+digest are the players'. It can download a stock authored map and uses the
+locally installed series for a campaign. It then joins the relay as a watcher (`live_service::prepare_watch`,
 `poll_watch`): a read-only session that pulls the match's stream from its first frame,
 held back by the delay. Receiving the grant ends the lobby request's wait. The map
 download and relay connection each keep their own deadline. If the setup cannot
@@ -892,6 +915,20 @@ and the online lobby. When every player's departure reaches the relay stream
 without that result, the watcher returns to the lobby with the match-ended line.
 The lobby renews a watcher's relay pass as it does a player's (`renew_watch`).
 
+A launcher's room watches the same way, outside the game's lobby: the launcher's lobby grants
+a watch ticket once the match plays and hands the game the spawn.ini of the match's source 0
+with that ticket in `[Relay]` ([external launches](spawn.md#watching)). Its world stands in
+source 0's seat, but the game starts on the observer's sidebar with the whole map (Tab follows the
+players as a lobby watcher's does), hears no House's verdict there, leaves without a score page
+once the match is decided, reads the stream from its first frame, and renews its ticket by polling the launcher's match service with its watch token, which
+the service answers with `watch_renewed` and nothing else; it sends that service no command. A
+watcher whose connections hold every source of the match, rather than all but its own seat,
+follows the first source from no seat (`sequenced::watched_source`). The relay takes up to 256
+watchers a match (1,024 in all) and a delay of up to 24 hours; a watcher held back more than the
+300 seconds a finished match's records stay misses the end. A game from before this refuses a
+watch ticket in `[Relay]` as an invalid grant, and a relay from before it refuses the watcher, so
+the launch fails with its reason; players are not affected.
+
 Older versions and rollbacks: a game from before watching never asks for the list, its
 rooms send no `watching`, and their matches are never watchable. A watcher sees only
 matches of its own version, and its game refuses a start whose version or rules digest
@@ -932,6 +969,99 @@ If the departure is lost, the next mission's loading deadline still retires
 the entire continuation when a required playing connection is missing.
 A rollback restores that build's return handling. Mixed builds are refused
 by the room agreement before either side can enter a continuation.
+
+### Multiplayer Campaign rooms
+
+Choose an installed series and stage in the room’s mode and map controls. The
+host sets the difficulty and assigns a distinct role to every playing
+connection. Clients check the stage’s minimum and effective maximum player
+counts, then compile the same House bindings, rule policy and control grants.
+The effective maximum also respects the number of roles and the room
+capacity. With no roles, the map’s `[Basic] Player` supplies one playing House.
+The game numbers playing sources in canonical player-name order. Roles that
+share a House keep separate source numbers and grants. A watcher has no role
+and does not occupy a House. [Campaign authoring, local checks and setup](campaign-manifest.md)
+
+#### Options and admission
+
+LAN sends `ExtendedOptions { agreement, current_speed, game_speed, admissions, body }`
+under the existing room scope, `SessionScope { epoch, revision }`. The guest
+checks the build in `agreement` before it decodes the tagged body. The accepted
+body replaces the older options for that scope.
+
+| Field | Meaning |
+| --- | --- |
+| `current_speed` | Value already applied by the host. The guest applies it when accepting the options. |
+| `game_speed` | Setup trackbar value. The match takes this value at launch. |
+| `admissions` | Existing LAN peer admission identities. |
+| `body.kind="stock"` | Stock `room` and optional `random_map` record. |
+| `body.kind="campaign"` | Authored `room` and host `seed`. |
+
+The campaign room carries `series`, `stage`, `manifest_sha256`, `map_sha256`,
+`effective_map_digest`, `attempt`, `player_limit`, `difficulty`,
+`playing_sources` and `carry_over`. A playing row contains `player` and `role`.
+Players and watchers reconstruct from installed content. The manifest digest
+covers the exact `campaign.ini` bytes, the map digest covers the exact map
+file, and the effective map digest covers the parsed map after INI includes.
+The launcher compares those proofs before admitting the start.
+
+The Internet client requires the WOL session capability `campaign_rooms`.
+A supporting lobby preserves the optional `campaign` record in `HostOptions`,
+including room revisions, match start and `watch_started`. Those clients use
+the existing authenticated relay match identity. Released lobbies without
+the capability continue to admit standard rooms. A client connected to one of
+those lobbies reports that online campaign rooms are unavailable. LAN remains
+available for the same installed series and matching builds.
+
+#### Cutscenes and stage changes
+
+Campaign controls share the existing global channel. Each record
+carries a stage attempt and either the LAN room scope or the authenticated WOL
+match identity. Stage and narrative aborts are sent directly over that route
+before teardown. These final UDP notifications are best effort. A stage
+abort that arrives during the outcome is retained for the result. Narrative
+readiness also carries the boundary ordinal and
+simulation tick. The host releases the hold when the playing sources have
+reported readiness for that boundary. The simulation records the resulting
+scenario service inputs at the same point for diagnostic replay. Playing
+clients exclude the hold from lag reporting. On an ordered WOL match that
+supports shared pause, the host requests a relay pause and resumes the clock
+after all playing peers acknowledge the release. The host leaves an existing
+player pause in place. The relay stops sealing at its acknowledged frontier
+and continues from there without counting the stopped wall time. A connection
+watcher reconstructs the scenario services locally, without playing the clips
+or sending readiness, and follows the relay's sealed frontier. Frames already
+sealed before the pause remain available to watchers. If the relay cannot
+pause (for example, in a federated match or during its pause cooldown), the
+frontier can advance while the players are held.
+
+`MatchSession::NetworkPhase` owns the result vote and stage handoff. **Retry**
+reuses the current stage’s entry record. A route uses the carry-over captured
+at the end of the outgoing stage. The host prepares the next recipe after all
+playing sources vote for the same option. Its preparation includes the
+finished state hash and the SHA-256 of the next room recipe. Guests verify the
+recipe and acknowledge it before the host sends Begin. The host collects the
+Begin receipts before retiring the old transport. LAN keeps the socket,
+increments the admission revision and resets reliable delivery. During
+promotion it can re-ack an exact registered final receipt from the old
+admission. Old gameplay and loading messages stay outside the successor’s
+queues. On WOL the host keeps the old relay active for the negotiated retry
+intervals so it can acknowledge retries of the last Begin receipts. A guest
+that receives Begin late still has time to send and retry its receipt. The
+reopened room publishes the chosen
+stage and carry-over. It auto-starts only if its playing roster still
+matches the voted roster. A LAN successor uses the connected playing sources
+and must meet the target stage’s player limits. Departure during the vote or
+an expired handoff aborts it. Watcher departure leaves the quorum alone.
+
+#### Releases and rollback
+
+The existing build agreement refuses mixed builds before start, including when
+the newer build uses the campaign options body. An older game uses the stock
+room path. Rolling back the lobby removes online campaign creation if the
+replacement stops advertising `campaign_rooms`. For a released lobby that
+does not preserve the campaign record through start and watching, host on
+LAN.
 
 ## Native behavior and deliberate bounds
 
