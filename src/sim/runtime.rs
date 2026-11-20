@@ -814,22 +814,29 @@ pub fn spawn_terrain_tile_animations(
             draw_runtime: AnimDrawRuntime::default(),
             owner: None,
         };
-        let id = sim
-            .spawn_anim_at_world(
-                rules,
-                descriptor,
-                AnimWorldCoord {
-                    x: tile.world_x,
-                    y: tile.world_y,
-                    z: tile.world_z,
-                },
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "resolved terrain animation [{}] must be bound before map spawn: {error}",
-                    tile.anim_name
-                )
-            });
+        let world = AnimWorldCoord {
+            x: tile.world_x,
+            y: tile.world_y,
+            z: tile.world_z,
+        };
+        // The loader binds every `Tile%02dAnim` name as a scheduler root, so
+        // the type resolves; construction can still refuse a mod's own ART
+        // for it, such as a `Bouncer=` launch outside the modelled x87 domain
+        // or an invalid Tiberium image start. VERA then leaves the tile
+        // without its animation and loads the map (VERA's choice: gamemd's
+        // constructor 0x00421EA0 has no refusal path).
+        let id = match sim.spawn_anim_at_world(rules, descriptor, world) {
+            Ok(id) => id,
+            Err(error) => {
+                log::warn!(
+                    "tile animation [{}] at ({}, {}) not spawned: {error}",
+                    tile.anim_name,
+                    tile.rx,
+                    tile.ry
+                );
+                continue;
+            }
+        };
         assert!(
             sim.substrate
                 .set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
