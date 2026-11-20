@@ -224,9 +224,7 @@ impl Simulation {
         if attached {
             return Some(DisplayLayer::GROUND);
         }
-        let config = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(anim.type_id));
+        let config = self.interner.anim_type_config(anim.type_id, rules);
         match config.map(|config| config.layer) {
             None => Some(DisplayLayer::AIR),
             Some(AnimLayer::Ground) => Some(DisplayLayer::GROUND),

@@ -41,9 +41,9 @@ impl Simulation {
     /// (`LightningStorm::Process @ 0x0053A6C0`).
     pub(crate) fn anim_stage_and_frames(&self, id: AnimId, rules: &RuleSet) -> Option<(i32, i32)> {
         let anim = self.anim(id)?;
-        let frames = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(anim.type_id))
+        let frames = self
+            .interner
+            .anim_type_config(anim.type_id, rules)
             .and_then(|config| config.raw_shp_frame_count)
             .unwrap_or(0);
         Some((anim.runtime.current_frame, frames))
@@ -656,11 +656,12 @@ impl Simulation {
         // anim runs in every game alike, so it may name what it plays.
         let private = local && !presentation;
         // Borrowed from the rules, which outlive the spawn: the record is
-        // only read. The lookup folds case itself.
-        let config = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(descriptor.type_name))
+        // only read. Found by the type id's handle, matched as the name is.
+        let config_handle = self
+            .interner
+            .anim_type_config_handle(descriptor.type_name, rules)
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
+        let config = rules.art().anim_config(config_handle);
         // The refusals name the type in uppercase, as the ART key is written.
         let (effective_end, effective_loop_end) = effective_bounds(config).ok_or_else(|| {
             AnimSpawnError::UnboundType(
@@ -835,9 +836,7 @@ impl Simulation {
             .is_some_and(|owner| self.anim_owner_coords(owner).is_some());
         self.reveal_anim(stable_id, rules, !attaches || start_reaches_display);
         //42264D..4226BF reveals DropZone before the constructor-time Start.
-        if rules.general.drop_zone_anim.as_deref().is_some_and(|name| {
-            name.eq_ignore_ascii_case(self.interner.resolve(descriptor.type_name))
-        }) {
+        if self.interner.is_drop_zone_anim(config_handle, rules) {
             self.reveal_drop_zone_from_anim(rules, initial_world_coord);
         }
         // RESIDUAL (VERA-only refusal): Start can refuse a mod's invalid
@@ -953,9 +952,8 @@ impl Simulation {
         let candidates: Vec<_> = self
             .anims()
             .filter(|(_, anim)| {
-                rules
-                    .art()
-                    .anim_runtime_config(self.interner.resolve(anim.type_id))
+                self.interner
+                    .anim_type_config(anim.type_id, rules)
                     .is_some_and(|config| config.is_animated_tiberium)
             })
             .map(|(&id, anim)| (id, anim.world_coord))

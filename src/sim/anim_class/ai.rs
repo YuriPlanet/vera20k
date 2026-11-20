@@ -79,14 +79,13 @@ impl Simulation {
         let type_id = anim.type_id;
         let mut gates = AnimGates::of(anim);
         // Borrowed from the rules, not the world: the visit below mutates the
-        // world while it reads the type.
-        let Some(config) = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(type_id))
-        else {
+        // world while it reads the type. Found by the type id's handle, not
+        // its name (VERA-only, same config).
+        let Some(config_handle) = self.interner.anim_type_config_handle(type_id, rules) else {
             self.destroy_anim(id, rules);
             return Ok(false);
         };
+        let config = rules.art().anim_config(config_handle);
 
         //423B17/423B1E precede the ordinary first-AI, delay and timer gates.
         if config.is_flaming_guy {
@@ -210,11 +209,9 @@ impl Simulation {
         //AnimAI424322..42435F: a DropZone marker ends over the first ground
         //Building at its current GetCoords, before first-AI/delay/timer gates.
         //NoEffects does not gate this test; a deck-only Building does not end it.
-        if rules
-            .general
-            .drop_zone_anim
-            .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
+        //The type compare is by config handle: the same answer as the names'
+        //case-insensitive compare for this type, which has a config.
+        if self.interner.is_drop_zone_anim(config_handle, rules)
             && self.anim_absolute_coord(id).is_some_and(|world| {
                 Self::map_coord_cell(&self.resolved_terrain, world.x, world.y)
                     .and_then(|(x, y)| {
@@ -874,9 +871,9 @@ impl Simulation {
         else {
             return Ok(());
         };
-        if !rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(type_id))
+        if !self
+            .interner
+            .anim_type_config(type_id, rules)
             .is_some_and(|config| config.tiberium_chain_reaction)
         {
             return Ok(());
