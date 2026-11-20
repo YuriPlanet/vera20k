@@ -189,6 +189,79 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
     );
 }
 
+/// docs/spawn.md: a spectator may watch a player fight AI. The observer
+/// House, holding nothing, is defeated at once without deciding the match,
+/// which the player and the AI still fight out.
+#[test]
+fn an_observer_beside_a_player_and_ai_decides_nothing() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2]);
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.install_network_timing(10);
+    sim.session.set_current_house_for_test(Some(owners[0]));
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![owners[0]],
+    );
+    for (index, owner) in owners.iter().enumerate() {
+        let house = sim.houses.get_mut(owner).unwrap();
+        // The observer and the player are people; the third House is AI.
+        house.set_is_human_for_test(index < 2);
+        house
+            .tracking_mut_for_test()
+            .set_for_test(i32::from(index > 0), &[], (0, 0, 0), &[]);
+    }
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].is_defeated());
+    for owner in &owners {
+        let house = &sim.houses[owner];
+        assert!(!house.has_lost() && !house.has_won());
+    }
+    assert!(!sim.houses[&owners[1]].is_defeated() && !sim.houses[&owners[2]].is_defeated());
+    // The AI's fall ends the match for the player and the observer alike.
+    sim.houses
+        .get_mut(&owners[2])
+        .unwrap()
+        .tracking_mut_for_test()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[1]].has_won());
+    assert!(sim.houses[&owners[0]].has_lost());
+}
+
+/// A watcher on the observer's sidebar takes no side: the House it stands
+/// in wins without a verdict said to it, though the House's result stands.
+#[test]
+fn a_watcher_on_the_observers_view_hears_no_verdict() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::SimSoundEvent;
+    let verdicts = |observing: bool| {
+        let (mut sim, owners) = sim_with_houses(&[0, 1]);
+        sim.session.set_game_mode(ScenarioGameMode::Wol);
+        sim.session.install_network_timing(10);
+        sim.session.set_current_house_for_test(Some(owners[0]));
+        for (index, owner) in owners.iter().enumerate() {
+            let house = sim.houses.get_mut(owner).unwrap();
+            house.set_is_human_for_test(index == 0);
+            house
+                .tracking_mut_for_test()
+                .set_for_test(i32::from(index == 0), &[], (0, 0, 0), &[]);
+        }
+        sim.install_watcher();
+        if observing {
+            assert!(sim.observe());
+        }
+        sim.check_defeat(None, None);
+        assert!(sim.houses[&owners[0]].has_won());
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(event, SimSoundEvent::MatchOutcome { .. }))
+            .count()
+    };
+    assert_eq!(verdicts(false), 1);
+    assert_eq!(verdicts(true), 0);
+}
+
 #[test]
 fn cooperative_defeated_local_waits_for_partner_and_shares_completed_victory() {
     use crate::sim::scenario_session::ScenarioGameMode;

@@ -945,12 +945,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 /// is then a watcher's before its first frame: it sends nothing, also in the
 /// seat of the player it follows, whose sight it starts with, and Tab may
 /// change its view (`match_runtime::watching`).
+/// A launcher's watcher (docs/spawn.md "Watching") stands in source 0's seat
+/// only because a world needs a current House: it starts on the observer's
+/// sidebar (`watching::begin_on_observers_view`).
 fn install_watcher(state: &mut AppState) {
     if !crate::app::match_runtime::watching::active(state) {
         return;
     }
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime.simulation.install_watcher();
+    }
+    if state.frontend.external_launch {
+        crate::app::match_runtime::watching::begin_on_observers_view(state);
     }
 }
 

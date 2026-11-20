@@ -16,6 +16,15 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
   `--pacing on|off` (`run.sh`: `PACING=on|off`). Results go to `OUT/results.json`.
   `run.sh` takes `RELAY_PORT` and `SERVICE_PORT` when 5000 or 8787 is in use.
+* `run.sh relay` with `WATCHERS=N` also writes `OUT/w0..` (docs/spawn.md "Watching"): source 0's
+  file with a watch ticket and a watch token, which the mock answers on `/v1/events` with
+  `watch_renewed` and refuses everywhere else. The watchers start `WATCH_AFTER` seconds (default
+  0) after p0's match is on screen, and `run.sh` waits for them and prints their results too.
+  A watcher's log says `Relay spawn: … watch=true`, then `External launch: frame N` lines; the
+  mock logs each `watch renewal`.
+* `AI=N` adds N computer houses after the humans; in relay mode `PLAYERS=1 AI=N` is one person
+  against AI, and `ALONE=on` signs its certificate as a `VO2C` the relay orders alone, so the
+  match runs through the relay and can be watched (`WATCHERS=1`).
 * `run.sh` builds nothing; it starts the relay (relay mode) and the mock, then
   both clients, waits for both processes to exit, and prints each client's
   exit status and `spawn_result.json` (docs/spawn.md "Results"; exit status 0

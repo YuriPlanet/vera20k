@@ -70,6 +70,9 @@ pub(crate) struct ExternalLaunchProgress {
     pub(crate) mode: ExternalLaunchMode,
     pub(crate) match_id: Option<String>,
     pub(crate) source_index: Option<usize>,
+    /// A watcher's launch (docs/spawn.md "Watching"): no source and no
+    /// result of its own.
+    pub(crate) watch: bool,
     /// First and latest frame service with the match on screen.
     pub(crate) match_started: Option<Instant>,
     pub(crate) match_last: Option<Instant>,
@@ -155,8 +158,12 @@ pub(crate) struct ExternalLaunchReport {
     pub(crate) mode: ExternalLaunchMode,
     /// Relay launches only.
     pub(crate) match_id: Option<String>,
-    /// Multiplayer launches only: the local SourceIndex.
+    /// Multiplayer launches only: the local SourceIndex; none for a watcher.
     pub(crate) source_index: Option<usize>,
+    /// `true` for a watcher's launch (docs/spawn.md "Watching"), whose
+    /// result is always `quit`; absent otherwise.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) watch: bool,
     pub(crate) frames: u32,
     /// Wall time the match was on screen, in seconds (millisecond precision).
     pub(crate) duration_seconds: f64,
@@ -195,6 +202,7 @@ impl ExternalLaunchReport {
             mode: progress.mode,
             match_id: progress.match_id.clone(),
             source_index: progress.source_index,
+            watch: progress.watch,
             frames: progress.frames,
             duration_seconds: duration,
             opponents_left: progress.opponents_left,
@@ -460,6 +468,12 @@ impl App {
                 SpawnTransport::Relay(relay) => {
                     progress.mode = ExternalLaunchMode::Relay;
                     progress.match_id = Some(relay.match_id.clone());
+                    // A watcher stands in source 0's seat but is not that
+                    // player (docs/spawn.md "Watching").
+                    if relay.watch {
+                        progress.watch = true;
+                        progress.source_index = None;
+                    }
                 }
                 SpawnTransport::Direct(_) => progress.mode = ExternalLaunchMode::Direct,
             }
@@ -532,12 +546,13 @@ impl App {
                     }
                 };
                 log::info!(
-                    "Relay spawn: match={}, source={}, humans={}, ai={}, speed={}",
+                    "Relay spawn: match={}, source={}, humans={}, ai={}, speed={}, watch={}",
                     relay.match_id,
                     network.session.local_player_index,
                     network.session.humans.len(),
                     network.session.opponents.len(),
-                    request.game_speed
+                    request.game_speed,
+                    relay.watch
                 );
                 crate::app::shell_wol::begin_spawned_match(state, network.session, relay, seed)?;
             }
@@ -617,6 +632,11 @@ impl App {
             crate::web::status("spawn:match_started");
         }
         progress.match_last = Some(now);
+        // A line every 900 frames, so a hidden launch's log shows it plays
+        // (or, watching, catches up).
+        if frame / 900 > progress.frames / 900 {
+            log::info!("External launch: frame {frame}");
+        }
         progress.frames = progress.frames.max(frame);
         if left && !progress.opponents_left {
             log::info!("External launch: every opposing participant has left the match");
@@ -979,6 +999,24 @@ mod tests {
         );
         assert_eq!((failed.result, failed.exit_code), ("failed", 1));
         assert_eq!(failed.reason.as_deref(), Some("boom"));
+        // docs/spawn.md "Watching": a watcher's report names no source and
+        // says it watched.
+        let watched = ExternalLaunchProgress {
+            source_index: None,
+            watch: true,
+            ..progress
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&ExternalLaunchReport::new(None, Some(&watched), None).json())
+                .unwrap();
+        assert_eq!(
+            (&value["result"], &value["source_index"], &value["watch"]),
+            (
+                &serde_json::json!("quit"),
+                &serde_json::Value::Null,
+                &serde_json::json!(true)
+            )
+        );
     }
 
     #[test]

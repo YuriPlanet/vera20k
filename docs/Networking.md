@@ -851,6 +851,20 @@ as for the player it follows, with the score page, then the online lobby. One th
 player leaves without a result returns it to the lobby with a line saying the match
 ended. The lobby renews a watcher's relay pass as it does a player's (`renew_watch`).
 
+A launcher's room watches the same way, outside the game's lobby: the launcher's lobby grants
+a watch ticket once the match plays and hands the game the spawn.ini of the match's source 0
+with that ticket in `[Relay]` ([external launches](spawn.md#watching)). Its world stands in
+source 0's seat, but the game starts on the observer's sidebar with the whole map (Tab follows the
+players as a lobby watcher's does), hears no House's verdict there, leaves without a score page
+once the match is decided, reads the stream from its first frame, and renews its ticket by polling the launcher's match service with its watch token, which
+the service answers with `watch_renewed` and nothing else; it sends that service no command. A
+watcher whose connections hold every source of the match, rather than all but its own seat,
+follows the first source from no seat (`sequenced::watched_source`). The relay takes up to 256
+watchers a match (1,024 in all) and a delay of up to 24 hours; a watcher held back more than the
+300 seconds a finished match's records stay misses the end. A game from before this refuses a
+watch ticket in `[Relay]` as an invalid grant, and a relay from before it refuses the watcher, so
+the launch fails with its reason; players are not affected.
+
 Older versions and rollbacks: a game from before watching never asks for the list, its
 rooms send no `watching`, and their matches are never watchable. A watcher sees only
 matches of its own version, and its game refuses a start whose version or rules digest

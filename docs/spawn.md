@@ -79,3 +79,67 @@ imported with `import_file`, never a mod, and rejects with an `Error` saying wha
 before a launch or between launches, as `probe`. On the threaded package, once the host has awaited
 `initThreadPool`, it runs on a pool worker and the page's thread goes on; otherwise it runs on the
 page's thread, which it holds until the map is made.
+
+## Watching
+
+A launcher can start a game that watches a match being played, from its first frame, without
+taking part in it. Its `spawn.ini` is the one the human with the lowest `SourceIndex` (source 0)
+gets, with the same `[Settings]`, `[OtherK]`, AI rows, `[IsSpectator]` and teams, and
+`PlayerCount` counting every human, spectators included. Only `[Relay]` differs:
+
+```ini
+[Relay]
+Address=203.0.113.5:5000
+MatchId=<the match's UUID>
+PlayerId=<the watcher's UUID>
+Ticket=<a version 3 watch ticket, base64url>
+PacketKey=<base64url>
+PayloadKey=<the match's payload key>
+OrderingCertificate=<the match's certificate>
+ServiceUrl=https://match.example.com
+Token=<the watcher's watch token>
+GatewayUrl=wss://gateway.example.com   ; optional
+AdmissionTimeout=60                     ; optional
+```
+
+The ticket alone makes the game a watcher (relay README "Watchers"): a player's ticket starts a
+player, byte for byte as before. `ResumePings`, `ResumeCursor` and `Federation` are refused with a
+watch ticket: a watcher joins one relay and is nobody returning. The ticket and certificate must be
+`MatchId`'s, and the certificate must name all `PlayerCount` humans.
+
+A match of one human against AI is watchable only when the relay orders it: its certificate must be
+a `VO2C` marked ordered alone (`OrderingCertificate::ordered_alone`, flags bit 1, see
+[Watching](Networking.md#watching)). Without the mark the player's game runs its commands locally,
+the relay never starts the match, and a watcher's launch fails once its admission wait runs out.
+With it the player plays through the relay as in any relay match, and its watcher, whose
+connections hold no other source, takes source 0's seat as always.
+
+The watcher's world stands in source 0's seat, because a world needs a current House, but the
+watcher is none of the players: it starts on the observer's sidebar, which lists every player and
+sees the whole map, and Tab moves it to each player's view and back, as the
+[online lobby's watcher](Networking.md#watching) does. It controls nothing: its orders are dropped
+and it sends nothing into the match (`SequencedSession`'s watch). On the observer's sidebar it
+hears no House's verdict.
+Its relay lets it in once the match has started and is journaled; until then its handshake is
+left unanswered and the game tries again for up to 240 seconds (or `AdmissionTimeout`, if
+longer), then fails the launch. It then reads the match from its first frame at speed until it
+has caught up, and plays on with the players.
+
+`Token` is only for renewing the watch ticket, which, like a player's, lives at most 300 seconds:
+once the relay has let the watcher in, then 150 seconds after each grant, and every 10 seconds
+until one comes, the game asks
+`GET {ServiceUrl}/v1/events?after=<cursor>` with it, which answers with a `watch_renewed` event,
+`{"match_id": "…", "relay": {"address", "ticket", "packet_key", "payload_key",
+"ordering_certificate"}}`. A watcher sends nothing else to the match service: no command, report,
+`finish`, `leave` or `logout`, and it ignores any other event. A refusal (401, 403, 409
+`unknown_match` once the match ended, any 4xx but 408 and 429) stops its polls for good; a network
+failure, 408, 429 or 5xx is tried again.
+
+The game ends by itself, with no score page, once the match is decided or every player has left
+it, or when the watcher closes it (Escape). Its `spawn_result.json` says `"watch": true`, with
+`result` always `quit` and no `source_index`. Its log names the launch `Relay spawn: … watch=true`,
+says `External launch: match on screen at frame N` once the match is on screen and then
+`External launch: frame N` every 900 frames, which a watcher passes quickly while it catches up.
+
+`tools/spawn/run.sh relay` with `WATCHERS=N` starts N such watchers beside its players once p0's
+match is on screen ([tools/spawn/README.md](../tools/spawn/README.md)).

@@ -56,6 +56,9 @@ const RELAY_GRANT_LIFETIME: Duration = Duration::from_secs(300);
 /// spends 6 of renew_relay's 12 a minute (docs/lobby-protocol.md).
 const RELAY_RENEWAL_MARGIN: Duration = Duration::from_secs(150);
 const RELAY_RENEWAL_RETRY_MS: u32 = 10_000;
+/// How long a launcher's watcher waits for its relay to let it in: the
+/// relay's loading limit (`LOADING_LIMIT_MS`) and some more.
+const WATCH_ADMISSION_TIMEOUT: Duration = Duration::from_secs(240);
 /// The lobby's chat limit in UTF-8 bytes (docs/lobby-protocol.md): the
 /// longest text `/v1/translate` takes, and the longest a lobby phrase fills
 /// to before its line's own text stands ([`super::lobby_phrases`]).
@@ -159,7 +162,11 @@ impl OnlineCleanup {
         assert!(self.retired.is_none(), "one online exit owner at a time");
         self.logout_acknowledged = false;
         service.auth_attempt = service.auth_attempt.wrapping_add(1);
-        if let Some(pending) = service.pending.take()
+        if service.spawned_watch.is_some() {
+            // A launcher's watcher has nothing to finish, leave or log out
+            // (docs/spawn.md "Watching"): its worker just stops.
+            service.stopping.store(true, Ordering::Release);
+        } else if let Some(pending) = service.pending.take()
             && service.match_id.is_none()
         {
             service.hold_match(Some(pending.match_id));
@@ -334,6 +341,10 @@ pub(super) struct LiveService {
     /// VERA: the match this game watches, from its `watch_started` until it
     /// leaves with `unwatch`.
     watching: Option<Watching>,
+    /// The match a launcher's watcher follows (docs/spawn.md "Watching"):
+    /// its bearer only polls for `watch_renewed`, and this service sends no
+    /// command, report, finish or leave.
+    spawned_watch: Option<String>,
 }
 
 /// VERA: a match this game watches (docs/lobby-protocol.md "Watching"). It
@@ -750,6 +761,7 @@ impl LiveService {
             account_attempt: 0,
             deleting: None,
             watching: None,
+            spawned_watch: None,
         }
     }
 
@@ -813,6 +825,11 @@ impl LiveService {
     }
 
     fn send_command(&self, id: u64, operation: &'static str, payload: Value) {
+        // A launcher's watcher's bearer acts as no player (docs/spawn.md
+        // "Watching"); the worker refuses its commands too.
+        if self.spawned_watch.is_some() {
+            return;
+        }
         let _ = self.requests.send(http::Request::Command {
             id,
             operation,
@@ -1165,11 +1182,13 @@ impl LiveService {
         if self.finishing.is_some() {
             return;
         }
-        // A watcher renews its watch, a player its place in the match.
-        let (operation, match_id) = match (&self.watching, &self.match_id) {
-            (Some(watching), _) => ("renew_watch", &watching.match_id),
-            (None, Some(match_id)) => ("renew_relay", match_id),
-            (None, None) => return,
+        // A watcher renews its watch, a player its place in the match. A
+        // launcher's watcher polls its events, which answer `watch_renewed`.
+        let (operation, match_id) = match (&self.watching, &self.match_id, &self.spawned_watch) {
+            (Some(watching), _, _) => ("renew_watch", &watching.match_id),
+            (None, Some(match_id), _) => ("renew_relay", match_id),
+            (None, None, Some(match_id)) => ("", match_id),
+            (None, None, None) => return,
         };
         let Some(due) = self.relay_renewal_due else {
             return;
@@ -1183,7 +1202,11 @@ impl LiveService {
         }
         let match_id = match_id.clone();
         self.next_renewal_attempt = Some(now_ms.wrapping_add(RELAY_RENEWAL_RETRY_MS));
-        self.command(operation, json!({"match_id":match_id}));
+        if self.spawned_watch.is_some() {
+            let _ = self.requests.send(http::Request::PollEvents);
+        } else {
+            self.command(operation, json!({"match_id":match_id}));
+        }
     }
 
     fn send_report(&mut self, operation: &'static str, payload: Value, now: Instant) {
@@ -1452,7 +1475,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             }
         }
         service.poll_cleanup(Instant::now());
-        if service.watching.is_some() {
+        if service.watching.is_some() || service.spawned_watch.is_some() {
             // A watcher's setup is no room's: it tells the lobby nothing.
             if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
                 protocol.take_service_requests();
@@ -3204,12 +3227,48 @@ pub(crate) fn decode_external_relay_grant(
     )
 }
 
+/// Whether a spawn.ini `[Relay] Ticket` is a watch ticket (docs/spawn.md
+/// "Watching"): the relay protocol's own parser decides, not a version byte
+/// copied here.
+pub(crate) fn relay_ticket_is_watch(ticket: &str) -> bool {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(ticket)
+        .is_ok_and(|bytes| crate::net::udp::RelayWatchTicket::parse(&bytes).is_ok())
+}
+
+/// A watcher spawn.ini's `[Relay]` grant, admitted through the lobby path's
+/// own watch decoder: the ticket and certificate are `match_id`'s. A watch
+/// ticket names no source and no player of the match.
+pub(crate) fn decode_external_watch_grant(
+    address: SocketAddrV4,
+    ticket: String,
+    packet_key: String,
+    payload_key: String,
+    ordering_certificate: String,
+    match_id: &str,
+) -> Result<DecodedRelayGrant> {
+    decode_watch_grant(
+        &wire::WatchGrant {
+            address,
+            ticket,
+            packet_key,
+            payload_key,
+            ordering_certificate,
+        },
+        match_id,
+    )
+}
+
 fn apply_event(
     state: &mut AppState,
     service: &mut LiveService,
     kind: &str,
     payload: Value,
 ) -> Result<()> {
+    // A launcher's watcher hears only its renewals (docs/spawn.md "Watching").
+    if service.spawned_watch.is_some() && kind != "watch_renewed" {
+        return Ok(());
+    }
     let local = state.frontend.wol_account.nickname.clone();
     match kind {
         "relay_renewed" => {
@@ -3263,9 +3322,12 @@ fn apply_event(
                 relay: wire::WatchGrant,
             }
             let renewed: Renewed = decode(payload)?;
-            if service.watching.as_ref().map(|watching| &watching.match_id)
-                != Some(&renewed.match_id)
-            {
+            let watched = service
+                .watching
+                .as_ref()
+                .map(|watching| &watching.match_id)
+                .or(service.spawned_watch.as_ref());
+            if watched != Some(&renewed.match_id) {
                 return Ok(());
             }
             let grant = decode_watch_grant(&renewed.relay, &renewed.match_id)?;
@@ -3783,7 +3845,13 @@ fn enter_timed_start(
     match_id: String,
     pings: &[i32],
 ) -> Result<()> {
-    service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
+    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32;
+    service.relay_granted(now_ms);
+    if service.spawned_watch.is_some() {
+        // A launcher's watch ticket may have spent most of its life waiting
+        // for the relay to let it in: renew it at once.
+        service.relay_renewal_due = Some(now_ms);
+    }
     // A new match: no earlier one's result may stand for it.
     crate::app::App::clear_match_result(state);
     crate::app::lan_service::apply_online_timing(state, pings)?;
@@ -3805,7 +3873,7 @@ fn enter_timed_start(
         NetworkSetupEvent::Negotiated { result: 0 },
     )?;
     // A watched match is no match of this player's: nothing finishes it.
-    if service.watching.is_none() {
+    if service.watching.is_none() && service.spawned_watch.is_none() {
         service.hold_match(Some(match_id));
     }
     service.pending = None;
@@ -4178,15 +4246,29 @@ pub(crate) fn begin_spawned_match(
     service.spawned = true;
     service.relay_timeout = relay.admission_timeout;
     service.player_id = relay.player_id;
-    let (resume_pings, resume_cursor) = relay.resume.map_or((None, None), |resume| {
+    let (mut resume_pings, resume_cursor) = relay.resume.map_or((None, None), |resume| {
         (Some(resume.pings), Some(resume.cursor))
     });
+    if relay.watch {
+        // docs/spawn.md "Watching": the match is under way, so the relay's
+        // admission is the start, as a lobby watcher's (`poll_watch`). The
+        // timing vector only sets retry timing, which a watcher's sends
+        // never use; no ping is measured or reported.
+        service.spawned_watch = Some(relay.match_id.clone());
+        resume_pings = Some(vec![0; launch.humans.len()]);
+        // The lobby grants a watch once the match plays, which can be
+        // before its players loaded and the relay journals it: until then
+        // the relay leaves a watcher's CONFIRM unanswered and the handshake
+        // tries again, for as long as players may load.
+        service.relay_timeout = service.relay_timeout.max(WATCH_ADMISSION_TIMEOUT);
+    }
     // The launcher's bearer replaces `/v1/sessions`; nothing else is opened.
     service
         .requests
         .send(http::Request::AdoptSession {
             token: relay.token,
             resume: resume_cursor.map(|cursor| (relay.match_id.clone(), cursor)),
+            watch: relay.watch,
         })
         .map_err(|_| anyhow!("the match service worker stopped"))?;
     let users: Vec<_> = launch
@@ -4275,7 +4357,10 @@ fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService) {
     };
     let now = Instant::now();
     if !std::mem::replace(&mut spawned.cleanup_begun, true) {
-        if service.match_id.is_some() {
+        if service.spawned_watch.is_some() {
+            // A watch is no match of this player's: it finishes and leaves
+            // nothing (docs/spawn.md "Watching").
+        } else if service.match_id.is_some() {
             service.finish_result = Some(result.as_str());
             service.finish_opponents_left = opponents_left;
             service.begin_finish(now);
@@ -4550,6 +4635,52 @@ mod completion_tests {
             [7; 32]
         );
         assert!(decode_watch_grant(&grant, "33333333-3333-3333-3333-333333333333").is_err());
+        // A watcher spawn.ini's grant (docs/spawn.md "Watching"): the ticket
+        // alone says it watches, and the same decoder admits it.
+        assert!(relay_ticket_is_watch(&grant.ticket));
+        let wire::WatchGrant {
+            address,
+            ticket,
+            packet_key,
+            payload_key,
+            ordering_certificate,
+        } = grant;
+        let external = |match_id| {
+            decode_external_watch_grant(
+                address,
+                ticket.clone(),
+                packet_key.clone(),
+                payload_key.clone(),
+                ordering_certificate.clone(),
+                match_id,
+            )
+        };
+        assert_eq!(external(watched).unwrap().payload_key, [7; 32]);
+        assert!(external("33333333-3333-3333-3333-333333333333").is_err());
+        assert!(!relay_ticket_is_watch(&packet_key) && !relay_ticket_is_watch("*"));
+    }
+
+    /// A launcher's watcher renews by polling its events at a player's
+    /// cadence and sends the match service no command.
+    #[test]
+    fn a_spawned_watcher_only_polls_for_its_renewal() {
+        let (mut service, input, _output) = control_service(None);
+        service.spawned = true;
+        service.spawned_watch = Some("watched-match".into());
+        let received = 1_000;
+        service.relay_granted(received);
+        service.poll_renewal(received + 149_999);
+        service.command("leave", json!({}));
+        service.begin_finish(Instant::now());
+        assert!(input.try_recv().is_err());
+        let due = received + 150_000;
+        service.poll_renewal(due);
+        assert!(matches!(input.try_recv(), Ok(http::Request::PollEvents)));
+        // An unanswered poll goes again at the renewal retry.
+        service.poll_renewal(due + RELAY_RENEWAL_RETRY_MS - 1);
+        assert!(input.try_recv().is_err());
+        service.poll_renewal(due + RELAY_RENEWAL_RETRY_MS);
+        assert!(matches!(input.try_recv(), Ok(http::Request::PollEvents)));
     }
 
     fn control_service(

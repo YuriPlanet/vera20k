@@ -13,12 +13,13 @@ use crate::link::Reader;
 /// The version byte of a watch ticket.
 pub const WATCH_TICKET_VERSION: u8 = 3;
 pub(crate) const WATCH_TICKET_DOMAIN: &[u8] = b"VERA20k relay watch ticket v1\0";
-/// The longest delay a watch ticket carries. It stays below the 300 s a
-/// finished match's records outlive its end (`cleanup_due`), so a watcher
-/// that kept up still reads the end.
-pub const MAX_WATCH_DELAY_SECONDS: u32 = 240;
+/// The longest delay a watch ticket carries: the longest a match runs
+/// (`MAX_MATCH_SECONDS`). A finished match's records outlive its end by
+/// only 300 s (`cleanup_due`), so a watcher held back longer than that
+/// loses the end of the match.
+pub const MAX_WATCH_DELAY_SECONDS: u32 = 24 * 60 * 60;
 /// Watchers one room admits; the relay admits `MAX_WATCHERS` in all.
-pub const MAX_ROOM_WATCHERS: usize = 10;
+pub const MAX_ROOM_WATCHERS: usize = 256;
 const MAX_WATCHERS: usize = 1024;
 /// The `source` of a watcher's hop: none of the match's.
 pub(crate) const WATCH_SOURCE: u8 = MAX_PEERS;
@@ -912,6 +913,105 @@ mod tests {
                 .all(|entry| entry.source != WATCH_SOURCE)
         );
         assert_eq!(before, (ordering(&server), server.ordering_history(ROOM)));
+    }
+
+    /// A lobby may grant a watch before the relay has started and journaled
+    /// the match: the watcher's CONFIRM goes unanswered (`Unregistered`),
+    /// and the same session's next handshake gets in once the match runs.
+    #[test]
+    fn a_watcher_too_early_for_the_match_gets_in_once_it_runs() {
+        let directory = TestDirectory::new();
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        for player in [&mut first, &mut second] {
+            connect(&mut server, player, 0);
+        }
+        let mut early = watcher(&server, ROOM, 41, 0);
+        let mut bytes = Vec::new();
+        early.probe(&mut bytes).unwrap();
+        let challenge = server
+            .process_at(endpoint(&early), &bytes, unix(0), 0)
+            .unwrap()
+            .remove(0);
+        let ServerEvent::Challenge(cookie) = early.receive(&challenge.bytes).unwrap() else {
+            panic!("challenge");
+        };
+        early.confirm(cookie, &mut bytes).unwrap();
+        assert_eq!(
+            server
+                .process_at(endpoint(&early), &bytes, unix(0), 0)
+                .err(),
+            Some(RelayError::Unregistered)
+        );
+        let cert = certificate(&key, 3, 1300);
+        for player in [&mut first, &mut second] {
+            configure(&mut server, player, &cert, 0);
+        }
+        for at in (1000..=3000).step_by(1000) {
+            server.advance_clock(at, unix(at));
+        }
+        connect(&mut server, &mut early, 3000);
+        assert!(matches!(
+            watch_ready(&mut server, &mut early, [7; 32], 3000)[..],
+            [OrderEvent::Status(_)]
+        ));
+    }
+
+    /// A watch may be held back as long as a match runs, and no longer.
+    #[test]
+    fn a_watch_ticket_may_delay_up_to_a_whole_match() {
+        let ticket = |delay_seconds| WatchTicket {
+            room: ROOM,
+            expires: 1200,
+            nonce: [41; 16],
+            watcher: [41; 16],
+            delay_seconds,
+        };
+        let key = SecretKey::new([73; 32]);
+        let day = 24 * 60 * 60;
+        let signed = ticket(day).sign(&key).unwrap();
+        assert_eq!(WatchTicket::parse(&signed), Ok(ticket(day)));
+        assert_eq!(
+            ticket(day + 1).sign(&key).err(),
+            Some(RelayError::Malformed)
+        );
+    }
+
+    /// The lobby's Go `relay.Signer.IssueWatch` signs this same vector
+    /// (vera20k-lobby-server `relay/watch_test.go`): both sides must keep
+    /// these bytes.
+    #[test]
+    fn the_lobby_watch_ticket_vector_matches_these_bytes() {
+        fn range<const N: usize>(start: u8) -> [u8; N] {
+            std::array::from_fn(|index| start + index as u8)
+        }
+        let key = SecretKey::new(range(0x00));
+        let ticket = WatchTicket {
+            room: range(0x10),
+            expires: 1_900_000_000,
+            nonce: range(0x20),
+            watcher: range(0x30),
+            delay_seconds: 0,
+        };
+        let signed = ticket.sign(&key).unwrap();
+        let hex = |bytes: &[u8]| {
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        assert_eq!(
+            hex(&signed),
+            "03101112131415161718191a1b1c1d1e1f0000b33f7100000000202122232425262728292a2b2c2d2e2f\
+             303132333435363738393a3b3c3d3e3f00000000000000001b89a25d44deaa2751154d7b55366618\
+             14c547ca1cea199b68d049de4d9962c4"
+        );
+        assert_eq!(
+            hex(derive_packet_key(&key, &signed).expose_for_https()),
+            "2a61c73a0474c855a50fd7767040d22e70b2b1e8ba791b447e319d854c30fdfa"
+        );
+        assert_eq!(WatchTicket::parse(&signed), Ok(ticket));
     }
 
     #[test]

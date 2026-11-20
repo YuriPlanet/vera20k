@@ -232,6 +232,35 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
     assert_eq!(restored.houses[&owner].enemy_house(), Some(names[1]));
 }
 
+/// An observer's House is defeated from its first House pass (it holds
+/// nothing), so an AI that watches it come first in House order never takes
+/// it for its enemy (`0x004FD538`'s defeated test).
+#[test]
+fn an_ai_never_picks_a_defeated_observer_for_its_enemy() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let (mut sim, names) = houses(true, 3);
+    let (observer, ai, player) = (names[0], names[1], names[2]);
+    sim.houses
+        .get_mut(&observer)
+        .unwrap()
+        .set_is_defeated_for_test(true);
+    sim.houses
+        .get_mut(&ai)
+        .unwrap()
+        .set_base_center_for_test(Some((10, 10)));
+    sim.session.set_binary_frame_for_test(100);
+    pick_enemy(
+        &sim.interner,
+        &sim.session,
+        &sim.house_alliances,
+        &mut sim.houses,
+        ai,
+        rules.ares_form(),
+        false,
+    );
+    assert_eq!(sim.houses[&ai].enemy_house(), Some(player));
+}
+
 #[test]
 fn the_strategy_timer_and_its_gates_match_native() {
     let rules = rules();

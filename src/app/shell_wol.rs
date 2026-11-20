@@ -42,7 +42,8 @@ pub(crate) use live_service::keep_network_report;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::retire_visit_for_exit;
 pub(crate) use live_service::{
-    DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant, end_spawned_match,
+    DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant,
+    decode_external_watch_grant, end_spawned_match, relay_ticket_is_watch,
 };
 pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};

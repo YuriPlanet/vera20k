@@ -139,6 +139,14 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     let Some(outcome) = outcome.map(|outcome| outcome.kind) else {
         return;
     };
+    // docs/spawn.md "Watching": a launcher's watcher is none of the players,
+    // so the House it stands in deciding ends the watch with no verdict or
+    // score page of that player's, and its launch with no result.
+    if state.frontend.external_launch && super::watching::active(state) {
+        log::info!("The watched match is decided; the watcher leaves it");
+        crate::app::App::leave_network_wait_to_main_menu(state);
+        return;
+    }
     // The loser gets the last word. The simulation published this result on
     // its own frame, the same one a headless or replay run publishes, and no
     // further frame runs while it waits. With `Custom End Game Movie` on, only
