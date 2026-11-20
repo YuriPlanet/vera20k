@@ -36,7 +36,14 @@ pub(super) fn request_service(
             let credential =
                 sign_in_credential(settings_dir(state), service, &nickname, password, remember);
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
-            service.sign_in(nickname, credential);
+            // What this game changes from the original game, which a room
+            // names when its rules differ from the host's.
+            use crate::app::shell_network_setup::agreement;
+            let changes = agreement::changes_header(&agreement::original_game_changes(
+                state.frontend.mods.title(),
+                &state.process_assets,
+            ));
+            service.sign_in(nickname, credential, changes);
         }
         WolServiceRequest::Account { attempt, request } => {
             let _ = service

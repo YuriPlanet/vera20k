@@ -491,11 +491,17 @@ impl LiveService {
     /// it still holds, after one attempt to finish this service's match with
     /// it; then that match, and any cleanup still owed for the old session,
     /// is dropped, whether or not the lobby answered.
-    pub(super) fn sign_in(&mut self, nickname: String, credential: http::Credential) {
+    pub(super) fn sign_in(
+        &mut self,
+        nickname: String,
+        credential: http::Credential,
+        changes: String,
+    ) {
         let _ = self.requests.send(http::Request::OpenSession {
             attempt: self.auth_attempt,
             nickname,
             credential,
+            changes,
         });
         self.clear_cleanup();
     }

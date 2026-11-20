@@ -66,6 +66,9 @@ pub(super) enum Request {
         attempt: u64,
         nickname: String,
         credential: Credential,
+        /// What this game changes from the original game, the `Vera-Changes`
+        /// sign-in header (`agreement::changes_header`).
+        changes: String,
     },
     /// An `/v1/accounts/` request, answered by [`Response::AccountAnswered`]
     /// with the same `attempt`.
@@ -428,7 +431,7 @@ const LOBBY_LOST_POLLS: u8 = 6;
 /// too, since a browser cannot set the User-Agent released games name it in.
 /// The browser's gateway forwards only the headers it lists
 /// (tools/wasm/gateway/server.mjs).
-fn sign_in_headers() -> [(&'static str, String); 6] {
+fn sign_in_headers(changes: &str) -> [(&'static str, String); 7] {
     [
         ("Vera-Version", env!("CARGO_PKG_VERSION").to_owned()),
         (
@@ -439,6 +442,7 @@ fn sign_in_headers() -> [(&'static str, String); 6] {
         ("Vera-Host-Handover", "1".to_owned()),
         ("Vera-Watch-AI", "1".to_owned()),
         ("Vera-Language", crate::i18n::selected_language()),
+        ("Vera-Changes", changes.to_owned()),
     ]
 }
 
@@ -725,6 +729,9 @@ struct Client {
     browser: u32,
     token: Option<String>,
     cursor: u64,
+    /// The `Vera-Changes` header its sign-ins send, from the last
+    /// `Request::OpenSession`.
+    changes: String,
     /// The match `/v1/match/resume` recovers after a lost event history and
     /// a held bearer's logout finishes first: the live service's, as
     /// `Request::HoldMatch` last named it, or a returning launcher's from
@@ -794,6 +801,7 @@ impl Client {
             browser,
             token: None,
             cursor: 0,
+            changes: String::new(),
             active_match: None,
             spawned: false,
             watching: false,
@@ -911,7 +919,7 @@ impl Client {
                 // Its relay CONFIRM carries a federation roster. A browser
                 // game does not say so: its gateway reaches one fixed relay.
                 request = request.header("Vera-Relay-Federation", "1");
-                for (name, value) in sign_in_headers() {
+                for (name, value) in sign_in_headers(&self.changes) {
                     request = request.header(name, value);
                 }
             }
@@ -1356,7 +1364,9 @@ macro_rules! serial_driver {
                 attempt,
                 nickname,
                 credential,
+                changes,
             }) => {
+                client.changes = changes;
                 // A held bearer still holds its name: log it out first, and
                 // while the lobby is away, report that instead of the name.
                 if !platform_await!(client.release_held_session()) {
@@ -2021,6 +2031,7 @@ mod tests {
             attempt,
             nickname: "Player_01234567890123456".into(),
             credential: Credential::Guest,
+            changes: String::new(),
         };
         requests.send(sign_in(1)).unwrap();
         assert!(matches!(next(), Response::Authenticated { attempt: 1, .. }));
@@ -2431,14 +2442,15 @@ mod tests {
         );
     }
 
-    /// A sign-in names the game's version and build beside what it can do.
+    /// A sign-in names the game's version, build and changes beside what it
+    /// can do.
     #[test]
     fn a_sign_in_names_the_version_and_build() {
         let (address, lobby) = one_request_lobby(
             |request| request.ends_with(b"}"),
             b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
         );
-        let client = Client::new(
+        let mut client = Client::new(
             Arc::new(AtomicBool::new(false)),
             ureq::Agent::config_builder()
                 .http_status_as_error(false)
@@ -2446,6 +2458,7 @@ mod tests {
                 .into(),
             format!("http://{address}"),
         );
+        client.changes = "%7B%22ares%22%3A%22on%22%7D".into();
         let body = session_body("Tanya", &Credential::Guest);
         assert_eq!(
             client.request("/v1/sessions", Some(&body)),
@@ -2464,6 +2477,10 @@ mod tests {
             Some(env!("CARGO_PKG_VERSION"))
         );
         assert_eq!(header("Vera-Relay-Federation").as_deref(), Some("1"));
+        assert_eq!(
+            header("Vera-Changes").as_deref(),
+            Some("%7B%22ares%22%3A%22on%22%7D")
+        );
         // The build `ready` and `map_status` carry, in the characters and
         // length the lobby takes (docs/lobby-protocol.md "Sign-in headers").
         let build = header("Vera-Build").unwrap();
@@ -2490,7 +2507,7 @@ mod tests {
             .split_once("const FORWARDED_HEADERS = Object.freeze([")
             .unwrap();
         let (forwarded, _) = list.split_once("])").unwrap();
-        for (name, _) in sign_in_headers() {
+        for (name, _) in sign_in_headers("") {
             let name = name.to_ascii_lowercase();
             assert!(forwarded.contains(&format!("'{name}'")), "{name}");
         }
