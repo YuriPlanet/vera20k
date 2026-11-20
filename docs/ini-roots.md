@@ -150,10 +150,10 @@ they do not establish compatibility with a whole mod.
 
 ## Source and scope
 
-Root selection adapts the ra2-mono `GameConfig`/`GameIniLoader` design to
-VERA's existing owners. It keeps one root per family, rather than copying
-multi-file AI merging or replacing scenario loading. The adaptation is
-contributed under VERA's GPLv3.
+baixiong443 adapted root selection from the ra2-mono files
+`Ra2.Shared/GameConfig.cs`, `Ra2.IO/GameIniLoader.cs` and `Ra2.IO/IniMerger.cs`.
+VERA keeps one root per family. The author contributed the adaptation under
+VERA's GPLv3. [Original contribution](https://github.com/YuriPlanet/vera20k/commit/abe98da40b836f73de99902bc109f1aa43ce14af)
 
 [Include and inheritance](ini-directives.md) run at the selected source
 boundary when the game reads the [Ares way](ares.md), or in a `phobos` build.
