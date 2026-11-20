@@ -1215,18 +1215,20 @@ impl EntityStore {
         entries.into_iter().filter_map(|(_, id)| self.get(id))
     }
 
-    /// Materialize AircraftTracker412B40/4137A0 in retained per-bucket entry
+    /// AircraftTracker412B40/4137A0's copy, in retained per-bucket entry
     /// order. Shared by GreatestThreat6F91D3 and area damage4892D8. Current
     /// object coordinates do not relocate entries; FootAir owns that update.
     /// Repeated query buckets deliberately copy their vectors again. Each
     /// bucket's entries come from the airborne set, which debug builds check
     /// against a walk of every entity on every call (the live-read check).
+    /// The ids are read as the caller takes them, from the store it borrows,
+    /// so the copy needs no list of its own.
     pub(crate) fn airborne_in_query_order(
         &self,
         center_cell: &crate::sim::cell_rect::CellRef<'_>,
         radius_cells: i32,
         map_extent: (u16, u16),
-    ) -> Vec<u64> {
+    ) -> impl Iterator<Item = u64> + use<'_> {
         //412B6E calls Cell vt+48;413A30 truncates the returned XYZ's
         // X/Y toward zero and packs16. Read the resolved live Cell rather
         // than its lookup argument: aliases and the shared Dummy can differ.
@@ -1242,21 +1244,18 @@ impl EntityStore {
                 || self.airborne == self.walk_airborne(),
             "the airborne set disagrees with the entities"
         );
-        let mut ordered = Vec::new();
-        for bucket in crate::sim::occupancy::air_spatial_query_bucket_order(
+        crate::sim::occupancy::air_spatial_query_bucket_order(
             center.0,
             center.1,
             radius_cells,
             map_extent.0,
             map_extent.1,
-        ) {
-            ordered.extend(
-                self.airborne
-                    .range((bucket, 0, 0)..=(bucket, u64::MAX, u64::MAX))
-                    .map(|&(_, _, id)| id),
-            );
-        }
-        ordered
+        )
+        .flat_map(|bucket| {
+            self.airborne
+                .range((bucket, 0, 0)..=(bucket, u64::MAX, u64::MAX))
+                .map(|&(_, _, id)| id)
+        })
     }
 
     /// `(bucket, enter order, stable_id)` of every stored entity the tracker
@@ -1443,9 +1442,10 @@ mod tests {
             let center = point("center_cell");
             let extent = point("map_extent");
             let radius = input["radius_cells"].as_i64().unwrap() as i32;
-            let actual = crate::sim::occupancy::air_spatial_query_bucket_order(
+            let actual: Vec<_> = crate::sim::occupancy::air_spatial_query_bucket_order(
                 center.0, center.1, radius, extent.0, extent.1,
-            );
+            )
+            .collect();
             let expected: Vec<_> = row["copied_bucket_order"]
                 .as_array()
                 .unwrap()
@@ -1476,11 +1476,13 @@ mod tests {
                 .collect();
             let cell = crate::map::resolved_terrain::test_flat_cell(center.0, center.1);
             assert_eq!(
-                store.airborne_in_query_order(
-                    &crate::sim::cell_rect::CellRef::Real(&cell),
-                    radius,
-                    extent
-                ),
+                store
+                    .airborne_in_query_order(
+                        &crate::sim::cell_rect::CellRef::Real(&cell),
+                        radius,
+                        extent
+                    )
+                    .collect::<Vec<_>>(),
                 expected,
                 "{}",
                 row["name"]

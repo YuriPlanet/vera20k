@@ -791,13 +791,15 @@ fn cell_spread_technos(
         )
     });
     let tracked: Vec<u64> = match center_cell_ref {
-        Some(cell_ref) if cell_ref.center_coordinate().is_some() => {
-            world.substrate.entities.airborne_in_query_order(
+        Some(cell_ref) if cell_ref.center_coordinate().is_some() => world
+            .substrate
+            .entities
+            .airborne_in_query_order(
                 &cell_ref,
                 spread_cells as i32,
                 (world.session.map_width(), world.session.map_height()),
             )
-        }
+            .collect(),
         _ => Vec::new(),
     };
     for id in tracked {
