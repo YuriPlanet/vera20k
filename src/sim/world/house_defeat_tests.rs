@@ -113,6 +113,54 @@ fn sim_with_houses(sides: &[u8]) -> (Simulation, Vec<InternedId>) {
     (sim, houses)
 }
 
+/// `0x004FC62C`'s final human scan counts a living passive human: a skirmish
+/// watched by a passive observer (no starting forces, so the defeat gate
+/// leaves its House alone) runs on while two hostile computers still fight,
+/// and ends once one side is left.
+#[test]
+fn a_spectated_match_runs_on_after_the_first_computer_falls() {
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2, 3]);
+    sim.session.set_current_house_for_test(Some(owners[3]));
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![owners[3]],
+    );
+    sim.make_house_multiplay_passive(owners[3]);
+    sim.houses
+        .get_mut(&owners[3])
+        .unwrap()
+        .set_is_human_for_test(true);
+    for owner in &owners {
+        sim.houses
+            .get_mut(owner)
+            .unwrap()
+            .tracking_mut_for_test()
+            .set_for_test(1, &[], (0, 0, 0), &[]);
+    }
+    sim.houses
+        .get_mut(&owners[0])
+        .unwrap()
+        .tracking_mut_for_test()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].is_defeated());
+    assert!(
+        sim.multiplayer_decision().is_none(),
+        "the observer is still watching two hostile computers"
+    );
+    // The second computer falls: one side is left, so the match is decided.
+    sim.houses
+        .get_mut(&owners[1])
+        .unwrap()
+        .tracking_mut_for_test()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(
+        sim.multiplayer_decision().is_some(),
+        "the last surviving computer ends the watched match"
+    );
+}
+
 #[test]
 fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() {
     use crate::sim::scenario_session::ScenarioGameMode;
