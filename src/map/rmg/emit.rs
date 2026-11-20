@@ -102,8 +102,7 @@ pub fn populate(
 ) {
     let mut overlay_cells: Vec<(u16, u16, u8)> = Vec::new();
 
-    for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-        let cell = grid.get(x, y).expect("native cell is in-band");
+    for ((x, y), cell) in grid.cells_in_native_order() {
         let (rx, ry) = (x as u16, y as u16);
 
         let tile_index = if cell.tile == TILE_UNASSIGNED {

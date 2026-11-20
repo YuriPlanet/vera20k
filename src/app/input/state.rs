@@ -166,6 +166,7 @@ impl PreparedSavedLocalView {
         sidebar.sell_mode_on = modes.sell;
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
+        input.skirmish_spawn = None;
         // The preview is derived from the cursor; the next tactical frame
         // recomputes it. RESIDUAL: the BandBoxLeftUp retry copy (+1190..+1198)
         // loads raw and MouseLoad 0x005BDF70 never swizzles it, so natively it
@@ -311,6 +312,9 @@ pub(crate) struct MatchInputState {
     /// placement OR superweapon). Right-click clears; Options preserves it. Arming one
     /// kind clears the other.
     pub(crate) targeting_mode: Option<crate::app::types::TargetingMode>,
+    /// An unconfirmed offline chat order temporarily owns the mouse without
+    /// disturbing selected units or a ready sidebar product.
+    pub(crate) skirmish_spawn: Option<super::chat::SpawnOrder>,
     /// Current placement preview for the armed building, if any.
     pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
     pub(crate) foundation_latch: FoundationLatch,
@@ -593,6 +597,7 @@ impl MatchInputState {
             build_repeat: Default::default(),
             follow_target: None,
             targeting_mode: None,
+            skirmish_spawn: None,
             building_placement_preview: None,
             foundation_latch: FoundationLatch::default(),
             saved_building_placement: None,
@@ -857,6 +862,7 @@ impl MatchInputState {
         // reuses the same object ids or has the same buildable types.
         self.ferry = Default::default();
         self.build_repeat = Default::default();
+        self.skirmish_spawn = None;
         // The double-click chain belongs to the outgoing tactical view.
         self.last_selection_click = None;
         self.targeting_mode = None;

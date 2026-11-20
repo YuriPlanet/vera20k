@@ -175,6 +175,11 @@ fn find_cursor_feedback_kind(
     {
         return Some(CursorFeedbackKind::Default);
     }
+    if state.match_state.input.skirmish_spawn.is_some()
+        && super::camera::spawn_pointer_world_point(state).is_some()
+    {
+        return Some(CursorFeedbackKind::Deploy);
+    }
     let runtime = state.match_state.sim_runtime.runtime();
     let selected = runtime.map_or(
         std::borrow::Cow::Borrowed(targets.selected.as_slice()),

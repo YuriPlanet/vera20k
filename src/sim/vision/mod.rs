@@ -1691,7 +1691,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             self.increment_sensor_at(house, rx, ry);
         }
@@ -1706,7 +1706,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             let _ = self.decrement_sensor_at_if_positive(house, rx, ry);
         }
@@ -1716,32 +1716,21 @@ impl FogState {
     /// Exact outer-Y / inner-X strict-circle cell order shared by the four
     /// active sensor writers. Mutation stays separate so Simulation can issue
     /// each native resident callback immediately after that cell's counter.
-    pub(crate) fn sensor_circle_cells(&self, center: (u16, u16), radius: u16) -> Vec<(u16, u16)> {
+    /// The cells take no borrow of the fog, so the caller may change each
+    /// cell's counters as it reaches it.
+    pub(crate) fn sensor_circle_cells(
+        &self,
+        center: (u16, u16),
+        radius: u16,
+    ) -> impl Iterator<Item = (u16, u16)> + use<> {
         let radius = i32::from(radius);
-        if radius <= 0 || self.width == 0 || self.height == 0 {
-            return Vec::new();
-        }
-        let mut touched = Vec::new();
-        for dy in -radius..radius {
-            for dx in -radius..radius {
-                if dx * dx + dy * dy >= radius * radius {
-                    continue;
-                }
-                let cell_x = i32::from(center.0) + dx;
-                let cell_y = i32::from(center.1) + dy;
-                if cell_x < 0
-                    || cell_y < 0
-                    || cell_x >= i32::from(self.width)
-                    || cell_y >= i32::from(self.height)
-                {
-                    continue;
-                }
-                let rx = cell_x as u16;
-                let ry = cell_y as u16;
-                touched.push((rx, ry));
-            }
-        }
-        touched
+        let (width, height) = (i32::from(self.width), i32::from(self.height));
+        (-radius..radius)
+            .flat_map(move |dy| (-radius..radius).map(move |dx| (dx, dy)))
+            .filter(move |&(dx, dy)| dx * dx + dy * dy < radius * radius)
+            .map(move |(dx, dy)| (i32::from(center.0) + dx, i32::from(center.1) + dy))
+            .filter(move |&(x, y)| (0..width).contains(&x) && (0..height).contains(&y))
+            .map(|(x, y)| (x as u16, y as u16))
     }
 
     fn sensor_counter_mut(&mut self, house: InternedId, rx: u16, ry: u16) -> &mut i16 {
@@ -1854,7 +1843,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             let counter = self.disguise_detect_counter_mut(house, rx, ry);
             *counter = counter.wrapping_add(1);
@@ -1872,7 +1861,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             let counter = self.disguise_detect_counter_mut(house, rx, ry);
             *counter = counter.wrapping_sub(1);

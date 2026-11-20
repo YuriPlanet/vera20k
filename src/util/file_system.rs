@@ -87,7 +87,7 @@ mod memory {
         collections::BTreeMap,
         io,
         path::{Component, Path, PathBuf},
-        sync::{Arc, Mutex, OnceLock},
+        sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError},
     };
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     type PersistenceCallbacks = (fn(&str, &[u8], u64), fn(&str));
@@ -104,8 +104,14 @@ mod memory {
         modified_ms: u64,
     }
     static FILES: OnceLock<Mutex<BTreeMap<PathBuf, Entry>>> = OnceLock::new();
-    fn files() -> &'static Mutex<BTreeMap<PathBuf, Entry>> {
-        FILES.get_or_init(Default::default)
+    /// The imported files. Each change to the map or the folder set is one
+    /// insert, remove or retain, so a panic elsewhere while one is locked
+    /// leaves it whole: a poisoned lock is used as it is.
+    fn files() -> MutexGuard<'static, BTreeMap<PathBuf, Entry>> {
+        FILES
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
     fn key(path: &Path) -> PathBuf {
         let mut result = PathBuf::from("/");
@@ -121,8 +127,12 @@ mod memory {
         result
     }
     static DIRECTORIES: OnceLock<Mutex<std::collections::BTreeSet<PathBuf>>> = OnceLock::new();
-    fn directories() -> &'static Mutex<std::collections::BTreeSet<PathBuf>> {
-        DIRECTORIES.get_or_init(|| Mutex::new([PathBuf::from("/")].into()))
+    /// The created folders; locked as [`files`] is.
+    fn directories() -> MutexGuard<'static, std::collections::BTreeSet<PathBuf>> {
+        DIRECTORIES
+            .get_or_init(|| Mutex::new([PathBuf::from("/")].into()))
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
     pub fn is_file(path: impl AsRef<Path>) -> bool {
         metadata(path).is_ok_and(|m| m.is_file())
@@ -154,7 +164,7 @@ mod memory {
         restore_file(path, bytes, 0);
     }
     pub fn restore_file(path: impl AsRef<Path>, bytes: Vec<u8>, modified_ms: u64) {
-        files().lock().unwrap().insert(
+        files().insert(
             key(path.as_ref()),
             Entry {
                 bytes: bytes.into(),
@@ -165,7 +175,7 @@ mod memory {
     /// Import bytes already in shared storage, as a file assembled in parts
     /// is: the engine keeps this allocation and copies nothing.
     pub fn import_shared(path: impl AsRef<Path>, bytes: Arc<[u8]>) {
-        files().lock().unwrap().insert(
+        files().insert(
             key(path.as_ref()),
             Entry {
                 bytes,
@@ -178,19 +188,14 @@ mod memory {
     /// Returns how many files went.
     pub fn forget_tree(path: impl AsRef<Path>) -> usize {
         let path = key(path.as_ref());
-        let mut files = files().lock().unwrap();
+        let mut files = files();
         let before = files.len();
         files.retain(|file, _| !file.starts_with(&path));
-        directories()
-            .lock()
-            .unwrap()
-            .retain(|dir| !dir.starts_with(&path) || dir == Path::new("/"));
+        directories().retain(|dir| !dir.starts_with(&path) || dir == Path::new("/"));
         before - files.len()
     }
     pub fn read_shared(path: impl AsRef<Path>) -> io::Result<Arc<[u8]>> {
         files()
-            .lock()
-            .unwrap()
             .get(&key(path.as_ref()))
             .map(|entry| entry.bytes.clone())
             .ok_or_else(missing)
@@ -223,7 +228,7 @@ mod memory {
             .unwrap_or_default()
             .as_millis() as u64;
         {
-            let mut files = files().lock().unwrap();
+            let mut files = files();
             if exclusive && files.contains_key(&path) {
                 return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
@@ -246,24 +251,18 @@ mod memory {
     }
     pub fn create_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
         let path = key(path.as_ref());
-        if path
-            .ancestors()
-            .any(|p| files().lock().unwrap().contains_key(p))
-        {
+        if path.ancestors().any(|p| files().contains_key(p)) {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "path is a file",
             ));
         }
-        directories()
-            .lock()
-            .unwrap()
-            .extend(path.ancestors().map(Path::to_path_buf));
+        directories().extend(path.ancestors().map(Path::to_path_buf));
         Ok(())
     }
     pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
         let path = key(path.as_ref());
-        files().lock().unwrap().remove(&path).ok_or_else(missing)?;
+        files().remove(&path).ok_or_else(missing)?;
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         if let Some((_, remove)) = PERSISTENCE.get() {
             remove(&path.to_string_lossy());
@@ -291,7 +290,7 @@ mod memory {
     }
     pub fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
         let path = key(path.as_ref());
-        let files = files().lock().unwrap();
+        let files = files();
         if let Some(bytes) = files.get(&path) {
             return Ok(Metadata {
                 file: true,
@@ -299,9 +298,7 @@ mod memory {
                 modified_ms: bytes.modified_ms,
             });
         }
-        if directories().lock().unwrap().contains(&path)
-            || files.keys().any(|p| p.starts_with(&path))
-        {
+        if directories().contains(&path) || files.keys().any(|p| p.starts_with(&path)) {
             return Ok(Metadata {
                 file: false,
                 len: 0,
@@ -337,15 +334,13 @@ mod memory {
             ));
         }
         let mut entries: std::collections::BTreeSet<_> = files()
-            .lock()
-            .unwrap()
             .keys()
             .filter_map(|p| {
                 let relative = p.strip_prefix(&path).ok()?;
                 Some(path.join(relative.components().next()?.as_os_str()))
             })
             .collect();
-        entries.extend(directories().lock().unwrap().iter().filter_map(|p| {
+        entries.extend(directories().iter().filter_map(|p| {
             let relative = p.strip_prefix(&path).ok()?;
             Some(path.join(relative.components().next()?.as_os_str()))
         }));

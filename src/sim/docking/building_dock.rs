@@ -85,20 +85,22 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 ///The row order is native data, including refinery/special foundations that
 ///are not rectangular rings. Both depot exit scanning and factory Unload use
 ///this owner. Native execution: anytown_damage/unit_unlimbo foundation rows.
-pub fn foundation_exit_list(foundation: &crate::rules::foundation::Foundation) -> Vec<(i32, i32)> {
-    if let Some(outline) = foundation.custom_outline() {
-        return outline
-            .iter()
-            .copied()
-            .take_while(|&pair| pair != (0x7fff, 0x7fff))
-            .map(|(x, y)| (i32::from(x), i32::from(y)))
-            .collect();
-    }
-    FOUNDATION_EXIT_ROWS[usize::from(foundation.selector())]
+///The list is read in place: a custom foundation's outline, or its row.
+pub fn foundation_exit_list(
+    foundation: &crate::rules::foundation::Foundation,
+) -> impl Iterator<Item = (i32, i32)> + '_ {
+    let (outline, row): (&[(i16, i16)], &[(i32, i32)]) = match foundation.custom_outline() {
+        Some(outline) => (outline, &[]),
+        None => (
+            &[],
+            &FOUNDATION_EXIT_ROWS[usize::from(foundation.selector())],
+        ),
+    };
+    outline
         .iter()
-        .copied()
+        .map(|&(x, y)| (i32::from(x), i32::from(y)))
+        .chain(row.iter().copied())
         .take_while(|&pair| pair != (0x7FFF, 0x7FFF))
-        .collect()
 }
 
 /// Building459CA0: any in-Size exit-list cell with no ground-list object
@@ -134,41 +136,39 @@ pub(crate) fn building_has_clear_foundation_exit(
         native_cells: Some(&cells),
         ..sim.cell_passability_map()
     };
-    foundation_exit_list(&object.foundation)
-        .into_iter()
-        .any(|(dx, dy)| {
-            let at = (
-                origin.0.wrapping_add(dx as i16),
-                origin.1.wrapping_add(dy as i16),
-            );
-            if !sim.map_cell_in_bounds(at) {
-                return false;
-            }
-            let cell = cells.lookup(at);
-            let at_cell = cells.coord(cell);
-            if sim
-                .cell_objects((at_cell.0 as u16, at_cell.1 as u16), MovementLayer::Ground)
-                .next()
-                .is_some()
-            {
-                return false;
-            }
-            //459D4D repeats the lookup before the passability receiver.
-            check_cell_passability(
-                &native_cell_ref(&cells, cells.lookup(at)),
-                CellPassabilityArgs {
-                    speed_type: SpeedType::Foot,
-                    ignore_infantry: false,
-                    ignore_vehicles: false,
-                    zone: None,
-                    movement_zone: MovementZone::Normal,
-                    level: None,
-                    is_bridge: true,
-                },
-                &map,
-            )
-            .admits()
-        })
+    foundation_exit_list(&object.foundation).any(|(dx, dy)| {
+        let at = (
+            origin.0.wrapping_add(dx as i16),
+            origin.1.wrapping_add(dy as i16),
+        );
+        if !sim.map_cell_in_bounds(at) {
+            return false;
+        }
+        let cell = cells.lookup(at);
+        let at_cell = cells.coord(cell);
+        if sim
+            .cell_objects((at_cell.0 as u16, at_cell.1 as u16), MovementLayer::Ground)
+            .next()
+            .is_some()
+        {
+            return false;
+        }
+        //459D4D repeats the lookup before the passability receiver.
+        check_cell_passability(
+            &native_cell_ref(&cells, cells.lookup(at)),
+            CellPassabilityArgs {
+                speed_type: SpeedType::Foot,
+                ignore_infantry: false,
+                ignore_vehicles: false,
+                zone: None,
+                movement_zone: MovementZone::Normal,
+                level: None,
+                is_bridge: true,
+            },
+            &map,
+        )
+        .admits()
+    })
 }
 
 ///Read an actual retained pair, including sentinel/padding. Factory Unload
@@ -187,7 +187,7 @@ pub(crate) fn foundation_exit_pair(
         .copied()
 }
 
-const FOUNDATION_EXIT_ROWS: [[(i32, i32); 30]; 22] = [
+static FOUNDATION_EXIT_ROWS: [[(i32, i32); 30]; 22] = [
     [
         (0, 1),
         (-1, 1),
@@ -967,8 +967,6 @@ pub(crate) fn building_dock_cell(
     }
     if !object.hospital {
         return foundation_exit_list(&object.foundation)
-            .iter()
-            .copied()
             .map(|(x, y)| relative(x as i16, y as i16))
             .find(|&cell| admits(cell, EntryQueryMode::SkipLocomotor))
             .map(published);
@@ -1804,7 +1802,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(
-                foundation_exit_list(&foundation.name.into()),
+                foundation_exit_list(&foundation.name.into()).collect::<Vec<_>>(),
                 expected,
                 "{}",
                 foundation.name

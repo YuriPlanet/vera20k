@@ -813,18 +813,16 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
     }
     // `0x00449817..0x00449833`: UnitRepair, UnitReload or Bunker
     // (`+0x16A9/+0x16AA/+0x16AB`) takes the contact arm.
-    if status == 1 && (obj.unit_repair || obj.unit_reload || obj.bunker) {
+    if status == 1
+        && (obj.unit_repair || obj.unit_reload || obj.bunker)
+        && let Some(depot) = sim.substrate.entities.get(id)
+    {
         //449839..44994A: scan contacts in slot order, raw GetCoords 3D
         //distance <64 (no Building foundation discount), then NEED_MOVE;
-        //on ROGER queue Repair and return 1 with no Scenario draw.
-        let contacts: Vec<_> = sim
-            .substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .radio_contacts
-            .iter_live()
-            .collect();
+        //on ROGER queue Repair and return 1 with no Scenario draw. Each
+        //NEED_MOVE runs the contact's receivers, so the scan walks the
+        //contacts as they stood when it began.
+        let contacts: Vec<_> = depot.radio_contacts.iter_live().collect();
         for contact in contacts {
             let Some(unit) = sim.substrate.entities.get(contact) else {
                 continue;
@@ -832,8 +830,11 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
             if unit.mission.effective() != MissionId::from_known(MissionType::Enter) {
                 continue;
             }
+            let Some(depot) = sim.substrate.entities.get(id) else {
+                break;
+            };
             let center = crate::sim::movement::ground_pose::object_get_coords(
-                sim.substrate.entities.get(id).unwrap(),
+                depot,
                 sim.resolved_terrain.as_ref(),
             );
             let position = crate::sim::movement::ground_pose::object_get_coords(

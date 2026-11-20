@@ -625,12 +625,12 @@ fn settings_files(dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// The tag in a language file's name, `vera20k.<tag>.ini`.
 fn file_tag(name: &str) -> Option<&str> {
-    let lower = name.to_ascii_lowercase();
-    if !lower.starts_with("vera20k.") || !lower.ends_with(".ini") {
-        return None;
-    }
-    let tag = &name["vera20k.".len()..name.len() - ".ini".len()];
-    (!tag.is_empty()).then_some(tag)
+    let (prefix, rest) = name.split_at_checked("vera20k.".len())?;
+    let (tag, suffix) = rest.split_at_checked(rest.len().checked_sub(".ini".len())?)?;
+    (prefix.eq_ignore_ascii_case("vera20k.")
+        && suffix.eq_ignore_ascii_case(".ini")
+        && !tag.is_empty())
+    .then_some(tag)
 }
 
 /// Load the shipped languages and those in `settings_dir`, and use `chosen`
@@ -1683,6 +1683,15 @@ mod tests {
         assert_eq!(pseudo("A"), "[Å]");
         assert_eq!(pseudo(""), "");
         assert_eq!(pseudo(" "), " ");
+    }
+
+    /// A file named only `vera20k.ini` has no tag between the two affixes,
+    /// which overlap; it is not a language file and must not stop startup.
+    #[test]
+    fn a_language_file_name_without_a_tag_has_none() {
+        assert_eq!(check("vera20k.ini", "").tag, None);
+        assert_eq!(check("VERA20K.INI", "").tag, None);
+        assert_eq!(check("VERA20K.de.INI", "").tag.as_deref(), Some("de"));
     }
 
     #[test]

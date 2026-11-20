@@ -696,6 +696,9 @@ impl LiveCommandSession {
     }
 
     /// Keep the private connection and its progress row in the same lifetime.
+    /// `new` builds the progress rows from the transport's connections, and
+    /// this session owns that transport and removes a connection only here,
+    /// so a row this removed always had its connection.
     pub fn remove_peer(&mut self, house: i8) -> bool {
         if !self.exchange.remove_peer(house) {
             return false;
@@ -703,10 +706,12 @@ impl LiveCommandSession {
         if !self.uses_sequenced_lockstep() {
             self.startup.abort();
         }
+        let connected = self
+            .transport
+            .connections_mut()
+            .remove_peer(i32::from(house));
         assert!(
-            self.transport
-                .connections_mut()
-                .remove_peer(i32::from(house)),
+            connected,
             "the admitted connection and command progress share one roster"
         );
         true
@@ -1103,7 +1108,7 @@ impl LiveCommandSession {
         // Local scheduling remains fixed by the original solo admission.
         if self.policy != NetworkSendPolicy::Local {
             self.policy = NetworkSendPolicy::FrameSendRate2 {
-                frame_send_rate: NonZeroU32::new(u32::from(rate.get())).unwrap(),
+                frame_send_rate: NonZeroU32::from(rate),
             };
         }
         if frame != 0 && frame & 127 == 0 {

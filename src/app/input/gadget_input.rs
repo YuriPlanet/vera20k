@@ -117,6 +117,13 @@ impl InGameGadgets {
         }
     }
 
+    /// Whether a live control, including a layout button over the battlefield,
+    /// owns this frame pixel. The full-map tactical catcher is terrain.
+    pub(crate) fn control_at(&self, x: i32, y: i32) -> bool {
+        crate::ui::gadget::tick::hit_test(&self.list, x, y)
+            .is_some_and(|hit| Some(hit) != self.tactical)
+    }
+
     fn is_cameo(&self, h: GadgetHandle) -> bool {
         self.cameos.contains(&h)
     }
@@ -882,11 +889,14 @@ mod tests {
             GadgetRect::new(0, 0, 800, 600),
             TACTICAL_REGION_FLAGS,
         ));
+        gadgets.tactical = Some(tactical);
         // The layout's first part is a text, its second a button.
         sync_layout_button_rects(
             &mut gadgets,
             &[None, Some(GadgetRect::new(20, 100, 60, 17))],
         );
+        assert!(gadgets.control_at(25, 105));
+        assert!(!gadgets.control_at(400, 300));
         let click = |gadgets: &mut InGameGadgets, x: i32, y: i32| {
             let mut input = GadgetInput {
                 queued_key: KEY_LMB_DOWN,

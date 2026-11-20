@@ -118,19 +118,16 @@ impl NativeReplayHeader {
             });
         }
 
-        let mut scenario_name = [0; NATIVE_REPLAY_SCENARIO_NAME_LEN];
-        scenario_name.copy_from_slice(&bytes[0x0c..0x110]);
-        let mut options = [0; NATIVE_REPLAY_OPTIONS_LEN];
-        options.copy_from_slice(&bytes[0x118..0x1d0]);
-
+        // The fields in file order, as `encode` writes them.
+        let cursor = &mut 0;
         Ok(Self {
-            version: u32::from_le_bytes(bytes[0x00..0x04].try_into().unwrap()),
-            seed: u32::from_le_bytes(bytes[0x04..0x08].try_into().unwrap()),
-            scenario_value: u32::from_le_bytes(bytes[0x08..0x0c].try_into().unwrap()),
-            scenario_name,
-            session_value: u32::from_le_bytes(bytes[0x110..0x114].try_into().unwrap()),
-            special_flags: u32::from_le_bytes(bytes[0x114..0x118].try_into().unwrap()),
-            options,
+            version: u32::from_le_bytes(take(bytes, cursor, "version")?),
+            seed: u32::from_le_bytes(take(bytes, cursor, "seed")?),
+            scenario_value: u32::from_le_bytes(take(bytes, cursor, "scenario value")?),
+            scenario_name: take(bytes, cursor, "scenario name")?,
+            session_value: u32::from_le_bytes(take(bytes, cursor, "session value")?),
+            special_flags: u32::from_le_bytes(take(bytes, cursor, "special flags")?),
+            options: take(bytes, cursor, "options")?,
         })
     }
 
@@ -640,21 +637,20 @@ fn decode_command_batch(
     Ok(commands)
 }
 
-#[cfg(any(test, feature = "test-support"))]
+/// The `N` bytes of `field` at `cursor`, which moves past them.
 fn take<const N: usize>(
     bytes: &[u8],
     cursor: &mut usize,
     field: &'static str,
 ) -> std::result::Result<[u8; N], NativeReplayError> {
-    let end = cursor
-        .checked_add(N)
-        .filter(|end| *end <= bytes.len())
+    let value = *bytes
+        .get(*cursor..)
+        .and_then(<[u8]>::first_chunk::<N>)
         .ok_or(NativeReplayError::Truncated {
             offset: *cursor,
             field,
         })?;
-    let value = bytes[*cursor..end].try_into().unwrap();
-    *cursor = end;
+    *cursor += N;
     Ok(value)
 }
 
