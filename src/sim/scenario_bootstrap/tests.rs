@@ -3773,7 +3773,8 @@ fn quick_coop_assign(session: &SkirmishLaunchSession, rng: &mut SimRng) -> Vec<(
     let starts = quick_coop_row();
     let preassignment = native_preassign_launch_start_table(session, starts.len());
     let assignment =
-        native_assign_quick_coop_starts_from_preassignment(session, &starts, &preassignment, rng);
+        native_assign_quick_coop_starts_from_preassignment(session, &starts, &preassignment, rng)
+            .unwrap();
     assignment
         .placements
         .iter()
@@ -3803,7 +3804,8 @@ fn quick_coop_starts_seat_humans_first_and_ignore_preset_ai_starts() {
         &starts,
         &preassignment,
         &mut rng,
-    );
+    )
+    .unwrap();
     assert_eq!(
         assignment.start_table,
         vec![Some(1), Some(3), Some(0), Some(2), Some(2)]
@@ -3852,7 +3854,7 @@ fn quick_coop_picker_third_house_of_three_takes_the_last_start_without_a_draw() 
     let before = rng.state();
     assert_eq!(
         choose_quick_coop_start(starts, &[true, true, false], false, &mut rng),
-        2
+        Some(2)
     );
     assert_eq!(rng.state(), before);
 }
@@ -3864,7 +3866,7 @@ fn quick_coop_picker_gives_an_ai_on_an_empty_table_the_first_start() {
     let before = rng.state();
     assert_eq!(
         choose_quick_coop_start(&starts, &[false; 5], false, &mut rng),
-        0
+        Some(0)
     );
     assert_eq!(rng.state(), before);
 }
@@ -3921,4 +3923,90 @@ fn quick_coop_starts_replace_the_mode_chooser_in_the_prefix() {
             );
         }
     }
+}
+
+/// Prepare a launch prefix on another thread and return its refusal. A start
+/// assignment that loops forever fails the test after a minute instead of
+/// hanging the run; the longest refusal takes a few seconds on a busy machine.
+fn prefix_refusal_before_hang_guard(
+    fixture: impl FnOnce() -> (MatchLaunchDescriptor, MapFile) + Send + 'static,
+) -> PreFillScenarioPrefixPlanError {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (launch, map) = fixture();
+        let refusal =
+            prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, 0x5C2E).err();
+        let _ = sender.send(refusal);
+    });
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("start assignment finishes")
+        .expect("the launch is refused")
+}
+
+fn four_start_row_map() -> MapFile {
+    let row: Vec<Waypoint> = [6, 12, 20, 30]
+        .into_iter()
+        .enumerate()
+        .map(|(index, rx)| Waypoint {
+            index: index as u32,
+            rx,
+            ry: 20,
+        })
+        .collect();
+    prefix_map_with_starts(&row)
+}
+
+#[test]
+fn quick_coop_refuses_a_launch_whose_preset_ai_start_leaves_an_ai_no_start() {
+    use LaunchStartPosition::{Auto, Position};
+    // Four starts for four players. AI 1's preset start 3 stays reserved
+    // while AI 1 picks another, so AI 2 finds every start used.
+    let session = quick_coop_session([Position(2), Auto], [Position(3), Auto]);
+    let launch = MatchLaunchDescriptor::from_resolved(session)
+        .unwrap()
+        .with_quick_coop_starts();
+    let map = four_start_row_map();
+    assert_eq!(
+        prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, 0x5EE9)
+            .unwrap_err(),
+        PreFillScenarioPrefixPlanError::QuickCoopStartsExhausted { start_count: 4 }
+    );
+}
+
+#[test]
+fn cooperative_refuses_more_humans_than_the_maps_human_start_spots() {
+    let refusal = prefix_refusal_before_hang_guard(|| {
+        use LaunchStartPosition::Auto;
+        let mut session = quick_coop_session([Auto, Auto], [Auto, Auto]);
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        let mut map = four_start_row_map();
+        map.ini = IniFile::from_str("[Header]\nNumCoopHumanStartSpots=1\n");
+        (MatchLaunchDescriptor::from_resolved(session).unwrap(), map)
+    });
+    assert_eq!(
+        refusal,
+        PreFillScenarioPrefixPlanError::CoopHumanStartSpotsFull {
+            human_start_spots: 1,
+            human_count: 2,
+        }
+    );
+}
+
+#[test]
+fn gather_refuses_a_map_with_no_room_for_a_missing_start() {
+    let refusal = prefix_refusal_before_hang_guard(|| {
+        // No authored start, and a zero-width LocalSize leaves no playfield
+        // cell for the 8x8 rect's corner.
+        let mut map = prefix_map_with_starts(&[]);
+        map.header.local_width = 0;
+        (one_player_battle_launch("no-room.map"), map)
+    });
+    assert_eq!(
+        refusal,
+        PreFillScenarioPrefixPlanError::NoRoomForStarts {
+            found: 0,
+            required: 1,
+        }
+    );
 }
