@@ -408,6 +408,11 @@ impl App {
             }
             Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
+                // Startup built every renderer and its shaders on this device:
+                // its API works here, and a loss from now on is play's
+                // (`persistence::startup_backend`).
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                crate::app::persistence::startup_backend::start_finished();
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {

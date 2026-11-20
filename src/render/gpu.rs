@@ -227,23 +227,30 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
+        backends: wgpu::Backends,
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture)).context(GraphicsUnavailable)
+        block_on(Self::new_async(window, display, hidden_capture, backends))
+            .context(GraphicsUnavailable)
     }
 
-    /// Async initialization — called by new() via block_on().
+    /// Async initialization — called by new() via block_on(). `backends` is
+    /// what this start asks wgpu for (`persistence::startup_backend`).
     async fn new_async(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
+        backends: wgpu::Backends,
     ) -> Result<Self> {
-        // The standard override selects a backend for reproducible
-        // shroud GPU comparisons while retaining primary backends by default.
-        // wgpu requires the display at instance creation for Wayland EGL:
+        // Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the
+        // first API it lists; a start record asks for one alone
+        // (`persistence::startup_backend`). wgpu's own override
+        // (`WGPU_BACKEND`) wins over either, for reproducible shroud GPU
+        // comparisons. wgpu requires the display at instance creation for
+        // Wayland EGL:
         // https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY.with_env(),
+            backends: backends.with_env(),
             ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
         });
         // Browsers without a usable WebGPU adapter fall back to WebGL2. A
@@ -251,6 +258,9 @@ impl GpuContext {
         // first: a canvas given a WebGPU context can no longer create WebGL2.
         // wgpu's own probe (util::is_browser_webgpu_supported) asks with
         // default options, which can succeed where this request fails.
+        // The browser's APIs are its own.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let _ = backends;
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let instance: wgpu::Instance = {
             let probe = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -308,6 +318,13 @@ impl GpuContext {
             adapter_info.driver,
             adapter_info.driver_info
         );
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let _ = DEVICE_IDENTITY.set(DeviceIdentity {
+            backend: adapter_info.backend,
+            vendor: adapter_info.vendor,
+            device: adapter_info.device,
+            name: adapter_info.name.clone(),
+        });
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
         let adapter_limits = adapter.limits();
@@ -747,6 +764,27 @@ impl GpuContext {
 /// context would share this.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 static LOST_DEVICE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The process's graphics device: the API and adapter it runs on, for the
+/// start record (`persistence::startup_backend`) when the device is lost
+/// before startup finishes, which the panic hook reports too.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) struct DeviceIdentity {
+    pub(crate) backend: wgpu::Backend,
+    /// PCI vendor and device ids, the same on every API.
+    pub(crate) vendor: u32,
+    pub(crate) device: u32,
+    pub(crate) name: String,
+}
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+static DEVICE_IDENTITY: std::sync::OnceLock<DeviceIdentity> = std::sync::OnceLock::new();
+
+/// The device the game runs on, once `GpuContext::new` chose it.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn device_identity() -> Option<&'static DeviceIdentity> {
+    DEVICE_IDENTITY.get()
+}
 
 /// The driver's message once the graphics device is lost; `None` while it
 /// works. See [`GpuContext::device_lost`].
