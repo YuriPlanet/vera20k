@@ -6,6 +6,7 @@ pub mod button;
 pub mod descriptor;
 pub mod geom;
 pub mod layout;
+pub mod list;
 pub mod paging;
 pub mod static_reveal;
 pub mod trackbar;

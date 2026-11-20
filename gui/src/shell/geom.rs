@@ -9,7 +9,7 @@
 /// Pixel rect in window space. Fields/semantics identical to the three prior
 /// per-shell copies; `translate` is hoisted from the skirmish copy so all shells
 /// share one type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RectPx {
     pub x: i32,
     pub y: i32,

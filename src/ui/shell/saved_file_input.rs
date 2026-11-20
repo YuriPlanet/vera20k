@@ -99,13 +99,13 @@ fn hit<I>(
     if let Some(prompt) = browser.prompt.as_ref() {
         prompt.control_at(extent.0, extent.1, x, y)
     } else {
-        SeedListGeometry::new(
+        let geometry = SeedListGeometry::new(
             layout.list,
             browser.entries.len(),
             browser.top_index,
             ListMetrics::scaled(layout.scale),
-        )
-        .scroll_control_at(x, y)
+        );
+        crate::ui::skirmish_shell::seed_list::scroll_control_at(&geometry, x, y)
         .or_else(|| crate::ui::skirmish_shell::saved_seed_control_at(layout, x, y))
     }
 }

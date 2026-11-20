@@ -84,15 +84,14 @@ pub fn compute_responsive_movie_list_layout(screen_w: u32, screen_h: u32) -> Mov
 /// One `0x129` instance: rows from `0x005FC000` and the subclass selection.
 pub type MovieListState = ListBoxState<MovieEntry>;
 
-impl MovieListState {
-    /// Populate and apply the retained `DAT_00825C80` selection.
-    pub fn open(progress: MovieProgress, retained_selection: i32) -> Self {
-        let rows = active_movie_entries(progress);
-        let selected = usize::try_from(retained_selection)
-            .ok()
-            .filter(|index| *index < rows.len());
-        Self::new(rows, selected)
-    }
+/// One `0x129` instance, populated, with the retained `DAT_00825C80`
+/// selection applied.
+pub fn open_movie_list(progress: MovieProgress, retained_selection: i32) -> MovieListState {
+    let rows = active_movie_entries(progress);
+    let selected = usize::try_from(retained_selection)
+        .ok()
+        .filter(|index| *index < rows.len());
+    MovieListState::new(rows, selected)
 }
 
 /// One row of the retail movie table.
@@ -190,7 +189,7 @@ mod tests {
     #[test]
     fn second_press_inside_the_double_click_window_is_not_a_selection_press() {
         let limits = (Duration::from_millis(500), 4, 4);
-        let mut list = MovieListState::open(MovieProgress::default(), -1);
+        let mut list = open_movie_list(MovieProgress::default(), -1);
         let t0 = Instant::now();
         assert!(!list.is_double_click(t0, 150, 137, limits));
         assert!(list.is_double_click(t0 + Duration::from_millis(300), 151, 138, limits));
@@ -222,7 +221,7 @@ mod tests {
     #[test]
     fn press_hit_uses_client_y_without_border_correction() {
         let list = RectPx::new(120, 128, 399, 304);
-        let state = MovieListState::open(MovieProgress::default(), -1);
+        let state = open_movie_list(MovieProgress::default(), -1);
         assert_eq!(state.row_at(list, ListMetrics::RETAIL, 150, 128), Some(0));
         assert_eq!(state.row_at(list, ListMetrics::RETAIL, 150, 146), Some(0));
         assert_eq!(

@@ -20,11 +20,28 @@ pub mod saved_file_input;
 pub mod saved_games;
 pub mod slide;
 pub mod sound;
-pub mod list;
 pub mod keyboard;
 pub(crate) mod combobox;
 
+/// The GUI crate's copy of `Math::ftol` for binary64 agrees with the engine's
+/// x87 model on the edges a list thumb can reach.
+#[cfg(all(test, tests_ui))]
+mod ftol_tests {
+    #[test]
+    fn list_ftol_matches_the_x87_model() {
+        for v in [0.0, -0.0, 0.99, -0.99, 13.999999, 2147483647.9, 2147483648.0, -2147483649.5,
+            9.3e18, -9.3e18, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300]
+        {
+            assert_eq!(
+                vera20k_gui::shell::list::ftol_f64(v),
+                crate::util::native_x87::X87Chop53::ftol_f64_low_masked(v),
+                "{v}"
+            );
+        }
+    }
+}
+
 // The render-agnostic substrate lives in the GUI crate.
 pub use vera20k_gui::shell::{
-    button, descriptor, geom, layout, paging, static_reveal, trackbar, warning_monitor,
+    button, descriptor, geom, layout, list, paging, static_reveal, trackbar, warning_monitor,
 };

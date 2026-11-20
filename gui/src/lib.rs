@@ -6,13 +6,13 @@
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures;
-pub mod geom;
 pub mod gui;
 pub mod node;
 pub mod shell;
 pub mod time;
+mod widget;
 
-pub use geom::Rect;
+pub use shell::geom::RectPx as Rect;
 pub use gui::{
     DialogId, DialogKind, Gui, InputEvent, InputResult, Key, MouseButton, UiEvent, UiMs, hover_flash_on,
 };

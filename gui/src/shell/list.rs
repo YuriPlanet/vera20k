@@ -2,7 +2,7 @@
 //! Native list rows use GAME.FNT height 17 + 2; inner rectangles exclude borders.
 
 use super::geom::{RectPx, ShellScale};
-use crate::util::time::{Duration, Instant};
+use crate::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListScrollPart {
@@ -531,13 +531,23 @@ pub fn is_double_click(
 /// comparison coverage.
 pub fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
     let track = f64::from(height - 2 - metrics.arrow_h * 2);
-    crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
-        track - ((range + 1) as f64).ln() * track * 0.2,
-    )
-    .max(metrics.min_thumb_h)
+    ftol_f64(track - ((range + 1) as f64).ln() * track * 0.2).max(metrics.min_thumb_h)
 }
 
-#[cfg(all(test, tests_ui))]
+/// `Math::ftol 7C5F00` of a binary64 operand when the caller reads only EAX:
+/// `FLD m64` is exact, `FISTP qword` truncates toward zero, and the masked
+/// invalid conversion (NaN, infinity, beyond i64) stores `i64::MIN`, whose low
+/// dword is zero. The engine's x87 model (`X87Chop53::ftol_f64_low_masked`)
+/// is the general port; the host's tests hold the two equal.
+pub fn ftol_f64(value: f64) -> i32 {
+    if value.is_finite() && value.trunc() >= -(2f64.powi(63)) && value.trunc() < 2f64.powi(63) {
+        value.trunc() as i64 as i32
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     // Timer expectations are from the61C690 instructions cited above; geometry
@@ -664,7 +674,7 @@ mod tests {
     }
     #[test]
     fn thumb_height_matches_native_sampled_geometry() {
-        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        let vectors: serde_json::Value = serde_json::from_str(crate::fixtures::text(
             "tools/storage_oracle/saved_scrollbar.json",
         ))
         .unwrap();

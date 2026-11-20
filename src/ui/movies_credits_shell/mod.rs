@@ -13,7 +13,7 @@ mod page;
 pub use credits::{CreditLine, CreditsLayoutFlags, parse_credits};
 pub use movie_list::{
     MOVIE_LIST_CONTROL, MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY,
-    MOVIE_LIST_TOOLTIP_KEY, MovieEntry, MovieListLayout, MovieListState, MovieProgress,
+    MOVIE_LIST_TOOLTIP_KEY, MovieEntry, MovieListLayout, MovieListState, MovieProgress, open_movie_list,
     PLAY_MOVIE_CONTROL, active_movie_entries, compute_movie_list_layout,
     compute_responsive_movie_list_layout,
 };

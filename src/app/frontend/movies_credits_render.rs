@@ -679,7 +679,7 @@ mod tests {
         let list = RectPx::new(120, 128, 399, 304);
         // Selection fill measured at x 121..=518, y 129..=147.
         assert_eq!(list_interior(list), RectPx::new(121, 129, 398, 303));
-        let mut state = crate::ui::movies_credits_shell::MovieListState::open(
+        let mut state = crate::ui::movies_credits_shell::open_movie_list(
             crate::ui::movies_credits_shell::MovieProgress::default(),
             -1,
         );

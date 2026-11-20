@@ -6,8 +6,11 @@
 //! over it, and release activates only on the captured button. A disabled
 //! button still takes hover (it shows tooltip and status text) but no press.
 
-use crate::geom::Rect;
+use crate::Rect;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
+use crate::shell::geom::ShellScale;
+use crate::shell::trackbar::{TrackbarPress, TrackbarRange};
+use crate::widget::{self, Capture, Ctx};
 
 /// Milliseconds on the UI clock (§9.1). The host supplies it, so tests and
 /// replays control time.
@@ -24,6 +27,16 @@ pub enum Key {
     Enter,
     Escape,
     Tab,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Backspace,
+    Delete,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,7 +44,11 @@ pub enum InputEvent {
     PointerDown { x: i32, y: i32, button: MouseButton },
     PointerUp { x: i32, y: i32, button: MouseButton },
     PointerMove { x: i32, y: i32 },
+    /// Wheel notches, already converted by the host (§8.8); positive is up.
+    Wheel { lines: i32 },
     Key(Key),
+    /// Typed text for the focused `Edit` (IME commits included).
+    Text(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -43,6 +60,23 @@ pub struct InputResult {
 pub enum UiEvent {
     Activated { node: NodeId, command: Option<String> },
     Hovered { node: NodeId, entered: bool },
+    /// Checkbox (`Bool`) or Trackbar (`Int`). `final_` is false for the
+    /// intermediate positions of a drag and true once the user lets go.
+    Changed { node: NodeId, value: Value, final_: bool },
+    /// A press the node took (the host plays its press cue).
+    Pressed { node: NodeId },
+    /// List: the user picked a row (never for a host `set`).
+    ListSelected { node: NodeId, row: u32 },
+    ListDoubleClicked { node: NodeId, row: u32 },
+    /// List or combo popup: the user scrolled to `top`.
+    Scrolled { node: NodeId, top: i32 },
+    /// Combo: the drop-down opened or closed (the host plays the cues).
+    ComboOpened { node: NodeId },
+    ComboClosed { node: NodeId },
+    /// Edit.
+    TextChanged { node: NodeId, text: String },
+    Submitted { node: NodeId, text: String },
+    Cancelled { node: NodeId },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +97,12 @@ struct Pointer {
     pressed: Option<NodeId>,
     hovered: Option<NodeId>,
     hover_started: Option<UiMs>,
+    /// The captured trackbar follows the pointer (a press on its thumb).
+    dragging: bool,
+    /// An open combo drop-down; it takes the dialog's pointer input first.
+    popup: Option<NodeId>,
+    /// The keyboard focus (an `Edit`).
+    focus: Option<NodeId>,
 }
 
 struct Dialog {
@@ -72,6 +112,9 @@ struct Dialog {
     default_button: Option<NodeId>,
     cancel_button: Option<NodeId>,
     pointer: Pointer,
+    /// Maps the dialog's device rects back to the authored 800x600 numbers
+    /// the native widget arithmetic runs on.
+    scale: ShellScale,
 }
 
 pub struct Gui {
@@ -138,7 +181,7 @@ impl Gui {
         }
         let id = DialogId(self.next_dialog);
         self.next_dialog += 1;
-        self.dialogs.push(Dialog { id, root, kind, default_button, cancel_button, pointer: Pointer::default() });
+        self.dialogs.push(Dialog { id, root, kind, default_button, cancel_button, pointer: Pointer::default(), scale: ShellScale::RETAIL });
         Ok(id)
     }
 
@@ -155,6 +198,12 @@ impl Gui {
 
     pub fn dialog_root(&self, id: DialogId) -> Option<NodeId> {
         self.dialogs.iter().find(|d| d.id == id).map(|d| d.root)
+    }
+
+    pub fn set_dialog_scale(&mut self, id: DialogId, scale: ShellScale) {
+        if let Some(d) = self.dialogs.iter_mut().find(|d| d.id == id) {
+            d.scale = scale;
+        }
     }
 
     pub fn dialogs(&self) -> impl Iterator<Item = DialogId> + '_ {
@@ -215,32 +264,224 @@ impl Gui {
     pub fn input(&mut self, event: InputEvent, now: UiMs) -> InputResult {
         let Some(top) = self.dialogs.last() else { return InputResult::default() };
         let (root, modal) = (top.root, top.kind == DialogKind::Modal);
+        if let Some(popup) = top.pointer.popup {
+            match event {
+                InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
+                    self.with_ctx(now, |ctx| widget::combo::popup_press(ctx, popup, x, y));
+                    return InputResult { consumed: true };
+                }
+                InputEvent::PointerMove { x, y } => {
+                    self.with_ctx(now, |ctx| widget::combo::popup_move(ctx, popup, x, y));
+                    return InputResult { consumed: true };
+                }
+                InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
+                    self.with_ctx(now, |ctx| widget::combo::popup_release(ctx, popup, x, y));
+                    return InputResult { consumed: true };
+                }
+                _ => {}
+            }
+        }
         match event {
             InputEvent::PointerMove { x, y } => {
+                if let Some(held) = self.top_pointer().pressed {
+                    match self.tree.kind(held) {
+                        Ok(NodeKind::Trackbar) => {
+                            // The trackbar holds the pointer: nothing else
+                            // sees it until the release (`SetCapture` 0x0061E4DF).
+                            self.set_hover(None, now);
+                            if self.top_mut().pointer.dragging {
+                                self.drag_trackbar(held, x);
+                            }
+                            return InputResult { consumed: true };
+                        }
+                        Ok(NodeKind::List) => {
+                            self.with_ctx(now, |ctx| widget::list::drag(ctx, held, x, y));
+                        }
+                        Ok(NodeKind::Edit) => {
+                            self.with_ctx(now, |ctx| widget::edit::drag(ctx, held, x, y));
+                        }
+                        _ => {}
+                    }
+                }
                 let over = self.hit(root, x, y);
                 self.set_hover(over, now);
                 InputResult { consumed: over.is_some() || modal }
             }
             InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
                 let over = self.hit(root, x, y);
-                let pressed = over.filter(|n| self.tree.effective(*n, Prop::Enabled));
-                self.top_mut().pointer.pressed = pressed;
+                let enabled = over.filter(|n| self.tree.effective(*n, Prop::Enabled));
+                self.top_mut().pointer.pressed = None;
+                if let Some(n) = enabled {
+                    self.press(n, x, y, now);
+                }
                 InputResult { consumed: over.is_some() || modal }
             }
             InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
                 let over = self.hit(root, x, y);
-                let held = self.top_mut().pointer.pressed.take();
-                if let Some(n) = held.filter(|h| Some(*h) == over) {
-                    if self.tree.effective(n, Prop::Enabled) {
-                        self.activate(n);
-                    }
+                let pointer = &mut self.top_mut().pointer;
+                let held = pointer.pressed.take();
+                pointer.dragging = false;
+                if let Some(n) = held {
+                    self.release(n, x, y, over == Some(n), now);
                 }
                 InputResult { consumed: held.is_some() || over.is_some() || modal }
             }
             InputEvent::PointerDown { .. } | InputEvent::PointerUp { .. } => {
                 InputResult { consumed: modal }
             }
-            InputEvent::Key(key) => self.key(key),
+            InputEvent::Wheel { lines } => {
+                let target = self.top_pointer().hovered.filter(|n| self.tree.kind(*n) == Ok(NodeKind::List));
+                let scrolled = target
+                    .is_some_and(|n| self.with_ctx(now, |ctx| widget::list::wheel(ctx, n, lines)));
+                InputResult { consumed: scrolled || modal }
+            }
+            InputEvent::Key(key) => {
+                if let Some(f) = self.top_pointer().focus.filter(|_| widget::is_edit_key(key)) {
+                    if self.with_ctx(now, |ctx| widget::edit::key(ctx, f, key)) {
+                        return InputResult { consumed: true };
+                    }
+                }
+                self.key(key)
+            }
+            InputEvent::Text(text) => match self.top_pointer().focus {
+                Some(f) => {
+                    self.with_ctx(now, |ctx| widget::edit::text(ctx, f, &text));
+                    InputResult { consumed: true }
+                }
+                None => InputResult { consumed: modal },
+            },
+        }
+    }
+
+    /// Runs the widget timers (scroll-arrow repeat) of the top dialog's
+    /// captured node; returns when the next poll is due.
+    pub fn poll(&mut self, now: UiMs) -> Option<UiMs> {
+        let held = self.top_pointer().pressed?;
+        match self.tree.kind(held) {
+            Ok(NodeKind::List) => self.with_ctx(now, |ctx| widget::list::poll(ctx, held)),
+            _ => None,
+        }
+    }
+
+    pub fn focus(&self) -> Option<NodeId> {
+        self.top_pointer().focus
+    }
+
+    /// Gives the top dialog's keyboard focus to `node` (an `Edit`), or none.
+    pub fn set_focus(&mut self, node: Option<NodeId>) -> Result<(), Refused> {
+        if let Some(n) = node {
+            if self.tree.kind(n)? != NodeKind::Edit {
+                return Err(Refused::WrongKind);
+            }
+        }
+        match self.dialogs.last_mut() {
+            Some(d) => {
+                d.pointer.focus = node;
+                Ok(())
+            }
+            None => Err(Refused::NotFound),
+        }
+    }
+
+    /// The open combo drop-down of the top dialog.
+    pub fn popup(&self) -> Option<NodeId> {
+        self.top_pointer().popup
+    }
+
+    fn with_ctx<R>(&mut self, now: UiMs, f: impl FnOnce(&mut Ctx<'_>) -> R) -> R {
+        let d = self.dialogs.last_mut().expect("callers check for a top dialog");
+        let mut ctx = Ctx {
+            tree: &mut self.tree,
+            events: &mut self.events,
+            scale: d.scale,
+            now,
+            popup: &mut d.pointer.popup,
+            focus: &mut d.pointer.focus,
+        };
+        f(&mut ctx)
+    }
+
+    /// A left press on an enabled node.
+    fn press(&mut self, node: NodeId, x: i32, y: i32, now: UiMs) {
+        let Ok(n) = self.tree.node(node) else { return };
+        let delegated = match n.kind {
+            NodeKind::List => Some(self.with_ctx(now, |ctx| widget::list::press(ctx, node, x, y))),
+            NodeKind::Combo => Some(self.with_ctx(now, |ctx| widget::combo::press(ctx, node, x, y))),
+            NodeKind::Edit => Some(self.with_ctx(now, |ctx| widget::edit::press(ctx, node, x, y))),
+            _ => None,
+        };
+        if let Some(capture) = delegated {
+            if capture == Capture::Yes {
+                self.top_mut().pointer.pressed = Some(node);
+            }
+            return;
+        }
+        let Ok(n) = self.tree.node(node) else { return };
+        match n.kind {
+            NodeKind::Checkbox if n.bool_prop(Prop::ActivateOnPress, false) => self.toggle(node),
+            NodeKind::Trackbar => {
+                let range = trackbar_range(n);
+                let value = n.int_prop(Prop::Pos, range.min);
+                let rect = self.tree.screen_rect(node).unwrap_or_default();
+                let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
+                match range.press_in(value, x, y, rect, scale) {
+                    TrackbarPress::Miss => {}
+                    TrackbarPress::Hold => self.top_mut().pointer.pressed = Some(node),
+                    TrackbarPress::Drag => {
+                        let pointer = &mut self.top_mut().pointer;
+                        pointer.pressed = Some(node);
+                        pointer.dragging = true;
+                    }
+                    TrackbarPress::Jump(to) => {
+                        self.top_mut().pointer.pressed = Some(node);
+                        self.move_trackbar(node, to);
+                    }
+                }
+            }
+            _ => {
+                self.top_mut().pointer.pressed = Some(node);
+                self.events.push(UiEvent::Pressed { node });
+            }
+        }
+    }
+
+    /// The release of a captured node; `over` when the pointer is still on it.
+    fn release(&mut self, node: NodeId, x: i32, y: i32, over: bool, now: UiMs) {
+        let Ok(n) = self.tree.node(node) else { return };
+        let enabled = self.tree.effective(node, Prop::Enabled);
+        match n.kind {
+            NodeKind::List => self.with_ctx(now, |ctx| widget::list::release(ctx, node, x, y)),
+            NodeKind::Combo => self.with_ctx(now, |ctx| widget::combo::release(ctx, node, x, y)),
+            NodeKind::Edit => self.with_ctx(now, |ctx| widget::edit::release(ctx, node, x, y)),
+            NodeKind::Trackbar => {
+                let value = Value::Int(n.int_prop(Prop::Pos, 0));
+                self.events.push(UiEvent::Changed { node, value, final_: true });
+            }
+            NodeKind::Checkbox if over && enabled => self.toggle(node),
+            _ if over && enabled => self.activate(node),
+            _ => {}
+        }
+    }
+
+    fn toggle(&mut self, node: NodeId) {
+        let checked = !self.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::Checked, false));
+        let _ = self.tree.set(node, Prop::Checked, Value::Bool(checked));
+        self.events.push(UiEvent::Changed { node, value: Value::Bool(checked), final_: true });
+    }
+
+    fn drag_trackbar(&mut self, node: NodeId, x: i32) {
+        let Ok(n) = self.tree.node(node) else { return };
+        let range = trackbar_range(n);
+        let rect = self.tree.screen_rect(node).unwrap_or_default();
+        let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
+        self.move_trackbar(node, range.value_at_in(x, rect, scale));
+    }
+
+    fn move_trackbar(&mut self, node: NodeId, to: i32) {
+        let from = self.tree.node(node).map_or(to, |n| n.int_prop(Prop::Pos, trackbar_range(n).min));
+        if from != to {
+            let _ = self.tree.set(node, Prop::Pos, Value::Int(to));
+            self.events.push(UiEvent::Changed { node, value: Value::Int(to), final_: false });
         }
     }
 
@@ -253,7 +494,7 @@ impl Gui {
         let target = match key {
             Key::Enter => top.default_button,
             Key::Escape => top.cancel_button,
-            Key::Tab => None,
+            _ => None,
         };
         let modal = top.kind == DialogKind::Modal;
         match target {
@@ -295,7 +536,7 @@ impl Gui {
             if found.is_none()
                 && kind.is_focusable()
                 && self.tree.effective(id, Prop::Visible)
-                && self.tree.screen_rect(id).is_ok_and(|r: Rect| r.contains(x, y))
+                && self.tree.screen_rect(id).is_ok_and(|r| r.contains(x, y))
             {
                 found = Some(id);
             }
@@ -312,6 +553,10 @@ impl Gui {
             }
         }
     }
+}
+
+fn trackbar_range(n: &crate::node::Node) -> TrackbarRange {
+    TrackbarRange::new(n.int_prop(Prop::Min, 0), n.int_prop(Prop::Max, 100), n.int_prop(Prop::Step, 1))
 }
 
 /// 612B70's timer highlight: 1000 ms alternating, starting off.
@@ -406,6 +651,54 @@ mod tests {
         down(&mut g, 5);
         up(&mut g, 5);
         assert_eq!(activations(&mut g), vec![a]);
+    }
+
+    #[test]
+    fn checkbox_toggles_on_release_over_it_or_on_press_when_asked() {
+        let (mut g, _, _) = page_with_two_buttons();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let cb = g.create(NodeKind::Checkbox, Some(root)).unwrap();
+        g.set(cb, Prop::Rect, Value::Rect(Rect::new(30, 0, 10, 10))).unwrap();
+        down(&mut g, 35);
+        up(&mut g, 50);
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), None, "released off the box");
+        down(&mut g, 35);
+        up(&mut g, 35);
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)));
+        g.set(cb, Prop::ActivateOnPress, Value::Bool(true)).unwrap();
+        down(&mut g, 35);
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(false)));
+    }
+
+    #[test]
+    fn trackbar_jumps_beside_the_thumb_and_drags_only_from_it() {
+        let mut g = Gui::new(8);
+        let root = g.create(NodeKind::Dialog, None).unwrap();
+        let bar = g.create(NodeKind::Trackbar, Some(root)).unwrap();
+        // 200 px wide, 20 tall: track 1..=138, plaque the last 50 px.
+        g.set(bar, Prop::Rect, Value::Rect(Rect::new(0, 0, 200, 20))).unwrap();
+        g.set(bar, Prop::Max, Value::Int(10)).unwrap();
+        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        let at = |g: &mut Gui, e: InputEvent| {
+            g.input(e, 0);
+        };
+        // Beside the thumb, in the admitted strip: one jump, no drag after.
+        at(&mut g, InputEvent::PointerDown { x: 100, y: 15, button: MouseButton::Left });
+        let jumped = g.get(bar, Prop::Pos).unwrap().cloned();
+        assert!(matches!(jumped, Some(Value::Int(v)) if v > 0));
+        at(&mut g, InputEvent::PointerMove { x: 10, y: 15 });
+        assert_eq!(g.get(bar, Prop::Pos).unwrap().cloned(), jumped);
+        at(&mut g, InputEvent::PointerUp { x: 10, y: 15, button: MouseButton::Left });
+        // Above the strip: capture only.
+        at(&mut g, InputEvent::PointerDown { x: 20, y: 1, button: MouseButton::Left });
+        assert_eq!(g.get(bar, Prop::Pos).unwrap().cloned(), jumped);
+        at(&mut g, InputEvent::PointerUp { x: 20, y: 1, button: MouseButton::Left });
+        let finals = g
+            .drain_events()
+            .into_iter()
+            .filter(|e| matches!(e, UiEvent::Changed { final_: true, .. }))
+            .count();
+        assert_eq!(finals, 2, "every release reports the final position");
     }
 
     #[test]

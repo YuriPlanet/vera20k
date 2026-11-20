@@ -68,7 +68,7 @@ impl App {
     /// and the retained selection `DAT_00825C80`.
     pub(super) fn open_movie_list(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
-        state.frontend.movie_list = Some(MovieListState::open(
+        state.frontend.movie_list = Some(crate::ui::movies_credits_shell::open_movie_list(
             state.persistence.options_profile.movie_progress,
             state.frontend.movie_list_selection,
         ));

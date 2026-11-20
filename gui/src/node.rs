@@ -5,7 +5,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::geom::Rect;
+use crate::Rect;
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId {
@@ -80,6 +81,22 @@ pub enum Prop {
     Pos,
     Min,
     Max,
+    Step,
+    /// Checkbox: toggle on the press instead of the release (§8.2).
+    ActivateOnPress,
+    /// List, Combo: the rows' texts (§5.1, §5.3).
+    Items,
+    /// List, Combo: the row count when the host paints its own rows.
+    RowCount,
+    /// List, Combo popup: the first visible row.
+    Top,
+    /// Combo: the drop-down list is open.
+    Open,
+    /// Edit.
+    MaxLen,
+    Password,
+    /// Edit: caret position in chars.
+    Caret,
     Color,
     Font,
 }
@@ -94,6 +111,7 @@ pub enum Value {
     Text(String),
     Rect(Rect),
     Rgba(Rgba),
+    Items(Vec<String>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -103,12 +121,20 @@ enum ValueType {
     Text,
     Rect,
     Rgba,
+    Items,
 }
 
 impl Prop {
     fn value_type(self) -> ValueType {
         match self {
-            Prop::Visible | Prop::Enabled | Prop::Toggled | Prop::Checked => ValueType::Bool,
+            Prop::Visible
+            | Prop::Enabled
+            | Prop::Toggled
+            | Prop::Checked
+            | Prop::ActivateOnPress
+            | Prop::Open
+            | Prop::Password => ValueType::Bool,
+            Prop::Items => ValueType::Items,
             Prop::Text | Prop::Label | Prop::Picture | Prop::Command | Prop::Tooltip | Prop::Name => {
                 ValueType::Text
             }
@@ -120,6 +146,11 @@ impl Prop {
             | Prop::Pos
             | Prop::Min
             | Prop::Max
+            | Prop::Step
+            | Prop::RowCount
+            | Prop::Top
+            | Prop::MaxLen
+            | Prop::Caret
             | Prop::Font => ValueType::Int,
         }
     }
@@ -128,7 +159,8 @@ impl Prop {
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
             Prop::Command | Prop::Toggled => kind == NodeKind::Button,
-            Prop::Checked => kind == NodeKind::Checkbox,
+            Prop::Checked | Prop::ActivateOnPress => kind == NodeKind::Checkbox,
+            Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }
     }
@@ -142,6 +174,7 @@ impl Value {
             Value::Text(_) => ValueType::Text,
             Value::Rect(_) => ValueType::Rect,
             Value::Rgba(_) => ValueType::Rgba,
+            Value::Items(_) => ValueType::Items,
         }
     }
 }
@@ -151,6 +184,9 @@ pub(crate) struct Node {
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
     pub props: BTreeMap<Prop, Value>,
+    /// Interaction state a widget keeps between inputs (scroll capture,
+    /// double-click timing, caret blink); never set by the host.
+    pub state: crate::widget::WidgetState,
 }
 
 impl Node {
@@ -219,7 +255,7 @@ impl Tree {
         if self.live >= self.max_nodes {
             return Err(Refused::Limit);
         }
-        let node = Node { kind, parent, children: Vec::new(), props: BTreeMap::new() };
+        let node = Node { kind, parent, children: Vec::new(), props: BTreeMap::new(), state: Default::default() };
         let id = match self.free.pop() {
             Some(idx) => {
                 let slot = &mut self.slots[idx as usize];
@@ -304,7 +340,7 @@ impl Tree {
         }
     }
 
-    fn node_mut(&mut self, id: NodeId) -> Result<&mut Node, Refused> {
+    pub(crate) fn node_mut(&mut self, id: NodeId) -> Result<&mut Node, Refused> {
         match self.slots.get_mut(id.idx as usize) {
             None => Err(Refused::NotFound),
             Some(Slot { generation, node: Some(n) }) if *generation == id.generation => Ok(n),
