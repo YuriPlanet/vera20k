@@ -4,8 +4,10 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use super::ReplayStartOptions;
 use crate::rules::personal_rules::PersonalRules;
 use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::sim::campaign_carry_over::CampaignCarryOver;
 use crate::sim::game_options::GameOptions;
 use crate::sim::scenario_bootstrap::{MatchLaunchDescriptor, MatchNetworkStart};
 use crate::sim::scenario_session::ScenarioSession;
@@ -46,6 +48,8 @@ pub struct AuthoredMatchStart {
     teams: Option<u8>,
     quick_coop_starts: bool,
     personal_rules: PersonalRules,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    campaign_carry_over: Option<CampaignCarryOver>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,8 +66,7 @@ impl MatchStartBlueprint {
     pub(super) fn capture(
         launch: &SkirmishLaunchSession,
         admitted: &ScenarioSession,
-        quick_coop_starts: bool,
-        personal_rules: PersonalRules,
+        options: ReplayStartOptions,
     ) -> Result<Self> {
         let mode = &launch.mode;
         let facts = AuthoredMatchStart {
@@ -80,8 +83,9 @@ impl MatchStartBlueprint {
             constructor_roster: launch.pre_fill_house_roster().into_owned(),
             options: launch.options.to_game_options(launch.ai_player_count),
             teams: launch.options.teams,
-            quick_coop_starts,
-            personal_rules,
+            quick_coop_starts: options.quick_coop_starts,
+            personal_rules: options.personal_rules,
+            campaign_carry_over: options.campaign_carry_over,
         };
         let launch = if scripted_lockstep(admitted) {
             ReplayLaunch::Campaign(facts)
@@ -114,6 +118,10 @@ impl MatchStartBlueprint {
         &self.admitted
     }
 
+    pub(super) fn campaign_carry_over(&self) -> Option<&CampaignCarryOver> {
+        self.facts().campaign_carry_over.as_ref()
+    }
+
     pub(super) fn validate(&self) -> Result<()> {
         let facts = self.facts();
         let scripted = scripted_lockstep(&self.admitted);
@@ -126,6 +134,12 @@ impl MatchStartBlueprint {
                 ReplayLaunch::Campaign(_) => scripted,
             } && self.admitted.multiplayer_mode_class() == Some(facts.mode.class),
             "replay launch kind disagrees with its admitted mode"
+        );
+        anyhow::ensure!(
+            facts.campaign_carry_over.is_none()
+                || matches!(self.launch(), ReplayLaunch::Cooperative(_))
+                    && self.admitted.execution_topology().is_lockstep(),
+            "only a Cooperative lockstep replay can inherit a campaign record"
         );
         anyhow::ensure!(
             facts.local_player_index < facts.humans.len()

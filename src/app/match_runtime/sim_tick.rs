@@ -70,21 +70,24 @@ pub(crate) fn prepare_replay_recording(state: &mut AppState) {
                 .or_else(|| state.match_state.startup.offline_launch()),
             state.match_state.loaded_map_source.as_ref(),
             state.match_state.loaded_map_hash,
-            state
-                .match_state
-                .live_network
-                .as_ref()
-                .is_some_and(|live| live.dispatches_every_frame()),
-            state
-                .match_state
-                .session
-                .network_wol_start()
-                .is_some_and(|start| start.quick_coop),
-            state
-                .process_assets
-                .native_rules()
-                .map(|owner| owner.personal_rules().clone())
-                .unwrap_or_default(),
+            crate::sim::replay::ReplayStartOptions {
+                every_frame_network: state
+                    .match_state
+                    .live_network
+                    .as_ref()
+                    .is_some_and(|live| live.dispatches_every_frame()),
+                quick_coop_starts: state
+                    .match_state
+                    .session
+                    .network_wol_start()
+                    .is_some_and(|start| start.quick_coop),
+                personal_rules: state
+                    .process_assets
+                    .native_rules()
+                    .map(|owner| owner.personal_rules().clone())
+                    .unwrap_or_default(),
+                campaign_carry_over: state.match_state.session.network_campaign_carry_over(),
+            },
         );
     }
 }

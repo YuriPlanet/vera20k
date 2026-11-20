@@ -793,6 +793,15 @@ const REPLAY_STARTUP_VERSION: u32 = 5;
 mod blueprint;
 pub use blueprint::{MatchStartBlueprint, ReplayLaunch};
 
+/// Accepted inputs needed in addition to the authored setup and frame-zero world.
+#[derive(Debug, Default)]
+pub struct ReplayStartOptions {
+    pub every_frame_network: bool,
+    pub quick_coop_starts: bool,
+    pub personal_rules: crate::rules::personal_rules::PersonalRules,
+    pub campaign_carry_over: Option<crate::sim::campaign_carry_over::CampaignCarryOver>,
+}
+
 /// The deterministic launch and frame-zero simulation session carry the
 /// admitted rule policy and control grants. Transport and its endpoints,
 /// service sessions and credentials stay in the live network owners.
@@ -864,9 +873,7 @@ impl ReplayStartup {
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
         tick_ms: u32,
-        every_frame_network: bool,
-        quick_coop_starts: bool,
-        personal_rules: crate::rules::personal_rules::PersonalRules,
+        options: ReplayStartOptions,
     ) -> Result<Self> {
         let sim = &runtime.simulation;
         anyhow::ensure!(
@@ -911,8 +918,8 @@ impl ReplayStartup {
             tick_ms != 0 && tick_ms <= 1000,
             "invalid replay tick duration"
         );
-        let blueprint =
-            MatchStartBlueprint::capture(launch, sim.session(), quick_coop_starts, personal_rules)?;
+        let every_frame_network = options.every_frame_network;
+        let blueprint = MatchStartBlueprint::capture(launch, sim.session(), options)?;
         Ok(Self {
             version: REPLAY_STARTUP_VERSION,
             native_id_prefix: Some(
@@ -1008,6 +1015,22 @@ impl ReplayLog {
                 state_hash: sim.state_hash(),
                 terminal_score_snapshot: sim.terminal_score_snapshot().cloned(),
             });
+    }
+
+    fn validate_ending(&self, sim: &Simulation) -> Result<()> {
+        if let Some(ending) = &self.ending {
+            let state_hash = sim.state_hash();
+            anyhow::ensure!(
+                state_hash == ending.state_hash,
+                "replay final state hash mismatch: recorded {:#018x}, replayed {state_hash:#018x}",
+                ending.state_hash
+            );
+            anyhow::ensure!(
+                sim.terminal_score_snapshot() == ending.terminal_score_snapshot.as_ref(),
+                "replay terminal score snapshot differs"
+            );
+        }
+        Ok(())
     }
 
     pub fn record_tick(
@@ -1203,6 +1226,11 @@ impl ReplayPlayback {
         startup
             .session()
             .validate_restored_control_grants(sim.houses())?;
+        // Stock Cooperative restores the incoming single record immediately
+        // after Start_Scenario (0x004C6210). Its globals also reset Tag timers.
+        if let Some(record) = startup.blueprint().campaign_carry_over() {
+            sim.restore_campaign_carry_over(record, &runtime.resources.rules);
+        }
         sim.restore_replay_startup(
             startup.session().clone(),
             startup.scenario_rng.clone(),
@@ -1261,6 +1289,9 @@ impl ReplayPlayback {
             .hash_state_every(std::num::NonZeroU64::MIN);
         for input in &replay.initial_scenario_services {
             input.replay(&mut runtime.simulation, &runtime.resources.rules)?;
+        }
+        if replay.ticks.is_empty() {
+            replay.validate_ending(&runtime.simulation)?;
         }
         let every_frame_network = replay
             .startup
@@ -1380,6 +1411,9 @@ impl ReplayPlayback {
                 .trigger_effects
                 .extend(input.replay(&mut runtime.simulation, &runtime.resources.rules)?);
         }
+        if self.index + 1 == self.replay.ticks.len() {
+            self.replay.validate_ending(&runtime.simulation)?;
+        }
         self.index += 1;
         Ok(output)
     }
@@ -1402,19 +1436,9 @@ impl ReplayPlayback {
             checked_hashes > 0 || self.replay.ending.is_some(),
             "replay contains no recorded state hashes"
         );
+        self.replay.validate_ending(&runtime.simulation)?;
         let final_state_hash = runtime.simulation.state_hash();
         let terminal_score_snapshot = runtime.simulation.terminal_score_snapshot().cloned();
-        if let Some(ending) = &self.replay.ending {
-            anyhow::ensure!(
-                final_state_hash == ending.state_hash,
-                "replay final state hash mismatch: recorded {:#018x}, replayed {final_state_hash:#018x}",
-                ending.state_hash
-            );
-            anyhow::ensure!(
-                terminal_score_snapshot == ending.terminal_score_snapshot,
-                "replay terminal score snapshot differs"
-            );
-        }
         Ok(ReplayVerification {
             ticks: self.index,
             checked_hashes,
@@ -1722,9 +1746,10 @@ mod tests {
                 &scene.source,
                 scene.map.ini.content_hash(),
                 22,
-                true,
-                false,
-                Default::default(),
+                ReplayStartOptions {
+                    every_frame_network: true,
+                    ..Default::default()
+                },
             )
             .is_err(),
             "serial headless paths do not satisfy the normal App replay contract"
@@ -1759,9 +1784,10 @@ mod tests {
             &scene.source,
             scene.map.ini.content_hash(),
             22,
-            true,
-            false,
-            Default::default(),
+            ReplayStartOptions {
+                every_frame_network: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         let mut log = ReplayLog::new(ReplayHeader {

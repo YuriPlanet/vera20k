@@ -25,11 +25,12 @@ impl AuthoredReplay {
     fn begin(
         root: &Path,
         map_path: &str,
-        descriptor: MatchLaunchDescriptor,
+        mut descriptor: MatchLaunchDescriptor,
         mode: ScenarioGameMode,
-        quick_coop: bool,
+        mut options: ReplayStartOptions,
     ) -> Self {
         let launch = descriptor.session().clone();
+        descriptor.set_personal_rules(options.personal_rules.clone());
         let mut scene = load_with_launch_and_ini(
             root,
             map_path,
@@ -46,6 +47,9 @@ impl AuthoredReplay {
         sim.batch_target_scans();
         sim.present_effect_anims();
         sim.sleep_idle_objects_in_match();
+        if let Some(record) = &options.campaign_carry_over {
+            sim.restore_campaign_carry_over(record, &scene.runtime.resources.rules);
+        }
         sim.hash_state_every(NonZeroU64::MIN);
         let lockstep = sim.session().execution_topology().is_lockstep();
         if lockstep {
@@ -61,15 +65,14 @@ impl AuthoredReplay {
             sim.network_command_queues()
                 .install_timing(0, NonZeroU8::MIN, sources);
         }
+        options.every_frame_network = lockstep;
         let startup = ReplayStartup::capture(
             &scene.runtime,
             &launch,
             &scene.source,
             scene.map.ini.content_hash(),
             TICK_MS,
-            lockstep,
-            quick_coop,
-            Default::default(),
+            options,
         )
         .unwrap();
         let mut log = ReplayLog::new(ReplayHeader {
@@ -190,7 +193,7 @@ fn authored_stock_skirmish_replays_an_in_place_cutscene_and_terminal_score() {
         map_path,
         descriptor,
         ScenarioGameMode::Skirmish,
-        false,
+        Default::default(),
     );
     assert!(recording.scene.sim().session().has_stock_rule_policy());
     for _ in 0..64 {
@@ -243,7 +246,7 @@ fn authored_stock_skirmish_replays_an_in_place_cutscene_and_terminal_score() {
 
 #[test]
 #[ignore = "slow; retail Cooperative stage startup and independent lockstep verification"]
-fn authored_stock_cooperative_reconstructs_and_keeps_the_native_no_score_outcome() {
+fn authored_stock_cooperative_restores_stage_and_keeps_the_native_no_score_outcome() {
     // CoopCampMD.ini Allied stage 1, also the stock WOL Quick Co-op stage.
     const MAP: &str = "C1A01MD.MAP";
     let (root, assets) = crate::rules::retail_ini_fixture::retail_assets().expect("retail RA2_DIR");
@@ -265,9 +268,21 @@ fn authored_stock_cooperative_reconstructs_and_keeps_the_native_no_score_outcome
     let descriptor = MatchLaunchDescriptor::from_resolved(launch)
         .unwrap()
         .with_quick_coop_starts();
-    let mut recording =
-        AuthoredReplay::begin(&root, map_path, descriptor, ScenarioGameMode::Wol, true);
+    let mut previous = Simulation::new();
+    previous.set_trigger_variable_for_test(true, 3, true);
+    let mut recording = AuthoredReplay::begin(
+        &root,
+        map_path,
+        descriptor,
+        ScenarioGameMode::Wol,
+        ReplayStartOptions {
+            quick_coop_starts: true,
+            campaign_carry_over: Some(previous.save_campaign_carry_over()),
+            ..Default::default()
+        },
+    );
     let sim = recording.scene.sim();
+    assert!(sim.global_variables()[3]);
     assert!(sim.session().has_stock_rule_policy());
     assert!(sim.session().rule_policy().skips_network_score_dialog());
     assert_eq!(
@@ -318,6 +333,7 @@ fn authored_lockstep_replay_preserves_custom_rules_and_source_grants() {
             ("TiberiumSpreads", "no"),
         ],
     );
+    let map = add_action(&map, "7F800002", "7F810002", 1, "1,67,0,0,0,0,0,0,Z");
     directory.write(BATTLE_MAP, &map);
     let map_path = directory.path().join(BATTLE_MAP);
     let map_path = map_path.to_str().unwrap();
@@ -347,7 +363,27 @@ fn authored_lockstep_replay_preserves_custom_rules_and_source_grants() {
         .unwrap()
         .with_rule_policy(policy)
         .with_control_grants(grants.to_vec());
-    let mut recording = AuthoredReplay::begin(&root, map_path, descriptor, mode, false);
+    let mut personal_rules = crate::rules::personal_rules::PersonalRules::default();
+    personal_rules.set_terrain_deformation(true);
+    let mut recording = AuthoredReplay::begin(
+        &root,
+        map_path,
+        descriptor,
+        mode,
+        ReplayStartOptions {
+            personal_rules,
+            ..Default::default()
+        },
+    );
+    assert!(
+        recording
+            .scene
+            .runtime
+            .resources
+            .rules
+            .combat_damage
+            .terrain_deformation
+    );
     let sim = recording.scene.sim();
     assert!(sim.session().no_damage());
     assert!(sim.session().harvester_immune());
@@ -411,6 +447,17 @@ fn authored_lockstep_replay_preserves_custom_rules_and_source_grants() {
             Some(TargetKind::Cell(x, 40)),
         );
     }
+    for _ in 0..64 {
+        if recording.frame(&[]).terminal_score_finalized {
+            break;
+        }
+    }
+    let sim = recording.scene.sim();
+    assert_eq!(
+        sim.session().outcome_request(),
+        Some(HouseOutcomeKind::Victory)
+    );
+    assert!(!sim.terminal_score_snapshot().unwrap().rows.is_empty());
     // A last service changes the final shared hash without a new frame.
     let last_checkpoint = recording.log.ticks.last().unwrap().state_hash;
     recording.service(ScenarioServiceInput::Pause);
