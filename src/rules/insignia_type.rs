@@ -223,10 +223,6 @@ impl InsigniaVariant {
     }
 }
 
-/// Phobos `TechnoTypeExt`'s insignia block, accumulated pass by pass like
-/// `TechnoTypeExt::LoadFromINIFile`: a later layer resolves `InsigniaType`
-/// first and skips the direct keys, and each direct key read retains what the
-/// earlier layers set.
 /// VERA's bound on the passenger counts that get their own insignia variant.
 /// Phobos reads one per count up to `Passengers=` with no upper bound, so a
 /// value near `i32::MAX` exhausts memory there. A transport holding more
@@ -234,6 +230,10 @@ impl InsigniaVariant {
 #[cfg(feature = "phobos")]
 const PASSENGER_INSIGNIA_LIMIT: i32 = 1024;
 
+/// Phobos `TechnoTypeExt`'s insignia block, accumulated pass by pass like
+/// `TechnoTypeExt::LoadFromINIFile`: a later layer resolves `InsigniaType`
+/// first and skips the direct keys, and each direct key read retains what the
+/// earlier layers set.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct PhobosInsignia {
     pub base: InsigniaVariant,

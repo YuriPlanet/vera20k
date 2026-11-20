@@ -55,6 +55,12 @@ pub(crate) struct AresTechnoTypeRules {
     prerequisites: AresPrerequisiteRules,
 }
 
+/// VERA's bound on `Prerequisite.Lists=`, the lists after list 0. Ares sizes
+/// the vector by the raw value (`TechnoTypeExt::LoadFromINIFile`, no upper
+/// bound), so a value near `i32::MAX` exhausts memory there. Outside data
+/// never stops the game: the count clamps here, far above any mod's lists.
+const PREREQUISITE_LIST_LIMIT: i32 = 1024;
+
 /// TechnoTypeExt `PrerequisiteLists` (+0x40) past list 0,
 /// `PrerequisiteNegatives` (+0x4C), `PrerequisiteTheaters` (+0x64,
 /// constructor 0xFFFFFFFF) and `RequiredStolenTech` (+0x128, constructor
@@ -67,12 +73,6 @@ pub(crate) struct AresTechnoTypeRules {
 /// replaced, so one field holds both. `RequirementsMet @ 10021FF0`,
 /// `PrerequisitesMet @ 10021CA0` and `PrerequisitesListed @ 10021C50`
 /// consume these.
-/// VERA's bound on `Prerequisite.Lists=`, the lists after list 0. Ares sizes
-/// the vector by the raw value (`TechnoTypeExt::LoadFromINIFile`, no upper
-/// bound), so a value near `i32::MAX` exhausts memory there. Outside data
-/// never stops the game: the count clamps here, far above any mod's lists.
-const PREREQUISITE_LIST_LIMIT: i32 = 1024;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresPrerequisiteRules {
     /// Lists 1.. of +0x40 (`Prerequisite.List1=` on).
