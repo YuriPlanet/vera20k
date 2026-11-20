@@ -268,6 +268,10 @@ arboard = { version = "3.7", default-features = false }
 # A trial for slow Windows machines; the gain has not been measured there yet.
 [target.'cfg(windows)'.dependencies]
 mimalloc = { version = "0.1.52", default-features = false }
+# The same crate and version wgpu-hal's DirectX 12 backend uses, for the one
+# call wgpu does not expose: ID3D12Device::GetDeviceRemovedReason, which says
+# why a lost device was lost (`GpuContext::device_removed_reason`).
+windows = { version = "0.62", features = ["Win32_Graphics_Direct3D12", "Win32_Graphics_Dxgi"] }
 
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
