@@ -268,29 +268,31 @@ impl Simulation {
     /// `TrailerAnim=`, `ExpireAnim=`, `BounceAnim=`) and their StopSounds.
     /// A game loaded or rejoined while the anim lives lacks the anim, so the
     /// interner must not wait for its visits to learn them.
-    pub(super) fn intern_presentation_chain(
+    pub(super) fn intern_presentation_chain<'r>(
         &mut self,
-        rules: &RuleSet,
-        config: &AnimTypeRuntimeConfig,
+        rules: &'r RuleSet,
+        config: &'r AnimTypeRuntimeConfig,
     ) {
-        let children = |config: &AnimTypeRuntimeConfig| {
+        // The names are borrowed from the rules, which the interning leaves
+        // alone.
+        let children = |config: &'r AnimTypeRuntimeConfig| {
             [
-                config.next.clone(),
-                config.trailer_anim.clone(),
-                config.expire_anim.clone(),
-                config.bounce_anim.clone(),
+                config.next.as_deref(),
+                config.trailer_anim.as_deref(),
+                config.expire_anim.as_deref(),
+                config.bounce_anim.as_deref(),
             ]
             .into_iter()
             .flatten()
         };
-        let mut pending: Vec<String> = children(config).collect();
-        let mut seen: Vec<String> = Vec::new();
+        let mut pending: Vec<&str> = children(config).collect();
+        let mut seen: Vec<&str> = Vec::new();
         while let Some(name) = pending.pop() {
             if seen.contains(&name) {
                 continue;
             }
-            self.interner.intern(&name);
-            if let Some(child) = rules.art().anim_runtime_config(&name) {
+            self.interner.intern(name);
+            if let Some(child) = rules.art().anim_runtime_config(name) {
                 if let Some(sound) = child.stop_sound.as_deref() {
                     self.interner.intern(sound);
                 }

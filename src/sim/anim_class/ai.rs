@@ -20,11 +20,11 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
-enum VisitAction {
+enum VisitAction<'a> {
     None,
     Destroy,
     MakeInfantry,
-    Next(String),
+    Next(&'a str),
 }
 
 /// The facing a `MakeInfantry=` anim's infantryman is Unlimbo'd with
@@ -344,7 +344,7 @@ impl Simulation {
                 random_loop_delay = config.random_loop_delay;
             }
             AnimBoundary::Complete => {
-                action = if let Some(next) = config.next.clone() {
+                action = if let Some(next) = config.next.as_deref() {
                     VisitAction::Next(next)
                 } else if config.make_infantry != -1 {
                     VisitAction::MakeInfantry
@@ -386,7 +386,7 @@ impl Simulation {
                 }
             }
             VisitAction::Next(next) => {
-                self.switch_anim_type(id, &next, rules, overlay_registry, frame_effects)?;
+                self.switch_anim_type(id, next, rules, overlay_registry, frame_effects)?;
             }
         }
         Ok(bridge_state_changed)
@@ -1211,7 +1211,7 @@ impl Simulation {
             self.destroy_anim(id, rules);
             return Ok(());
         };
-        let Ok((effective_end, effective_loop_end)) = effective_bounds(next, config) else {
+        let Some((effective_end, effective_loop_end)) = effective_bounds(config) else {
             self.destroy_anim(id, rules);
             return Ok(());
         };
