@@ -159,8 +159,8 @@ fn admit_attacker_fire<'r>(
     // Wave on either slot) keep the same protection for other layouts.
     if snap.category == EntityCategory::Unit
         && has_active_wave
-        && combat_weapon::primary_for_tier(obj, snap.veterancy)
-            .and_then(|weapon_id| rules.weapon(weapon_id))
+        && combat_weapon::weapon_for_index(obj, snap.veterancy, 0)
+            .and_then(|record| record.weapon(rules))
             .is_some_and(|weapon| weapon.is_sonic)
     {
         return None;
@@ -1212,10 +1212,10 @@ fn reveal_on_fire(
     };
     // The clients whose victim/weapon leaf passes: 6FF6D0..6FF6FA (Spawner
     // 6FDEE0..6FDF0F), RevealOnFire and IsHumanPlayer of the victim's House.
-    let admitted = match victim {
-        Some(victim) if enabled => world.human_player_clients(victim),
-        _ => Vec::new(),
-    };
+    let admission = victim
+        .filter(|_| enabled)
+        .map(|victim| world.human_player_client_set(victim));
+    let admitted = admission.as_deref().unwrap_or_default();
     let clients;
     let viewers = match path {
         // No callback or RNG occurs in this border. Every client runs it, in
@@ -1225,7 +1225,7 @@ fn reveal_on_fire(
             &clients[..]
         }
         FireDisclosurePath::Shot if admitted.is_empty() => return,
-        FireDisclosurePath::Shot => &admitted[..],
+        FireDisclosurePath::Shot => admitted,
     };
     let context = crate::sim::world::UninitContext::new(rules);
     let config = world.sight_reveal_config(rules);
@@ -1750,7 +1750,7 @@ pub(super) fn emit_admitted_fire(
     let bullet_id = world.substrate.allocate_stable_id();
     let native_unique_id = world.next_native_runtime_id();
     fireat_estimate_debit(world, rules, snap.stable_id, tarcom, obj, weapon);
-    let launched = {
+    let launched_weapon = {
         let impact_world_z_leptons =
             attack_world_z_leptons(snap.target, world, world.resolved_terrain.as_ref());
         let origin_world_z_leptons = fire.source_z;
@@ -1987,8 +1987,8 @@ pub(super) fn emit_admitted_fire(
         });
         // A launch with no ballistic solution deletes its bullet
         // (`0x006FF000` -> `0x006FF93C`, or `0x006FF01E` when
-        // `BulletClass::Fire` refuses) and resumes at `0x006FF749`.
-        let mut launched = launch.is_some();
+        // `BulletClass::Fire` refuses) and resumes at `0x006FF749`. A
+        // launched shot answers its weapon's id, interned with its payload.
         if let Some(FireAtLaunchResult {
             velocity,
             speed: launch_speed,
@@ -2013,14 +2013,13 @@ pub(super) fn emit_admitted_fire(
                     .wrapping_add(world.ares_prism_shot_damage_add(snap.stable_id, rules)),
                 _ => base_damage,
             };
-            let payload = ProjectilePayload::new(
-                base_damage,
-                world.interner.intern(&warhead.id),
-                projectile_type.map(|kind| world.interner.intern(&kind.id)),
-                weapon.bright,
-            )
-            .with_installed_weapon(Some(world.interner.intern(selected.weapon_id)))
-            .with_damage_multiplier(damage_multiplier);
+            let warhead_id = world.interner.intern(&warhead.id);
+            let projectile_id = projectile_type.map(|kind| world.interner.intern(&kind.id));
+            let weapon_id = world.interner.intern(selected.weapon_id);
+            let payload =
+                ProjectilePayload::new(base_damage, warhead_id, projectile_id, weapon.bright)
+                    .with_installed_weapon(Some(weapon_id))
+                    .with_damage_multiplier(damage_multiplier);
             // Ares TechnoClass_Fire_CreateBullet (1001ADE0, hook 0x6FE53F):
             // the bullet's Range is the weapon's ProjectileRange, which only
             // a `Ranged=` type spends, in a game read the Ares way.
@@ -2037,7 +2036,7 @@ pub(super) fn emit_admitted_fire(
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
             // `BulletClass::Fire` (`0x006FF014`) at the launch source.
-            launched = super::admit_techno_fired_bullet(
+            super::admit_techno_fired_bullet(
                 world,
                 rules,
                 weapon,
@@ -2065,9 +2064,11 @@ pub(super) fn emit_admitted_fire(
                         entry_target.projectile_target(world),
                     ),
                 },
-            );
+            )
+            .then_some(weapon_id)
+        } else {
+            None
         }
-        launched
     };
 
     // A failed launch resumes at `0x006FF749`, past the rest of the shot
@@ -2077,10 +2078,10 @@ pub(super) fn emit_admitted_fire(
     // `+0x3BC` 15-frame timer (`0x006FF4B0`), RevealOnFire and the `+0x120`
     // store, so the firer may try again next frame. The tail from
     // `0x006FF749` still runs.
-    if !launched {
+    let Some(weapon_id) = launched_weapon else {
         fireat_tail(world, rules, snap, weapon, None, effects);
         return None;
-    }
+    };
 
     let sequence = world
         .substrate
@@ -2100,7 +2101,7 @@ pub(super) fn emit_admitted_fire(
         attacker_id: snap.stable_id,
         #[cfg(any(test, feature = "test-support"))]
         weapon_slot: selected.slot,
-        weapon_id: world.interner.intern(selected.weapon_id),
+        weapon_id,
         #[cfg(any(test, feature = "test-support"))]
         facing,
         #[cfg(any(test, feature = "test-support"))]

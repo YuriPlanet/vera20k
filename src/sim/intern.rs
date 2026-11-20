@@ -143,9 +143,10 @@ impl StringInterner {
         self.types.warhead(self, id, rules)
     }
 
-    /// The object type `id` names in `rules`, as
-    /// `rules.object(self.resolve(id))` answers, through the bound handles
-    /// where they apply.
+    /// The object type `id` names in `rules`, as `rules.object(name)`
+    /// answers for the name `self.try_resolve(id)` gives (none for an id
+    /// this interner never made), through the bound handles where they
+    /// apply.
     #[inline]
     pub fn object_type<'r>(&self, id: InternedId, rules: &'r RuleSet) -> Option<&'r ObjectType> {
         self.types.object(self, id, rules)
@@ -167,7 +168,8 @@ impl StringInterner {
     }
 
     /// The handle of the object type `id` names in `rules`, as
-    /// `rules.type_handle(self.resolve(id))` answers, the same way.
+    /// `rules.type_handle(name)` answers for `self.try_resolve(id)`, the
+    /// same way.
     #[inline]
     pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
         self.types.handle(self, id, rules)
