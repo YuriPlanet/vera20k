@@ -126,19 +126,20 @@ fn exit_finished_object(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let Some(object) = sim
+    let Some(product) = sim
         .production
         .factories()
         .building_factory(building)
         .filter(|factory| factory.progress() >= PRODUCTION_STEPS)
-        .and_then(|factory| factory.object().cloned())
+        .and_then(|factory| factory.object())
+        .map(|object| object.entity_id)
     else {
         return;
     };
     if !placement_wait_over(sim, building) {
         return;
     }
-    let Some(product) = object.entity_id else {
+    let Some(product) = product else {
         return;
     };
     let Some(product_type) = sim

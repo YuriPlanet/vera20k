@@ -815,9 +815,10 @@ fn kick_out_ares_clones(
     let sources: Vec<u64> = sim
         .houses
         .get(&owner)
-        .map(|house| house.base_projection().buildings().to_vec())
+        .map(|house| house.base_projection().buildings())
         .unwrap_or_default()
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|&id| {
             sim.substrate
                 .entities
