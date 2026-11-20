@@ -164,7 +164,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    control: ControlProjection<'_>,
+    control: &ControlProjection<'_>,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     pixel_cell: Option<(u16, u16)>,

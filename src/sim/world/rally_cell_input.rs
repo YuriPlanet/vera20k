@@ -2,7 +2,7 @@
 //! Input isolates the fallback Cell; the opening uses the live simulation Cell.
 //! Both publish prepared targets through the existing event1E command owner.
 
-use super::Simulation;
+use super::{ControlProjection, Simulation};
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::FactoryType;
@@ -30,7 +30,17 @@ impl Simulation {
         clicked: (u16, u16),
         rules: &RuleSet,
     ) -> Result<Option<(u16, u16)>, String> {
-        self.factory_rally_cell(id, clicked, rules, false)
+        self.factory_rally_cell_input_with(&self.control_projection(), id, clicked, rules)
+    }
+
+    pub fn factory_rally_cell_input_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        clicked: (u16, u16),
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        self.factory_rally_cell(id, clicked, rules, Some(control))
     }
 
     /// The sole SetRallyPoint443860 search, shared by input and live Logic.
@@ -39,7 +49,7 @@ impl Simulation {
         id: u64,
         clicked: (u16, u16),
         rules: &RuleSet,
-        live: bool,
+        control: Option<&ControlProjection<'_>>,
     ) -> Result<Option<(u16, u16)>, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -61,7 +71,7 @@ impl Simulation {
         let size = self
             .map_size_diamond()
             .ok_or("rally input lacks native map dimensions")?;
-        let cells = if live {
+        let cells = if control.is_none() {
             NativeCellQuery::canonical(terrain)
         } else {
             NativeCellQuery::isolated(terrain)
@@ -101,7 +111,14 @@ impl Simulation {
                 .session
                 .rule_policy()
                 .allows_construction_yard_redeploy()
-            && self.construction_yard_redeploy_core_gate(entity);
+            && self.construction_yard_redeploy_core_gate(
+                entity,
+                self.houses
+                    .get(&entity.owner())
+                    .is_some_and(|house| house.is_human())
+                    || control
+                        .is_some_and(|control| control.has_delegated_full_control(entity.owner())),
+            );
         Ok(if redeploy_yard {
             self.object_coords_cell(id)
         } else {
@@ -156,7 +173,7 @@ impl Simulation {
         if clicked == (0, 0) {
             return;
         }
-        let prepared = self.factory_rally_cell(id, clicked, rules, true);
+        let prepared = self.factory_rally_cell(id, clicked, rules, None);
         match prepared {
             Ok(Some((rx, ry))) => {
                 let _ = self.issue_local_command(crate::sim::command::CommandEnvelope::new(

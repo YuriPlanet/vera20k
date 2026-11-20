@@ -22,7 +22,16 @@ pub(crate) fn unload_command(
     obj: Option<&ObjectType>,
     local_owner: Option<InternedId>,
 ) -> Option<Command> {
-    let control = sim.control_projection();
+    unload_command_with(sim, &sim.control_projection(), entity, obj, local_owner)
+}
+
+pub(super) fn unload_command_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    entity: &GameEntity,
+    obj: Option<&ObjectType>,
+    local_owner: Option<InternedId>,
+) -> Option<Command> {
     let can_order = match local_owner {
         Some(owner) => control.can_order_from(entity.owner(), owner),
         None if sim.session().has_custom_control_grants() => control.can_order(entity.owner()),

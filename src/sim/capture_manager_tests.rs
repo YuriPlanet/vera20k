@@ -2010,8 +2010,8 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
         crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(owner(&sim, stolen), "Americans");
-    assert!(!sim.can_undeploy_building_runtime(stolen, &rules));
-    assert!(sim.can_undeploy_building_runtime(own, &rules));
+    assert!(!sim.can_undeploy_building_runtime(stolen, false, &rules));
+    assert!(sim.can_undeploy_building_runtime(own, false, &rules));
 }
 
 /// Selling a Psychic Tower frees its captives first: native Selling ends

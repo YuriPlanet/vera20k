@@ -1084,7 +1084,7 @@ UndeploysInto=SMIN
         .expect("spawn refinery");
     sim.session.game_options_mut_for_test().mcv_redeploy = false;
 
-    assert!(sim.can_undeploy_building_runtime(refinery, &rules));
+    assert!(sim.can_undeploy_building_runtime(refinery, false, &rules));
 }
 
 /// Reproduce only the prior state declared by an original execution row. These

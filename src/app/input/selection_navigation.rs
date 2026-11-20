@@ -38,18 +38,22 @@ fn next_object(
         .chain(layers.members(DisplayLayer::AIR))
         .chain(layers.members(DisplayLayer::TOP))
         .copied();
+    let control = sim.control_projection();
     let eligible = |id| {
         let Some(entity) = sim.entities().get(id) else {
             return false;
         };
-        crate::app::input::entity_pick::is_local_player_selectable_object(sim, rules, entity)
-            && crate::app::input::entity_pick::selection_dynamic_prefix(
-                entity,
-                sim.entities(),
-                rules,
-                Some(sim.interner()),
-            )
-            && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
+        crate::app::input::entity_pick::is_local_player_selectable_object(
+            sim.interner(),
+            &control,
+            rules,
+            entity,
+        ) && crate::app::input::entity_pick::selection_dynamic_prefix(
+            entity,
+            sim.entities(),
+            rules,
+            Some(sim.interner()),
+        ) && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
     };
     match direction {
         ObjectDirection::Next => after_anchor(ids, anchor, eligible),

@@ -320,6 +320,11 @@ impl LoadingRequest {
                 native_id_prefix: startup
                     .native_id_prefix()
                     .expect("validated replay startup"),
+                authority: Some(Box::new(crate::app::match_bootstrap::ReplayLoadAuthority {
+                    rule_policy: startup.rule_policy(),
+                    rule_policy_override: startup.rule_policy_override(),
+                    control_grants: startup.control_grants().to_vec(),
+                })),
                 seed: crate::app::match_bootstrap::MatchSeed {
                     value: startup.seed(),
                     source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,

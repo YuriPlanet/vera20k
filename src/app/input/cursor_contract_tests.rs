@@ -94,8 +94,10 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
         kind: HoverTargetKind::EnemyUnit,
     };
     let before = sim.state_hash();
+    let control = sim.control_projection();
     assert!(crate::app::input::context_order::vehicle_capture_action(
         &sim,
+        &control,
         &retail.rules,
         actor,
         target,
@@ -118,6 +120,7 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
     );
     assert!(!crate::app::input::context_order::vehicle_capture_action(
         &sim,
+        &control,
         &retail.rules,
         actor,
         target,

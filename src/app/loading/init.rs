@@ -3189,10 +3189,10 @@ fn load_map_first_step(
                         )
                     }
                 } else {
-                    assert!(
-                        prepared_prefix.is_none(),
-                        "campaign loading cannot consume an ordinary prefix"
-                    );
+                    if let Some(preparation) = prepared_prefix {
+                        native_rules_owner.cancel_prepared_noncampaign_scenario_prefix(preparation);
+                        anyhow::bail!("campaign loading cannot consume an ordinary prefix");
+                    }
                     crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
                         campaign_named_ini.as_ref(),
                     )
@@ -3323,23 +3323,6 @@ fn load_map_first_step(
                             .unwrap_or_default(),
                         theater: map_data.header.theater.clone(),
                         rule_policy,
-                        // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
-                        // replace active SpecialFlags from session staging.
-                        no_damage: !rule_policy.uses_room_options()
-                            && map_data.special_flags.inert.unwrap_or(false),
-                        // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
-                        // HarvesterImmune=`; a nonzero game mode replaces the map's flags
-                        // with the session staging word (`0x00687C16..0x00687C29`), whose
-                        // PregameSetup arm stores the session's Harvester Truce byte
-                        // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
-                        // lobby never sets the truce (`0x006AD89D` clears it), so every
-                        // skirmish leaves the bit off.
-                        harvester_immune: if rule_policy.uses_room_options() {
-                            skirmish_launch_session
-                                .is_some_and(|launch| launch.options.harvester_truce)
-                        } else {
-                            map_data.special_flags.harvester_immune.unwrap_or(false)
-                        },
                         free_radar: map_data.basic.free_radar.unwrap_or(false),
                         ignore_global_ai_triggers: map_data
                             .basic
@@ -3352,12 +3335,6 @@ fn load_map_first_step(
                         truck_crate: map_data.basic.truck_crate.unwrap_or(false),
                         ice_growth_enabled: map_data.basic.ice_growth_enabled,
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
-                        // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-                        // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: rule_policy.uses_room_options()
-                            || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: rule_policy.uses_room_options()
-                            || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,
                         map_height: scenario_cell_extent,
@@ -3374,7 +3351,13 @@ fn load_map_first_step(
                         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(
                             &lighting_profiles,
                         ),
-                    };
+                        ..Default::default()
+                    }
+                    .with_authored_special_flags(
+                        &map_data.special_flags,
+                        skirmish_launch_session
+                            .is_some_and(|launch| launch.options.harvester_truce),
+                    );
                             log::info!("Match seed: 0x{:08X}", scenario_descriptor.seed);
                             // Consume the paired RNG/native-ID prefix here: Fill and every later load
                             // constructor now mutate the same Simulation identity that reaches gameplay.

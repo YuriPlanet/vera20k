@@ -170,6 +170,13 @@ impl FreshScenarioLoadContextDescriptor {
         {
             launch = launch.with_quick_coop_starts();
         }
+        if let LoadingStartup::Replay {
+            authority: Some(authority),
+            ..
+        } = startup
+        {
+            launch = launch.with_control_grants(authority.control_grants.clone());
+        }
         let selected_map = session
             .selected_map_file
             .as_deref()

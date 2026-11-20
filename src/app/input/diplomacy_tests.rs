@@ -3,6 +3,33 @@ use crate::rules::house_colors::{HouseColorIndex, house_text_rgb};
 use crate::sim::house_state::{HouseState, MatchStatistics};
 use crate::skirmish_modes::MpModeClass;
 
+#[test]
+fn alliance_order_admission_uses_the_admitted_policy_in_skirmish() {
+    let Fixture {
+        mut sim, mut rules, ..
+    } = fixture();
+    rules.general.allies_allowed = true;
+    rules.general.ally_change_allowed = true;
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .ally_change_allowed = true;
+
+    let mode = SessionMode::Skirmish;
+    let stock = mode.stock_rule_policy(Some(MpModeClass::Battle));
+    sim.install_session_admission(
+        mode,
+        Some(MpModeClass::Battle),
+        stock.with_uses_campaign_diplomacy(true),
+    );
+    assert!(alliance_change_allowed(sim.session(), &rules));
+    sim.install_session_admission(
+        mode,
+        Some(MpModeClass::Battle),
+        stock.with_allows_manual_alliances(false),
+    );
+    assert!(!alliance_change_allowed(sim.session(), &rules));
+}
+
 /// Entry: the sidebar gadget 0x006538FE and Request_Diplomacy_Menu 0x006ABC40.
 #[test]
 fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {

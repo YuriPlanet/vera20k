@@ -855,6 +855,28 @@ pub struct ScenarioDescriptor {
 }
 
 impl ScenarioDescriptor {
+    /// Resolve the scenario bits copied from the room staging word at
+    /// Full_Init 0x00687C16 or read from the map at 0x006B8CA0.
+    pub fn with_authored_special_flags(
+        mut self,
+        flags: &crate::map::basic::SpecialFlagsSection,
+        harvester_truce: bool,
+    ) -> Self {
+        if self.rule_policy.uses_room_options() {
+            self.no_damage = false;
+            self.harvester_immune = harvester_truce;
+            // PregameSetup sets TiberiumGrows|TiberiumSpreads at 0x005E74CD.
+            self.tiberium_grows_flag = true;
+            self.tiberium_spreads_flag = true;
+        } else {
+            self.no_damage = flags.inert.unwrap_or(false);
+            self.harvester_immune = flags.harvester_immune.unwrap_or(false);
+            self.tiberium_grows_flag = flags.tiberium_grows.unwrap_or(false);
+            self.tiberium_spreads_flag = flags.tiberium_spreads.unwrap_or(true);
+        }
+        self
+    }
+
     /// Seed normal scenario initialization from a native recording header.
     ///
     /// Map bounds, theater, objects, and active registration order are rebuilt
@@ -907,7 +929,7 @@ pub enum CampaignScenarioStartupError {
 ///
 /// `Simulation.playfield_bounds` still owns the FNPC diamond lens over
 /// LocalSize; migrating those consumers is a separate ownership change.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioSession {
     /// Construction seed — the negotiated per-match value; the replay header
     /// records it. Stored widened (the negotiated value is 32-bit).
@@ -965,6 +987,7 @@ pub struct ScenarioSession {
     /// MainGame48CEBF clears it on exit, and LoadGame67E6C4 republishes1.
     /// It is reconstructed by the committed load/start route, not inferred
     /// from a saved focus timer or the render screen.
+    #[serde(skip)]
     started: bool,
     /// Persisted native `ScenarioClass` flags bit `0x20`.
     no_damage: bool,
@@ -1075,7 +1098,7 @@ pub(crate) enum NativePlayerIdentity {
 
 /// Process-local House identity, shared-House sender and observer presentation.
 /// The session owns these fields and excludes them from the shared hash.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LocalViewIdentity {
     /// Native A83D4C: this process's current HouseClass identity. Campaign
     /// Basic.Player and multiplayer participant index0 choose it at creation;
@@ -1097,196 +1120,6 @@ pub(crate) struct LocalViewIdentity {
     /// while its world keeps the House it last followed. Local identity, like
     /// the current House, outside the shared hash.
     pub(crate) observer_sidebar: bool,
-}
-
-/// Stock save and replay field names and order predate `LocalViewIdentity`.
-/// Remote serde borrows the shared fields and reads the four local fields
-/// through the session owner, retaining the same binary and JSON layouts.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(remote = "ScenarioSession", rename = "ScenarioSession")]
-struct SavedScenarioSession {
-    seed: u64,
-    map_name: String,
-    theater: String,
-    #[serde(default)]
-    game_mode: ScenarioGameMode,
-    multiplayer_mode_class: Option<crate::skirmish_modes::MpModeClass>,
-    #[serde(rename = "observer_houses")]
-    observers: Vec<InternedId>,
-    network_max_ahead_frames: Option<i32>,
-    #[serde(default)]
-    network_command_timing: Option<crate::sim::command_queue::NetworkCommandTiming>,
-    #[serde(default)]
-    shared_house_sources: Vec<u8>,
-    #[serde(
-        rename = "local_shared_house_source",
-        getter = "ScenarioSession::local_shared_house_source",
-        default
-    )]
-    source: Option<i8>,
-    #[serde(rename = "watcher", getter = "ScenarioSession::watcher", default)]
-    watching: bool,
-    #[serde(
-        rename = "watcher_observes",
-        getter = "ScenarioSession::watcher_observes",
-        default
-    )]
-    observer_sidebar: bool,
-    #[serde(default)]
-    start_header: crate::map::preview::ScenarioStartHeader,
-    #[serde(default)]
-    campaign: Option<CampaignScenarioState>,
-    campaign_map_stage: u16,
-    #[serde(default)]
-    input_locked: bool,
-    chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState,
-    scenario_pause: pause::ScenarioPause,
-    #[serde(default)]
-    scenario_countdown: countdown::ScenarioCountdown,
-    #[serde(default)]
-    carry_over_money: Option<crate::util::native_x87::NativeF64Bits>,
-    #[serde(default)]
-    carry_over_cap: i32,
-    #[serde(default)]
-    no_damage: bool,
-    #[serde(default)]
-    free_radar: bool,
-    #[serde(default)]
-    ignore_global_ai_triggers: bool,
-    #[serde(default)]
-    train_crate: bool,
-    #[serde(default)]
-    truck_crate: bool,
-    #[serde(default = "tiberium_death_to_visceroid_default")]
-    tiberium_death_to_visceroid: bool,
-    ice_growth: u8,
-    vein_growth: u8,
-    #[serde(default)]
-    tiberium_grows_flag: bool,
-    #[serde(default)]
-    tiberium_spreads_flag: bool,
-    #[serde(default)]
-    harvester_immune: bool,
-    #[serde(default)]
-    computer_slot_has_team: bool,
-    #[serde(default)]
-    wol_tournament: i32,
-    #[serde(default)]
-    wol_squad_lists: [Vec<String>; 2],
-    #[serde(default)]
-    fixed_alliance: bool,
-    lighting: ScenarioLightingState,
-    pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
-    map_width: u16,
-    map_height: u16,
-    mp_start_waypoints: BTreeMap<u32, (u16, u16)>,
-    #[serde(default)]
-    waypoints: BTreeMap<u32, (i16, i16)>,
-    start_slot_houses: BTreeMap<u32, InternedId>,
-    #[serde(rename = "current_house", getter = "ScenarioSession::current_house")]
-    house: Option<InternedId>,
-    #[serde(default)]
-    victory_requested: bool,
-    #[serde(default)]
-    defeat_requested: bool,
-    scenario_side: i32,
-    game_options: GameOptions,
-    #[serde(default = "initial_map_regrowth_timer")]
-    shroud_growth_timer: CdTimer,
-    #[serde(default = "initial_map_regrowth_timer")]
-    fog_regrow_timer: CdTimer,
-    tick: u64,
-    total_sim_ms: u64,
-    binary_frame: u32,
-}
-
-impl From<SavedScenarioSession> for ScenarioSession {
-    fn from(saved: SavedScenarioSession) -> Self {
-        Self {
-            seed: saved.seed,
-            map_name: saved.map_name,
-            theater: saved.theater,
-            game_mode: saved.game_mode,
-            multiplayer_mode_class: saved.multiplayer_mode_class,
-            rule_policy: saved
-                .game_mode
-                .stock_rule_policy(saved.multiplayer_mode_class),
-            observers: saved.observers,
-            network_max_ahead_frames: saved.network_max_ahead_frames,
-            network_command_timing: saved.network_command_timing,
-            shared_house_sources: saved.shared_house_sources,
-            control_authority: ControlAuthority::default(),
-            view: LocalViewIdentity {
-                shared_house_source: saved.source,
-                watching: saved.watching,
-                observer_sidebar: saved.observer_sidebar,
-                current_house: saved.house,
-            },
-            start_header: saved.start_header,
-            campaign: saved.campaign,
-            campaign_map_stage: saved.campaign_map_stage,
-            input_locked: saved.input_locked,
-            chrono_screen: saved.chrono_screen,
-            scenario_pause: saved.scenario_pause,
-            scenario_countdown: saved.scenario_countdown,
-            carry_over_money: saved.carry_over_money,
-            carry_over_cap: saved.carry_over_cap,
-            started: false,
-            no_damage: saved.no_damage,
-            free_radar: saved.free_radar,
-            ignore_global_ai_triggers: saved.ignore_global_ai_triggers,
-            train_crate: saved.train_crate,
-            truck_crate: saved.truck_crate,
-            tiberium_death_to_visceroid: saved.tiberium_death_to_visceroid,
-            ice_growth: saved.ice_growth,
-            vein_growth: saved.vein_growth,
-            tiberium_grows_flag: saved.tiberium_grows_flag,
-            tiberium_spreads_flag: saved.tiberium_spreads_flag,
-            harvester_immune: saved.harvester_immune,
-            computer_slot_has_team: saved.computer_slot_has_team,
-            wol_tournament: saved.wol_tournament,
-            wol_squad_lists: saved.wol_squad_lists,
-            fixed_alliance: saved.fixed_alliance,
-            lighting: saved.lighting,
-            pixel_conversion_bounds: saved.pixel_conversion_bounds,
-            map_width: saved.map_width,
-            map_height: saved.map_height,
-            mp_start_waypoints: saved.mp_start_waypoints,
-            waypoints: saved.waypoints,
-            start_slot_houses: saved.start_slot_houses,
-            victory_requested: saved.victory_requested,
-            defeat_requested: saved.defeat_requested,
-            scenario_side: saved.scenario_side,
-            game_options: saved.game_options,
-            shroud_growth_timer: saved.shroud_growth_timer,
-            fog_regrow_timer: saved.fog_regrow_timer,
-            tick: saved.tick,
-            total_sim_ms: saved.total_sim_ms,
-            binary_frame: saved.binary_frame,
-        }
-    }
-}
-
-impl serde::Serialize for ScenarioSession {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if self.has_custom_control_grants() {
-            return Err(serde::ser::Error::custom(
-                "the legacy scenario layout cannot store source-specific control grants",
-            ));
-        }
-        if !self.has_stock_rule_policy() {
-            return Err(serde::ser::Error::custom(
-                "the legacy scenario layout cannot store a non-stock rule policy",
-            ));
-        }
-        SavedScenarioSession::serialize(self, serializer)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ScenarioSession {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        SavedScenarioSession::deserialize(deserializer)
-    }
 }
 
 impl ScenarioSession {
@@ -1656,6 +1489,7 @@ impl ScenarioSession {
         if !lockstep {
             self.network_max_ahead_frames = None;
             self.network_command_timing = None;
+            self.control_authority = ControlAuthority::default();
         }
     }
 
@@ -1735,6 +1569,12 @@ impl ScenarioSession {
         source_houses: Vec<u8>,
         local_source: Option<i8>,
     ) {
+        // Grants bind to admitted source rows. Local perspective may change
+        // without modifying the shared roster that gives those rows meaning.
+        if self.has_custom_control_grants() && self.shared_house_sources != source_houses {
+            log::warn!("Cannot replace the source roster after control grants are admitted");
+            return;
+        }
         self.shared_house_sources = source_houses;
         self.view.shared_house_source = local_source;
     }
@@ -1757,20 +1597,54 @@ impl ScenarioSession {
             return Err(ControlGrantError::GrantsAlreadyAdmitted);
         }
 
-        let source_count = if self.shares_houses() {
+        self.control_authority = ControlAuthority::admit(
+            grants,
+            houses.len(),
+            self.control_grant_source_count(houses),
+            |source| self.control_grant_source_house(houses, source),
+        )?;
+        Ok(())
+    }
+
+    /// A save retains the admitted grants, but it cannot bypass the source
+    /// roster and stable House-slot checks used by a fresh launch.
+    pub(crate) fn validate_restored_control_grants(
+        &self,
+        houses: &Houses,
+    ) -> Result<(), ControlGrantError> {
+        if self.has_custom_control_grants() && !self.execution_topology().is_lockstep() {
+            return Err(ControlGrantError::NotLockstep);
+        }
+        self.control_authority.validate_restored(
+            houses.len(),
+            self.control_grant_source_count(houses),
+            self.shares_houses(),
+            |source| self.control_grant_source_house(houses, source),
+        )?;
+        if let (Some(width), Some(timing)) = (
+            self.admitted_control_source_count(),
+            self.network_command_timing(),
+        ) && let Some(source) = timing
+            .admitted_sources()
+            .find(|&source| usize::try_from(source).map_or(true, |source| source >= width))
+        {
+            return Err(ControlGrantError::InvalidSource(source));
+        }
+        Ok(())
+    }
+
+    fn control_grant_source_count(&self, houses: &Houses) -> usize {
+        if self.shares_houses() {
             self.shared_house_sources.len()
         } else {
             houses.len()
-        };
-        self.control_authority =
-            ControlAuthority::admit(grants, houses.len(), source_count, |source| {
-                let index = self.network_source_house(source)?;
-                let house = houses.order().get(index)?;
-                // The shared launch's observer roster comes from the same
-                // normalized slots as the source-to-House map.
-                (houses.get(house)?.is_human() && !self.observers.contains(house)).then_some(index)
-            })?;
-        Ok(())
+        }
+    }
+
+    fn control_grant_source_house(&self, houses: &Houses, source: i8) -> Option<usize> {
+        let index = self.network_source_house(source)?;
+        let house = houses.order().get(index)?;
+        (houses.get(house)?.is_human() && !self.observers.contains(house)).then_some(index)
     }
 
     pub(crate) fn control_scope_for_source(
@@ -1789,7 +1663,22 @@ impl ScenarioSession {
             .scope(source, primary, subject, houses)
     }
 
-    /// Explicit grants require a startup format that can restore their sources.
+    pub(crate) fn control_scope_table(
+        &self,
+        houses: &Houses,
+    ) -> Option<std::sync::Arc<crate::sim::control_authority::ControlScopeTable>> {
+        self.control_authority.scope_table(houses)
+    }
+
+    pub(crate) fn admitted_control_source_count(&self) -> Option<usize> {
+        self.control_authority.admitted_source_count()
+    }
+
+    pub(crate) fn control_grants(&self) -> &[ControlGrant] {
+        self.control_authority.grants()
+    }
+
+    /// The scenario admitted source-specific control grants.
     pub const fn has_custom_control_grants(&self) -> bool {
         self.control_authority.has_any_grants()
     }
@@ -2210,8 +2099,9 @@ impl ScenarioSession {
             b"scenario-rule-policy-v1".hash(hasher);
             s.rule_policy.hash(hasher);
         }
-        if s.has_custom_control_grants() {
-            b"scenario-control-grants-v1".hash(hasher);
+        if let Some(source_count) = s.admitted_control_source_count() {
+            b"scenario-control-grants-v2".hash(hasher);
+            source_count.hash(hasher);
             s.shared_house_sources.hash(hasher);
             s.control_authority.grants().hash(hasher);
         }
@@ -2543,6 +2433,142 @@ impl ScenarioSession {
 mod tests {
     use super::*;
     use crate::sim::world::Simulation;
+
+    fn shared_source_grant_fixture() -> (Simulation, InternedId) {
+        use crate::sim::control_authority::ControlGrantLevel;
+        use crate::sim::house_state::HouseState;
+
+        let mut sim = Simulation::new();
+        for (index, name, human) in [
+            (0, "Primary", true),
+            (1, "Alternate", true),
+            (2, "AI", false),
+        ] {
+            let owner = sim.intern(name);
+            sim.houses
+                .register(HouseState::new(owner, index, None, human, 0, 1));
+        }
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(0));
+        sim.install_control_grants(vec![ControlGrant {
+            source: 1,
+            house: 2,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+        let target = sim.interner.get("AI").unwrap();
+        (sim, target)
+    }
+
+    #[test]
+    fn switching_off_lockstep_clears_the_admitted_grants() {
+        let (mut sim, target) = shared_source_grant_fixture();
+        assert_eq!(
+            sim.control_scope_for_source(1, target),
+            ControlScope::FullControl
+        );
+
+        sim.install_session_mode(ScenarioGameMode::Skirmish);
+
+        assert!(!sim.session.has_custom_control_grants());
+        assert_eq!(sim.control_scope_for_source(1, target), ControlScope::None);
+        sim.session
+            .validate_restored_control_grants(&sim.houses)
+            .unwrap();
+    }
+
+    #[test]
+    fn admitted_grants_keep_the_source_roster_but_allow_local_view_changes() {
+        let (mut sim, target) = shared_source_grant_fixture();
+        let hash = sim.state_hash();
+
+        sim.session
+            .install_shared_house_sources(vec![0, 1], Some(1));
+        assert_eq!(sim.session.network_source_house(1), Some(0));
+        assert_eq!(sim.session.local_shared_house_source(), Some(0));
+        assert_eq!(
+            sim.control_scope_for_source(1, target),
+            ControlScope::FullControl
+        );
+
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(1));
+        assert_eq!(sim.session.local_shared_house_source(), Some(1));
+        assert_eq!(sim.state_hash(), hash);
+    }
+
+    #[test]
+    fn custom_authority_hash_distinguishes_the_admitted_source_roster_width() {
+        use crate::sim::control_authority::ControlGrantLevel;
+        use crate::sim::house_state::HouseState;
+
+        let mut narrow = Simulation::new();
+        for (index, (name, human)) in [("Player", true), ("Third", false)].into_iter().enumerate() {
+            let id = narrow.intern(name);
+            narrow.register_house(HouseState::new(id, index as u8, None, human, 0, 1));
+        }
+        narrow.install_session_mode(ScenarioGameMode::Lan);
+        let added = narrow.intern("Additional");
+        let mut wide = narrow.clone();
+        let late_house = HouseState::new(added, 2, None, true, 0, 1);
+        let grant = ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        };
+        narrow.install_control_grants(vec![grant]).unwrap();
+        narrow.register_house(late_house.clone());
+        wide.register_house(late_house);
+        wide.install_control_grants(vec![grant]).unwrap();
+
+        assert_eq!(
+            narrow.control_scope_for_source(2, added),
+            ControlScope::None
+        );
+        assert_eq!(
+            wide.control_scope_for_source(2, added),
+            ControlScope::OwnFull
+        );
+        assert_ne!(narrow.state_hash(), wide.state_hash());
+        narrow
+            .session
+            .validate_restored_control_grants(&narrow.houses)
+            .unwrap();
+    }
+
+    #[test]
+    fn custom_restore_rejects_a_timing_source_outside_the_authority_roster() {
+        use crate::sim::control_authority::ControlGrantLevel;
+        use crate::sim::house_state::HouseState;
+
+        let mut sim = Simulation::new();
+        for (index, (name, human)) in [("Player", true), ("Ally", true), ("Third", false)]
+            .into_iter()
+            .enumerate()
+        {
+            let id = sim.intern(name);
+            sim.register_house(HouseState::new(id, index as u8, None, human, 0, 1));
+        }
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.install_network_timing(10);
+        sim.network_command_queues()
+            .install_timing(0, std::num::NonZeroU8::MIN, [0, 1]);
+        sim.install_control_grants(vec![ControlGrant {
+            source: 0,
+            house: 2,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+        let mut serialized = serde_json::to_value(&sim.session).unwrap();
+        serialized["control_authority"]["delegated"]["source_count"] = 1.into();
+        let corrupted: ScenarioSession = serde_json::from_value(serialized).unwrap();
+
+        assert_eq!(
+            corrupted.validate_restored_control_grants(&sim.houses),
+            Err(ControlGrantError::InvalidSource(1)),
+        );
+    }
 
     #[test]
     fn campaign_startup_retains_literal_rows_counter_and_identity() {
@@ -3030,12 +3056,9 @@ mod tests {
         assert!(restored.session.free_radar);
         assert_eq!(restored.state_hash(), sim.state_hash());
 
-        // Self-describing formats may omit a newly added field; bincode saves
-        // have a separate mandatory version boundary and are not defaulted.
         let mut json = serde_json::to_value(&sim.session).unwrap();
         json.as_object_mut().unwrap().remove("free_radar");
-        let missing: ScenarioSession = serde_json::from_value(json).unwrap();
-        assert!(!missing.free_radar);
+        assert!(serde_json::from_value::<ScenarioSession>(json).is_err());
         let header = crate::sim::replay::NativeReplayHeader::new(0, "radar.map");
         assert!(
             !ScenarioDescriptor::from_native_replay_header(&header).free_radar,
@@ -3137,12 +3160,9 @@ mod tests {
         assert!(restored.session.harvester_immune);
         assert_eq!(restored.state_hash(), immune.state_hash());
 
-        // A snapshot written before the field existed loads with the bit
-        // clear, the retained cold-Scenario value of the native word.
         let mut json = serde_json::to_value(&immune.session).unwrap();
         json.as_object_mut().unwrap().remove("harvester_immune");
-        let missing: ScenarioSession = serde_json::from_value(json).unwrap();
-        assert!(!missing.harvester_immune);
+        assert!(serde_json::from_value::<ScenarioSession>(json).is_err());
     }
 }
 

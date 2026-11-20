@@ -492,16 +492,6 @@ impl MatchDiagnosticsState {
             return None;
         }
         let sim = &runtime.simulation;
-        if sim.session().has_custom_control_grants() {
-            const REFUSAL: &str =
-                "Replay recording is unavailable for matches with source-specific control grants.";
-            self.replay_log = None;
-            if self.replay_startup_refusal.as_deref() != Some(REFUSAL) {
-                log::warn!("{REFUSAL}");
-                self.replay_startup_refusal = Some(REFUSAL.to_owned());
-            }
-            return None;
-        }
         // Trainer changes are deliberately outside the ordinary command log.
         // The caller closes the valid prefix before the first such mutation;
         // never emit an apparently replayable continuation afterward.
@@ -836,7 +826,7 @@ mod tests {
     fn sample_log_with(seed: u64, map_name: &str, state_hash: u64) -> ReplayLog {
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
-            version: 71,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 15,
             seed,
             map_name: map_name.to_owned(),
@@ -908,7 +898,7 @@ mod tests {
     }
 
     #[test]
-    fn source_grants_prevent_an_automatic_replay_segment() {
+    fn source_grants_allow_an_automatic_replay_segment() {
         use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
         use crate::sim::house_state::HouseState;
         use crate::sim::scenario_session::ScenarioGameMode;
@@ -931,14 +921,9 @@ mod tests {
 
         let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
         let mut diagnostics = MatchDiagnosticsState::default();
-        assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
-        assert!(diagnostics.replay_log.is_none());
-        assert!(
-            diagnostics
-                .replay_startup_refusal
-                .as_deref()
-                .is_some_and(|reason| reason.contains("source-specific control grants"))
-        );
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_some());
+        assert!(diagnostics.replay_log.is_some());
+        assert!(diagnostics.replay_startup_refusal.is_none());
     }
 
     #[test]

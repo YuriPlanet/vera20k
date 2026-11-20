@@ -470,12 +470,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     };
     let rules = &runtime.resources.rules;
     let sim = &mut runtime.simulation;
-    if !sim.session().game_mode_nonzero()
-        || sim.session().fixed_alliance()
-        || !rules.general.allies_allowed
-        || !rules.general.ally_change_allowed
-        || !sim.session().game_options().ally_change_allowed
-    {
+    if !alliance_change_allowed(sim.session(), rules) {
         return;
     }
     let Some(index) = sim.houses().index_of(house) else {
@@ -488,6 +483,17 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
             house_index: index as i32,
         },
     );
+}
+
+fn alliance_change_allowed(
+    session: &crate::sim::scenario_session::ScenarioSession,
+    rules: &RuleSet,
+) -> bool {
+    session.rule_policy().allows_manual_alliances()
+        && !session.fixed_alliance()
+        && rules.general.allies_allowed
+        && rules.general.ally_change_allowed
+        && session.game_options().ally_change_allowed
 }
 
 /// `AllianceCommandClass::Execute 0x00536F20` → `0x007318F0`: toggle the
