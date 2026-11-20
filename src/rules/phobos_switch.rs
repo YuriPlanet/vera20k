@@ -29,36 +29,15 @@
 //! game, as it always has: the rest of its Phobos code still runs there
 //! without asking.
 
-use std::cell::Cell;
-
 use crate::rules::ares_switch::KeyReads;
 
-thread_local! {
-    /// Open [`phobos_read`] scopes on this thread.
-    static PHOBOS_READERS: Cell<u32> = const { Cell::new(0) };
-}
-
-/// Marks the reads made while it lives as a Phobos reader's.
-#[must_use = "the scope ends when the guard drops"]
-struct PhobosReads(());
-
-impl Drop for PhobosReads {
-    fn drop(&mut self) {
-        PHOBOS_READERS.set(PHOBOS_READERS.get() - 1);
-    }
-}
-
 /// One Phobos read written inline (a struct field), marked as a Phobos
-/// reader's, so its key turns Phobos on (see the module notes).
+/// reader's, so its key turns Phobos on (see the module notes). The scope is
+/// noted by the reader recorder both switches share
+/// (`ares_switch::phobos_reads`).
 pub(crate) fn phobos_read<T>(read: impl FnOnce() -> T) -> T {
-    PHOBOS_READERS.set(PHOBOS_READERS.get() + 1);
-    let _phobos = PhobosReads(());
+    let _phobos = crate::rules::ares_switch::phobos_reads();
     read()
-}
-
-/// Whether a [`phobos_read`] scope is open on this thread.
-pub(super) fn reading() -> bool {
-    PHOBOS_READERS.get() > 0
 }
 
 /// Whether Phobos plays in the game whose Rules projection made these reads:

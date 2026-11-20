@@ -621,6 +621,16 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// Make this the game the launch plays: its [`Self::ships_ares`] answer
+    /// becomes the launch's (`util::ares_launch`), which a thread outside
+    /// every reading scope loads its INIs by, as Ares.dll patches a whole
+    /// launch. Only a launch's entry point calls it, once the game's archives
+    /// are open; a manager opened for a test, a preview or a probe stays out
+    /// of it.
+    pub fn open_for_play(&self) {
+        crate::util::ares_launch::open_for_play(self.ships_ares());
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -689,24 +699,22 @@ impl AssetManager {
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
     ) -> Result<Self, AssetError> {
-        let manager = Self::open_startup_archives(
+        Self::open_startup_archives(
             ra2_dir,
             mod_dir,
             media_mode,
             Default::default(),
             &ArchiveNames::default(),
             StartupArchivePolicy::OptionalWarnings,
-        )?;
-        // The launch's `ares.mix` answer, as below; the Ares setting is left
-        // to the launch that chose one (`with_mod_and_ares`).
-        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
-        Ok(manager)
+        )
     }
 
     /// VERA: [`AssetManager::with_mod`] under the player's Ares setting
     /// (`util::ares_launch::AresSetting`), which can make the game an Ares
     /// game, or not, whatever its mod ships. `archive_names` selects names
     /// for the existing native archive slots without changing their order.
+    /// Opening a manager does not make it the launch's game: a launch says so
+    /// with [`Self::open_for_play`].
     pub fn with_mod_and_ares(
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
@@ -722,11 +730,6 @@ impl AssetManager {
             archive_names,
             StartupArchivePolicy::OptionalWarnings,
         )?;
-        // This is the game the launch plays: its `ares.mix` answer is the
-        // launch's (`util::ares_launch`), which a thread with no reading scope
-        // loads its INIs by.
-        crate::util::ares_launch::set_setting(ares_setting);
-        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
         if ares_setting == crate::util::ares_launch::AresSetting::On && !manager.ares_mix_mounted()
         {
             log::warn!(
@@ -2762,6 +2765,10 @@ mod tests {
         let on = open(None, AresSetting::On);
         assert!(on.ships_ares());
         assert_eq!(on.get_ref("ares.txt"), Some(&b"installed Ares"[..]));
+        // Opening an Ares game is not playing it: the launch's answer, which a
+        // thread outside every reading scope reads by, waits for a launch to
+        // publish its game (`open_for_play`).
+        assert!(!crate::util::ares_launch::game_ships_ares());
         let off = open(Some(mod_dir.path()), AresSetting::Off);
         assert!(!off.ships_ares() && !off.ares_mix_mounted());
         assert_eq!(off.get_ref("ares.txt"), None);

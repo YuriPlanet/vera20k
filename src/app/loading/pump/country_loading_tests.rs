@@ -14,7 +14,8 @@ fn fixture() -> (TestDirectory, ProcessAssets, LoadingSession) {
     dir.write("artmd.ini", b"[Movies]\n");
     dir.write("parent.pal", &[12; 768]);
     dir.write("child.pal", &[20; 768]);
-    let manager = AssetManager::from_loose_root_for_test(dir.path());
+    // An Ares game: its Rules are read the Ares way.
+    let manager = AssetManager::from_loose_root_with_ares_for_test(dir.path());
     let mut assets = ProcessAssets::new(
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         false,

@@ -233,10 +233,15 @@ pub(crate) fn load_process_sources(
         .with_resources(resources)
         .with_personal_rules(personal_rules)
         .with_ares_setting(ares_setting);
-    let (startup_rules, projection) = process
-        .initialize_sources_if_needed(&assets)
-        .map_err(anyhow::Error::msg)
-        .context("could not load the retail rules")?;
+    // Startup reads this game's INIs as its launch does
+    // (`rules::ares_switch::ares_way`); a caller that plays the game says so
+    // after (`AssetManager::open_for_play`).
+    let (startup_rules, projection) = {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(assets.ships_ares());
+        process.initialize_sources_if_needed(&assets)
+    }
+    .map_err(anyhow::Error::msg)
+    .context("could not load the retail rules")?;
     // Startup registers these before any match computes its agreement.
     let _ = assets.register_neutral_archives();
     process.return_from_loading(assets);
@@ -263,9 +268,9 @@ pub(crate) fn probe(
         ares_setting,
         true,
     )?;
-    let modes = crate::skirmish_modes::skirmish_modes_from_assets(
-        process.manager().context("retail sources missing")?,
-    )?;
+    let assets = process.manager().context("retail sources missing")?;
+    assets.open_for_play();
+    let modes = crate::skirmish_modes::skirmish_modes_from_assets(assets)?;
     let default_mode = crate::skirmish_modes::default_skirmish_mode(&modes)
         .context("the selected mode catalog has no Skirmish game mode")?;
     let rules_digest = process
