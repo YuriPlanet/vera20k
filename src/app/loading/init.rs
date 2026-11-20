@@ -2682,7 +2682,7 @@ pub(crate) fn load_map_initial_with_assets(
         // real TMP data — the shore tiler and zone classifier read these.
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-                asset_manager.get(name)
+                asset_manager.get_ref(name)
             });
 
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
