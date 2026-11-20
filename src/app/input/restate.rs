@@ -18,7 +18,8 @@
 
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::InGameMenuState;
-use crate::ui::shell::restate::{RestateButton, RestateControl, RestateLayout, restate_layout};
+use crate::ui::shell::page::PageEvent;
+use crate::ui::shell::restate::{self, RestateControl, RestateLayout, restate_layout};
 use winit::event::MouseButton;
 
 /// Scenario+0x125C, the section MISSIONMD is read under: the loaded
@@ -61,52 +62,36 @@ pub(crate) fn layout(state: &AppState) -> Option<RestateLayout> {
     ))
 }
 
-fn control_under_pointer(state: &AppState) -> Option<RestateControl> {
-    let layout = layout(state)?;
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    layout.control_at(x, y)
-}
-
-fn return_under(control: Option<RestateControl>) -> Option<RestateButton> {
-    (control == Some(RestateControl::Return)).then_some(RestateButton::Return)
+/// One pointer message on 0x10C (`down`: `None` moves).
+fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = layout(state) else {
+        return;
+    };
+    let event = super::dialog_page::shell_event(state, down);
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let events = super::dialog_page::route(
+        ui,
+        restate::DIALOG,
+        restate::spec,
+        |id| layout.rect(id),
+        super::dialog_page::no_sync,
+        event,
+    );
+    for event in super::dialog_page::play_cues(state, events) {
+        if event == PageEvent::Activated(RestateControl::Return.id()) {
+            // 0x0065F710 writes 0x423 to the result slot; State_Machine then
+            // clears state 9 (0x0048C97A).
+            App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+        }
+    }
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    let over = control_under_pointer(state);
-    let interaction = &mut state.match_state.match_presentation.restate;
-    interaction.hovered = over;
-    interaction.button.hovered = return_under(over);
+    pointer(state, None);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
-    }
-    let over = control_under_pointer(state);
-    state.match_state.match_presentation.restate.hovered = over;
-    let target = return_under(over);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .restate
-            .button
-            .press(target);
-        if target.is_some() {
-            // The common type-2 owner-draw button plays GUIMainButtonSound
-            // at button-down (0x0061376B).
-            App::play_main_menu_button_sound(state);
-        }
-    } else if state
-        .match_state
-        .match_presentation
-        .restate
-        .button
-        .release(target)
-        == Some(RestateButton::Return)
-    {
-        // 0x0065F710 writes 0x423 to the result slot; State_Machine then
-        // clears state 9 (0x0048C97A).
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+    if button == MouseButton::Left {
+        pointer(state, Some(pressed));
     }
 }

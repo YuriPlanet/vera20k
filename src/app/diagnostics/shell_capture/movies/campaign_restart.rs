@@ -855,7 +855,7 @@ impl RestartCapture {
                         set_window_pointer_to_rect_center(state, layout.ok);
                         App::handle_shell_message_box_mouse_down(state);
                         ensure!(
-                            state.frontend.shell_controller.pressed()
+                            box_pressed(state)
                                 == Some(crate::ui::shell::modal::control::OK),
                             "MapSelect OK press missed"
                         );
@@ -968,7 +968,7 @@ impl RestartCapture {
                         );
                         App::handle_shell_message_box_mouse_down(state);
                         ensure!(
-                            state.frontend.shell_controller.pressed()
+                            box_pressed(state)
                                 == Some(if answer_no {
                                     crate::ui::shell::modal::control::CANCEL
                                 } else {
@@ -1249,4 +1249,10 @@ impl RestartCapture {
             "objective_observations": self.objective_observations, "opening_view":self.opening_view,
             "map_select_failure":self.map_select_failure,"win_movie":self.win_movie})
     }
+}
+
+/// The message box control the shared controller holds captured.
+fn box_pressed(state: &AppState) -> Option<u16> {
+    let controller = &state.frontend.shell_controller;
+    crate::ui::shell::menu_page::pressed_id(controller, controller.top_id()?)
 }

@@ -9,13 +9,11 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::lan_shell::LanChatLine;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::page;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::page;
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0117);
 pub(crate) const CANCEL: u16 = 0x05C0;
@@ -28,13 +26,7 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: "GUI:Matching",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CANCEL,
-        dlu_top: 257,
-        csf_key: "GUI:Cancel",
-        tooltip_key: "STT:WOLMatchCancel",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(CANCEL, 257, "GUI:Cancel", "STT:WOLMatchCancel"),
 };
 
 /// The caption over the transcript (a left static, `0x50020000`).
@@ -114,40 +106,12 @@ impl WolQuickMatchLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
+        let place = Placer::on(scale, width, height);
+        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
+        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
         // Heading 0x694 is 106x11 DLU, centred by 0x0060B1D0 where the
         // family's sits and one row taller.
-        let heading = dlu_rect(426, 4, 106, 11);
-        let narrow = |mut title: RectPx| {
-            let w = heading.w + 1;
-            title.x += (title.w - w) / 2;
-            title.w = w;
-            title.h = heading.h + 1;
-            title
-        };
-        let title = narrow(
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title,
-        );
-        if scale.is_retail() {
-            page.title = narrow(page.title);
-        } else {
-            page.title = scale.scale_rect(title);
-        }
+        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 106, 11);
         let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
         Self {
             page,

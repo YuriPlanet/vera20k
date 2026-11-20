@@ -14,11 +14,9 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
+use crate::ui::shell::geom::{RectPx, ScaledRects, ShellScale, child_window, fit_window};
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
 };
@@ -38,13 +36,7 @@ pub const MAIN_MENU: u16 = 0x0686;
 pub const WOL_LOBBY_TITLE_KEY: &str = "GUI:CustomMatch";
 
 const fn button(id: u16, top: i32, key: &'static str, help: &'static str) -> MenuPageButtonSpec {
-    MenuPageButtonSpec {
-        id,
-        dlu_top: top,
-        csf_key: key,
-        tooltip_key: help,
-        result: None,
-    }
+    MenuPageButtonSpec::new(id, top, key, help)
 }
 
 /// RT_DIALOG `0x10E` as a family page: six top buttons (`0x00608CD0`, all
@@ -62,13 +54,7 @@ pub const WOL_WELCOME_PAGE: MenuPageSpec = MenuPageSpec {
         button(MY_INFORMATION, 228, "GUI:MyInformation", "STT:WOLWelcomeMyInformation"),
         button(COMMUNITY, 256, "GUI:YuriWebSite", "STT:MainButtonYuriWebSite"),
     ],
-    back: MenuPageButtonSpec {
-        id: MAIN_MENU,
-        dlu_top: 284,
-        csf_key: "GUI:MainMenu",
-        tooltip_key: "STT:WOLWelcomeBack",
-        result: Some(0),
-    },
+    back: MenuPageButtonSpec::new(MAIN_MENU, 284, "GUI:MainMenu", "STT:WOLWelcomeBack").returning(0),
 };
 
 /// The buttons in template order, which is their Z-order: a hit test finds
@@ -284,35 +270,18 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
     let mut page = menu_page::compute_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
     // The heading template is 108x11 DLU here (the family's is 108x10): the
     // relayout keeps the family place and the window is one row taller.
-    page.title.h = dlu_rect(423, 4, 108, 11).h + 1;
-    let template = RectPx::new(2, 355, 316, 12);
-    let status_help = status_line_rect(template, screen_w as i32, screen_h as i32);
-    with_children(page, status_help, ShellScale::RETAIL)
-}
-
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x10E`
-/// scaled to fit the window, keeping its shape. Identity at the base size.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    let mut page = menu_page::compute_responsive_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
-    // The heading override is authored 11 DLU tall, so it stretches from the
-    // overridden base rect rather than the family's 10.
-    page.title = scale.scale_rect(base.page.title);
-    with_children(page, scale.scale_rect(base.status_help), scale)
-}
-
-/// The left-side children at their template places, scaled with the page.
-fn with_children(page: MenuPageLayout, status_help: RectPx, scale: ShellScale) -> WolWelcomeLayout {
-    let px = |(x, y, w, h)| scale.scale_rect(child_window(x, y, w, h));
+    let place = Placer::new(screen_w as i32, screen_h as i32);
+    page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
+    // The left-side children stay at their template places.
+    let px = |(x, y, w, h)| child_window(x, y, w, h);
     let icon = |icon: &WolIcon| {
         let mut window = child_window(icon.dlu.0, icon.dlu.1, icon.dlu.2, icon.dlu.3);
         window.x += i32::from(icon.id == 0x079F);
-        (icon.file, scale.scale_rect(window))
+        (icon.file, window)
     };
     WolWelcomeLayout {
         page,
-        status_help,
+        status_help: place.at(AnchorRule::StatusLine, 2, 355, 316, 12),
         texts: WOL_TEXT_STATICS
             .iter()
             .map(|text| (*text, px(text.dlu)))
@@ -321,6 +290,28 @@ fn with_children(page: MenuPageLayout, status_help: RectPx, scale: ShellScale) -
         group_boxes: WOL_GROUP_BOXES.into_iter().map(px).collect(),
     }
 }
+
+/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x10E`
+/// scaled to fit the window, keeping its shape. Identity at the base size. The
+/// heading override is authored 11 DLU tall, so it stretches from the
+/// overridden base rect rather than the family's 10.
+pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
+    fit_window(screen_w, screen_h, compute_layout)
+}
+
+impl ScaledRects for WolTextStatic {
+    fn scaled_rects(&self, _: ShellScale) -> Self {
+        *self
+    }
+}
+
+vera20k_gui::scaled_rects!(WolWelcomeLayout {
+    page,
+    status_help,
+    texts,
+    icons,
+    group_boxes
+});
 
 impl WolWelcomeLayout {
     pub fn page_spec(&self) -> &'static MenuPageSpec {

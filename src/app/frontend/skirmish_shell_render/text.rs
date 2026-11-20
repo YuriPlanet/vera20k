@@ -366,30 +366,6 @@ pub(in crate::app::frontend) fn text_covered_by_overlay(rect: RectPx, overlays: 
         .any(|overlay| rects_intersect(rect, *overlay))
 }
 
-pub(super) fn push_combo_face_label_draw_with_color(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    rect: RectPx,
-    color: [f32; 3],
-    scale: ShellScale,
-) {
-    let text_rect = combo_face_text_draw_rect(rect, scale);
-    let fit_width = combo_face_text_fit_width(rect, scale);
-    fit_owner_draw_label(&state.renderer.bit_font, label, fit_width, |label| {
-        push_text_draw(
-            out,
-            state,
-            label,
-            rect_to_text_rect(text_rect),
-            color,
-            ShellAlign::V_CENTER,
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        );
-    });
-}
-
 /// The texts `0x102` holds for its heading, game type and map name statics
 /// (`0x006AEC86`, `0x006AEC8D`; again after Use Map, `0x006ADA99`); its SHOW
 /// completion hands them to [`crate::ui::skirmish_shell::SkirmishStatics`].
@@ -627,36 +603,6 @@ pub(crate) fn skirmish_labels(state: &AppState) -> crate::ui::skirmish_shell::pa
             localized_label(state, key, fallback)
         }),
     }
-}
-
-/// One open ComboDropWin row's caption, cut to the row less the scrollbar
-/// reserve (`0x0060DF38`), on the grid the highlight and the pointer use.
-pub(super) fn push_combo_dropdown_label(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    content: RectPx,
-    visible_row: usize,
-    scale: ShellScale,
-) {
-    if label.is_empty() {
-        return;
-    }
-    let rect = combo_dropdown_text_rect_for_current_renderer(content, visible_row, scale);
-    let fit_width = combo_dropdown_text_fit_width(content, scale);
-    fit_owner_draw_label(&state.renderer.bit_font, label, fit_width, |label| {
-        push_text_draw(
-            out,
-            state,
-            label,
-            rect,
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            SHELL_DROPDOWN_TEXT_DEPTH,
-            // The rows stretch, so their captions grow with them.
-            scale.factor(),
-        );
-    });
 }
 
 /// The right panel's button captions.

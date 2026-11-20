@@ -32,28 +32,10 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xBB),
     title_key: "GUI:Lobby",
     stacked: &[
-        MenuPageButtonSpec {
-            id: CREATE,
-            dlu_top: 122,
-            csf_key: "GUI:New",
-            tooltip_key: "STT:LobbyButtonNew",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: JOIN,
-            dlu_top: 149,
-            csf_key: "GUI:Join",
-            tooltip_key: "STT:LobbyButtonJoin",
-            result: None,
-        },
+        MenuPageButtonSpec::new(CREATE, 122, "GUI:New", "STT:LobbyButtonNew"),
+        MenuPageButtonSpec::new(JOIN, 149, "GUI:Join", "STT:LobbyButtonJoin"),
     ],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 346,
-        csf_key: "GUI:MainMenu",
-        tooltip_key: "STT:LobbyButtonBack",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(BACK, 346, "GUI:MainMenu", "STT:LobbyButtonBack"),
 };
 
 /// Executed6040B0 against BB's original resource control IDs.
@@ -84,10 +66,14 @@ pub(crate) fn spec() -> NodeSpec {
             .id(i32::from(id))
             .tooltip(tooltip_key(id).unwrap_or_default())
     };
+    // Each row's text 2 px in from both ends; the chat log shows no
+    // selection.
     let list = |id: u16| {
         node(NodeKind::List, id)
             .with(Prop::RowCount, Value::Int(0))
             .with(Prop::ListWindow, Value::Bool(true))
+            .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
+            .with(Prop::NoSelectionFill, Value::Bool(id == CHAT_LOG))
     };
     NodeSpec::new(NodeKind::Dialog)
         .children(crate::ui::shell::page::menu_buttons(&PAGE))
@@ -810,11 +796,7 @@ impl LanLobbyLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let page = if scale.is_retail() {
-            menu_page::compute_layout(&PAGE, width as u32, height as u32)
-        } else {
-            menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32)
-        };
+        let page = menu_page::compute_layout_for(&PAGE, scale, width, height);
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
         // Executed original BB child setup60AAB0/include60C540/relayout60C4A0
         // ->60C0C0; corpus lan_lobby.json. Ordinary controls retain template

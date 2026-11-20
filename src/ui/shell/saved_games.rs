@@ -4,7 +4,7 @@
 //! evidence dated 2026-09-12 for callers, text keys and active paint policy.
 
 use super::descriptor::DialogId;
-use super::geom::{self, RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale};
+use super::geom::{self, RectPx, ShellScale};
 use super::in_game_shell::{self, InGameShellLayout};
 use super::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{SavedSeedLayout, SavedSeedMode};
@@ -98,20 +98,14 @@ pub const LOAD_LIST_HELP_KEY: &str = "STT:LoadList";
 pub const LOAD_SAVED_GAME_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0x00B7),
     title_key: "GUI:LoadMissionMenu",
-    stacked: &[MenuPageButtonSpec {
-        id: LOAD_BUTTON,
-        dlu_top: ACTION_DLU.y,
-        csf_key: "GUI:Load",
-        tooltip_key: "STT:LoadButtonLoad",
-        result: Some(LOAD_BUTTON as i32),
-    }],
-    back: MenuPageButtonSpec {
-        id: BACK_BUTTON,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:LoadButtonBack",
-        result: Some(2),
-    },
+    stacked: &[MenuPageButtonSpec::new(
+        LOAD_BUTTON,
+        ACTION_DLU.y,
+        "GUI:Load",
+        "STT:LoadButtonLoad",
+    )
+    .returning(LOAD_BUTTON as i32)],
+    back: MenuPageButtonSpec::new(BACK_BUTTON, 346, "GUI:Back", "STT:LoadButtonBack").returning(2),
 };
 
 /// The main-menu `0xB7`: the page and the browser geometry its list, Load
@@ -175,14 +169,14 @@ pub fn main_menu_saved_game_layout(width: u32, height: u32) -> MainMenuSavedGame
 /// at the base size. Rows grow with the scale, so the list shows the rows it
 /// shows at 800x600.
 pub fn main_menu_saved_game_responsive_layout(width: u32, height: u32) -> MainMenuSavedGameLayout {
-    let scale = ShellScale::from_screen(width as i32, height as i32);
-    let base = main_menu_saved_game_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    MainMenuSavedGameLayout {
-        page: menu_page::compute_responsive_layout(&LOAD_SAVED_GAME_PAGE, width, height),
-        list_window: base.list_window.scaled_rects(scale),
-        browser: base.browser.scaled_rects(scale),
-    }
+    geom::fit_window(width, height, main_menu_saved_game_layout)
 }
+
+vera20k_gui::scaled_rects!(MainMenuSavedGameLayout {
+    page,
+    list_window,
+    browser
+});
 
 #[cfg(all(test, tests_ui))]
 mod tests {

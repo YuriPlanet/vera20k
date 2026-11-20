@@ -12,11 +12,10 @@ use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value}
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
 use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
+    RectPx, ShellScale, child_window, };
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 use crate::ui::wol_lobby::{AdmissionContext, LOBBY_PREFIX, WolChannel, WolLobbyRow, admit};
@@ -41,6 +40,8 @@ pub(crate) const OBSERVER_IMAGE: u16 = 0x075F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x0760;
 /// `0x115`'s name edit.
 pub(crate) const NAME: u16 = 0x0540;
+/// `0x115`'s caption static (no control id in gamemd; VERA's handle).
+pub(crate) const NICKNAME_CAPTION: u16 = 0xF001;
 
 /// The value statics in template order.
 pub(crate) const STATS: [u16; 5] = [WINS, LOSSES, DISCONNECTS, RANK, POINTS];
@@ -73,13 +74,7 @@ const fn button(
     csf_key: &'static str,
     tooltip_key: &'static str,
 ) -> MenuPageButtonSpec {
-    MenuPageButtonSpec {
-        id,
-        dlu_top,
-        csf_key,
-        tooltip_key,
-        result: None,
-    }
+    MenuPageButtonSpec::new(id, dlu_top, csf_key, tooltip_key)
 }
 
 /// RT_DIALOG `0x116`: Create Game, Join, Page, Add and Remove stacked by
@@ -335,13 +330,15 @@ const NAME_LIMIT: usize = crate::ui::wol_account::NAME_LIMIT;
 /// `0x115`'s widgets (`0x497`): the empty edit, which takes the focus, and
 /// Add created disabled.
 pub(crate) fn add_spec() -> NodeSpec {
+    use crate::ui::wol_page::{button, static_text};
     NodeSpec::new(NodeKind::Dialog)
-        .child(
-            NodeSpec::new(NodeKind::Button)
-                .id(ADD.into())
-                .with(Prop::Enabled, Value::Bool(false)),
-        )
-        .child(NodeSpec::new(NodeKind::Button).id(BACK.into()))
+        .child(static_text(
+            NICKNAME_CAPTION,
+            Some("GUI:BuddyNickname"),
+            ShellAlign::H_CENTER,
+        ))
+        .child(button(ADD, "GUI:AddBuddy").with(Prop::Enabled, Value::Bool(false)))
+        .child(button(BACK, "GUI:Back"))
         .child(
             NodeSpec::new(NodeKind::Edit)
                 .id(NAME.into())
@@ -579,31 +576,11 @@ impl WolBuddyLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
+        let place = Placer::on(scale, width, height);
+        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
+        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
         // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        let mut title =
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-        title.h = dlu_rect(426, 4, 108, 11).h + 1;
-        if scale.is_retail() {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
+        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
         let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
         Self {
             page,

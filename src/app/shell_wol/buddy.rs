@@ -440,8 +440,11 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
             if let Some(dialog) = page_mut(state) {
                 dialog.ui.add = Some(WolAddBuddy);
             }
-            // 0x115 runs over 0x116, which keeps its list.
-            state.frontend.shell_controller.push(ADD_DIALOG, false);
+            // 0x115 runs over 0x116, which keeps its list but loses the
+            // pointer: no hover, so no status help, while the box is up.
+            let controller = &mut state.frontend.shell_controller;
+            controller.drop_pointer_in(DIALOG);
+            controller.push(ADD_DIALOG, false);
             if sync_add(state).is_some() {
                 leaf::focus(state, ADD_DIALOG, Some(NAME));
             }

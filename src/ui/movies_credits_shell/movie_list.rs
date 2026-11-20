@@ -12,9 +12,7 @@ use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, dlu_rect,
-};
+use crate::ui::shell::geom::{RectPx, dlu_rect, fit_window};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
@@ -32,20 +30,13 @@ pub const MOVIE_LIST_PROMPT_KEY: &str = "GUI:SelectMovie";
 pub const MOVIE_LIST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: MOVIE_LIST_DIALOG,
     title_key: "GUI:Blank",
-    stacked: &[MenuPageButtonSpec {
-        id: PLAY_MOVIE_CONTROL,
-        dlu_top: 122,
-        csf_key: "GUI:PlayMovie",
-        tooltip_key: "GUI:PlayMovie",
-        result: None,
-    }],
-    back: MenuPageButtonSpec {
-        id: 0x0686,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:MsnDltButtonBack",
-        result: Some(-1),
-    },
+    stacked: &[MenuPageButtonSpec::new(
+        PLAY_MOVIE_CONTROL,
+        122,
+        "GUI:PlayMovie",
+        "GUI:PlayMovie",
+    )],
+    back: MenuPageButtonSpec::new(0x0686, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
 
 /// Dialog `0x129` geometry. The list `0x744` and prompt `0x40C` are in none
@@ -72,14 +63,10 @@ pub fn compute_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayou
 /// base size. Rows grow with the scale, so the list shows the rows it shows at
 /// 800x600.
 pub fn compute_responsive_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_movie_list_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    MovieListLayout {
-        page: menu_page::compute_responsive_layout(&MOVIE_LIST_PAGE, screen_w, screen_h),
-        list: base.list.scaled_rects(scale),
-        prompt: base.prompt.scaled_rects(scale),
-    }
+    fit_window(screen_w, screen_h, compute_movie_list_layout)
 }
+
+vera20k_gui::scaled_rects!(MovieListLayout { page, list, prompt });
 
 /// The list box (subclass `0x0061A948`) as a `List` node under `parent`:
 /// window `rect`, `rows` the page paints itself, `selected` and `top`.

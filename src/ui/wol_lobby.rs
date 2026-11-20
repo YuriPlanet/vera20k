@@ -27,8 +27,8 @@ use crate::ui::lan_shell::{
     LanChatState, PlayerNameMatch, apply_chat_length_limit, saved_player_name_matches,
 };
 use crate::ui::shell::descriptor::{AnchorRule, DialogId};
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
-use crate::ui::shell::layout::{anchor_rect, status_line_rect};
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
@@ -86,13 +86,7 @@ const fn button(
     csf_key: &'static str,
     tooltip_key: &'static str,
 ) -> MenuPageButtonSpec {
-    MenuPageButtonSpec {
-        id,
-        dlu_top,
-        csf_key,
-        tooltip_key,
-        result: None,
-    }
+    MenuPageButtonSpec::new(id, dlu_top, csf_key, tooltip_key)
 }
 
 /// The right column: eight top-list buttons (`0x0060B000`) and Back
@@ -307,37 +301,19 @@ impl WolLobbyLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale, spec: &MenuPageSpec) -> Self {
-        let mut page = if scale.is_retail() {
-            menu_page::compute_layout(spec, width as u32, height as u32)
-        } else {
-            menu_page::compute_responsive_layout(spec, width as u32, height as u32)
-        };
+        let mut page = menu_page::compute_layout_for(spec, scale, width, height);
         // Executed relayout 0x60AAB0 -> 0x60C540 -> 0x60C4A0 -> 0x60C0C0
         // (tools/storage_oracle/wol_shell.json): the body keeps its template
         // windows at every size; heading, lobby list and status line anchor.
-        let (aw, ah) = if scale.is_retail() {
-            (width, height)
-        } else {
-            (SHELL_BASE_W, SHELL_BASE_H)
-        };
-        page.title = scale.scale_rect(anchor_rect(
-            RIGHT_PANEL_CHILD_ANCHOR,
-            RectPx::new(423, 4, 108, 11),
-            aw,
-            ah,
-        ));
-        page.status_help = scale.scale_rect(status_line_rect(RectPx::new(1, 351, 316, 12), aw, ah));
+        let place = Placer::on(scale, width, height);
+        page.title = place.at(RIGHT_PANEL_CHILD_ANCHOR, 423, 4, 108, 11);
+        page.status_help = place.at(AnchorRule::StatusLine, 1, 351, 316, 12);
         // The body's executed windows (identical at every size); the chat
         // NewEdit is inset +1/-2 by 0x00614CCF.
-        let px = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
+        let px = |x, y, w, h| place.px(x, y, w, h);
         Self {
             page,
-            lobbies: scale.scale_rect(anchor_rect(
-                RIGHT_PANEL_CHILD_ANCHOR,
-                RectPx::new(428, 22, 103, 73),
-                aw,
-                ah,
-            )),
+            lobbies: place.at(RIGHT_PANEL_CHILD_ANCHOR, 428, 22, 103, 73),
             games: px(11, 57, 301, 307),
             players: px(321, 57, 301, 307),
             chat_log: px(11, 369, 611, 160),

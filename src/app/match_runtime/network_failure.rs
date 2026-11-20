@@ -2,13 +2,15 @@
 //! Simulation owns the suspended frame; this owner keeps only its local input
 //! result. The shared shell controller owns button capture and keyboard routing.
 
+use crate::app::input::dialog_page;
 use crate::app::{App, AppState};
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::{DialogController, ShellKey};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::layout::LaidOutControl;
 use crate::ui::shell::modal::{body_ok_layout_in, control};
+use crate::ui::shell::page::PageEvent;
+use vera20k_gui::{InputEvent, NodeKind, NodeSpec};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
@@ -142,14 +144,23 @@ impl NetworkFailureModal {
         self.acknowledged |= controller.on_key(key);
     }
 
-    fn mouse_up(
+    /// One pointer message on the box: OK acknowledges once released over
+    /// its own press.
+    fn pointer(
         &mut self,
         controller: &mut DialogController,
-        x: i32,
-        y: i32,
-        feed: &[LaidOutControl],
-    ) {
-        self.acknowledged |= controller.on_pointer_up(x, y, feed) == Some(control::OK);
+        event: InputEvent,
+        ok: RectPx,
+    ) -> Vec<PageEvent> {
+        let nodes = || {
+            NodeSpec::new(NodeKind::Dialog)
+                .child(NodeSpec::new(NodeKind::Button).id(control::OK.into()))
+        };
+        let rect = |id| (id == control::OK).then_some(ok);
+        let events =
+            dialog_page::route(controller, DIALOG, nodes, rect, dialog_page::no_sync, event);
+        self.acknowledged |= events.contains(&PageEvent::Activated(control::OK));
+        events
     }
 }
 
@@ -213,11 +224,14 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
 }
 
 /// The box keeps gamemd's centring on the match's frame.
-fn button_feed(width: i32, height: i32) -> [LaidOutControl; 1] {
-    [LaidOutControl {
-        id: control::OK,
-        rect: body_ok_layout_in(RectPx::new(0, 0, width, height)).ok,
-    }]
+fn ok_rect(width: i32, height: i32) -> RectPx {
+    body_ok_layout_in(RectPx::new(0, 0, width, height)).ok
+}
+
+/// Whether OK shows pushed.
+pub(crate) fn ok_pressed(state: &AppState) -> bool {
+    let controller = &state.frontend.shell_controller;
+    controller.top_id() == Some(DIALOG) && dialog_page::pressed(controller, control::OK)
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
@@ -238,33 +252,30 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     }
 }
 
-pub(crate) fn cursor_moved(state: &mut AppState) {
+fn pointer(state: &mut AppState, down: Option<bool>) {
     show(state);
-    let feed = button_feed(state.render_width() as i32, state.render_height() as i32);
+    let ok = ok_rect(state.render_width() as i32, state.render_height() as i32);
     let (x, y) = state.match_state.input.cursor_px();
-    state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+    let event = dialog_page::event_at(x, y, down);
+    let events = state
+        .match_state
+        .network_failure
+        .as_mut()
+        .expect("shown modal")
+        .pointer(&mut state.frontend.shell_controller, event, ok);
+    // The box's owner-draw OK plays GUIMainButtonSound (0x0061376B).
+    dialog_page::play_cues(state, events);
+}
+
+pub(crate) fn cursor_moved(state: &mut AppState) {
+    pointer(state, None);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    show(state);
-    if button != MouseButton::Left {
-        return;
-    }
-    let feed = button_feed(state.render_width() as i32, state.render_height() as i32);
-    let (x, y) = state.match_state.input.cursor_px();
-    if pressed {
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // The box's owner-draw OK plays GUIMainButtonSound (0x0061376B).
-        if state.frontend.shell_controller.pressed().is_some() {
-            App::play_main_menu_button_sound(state);
-        }
+    if button == MouseButton::Left {
+        pointer(state, Some(pressed));
     } else {
-        state
-            .match_state
-            .network_failure
-            .as_mut()
-            .expect("shown modal")
-            .mouse_up(&mut state.frontend.shell_controller, x, y, &feed);
+        show(state);
     }
 }
 
@@ -277,16 +288,20 @@ mod tests {
         let mut controller = DialogController::default();
         controller.ensure_active(DIALOG, true);
         let mut modal = NetworkFailureModal::default();
-        let feed = button_feed(800, 600);
-        let rect = feed[0].rect;
+        let rect = ok_rect(800, 600);
         let (x, y) = (rect.x + 1, rect.y + 1);
-        modal.mouse_up(&mut controller, x, y, &feed);
+        let mut send = |modal: &mut NetworkFailureModal, x, y, down| {
+            modal.pointer(&mut controller, dialog_page::event_at(x, y, down), rect);
+        };
+        send(&mut modal, x, y, None);
+        send(&mut modal, x, y, Some(false));
         assert!(!modal.acknowledged);
-        controller.on_pointer_down(x, y, &feed);
-        modal.mouse_up(&mut controller, 0, 0, &feed);
+        send(&mut modal, x, y, Some(true));
+        send(&mut modal, 0, 0, Some(false));
         assert!(!modal.acknowledged);
-        controller.on_pointer_down(x, y, &feed);
-        modal.mouse_up(&mut controller, x, y, &feed);
+        send(&mut modal, x, y, None);
+        send(&mut modal, x, y, Some(true));
+        send(&mut modal, x, y, Some(false));
         assert!(modal.acknowledged);
     }
 

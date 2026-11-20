@@ -520,7 +520,8 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     if let Some(dialog) = top(state)
         && sync(state, dialog).is_some()
     {
-        leaf::pointer(state, Pointer::Move);
+        // The boxes' hit tests leave the status line under them alone.
+        leaf::pointer_quiet(state, Pointer::Move);
     }
 }
 
@@ -535,7 +536,7 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
         return;
     }
     let before = leaf::focused(state);
-    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    let events = leaf::pointer_quiet(state, if pressed { Pointer::Down } else { Pointer::Up });
     if dialog == PAGE_DIALOG {
         let after = leaf::focused(state);
         let actions = with_last(state, |page, c, last| {

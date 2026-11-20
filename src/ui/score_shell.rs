@@ -20,9 +20,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, child_window,
-};
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window, fit_window};
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
@@ -39,13 +37,13 @@ pub const SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     // The template caption; the proc replaces it (`0x005C9BEC..0x005C9C34`).
     title_key: "GUI:MultiplayerScore",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CONTINUE_BUTTON,
-        dlu_top: 326,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:MPScoreButtonContinue",
-        result: Some(1),
-    },
+    back: MenuPageButtonSpec::new(
+        CONTINUE_BUTTON,
+        326,
+        "GUI:Continue",
+        "STT:MPScoreButtonContinue",
+    )
+    .returning(1),
 };
 
 /// Continue and VERA's paging pair as nodes; only Continue has help.
@@ -285,29 +283,20 @@ impl ScoreTableLayout {
     }
 }
 
-impl ScaledRects for ScoreRowRects {
-    fn scaled_rects(&self, scale: ShellScale) -> Self {
-        Self {
-            name: self.name.scaled_rects(scale),
-            kills: self.kills.scaled_rects(scale),
-            losses: self.losses.scaled_rects(scale),
-            built: self.built.scaled_rects(scale),
-            score: self.score.scaled_rects(scale),
-        }
-    }
-}
-
-impl ScaledRects for ScoreTableLayout {
-    fn scaled_rects(&self, scale: ShellScale) -> Self {
-        Self {
-            game_label: self.game_label.scaled_rects(scale),
-            time_label: self.time_label.scaled_rects(scale),
-            header: self.header.scaled_rects(scale),
-            rows: self.rows.scaled_rects(scale),
-            bands: self.bands.scaled_rects(scale),
-        }
-    }
-}
+vera20k_gui::scaled_rects!(ScoreRowRects {
+    name,
+    kills,
+    losses,
+    built,
+    score
+});
+vera20k_gui::scaled_rects!(ScoreTableLayout {
+    game_label,
+    time_label,
+    header,
+    rows,
+    bands
+});
 
 /// Dialog `0x108` at one screen size: the right panel, heading, monitor,
 /// status line and Continue follow the family rules; the table does not move.
@@ -317,18 +306,13 @@ pub struct ScoreLayout {
     pub table: ScoreTableLayout,
 }
 
-/// `0x695` on this dialog is 303x14 DLU; the menu pages' is 303x12.
-fn score_status_help(screen_w: u32, screen_h: u32, scale: ShellScale) -> RectPx {
-    let window = RectPx::new(2, 353, 303, 14);
-    if scale.is_retail() {
-        return status_line_rect(window, screen_w as i32, screen_h as i32);
-    }
-    scale.scale_rect(status_line_rect(window, SHELL_BASE_W, SHELL_BASE_H))
-}
+vera20k_gui::scaled_rects!(ScoreLayout { page, table });
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
     let mut page = menu_page::compute_layout(&SCORE_PAGE, screen_w, screen_h);
-    page.status_help = score_status_help(screen_w, screen_h, page.scale);
+    // `0x695` on this dialog is 303x14 DLU; the menu pages' is 303x12.
+    let status = RectPx::new(2, 353, 303, 14);
+    page.status_help = status_line_rect(status, screen_w as i32, screen_h as i32);
     ScoreLayout {
         page,
         table: ScoreTableLayout::template(),
@@ -340,14 +324,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
 /// table's cells, shaded rectangle, band windows and bars all scale with the
 /// page; each bar stays centred in its band window.
 pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let mut page = menu_page::compute_responsive_layout(&SCORE_PAGE, screen_w, screen_h);
-    page.status_help = score_status_help(screen_w, screen_h, scale);
-    let base = ScoreTableLayout::template();
-    ScoreLayout {
-        page,
-        table: base.scaled_rects(scale),
-    }
+    fit_window(screen_w, screen_h, compute_layout)
 }
 
 impl ScoreLayout {

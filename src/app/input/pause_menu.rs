@@ -13,22 +13,20 @@ use crate::ui::main_menu_dialogs::options::{
     Category, LauncherOptionsEvent, LauncherOptionsPacked, LauncherParentResult, LauncherTrackbarId,
 };
 use crate::ui::pause_menu::InGameMenuState;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::page::PageEvent;
 use crate::ui::shell::pause_menu::{
-    InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
-    pause_menu_layout,
+    self, InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
+    PauseMenuTemplate, pause_menu_layout,
 };
-use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress};
 use crate::ui::skirmish_shell::SavedSeedMode;
 use winit::event::MouseButton;
 
-/// FF's two trackbars as the dialog holds them between init and Resume.
+/// FF's two trackbars' positions as the dialog holds them between init and
+/// Resume; the trackbars report each move here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct InternetPauseControls {
     /// Trackbar values in [`InternetSlider`] order.
     pub(crate) positions: [i32; 2],
-    pub(crate) hold: Option<TrackbarHold<InternetSlider>>,
-    pub(crate) hovered: Option<InternetSlider>,
 }
 
 impl InternetPauseControls {
@@ -42,7 +40,6 @@ impl InternetPauseControls {
                     crate::ui::shell::game_speed::SpeedContext::Network.visual_position(game_speed),
                 ),
             ],
-            ..Self::default()
         }
     }
 
@@ -496,7 +493,8 @@ fn close_page(state: &mut AppState, apply_speed: bool) {
 }
 
 pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
-    let interaction = state.match_state.match_presentation.pause_menu_interaction;
+    let ui = &state.match_state.match_presentation.dialog_ui;
+    let template = current_template(state);
     // Native4F17D9..4F1832 applies559C20 eligibility to Load/Delete only, and
     // only in modes0/5; BBA/FF have neither control.
     let has_saves = state.match_state.match_presentation.pause_menu_has_saves;
@@ -507,7 +505,7 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
         .as_ref()
         .is_some_and(|page| page.dialog.category() == Category::GameControls);
     PauseMenuButton::ALL.map(|button| PauseMenuButtonState {
-        pressed: interaction.is_pressed(button),
+        pressed: super::dialog_page::pressed(ui, template.id(button)),
         // C5 timer highlighting is separate from pointer hover. VERA lights
         // Game Controls while its page shows, as a tab.
         highlighted: button == PauseMenuButton::GameControls && controls_page,
@@ -530,113 +528,89 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<LauncherStatusHelp> {
     {
         return Some(help);
     }
-    if let Some(slider) = presentation.internet_pause.hovered {
+    // A held trackbar keeps the help it showed at the press: FF's pointer
+    // moves go only to it until the release.
+    let ui = &presentation.dialog_ui;
+    let hovered =
+        super::dialog_page::held_trackbar(ui).or_else(|| super::dialog_page::hovered(ui))?;
+    if let Some(slider) = InternetSlider::from_id(hovered) {
         return Some(LauncherStatusHelp::Csf(slider.help()));
     }
-    let hovered = presentation.pause_menu_interaction.hovered?;
-    if hovered == PauseMenuButton::Keyboard {
-        return Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP));
+    match template.button(hovered)? {
+        PauseMenuButton::Keyboard => Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP)),
+        button => template.control(button)?.help.map(LauncherStatusHelp::Csf),
     }
-    template.control(hovered)?.help.map(LauncherStatusHelp::Csf)
 }
 
-fn hit(state: &AppState, layout: &PauseMenuLayout) -> Option<PauseMenuButton> {
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+/// One pointer message on the menu (`down`: `None` moves). The Options page
+/// sees it first; a disabled button neither hovers nor takes a press.
+fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = current_layout(state) else {
+        return;
+    };
+    if options_page_pointer(state, down) {
+        return;
+    }
     let states = button_states(state);
-    layout
-        .buttons()
-        .find(|(button, rect)| states[*button as usize].enabled && rect.contains(x, y))
-        .map(|(button, _)| button)
+    let template = layout.template;
+    let positions = state
+        .match_state
+        .match_presentation
+        .internet_pause
+        .positions;
+    let event = super::dialog_page::shell_event(state, down);
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let rect = |id| {
+        let enabled = template
+            .button(id)
+            .is_none_or(|button| states[button as usize].enabled);
+        layout.rect(id).filter(|_| enabled)
+    };
+    let events = super::dialog_page::route(
+        ui,
+        template.dialog(),
+        || pause_menu::spec(template, positions, IN_GAME_KEYBOARD_HELP),
+        rect,
+        super::dialog_page::no_sync,
+        event,
+    );
+    // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
+    // 0x0061374B..0x00613771).
+    for event in super::dialog_page::play_cues(state, events) {
+        match event {
+            PageEvent::Activated(id) => {
+                if let Some(button) = template.button(id) {
+                    activate(state, button);
+                }
+            }
+            // A moved trackbar's notification sets its right static.
+            PageEvent::Slid {
+                id,
+                value,
+                final_: false,
+            } => {
+                if let Some(slider) = InternetSlider::from_id(id)
+                    && state
+                        .match_state
+                        .match_presentation
+                        .internet_pause
+                        .set(slider, value)
+                {
+                    App::play_skirmish_shell_generic_click_sound(state);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    let Some(layout) = current_layout(state) else {
-        return;
-    };
-    if options_page_pointer(state, None) {
-        return;
-    }
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    let over = hit(state, &layout);
-    let pause = &mut state.match_state.match_presentation.internet_pause;
-    // A held trackbar owns the capture (`0x0061E4DF`): nothing else sees the
-    // pointer until release.
-    if let Some(hold) = pause.hold {
-        let changed = match (hold.dragging, layout.internet) {
-            (true, Some(controls)) => {
-                let rect = controls.sliders[hold.id as usize];
-                let value = hold.id.range().value_at_in(x, rect, ShellScale::RETAIL);
-                pause.set(hold.id, value)
-            }
-            _ => false,
-        };
-        if changed {
-            App::play_skirmish_shell_generic_click_sound(state);
-        }
-        return;
-    }
-    pause.hovered = layout.internet.and_then(|c| c.slider_at(x, y));
-    state
-        .match_state
-        .match_presentation
-        .pause_menu_interaction
-        .hovered = over;
+    pointer(state, None);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
-    }
-    let Some(layout) = current_layout(state) else {
-        return;
-    };
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    if options_page_pointer(state, Some(pressed)) {
-        return;
-    }
-    if !pressed
-        && state
-            .match_state
-            .match_presentation
-            .internet_pause
-            .hold
-            .take()
-            .is_some()
-    {
-        return;
-    }
-    if pressed && let Some(controls) = layout.internet {
-        if let Some(slider) = controls.slider_at(x, y) {
-            let rect = controls.sliders[slider as usize];
-            let pause = &mut state.match_state.match_presentation.internet_pause;
-            let press = slider.range().press_in(
-                pause.positions[slider as usize],
-                x,
-                y,
-                rect,
-                ShellScale::RETAIL,
-            );
-            pause.hold = press.hold(slider);
-            if let TrackbarPress::Jump(value) = press
-                && pause.set(slider, value)
-            {
-                App::play_skirmish_shell_generic_click_sound(state);
-            }
-            return;
-        }
-    }
-    let over = hit(state, &layout);
-    let interaction = &mut state.match_state.match_presentation.pause_menu_interaction;
-    interaction.hovered = over;
-    if pressed {
-        interaction.press(over);
-        if over.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
-            // 0x0061374B..0x00613771).
-            App::play_main_menu_button_sound(state);
-        }
-    } else if let Some(button) = interaction.release(over) {
-        activate(state, button);
+    if button == MouseButton::Left {
+        pointer(state, Some(pressed));
     }
 }
 

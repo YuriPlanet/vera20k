@@ -7,7 +7,7 @@
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale};
+use crate::ui::shell::geom::{RectPx, fit_window};
 use crate::ui::shell::list::ROW_HEIGHT;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
@@ -31,42 +31,17 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: TITLE_KEY,
     stacked: &[
-        MenuPageButtonSpec {
-            id: USE,
-            dlu_top: 122,
-            csf_key: "VERA:ModUse",
-            tooltip_key: "VERA:ModUseHelp",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: OPEN_FOLDER,
-            dlu_top: 149,
-            csf_key: "VERA:ModsOpenFolder",
-            tooltip_key: "VERA:ModsOpenFolderHelp",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: CHECK,
-            dlu_top: 176,
-            csf_key: "VERA:ModCheck",
-            tooltip_key: "VERA:ModCheckHelp",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: NEW,
-            dlu_top: 203,
-            csf_key: "VERA:ModNew",
-            tooltip_key: "VERA:ModNewHelp",
-            result: None,
-        },
+        MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+        MenuPageButtonSpec::new(
+            OPEN_FOLDER,
+            149,
+            "VERA:ModsOpenFolder",
+            "VERA:ModsOpenFolderHelp",
+        ),
+        MenuPageButtonSpec::new(CHECK, 176, "VERA:ModCheck", "VERA:ModCheckHelp"),
+        MenuPageButtonSpec::new(NEW, 203, "VERA:ModNew", "VERA:ModNewHelp"),
     ],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:MsnDltButtonBack",
-        result: Some(-1),
-    },
+    back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
 
 /// Where the page's own parts go, left of the right panel.
@@ -138,20 +113,20 @@ pub(crate) fn compute_layout(screen_w: u32, screen_h: u32) -> ModsLayout {
 /// fit the window, keeping its shape. Rows grow with the scale, so the list
 /// shows the rows it shows at 800x600.
 pub(crate) fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ModsLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    ModsLayout {
-        page: menu_page::compute_responsive_layout(&PAGE, screen_w, screen_h),
-        prompt: base.prompt.scaled_rects(scale),
-        list: base.list.scaled_rects(scale),
-        details: base.details.scaled_rects(scale),
-        name: base.name.scaled_rects(scale),
-        state: base.state.scaled_rects(scale),
-        author: base.author.scaled_rects(scale),
-        about: base.about.scaled_rects(scale),
-        terms: base.terms.scaled_rects(scale),
-    }
+    fit_window(screen_w, screen_h, compute_layout)
 }
+
+vera20k_gui::scaled_rects!(ModsLayout {
+    page,
+    prompt,
+    list,
+    details,
+    name,
+    state,
+    author,
+    about,
+    terms
+});
 
 #[cfg(all(test, tests_ui))]
 mod tests {

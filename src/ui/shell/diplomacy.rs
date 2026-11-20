@@ -12,9 +12,14 @@
 //! simulation; this module owns only control identity, geometry and the
 //! pointer's help target.
 
-use super::button::{CheckboxFace, ShellButtonInteraction};
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+
+use super::button::CheckboxFace;
+use super::descriptor::DialogId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
+
+pub const DIALOG: DialogId = DialogId(0x73);
 
 /// Physical row slots. VERA pages the same slots when more Houses are shown.
 pub const DIPLOMACY_ROWS: usize = 8;
@@ -112,24 +117,6 @@ const TAUNTS_DLU: RectPx = RectPx::new(69, 232, 227, 15);
 const MODE_NAME_DLU: RectPx = RectPx::new(69, 247, 263, 10);
 const MAP_NAME_DLU: RectPx = RectPx::new(69, 262, 263, 10);
 
-/// The dialog's Return button and VERA paging buttons.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiplomacyButton {
-    /// 0x423: the proc kills its timer and ends the modal (0x006581AD).
-    Return,
-    PreviousPage,
-    NextPage,
-}
-
-/// Pointer state while 0x73 is open: Return's capture and the child whose
-/// help the status line shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct DiplomacyInteraction {
-    pub button: ShellButtonInteraction<DiplomacyButton>,
-    pub hovered: Option<DiplomacyControl>,
-    pub page: super::paging::RowPage,
-}
-
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiplomacyControl {
@@ -167,6 +154,29 @@ impl DiplomacyControl {
             | Self::PreviousPage
             | Self::NextPage => None,
         }
+    }
+
+    /// Every child in template (Z) order, as the common handler's
+    /// `ChildWindowFromPointEx(.., CWP_SKIPINVISIBLE)` (0x00622D24) finds
+    /// them; VERA's paging buttons follow Return.
+    fn all() -> impl Iterator<Item = Self> {
+        [Self::Return, Self::PreviousPage, Self::NextPage]
+            .into_iter()
+            .chain((0..DIPLOMACY_ROWS).flat_map(|row| {
+                [
+                    Self::Insignia(row),
+                    Self::Name(row),
+                    Self::Kills(row),
+                    Self::Allies(row),
+                    Self::Chat(row),
+                ]
+            }))
+            .chain(DiplomacyHeader::ALL.map(Self::Header))
+            .chain([Self::ModeName, Self::MapName, Self::Taunts])
+    }
+
+    pub fn from_id(id: u16) -> Option<Self> {
+        Self::all().find(|control| control.id() == id)
     }
 
     /// Native control id.
@@ -332,47 +342,83 @@ pub struct DiplomacyView {
     pub map_name: String,
 }
 
+/// Every child: Return and the paging buttons, the boxes (taking their
+/// press, `0x00616700`; the row boxes anywhere in their window) and the
+/// statics, each with its status help. Disabled children still hover.
+pub fn spec() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog).children(DiplomacyControl::all().map(|control| {
+        let kind = match control {
+            DiplomacyControl::Return
+            | DiplomacyControl::PreviousPage
+            | DiplomacyControl::NextPage => NodeKind::Button,
+            DiplomacyControl::Allies(_) | DiplomacyControl::Chat(_) | DiplomacyControl::Taunts => {
+                NodeKind::Checkbox
+            }
+            _ => NodeKind::Text,
+        };
+        let node = NodeSpec::new(kind)
+            .id(control.id().into())
+            .tooltip(control.help_key().unwrap_or_default());
+        match kind {
+            NodeKind::Checkbox => node.with(Prop::ActivateOnPress, Value::Bool(true)),
+            _ => node,
+        }
+    }))
+}
+
 impl DiplomacyView {
-    /// The visible child under a pointer, in template (Z) order, as the
-    /// common handler's `ChildWindowFromPointEx(.., CWP_SKIPINVISIBLE)`
-    /// (0x00622D24) finds it. Disabled children still answer.
-    pub fn control_at(&self, layout: &DiplomacyLayout, x: i32, y: i32) -> Option<DiplomacyControl> {
-        self.visible_controls()
-            .find(|control| layout.control_rect(*control).contains(x, y))
+    fn shows(&self, control: DiplomacyControl) -> bool {
+        let row = |row: usize| self.rows[row].as_ref();
+        match control {
+            DiplomacyControl::Return | DiplomacyControl::ModeName | DiplomacyControl::MapName => {
+                true
+            }
+            DiplomacyControl::PreviousPage | DiplomacyControl::NextPage => self.page_count > 1,
+            DiplomacyControl::Insignia(r)
+            | DiplomacyControl::Name(r)
+            | DiplomacyControl::Kills(r) => row(r).is_some(),
+            DiplomacyControl::Allies(r) => row(r).is_some_and(|row| row.allies.is_some()),
+            DiplomacyControl::Chat(r) => row(r).is_some_and(|row| row.chat.is_some()),
+            DiplomacyControl::Header(DiplomacyHeader::Allies) => self.allies_header,
+            DiplomacyControl::Header(DiplomacyHeader::Chat) => self.chat_header,
+            DiplomacyControl::Header(_) => true,
+            DiplomacyControl::Taunts => self.taunts.is_some(),
+        }
     }
 
-    fn visible_controls(&self) -> impl Iterator<Item = DiplomacyControl> + '_ {
-        let rows = (0..DIPLOMACY_ROWS).filter(|row| self.rows[*row].is_some());
-        let row_controls = rows.flat_map(move |row| {
-            let shown = self.rows[row].as_ref().expect("filtered");
-            [
-                Some(DiplomacyControl::Insignia(row)),
-                Some(DiplomacyControl::Name(row)),
-                Some(DiplomacyControl::Kills(row)),
-                shown.allies.map(|_| DiplomacyControl::Allies(row)),
-                shown.chat.map(|_| DiplomacyControl::Chat(row)),
-            ]
-            .into_iter()
-            .flatten()
-        });
-        let headers = DiplomacyHeader::ALL
-            .into_iter()
-            .filter(|header| match header {
-                DiplomacyHeader::Allies => self.allies_header,
-                DiplomacyHeader::Chat => self.chat_header,
-                DiplomacyHeader::Player | DiplomacyHeader::Kills => true,
-            });
-        std::iter::once(DiplomacyControl::Return)
-            .chain(
-                (self.page_count > 1)
-                    .then_some([DiplomacyControl::PreviousPage, DiplomacyControl::NextPage])
-                    .into_iter()
-                    .flatten(),
-            )
-            .chain(row_controls)
-            .chain(headers.map(DiplomacyControl::Header))
-            .chain([DiplomacyControl::ModeName, DiplomacyControl::MapName])
-            .chain(self.taunts.map(|_| DiplomacyControl::Taunts))
+    /// Control `id`'s rect; `None` while it is hidden.
+    pub fn rect(&self, layout: &DiplomacyLayout, id: u16) -> Option<RectPx> {
+        let control = DiplomacyControl::from_id(id)?;
+        self.shows(control).then(|| layout.control_rect(control))
+    }
+
+    /// The boxes' states on their nodes under `root`.
+    pub fn sync(&self, layout: &DiplomacyLayout, gui: &mut Gui, root: NodeId) {
+        let mut set = |control: DiplomacyControl, checked: bool, enabled: bool| {
+            let id = control.id();
+            super::page::set(gui, root, id, Prop::Checked, Value::Bool(checked));
+            super::page::set(gui, root, id, Prop::Enabled, Value::Bool(enabled));
+            let rect = layout.control_rect(control);
+            if control != DiplomacyControl::Taunts {
+                super::page::set(gui, root, id, Prop::HitRect, Value::Rect(rect));
+            }
+        };
+        for (index, row) in self.rows.iter().enumerate() {
+            let Some(row) = row else { continue };
+            if let Some(allies) = row.allies {
+                set(
+                    DiplomacyControl::Allies(index),
+                    allies.checked,
+                    allies.enabled,
+                );
+            }
+            if let Some(chat) = row.chat {
+                set(DiplomacyControl::Chat(index), chat.checked, chat.enabled);
+            }
+        }
+        if let Some(on) = self.taunts {
+            set(DiplomacyControl::Taunts, on, true);
+        }
     }
 }
 
@@ -524,22 +570,31 @@ mod tests {
             ],
             ..DiplomacyView::default()
         };
+        let control_at = |view: &DiplomacyView, x, y| {
+            let mut gui = Gui::new(256);
+            let root = gui.create(NodeKind::Dialog, None).unwrap();
+            crate::ui::shell::page::ensure_built(&mut gui, root, spec);
+            crate::ui::shell::page::sync_rects(&mut gui, root, |id| view.rect(&layout, id));
+            view.sync(&layout, &mut gui, root);
+            let node = gui.hit_at(root, x, y, false)?;
+            DiplomacyControl::from_id(gui.id_of(node)? as u16)
+        };
         let allies = layout.allies[1];
         assert_eq!(
-            view.control_at(&layout, allies.x, allies.y),
+            control_at(&view, allies.x, allies.y),
             Some(DiplomacyControl::Allies(1))
         );
         let chat = layout.chat[1];
-        assert_eq!(view.control_at(&layout, chat.x, chat.y), None);
+        assert_eq!(control_at(&view, chat.x, chat.y), None);
         let name2 = layout.names[2];
-        assert_eq!(view.control_at(&layout, name2.x, name2.y), None);
+        assert_eq!(control_at(&view, name2.x, name2.y), None);
         view.rows[1] = Some(row(None));
-        assert_eq!(view.control_at(&layout, allies.x, allies.y), None);
+        assert_eq!(control_at(&view, allies.x, allies.y), None);
         let taunts = layout.taunts;
-        assert_eq!(view.control_at(&layout, taunts.x, taunts.y), None);
+        assert_eq!(control_at(&view, taunts.x, taunts.y), None);
         view.taunts = Some(false);
         assert_eq!(
-            view.control_at(&layout, taunts.x, taunts.y),
+            control_at(&view, taunts.x, taunts.y),
             Some(DiplomacyControl::Taunts)
         );
     }

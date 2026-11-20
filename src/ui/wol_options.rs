@@ -12,11 +12,10 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
 use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
+    RectPx, ShellScale, child_window, };
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageEvent};
 
@@ -154,28 +153,15 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: "GUI:WOLOptions",
     stacked: &[
-        MenuPageButtonSpec {
-            id: OK,
-            dlu_top: 111,
-            csf_key: "GUI:OK",
-            tooltip_key: "STT:WOLOptionsOk",
-            result: Some(1),
-        },
-        MenuPageButtonSpec {
-            id: SOUND_OPTIONS,
-            dlu_top: 140,
-            csf_key: "GUI:SoundOptions",
-            tooltip_key: "STT:WOLOptionsSoundOptions",
-            result: None,
-        },
+        MenuPageButtonSpec::new(OK, 111, "GUI:OK", "STT:WOLOptionsOk").returning(1),
+        MenuPageButtonSpec::new(
+            SOUND_OPTIONS,
+            140,
+            "GUI:SoundOptions",
+            "STT:WOLOptionsSoundOptions",
+        ),
     ],
-    back: MenuPageButtonSpec {
-        id: CANCEL,
-        dlu_top: 251,
-        csf_key: "GUI:Cancel",
-        tooltip_key: "STT:WOLOptionsCancel",
-        result: Some(2),
-    },
+    back: MenuPageButtonSpec::new(CANCEL, 251, "GUI:Cancel", "STT:WOLOptionsCancel").returning(2),
 };
 
 /// Status help of `0x2BC`'s controls (executed `0x006040B0`), and of VERA's
@@ -362,31 +348,11 @@ impl WolOptionsLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
+        let place = Placer::on(scale, width, height);
+        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
+        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
         // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        let mut title =
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-        title.h = dlu_rect(424, 4, 108, 11).h + 1;
-        if scale.is_retail() {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
+        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
         Self {
             page,
             status_help,

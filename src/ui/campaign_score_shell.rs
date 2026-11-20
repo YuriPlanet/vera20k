@@ -27,7 +27,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{self, RectPx, RightPanelRects, ShellScale, child_window};
+use crate::ui::shell::geom::{self, RectPx, RightPanelRects, ShellScale, child_window, fit_window};
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
 use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
@@ -62,13 +62,12 @@ pub const CAMPAIGN_SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: CAMPAIGN_SCORE_DIALOG,
     title_key: "GUI:StandaloneScore",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CONTINUE_BUTTON,
-        dlu_top: 346,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:StandScoreButtonReturn",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(
+        CONTINUE_BUTTON,
+        346,
+        "GUI:Continue",
+        "STT:StandScoreButtonReturn",
+    ),
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,13 +162,12 @@ pub const CAMPAIGN_END_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: CAMPAIGN_END_DIALOG,
     title_key: "GUI:CampaignResults",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CAMPAIGN_END_CONTINUE,
-        dlu_top: 346,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:MPScoreButtonContinue",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(
+        CAMPAIGN_END_CONTINUE,
+        346,
+        "GUI:Continue",
+        "STT:MPScoreButtonContinue",
+    ),
 };
 
 /// `0xBC7`'s kind-1 groups, executed from the same getters as `0x103`'s.
@@ -406,10 +404,6 @@ pub struct CampaignScoreLayout {
     pub controls: Vec<CampaignScoreControlRect>,
 }
 
-/// Root window width the campaign score page was authored for.
-const SCORE_PAGE_W: i32 = 800;
-/// Root window height the campaign score page was authored for.
-const SCORE_PAGE_H: i32 = 600;
 /// `0x00601360`'s template rect for status line `0x695`; `0x0060B550`
 /// anchors its converted 456x21 window to `dx + 10` and the bottom edge.
 const STATUS_LINE_DLU: RectPx = RectPx::new(10, 357, 303, 12);
@@ -502,52 +496,6 @@ impl CampaignScoreLayout {
         }
     }
 
-    /// Uniformly scale the 800x600 campaign score page into the supplied
-    /// window. This is the app's fill-window path; it keeps the large art.
-    pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> Self {
-        Self::compute_responsive_layout_for_side(screen_w, screen_h, 0)
-    }
-
-    /// Uniformly scale the 800x600 page for one campaign side.
-    pub fn compute_responsive_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
-        Self::compute_responsive_dialog_layout(
-            CampaignScoreDialog::Victory,
-            screen_w,
-            screen_h,
-            side,
-        )
-    }
-
-    /// Uniformly scale either dialog's 800x600 page for one campaign side.
-    pub fn compute_responsive_dialog_layout(
-        dialog: CampaignScoreDialog,
-        screen_w: u32,
-        screen_h: u32,
-        side: i32,
-    ) -> Self {
-        let base =
-            Self::compute_dialog_layout(dialog, SCORE_PAGE_W as u32, SCORE_PAGE_H as u32, side);
-        let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-        base.scaled(scale)
-    }
-
-    fn scaled(mut self, scale: ShellScale) -> Self {
-        self.scale = scale;
-        self.screen = RectPx::new(0, 0, scale.window().w, scale.window().h);
-        self.title = scale.scale_rect(self.title);
-        self.status_help = scale.scale_rect(self.status_help);
-        self.continue_button = scale.scale_rect(self.continue_button);
-        self.warning_monitor = scale.scale_rect(self.warning_monitor);
-        self.background = scale.scale_rect(self.background);
-        self.panel = scale.scale_rect(self.panel);
-        self.right_panel = scale.scale_panel(self.right_panel);
-        self.lower_strip = scale.scale_rect(self.lower_strip);
-        for control in &mut self.controls {
-            control.rect = scale.scale_rect(control.rect);
-        }
-        self
-    }
-
     pub fn control_rect(&self, id: u16) -> Option<RectPx> {
         self.controls
             .iter()
@@ -573,30 +521,17 @@ fn campaign_score_art_rect(screen_w: i32, screen_h: i32, side: i32) -> RectPx {
     RectPx::new(origin_x + x, origin_y + y, 424, height)
 }
 
-/// Module-level retail layout entry point for callers which keep page layouts
-/// alongside their sibling shell functions.
-pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_layout(screen_w, screen_h)
-}
-
 /// Module-level retail layout entry point for one campaign side.
 pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> CampaignScoreLayout {
     CampaignScoreLayout::compute_layout_for_side(screen_w, screen_h, side)
 }
 
-/// Module-level responsive layout entry point.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_responsive_layout(screen_w, screen_h)
-}
-
-/// Module-level responsive layout entry point for one campaign side.
-pub fn compute_responsive_layout_for_side(
-    screen_w: u32,
-    screen_h: u32,
-    side: i32,
-) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_responsive_layout_for_side(screen_w, screen_h, side)
-}
+vera20k_gui::scaled_rects!(CampaignScoreControlRect { rect; keep: id });
+vera20k_gui::scaled_rects!(CampaignScoreLayout {
+    [scale, screen]
+    background, panel, right_panel, lower_strip, title, status_help, continue_button,
+    warning_monitor, controls
+});
 
 fn reveal_params(spec: CampaignScoreRevealSpec) -> Kind1Params {
     Kind1Params {
@@ -839,20 +774,12 @@ impl CampaignScorePage {
     /// Geometry this page instance uses at the live window size. The retail
     /// path is unscaled; the app's fill-window path scales the 800x600 page.
     pub fn layout(&self, screen_w: u32, screen_h: u32, fills_window: bool) -> CampaignScoreLayout {
+        let layout =
+            |w, h| CampaignScoreLayout::compute_dialog_layout(self.dialog, w, h, self.model.side);
         if fills_window {
-            CampaignScoreLayout::compute_responsive_dialog_layout(
-                self.dialog,
-                screen_w,
-                screen_h,
-                self.model.side,
-            )
+            fit_window(screen_w, screen_h, layout)
         } else {
-            CampaignScoreLayout::compute_dialog_layout(
-                self.dialog,
-                screen_w,
-                screen_h,
-                self.model.side,
-            )
+            layout(screen_w, screen_h)
         }
     }
 

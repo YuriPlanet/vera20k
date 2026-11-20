@@ -17,9 +17,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, center_offset, dlu_rect,
-};
+use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, dlu_rect, fit_window};
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec, hover_target,
 };
@@ -52,13 +50,8 @@ pub const CAMPAIGN_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: CAMPAIGN_DIALOG,
     title_key: "GUI:CampaignMenu",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: BACK_BUTTON,
-        dlu_top: 253,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:CampaignButtonBack",
-        result: Some(-1),
-    },
+    back: MenuPageButtonSpec::new(BACK_BUTTON, 253, "GUI:Back", "STT:CampaignButtonBack")
+        .returning(-1),
 };
 
 /// `0x94`'s nodes: Back, then the emblems and the slider, which only hover
@@ -220,21 +213,14 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
 /// rectangles carry no centring offset, so the authored geometry is the retail
 /// one.
 pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    let stretch = |rect: RectPx| scale.scale_rect(rect);
-    CampaignLayout {
-        page: menu_page::compute_responsive_layout(&CAMPAIGN_PAGE, screen_w, screen_h),
-        allied: stretch(base.allied),
-        soviet: stretch(base.soviet),
-        allied_caption: stretch(base.allied_caption),
-        soviet_caption: stretch(base.soviet_caption),
-        slider: stretch(base.slider),
-        difficulty_label: stretch(base.difficulty_label),
-        difficulty_value: stretch(base.difficulty_value),
-        scale,
-    }
+    fit_window(screen_w, screen_h, compute_layout)
 }
+
+vera20k_gui::scaled_rects!(CampaignLayout {
+    [scale]
+    page, allied, soviet, allied_caption, soviet_caption, slider, difficulty_label,
+    difficulty_value
+});
 
 /// One emblem static's kind-4 animation (`+0x98` frame, `+0xA8` running).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -12,16 +12,20 @@
 
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
+use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{QuitConfirmLayout, quit_confirm_layout_in};
+use crate::ui::shell::page::PageEvent;
 use winit::event::MouseButton;
+
+const DIALOG: DialogId = DialogId(0x120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurrenderButton {
     /// `0x5AE`.
-    Ok,
+    Ok = 0x5AE,
     /// Control 2 (IDCANCEL).
-    Cancel,
+    Cancel = 2,
 }
 
 /// State 2's arm. An observer (`[0xAC10C8]`) leaves at once through
@@ -63,50 +67,53 @@ pub(crate) fn layout(state: &AppState) -> QuitConfirmLayout {
     ))
 }
 
-fn hit(state: &AppState) -> Option<SurrenderButton> {
+/// One pointer message on the box (`down`: `None` moves).
+fn pointer(state: &mut AppState, down: Option<bool>) {
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    [
-        (layout.ok, SurrenderButton::Ok),
-        (layout.cancel, SurrenderButton::Cancel),
-    ]
-    .into_iter()
-    .find_map(|(rect, button)| rect.contains(x, y).then_some(button))
+    let event = super::dialog_page::event_at(x, y, down);
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let button = |id: SurrenderButton| {
+        vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Button).id(id as i32)
+    };
+    let nodes = || {
+        vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog)
+            .child(button(SurrenderButton::Ok))
+            .child(button(SurrenderButton::Cancel))
+    };
+    let rect = |id| match id {
+        0x5AE => Some(layout.ok),
+        2 => Some(layout.cancel),
+        _ => None,
+    };
+    let events =
+        super::dialog_page::route(ui, DIALOG, nodes, rect, super::dialog_page::no_sync, event);
+    for event in super::dialog_page::play_cues(state, events) {
+        match event {
+            PageEvent::Activated(0x5AE) => activate(state, SurrenderButton::Ok),
+            PageEvent::Activated(2) => activate(state, SurrenderButton::Cancel),
+            _ => {}
+        }
+    }
+    state.platform.window.request_redraw();
+}
+
+/// Whether `button` shows pushed.
+pub(crate) fn pressed(state: &AppState, button: SurrenderButton) -> bool {
+    super::dialog_page::pressed(
+        &state.match_state.match_presentation.dialog_ui,
+        button as u16,
+    )
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    state
-        .match_state
-        .match_presentation
-        .surrender_buttons
-        .hovered = hit(state);
-    state.platform.window.request_redraw();
+    pointer(state, None);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
+    if button == MouseButton::Left {
+        pointer(state, Some(pressed));
     }
-    let over = hit(state);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .surrender_buttons
-            .press(over);
-        if over.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (0x0061376B).
-            App::play_main_menu_button_sound(state);
-        }
-    } else if let Some(button) = state
-        .match_state
-        .match_presentation
-        .surrender_buttons
-        .release(over)
-    {
-        activate(state, button);
-    }
-    state.platform.window.request_redraw();
 }
 
 /// Enter (IDOK) and Escape (IDCANCEL) both give result 1.

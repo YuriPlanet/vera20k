@@ -19,7 +19,7 @@ use crate::render::{
     shell_text::{self, ShellAlign, ShellTextDraw},
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardParent};
+use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardControl, KeyboardParent};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
@@ -92,8 +92,8 @@ pub(crate) fn render_keyboard_shell(
             .frontend
             .keyboard_dialog
             .as_ref()
-            .and_then(|dialog| dialog.hovered)
-            .map(|control| localized_label(state, control.help_key(), ""))
+            .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui))
+            .map(|key| localized_label(state, key, ""))
             .unwrap_or_default();
         let window =
             crate::app::frontend::shell_layout::keyboard_layout(state, width, height, None).footer;
@@ -110,6 +110,10 @@ pub(crate) fn render_keyboard_shell(
         .keyboard_dialog
         .as_ref()
         .expect("active A3 state");
+    let is_pressed = |button: KeyboardButton| {
+        crate::app::input::dialog_page::pressed(&dialog.ui, KeyboardControl::Button(button).id())
+    };
+    let list = dialog.list();
     let atlas = state
         .frontend
         .skirmish_shell_chrome
@@ -119,10 +123,8 @@ pub(crate) fn render_keyboard_shell(
         let sidebar = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
             .expect("active A3 side art");
         let mut art = in_game_shell::background_instances(sidebar, shell.layout, width, height);
-        let frame = crate::ui::shell::button::owner_button_frame(
-            dialog.buttons.is_pressed(KeyboardButton::Back),
-            false,
-        );
+        let frame =
+            crate::ui::shell::button::owner_button_frame(is_pressed(KeyboardButton::Back), false);
         if let Some(entry) =
             sidebar.in_game_shell.buttons[frame].or(sidebar.in_game_shell.buttons[0])
         {
@@ -159,7 +161,7 @@ pub(crate) fn render_keyboard_shell(
             &mut art,
             atlas,
             layout.back,
-            dialog.buttons.is_pressed(KeyboardButton::Back),
+            is_pressed(KeyboardButton::Back),
             false,
             SHELL_CONTROL_DEPTH,
         );
@@ -197,16 +199,16 @@ pub(crate) fn render_keyboard_shell(
     let geometry = ShellListGeometry::new(
         layout.commands,
         dialog.rows.len(),
-        dialog.top,
+        list.top,
         ListMetrics::scaled(layout.scale),
     );
     super::list::paint_list(
         &mut controls,
         atlas,
         geometry,
-        dialog.top,
-        dialog.selected,
-        dialog.scroll.pressed_part(),
+        list.top,
+        list.selected,
+        list.pressed,
         false,
         layout.scale,
     );
@@ -257,7 +259,7 @@ pub(crate) fn render_keyboard_shell(
     let buttons =
         [KeyboardButton::Assign, KeyboardButton::ResetAll].map(|id| shell_paint::ModalButton {
             rect: layout.button(id),
-            pressed: dialog.buttons.is_pressed(id),
+            pressed: is_pressed(id),
             enabled: true,
         });
     controls.extend(shell_paint::paint_modal_sprites(
@@ -316,8 +318,7 @@ pub(crate) fn render_keyboard_shell(
         ]
     };
     for &(id, key, fallback) in captions {
-        let rect =
-            super::pause_menu::button_text_rect(layout.button(id), dialog.buttons.is_pressed(id));
+        let rect = super::pause_menu::button_text_rect(layout.button(id), is_pressed(id));
         texts.push(text(
             font,
             &localized_label(state, key, fallback),
@@ -345,7 +346,7 @@ pub(crate) fn render_keyboard_shell(
     for (visible, row) in dialog
         .rows
         .iter()
-        .skip(dialog.top)
+        .skip(list.top)
         .take(geometry.visible_rows)
         .enumerate()
     {
@@ -421,10 +422,10 @@ pub(crate) fn render_keyboard_shell(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
-    if let Some(hovered) = dialog.hovered.filter(|_| active) {
+    if let Some(key) = crate::app::input::dialog_page::help(&dialog.ui).filter(|_| active) {
         texts.push(text(
             font,
-            &localized_label(state, hovered.help_key(), ""),
+            &localized_label(state, key, ""),
             layout.footer,
             ShellAlign::NONE,
             SHELL_CONTROL_TEXT_DEPTH,

@@ -146,6 +146,13 @@ fn dialog_of(gui: &Gui, root: NodeId) -> Option<vera20k_gui::DialogId> {
     gui.dialogs().find(|d| gui.dialog_root(*d) == Some(root))
 }
 
+/// The node of the dialog rooted at `root` that shows pushed: captured and
+/// still under the pointer (612B70), under another dialog too.
+pub fn held_in(gui: &Gui, root: NodeId) -> Option<NodeId> {
+    let dialog = dialog_of(gui, root)?;
+    gui.pressed_in(dialog).filter(|n| gui.hovered_in(dialog) == Some(*n))
+}
+
 /// The status help of the control hovered in the dialog rooted at `root`,
 /// which may lie under another.
 pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
@@ -164,8 +171,7 @@ pub fn menu_button_looks(
     buttons: &[super::menu_page::MenuPageButtonRect],
 ) -> Vec<(super::menu_page::MenuPageButtonRect, bool, bool)> {
     let Some(root) = root else { return Vec::new() };
-    let dialog = dialog_of(gui, root);
-    let held = dialog.and_then(|d| gui.pressed_in(d).filter(|n| gui.hovered_in(d) == Some(*n)));
+    let held = held_in(gui, root);
     buttons
         .iter()
         .map(|b| {

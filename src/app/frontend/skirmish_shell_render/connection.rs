@@ -5,17 +5,16 @@
 
 use super::chrome::{push_rect_outline, push_solid_rect};
 use super::in_game_shell::{self, InGameShellFrame};
-use super::pause_menu::{button_frame, button_text_rect};
+use super::pause_menu::button_text_rect;
 use super::text::{localized_label, push_text_draw, rect_to_text_rect};
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::{shell_paint, shell_text::ShellAlign};
 use crate::ui::shell::connection::{
-    BAR_OUTLINE_RGB, ConnectionButton, QUIT_LABEL, bar_paint, connection_layout,
+    BAR_OUTLINE_RGB, ConnectionButton, ConnectionControl, QUIT_LABEL, bar_paint, connection_layout,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
 
 fn rgb(unit: [u8; 3]) -> [f32; 3] {
     unit.map(|channel| f32::from(channel) / 255.0)
@@ -49,18 +48,32 @@ pub(crate) fn render_connection_shell(
         .page()
         .expect("open 0xEA")
         .clone();
+    let ui = &state.match_state.match_presentation.connection_ui;
+    let pressed_id = |id: u16| crate::app::input::dialog_page::pressed(ui, id);
+    let is_pressed = |button: ConnectionButton| {
+        let control = match button {
+            ConnectionButton::Quit => ConnectionControl::Quit,
+            ConnectionButton::PreviousPage => ConnectionControl::PreviousPage,
+            ConnectionButton::NextPage => ConnectionControl::NextPage,
+            ConnectionButton::Player(row) => {
+                ConnectionControl::Player(row - page.visible_range().start)
+            }
+        };
+        pressed_id(control.id())
+    };
+    let help = crate::app::input::dialog_page::help(ui).map(str::to_owned);
     let screen = RectPx::new(0, 0, width, height);
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active 0xEA art");
     let mut art = in_game_shell::background_instances(atlas, shell, width, height);
-    let pressed = page.buttons.is_pressed(ConnectionButton::Quit);
-    let frame = button_frame(PauseMenuButtonState {
-        pressed,
-        ..Default::default()
-    });
-    if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
-        in_game_shell::push_art(&mut art, entry, layout.quit, screen);
-    }
+    let mut texts = Vec::new();
+    let caption = localized_label(state, QUIT_LABEL.0, QUIT_LABEL.1);
+    let quit = (
+        layout.quit,
+        caption.as_str(),
+        is_pressed(ConnectionButton::Quit),
+    );
+    in_game_shell::push_panel_button(&mut art, &mut texts, state, atlas, quit, screen);
     let chrome = state
         .frontend
         .skirmish_shell_chrome
@@ -74,7 +87,7 @@ pub(crate) fn render_connection_shell(
         .enumerate()
         .map(|(slot, row)| shell_paint::ModalButton {
             rect: layout.players[slot],
-            pressed: page.buttons.is_pressed(ConnectionButton::Player(row)),
+            pressed: is_pressed(ConnectionButton::Player(row)),
             enabled: true,
         })
         .collect();
@@ -117,19 +130,13 @@ pub(crate) fn render_connection_shell(
         );
     }
     if page.page_count() > 1 {
-        for (slot, button) in [ConnectionButton::PreviousPage, ConnectionButton::NextPage]
-            .into_iter()
-            .enumerate()
-        {
-            let frame = button_frame(PauseMenuButtonState {
-                pressed: page.buttons.is_pressed(button),
-                ..Default::default()
-            });
-            if let Some(entry) =
-                atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0])
-            {
-                in_game_shell::push_art(&mut art, entry, layout.paging[slot], screen);
-            }
+        for (slot, button, label) in [
+            (0, ConnectionButton::PreviousPage, "VERA:Previous"),
+            (1, ConnectionButton::NextPage, "VERA:Next"),
+        ] {
+            let caption = crate::i18n::tr(label);
+            let button = (layout.paging[slot], caption.as_str(), is_pressed(button));
+            in_game_shell::push_panel_button(&mut art, &mut texts, state, atlas, button, screen);
         }
     }
     let geometry = ShellListGeometry::new(
@@ -149,7 +156,6 @@ pub(crate) fn render_connection_shell(
         ShellScale::RETAIL,
     );
 
-    let mut texts = Vec::new();
     let mut text = |value: &str, rect: RectPx, align: ShellAlign| {
         push_text_draw(
             &mut texts,
@@ -162,32 +168,17 @@ pub(crate) fn render_connection_shell(
             1.0,
         )
     };
-    text(
-        &localized_label(state, QUIT_LABEL.0, QUIT_LABEL.1),
-        button_text_rect(layout.quit, pressed),
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-    );
     for (slot, row) in visible.clone().enumerate() {
         text(
             &page.rows[row].name,
             button_text_rect(
                 layout.players[slot],
-                page.buttons.is_pressed(ConnectionButton::Player(row)),
+                is_pressed(ConnectionButton::Player(row)),
             ),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         );
     }
     if page.page_count() > 1 {
-        for (slot, button, label) in [
-            (0, ConnectionButton::PreviousPage, "VERA:Previous"),
-            (1, ConnectionButton::NextPage, "VERA:Next"),
-        ] {
-            text(
-                &crate::i18n::tr(label),
-                button_text_rect(layout.paging[slot], page.buttons.is_pressed(button)),
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            );
-        }
         let first = layout.paging[0];
         let shown = page.page.index(
             page.rows.len(),
@@ -221,9 +212,9 @@ pub(crate) fn render_connection_shell(
             ShellAlign::V_CENTER,
         );
     }
-    if let Some(control) = page.hovered {
+    if let Some(key) = help {
         text(
-            &localized_label(state, control.help_key(), ""),
+            &localized_label(state, &key, ""),
             layout.status_line,
             ShellAlign::NONE,
         );

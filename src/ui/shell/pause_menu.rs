@@ -15,6 +15,9 @@
 //! to the main menu's Options pages ([`PauseMenuLayout::show_options_column`]),
 //! and FF's group heads the Game Options page.
 
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use super::descriptor::DialogId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 use super::trackbar::TrackbarRange;
@@ -82,6 +85,31 @@ impl PauseMenuTemplate {
         }
     }
 
+    pub const fn dialog(self) -> DialogId {
+        match self {
+            Self::Offline => DialogId(0xB5),
+            Self::Network => DialogId(0xBBA),
+            Self::Internet => DialogId(0xFF),
+        }
+    }
+
+    /// Button `button`'s control id; VERA's own buttons take ids no template
+    /// uses.
+    pub fn id(self, button: PauseMenuButton) -> u16 {
+        match button {
+            PauseMenuButton::SharedPause => 0x7E60,
+            PauseMenuButton::Keyboard => 0x7E61,
+            button => self.control(button).map_or(0, |control| control.id),
+        }
+    }
+
+    /// The button control `id` is.
+    pub fn button(self, id: u16) -> Option<PauseMenuButton> {
+        PauseMenuButton::ALL
+            .into_iter()
+            .find(|button| self.id(*button) == id)
+    }
+
     /// The template's buttons in resource order of their sidebar rows, Resume
     /// last.
     pub const fn buttons(self) -> &'static [PauseMenuButton] {
@@ -130,8 +158,6 @@ pub struct PauseMenuButtonState {
     pub highlighted: bool,
     pub enabled: bool,
 }
-
-pub type PauseMenuInteraction = super::button::ShellButtonInteraction<PauseMenuButton>;
 
 impl Default for PauseMenuButtonState {
     fn default() -> Self {
@@ -271,6 +297,18 @@ pub enum InternetSlider {
 impl InternetSlider {
     pub const ALL: [Self; 2] = [Self::Connection, Self::Speed];
 
+    /// The trackbars 0x3EF and 0x529.
+    pub const fn id(self) -> u16 {
+        match self {
+            Self::Connection => 0x3EF,
+            Self::Speed => 0x529,
+        }
+    }
+
+    pub fn from_id(id: u16) -> Option<Self> {
+        Self::ALL.into_iter().find(|slider| slider.id() == id)
+    }
+
     /// Init4F1720 sends `TBM_SETRANGE (1, MAKELONG(0, n))`: 0..3 and 0..6. It
     /// never sends `0x4AC`, so both keep the default value plaque.
     pub const fn range(self) -> TrackbarRange {
@@ -327,14 +365,6 @@ pub struct InternetControlsLayout {
     pub values: [RectPx; 2],
 }
 
-impl InternetControlsLayout {
-    pub fn slider_at(&self, x: i32, y: i32) -> Option<InternetSlider> {
-        InternetSlider::ALL
-            .into_iter()
-            .find(|slider| self.sliders[*slider as usize].contains(x, y))
-    }
-}
-
 /// The main menu's Options column as the in-game menu's other pages show it:
 /// Keyboard, a button per category, then Back
 /// ([`PauseMenuLayout::show_options_column`]).
@@ -365,6 +395,15 @@ impl PauseMenuLayout {
             .iter()
             .chain([&PauseMenuButton::SharedPause, &PauseMenuButton::Keyboard])
             .filter_map(|button| Some((*button, self.button(*button)?)))
+    }
+
+    /// Control `id`'s rect: a shown button or one of FF's trackbars.
+    pub fn rect(&self, id: u16) -> Option<RectPx> {
+        match (self.template.button(id), InternetSlider::from_id(id)) {
+            (Some(button), _) => self.button(button),
+            (None, Some(slider)) => Some(self.internet?.sliders[slider as usize]),
+            (None, None) => None,
+        }
     }
 
     /// The sidebar rows of the Options page's own buttons, top to bottom:
@@ -475,6 +514,40 @@ impl PauseMenuLayout {
         // 60B000's rows are one button high.
         self.buttons[PauseMenuButton::SharedPause as usize] = Some(abort.translate(0, abort.h));
     }
+}
+
+/// The menu's buttons (every template's, with VERA's) and FF's trackbars
+/// at `positions`, each with its status help (`0x006040B0`); `keyboard_help`
+/// is VERA's Keyboard button's.
+pub fn spec(template: PauseMenuTemplate, positions: [i32; 2], keyboard_help: &str) -> NodeSpec {
+    let buttons = template
+        .buttons()
+        .iter()
+        .chain([&PauseMenuButton::SharedPause, &PauseMenuButton::Keyboard])
+        .map(|button| {
+            let help = match button {
+                PauseMenuButton::Keyboard => Some(keyboard_help),
+                button => template.control(*button).and_then(|control| control.help),
+            };
+            NodeSpec::new(NodeKind::Button)
+                .id(template.id(*button).into())
+                .tooltip(help.unwrap_or_default())
+        });
+    let sliders = InternetSlider::ALL
+        .into_iter()
+        .filter(|_| template == PauseMenuTemplate::Internet)
+        .map(|slider| {
+            let range = slider.range();
+            NodeSpec::new(NodeKind::Trackbar)
+                .id(slider.id().into())
+                .tooltip(slider.help())
+                .with(Prop::Min, Value::Int(range.min))
+                .with(Prop::Max, Value::Int(range.max))
+                .with(Prop::Pos, Value::Int(positions[slider as usize]))
+        });
+    NodeSpec::new(NodeKind::Dialog)
+        .children(buttons)
+        .children(sliders)
 }
 
 /// 72 DLUs in pixels, a multiple of 8 so each rect keeps its authored size

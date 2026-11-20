@@ -1,20 +1,31 @@
 //! Paints a dialog's `vera20k-gui` widgets with the shell's owner-draw
-//! emitters: one place that turns Checkbox, Trackbar, Combo and Text nodes into the
-//! sprites and texts each screen used to assemble by hand. A screen keeps
-//! its backdrop and chrome and calls [`paint_gui_children`] for the widgets
-//! it built under its dialog root.
+//! emitters: one place that turns Button, Checkbox, Trackbar, Combo, List,
+//! Edit and Text nodes into the sprites and texts each screen used to
+//! assemble by hand. A screen keeps its backdrop and chrome and calls
+//! [`paint_gui_children`] for the widgets it built under its dialog root.
+//!
+//! Each node paints in tree order, its sprites before its text, so a tree
+//! in the order a screen drew lays its draws down in that order. A node's
+//! own props choose its text: `Color` and `DisabledColor`, `Align`,
+//! `TextInset`; the host's [`GuiStyle`] the depth of every text, the
+//! buttons' art and the texts and rows it keeps itself.
 
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use super::controls::{ControlPaint, dropdown_scroll_part, paint_control, push_popup_instances};
-use super::text::{combo_face_text_color, rect_to_text_rect};
+use super::text::{
+    combo_dropdown_text_fit_width, combo_dropdown_text_rect_for_current_renderer, combo_face_text_color,
+    combo_face_text_draw_rect, combo_face_text_fit_width, fit_owner_draw_label, rect_to_text_rect,
+};
 use super::{
     SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_DROPDOWN_DEPTH,
     SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
+use crate::render::shell_paint::{self, ModalButton, ModalButtonFrames, ModalDepths};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::trackbar::{TrackbarRange, value_text_rect};
 
@@ -28,17 +39,54 @@ pub(crate) struct GuiPaint {
     pub(crate) popup_texts: Vec<ShellTextDraw>,
 }
 
-/// A node's caption: `Label` is a CSF key (shown as the key when missing),
-/// `Text` a literal.
-fn caption(state: &AppState, gui: &Gui, node: NodeId) -> Option<String> {
+/// A list's rows as the host keeps them: each row's text and packed
+/// `00BBGGRR` colour (`u32::MAX` for the node's own).
+pub(crate) type HostRows = Vec<(String, u32)>;
+
+/// What a dialog's widgets take from their host rather than their props.
+#[derive(Clone, Copy)]
+pub(crate) struct GuiStyle<'a> {
+    /// The depth of every caption, value and row (an open list's excepted).
+    pub(crate) text_depth: f32,
+    /// A focused edit shows the open IME composition.
+    pub(crate) ime: bool,
+    /// Buttons paint as owner-draw buttons (`0x00612B70`) of these frames at
+    /// this depth, captioned with their `Label` or `Text`; without, the host
+    /// paints them.
+    pub(crate) buttons: Option<(ModalButtonFrames, f32)>,
+    /// The host's text for a node by its `Id` (a status, a name), in place
+    /// of its `Label` or `Text`.
+    pub(crate) text_of: Option<&'a dyn Fn(i32) -> Option<String>>,
+    /// The rows of a host-counted (`RowCount`) list by its `Id`; a list
+    /// without paints nothing, its host paints it.
+    pub(crate) rows_of: Option<&'a dyn Fn(i32) -> Option<HostRows>>,
+    /// Lists paint as the shell dialogs' own ([`super::controls::list_view_controls`]:
+    /// frame, selection, the control scrollbar) rather than as the WOL
+    /// pages' over their art ([`super::list::paint_list`]).
+    pub(crate) control_lists: bool,
+}
+
+impl Default for GuiStyle<'_> {
+    fn default() -> Self {
+        GuiStyle { text_depth: SHELL_CONTROL_TEXT_DEPTH, ime: true, buttons: None, text_of: None, rows_of: None, control_lists: false }
+    }
+}
+
+impl GuiStyle<'_> {
+    /// The WOL and online boxes': MNBTTN buttons and texts at the popups'
+    /// depths, edits without the IME composition.
+    pub(crate) fn popup(atlas: &SkirmishShellChromeAtlas) -> Self {
+        let depths = super::wol_lobby::POPUP_DEPTHS;
+        let buttons = Some((super::type3_button_frames(atlas), depths.button));
+        GuiStyle { text_depth: depths.text, ime: false, buttons, control_lists: true, ..Default::default() }
+    }
+}
+
+/// A node's caption: `Label` is a string key (shown as the key when
+/// missing), `Text` a literal.
+fn label_of(state: &AppState, gui: &Gui, node: NodeId) -> Option<String> {
     match gui.get(node, Prop::Label).ok().flatten() {
-        Some(Value::Text(key)) => Some(
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .map_or_else(|| key.clone(), |csf| csf.text(key).into_owned()),
-        ),
+        Some(Value::Text(key)) => Some(crate::i18n::label(state.process_assets.csf.as_ref(), key, key)),
         _ => match gui.get(node, Prop::Text).ok().flatten() {
             Some(Value::Text(text)) => Some(text.clone()),
             _ => None,
@@ -60,26 +108,31 @@ fn flag(gui: &Gui, node: NodeId, prop: Prop, default: bool) -> bool {
     }
 }
 
-fn rgb(gui: &Gui, node: NodeId, default: [f32; 3]) -> [f32; 3] {
-    match gui.get(node, Prop::Color).ok().flatten() {
-        Some(Value::Rgba(c)) => [c.0 as f32 / 255.0, c.1 as f32 / 255.0, c.2 as f32 / 255.0],
-        _ => default,
+fn color(gui: &Gui, node: NodeId, prop: Prop) -> Option<[f32; 3]> {
+    match gui.get(node, prop).ok().flatten() {
+        Some(Value::Rgba(c)) => Some([c.0, c.1, c.2].map(|c| f32::from(c) / 255.0)),
+        _ => None,
     }
 }
 
-fn text(state: &AppState, value: &str, rect: RectPx, align: ShellAlign, scale: ShellScale, rgb: [f32; 3]) -> ShellTextDraw {
-    text_at_depth(state, value, rect, align, scale, rgb, SHELL_CONTROL_TEXT_DEPTH)
+/// The node's text colour: `Color` (else `normal`), or while disabled its
+/// `DisabledColor`, else its kind's `disabled` colour when it has one.
+fn text_rgb(gui: &Gui, node: NodeId, enabled: bool, normal: [f32; 3], disabled: Option<[f32; 3]>) -> [f32; 3] {
+    let off = (!enabled).then(|| color(gui, node, Prop::DisabledColor).or(disabled)).flatten();
+    off.or_else(|| color(gui, node, Prop::Color)).unwrap_or(normal)
 }
 
-fn text_at_depth(
-    state: &AppState,
-    value: &str,
-    rect: RectPx,
-    align: ShellAlign,
-    scale: ShellScale,
-    rgb: [f32; 3],
-    depth: f32,
-) -> ShellTextDraw {
+/// `rect` less the node's `TextInset` (base pixels, grown with the page).
+fn inset(gui: &Gui, node: NodeId, rect: RectPx, scale: ShellScale) -> Option<RectPx> {
+    match gui.get(node, Prop::TextInset).ok().flatten() {
+        Some(Value::Rect(i)) => {
+            Some(scale.derive_rect(rect, |r| RectPx::new(r.x + i.x, r.y + i.y, r.w - i.x - i.w, r.h - i.y - i.h)))
+        }
+        _ => None,
+    }
+}
+
+fn text(state: &AppState, value: &str, rect: RectPx, align: ShellAlign, scale: ShellScale, rgb: [f32; 3], depth: f32) -> ShellTextDraw {
     shell_text::draw_in_rect_scaled(
         &state.renderer.bit_font,
         value,
@@ -92,8 +145,8 @@ fn text_at_depth(
     )
 }
 
-fn items(gui: &Gui, node: NodeId) -> &[String] {
-    match gui.get(node, Prop::Items).ok().flatten() {
+fn items(gui: &Gui, node: NodeId, prop: Prop) -> &[String] {
+    match gui.get(node, prop).ok().flatten() {
         Some(Value::Items(items)) => items,
         _ => &[],
     }
@@ -135,24 +188,49 @@ pub(crate) fn paint_gui_children_under(
     scale: ShellScale,
     overlays: &[RectPx],
 ) -> GuiPaint {
-    match state.frontend.skirmish_shell_chrome.as_ref() {
-        Some(atlas) => paint_gui_with(state, atlas, gui, root, scale, overlays),
-        None => GuiPaint::default(),
-    }
+    paint_gui_styled(state, gui, root, scale, overlays, GuiStyle::default())
 }
 
-/// [`paint_gui_children_under`] on `atlas`, for a renderer that holds the
-/// shell chrome while it paints (the Skirmish family's).
-pub(crate) fn paint_gui_with(
+/// [`paint_gui_children_under`] in the host's `style`.
+pub(crate) fn paint_gui_styled(
     state: &AppState,
-    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     gui: &Gui,
     root: NodeId,
     scale: ShellScale,
     overlays: &[RectPx],
+    style: GuiStyle<'_>,
+) -> GuiPaint {
+    match state.frontend.skirmish_shell_chrome.as_ref() {
+        Some(atlas) => paint_gui_with(state, atlas, gui, root, scale, overlays, style),
+        None => GuiPaint::default(),
+    }
+}
+
+/// [`paint_gui_styled`] on `atlas`, for a renderer that holds the shell
+/// chrome while it paints (the Skirmish family's).
+pub(crate) fn paint_gui_with(
+    state: &AppState,
+    atlas: &SkirmishShellChromeAtlas,
+    gui: &Gui,
+    root: NodeId,
+    scale: ShellScale,
+    overlays: &[RectPx],
+    style: GuiStyle<'_>,
 ) -> GuiPaint {
     let mut paint = GuiPaint::default();
     let chrome = atlas.control_chrome();
+    let depth = style.text_depth;
+    // The pushed button of the dialog `root` belongs to.
+    let mut dialog_root = root;
+    while let Ok(Some(parent)) = gui.tree().parent(dialog_root) {
+        dialog_root = parent;
+    }
+    let held = crate::ui::shell::page::held_in(gui, dialog_root);
+    let id = |node| gui.id_of(node);
+    let caption = |node| match style.text_of.zip(id(node)).and_then(|(text_of, id)| text_of(id)) {
+        Some(text) => Some(text),
+        None => label_of(state, gui, node),
+    };
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         if !flag(gui, node, Prop::Visible, true) {
@@ -167,12 +245,25 @@ pub(crate) fn paint_gui_with(
         let enabled = flag(gui, node, Prop::Enabled, true);
         let align = ShellAlign(int(gui, node, Prop::Align, ShellAlign::V_CENTER.0 as i32) as u8);
         match kind {
+            NodeKind::Button => {
+                let Some((frames, button_depth)) = style.buttons else { continue };
+                let pressed = held == Some(node);
+                let button = ModalButton { rect, pressed, enabled };
+                let depths = ModalDepths { background: button_depth, button: button_depth, text: depth };
+                paint.controls.extend(shell_paint::paint_modal_sprites(None, frames, rect, &[button], scale, depths));
+                if let Some(label) = caption(node).filter(|_| !covered) {
+                    let at = crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
+                    let rgb = text_rgb(gui, node, enabled, SHELL_LABEL_TEXT_RGB, Some(shell_paint::SHELL_TEXT_RGB_DISABLED));
+                    paint.texts.push(text(state, &label, at, ShellAlign::H_CENTER | ShellAlign::V_CENTER, scale, rgb, depth));
+                }
+            }
             NodeKind::Checkbox => {
                 let checked = flag(gui, node, Prop::Checked, false);
                 paint_control(&mut paint.controls, &chrome, ControlPaint::Checkbox { rect, checked }, scale);
-                if let Some(label) = caption(state, gui, node).filter(|_| !covered) {
+                if let Some(label) = caption(node).filter(|_| !covered) {
                     let at = crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
-                    paint.texts.push(text(state, &label, at, align, scale, rgb(gui, node, SHELL_LABEL_TEXT_RGB)));
+                    let rgb = text_rgb(gui, node, enabled, SHELL_LABEL_TEXT_RGB, None);
+                    paint.texts.push(text(state, &label, at, align, scale, rgb, depth));
                 }
             }
             NodeKind::Trackbar => {
@@ -190,103 +281,26 @@ pub(crate) fn paint_gui_with(
                 );
                 if plaque && !covered {
                     // A disabled trackbar's value text takes [0xAC1CB4] (`0x0061E2B1`).
-                    let color = if enabled { SHELL_LABEL_TEXT_RGB } else { SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F };
+                    let rgb = text_rgb(gui, node, enabled, SHELL_LABEL_TEXT_RGB, Some(SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F));
                     // A host value text (`Text`) stands in for the position.
                     let shown = match gui.get(node, Prop::Text).ok().flatten() {
                         Some(Value::Text(shown)) => shown.clone(),
                         _ => range.stepped(value).to_string(),
                     };
-                    paint.texts.push(text(
-                        state,
-                        &shown,
-                        value_text_rect(rect, scale),
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                        scale,
-                        color,
-                    ));
+                    let at = value_text_rect(rect, scale);
+                    paint.texts.push(text(state, &shown, at, ShellAlign::H_CENTER | ShellAlign::V_CENTER, scale, rgb, depth));
                 }
             }
-            NodeKind::Combo => {
-                let drop_down = gui.combo_drop_down(node);
-                let selected = usize::try_from(int(gui, node, Prop::Selected, -1)).ok();
-                // A colour row shows its swatch (`house_color_tint`) and no text.
-                let swatches = match gui.get(node, Prop::Swatches).ok().flatten() {
-                    Some(Value::Items(rows)) => rows.as_slice(),
-                    _ => &[],
+            NodeKind::Combo => paint_combo(&mut paint, state, atlas, gui, node, rect, enabled, scale, depth),
+            NodeKind::List => {
+                // A host-counted list's rows are the host's, or it paints it.
+                let host_rows = match gui.get(node, Prop::RowCount).ok().flatten() {
+                    Some(_) => match style.rows_of.zip(id(node)).and_then(|(rows_of, id)| rows_of(id)) {
+                        Some(rows) => Some(rows),
+                        None => continue,
+                    },
+                    None => None,
                 };
-                let swatch = |row: usize| {
-                    let index = swatches.get(row)?.parse().ok()?;
-                    Some(super::controls::house_color_tint(state.rules(), index))
-                };
-                let face_swatch = selected.and_then(swatch);
-                paint_control(
-                    &mut paint.controls,
-                    &chrome,
-                    ControlPaint::Combo { rect, swatch: face_swatch, open: drop_down.is_some(), disabled: !enabled },
-                    scale,
-                );
-                let items = items(gui, node);
-                // A host caption (`Text`) stands in for the selected row's;
-                // `Truncate` cuts captions as gamemd's owner-draw combo does.
-                let truncate = flag(gui, node, Prop::Truncate, false);
-                let own_scrollbar = flag(gui, node, Prop::ComboScrollbar, false);
-                let face = match gui.get(node, Prop::Text).ok().flatten() {
-                    Some(Value::Text(face)) => Some(face),
-                    _ => selected.and_then(|row| items.get(row)),
-                };
-                if truncate && let Some(face) = face {
-                    let color = combo_face_text_color(!enabled);
-                    super::text::push_combo_face_label_draw_with_color(&mut paint.texts, state, face, rect, color, scale);
-                } else if let Some(face) = face {
-                    paint.texts.push(text(
-                        state,
-                        face,
-                        crate::ui::skirmish_shell::combo_text_rect(rect, scale),
-                        ShellAlign::V_CENTER,
-                        scale,
-                        combo_face_text_color(!enabled),
-                    ));
-                }
-                let Some(drop_down) = drop_down else { continue };
-                let popup = drop_down.popup;
-                push_popup_instances(
-                    &mut paint.popup,
-                    atlas,
-                    popup.rect,
-                    drop_down.hot_row.and_then(|row| popup.row_rect(row)),
-                    (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
-                        let at = scale.derive_rect(popup.row_rect(row)?, |r| RectPx::new(r.x + 2, r.y + 2, r.w - 4, 19));
-                        Some((at, swatch(row)?))
-                    }),
-                    // The combo's own scrollbar draws its thumb across the bar.
-                    popup.scrollbar().zip(popup.thumb()).map(|(bar, thumb)| match own_scrollbar {
-                        true => (bar, RectPx::new(bar.x, thumb.y, bar.w, thumb.h)),
-                        false => (bar, thumb),
-                    }),
-                    drop_down.pressed_part.map(dropdown_scroll_part),
-                    scale,
-                    SHELL_DROPDOWN_DEPTH - 0.00002,
-                );
-                for row in popup.first..popup.first + popup.visible_rows {
-                    let (Some(at), Some(item)) = (popup.row_rect(row), items.get(row)) else { continue };
-                    if truncate {
-                        let visible = row - popup.first;
-                        super::text::push_combo_dropdown_label(&mut paint.popup_texts, state, item, popup.content(), visible, scale);
-                        continue;
-                    }
-                    paint.popup_texts.push(text_at_depth(
-                        state,
-                        item,
-                        scale.derive_rect(at, |r| RectPx::new(r.x + 3, r.y, r.w - 6, r.h)),
-                        ShellAlign::V_CENTER,
-                        scale,
-                        SHELL_LABEL_TEXT_RGB,
-                        SHELL_DROPDOWN_TEXT_DEPTH,
-                    ));
-                }
-            }
-            // A list with a `RowCount` paints its own rows and frame.
-            NodeKind::List if gui.get(node, Prop::RowCount).ok().flatten().is_none() => {
                 // The owner-draw list `0x00618D40` over its dialog's art.
                 let Some(view) = gui.list_view(node) else { continue };
                 let metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
@@ -294,19 +308,32 @@ pub(crate) fn paint_gui_with(
                     Some(Value::Bool(true)) => view.window_geometry(rect, metrics),
                     _ => view.geometry(rect, metrics),
                 };
-                super::list::paint_list(&mut paint.controls, atlas, geometry, view.top, view.selected, view.pressed, false, scale);
-                let rows = items(gui, node).iter().skip(view.top).take(geometry.visible_rows);
-                for (visible, row) in rows.enumerate().filter(|_| !covered) {
+                let selected = view.selected.filter(|_| !flag(gui, node, Prop::NoSelectionFill, false));
+                match style.control_lists {
+                    true => super::controls::list_view_controls(&mut paint.controls, atlas, geometry, (selected, view.top, view.pressed), scale),
+                    false => super::list::paint_list(&mut paint.controls, atlas, geometry, view.top, selected, view.pressed, false, scale),
+                }
+                let normal = text_rgb(gui, node, true, SHELL_LABEL_TEXT_RGB, None);
+                let rows: Vec<(&str, u32)> = match &host_rows {
+                    Some(rows) => rows.iter().map(|(row, rgb)| (row.as_str(), *rgb)).collect(),
+                    None => items(gui, node, Prop::Items).iter().map(|row| (row.as_str(), u32::MAX)).collect(),
+                };
+                let shown = rows.into_iter().skip(view.top).take(geometry.visible_rows);
+                for (visible, (row, packed)) in shown.enumerate().filter(|_| !covered) {
                     let r = geometry.row(visible);
-                    let at = RectPx::new(r.x + 2, r.y, r.w - 2, r.h);
-                    paint.texts.push(text(state, row, at, ShellAlign::V_CENTER, scale, SHELL_LABEL_TEXT_RGB));
+                    let at = inset(gui, node, r, scale).unwrap_or(RectPx::new(r.x + 2, r.y, r.w - 2, r.h));
+                    let rgb = match packed {
+                        u32::MAX => normal,
+                        c => [c as u8, (c >> 8) as u8, (c >> 16) as u8].map(|c| f32::from(c) / 255.0),
+                    };
+                    paint.texts.push(text(state, row, at, ShellAlign::V_CENTER, scale, rgb, depth));
                 }
             }
             // NewEdit `0x00614B30` as `push_new_edit` paints it; the open IME
             // composition shows in the focused one.
             NodeKind::Edit => {
                 let edit = new_edit(gui, node);
-                let composition = state.platform.ime.open_composition().filter(|_| edit.focused);
+                let composition = state.platform.ime.open_composition().filter(|_| style.ime && edit.focused);
                 super::controls::push_new_edit(
                     &mut paint.controls,
                     &mut paint.texts,
@@ -316,18 +343,115 @@ pub(crate) fn paint_gui_with(
                     composition,
                     rect,
                     state.frontend.shell_controller.caret_visible(node),
-                    rgb(gui, node, SHELL_LABEL_TEXT_RGB),
-                    SHELL_CONTROL_TEXT_DEPTH,
+                    text_rgb(gui, node, true, SHELL_LABEL_TEXT_RGB, None),
+                    depth,
                     scale,
                 );
             }
             NodeKind::Text => {
-                if let Some(label) = caption(state, gui, node).filter(|t| !covered && !t.is_empty()) {
-                    paint.texts.push(text(state, &label, rect, align, scale, rgb(gui, node, SHELL_LABEL_TEXT_RGB)));
+                if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
+                    let at = inset(gui, node, rect, scale).unwrap_or(rect);
+                    let rgb = text_rgb(gui, node, enabled, SHELL_LABEL_TEXT_RGB, None);
+                    paint.texts.push(text(state, &label, at, align, scale, rgb, depth));
                 }
             }
             _ => {}
         }
     }
     paint
+}
+
+/// An owner-draw combo's face, and its drop-down while it is open.
+#[allow(clippy::too_many_arguments)]
+fn paint_combo(
+    paint: &mut GuiPaint,
+    state: &AppState,
+    atlas: &SkirmishShellChromeAtlas,
+    gui: &Gui,
+    node: NodeId,
+    rect: RectPx,
+    enabled: bool,
+    scale: ShellScale,
+    depth: f32,
+) {
+    let drop_down = gui.combo_drop_down(node);
+    let selected = usize::try_from(int(gui, node, Prop::Selected, -1)).ok();
+    // A colour row shows its swatch (`house_color_tint`) and no text.
+    let swatches = items(gui, node, Prop::Swatches);
+    let swatch = |row: usize| {
+        let index = swatches.get(row)?.parse().ok()?;
+        Some(super::controls::house_color_tint(state.rules(), index))
+    };
+    let face_swatch = selected.and_then(swatch);
+    let open = drop_down.is_some();
+    paint_control(&mut paint.controls, &atlas.control_chrome(), ControlPaint::Combo { rect, swatch: face_swatch, open, disabled: !enabled }, scale);
+    let items = items(gui, node, Prop::Items);
+    // A host caption (`Text`) stands in for the selected row's; `Truncate`
+    // cuts captions to gamemd's arrow and scrollbar reserves (`0x00617250`,
+    // `0x0060DF38`), squeezed first.
+    let truncate = flag(gui, node, Prop::Truncate, false);
+    let face = match gui.get(node, Prop::Text).ok().flatten() {
+        Some(Value::Text(face)) => Some(face),
+        _ => selected.and_then(|row| items.get(row)),
+    };
+    let rgb = text_rgb(gui, node, enabled, SHELL_LABEL_TEXT_RGB, Some(combo_face_text_color(true)));
+    let font = &state.renderer.bit_font;
+    if let Some(face) = face {
+        if truncate {
+            let at = combo_face_text_draw_rect(rect, scale);
+            fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
+                paint.texts.push(text(state, face, at, ShellAlign::V_CENTER, scale, rgb, depth));
+            });
+        } else {
+            let at = crate::ui::skirmish_shell::combo_text_rect(rect, scale);
+            paint.texts.push(text(state, face, at, ShellAlign::V_CENTER, scale, rgb, depth));
+        }
+    }
+    let Some(drop_down) = drop_down else { return };
+    let popup = drop_down.popup;
+    let own_scrollbar = flag(gui, node, Prop::ComboScrollbar, false);
+    push_popup_instances(
+        &mut paint.popup,
+        atlas,
+        popup.rect,
+        drop_down.hot_row.and_then(|row| popup.row_rect(row)),
+        (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
+            let at = scale.derive_rect(popup.row_rect(row)?, |r| RectPx::new(r.x + 2, r.y + 2, r.w - 4, 19));
+            Some((at, swatch(row)?))
+        }),
+        // The combo's own scrollbar draws its thumb across the bar.
+        popup.scrollbar().zip(popup.thumb()).map(|(bar, thumb)| match own_scrollbar {
+            true => (bar, RectPx::new(bar.x, thumb.y, bar.w, thumb.h)),
+            false => (bar, thumb),
+        }),
+        drop_down.pressed_part.map(dropdown_scroll_part),
+        scale,
+        SHELL_DROPDOWN_DEPTH - 0.00002,
+    );
+    let content = popup.content();
+    for row in popup.first..popup.first + popup.visible_rows {
+        let (Some(at), Some(item)) = (popup.row_rect(row), items.get(row)) else { continue };
+        if !truncate {
+            let at = scale.derive_rect(at, |r| RectPx::new(r.x + 3, r.y, r.w - 6, r.h));
+            paint.popup_texts.push(text(state, item, at, ShellAlign::V_CENTER, scale, SHELL_LABEL_TEXT_RGB, SHELL_DROPDOWN_TEXT_DEPTH));
+            continue;
+        }
+        if item.is_empty() {
+            continue;
+        }
+        // Cut to the row less the scrollbar reserve (`0x0060DF38`).
+        let at = combo_dropdown_text_rect_for_current_renderer(content, row - popup.first, scale);
+        fit_owner_draw_label(font, item, combo_dropdown_text_fit_width(content, scale), |item| {
+            paint.popup_texts.push(shell_text::draw_in_rect_scaled(
+                font,
+                item,
+                at,
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::V_CENTER,
+                [0.0; 2],
+                SHELL_DROPDOWN_TEXT_DEPTH,
+                scale.factor(),
+            ));
+        });
+    }
 }

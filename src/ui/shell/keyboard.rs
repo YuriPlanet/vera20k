@@ -1,9 +1,10 @@
 //! Shared Keyboard A3 control state and physical geometry. Native5FBEF0/5FB320,
 //! RT_DIALOG A3 atBEF560; bindings remain in the app command owner.
-use super::button::ShellButtonInteraction;
+use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
+
+use super::controller::DialogController;
 use super::geom::{self, RectPx, ShellScale};
 use super::in_game_shell::{self, InGameShellLayout};
-use super::list::ListScrollInteraction;
 
 /// A3 as a front-end family page: no top buttons, Back on the bottom row,
 /// heading `0x694` and status line `0x695` (template at `0x00BEF560`).
@@ -42,22 +43,88 @@ pub enum KeyboardControl {
     CurrentOwner,
     Error,
 }
+/// The children in the order the pointer finds them (the buttons, then the
+/// others, the description group last), with the template's control ids
+/// (the group box 0x6E9 holds the description) and status help.
+const CONTROLS: [(KeyboardControl, u16, &str); 10] = [
+    (
+        KeyboardControl::Button(KeyboardButton::Back),
+        0x686,
+        "STT:KeyboardButtonBack",
+    ),
+    (
+        KeyboardControl::Button(KeyboardButton::Assign),
+        0x4CF,
+        "STT:KeyboardButtonAssign",
+    ),
+    (
+        KeyboardControl::Button(KeyboardButton::ResetAll),
+        0x4D0,
+        "STT:KeyboardButtonResetAll",
+    ),
+    (
+        KeyboardControl::Category,
+        0x4C7,
+        "STT:KeyboardComboCategory",
+    ),
+    (KeyboardControl::Commands, 0x4C8, "STT:KeyboardListCommands"),
+    (KeyboardControl::Capture, 0x4CD, "STT:KeyboardEditEntry"),
+    (
+        KeyboardControl::CurrentShortcut,
+        0x63C,
+        "STT:KeyboardLabelShortcut",
+    ),
+    (
+        KeyboardControl::CurrentOwner,
+        0x63B,
+        "STT:KeyboardLabelAssigned",
+    ),
+    (KeyboardControl::Error, 0x63D, "STT:KeyboardLabelError"),
+    (
+        KeyboardControl::Description,
+        0x6E9,
+        "STT:KeyboardGroupDescription",
+    ),
+];
+
 impl KeyboardControl {
+    fn row(self) -> (KeyboardControl, u16, &'static str) {
+        CONTROLS
+            .into_iter()
+            .find(|row| row.0 == self)
+            .expect("every control has a row")
+    }
+    pub fn id(self) -> u16 {
+        self.row().1
+    }
+    pub fn from_id(id: u16) -> Option<Self> {
+        CONTROLS
+            .into_iter()
+            .find(|row| row.1 == id)
+            .map(|row| row.0)
+    }
     pub fn help_key(self) -> &'static str {
-        match self {
-            Self::Button(KeyboardButton::Back) => "STT:KeyboardButtonBack",
-            Self::Button(KeyboardButton::Assign) => "STT:KeyboardButtonAssign",
-            Self::Button(KeyboardButton::ResetAll) => "STT:KeyboardButtonResetAll",
-            Self::Category => "STT:KeyboardComboCategory",
-            Self::Commands => "STT:KeyboardListCommands",
-            Self::Description => "STT:KeyboardGroupDescription",
-            Self::Capture => "STT:KeyboardEditEntry",
-            Self::CurrentShortcut => "STT:KeyboardLabelShortcut",
-            Self::CurrentOwner => "STT:KeyboardLabelAssigned",
-            Self::Error => "STT:KeyboardLabelError",
-        }
+        self.row().2
     }
 }
+
+/// A3's children with their status help. The category face and the
+/// capture field are statics to the pointer: A3 opens its own list and
+/// takes the keys itself. Every press on a command row selects it.
+fn spec() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog).children(CONTROLS.map(|(control, id, help)| {
+        let node = match control {
+            KeyboardControl::Button(_) => NodeSpec::new(NodeKind::Button),
+            KeyboardControl::Commands => NodeSpec::new(NodeKind::List)
+                .with(Prop::RowCount, Value::Int(0))
+                .with(Prop::ListWindow, Value::Bool(true))
+                .with(Prop::DoubleClick, Value::Bool(false)),
+            _ => NodeSpec::new(NodeKind::Text),
+        };
+        node.id(id.into()).tooltip(help)
+    }))
+}
+
 #[derive(Debug, Clone)]
 pub struct KeyboardCommandRow {
     pub command_index: usize,
@@ -65,7 +132,7 @@ pub struct KeyboardCommandRow {
     pub category: String,
     pub description: String,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct KeyboardState {
     pub(crate) title: super::static_reveal::Kind1StaticReveal,
     pub(crate) title_receipt: Option<super::static_reveal::Kind1RevealReceipt>,
@@ -74,8 +141,6 @@ pub struct KeyboardState {
     pub categories: Vec<String>,
     pub category: usize,
     pub rows: Vec<usize>,
-    pub selected: Option<usize>,
-    pub top: usize,
     pub captured: u16,
     /// 464 clears63B independently of the retained capture field.
     pub current_owner_visible: bool,
@@ -83,9 +148,8 @@ pub struct KeyboardState {
     pub capture_focused: bool,
     pub category_open: bool,
     pub category_hovered: Option<usize>,
-    pub buttons: ShellButtonInteraction<KeyboardButton>,
-    pub hovered: Option<KeyboardControl>,
-    pub scroll: ListScrollInteraction,
+    /// The controls; the command list holds its selection and top.
+    pub ui: DialogController,
 }
 impl KeyboardState {
     /// `trailing_categories` are listed after every category the commands
@@ -114,18 +178,18 @@ impl KeyboardState {
             categories,
             category: 0,
             rows: Vec::new(),
-            selected: None,
-            top: 0,
             captured: 0,
             current_owner_visible: false,
             error: None,
             capture_focused: false,
             category_open: false,
             category_hovered: None,
-            buttons: Default::default(),
-            hovered: None,
-            scroll: Default::default(),
+            ui: DialogController::default(),
         };
+        result.ui.reset_to(KEYBOARD_PAGE.dialog, false);
+        if let Some(root) = result.root() {
+            super::page::ensure_built(result.ui.gui_mut(), root, spec);
+        }
         result.select_category(0);
         result
     }
@@ -144,7 +208,6 @@ impl KeyboardState {
         if category >= self.categories.len() {
             return;
         }
-        self.scroll.cancel();
         self.category = category;
         self.rows = self
             .commands
@@ -156,13 +219,51 @@ impl KeyboardState {
         self.rows
             .sort_by_key(|i| self.commands[*i].name.to_lowercase());
         // 5FB60E targets static63B, not list4C8: initial selection stays absent.
-        self.selected = None;
-        self.top = 0;
+        let count = self.rows.len() as i32;
+        if let Some(node) = self.list_node() {
+            let gui = self.ui.gui_mut();
+            gui.cancel_list_scroll(node);
+            let _ = gui.set(node, Prop::RowCount, Value::Int(count));
+            let _ = gui.set(node, Prop::Selected, Value::Int(-1));
+            let _ = gui.set(node, Prop::Top, Value::Int(0));
+        }
         self.current_owner_visible = false;
         self.category_open = false;
     }
+    fn root(&self) -> Option<NodeId> {
+        self.ui.root_in(KEYBOARD_PAGE.dialog)
+    }
+    fn list_node(&self) -> Option<NodeId> {
+        self.ui
+            .gui()
+            .find_id(self.root()?, KeyboardControl::Commands.id().into())
+    }
+    /// The command list's view: top, selection and held scroll part.
+    pub fn list(&self) -> vera20k_gui::ListView {
+        let view = self
+            .list_node()
+            .and_then(|node| self.ui.gui().list_view(node));
+        view.unwrap_or(vera20k_gui::ListView {
+            rows: 0,
+            top: 0,
+            selected: None,
+            pressed: None,
+        })
+    }
+    pub fn selected(&self) -> Option<usize> {
+        self.list().selected
+    }
+    /// The list's top row, which the wheel sets.
+    pub fn set_top(&mut self, top: usize) {
+        if let Some(node) = self.list_node() {
+            let _ = self
+                .ui
+                .gui_mut()
+                .set(node, Prop::Top, Value::Int(top as i32));
+        }
+    }
     pub fn selected_command(&self) -> Option<&KeyboardCommandRow> {
-        self.selected
+        self.selected()
             .and_then(|i| self.rows.get(i))
             .map(|i| &self.commands[*i])
     }
@@ -170,15 +271,18 @@ impl KeyboardState {
         if row >= self.rows.len() {
             return;
         }
-        self.selected = Some(row);
+        if let Some(node) = self.list_node() {
+            let _ = self
+                .ui
+                .gui_mut()
+                .set(node, Prop::Selected, Value::Int(row as i32));
+        }
         self.current_owner_visible = false;
         self.captured = 0;
         self.capture_focused = true;
     }
     pub fn reset_interaction(&mut self) {
-        self.buttons = Default::default();
-        self.scroll.cancel();
-        self.hovered = None;
+        self.ui.gui_mut().cancel_pointer();
         self.category_open = false;
     }
 }
@@ -288,30 +392,18 @@ impl KeyboardLayout {
             KeyboardButton::ResetAll => self.reset,
         }
     }
-    pub fn control_at(self, x: i32, y: i32) -> Option<KeyboardControl> {
-        for button in [
-            KeyboardButton::Back,
-            KeyboardButton::Assign,
-            KeyboardButton::ResetAll,
-        ] {
-            if self.button(button).contains(x, y) {
-                return Some(KeyboardControl::Button(button));
-            }
-        }
-        for (rect, id) in [
-            (self.category, KeyboardControl::Category),
-            (self.commands, KeyboardControl::Commands),
-            (self.capture, KeyboardControl::Capture),
-            (self.current_shortcut, KeyboardControl::CurrentShortcut),
-            (self.current_owner, KeyboardControl::CurrentOwner),
-            (self.error, KeyboardControl::Error),
-            (self.group, KeyboardControl::Description),
-        ] {
-            if rect.contains(x, y) {
-                return Some(id);
-            }
-        }
-        None
+    /// Control `id`'s rect.
+    pub fn rect(self, id: u16) -> Option<RectPx> {
+        Some(match KeyboardControl::from_id(id)? {
+            KeyboardControl::Button(button) => self.button(button),
+            KeyboardControl::Category => self.category,
+            KeyboardControl::Commands => self.commands,
+            KeyboardControl::Capture => self.capture,
+            KeyboardControl::CurrentShortcut => self.current_shortcut,
+            KeyboardControl::CurrentOwner => self.current_owner,
+            KeyboardControl::Error => self.error,
+            KeyboardControl::Description => self.group,
+        })
     }
     /// Combo owner618AEA sets font+6=23px dropdown rows, independently of lists.
     /// The popup is authored on the face and stretched with it, so a stretched
@@ -530,10 +622,10 @@ mod tests {
         state.category_open = true;
         state.select_category(0);
         assert_eq!(state.captured, 81);
-        assert_eq!(state.selected, Some(0));
+        assert_eq!(state.selected(), Some(0));
         assert!(!state.category_open);
         state.reset_categories();
-        assert!(state.selected.is_none());
+        assert!(state.selected().is_none());
         assert_eq!(state.captured, 81);
         assert!(!state.current_owner_visible);
         state.select_command(1);

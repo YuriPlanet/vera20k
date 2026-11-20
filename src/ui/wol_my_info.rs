@@ -11,13 +11,12 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
 use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::page;
+    RectPx, ShellScale, child_window, };
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::page;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0114);
@@ -61,49 +60,15 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: "GUI:MyInformation",
     stacked: &[
-        MenuPageButtonSpec {
-            id: PLAY_BUDDY,
-            dlu_top: 126,
-            csf_key: "GUI:PlayBuddy",
-            tooltip_key: "STT:WOLBuddy",
-            result: Some(PLAY_BUDDY as i32),
-        },
-        MenuPageButtonSpec {
-            id: CLAN,
-            dlu_top: 152,
-            csf_key: "GUI:Clan",
-            tooltip_key: "STT:WOLClan",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: TOURNAMENT,
-            dlu_top: 178,
-            csf_key: "GUI:Tournament",
-            tooltip_key: "STT:WOLTournament",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: FORGET,
-            dlu_top: 204,
-            csf_key: "GUI:ForgetAccount",
-            tooltip_key: "STT:WOLLoginForget",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: MANAGE,
-            dlu_top: 230,
-            csf_key: "GUI:ManageAccount",
-            tooltip_key: "STT:WOLManageAccount",
-            result: None,
-        },
+        MenuPageButtonSpec::new(PLAY_BUDDY, 126, "GUI:PlayBuddy", "STT:WOLBuddy")
+            .returning(PLAY_BUDDY as i32),
+        MenuPageButtonSpec::new(CLAN, 152, "GUI:Clan", "STT:WOLClan"),
+        MenuPageButtonSpec::new(TOURNAMENT, 178, "GUI:Tournament", "STT:WOLTournament"),
+        MenuPageButtonSpec::new(FORGET, 204, "GUI:ForgetAccount", "STT:WOLLoginForget"),
+        MenuPageButtonSpec::new(MANAGE, 230, "GUI:ManageAccount", "STT:WOLManageAccount"),
     ],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 344,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:WOLMyInformationBack",
-        result: Some(BACK as i32),
-    },
+    back: MenuPageButtonSpec::new(BACK, 344, "GUI:Back", "STT:WOLMyInformationBack")
+        .returning(BACK as i32),
 };
 
 /// The right-aligned captions of the combos and the statistics, in
@@ -478,16 +443,32 @@ impl WolMyInfoPage {
     pub(crate) fn present(&self, gui: &mut Gui, root: NodeId, unknown: &str) {
         let mut set = |id: u16, prop: Prop, value: Value| page::set(gui, root, id, prop, value);
         for (id, combo) in COMBOS.into_iter().zip(&self.combos) {
-            let rows = |f: fn(&MyInfoRow) -> String| Value::Items(combo.rows.iter().map(f).collect());
+            let rows =
+                |f: fn(&MyInfoRow) -> String| Value::Items(combo.rows.iter().map(f).collect());
             set(id, Prop::Items, rows(|row| row.text.clone()));
-            set(id, Prop::Swatches, rows(|row| row.swatch.map(|s| s.to_string()).unwrap_or_default()));
-            set(id, Prop::Selected, Value::Int(combo.selected.map_or(-1, |row| row as i32)));
+            set(
+                id,
+                Prop::Swatches,
+                rows(|row| row.swatch.map(|s| s.to_string()).unwrap_or_default()),
+            );
+            set(
+                id,
+                Prop::Selected,
+                Value::Int(combo.selected.map_or(-1, |row| row as i32)),
+            );
             set(id, Prop::Enabled, Value::Bool(combo.enabled));
         }
-        for (id, checked) in [(AUTO_LOGIN, self.auto_login), (MATCH_SAME_RES, self.match_same_res)] {
+        for (id, checked) in [
+            (AUTO_LOGIN, self.auto_login),
+            (MATCH_SAME_RES, self.match_same_res),
+        ] {
             // The caption greys as a disabled button's does.
             let enabled = self.enabled(id);
-            let color = if enabled { Rgba(0xFF, 0xFF, 0, 0xFF) } else { Rgba(0x48, 0, 0, 0xFF) };
+            let color = if enabled {
+                Rgba(0xFF, 0xFF, 0, 0xFF)
+            } else {
+                Rgba(0x48, 0, 0, 0xFF)
+            };
             set(id, Prop::Checked, Value::Bool(checked));
             set(id, Prop::Enabled, Value::Bool(enabled));
             set(id, Prop::Color, Value::Rgba(color));
@@ -497,7 +478,11 @@ impl WolMyInfoPage {
         }
         for id in [HEADING, UPDATE].into_iter().chain(STATS) {
             let text = self.texts.iter().find(|(control, _)| *control == id);
-            set(id, Prop::Text, Value::Text(text.map_or(unknown, |(_, text)| text).to_owned()));
+            set(
+                id,
+                Prop::Text,
+                Value::Text(text.map_or(unknown, |(_, text)| text).to_owned()),
+            );
         }
     }
 }
@@ -514,18 +499,31 @@ pub(crate) fn spec() -> NodeSpec {
     };
     let labels = LABELS.iter().enumerate().map(|(index, (key, _))| {
         let id = LABEL_IDS + index as u16;
-        NodeSpec::new(NodeKind::Text).id(id.into()).label(key).with(Prop::Align, align(ShellAlign::H_RIGHT))
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .label(key)
+            .with(Prop::Align, align(ShellAlign::H_RIGHT))
     });
     let combos = COMBOS.map(|id| {
-        help(NodeSpec::new(NodeKind::Combo), id).with(Prop::VisibleRows, Value::Int(visible_rows(id) as i32))
+        help(NodeSpec::new(NodeKind::Combo), id)
+            .with(Prop::VisibleRows, Value::Int(visible_rows(id) as i32))
     });
-    let boxes = [(AUTO_LOGIN, AUTO_LOGIN_KEY), (MATCH_SAME_RES, MATCH_SAME_RES_KEY)].map(|(id, key)| {
-        help(NodeSpec::new(NodeKind::Checkbox), id).label(key).with(Prop::ActivateOnPress, Value::Bool(true))
+    let boxes = [
+        (AUTO_LOGIN, AUTO_LOGIN_KEY),
+        (MATCH_SAME_RES, MATCH_SAME_RES_KEY),
+    ]
+    .map(|(id, key)| {
+        help(NodeSpec::new(NodeKind::Checkbox), id)
+            .label(key)
+            .with(Prop::ActivateOnPress, Value::Bool(true))
     });
-    let texts = [(HEADING, ShellAlign::H_CENTER), (UPDATE, ShellAlign::H_CENTER)]
-        .into_iter()
-        .chain(STATS.map(|id| (id, ShellAlign::NONE)))
-        .map(|(id, a)| help(NodeSpec::new(NodeKind::Text), id).with(Prop::Align, align(a)));
+    let texts = [
+        (HEADING, ShellAlign::H_CENTER),
+        (UPDATE, ShellAlign::H_CENTER),
+    ]
+    .into_iter()
+    .chain(STATS.map(|id| (id, ShellAlign::NONE)))
+    .map(|(id, a)| help(NodeSpec::new(NodeKind::Text), id).with(Prop::Align, align(a)));
     NodeSpec::new(NodeKind::Dialog)
         .children(page::menu_buttons(&PAGE))
         .children(labels)
@@ -583,31 +581,11 @@ impl WolMyInfoLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
+        let place = Placer::on(scale, width, height);
+        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
+        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
         // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        let mut title =
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-        title.h = dlu_rect(424, 4, 108, 11).h + 1;
-        if scale.is_retail() {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
+        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
         let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
         let combo_tops = [49, 71, 93, 115, 137];
         let combos = combo_tops.map(|top| child_window(177, top, 156, 143));

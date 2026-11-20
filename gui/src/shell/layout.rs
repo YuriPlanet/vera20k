@@ -76,13 +76,65 @@ pub fn status_text_rect(window: RectPx) -> RectPx {
 /// Resolve one include-set control outside a descriptor table, with the same
 /// per-control rule `layout_pass` applies.
 pub fn anchor_rect(rule: AnchorRule, dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
-    apply_anchor(
-        rule,
-        dlu,
-        screen_w,
-        screen_h,
-        geom::right_panel_rects(screen_w, screen_h),
-    )
+    Placer::new(screen_w, screen_h).at(rule, dlu.x, dlu.y, dlu.w, dlu.h)
+}
+
+/// Places a dialog's controls on one screen by their resource template and
+/// re-anchor rule, as `layout_pass` resolves them. On a scaled mapping the
+/// controls are placed on the 800x600 dialog and scaled with it, so a page's
+/// retail and window-filling layouts come from one table.
+#[derive(Debug, Clone, Copy)]
+pub struct Placer {
+    screen_w: i32,
+    screen_h: i32,
+    panel: RightPanelRects,
+    scale: geom::ShellScale,
+}
+
+impl Placer {
+    /// The retail placement on a `screen_w`x`screen_h` screen.
+    pub fn new(screen_w: i32, screen_h: i32) -> Self {
+        Self::on(geom::ShellScale::RETAIL, screen_w, screen_h)
+    }
+
+    /// The placement on `scale`'s mapping: the retail screen for the retail
+    /// mapping, the scaled 800x600 dialog otherwise.
+    pub fn on(scale: geom::ShellScale, screen_w: i32, screen_h: i32) -> Self {
+        let (screen_w, screen_h) = if scale.is_retail() {
+            (screen_w, screen_h)
+        } else {
+            (SHELL_BASE_W, SHELL_BASE_H)
+        };
+        Self {
+            screen_w,
+            screen_h,
+            panel: geom::right_panel_rects(screen_w, screen_h),
+            scale,
+        }
+    }
+
+    /// The control with resource template `(x, y, w, h)` DLU under `rule`.
+    pub fn at(&self, rule: AnchorRule, x: i32, y: i32, w: i32, h: i32) -> RectPx {
+        let placed = apply_anchor(
+            rule,
+            RectPx::new(x, y, w, h),
+            self.screen_w,
+            self.screen_h,
+            self.panel,
+        );
+        self.scale.scale_rect(placed)
+    }
+
+    /// A control whose rule reads no resource template (the column's final
+    /// tile, [`AnchorRule::ButtonColumnLast`]).
+    pub fn rule(&self, rule: AnchorRule) -> RectPx {
+        self.at(rule, 0, 0, 0, 0)
+    }
+
+    /// An already-placed 800x600 pixel rect `(x, y, w, h)` on this mapping.
+    pub fn px(&self, x: i32, y: i32, w: i32, h: i32) -> RectPx {
+        self.scale.scale_rect(RectPx::new(x, y, w, h))
+    }
 }
 
 /// Resolve one control's pixel rect by re-anchor rule. `dlu` is the raw DLU
@@ -104,6 +156,22 @@ fn apply_anchor(
             let x = panel.top.x + (geom::RIGHT_PANEL_WIDTH - cell_w);
             RectPx::new(x, y, cell_w, geom::SDBTNANM_CELL_H)
         }
+        AnchorRule::Resource => geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+        AnchorRule::ChildWindow => geom::child_window(dlu.x, dlu.y, dlu.w, dlu.h),
+        AnchorRule::ButtonColumn { cell_w } => geom::snap_button_biased_truncate(
+            screen_w,
+            screen_h,
+            geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+            panel,
+            cell_w,
+        ),
+        AnchorRule::ButtonColumnLast { cell_w } => RectPx::new(
+            screen_w - geom::center_offset(screen_w, SHELL_BASE_W) - cell_w,
+            panel.tile.y + (panel.tile_count - 1).max(0) * geom::RIGHT_PANEL_TILE_H,
+            cell_w,
+            geom::SDBTNANM_CELL_H,
+        ),
+        AnchorRule::StatusLine => status_line_rect(dlu, screen_w, screen_h),
         AnchorRule::RightAnchor => right_anchor(
             screen_w,
             screen_h,

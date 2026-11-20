@@ -12,18 +12,18 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::controller::DialogController;
-use super::descriptor::{DialogId, HEADING_ANCHOR, MONITOR_ANCHOR};
-use super::geom::{
-    RectPx, RightPanelRects, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, SHELL_BASE_H, SHELL_BASE_W,
-    ShellScale, center_offset, dlu_rect, lower_strip_rect, right_panel_rects,
-    snap_button_biased_truncate,
+use super::descriptor::{
+    AnchorRule, BACK_BUTTON, BUTTON, DialogId, HEADING_ANCHOR, MONITOR_ANCHOR,
 };
-use super::layout::{anchor_rect, status_line_rect};
+use super::geom::{
+    RectPx, RightPanelRects, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, center_offset,
+    lower_strip_rect, right_panel_rects,
+};
+use super::layout::Placer;
 use crate::ui::main_menu_shell::{
     MainMenuMovieBase, movie_base_for_responsive_width, movie_base_for_screen_width,
 };
 
-const RIGHT_PANEL_TILE_H: i32 = super::geom::RIGHT_PANEL_TILE_H;
 const RA2TS_L_W: i32 = 632;
 const RA2TS_L_H: i32 = 570;
 const RA2TS_S_W: i32 = 472;
@@ -44,6 +44,37 @@ pub struct MenuPageButtonSpec {
     /// Constant value the dialog proc writes through `GetWindowLong(hwnd, 8)`,
     /// or `None` when it writes run-time data instead.
     pub result: Option<i32>,
+}
+
+impl MenuPageButtonSpec {
+    /// A button whose dialog proc writes run-time data, or nothing.
+    pub const fn new(
+        id: u16,
+        dlu_top: i32,
+        csf_key: &'static str,
+        tooltip_key: &'static str,
+    ) -> Self {
+        Self {
+            id,
+            dlu_top,
+            csf_key,
+            tooltip_key,
+            result: None,
+        }
+    }
+
+    /// The same button at template top `dlu_top`.
+    pub const fn at(self, dlu_top: i32) -> Self {
+        Self { dlu_top, ..self }
+    }
+
+    /// The same button writing the constant `result`.
+    pub const fn returning(self, result: i32) -> Self {
+        Self {
+            result: Some(result),
+            ..self
+        }
+    }
 }
 
 /// Static description of one right-panel menu page dialog.
@@ -161,16 +192,6 @@ fn movie_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
     )
 }
 
-fn back_rect(screen_w: i32, panel: RightPanelRects) -> RectPx {
-    let offset_x = center_offset(screen_w, SHELL_BASE_W);
-    RectPx::new(
-        screen_w - offset_x - SDBTNANM_CELL_W_NARROW,
-        panel.tile.y + (panel.tile_count - 1).max(0) * RIGHT_PANEL_TILE_H,
-        SDBTNANM_CELL_W_NARROW,
-        SDBTNANM_CELL_H,
-    )
-}
-
 pub fn compute_layout(spec: &MenuPageSpec, screen_w: u32, screen_h: u32) -> MenuPageLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
@@ -180,50 +201,28 @@ pub fn compute_layout(spec: &MenuPageSpec, screen_w: u32, screen_h: u32) -> Menu
         MainMenuMovieBase::Ra2tsS => (RA2TS_S_W, RA2TS_S_H),
         MainMenuMovieBase::Ra2tsL => (RA2TS_L_W, RA2TS_L_H),
     };
-    let panel = right_panel_rects(screen_w, screen_h);
-    // Both statics sit at the same template rects as in main menu 0xE2 (the
-    // right-panel anchor reads only their size, not the DLU x).
-    let title = anchor_rect(
-        HEADING_ANCHOR,
-        RectPx::new(425, 1, 108, 10),
-        screen_w,
-        screen_h,
-    );
-    let warning_monitor = anchor_rect(
-        MONITOR_ANCHOR,
-        RectPx::new(447, 29, 61, 33),
-        screen_w,
-        screen_h,
-    );
-    let mut buttons: Vec<MenuPageButtonRect> = spec
-        .stacked
-        .iter()
-        .map(|button| MenuPageButtonRect {
-            id: button.id,
-            rect: snap_button_biased_truncate(
-                screen_w,
-                screen_h,
-                dlu_rect(425, button.dlu_top, 108, 23),
-                panel,
-                SDBTNANM_CELL_W_NARROW,
-            ),
-        })
-        .collect();
-    buttons.push(MenuPageButtonRect {
-        id: spec.back.id,
-        rect: back_rect(screen_w, panel),
+    let place = Placer::new(screen_w, screen_h);
+    let stacked = spec.stacked.iter().map(|button| MenuPageButtonRect {
+        id: button.id,
+        rect: place.at(BUTTON, 425, button.dlu_top, 108, 23),
     });
+    let back = MenuPageButtonRect {
+        id: spec.back.id,
+        rect: place.rule(BACK_BUTTON),
+    };
 
     MenuPageLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         movie_base,
         movie: RectPx::new(movie_x, movie_y, movie_w, movie_h),
-        title,
-        warning_monitor,
-        status_help: status_line_rect(RectPx::new(2, 355, 303, 12), screen_w, screen_h),
-        buttons,
-        right_panel: panel,
+        // Both statics sit at the same template rects as in main menu 0xE2
+        // (the right-panel anchor reads only their size, not the DLU x).
+        title: place.at(HEADING_ANCHOR, 425, 1, 108, 10),
+        warning_monitor: place.at(MONITOR_ANCHOR, 447, 29, 61, 33),
+        status_help: place.at(AnchorRule::StatusLine, 2, 355, 303, 12),
+        buttons: stacked.chain(std::iter::once(back)).collect(),
+        right_panel: right_panel_rects(screen_w, screen_h),
         lower_strip: lower_strip_rect(screen_w, screen_h),
     }
 }
@@ -251,10 +250,16 @@ impl MenuPageLayout {
         self.status_help = scale.scale_rect(self.status_help);
         self.lower_strip = scale.scale_rect(self.lower_strip);
         self.right_panel = scale.scale_panel(self.right_panel);
-        for button in &mut self.buttons {
-            button.rect = scale.scale_rect(button.rect);
-        }
+        self.buttons = self.buttons.scaled_rects(scale);
         self
+    }
+}
+
+vera20k_gui::scaled_rects!(MenuPageButtonRect { rect; keep: id });
+
+impl ScaledRects for MenuPageLayout {
+    fn scaled_rects(&self, scale: ShellScale) -> Self {
+        self.clone().scaled_to(scale)
     }
 }
 
@@ -269,6 +274,21 @@ pub fn compute_responsive_layout(
         spec,
         ShellScale::from_screen(screen_w as i32, screen_h as i32),
     )
+}
+
+/// The page on `scale`'s mapping into a `screen_w`x`screen_h` window: the
+/// retail page for the retail mapping, the scaled 800x600 page otherwise.
+pub fn compute_layout_for(
+    spec: &MenuPageSpec,
+    scale: ShellScale,
+    screen_w: i32,
+    screen_h: i32,
+) -> MenuPageLayout {
+    if scale.is_retail() {
+        compute_layout(spec, screen_w as u32, screen_h as u32)
+    } else {
+        compute_layout_on(spec, scale)
+    }
 }
 
 /// The verified 800x600 page on `scale`'s mapping into its window: VERA's

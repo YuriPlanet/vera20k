@@ -1404,8 +1404,9 @@ impl SkirmishCapture {
                     Self::set_pointer(state, point);
                     crate::app::input::dispatch::handle_cursor_moved_in_game(state);
                     ensure!(
-                        state.match_state.match_presentation.diplomacy.hovered
-                            == Some(crate::ui::shell::diplomacy::DiplomacyControl::Name(1)),
+                        crate::app::input::dialog_page::hovered(
+                            &state.match_state.match_presentation.dialog_ui
+                        ) == Some(crate::ui::shell::diplomacy::DiplomacyControl::Name(1).id()),
                         "the pointer missed row 1's name"
                     );
                     self.route

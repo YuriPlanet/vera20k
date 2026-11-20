@@ -134,14 +134,14 @@ impl App {
             .match_presentation
             .in_game_gadgets
             .cancel_pointer_capture();
-        state.match_state.match_presentation.pause_menu_interaction = Default::default();
-        state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy = Default::default();
-        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+        let presentation = &mut state.match_state.match_presentation;
+        presentation.dialog_ui.gui_mut().cancel_pointer();
+        presentation.diplomacy_page = Default::default();
+        if let Some(page) = presentation.options_page.as_mut() {
             page.dialog.shell_cancel_pointer_gesture();
         }
-        if let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut() {
-            dialog.reset_interaction();
+        if let Some(dialog) = presentation.sound_dialog.as_mut() {
+            dialog.ui.gui_mut().cancel_pointer();
         }
         if let Some(browser) = state
             .match_state

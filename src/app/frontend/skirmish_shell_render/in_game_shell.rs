@@ -134,6 +134,33 @@ pub(super) fn push_art(
     push_art_scaled(out, entry, RectPx::new(rect.x, rect.y, w, h), clip);
 }
 
+/// A right-panel owner-draw button (`0x00612B70`): its SIDEBTTN frame,
+/// pushed in while `pressed`, and its centred caption.
+pub(super) fn push_panel_button(
+    art: &mut Vec<SpriteInstance>,
+    texts: &mut Vec<crate::render::shell_text::ShellTextDraw>,
+    state: &AppState,
+    atlas: &SidebarChromeAtlas,
+    (rect, caption, pressed): (RectPx, &str, bool),
+    screen: RectPx,
+) {
+    let frame = crate::ui::shell::button::owner_button_frame(pressed, false);
+    if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
+        push_art(art, entry, rect, screen);
+    }
+    super::text::push_text_draw(
+        texts,
+        state,
+        caption,
+        super::text::rect_to_text_rect(super::pause_menu::button_text_rect(rect, pressed)),
+        super::SHELL_LABEL_TEXT_RGB,
+        crate::render::shell_text::ShellAlign::H_CENTER
+            | crate::render::shell_text::ShellAlign::V_CENTER,
+        super::SHELL_CONTROL_TEXT_DEPTH,
+        1.0,
+    );
+}
+
 /// The whole canvas drawn over `rect`, scaled to its size, then clipped as
 /// [`push_art`] clips; at the canvas size it is that blit.
 fn push_art_scaled(

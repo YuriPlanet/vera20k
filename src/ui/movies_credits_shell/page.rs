@@ -9,35 +9,11 @@ pub const MOVIES_CREDITS_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0x0101),
     title_key: "GUI:MoviesAndCredits",
     stacked: &[
-        MenuPageButtonSpec {
-            id: 0x068D,
-            dlu_top: 122,
-            csf_key: "GUI:SneakPeeks",
-            tooltip_key: "STT:OptionsButtonSneak",
-            result: Some(0x0D),
-        },
-        MenuPageButtonSpec {
-            id: 0x068E,
-            dlu_top: 149,
-            csf_key: "GUI:PlayMovies",
-            tooltip_key: "STT:OptionsButtonMovies",
-            result: Some(0x0E),
-        },
-        MenuPageButtonSpec {
-            id: 0x068F,
-            dlu_top: 176,
-            csf_key: "GUI:ViewCredits",
-            tooltip_key: "STT:OptionsButtonCredits",
-            result: Some(0x0F),
-        },
+        MenuPageButtonSpec::new(0x068D, 122, "GUI:SneakPeeks", "STT:OptionsButtonSneak").returning(0x0D),
+        MenuPageButtonSpec::new(0x068E, 149, "GUI:PlayMovies", "STT:OptionsButtonMovies").returning(0x0E),
+        MenuPageButtonSpec::new(0x068F, 176, "GUI:ViewCredits", "STT:OptionsButtonCredits").returning(0x0F),
     ],
-    back: MenuPageButtonSpec {
-        id: 0x0686,
-        dlu_top: 346,
-        csf_key: "GUI:MainMenu",
-        tooltip_key: "STT:OptionsButtonBack",
-        result: Some(0x12),
-    },
+    back: MenuPageButtonSpec::new(0x0686, 346, "GUI:MainMenu", "STT:OptionsButtonBack").returning(0x12),
 };
 
 /// Main-loop state a `0x101` command selects.

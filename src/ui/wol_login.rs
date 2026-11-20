@@ -12,11 +12,10 @@
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, UiEvent, Value};
 
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
 use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
+    RectPx, ShellScale, child_window, };
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
@@ -982,32 +981,12 @@ impl WolLoginLayout {
     }
 
     fn build(width: i32, height: i32, scale: ShellScale, policy: LoginPolicy) -> Self {
-        let status_template = RectPx::new(2, 354, 316, 12);
-        let spec = policy.page_spec();
-        let (mut page, status_help) = if scale.is_retail() {
-            let page = menu_page::compute_layout(spec, width as u32, height as u32);
-            (page, status_line_rect(status_template, width, height))
-        } else {
-            let page = menu_page::compute_responsive_layout(spec, width as u32, height as u32);
-            (
-                page,
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
+        let place = Placer::on(scale, width, height);
+        let mut page = menu_page::compute_layout_for(policy.page_spec(), scale, width, height);
+        let status_help = place.at(AnchorRule::StatusLine, 2, 354, 316, 12);
         // Heading 0x694 is 108x11 DLU here, one row taller than the family's
         // (the same executed rect as 0x10E's).
-        let mut title =
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-        title.h = dlu_rect(424, 4, 108, 11).h + 1;
-        if scale.is_retail() {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
+        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
         let px = |rect: RectPx| scale.scale_rect(rect);
         let combo = child_window(196, 147, 141, 143);
         let password = child_window(196, 177, 140, 14);

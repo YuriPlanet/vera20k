@@ -40,6 +40,12 @@ pub struct RoomLimitsLayout {
     pub spectators: RectPx,
 }
 
+vera20k_gui::scaled_rects!(RoomLimitsLayout {
+    players_label,
+    players,
+    spectators
+});
+
 /// The two choices as a box's widgets, with control ids `players` and
 /// `spectators`: the Max players trackbar takes the pointer as every shell
 /// trackbar does, and the Allow spectators box toggles on a press on its

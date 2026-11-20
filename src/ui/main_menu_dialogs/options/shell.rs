@@ -286,37 +286,19 @@ const MODS_BUTTON: u16 = 0x7FF6;
 /// Keyboard's, as the family pages' do, so each lands on the next tile.
 /// Its caption is the category's name and its help [`Category::help`].
 const fn category_button(index: usize) -> MenuPageButtonSpec {
-    MenuPageButtonSpec {
-        id: CATEGORY_BUTTONS[index],
-        dlu_top: 149 + 27 * index as i32,
-        csf_key: "",
-        tooltip_key: "",
-        result: None,
-    }
+    MenuPageButtonSpec::new(CATEGORY_BUTTONS[index], 149 + 27 * index as i32, "", "")
 }
 
 /// The column above Main Menu, Mods last.
 const COLUMN: &[MenuPageButtonSpec] = &[
-    MenuPageButtonSpec {
-        id: KEYBOARD_BUTTON,
-        dlu_top: 122,
-        csf_key: "GUI:Keyboard",
-        tooltip_key: "STT:MainOptButtonKeyboard",
-        result: None,
-    },
+    MenuPageButtonSpec::new(KEYBOARD_BUTTON, 122, "GUI:Keyboard", "STT:MainOptButtonKeyboard"),
     category_button(0),
     category_button(1),
     category_button(2),
     category_button(3),
     category_button(4),
     category_button(5),
-    MenuPageButtonSpec {
-        id: MODS_BUTTON,
-        dlu_top: 149 + 27 * 6,
-        csf_key: "",
-        tooltip_key: "",
-        result: None,
-    },
+    MenuPageButtonSpec::new(MODS_BUTTON, 149 + 27 * 6, "", ""),
 ];
 
 /// `0xD5` as a family page (Session `+0x30D8` clear at the main menu): the
@@ -334,13 +316,7 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     } else {
         COLUMN.split_at(COLUMN.len() - 1).0
     },
-    back: MenuPageButtonSpec {
-        id: MAIN_MENU_BUTTON,
-        dlu_top: 346,
-        csf_key: "GUI:MainMenu",
-        tooltip_key: "STT:MainOptButtonBack",
-        result: Some(0x05CB),
-    },
+    back: MenuPageButtonSpec::new(MAIN_MENU_BUTTON, 346, "GUI:MainMenu", "STT:MainOptButtonBack").returning(0x05CB),
 };
 
 /// Whether the retail panel at this window size has a tile for every column

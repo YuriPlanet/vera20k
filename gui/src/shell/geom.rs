@@ -393,6 +393,78 @@ impl<T: ScaledRects, const N: usize> ScaledRects for [T; N] {
     }
 }
 
+impl<T: ScaledRects> ScaledRects for Vec<T> {
+    fn scaled_rects(&self, scale: ShellScale) -> Self {
+        self.iter().map(|value| value.scaled_rects(scale)).collect()
+    }
+}
+
+impl<A: ScaledRects, B: ScaledRects> ScaledRects for (A, B) {
+    fn scaled_rects(&self, scale: ShellScale) -> Self {
+        (self.0.scaled_rects(scale), self.1.scaled_rects(scale))
+    }
+}
+
+/// A key carried beside a rect (a resource id, a caption or art name) stays
+/// as it is.
+macro_rules! unscaled {
+    ($($ty:ty),*) => {
+        $(impl ScaledRects for $ty {
+            fn scaled_rects(&self, _: ShellScale) -> Self {
+                *self
+            }
+        })*
+    };
+}
+unscaled!(u16, &'static str);
+
+/// The window-filling variant of a retail layout: `base` laid out on the
+/// verified 800x600 dialog, then scaled to fit the `screen_w`x`screen_h`
+/// window, keeping its shape. Identity at the base size.
+pub fn fit_window<L: ScaledRects>(
+    screen_w: u32,
+    screen_h: u32,
+    base: impl FnOnce(u32, u32) -> L,
+) -> L {
+    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
+    base(SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
+}
+
+/// A layout on `scale`'s mapping into a `screen_w`x`screen_h` window: laid out
+/// at the window's own size for the retail mapping, else laid out on the
+/// verified 800x600 dialog and scaled.
+pub fn layout_on<L: ScaledRects>(
+    scale: ShellScale,
+    screen_w: i32,
+    screen_h: i32,
+    layout: impl FnOnce(i32, i32) -> L,
+) -> L {
+    if scale.is_retail() {
+        layout(screen_w, screen_h)
+    } else {
+        layout(SHELL_BASE_W, SHELL_BASE_H).scaled_rects(scale)
+    }
+}
+
+/// Implements [`ScaledRects`] for a layout struct as one exhaustive struct
+/// literal: every listed field scales, `keep` fields copy through, and the
+/// leading `[scale, screen]` fields of a layout take the new mapping and the
+/// whole window (`[scale]` for a layout without a window rect). A field missing from the list is a compile error.
+#[macro_export]
+macro_rules! scaled_rects {
+    ($ty:ty { $([$scale:ident $(, $window:ident)?])? $($field:ident),* $(,)? $(; keep: $($keep:ident),* $(,)?)? }) => {
+        impl $crate::shell::geom::ScaledRects for $ty {
+            fn scaled_rects(&self, scale: $crate::shell::geom::ShellScale) -> Self {
+                Self {
+                    $($scale: scale, $($window: scale.window(),)?)?
+                    $($field: $crate::shell::geom::ScaledRects::scaled_rects(&self.$field, scale),)*
+                    $($($keep: ::core::clone::Clone::clone(&self.$keep),)*)?
+                }
+            }
+        }
+    };
+}
+
 impl<T: ScaledRects> ScaledRects for Option<T> {
     fn scaled_rects(&self, scale: ShellScale) -> Self {
         self.as_ref().map(|value| value.scaled_rects(scale))

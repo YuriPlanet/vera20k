@@ -14,8 +14,8 @@
 
 use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::descriptor::{AnchorRule, DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
-use crate::ui::shell::geom::{RectPx, child_window};
-use crate::ui::shell::layout::{anchor_rect, status_line_rect};
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
+use crate::ui::shell::layout::{Placer, anchor_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::trackbar::TrackbarRange;
 
@@ -52,20 +52,13 @@ pub const ROW_CELLS: [[u16; 5]; 2] = [
 pub const COOP_SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: COOP_SCORE_DIALOG,
     title_key: "GUI:CampaignResults",
-    stacked: &[MenuPageButtonSpec {
-        id: CONTINUE,
-        dlu_top: 149,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:MPCampScoreContinue",
-        result: None,
-    }],
-    back: MenuPageButtonSpec {
-        id: QUIT,
-        dlu_top: 346,
-        csf_key: "GUI:Quit",
-        tooltip_key: "STT:MPCampScoreQuit",
-        result: None,
-    },
+    stacked: &[MenuPageButtonSpec::new(
+        CONTINUE,
+        149,
+        "GUI:Continue",
+        "STT:MPCampScoreContinue",
+    )],
+    back: MenuPageButtonSpec::new(QUIT, 346, "GUI:Quit", "STT:MPCampScoreQuit"),
 };
 
 /// Win32 STATIC alignment (`SS_RIGHT` is style 2, `SS_CENTER` 1).
@@ -370,24 +363,20 @@ pub struct CoopScoreLayout {
 
 impl CoopScoreLayout {
     pub fn new(width: i32, height: i32, responsive: bool) -> Self {
-        let mut page = if responsive {
-            menu_page::compute_responsive_layout(&COOP_SCORE_PAGE, width as u32, height as u32)
+        let scale = if responsive {
+            ShellScale::from_screen(width, height)
         } else {
-            menu_page::compute_layout(&COOP_SCORE_PAGE, width as u32, height as u32)
+            ShellScale::RETAIL
         };
-        let scale = page.scale;
+        let mut page = menu_page::compute_layout_for(&COOP_SCORE_PAGE, scale, width, height);
+        let place = Placer::on(scale, width, height);
         let (aw, ah) = if responsive {
             (800, 600)
         } else {
             (width, height)
         };
-        page.title = scale.scale_rect(anchor_rect(
-            LOW_HEADING_ANCHOR,
-            RectPx::new(425, 1, 107, 10),
-            aw,
-            ah,
-        ));
-        page.status_help = scale.scale_rect(status_line_rect(RectPx::new(1, 356, 316, 12), aw, ah));
+        page.title = place.at(LOW_HEADING_ANCHOR, 425, 1, 107, 10);
+        page.status_help = place.at(AnchorRule::StatusLine, 1, 356, 316, 12);
         let mut controls: Vec<(u16, RectPx)> = COOP_SCORE_CONTROLS
             .iter()
             .map(|spec| {
@@ -414,24 +403,8 @@ impl CoopScoreLayout {
         preview.w = created.w;
         preview.h = created.h;
         controls.push((PREVIEW, scale.scale_rect(preview)));
-        controls.push((
-            MODE_LABEL,
-            scale.scale_rect(anchor_rect(
-                MAP_TEXT_ANCHOR,
-                RectPx::new(434, 103, 90, 10),
-                aw,
-                ah,
-            )),
-        ));
-        controls.push((
-            MAP_LABEL,
-            scale.scale_rect(anchor_rect(
-                MAP_TEXT_ANCHOR,
-                RectPx::new(434, 116, 90, 20),
-                aw,
-                ah,
-            )),
-        ));
+        controls.push((MODE_LABEL, place.at(MAP_TEXT_ANCHOR, 434, 103, 90, 10)));
+        controls.push((MAP_LABEL, place.at(MAP_TEXT_ANCHOR, 434, 116, 90, 20)));
         Self { page, controls }
     }
 

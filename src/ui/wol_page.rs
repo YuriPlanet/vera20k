@@ -15,6 +15,7 @@
 
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 
+use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{LanChatLine, apply_chat_length_limit};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
@@ -36,6 +37,16 @@ pub(crate) const SEND: u16 = 0x5C2;
 pub(crate) const CANCEL: u16 = 2;
 /// `0x11E`'s Back.
 pub(crate) const BACK: u16 = 0x686;
+/// `0xCF`'s locate status and `0x11E`'s reply-to name.
+pub(crate) const STATUS: u16 = 0x5C8;
+pub(crate) const REPLY_TO: u16 = 0x718;
+/// The captions' statics, which gamemd creates without a control id: VERA's
+/// own handles for them in the trees.
+pub(crate) const NAME_CAPTION: u16 = 0xF001;
+pub(crate) const TEXT_CAPTION: u16 = 0xF002;
+pub(crate) const STATUS_CAPTION: u16 = 0xF003;
+pub(crate) const TITLE_CAPTION: u16 = 0xF004;
+pub(crate) const REPLY_TO_CAPTION: u16 = 0xF005;
 
 /// `EM_LIMITTEXT 9` on `0xCF`'s name (`0x0078D855`), which its locates
 /// read into 10 bytes and Send cuts to (`0x0078D39A`). VERA deviation: the
@@ -58,29 +69,52 @@ fn node(kind: NodeKind, id: u16) -> NodeSpec {
     NodeSpec::new(kind).id(id.into())
 }
 
+/// A static at `align`: a caption with its string key, or a value its
+/// dialog's model shows.
+pub(crate) fn static_text(id: u16, key: Option<&str>, align: ShellAlign) -> NodeSpec {
+    let node = node(NodeKind::Text, id).with(Prop::Align, Value::Int(align.0.into()));
+    match key {
+        Some(key) => node.label(key),
+        None => node,
+    }
+}
+
+/// An owner-draw button and its caption key.
+pub(crate) fn button(id: u16, key: &str) -> NodeSpec {
+    node(NodeKind::Button, id).label(key)
+}
+
 /// `0xCF`'s widgets (`0x497`, `0x0078D855..0x0078D91B`): the name limited
 /// to [`NAME_LIMIT`] byte characters (`0x4D1(1)`), the text (no
 /// `EM_LIMITTEXT`: its handler caps it), the transcript and the buttons,
 /// Page `0x5C2` created disabled.
 pub(crate) fn page_spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
-        .child(node(NodeKind::Button, SEND).with(Prop::Enabled, Value::Bool(false)))
-        .child(node(NodeKind::Button, CANCEL))
+        // SS_RIGHT, then two left-aligned statics and the status.
+        .child(static_text(NAME_CAPTION, Some("GUI:PageBuddy"), ShellAlign::H_RIGHT))
+        .child(static_text(TEXT_CAPTION, Some("GUI:TextToSend"), ShellAlign::NONE))
+        .child(static_text(STATUS_CAPTION, Some("GUI:FindStatus"), ShellAlign::NONE))
+        .child(static_text(STATUS, None, ShellAlign::NONE))
+        .child(button(SEND, "GUI:Page").with(Prop::Enabled, Value::Bool(false)))
+        .child(button(CANCEL, "GUI:Cancel"))
         .child(
             node(NodeKind::Edit, NAME)
                 .with(Prop::MaxLen, Value::Int(NAME_LIMIT as i32))
                 .with(Prop::ByteOnly, Value::Bool(true)),
         )
         .child(node(NodeKind::Edit, TEXT))
-        .child(transcript(PAGE_TRANSCRIPT))
+        .child(transcript(PAGE_TRANSCRIPT).with(Prop::NoSelectionFill, Value::Bool(true)))
 }
 
 /// `0x11E`'s widgets (`0x497`): the reply limited to 120 and empty, Send
 /// disabled.
 pub(crate) fn received_spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
-        .child(node(NodeKind::Button, SEND).with(Prop::Enabled, Value::Bool(false)))
-        .child(node(NodeKind::Button, BACK))
+        .child(static_text(TITLE_CAPTION, Some("GUI:PageReceived"), ShellAlign::H_CENTER))
+        .child(static_text(REPLY_TO_CAPTION, Some("GUI:ReplyTo"), ShellAlign::H_RIGHT))
+        .child(static_text(REPLY_TO, None, ShellAlign::NONE))
+        .child(button(SEND, "GUI:ReplyPage").with(Prop::Enabled, Value::Bool(false)))
+        .child(button(BACK, "GUI:Back"))
         .child(node(NodeKind::Edit, TEXT).with(Prop::MaxLen, Value::Int(REPLY_LIMIT)))
         .child(transcript(RECEIVED_TRANSCRIPT))
 }

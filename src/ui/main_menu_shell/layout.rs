@@ -9,7 +9,9 @@ use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
 pub use crate::ui::shell::geom::{RIGHT_PANEL_TILE_H, RIGHT_PANEL_WIDTH};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 pub use crate::ui::shell::geom::{SHELL_BASE_H, SHELL_BASE_W};
-use crate::ui::shell::geom::{ShellScale, dlu_rect, lower_strip_rect, right_panel_rects};
+use crate::ui::shell::geom::{
+    ShellScale, dlu_rect, fit_window, lower_strip_rect, right_panel_rects,
+};
 use crate::ui::shell::layout::{LaidOutControl, layout_pass};
 use crate::ui::shell::menu_page::{
     MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
@@ -126,66 +128,30 @@ pub const MAIN_MENU_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: MAIN_MENU_DIALOG,
     title_key: "GUI:MainMenu",
     stacked: &[
-        MenuPageButtonSpec {
-            id: 0x0683,
-            dlu_top: 125,
-            csf_key: "GUI:SinglePlayer",
-            tooltip_key: "STT:MainButtonSinglePlayer",
-            result: Some(1),
-        },
-        MenuPageButtonSpec {
-            id: 0x0684,
-            dlu_top: 152,
-            csf_key: "GUI:WWOnline",
-            tooltip_key: "STT:MainButtonWWOnline",
-            result: Some(2),
-        },
-        MenuPageButtonSpec {
-            id: 0x0578,
-            dlu_top: 179,
-            csf_key: "GUI:Network",
-            tooltip_key: "STT:MainButtonNetwork",
-            result: Some(3),
-        },
-        MenuPageButtonSpec {
-            id: 0x0686,
-            dlu_top: 206,
-            csf_key: "GUI:MoviesAndCredits",
-            tooltip_key: "STT:MainButtonMovies",
-            result: Some(4),
-        },
-        MenuPageButtonSpec {
-            id: 0x055C,
-            dlu_top: 233,
-            csf_key: "GUI:Options",
-            tooltip_key: "STT:MainButtonOptions",
-            result: Some(5),
-        },
+        MenuPageButtonSpec::new(
+            0x0683,
+            125,
+            "GUI:SinglePlayer",
+            "STT:MainButtonSinglePlayer",
+        )
+        .returning(1),
+        MenuPageButtonSpec::new(0x0684, 152, "GUI:WWOnline", "STT:MainButtonWWOnline").returning(2),
+        MenuPageButtonSpec::new(0x0578, 179, "GUI:Network", "STT:MainButtonNetwork").returning(3),
+        MenuPageButtonSpec::new(0x0686, 206, "GUI:MoviesAndCredits", "STT:MainButtonMovies")
+            .returning(4),
+        MenuPageButtonSpec::new(0x055C, 233, "GUI:Options", "STT:MainButtonOptions").returning(5),
     ],
-    back: MenuPageButtonSpec {
-        id: 0x03EE,
-        dlu_top: 330,
-        csf_key: "GUI:ExitGame",
-        tooltip_key: "STT:MainButtonExitGamemd",
-        result: Some(6),
-    },
+    back: MenuPageButtonSpec::new(0x03EE, 330, "GUI:ExitGame", "STT:MainButtonExitGamemd")
+        .returning(6),
 };
 
 /// A 0xE2 owner-draw button control descriptor. The anchor consumes only the
 /// DLU top; the x/w/h carry the 162x37 template client rect the SDBTNANM cell
 /// replaces.
 fn button_ctrl(button: &MenuPageButtonSpec, anchor: AnchorRule) -> ControlDescriptor {
-    ControlDescriptor {
-        id: button.id,
-        kind: ControlKind::Button,
-        dlu_rect: RectPx::new(425, button.dlu_top, 108, 23),
-        anchor,
-        csf_key: Some(button.csf_key),
-        tooltip_key: Some(button.tooltip_key),
-        group: 0,
-        enabled: true,
-        visible: true,
-    }
+    let rect = RectPx::new(425, button.dlu_top, 108, 23);
+    ControlDescriptor::new(button.id, ControlKind::Button, rect, anchor)
+        .labelled(button.csf_key, button.tooltip_key)
 }
 
 /// Dialog 0xE2 descriptor: the six owner-draw buttons (five stacked + Exit) plus
@@ -203,6 +169,7 @@ fn dialog_descriptor() -> DialogDescriptor {
         .stacked
         .iter()
         .map(|button| button_ctrl(button, snap));
+    let stat = |id, rect, anchor| ControlDescriptor::new(id, ControlKind::Static, rect, anchor);
     DialogDescriptor {
         id: MAIN_MENU_DIALOG,
         bg_kind: BgKind::RightPanelShell,
@@ -212,29 +179,13 @@ fn dialog_descriptor() -> DialogDescriptor {
             .chain([
                 button_ctrl(&MAIN_MENU_PAGE.back, bottom_row),
                 // 0x694 heading: runtime +1w/+1h, right-anchor, then +7y/+1h.
-                ControlDescriptor {
-                    id: 0x0694,
-                    kind: ControlKind::Static,
-                    dlu_rect: RectPx::new(425, 1, 108, 10),
-                    anchor: HEADING_ANCHOR,
-                    csf_key: None,
-                    tooltip_key: None,
-                    group: 0,
-                    enabled: true,
-                    visible: true,
-                },
+                stat(0x0694, RectPx::new(425, 1, 108, 10), HEADING_ANCHOR),
                 // 0x71C SDWRNANM warning monitor (kind 4).
-                ControlDescriptor {
-                    id: WARNING_MONITOR_CONTROL,
-                    kind: ControlKind::Static,
-                    dlu_rect: RectPx::new(447, 29, 61, 33),
-                    anchor: MONITOR_ANCHOR,
-                    csf_key: None,
-                    tooltip_key: None,
-                    group: 0,
-                    enabled: true,
-                    visible: true,
-                },
+                stat(
+                    WARNING_MONITOR_CONTROL,
+                    RectPx::new(447, 29, 61, 33),
+                    MONITOR_ANCHOR,
+                ),
             ])
             .collect(),
     }
@@ -313,28 +264,17 @@ pub fn movie_base_for_responsive_width(_screen_w: u32) -> MainMenuMovieBase {
 /// parity at other sizes, but keeps render and input coordinates in the same
 /// window-pixel space.
 pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    let mut buttons = base.buttons.clone();
-    for button in &mut buttons {
-        button.rect = scale.scale_rect(button.rect);
-    }
-    let right_panel = scale.scale_panel(base.right_panel);
-
-    MainMenuShellLayout {
-        scale,
-        screen: RectPx::new(0, 0, screen_w as i32, screen_h as i32),
-        movie_base: movie_base_for_responsive_width(screen_w),
-        movie: scale.scale_rect(base.movie),
-        title: scale.scale_rect(base.title),
-        version_line: scale.scale_rect(base.version_line),
-        tooltip_line: scale.scale_rect(base.tooltip_line),
-        warning_monitor: scale.scale_rect(base.warning_monitor),
-        buttons,
-        right_panel,
-        lower_strip: scale.scale_rect(base.lower_strip),
-    }
+    fit_window(screen_w, screen_h, compute_layout)
 }
+
+// The 800x600 layout plays the large loop, as a stretched area always does
+// ([`movie_base_for_responsive_width`]).
+vera20k_gui::scaled_rects!(MainMenuButtonRect { rect; keep: id });
+vera20k_gui::scaled_rects!(MainMenuShellLayout {
+    [scale, screen]
+    movie, title, version_line, tooltip_line, warning_monitor, buttons, right_panel, lower_strip;
+    keep: movie_base
+});
 
 impl MainMenuShellLayout {
     /// The layout as the family pages' shared paint reads it; status line

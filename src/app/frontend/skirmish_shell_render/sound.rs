@@ -1,7 +1,7 @@
 //! Full-screen B8, original6B6300 and shared native shell/control owners.
 use super::controls::{ControlPaint, paint_control};
 use super::in_game_shell::{self, InGameShellFrame};
-use super::pause_menu::{button_frame, button_text_rect};
+use super::pause_menu::button_text_rect;
 use super::text::{localized_label, push_text_draw, rect_to_text_rect};
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
@@ -9,8 +9,7 @@ use crate::render::{shell_paint, shell_text::ShellAlign};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
-use crate::ui::shell::sound::{SoundButton, SoundLayout, SoundSlider};
+use crate::ui::shell::sound::{SoundButton, SoundControl, SoundLayout, SoundSlider};
 
 pub(crate) fn render_sound_shell(
     state: &mut AppState,
@@ -30,22 +29,27 @@ pub(crate) fn render_sound_shell(
         .sound_dialog
         .as_ref()
         .expect("active B8 state");
+    let pressed_of = |id: SoundButton| {
+        crate::app::input::dialog_page::pressed(&dialog.ui, SoundControl::Button(id).id())
+    };
+    let list = dialog.list().expect("B8's list");
+    let positions = dialog.positions();
+    // B8 reads the control under the pointer on every move, a held
+    // trackbar's drag included.
+    let (x, y) = in_game_shell::in_game_shell_cursor(state);
+    let hovered = match crate::app::input::dialog_page::held_trackbar(&dialog.ui) {
+        Some(_) => crate::app::input::dialog_page::hit(&dialog.ui, x, y),
+        None => crate::app::input::dialog_page::hovered(&dialog.ui),
+    }
+    .and_then(SoundControl::from_id);
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active B8 art");
     let mut art = in_game_shell::background_instances(atlas, shell, width, height);
-    let pressed = dialog.buttons.is_pressed(SoundButton::Back);
-    let frame = button_frame(PauseMenuButtonState {
-        pressed,
-        ..Default::default()
-    });
-    if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
-        in_game_shell::push_art(
-            &mut art,
-            entry,
-            layout.back,
-            RectPx::new(0, 0, width, height),
-        );
-    }
+    let mut texts = Vec::new();
+    let back = localized_label(state, "GUI:Back", "Back");
+    let back = (layout.back, back.as_str(), pressed_of(SoundButton::Back));
+    let screen = RectPx::new(0, 0, width, height);
+    in_game_shell::push_panel_button(&mut art, &mut texts, state, atlas, back, screen);
     let atlas = state
         .frontend
         .skirmish_shell_chrome
@@ -83,16 +87,16 @@ pub(crate) fn render_sound_shell(
     let geometry = ShellListGeometry::new(
         layout.list,
         dialog.rows.len(),
-        dialog.top,
+        list.top,
         ListMetrics::RETAIL,
     );
     super::list::paint_list(
         &mut controls,
         atlas,
         geometry,
-        dialog.top,
-        dialog.selected,
-        dialog.scroll.pressed_part(),
+        list.top,
+        list.selected,
+        list.pressed,
         false,
         ShellScale::RETAIL,
     );
@@ -100,7 +104,7 @@ pub(crate) fn render_sound_shell(
     // centered on the resource control, not the side column's SIDEBTTN.
     let buttons = [SoundButton::Play, SoundButton::Stop].map(|id| shell_paint::ModalButton {
         rect: layout.button(id),
-        pressed: dialog.buttons.is_pressed(id),
+        pressed: pressed_of(id),
         enabled: true,
     });
     controls.extend(shell_paint::paint_modal_sprites(
@@ -115,7 +119,6 @@ pub(crate) fn render_sound_shell(
             text: SHELL_CONTROL_TEXT_DEPTH,
         },
     ));
-    let mut texts = Vec::new();
     let mut text = |value: &str, rect: RectPx, align: ShellAlign| {
         push_text_draw(
             &mut texts,
@@ -134,13 +137,12 @@ pub(crate) fn render_sound_shell(
         ShellAlign::PANEL_TITLE,
     );
     for (id, key, fallback) in [
-        (SoundButton::Back, "GUI:Back", "Back"),
         (SoundButton::Play, "GUI:Play", "Play"),
         (SoundButton::Stop, "GUI:Stop", "Stop"),
     ] {
         text(
             &localized_label(state, key, fallback),
-            button_text_rect(layout.button(id), dialog.buttons.is_pressed(id)),
+            button_text_rect(layout.button(id), pressed_of(id)),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         );
     }
@@ -158,7 +160,7 @@ pub(crate) fn render_sound_shell(
             ShellAlign::H_RIGHT,
         );
         text(
-            &dialog.positions[index].to_string(),
+            &positions[index].to_string(),
             crate::ui::shell::trackbar::value_text_rect(layout.sliders[index], ShellScale::RETAIL),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         );
@@ -176,7 +178,7 @@ pub(crate) fn render_sound_shell(
     for (visible, row) in dialog
         .rows
         .iter()
-        .skip(dialog.top)
+        .skip(list.top)
         .take(geometry.visible_rows)
         .enumerate()
     {
@@ -187,7 +189,7 @@ pub(crate) fn render_sound_shell(
             ShellAlign::NONE,
         );
     }
-    if let Some(control) = dialog.hovered {
+    if let Some(control) = hovered {
         let (key, fallback) = control.help();
         text(
             &localized_label(state, key, fallback),

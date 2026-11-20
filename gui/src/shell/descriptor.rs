@@ -60,7 +60,39 @@ pub enum AnchorRule {
         dy: i32,
         dh: i32,
     },
+    /// A body control kept at its plain resource conversion ([`geom::dlu_rect`]).
+    ///
+    /// [`geom::dlu_rect`]: super::geom::dlu_rect
+    Resource,
+    /// A body control at the common resized window ([`geom::child_window`]).
+    ///
+    /// [`geom::child_window`]: super::geom::child_window
+    ChildWindow,
+    /// Owner-draw button snapped to a right-panel tile by the biased
+    /// truncation of `0x100`/`0x102` ([`geom::snap_button_biased_truncate`]).
+    ///
+    /// [`geom::snap_button_biased_truncate`]: super::geom::snap_button_biased_truncate
+    ButtonColumn { cell_w: i32 },
+    /// Owner-draw button on the column's final tile, flush to the centred
+    /// shell's right edge (Back of `0x100`/`0x102` and their family). The
+    /// resource rect is not consumed.
+    ButtonColumnLast { cell_w: i32 },
+    /// Status line `0x695` outside a suspended game
+    /// ([`layout::status_line_rect`]).
+    ///
+    /// [`layout::status_line_rect`]: super::layout::status_line_rect
+    StatusLine,
 }
+
+/// The family pages' stacked owner-draw buttons (`0x100`/`0x102`).
+pub const BUTTON: AnchorRule = AnchorRule::ButtonColumn {
+    cell_w: super::geom::SDBTNANM_CELL_W_NARROW,
+};
+
+/// The family pages' Back button on the column's final tile.
+pub const BACK_BUTTON: AnchorRule = AnchorRule::ButtonColumnLast {
+    cell_w: super::geom::SDBTNANM_CELL_W_NARROW,
+};
 
 /// Right-panel heading static `0x694`: the runtime window is one pixel wider
 /// and taller than the resource conversion (the compatibility correction the
@@ -81,6 +113,17 @@ pub const LOW_HEADING_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust 
     resource_dh: 1,
     inset: None,
     dy: 1,
+    dh: 0,
+};
+
+/// Heading `0x694` of the WOL pages whose template is 108x11 DLU (`0x10E`,
+/// `0x10F` and their sub-pages): the family heading's place, the window one
+/// row taller and without the family's `+1` h fix-up.
+pub const TALL_HEADING_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
+    resource_dw: 1,
+    resource_dh: 1,
+    inset: None,
+    dy: 7,
     dh: 0,
 };
 
@@ -151,6 +194,32 @@ pub struct ControlDescriptor {
     /// dialog proc never shows it, so it is not emitted or hit-tested. (Active
     /// `0xBBB` hides the VisualDetails trackbar + its caption/value-label.)
     pub visible: bool,
+}
+
+impl ControlDescriptor {
+    /// A visible, enabled, ungrouped control without caption or status help.
+    pub const fn new(id: u16, kind: ControlKind, dlu_rect: RectPx, anchor: AnchorRule) -> Self {
+        Self {
+            id,
+            kind,
+            dlu_rect,
+            anchor,
+            csf_key: None,
+            tooltip_key: None,
+            group: 0,
+            enabled: true,
+            visible: true,
+        }
+    }
+
+    /// The same control with caption `csf_key` and status help `tooltip_key`.
+    pub const fn labelled(self, csf_key: &'static str, tooltip_key: &'static str) -> Self {
+        Self {
+            csf_key: Some(csf_key),
+            tooltip_key: Some(tooltip_key),
+            ..self
+        }
+    }
 }
 
 /// A full shell dialog: its controls plus the dialog-level composition, slide,

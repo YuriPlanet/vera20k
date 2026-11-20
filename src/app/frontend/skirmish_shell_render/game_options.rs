@@ -59,7 +59,7 @@ pub(super) fn push_game_options_box(
     );
     sprites.extend(draw.sprites);
     texts.extend(draw.text);
-    let widgets = super::gui_paint::paint_gui_with(state, atlas, gui, root, scale, &[]);
+    let widgets = super::gui_paint::paint_gui_with(state, atlas, gui, root, scale, &[], Default::default());
     sprites.extend(widgets.controls);
     texts.extend(widgets.texts);
 }

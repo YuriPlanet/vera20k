@@ -765,7 +765,7 @@ fn render_skirmish_shell_with_atlas(
         .flatten();
     let page_paint = page_root.map_or_else(Default::default, |root| {
         let gui = state.frontend.shell_controller.gui();
-        gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[])
+        gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[], Default::default())
     });
     let pressed_button = page_root.and_then(|root| {
         crate::ui::skirmish_shell::page::pressed_button(state.frontend.shell_controller.gui(), root)

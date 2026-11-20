@@ -2,7 +2,7 @@
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
 use super::chrome::*;
-use super::controls::{ControlPaint, list_view_controls, paint_control, push_new_edit};
+use super::controls::{ControlPaint, paint_control, push_new_edit};
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
@@ -18,15 +18,6 @@ use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
-
-/// LB row colors carry packed00BBGGRR; -1 means the ordinary yellow text.
-fn row_rgb(color: Option<u32>) -> [f32; 3] {
-    match color {
-        None | Some(u32::MAX) => SHELL_LABEL_TEXT_RGB,
-        Some(color) => [color as u8, (color >> 8) as u8, (color >> 16) as u8]
-            .map(|channel| f32::from(channel) / 255.0),
-    }
-}
 
 /// Whether box button `id` shows pushed (612B70).
 fn box_pressed(state: &AppState, id: i32) -> bool {
@@ -260,91 +251,38 @@ pub(crate) fn render_lan_lobby(
                 SHELL_CONTROL_DEPTH,
             );
         }
-        // The lists' frames and scrollbars as their widgets hold them; the
-        // chat log selects nothing.
-        let metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
-        let [(games, games_top), (players, players_top), (chat, chat_top)] = [
-            (GAMES, layout.games),
-            (PLAYERS, layout.players),
-            (CHAT_LOG, layout.chat_log),
-        ]
-        .map(|(id, rect)| {
-            let view = root
-                .and_then(|root| gui.find_id(root, id.into()))
-                .and_then(|node| gui.list_view(node))
-                .unwrap_or(vera20k_gui::ListView {
-                    rows: 0,
-                    top: 0,
-                    selected: None,
-                    pressed: None,
-                });
-            let geometry = view.window_geometry(rect, metrics);
-            let selected = view.selected.filter(|_| id != CHAT_LOG);
-            list_view_controls(
-                &mut controls,
-                atlas,
-                geometry,
-                (selected, view.top, view.pressed),
-                scale,
-            );
-            (geometry, view.top)
-        });
-        for (visible, index) in (games_top..lobby.game_count())
-            .take(games.visible_rows)
-            .enumerate()
-        {
-            let label = if index == 0 {
-                localized_label(state, "TXT_LOBBY", "Lobby")
-            } else {
-                let game = &lobby.games[index - 1];
-                localized_label(state, game.label_key(), game.label_key())
-                    .replacen("%s", &game.name, 1)
-            };
-            texts.push(text(
-                &label,
-                scale.derive_rect(games.row(visible), |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-        }
-        for (visible, player) in lobby
-            .players
-            .iter()
-            .skip(players_top)
-            .take(players.visible_rows)
-            .enumerate()
-        {
-            let row = players.row(visible);
-            // Active BB has no custom columns: native registry record+F8
-            // is null (selected-game GUI probe).5DAFE0's4A8 color/side/status
-            // writes therefore return-1 in618D40; only the name is visible.
-            texts.push(text(
-                &player.name,
-                scale.derive_rect(row, |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-        }
-        for (visible, line) in lobby
-            .chat
-            .lines
-            .iter()
-            .skip(chat_top)
-            .take(chat.visible_rows)
-            .enumerate()
-        {
-            texts.push(text(
-                &String::from_utf16_lossy(&line.text),
-                scale.derive_rect(chat.row(visible), |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                row_rgb(Some(line.color)),
-            ));
+        // The lists with their rows, as their widgets hold them.
+        let rows_of = |id: i32| -> Option<super::gui_paint::HostRows> {
+            let yellow = |text: String| (text, u32::MAX);
+            Some(match u16::try_from(id).ok()? {
+                GAMES => (0..lobby.game_count())
+                    .map(|index| match index.checked_sub(1) {
+                        None => yellow(localized_label(state, "TXT_LOBBY", "Lobby")),
+                        Some(game) => {
+                            let game = &lobby.games[game];
+                            let format = localized_label(state, game.label_key(), game.label_key());
+                            yellow(format.replacen("%s", &game.name, 1))
+                        }
+                    })
+                    .collect(),
+                // Active BB has no custom columns: native registry record+F8
+                // is null (selected-game GUI probe).5DAFE0's4A8 color/side/status
+                // writes therefore return-1 in618D40; only the name is visible.
+                PLAYERS => lobby.players.iter().map(|player| yellow(player.name.clone())).collect(),
+                CHAT_LOG => {
+                    let line = |line: &crate::ui::lan_shell::LanChatLine| (String::from_utf16_lossy(&line.text), line.color);
+                    lobby.chat.lines.iter().map(line).collect()
+                }
+                _ => return None,
+            })
+        };
+        let style = super::gui_paint::GuiStyle { rows_of: Some(&rows_of), control_lists: true, ..Default::default() };
+        for id in [GAMES, PLAYERS, CHAT_LOG] {
+            if let Some(list) = root.and_then(|root| gui.find_id(root, id.into())) {
+                let paint = super::gui_paint::paint_gui_styled(state, gui, list, scale, &[], style);
+                controls.extend(paint.controls);
+                texts.extend(paint.texts);
+            }
         }
         if let Some(reveal) = title {
             texts.push(shell_text::draw_in_rect_path_a_scaled(

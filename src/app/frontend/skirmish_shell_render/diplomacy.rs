@@ -5,17 +5,15 @@
 use super::chrome::push_flag_entry_clipped_centered;
 use super::controls::{ControlPaint, paint_control};
 use super::in_game_shell::{self, InGameShellFrame};
-use super::pause_menu::{button_frame, button_text_rect};
 use super::text::{localized_label, push_text_draw, rect_to_text_rect};
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::button::CheckboxFace;
 use crate::ui::shell::diplomacy::{
-    DiplomacyButton, DiplomacyHeader, RETURN_LABEL, TITLE_LABEL, diplomacy_layout,
+    DiplomacyControl, DiplomacyHeader, RETURN_LABEL, TITLE_LABEL, diplomacy_layout,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
 
 pub(crate) fn render_diplomacy_shell(
     state: &mut AppState,
@@ -30,7 +28,10 @@ pub(crate) fn render_diplomacy_shell(
     } = in_game_shell::current_in_game_shell_layout(state).expect("active 0x73 geometry");
     let layout = diplomacy_layout(width, height, shell, button_size);
     let view = crate::app::input::diplomacy::view(state);
-    let interaction = state.match_state.match_presentation.diplomacy;
+    let ui = &state.match_state.match_presentation.dialog_ui;
+    let pressed_id =
+        |control: DiplomacyControl| crate::app::input::dialog_page::pressed(ui, control.id());
+    let help = crate::app::input::dialog_page::help(ui).map(str::to_owned);
     let screen = RectPx::new(0, 0, width, height);
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active 0x73 art");
@@ -50,43 +51,21 @@ pub(crate) fn render_diplomacy_shell(
         );
     };
 
-    let pressed = interaction.button.is_pressed(DiplomacyButton::Return);
-    let frame = button_frame(PauseMenuButtonState {
-        pressed,
-        ..Default::default()
-    });
-    if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
-        in_game_shell::push_art(&mut art, entry, layout.return_button, screen);
-    }
-    text(
-        &mut texts,
-        &localized_label(state, RETURN_LABEL.0, RETURN_LABEL.1),
-        button_text_rect(layout.return_button, pressed),
-        SHELL_LABEL_TEXT_RGB,
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+    let caption = localized_label(state, RETURN_LABEL.0, RETURN_LABEL.1);
+    let button = (
+        layout.return_button,
+        caption.as_str(),
+        pressed_id(DiplomacyControl::Return),
     );
+    in_game_shell::push_panel_button(&mut art, &mut texts, state, atlas, button, screen);
     if view.page_count > 1 {
         for (index, button, label) in [
-            (0, DiplomacyButton::PreviousPage, "VERA:Previous"),
-            (1, DiplomacyButton::NextPage, "VERA:Next"),
+            (0, DiplomacyControl::PreviousPage, "VERA:Previous"),
+            (1, DiplomacyControl::NextPage, "VERA:Next"),
         ] {
-            let pressed = interaction.button.is_pressed(button);
-            let frame = button_frame(PauseMenuButtonState {
-                pressed,
-                ..Default::default()
-            });
-            if let Some(entry) =
-                atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0])
-            {
-                in_game_shell::push_art(&mut art, entry, layout.paging[index], screen);
-            }
-            text(
-                &mut texts,
-                &crate::i18n::tr(label),
-                button_text_rect(layout.paging[index], pressed),
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            );
+            let caption = crate::i18n::tr(label);
+            let button = (layout.paging[index], caption.as_str(), pressed_id(button));
+            in_game_shell::push_panel_button(&mut art, &mut texts, state, atlas, button, screen);
         }
         let first = layout.paging[0];
         text(
@@ -234,10 +213,10 @@ pub(crate) fn render_diplomacy_shell(
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::NONE,
     );
-    if let Some(key) = interaction.hovered.and_then(|control| control.help_key()) {
+    if let Some(key) = help {
         text(
             &mut texts,
-            &localized_label(state, key, ""),
+            &localized_label(state, &key, ""),
             layout.status_line,
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::NONE,

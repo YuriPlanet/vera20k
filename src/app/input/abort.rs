@@ -6,7 +6,8 @@
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
-use crate::ui::shell::abort::{AbortButton, AbortLayout, AbortSecondary, abort_layout};
+use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
+use crate::ui::shell::page::PageEvent;
 use winit::event::MouseButton;
 
 /// B6 init `0x004F1938..0x004F1A0E` keys control712 on GameMode: 0 shows
@@ -72,14 +73,32 @@ pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
     ))
 }
 
-fn hit(state: &AppState) -> Option<AbortButton> {
-    let layout = current_abort_layout(state)?;
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    layout.hit(x, y)
+/// One pointer message on B6 (`down`: `None` moves).
+fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = current_abort_layout(state) else {
+        return;
+    };
+    let event = super::dialog_page::shell_event(state, down);
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let events = super::dialog_page::route(
+        ui,
+        abort::DIALOG,
+        || abort::spec(layout.secondary_kind),
+        |id| layout.rect(id),
+        super::dialog_page::no_sync,
+        event,
+    );
+    for event in super::dialog_page::play_cues(state, events) {
+        if let PageEvent::Activated(id) = event
+            && let Some(button) = AbortButton::from_id(id)
+        {
+            activate(state, button);
+        }
+    }
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    state.match_state.match_presentation.abort_buttons.hovered = hit(state);
+    pointer(state, None);
 }
 
 /// Callback4F18B0 writes the result B6 init stored for the pressed button:
@@ -100,27 +119,8 @@ pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
-    }
-    let over = hit(state);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .abort_buttons
-            .press(over);
-        if over.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (0x0061376B).
-            App::play_main_menu_button_sound(state);
-        }
-    } else if let Some(button) = state
-        .match_state
-        .match_presentation
-        .abort_buttons
-        .release(over)
-    {
-        activate(state, button);
+    if button == MouseButton::Left {
+        pointer(state, Some(pressed));
     }
 }
 

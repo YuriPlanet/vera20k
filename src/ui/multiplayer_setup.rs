@@ -10,9 +10,9 @@ use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 use crate::ui::lan_shell::{LanChatState, LanListState};
 use crate::ui::shell::combobox::ComboPopup;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::{DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
-use crate::ui::shell::layout::anchor_rect;
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self as page_nodes, PageCue, PageEvent};
@@ -390,80 +390,32 @@ pub(crate) const HOST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xBC),
     title_key: "GUI:HostScreen",
     stacked: &[
-        MenuPageButtonSpec {
-            id: START,
-            dlu_top: 147,
-            csf_key: "GUI:StartGame",
-            tooltip_key: "STT:HostButtonGo",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: CHOOSE_MAP,
-            dlu_top: 176,
-            csf_key: "GUI:ChooseMap",
-            tooltip_key: "STT:HostButtonChooseMap",
-            result: None,
-        },
+        MenuPageButtonSpec::new(START, 147, "GUI:StartGame", "STT:HostButtonGo"),
+        MenuPageButtonSpec::new(CHOOSE_MAP, 176, "GUI:ChooseMap", "STT:HostButtonChooseMap"),
     ],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:HostButtonBack",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:HostButtonBack"),
 };
 pub(crate) const GUEST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xBD),
     title_key: "GUI:JoinScreen",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 149,
-        csf_key: "GUI:Accept",
-        tooltip_key: "STT:GuestButtonAccept",
-        result: None,
-    }],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:GuestButtonBack",
-        result: None,
-    },
+    stacked: &[MenuPageButtonSpec::new(
+        ACCEPT,
+        149,
+        "GUI:Accept",
+        "STT:GuestButtonAccept",
+    )],
+    back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:GuestButtonBack"),
 };
 
-const WOL_BACK: MenuPageButtonSpec = MenuPageButtonSpec {
-    id: BACK,
-    dlu_top: 257,
-    csf_key: "GUI:Back",
-    tooltip_key: "STT:WOLNewGameCancel",
-    result: None,
-};
+const WOL_BACK: MenuPageButtonSpec =
+    MenuPageButtonSpec::new(BACK, 257, "GUI:Back", "STT:WOLNewGameCancel");
 pub(crate) const WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xC2),
     title_key: "GUI:HostScreen",
     stacked: &[
-        MenuPageButtonSpec {
-            id: START,
-            dlu_top: 156,
-            csf_key: "GUI:StartGame",
-            tooltip_key: "STT:HostButtonGo",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: CHOOSE_MAP,
-            dlu_top: 183,
-            csf_key: "GUI:ChooseMap",
-            tooltip_key: "STT:HostButtonChooseMap",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: PAGE,
-            dlu_top: 210,
-            csf_key: "GUI:PageButton",
-            tooltip_key: "STT:WOLPageButton",
-            result: None,
-        },
+        MenuPageButtonSpec::new(START, 156, "GUI:StartGame", "STT:HostButtonGo"),
+        MenuPageButtonSpec::new(CHOOSE_MAP, 183, "GUI:ChooseMap", "STT:HostButtonChooseMap"),
+        MenuPageButtonSpec::new(PAGE, 210, "GUI:PageButton", "STT:WOLPageButton"),
     ],
     back: WOL_BACK,
 };
@@ -471,90 +423,43 @@ pub(crate) const WOL_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xC9),
     title_key: "GUI:JoinScreen",
     stacked: &[
-        MenuPageButtonSpec {
-            id: ACCEPT,
-            dlu_top: 156,
-            csf_key: "GUI:Accept",
-            tooltip_key: "STT:GuestButtonAccept",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: PAGE,
-            dlu_top: 183,
-            csf_key: "GUI:PageButton",
-            tooltip_key: "STT:WOLPageButton",
-            result: None,
-        },
+        MenuPageButtonSpec::new(ACCEPT, 156, "GUI:Accept", "STT:GuestButtonAccept"),
+        MenuPageButtonSpec::new(PAGE, 183, "GUI:PageButton", "STT:WOLPageButton"),
     ],
     back: WOL_BACK,
 };
 /// VERA's game room ([`SetupDialog::modern`]): Game Options takes a guest's
 /// Accept place and a host's Choose Map place, and Choose Map moves down a
 /// place, to C2's Page place on WOL.
-const GAME_OPTIONS_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
-    id: GAME_OPTIONS,
-    dlu_top: 0,
-    csf_key: "GUI:GameOptions",
-    tooltip_key: "",
-    result: None,
-};
+const GAME_OPTIONS_BUTTON: MenuPageButtonSpec =
+    MenuPageButtonSpec::new(GAME_OPTIONS, 0, "GUI:GameOptions", "");
 const MODERN_HOST_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         HOST_PAGE.stacked[0],
-        MenuPageButtonSpec {
-            dlu_top: HOST_PAGE.stacked[1].dlu_top,
-            ..GAME_OPTIONS_BUTTON
-        },
-        MenuPageButtonSpec {
-            dlu_top: 2 * HOST_PAGE.stacked[1].dlu_top - HOST_PAGE.stacked[0].dlu_top,
-            ..HOST_PAGE.stacked[1]
-        },
+        GAME_OPTIONS_BUTTON.at(HOST_PAGE.stacked[1].dlu_top),
+        HOST_PAGE.stacked[1].at(2 * HOST_PAGE.stacked[1].dlu_top - HOST_PAGE.stacked[0].dlu_top),
     ],
     ..HOST_PAGE
 };
 const MODERN_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
-    stacked: &[MenuPageButtonSpec {
-        dlu_top: GUEST_PAGE.stacked[0].dlu_top,
-        ..GAME_OPTIONS_BUTTON
-    }],
+    stacked: &[GAME_OPTIONS_BUTTON.at(GUEST_PAGE.stacked[0].dlu_top)],
     ..GUEST_PAGE
 };
-const LOBBY_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
-    id: LOBBY,
-    dlu_top: 0,
-    csf_key: "VERA:Lobby",
-    tooltip_key: "",
-    result: None,
-};
+const LOBBY_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec::new(LOBBY, 0, "VERA:Lobby", "");
 /// VERA's online room adds Lobby under its other buttons.
 const MODERN_WOL_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
-        MenuPageButtonSpec {
-            dlu_top: WOL_GUEST_PAGE.stacked[0].dlu_top,
-            ..GAME_OPTIONS_BUTTON
-        },
-        MenuPageButtonSpec {
-            dlu_top: WOL_GUEST_PAGE.stacked[1].dlu_top,
-            ..LOBBY_BUTTON
-        },
+        GAME_OPTIONS_BUTTON.at(WOL_GUEST_PAGE.stacked[0].dlu_top),
+        LOBBY_BUTTON.at(WOL_GUEST_PAGE.stacked[1].dlu_top),
     ],
     ..WOL_GUEST_PAGE
 };
 const MODERN_WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         WOL_HOST_PAGE.stacked[0],
-        MenuPageButtonSpec {
-            dlu_top: WOL_HOST_PAGE.stacked[1].dlu_top,
-            ..GAME_OPTIONS_BUTTON
-        },
-        MenuPageButtonSpec {
-            dlu_top: WOL_HOST_PAGE.stacked[2].dlu_top,
-            ..WOL_HOST_PAGE.stacked[1]
-        },
-        MenuPageButtonSpec {
-            dlu_top: 2 * WOL_HOST_PAGE.stacked[2].dlu_top - WOL_HOST_PAGE.stacked[1].dlu_top,
-            ..LOBBY_BUTTON
-        },
+        GAME_OPTIONS_BUTTON.at(WOL_HOST_PAGE.stacked[1].dlu_top),
+        WOL_HOST_PAGE.stacked[1].at(WOL_HOST_PAGE.stacked[2].dlu_top),
+        LOBBY_BUTTON.at(2 * WOL_HOST_PAGE.stacked[2].dlu_top - WOL_HOST_PAGE.stacked[1].dlu_top),
     ],
     ..WOL_HOST_PAGE
 };
@@ -1230,26 +1135,18 @@ impl MultiplayerSetupLayout {
             menu_page::compute_layout(spec, width as u32, height as u32)
         };
         let scale = page.scale;
-        let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
-        let (aw, ah) = if responsive {
-            (800, 600)
-        } else {
-            (width, height)
-        };
+        let place = Placer::on(scale, width, height);
+        let rect = |x, y, w, h| place.px(x, y, w, h);
         // Resource templates of the anchored statics (BC/BD vs C2/C9).
         let (title, preview_x, label_x, map_label_y) = match (dialog.flavor, host) {
             (SetupFlavor::Lan, _) => (RectPx::new(425, 1, 108, 10), 429, 431, 116),
             (SetupFlavor::Wol, true) => (RectPx::new(424, 4, 108, 11), 432, 434, 118),
             (SetupFlavor::Wol, false) => (RectPx::new(424, 4, 108, 11), 433, 435, 118),
         };
-        page.title = scale.scale_rect(anchor_rect(LOW_HEADING_ANCHOR, title, aw, ah));
+        page.title = place.at(LOW_HEADING_ANCHOR, title.x, title.y, title.w, title.h);
         // Original BC/BD relayout60C4A0→60C0C0. Body controls stay at
         // resource coordinates; only the sidebar is anchored to screen size.
-        page.status_help = scale.scale_rect(crate::ui::shell::layout::status_line_rect(
-            RectPx::new(2, 355, 410, 12),
-            aw,
-            ah,
-        ));
+        page.status_help = place.at(AnchorRule::StatusLine, 2, 355, 410, 12);
         let combos = std::array::from_fn(|row| {
             std::array::from_fn(|column| {
                 let (x, w) = [(49, 100), (201, 78), (294, 27), (334, 25), (374, 25)][column];
@@ -1384,24 +1281,9 @@ impl MultiplayerSetupLayout {
             map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
             notice_ok: crate::ui::shell::modal::body_ok_layout(width, height).ok,
             cooperative_description: rect(60, 98, 540, 143),
-            map_preview: scale.scale_rect(anchor_rect(
-                crate::ui::shell::descriptor::AnchorRule::RightAnchor,
-                RectPx::new(preview_x, 23, 96, 69),
-                aw,
-                ah,
-            )),
-            mode_label: scale.scale_rect(anchor_rect(
-                MAP_TEXT_ANCHOR,
-                RectPx::new(label_x, 103, 90, 10),
-                aw,
-                ah,
-            )),
-            map_label: scale.scale_rect(anchor_rect(
-                MAP_TEXT_ANCHOR,
-                RectPx::new(label_x, map_label_y, 90, 20),
-                aw,
-                ah,
-            )),
+            map_preview: place.at(AnchorRule::RightAnchor, preview_x, 23, 96, 69),
+            mode_label: place.at(MAP_TEXT_ANCHOR, label_x, 103, 90, 10),
+            map_label: place.at(MAP_TEXT_ANCHOR, label_x, map_label_y, 90, 20),
         };
         if dialog.modern {
             layout.move_options_into_popup(dialog.wol(), host);

@@ -192,6 +192,14 @@ pub enum Prop {
     /// Edit: the caret blinks from this UI time, not from the focus (the
     /// saved-file browser's, from its opening).
     CaretFrom,
+    /// The text colour while the node is disabled, in place of its kind's.
+    DisabledColor,
+    /// Text, List rows: the caption's insets from the node's rect (or a
+    /// row's) in base pixels, as `Rect { x: left, y: top, w: right, h: bottom }`.
+    TextInset,
+    /// List: a press still selects, but the selected row shows no fill
+    /// (`LBS_NOSEL`, a chat transcript).
+    NoSelectionFill,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -240,6 +248,7 @@ impl Prop {
             | Prop::PopupHidden
             | Prop::HeldArrow
             | Prop::DoubleClickAcross
+            | Prop::NoSelectionFill
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches => ValueType::Items,
             Prop::Text
@@ -252,8 +261,8 @@ impl Prop {
             | Prop::Allowed => {
                 ValueType::Text
             }
-            Prop::Rect | Prop::HitRect | Prop::PopupRect | Prop::ScaleScreen => ValueType::Rect,
-            Prop::Color => ValueType::Rgba,
+            Prop::Rect | Prop::HitRect | Prop::PopupRect | Prop::ScaleScreen | Prop::TextInset => ValueType::Rect,
+            Prop::Color | Prop::DisabledColor => ValueType::Rgba,
             Prop::Id
             | Prop::OffsetX
             | Prop::OffsetY
@@ -294,7 +303,7 @@ impl Prop {
             | Prop::ComboScrollbar
             | Prop::PopupRowHeight
             | Prop::PopupRect => kind == NodeKind::Combo,
-            Prop::RowHeight => kind == NodeKind::List,
+            Prop::RowHeight | Prop::NoSelectionFill => kind == NodeKind::List,
             Prop::ScaleScreen => kind == NodeKind::Trackbar,
             Prop::AreaDoubleClick | Prop::ContentDoubleClick | Prop::HeldArrow | Prop::DoubleClickAcross => {
                 kind == NodeKind::List

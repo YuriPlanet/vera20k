@@ -18,13 +18,12 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
 use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::page;
+    RectPx, ShellScale, child_window, };
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::page;
 
 pub(crate) const AUTO_LOGIN_DIALOG: DialogId = DialogId(0x0112);
 pub(crate) const LOCALE_DIALOG: DialogId = DialogId(0x00FE);
@@ -40,20 +39,8 @@ pub(crate) const LOCALE_LIST: u16 = 0x03F0;
 pub(crate) const AUTO_LOGIN_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: AUTO_LOGIN_DIALOG,
     title_key: "GUI:AutoLoginQueryTitle",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 116,
-        csf_key: "GUI:Yes",
-        tooltip_key: "STT:WOLAutoLoginYes",
-        result: Some(1),
-    }],
-    back: MenuPageButtonSpec {
-        id: DECLINE,
-        dlu_top: 257,
-        csf_key: "GUI:No",
-        tooltip_key: "STT:WOLAutoLoginNo",
-        result: Some(2),
-    },
+    stacked: &[MenuPageButtonSpec::new(ACCEPT, 116, "GUI:Yes", "STT:WOLAutoLoginYes").returning(1)],
+    back: MenuPageButtonSpec::new(DECLINE, 257, "GUI:No", "STT:WOLAutoLoginNo").returning(2),
 };
 
 /// RT_DIALOG `0xFE`: OK (created disabled, `0x5800000B`) on top, Cancel on
@@ -61,20 +48,8 @@ pub(crate) const AUTO_LOGIN_PAGE: MenuPageSpec = MenuPageSpec {
 pub(crate) const LOCALE_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: LOCALE_DIALOG,
     title_key: "GUI:Location",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 116,
-        csf_key: "GUI:OK",
-        tooltip_key: "STT:WOLLocaleOK",
-        result: Some(1),
-    }],
-    back: MenuPageButtonSpec {
-        id: DECLINE,
-        dlu_top: 257,
-        csf_key: "GUI:Cancel",
-        tooltip_key: "STT:WOLLocaleCancel",
-        result: Some(2),
-    },
+    stacked: &[MenuPageButtonSpec::new(ACCEPT, 116, "GUI:OK", "STT:WOLLocaleOK").returning(1)],
+    back: MenuPageButtonSpec::new(DECLINE, 257, "GUI:Cancel", "STT:WOLLocaleCancel").returning(2),
 };
 
 /// RT_DIALOG `0x122`: Yes on top, No on the bottom row, and no heading
@@ -82,20 +57,10 @@ pub(crate) const LOCALE_PAGE: MenuPageSpec = MenuPageSpec {
 pub(crate) const ADD_BUDDY_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: ADD_BUDDY_DIALOG,
     title_key: "",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 116,
-        csf_key: "GUI:Yes",
-        tooltip_key: "STT:WOLAddBuddyQueryYes",
-        result: Some(1),
-    }],
-    back: MenuPageButtonSpec {
-        id: DECLINE,
-        dlu_top: 257,
-        csf_key: "GUI:No",
-        tooltip_key: "STT:WOLAddBuddyQueryNo",
-        result: Some(2),
-    },
+    stacked: &[
+        MenuPageButtonSpec::new(ACCEPT, 116, "GUI:Yes", "STT:WOLAddBuddyQueryYes").returning(1),
+    ],
+    back: MenuPageButtonSpec::new(DECLINE, 257, "GUI:No", "STT:WOLAddBuddyQueryNo").returning(2),
 };
 
 /// The question text: a centred static (`0x50020201`).
@@ -226,17 +191,33 @@ pub(crate) fn spec(dialog: DialogId) -> NodeSpec {
         let list = NodeSpec::new(NodeKind::List)
             .with(Prop::DoubleClick, Value::Bool(false))
             .with(Prop::ListWindow, Value::Bool(true));
-        (text.label(LOCALE_LABEL_KEY).with(Prop::Align, align(ShellAlign::H_CENTER)), list.id(LOCALE_LIST.into()))
+        (
+            text.label(LOCALE_LABEL_KEY)
+                .with(Prop::Align, align(ShellAlign::H_CENTER)),
+            list.id(LOCALE_LIST.into()),
+        )
     } else {
         let checkbox = NodeSpec::new(NodeKind::Checkbox).label(DO_NOT_ASK_KEY);
-        let text = text.with(Prop::Align, align(ShellAlign::H_CENTER | ShellAlign::V_CENTER));
-        (text, checkbox.id(DO_NOT_ASK.into()).with(Prop::ActivateOnPress, Value::Bool(true)))
+        let text = text.with(
+            Prop::Align,
+            align(ShellAlign::H_CENTER | ShellAlign::V_CENTER),
+        );
+        (
+            text,
+            checkbox
+                .id(DO_NOT_ASK.into())
+                .with(Prop::ActivateOnPress, Value::Bool(true)),
+        )
     };
     let control = match tooltip_key(dialog, control_id(dialog)) {
         Some(key) => control.tooltip(key),
         None => control,
     };
-    let text = if dialog == AUTO_LOGIN_DIALOG { text.label(AUTO_LOGIN_TEXT_KEY) } else { text };
+    let text = if dialog == AUTO_LOGIN_DIALOG {
+        text.label(AUTO_LOGIN_TEXT_KEY)
+    } else {
+        text
+    };
     NodeSpec::new(NodeKind::Dialog)
         .children(page::menu_buttons(WolPersonaLayout::spec(dialog)))
         .child(text)
@@ -248,7 +229,11 @@ fn align(align: ShellAlign) -> Value {
 }
 
 fn control_id(dialog: DialogId) -> u16 {
-    if dialog == LOCALE_DIALOG { LOCALE_LIST } else { DO_NOT_ASK }
+    if dialog == LOCALE_DIALOG {
+        LOCALE_LIST
+    } else {
+        DO_NOT_ASK
+    }
 }
 
 /// A persona page at the current screen: the family right panel, the
@@ -290,38 +275,17 @@ impl WolPersonaLayout {
     fn build(dialog: DialogId, width: i32, height: i32, scale: ShellScale) -> Self {
         let spec = Self::spec(dialog);
         let locale = dialog == LOCALE_DIALOG;
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(spec, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(spec, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
+        let place = Placer::on(scale, width, height);
+        let mut page = menu_page::compute_layout_for(spec, scale, width, height);
+        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
         // 0x112's heading 0x694 is 108x11 DLU and placed by 0x0060B1D0, one
         // row taller than the family's. 0xFE's is not placed at all: it
         // stays at its template rect at every size.
-        let title = if locale {
-            child_window(424, 4, 108, 11)
+        page.title = if locale {
+            place.at(AnchorRule::ChildWindow, 424, 4, 108, 11)
         } else {
-            let mut title =
-                menu_page::compute_layout(spec, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-            title.h = dlu_rect(316, 4, 108, 11).h + 1;
-            title
+            place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11)
         };
-        if scale.is_retail() && !locale {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
         let (text, control) = match dialog {
             LOCALE_DIALOG => (
                 child_window(119, 91, 187, 15),

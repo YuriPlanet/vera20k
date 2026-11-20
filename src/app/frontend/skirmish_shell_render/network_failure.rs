@@ -6,7 +6,7 @@ use super::in_game_shell::{
 };
 use super::text::localized_label;
 use crate::app::AppState;
-use crate::app::match_runtime::network_failure::{DIALOG, labels, vera_body};
+use crate::app::match_runtime::network_failure::{labels, vera_body};
 use crate::ui::shell::geom::ShellScale;
 
 pub(crate) fn render_network_failure(
@@ -26,8 +26,7 @@ pub(crate) fn render_network_failure(
         width as i32,
         height as i32,
     ));
-    let pressed = state.frontend.shell_controller.top_id() == Some(DIALOG)
-        && state.frontend.shell_controller.pressed() == Some(crate::ui::shell::modal::control::OK);
+    let pressed = crate::app::match_runtime::network_failure::ok_pressed(state);
     let mut art = Vec::new();
     let mut controls = Vec::new();
     let mut texts = Vec::new();

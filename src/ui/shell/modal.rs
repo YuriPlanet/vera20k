@@ -11,7 +11,7 @@ use super::descriptor::{
     AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
     RepositionPolicy,
 };
-use super::geom::{self, RectPx};
+use super::geom::{self, RectPx, ScaledRects};
 
 /// Resource control ids shared by the count-rule message-box family (the generic
 /// CSF helper resolves the dialog by which of these the click matched).
@@ -197,17 +197,7 @@ fn includes_third(kind: ModalKind) -> bool {
 /// by a plain DLU->pixel conversion with no re-anchor — but the field is required,
 /// so a benign value is stored.
 fn modal_control(id: u16, kind: ControlKind, dlu_rect: RectPx) -> ControlDescriptor {
-    ControlDescriptor {
-        id,
-        kind,
-        dlu_rect,
-        anchor: AnchorRule::RightAnchor,
-        csf_key: None,
-        tooltip_key: None,
-        group: 0,
-        enabled: true,
-        visible: true,
-    }
+    ControlDescriptor::new(id, kind, dlu_rect, AnchorRule::RightAnchor)
 }
 
 // --- Centered message-box modal layout (screen-relative pixel rects) ---
@@ -278,22 +268,9 @@ impl MessageBoxLayout {
                 .map(|id| NodeSpec::new(NodeKind::Button).id(i32::from(id))),
         )
     }
-
-    fn scaled(self, scale: geom::ShellScale) -> Self {
-        if scale.is_retail() {
-            return self;
-        }
-        let rect = |r| scale.scale_rect(r);
-        Self {
-            dialog: rect(self.dialog),
-            body: rect(self.body),
-            ok: rect(self.ok),
-            cancel: self.cancel.map(rect),
-            third: self.third.map(rect),
-            scale,
-        }
-    }
 }
+
+vera20k_gui::scaled_rects!(MessageBoxLayout { [scale] dialog, body, ok, cancel, third });
 
 pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> MessageBoxLayout {
     message_box_layout_in(kind, menu_popup_area(screen_w, screen_h))
@@ -328,21 +305,9 @@ pub fn message_box_layout_on(
     screen_h: i32,
     scale: geom::ShellScale,
 ) -> MessageBoxLayout {
-    message_box_base(kind, screen_w, screen_h, scale).scaled(scale)
-}
-
-/// The box in the coordinates [`message_box_layout_on`] maps it from.
-pub fn message_box_base(
-    kind: ModalKind,
-    screen_w: i32,
-    screen_h: i32,
-    scale: geom::ShellScale,
-) -> MessageBoxLayout {
-    if scale.is_retail() {
-        message_box_layout(kind, screen_w, screen_h)
-    } else {
-        message_box_layout(kind, geom::SHELL_BASE_W, geom::SHELL_BASE_H)
-    }
+    geom::layout_on(scale, screen_w, screen_h, |w, h| {
+        message_box_layout(kind, w, h)
+    })
 }
 
 /// VERA's front-end Esc menu places Options, Exit Game and Cancel in a
@@ -352,16 +317,18 @@ pub(crate) fn esc_menu_box_layout_on(
     screen_h: i32,
     scale: geom::ShellScale,
 ) -> MessageBoxLayout {
-    let mut layout = message_box_base(ModalKind::ThreeButton, screen_w, screen_h, scale);
-    let dialog = layout.dialog;
-    let button = layout.ok;
-    let inset = 24;
-    let y = dialog.y + dialog.h - inset - button.h;
-    let at = |x| RectPx::new(dialog.x + x, y, button.w, button.h);
-    layout.ok = at(inset);
-    layout.third = Some(at((dialog.w - button.w) / 2));
-    layout.cancel = Some(at(dialog.w - inset - button.w));
-    layout.scaled(scale)
+    geom::layout_on(scale, screen_w, screen_h, |w, h| {
+        let mut layout = message_box_layout(ModalKind::ThreeButton, w, h);
+        let dialog = layout.dialog;
+        let button = layout.ok;
+        let inset = 24;
+        let y = dialog.y + dialog.h - inset - button.h;
+        let at = |x| RectPx::new(dialog.x + x, y, button.w, button.h);
+        layout.ok = at(inset);
+        layout.third = Some(at((dialog.w - button.w) / 2));
+        layout.cancel = Some(at(dialog.w - inset - button.w));
+        layout
+    })
 }
 
 pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
@@ -421,18 +388,16 @@ pub fn wait_box_layout(screen_w: i32, screen_h: i32) -> WaitBoxLayout {
 
 /// WOL wait proc 0x00792CF0 uses the same shell mapping for art and hit rectangles.
 pub fn wait_box_layout_on(screen_w: i32, screen_h: i32, scale: geom::ShellScale) -> WaitBoxLayout {
-    if scale.is_retail() {
-        return wait_box_layout(screen_w, screen_h);
-    }
-    let base = wait_box_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
-    WaitBoxLayout {
-        dialog: scale.scale_rect(base.dialog),
-        text: scale.scale_rect(base.text),
-        disconnect: scale.scale_rect(base.disconnect),
-        check_status: scale.scale_rect(base.check_status),
-        animation: scale.scale_rect(base.animation),
-    }
+    geom::layout_on(scale, screen_w, screen_h, wait_box_layout)
 }
+
+vera20k_gui::scaled_rects!(WaitBoxLayout {
+    dialog,
+    text,
+    disconnect,
+    check_status,
+    animation
+});
 
 /// The Westwood Online Create Game popup `0xC3` (`0x0078DB70`), the same
 /// 451x326 centred box: executed screen rects (tools/storage_oracle/
@@ -571,33 +536,26 @@ pub fn wol_create_game_layout_on(
     online: bool,
     scale: geom::ShellScale,
 ) -> WolCreateGameLayout {
-    if scale.is_retail() {
-        return wol_create_game_layout(screen_w, screen_h, online);
-    }
-    let base = wol_create_game_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, online);
-    let s = |rect| scale.scale_rect(rect);
-    WolCreateGameLayout {
-        dialog: s(base.dialog),
-        password_label: s(base.password_label),
-        password: s(base.password),
-        clan: base.clan.map(s),
-        limit: s(base.limit),
-        observe: base.observe.map(s),
-        room: base
-            .room
-            .map(|room| crate::ui::room_limits::RoomLimitsLayout {
-                players_label: s(room.players_label),
-                players: s(room.players),
-                spectators: s(room.spectators),
-            }),
-        name: base.name.map(|(label, edit)| (s(label), s(edit))),
-        ranked: base.ranked.map(s),
-        watching: base.watching.map(s),
-        ok: s(base.ok),
-        cancel: s(base.cancel),
-        status: s(base.status),
-    }
+    geom::layout_on(scale, screen_w, screen_h, |w, h| {
+        wol_create_game_layout(w, h, online)
+    })
 }
+
+vera20k_gui::scaled_rects!(WolCreateGameLayout {
+    dialog,
+    password_label,
+    password,
+    clan,
+    limit,
+    observe,
+    room,
+    name,
+    ranked,
+    watching,
+    ok,
+    cancel,
+    status
+});
 
 /// VERA online's account popups (Create Account, its mailed code, Forgot
 /// Password) on the online Create Game box: one caption and edit per field,
@@ -652,21 +610,19 @@ pub fn wol_account_form_layout_on(
 ) -> WolAccountFormLayout {
     let base = wol_account_form_layout(area, count);
     if scale.is_retail() {
-        return base;
-    }
-    let s = |rect| scale.scale_rect(rect);
-    WolAccountFormLayout {
-        dialog: s(base.dialog),
-        fields: base
-            .fields
-            .iter()
-            .map(|&(caption, edit)| (s(caption), s(edit)))
-            .collect(),
-        ok: s(base.ok),
-        cancel: s(base.cancel),
-        status: s(base.status),
+        base
+    } else {
+        base.scaled_rects(scale)
     }
 }
+
+vera20k_gui::scaled_rects!(WolAccountFormLayout {
+    dialog,
+    fields,
+    ok,
+    cancel,
+    status
+});
 
 /// VERA's player card in the online lobby on the online Create Game box: a
 /// caption and value per row, Message and Add or Remove Buddy over Full
@@ -717,21 +673,18 @@ pub fn wol_player_card_layout_on(
     screen_h: i32,
     scale: geom::ShellScale,
 ) -> WolPlayerCardLayout {
-    if scale.is_retail() {
-        return wol_player_card_layout(screen_w, screen_h);
-    }
-    let base = wol_player_card_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
-    let s = |rect| scale.scale_rect(rect);
-    WolPlayerCardLayout {
-        dialog: s(base.dialog),
-        rows: base.rows.map(|(caption, value)| (s(caption), s(value))),
-        message: s(base.message),
-        buddy: s(base.buddy),
-        profile: s(base.profile),
-        close: s(base.close),
-        status: s(base.status),
-    }
+    geom::layout_on(scale, screen_w, screen_h, wol_player_card_layout)
 }
+
+vera20k_gui::scaled_rects!(WolPlayerCardLayout {
+    dialog,
+    rows,
+    message,
+    buddy,
+    profile,
+    close,
+    status
+});
 
 /// VERA's Create Game box in the LAN lobby, the online box's art and
 /// buttons: Max players in the password row, Allow spectators in the clan row.
@@ -794,19 +747,16 @@ pub fn wol_channel_password_layout_on(
     screen_h: i32,
     scale: geom::ShellScale,
 ) -> WolChannelPasswordLayout {
-    if scale.is_retail() {
-        return wol_channel_password_layout(screen_w, screen_h);
-    }
-    let base = wol_channel_password_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
-    let s = |rect| scale.scale_rect(rect);
-    WolChannelPasswordLayout {
-        dialog: s(base.dialog),
-        label: s(base.label),
-        password: s(base.password),
-        ok: s(base.ok),
-        cancel: s(base.cancel),
-    }
+    geom::layout_on(scale, screen_w, screen_h, wol_channel_password_layout)
 }
+
+vera20k_gui::scaled_rects!(WolChannelPasswordLayout {
+    dialog,
+    label,
+    password,
+    ok,
+    cancel
+});
 
 /// The WOL page dialog `0xCF` (proc `0x0078D120`), the same 451x326
 /// centred box: executed screen rects (tools/storage_oracle/wol_shell.json).
@@ -840,6 +790,10 @@ impl WolPageLayout {
             0x5B5 => self.transcript,
             0x5C2 => self.send,
             control::CANCEL => self.cancel,
+            crate::ui::wol_page::NAME_CAPTION => self.name_label,
+            crate::ui::wol_page::TEXT_CAPTION => self.text_label,
+            crate::ui::wol_page::STATUS_CAPTION => self.status_label,
+            crate::ui::wol_page::STATUS => self.status,
             _ => return None,
         })
     }
@@ -893,6 +847,9 @@ impl WolPageReceivedLayout {
             0x540 => self.reply,
             0x5C2 => self.send,
             0x686 => self.back,
+            crate::ui::wol_page::TITLE_CAPTION => self.title,
+            crate::ui::wol_page::REPLY_TO_CAPTION => self.reply_to_label,
+            crate::ui::wol_page::REPLY_TO => self.reply_to,
             _ => return None,
         })
     }
@@ -940,6 +897,7 @@ impl WolAddBuddyLayout {
             0x540 => self.name,
             0x702 => self.add,
             0x686 => self.back,
+            crate::ui::wol_buddy::NICKNAME_CAPTION => self.label,
             _ => return None,
         })
     }
@@ -1168,7 +1126,12 @@ mod tests {
             let [options, exit, cancel] =
                 [layout.ok, layout.third.unwrap(), layout.cancel.unwrap()]
                     .map(|r| scale.base_rect(r));
-            let native = message_box_base(ModalKind::ThreeButton, w, h, scale).ok;
+            let (base_w, base_h) = if scale.is_retail() {
+                (w, h)
+            } else {
+                (800, 600)
+            };
+            let native = message_box_layout(ModalKind::ThreeButton, base_w, base_h).ok;
             for button in [options, exit, cancel] {
                 assert_eq!(
                     (button.y, button.w, button.h),

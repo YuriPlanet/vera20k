@@ -1,0 +1,106 @@
+//! The in-game dialogs' controls on `vera20k-gui` ([`crate::ui::shell::page`]):
+//! each dialog describes its controls once (resource id and status help in
+//! every node), keeps them on its layout and reads what the pointer did as
+//! the shell's cues and control-id events. The scenario's modal dialogs share
+//! [`crate::app::presentation::state::MatchPresentationState::dialog_ui`];
+//! a dialog with state of its own (B8, A3, 0xEA) owns its controller.
+
+use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, NodeSpec};
+
+use crate::app::{App, AppState};
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::page::{self, PageEvent};
+
+/// A left-button message at `(x, y)`: `down`, or a move for `None`.
+pub(crate) fn event_at(x: i32, y: i32, down: Option<bool>) -> InputEvent {
+    let button = MouseButton::Left;
+    match down {
+        None => InputEvent::PointerMove { x, y },
+        Some(true) => InputEvent::PointerDown { x, y, button },
+        Some(false) => InputEvent::PointerUp { x, y, button },
+    }
+}
+
+/// [`event_at`] the active-game shell's cursor.
+pub(crate) fn shell_event(state: &AppState, down: Option<bool>) -> InputEvent {
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    event_at(x, y, down)
+}
+
+/// Builds `dialog`'s controls on `ui` once, keeps them on `rect_of` (a
+/// control without a rect is hidden), lets `sync` put the dialog's values on
+/// them, routes `event` and returns its control events, cues included, in
+/// order.
+pub(crate) fn route(
+    ui: &mut DialogController,
+    dialog: DialogId,
+    nodes: impl FnOnce() -> NodeSpec,
+    rect_of: impl Fn(u16) -> Option<RectPx>,
+    sync: impl FnOnce(&mut Gui, NodeId),
+    event: InputEvent,
+) -> Vec<PageEvent> {
+    ui.ensure_active(dialog, false);
+    crate::ui::shell::menu_page::sync_nodes(ui, dialog, nodes, rect_of, &[]);
+    if let Some(root) = ui.root_in(dialog) {
+        sync(ui.gui_mut(), root);
+    }
+    ui.on_input(event);
+    let events = ui.drain_events();
+    page::page_events(ui.gui(), events)
+}
+
+/// [`route`] with nothing to sync.
+pub(crate) fn no_sync(_: &mut Gui, _: NodeId) {}
+
+/// Plays the cues among `events` (an enabled button's GUIMainButtonSound at
+/// mouse down, `0x0061374B`) and returns the rest.
+pub(crate) fn play_cues(state: &mut AppState, events: Vec<PageEvent>) -> Vec<PageEvent> {
+    let mut rest = Vec::with_capacity(events.len());
+    for event in events {
+        match event {
+            PageEvent::Cue(cue) => App::play_page_cue(state, cue),
+            event => rest.push(event),
+        }
+    }
+    rest
+}
+
+/// Whether control `id` shows pushed: captured and still under the pointer
+/// (612B70).
+pub(crate) fn pressed(ui: &DialogController, id: u16) -> bool {
+    let gui = ui.gui();
+    let Some(root) = ui.top_id().and_then(|dialog| ui.root_in(dialog)) else {
+        return false;
+    };
+    gui.find_id(root, id.into())
+        .is_some_and(|node| gui.shows_pressed(node))
+}
+
+/// The control under the pointer.
+pub(crate) fn hovered(ui: &DialogController) -> Option<u16> {
+    u16::try_from(ui.gui().id_of(ui.gui().hovered()?)?).ok()
+}
+
+/// The trackbar holding the pointer: the GUI hovers nothing until its
+/// release (`SetCapture` 0x0061E4DF).
+pub(crate) fn held_trackbar(ui: &DialogController) -> Option<u16> {
+    let gui = ui.gui();
+    let node = gui
+        .pressed()
+        .filter(|node| gui.tree().kind(*node) == Ok(NodeKind::Trackbar))?;
+    u16::try_from(gui.id_of(node)?).ok()
+}
+
+/// The control a press at `(x, y)` lands on in `ui`'s top dialog.
+pub(crate) fn hit(ui: &DialogController, x: i32, y: i32) -> Option<u16> {
+    let root = ui.root_in(ui.top_id()?)?;
+    let gui = ui.gui();
+    u16::try_from(gui.id_of(gui.hit_at(root, x, y, true)?)?).ok()
+}
+
+/// The status help of the control under the pointer (`0x006040B0`).
+pub(crate) fn help(ui: &DialogController) -> Option<&str> {
+    page::hovered_key(ui.gui()).filter(|key| !key.is_empty())
+}
