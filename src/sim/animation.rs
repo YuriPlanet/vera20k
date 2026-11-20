@@ -650,100 +650,95 @@ fn tick_animations_impl(
                 .all(|entity| entity.animation.is_none()),
         "a Structure holds an Animation the frame-end step would not advance"
     );
-    let keys: Vec<u64> = if tick_dying {
-        entities.keys_sorted()
-    } else {
-        entities.ids_of_categories(animated)
-    };
+    entities.for_each_entry_mut(
+        |category| tick_dying || animated(category),
+        |entry| {
+            let id = entry.id();
+            let entity = entry.get();
+            if entity.death.is_dying() && !tick_dying {
+                return;
+            }
+            // The stage steps in TechnoClass::AI_Update (`0x006FAC4D`), which a
+            // warped object never reaches (`GameEntity::ai_frozen`): its pose holds.
+            if !entity.death.is_dying() && entity.ai_frozen() {
+                return;
+            }
+            // Its Doing's sequence, which its actions restart and whose stage
+            // steps in its own turn (`sim::movement::infantry_action`); this
+            // frame-end clock leaves it.
+            if crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
+                return;
+            }
+            if entity.animation.is_none() {
+                // Dying entity with no animation → ready for despawn.
+                if entity.death.is_dying() {
+                    dying_finished.push(id);
+                }
+                return;
+            }
+            let entity = entry.into_mut();
+            let type_ref = entity.type_ref();
+            let category = entity.category();
+            let anim = entity
+                .animation
+                .as_mut()
+                .expect("an animated entity was just read");
 
-    for &id in &keys {
-        let Some(entity) = entities.get(id) else {
-            continue;
-        };
-        if entity.death.is_dying() && !tick_dying {
-            continue;
-        }
-        // The stage steps in TechnoClass::AI_Update (`0x006FAC4D`), which a
-        // warped object never reaches (`GameEntity::ai_frozen`): its pose holds.
-        if !entity.death.is_dying() && entity.ai_frozen() {
-            continue;
-        }
-        // Its Doing's sequence, which its actions restart and whose stage
-        // steps in its own turn (`sim::movement::infantry_action`); this
-        // frame-end clock leaves it.
-        if crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
-            continue;
-        }
-        if entity.animation.is_none() {
-            // Dying entity with no animation → ready for despawn.
+            // Dying entities: only advance the death animation, skip all transitions.
             if entity.death.is_dying() {
-                dying_finished.push(id);
+                if anim.finished {
+                    dying_finished.push(id);
+                    return;
+                }
+                let Some(seq_set) =
+                    sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
+                else {
+                    dying_finished.push(id);
+                    return;
+                };
+                let Some(def) = seq_set.get(&anim.sequence) else {
+                    dying_finished.push(id);
+                    return;
+                };
+                advance_animation(anim, def, game_options);
+                if anim.finished {
+                    dying_finished.push(id);
+                }
+                return;
             }
-            continue;
-        }
-        let entity = entities
-            .get_mut(id)
-            .expect("an animated entity was just read");
-        let type_ref = entity.type_ref();
-        let category = entity.category();
-        let anim = entity
-            .animation
-            .as_mut()
-            .expect("an animated entity was just read");
 
-        // Dying entities: only advance the death animation, skip all transitions.
-        if entity.death.is_dying() {
-            if anim.finished {
-                dying_finished.push(id);
-                continue;
-            }
-            let Some(seq_set) = sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
-            else {
-                dying_finished.push(id);
-                continue;
+            // Infantry never enters this cascade: Doing/Stage is its only
+            // sequence clock. Motion does not switch the sequence either: the Unit
+            // SHP draw picks Walk or Stand by the locomotor's Is_Moving (vt+0x10 at
+            // `0x0073C696`, `resolve_shp_vehicle_body_frame`).
+            let seq_set = sequence_set_for_type(sequences, rules, interner.resolve(type_ref));
+
+            // Advance frame timing.
+            let Some(set) = seq_set else {
+                return;
             };
-            let Some(def) = seq_set.get(&anim.sequence) else {
-                dying_finished.push(id);
-                continue;
+            let Some(def) = set.get(&anim.sequence) else {
+                return;
             };
-            advance_animation(anim, def, game_options);
-            if anim.finished {
-                dying_finished.push(id);
+
+            // UnitClass SHP Stand/Walk images are selected from Foot's persistent
+            // body counter at draw time. Do not advance a second relative clock or
+            // reset cadence when the generic visual sequence changes.
+            if category == crate::map::entities::EntityCategory::Unit
+                && set.shp_vehicle_cadence().is_some()
+                && matches!(anim.sequence, SequenceKind::Stand | SequenceKind::Walk)
+            {
+                return;
             }
-            continue;
-        }
 
-        // Infantry never enters this cascade: Doing/Stage is its only
-        // sequence clock. Motion does not switch the sequence either: the Unit
-        // SHP draw picks Walk or Stand by the locomotor's Is_Moving (vt+0x10 at
-        // `0x0073C696`, `resolve_shp_vehicle_body_frame`).
-        let seq_set = sequence_set_for_type(sequences, rules, interner.resolve(type_ref));
-
-        // Advance frame timing.
-        let Some(set) = seq_set else {
-            continue;
-        };
-        let Some(def) = set.get(&anim.sequence) else {
-            continue;
-        };
-
-        // UnitClass SHP Stand/Walk images are selected from Foot's persistent
-        // body counter at draw time. Do not advance a second relative clock or
-        // reset cadence when the generic visual sequence changes.
-        if category == crate::map::entities::EntityCategory::Unit
-            && set.shp_vehicle_cadence().is_some()
-            && matches!(anim.sequence, SequenceKind::Stand | SequenceKind::Walk)
-        {
-            continue;
-        }
-
-        if let Some(next) = advance_animation(anim, def, game_options) {
-            if let Some(facing) = def.completion_facing {
-                snap_completion_facing(&mut entity.body_facing, facing, binary_frame);
+            if let Some(next) = advance_animation(anim, def, game_options) {
+                if let Some(facing) = def.completion_facing {
+                    snap_completion_facing(&mut entity.body_facing, facing, binary_frame);
+                }
+                anim.switch_to(next);
             }
-            anim.switch_to(next);
-        }
-    }
+        },
+    );
 
     dying_finished
 }

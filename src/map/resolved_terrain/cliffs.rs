@@ -180,18 +180,24 @@ impl ResolvedTerrainGrid {
         cliff_back_rock: Option<&LandTypeSemantics>,
         mut clear_replacement_cell: impl FnMut(u16, u16),
     ) -> Option<DestroyableCliffMutation> {
-        let catalog = self.destroyable_cliff_catalog.clone()?;
+        let catalog = self.destroyable_cliff_catalog.as_ref()?;
         let selected = self.cell(rx, ry)?;
         let family = match selected.final_tile_index {
             tile if tile == i32::from(catalog.destroyable_start) => DestroyableCliffFamily::A,
             tile if tile == i32::from(catalog.destroyable_start) + 1 => DestroyableCliffFamily::B,
             _ => return None,
         };
+        let sub_tile = selected.final_sub_tile;
+        // Held out of the grid while the collapse writes it, and put back
+        // before the result; nothing the collapse calls reads it.
+        let catalog = self
+            .destroyable_cliff_catalog
+            .take()
+            .expect("the catalog was read above");
         let old = &catalog.old[match family {
             DestroyableCliffFamily::A => 0,
             DestroyableCliffFamily::B => 1,
         }];
-        let sub_tile = selected.final_sub_tile;
         let (sub_x, sub_y) = match family {
             DestroyableCliffFamily::A => (sub_tile % 6, sub_tile / 6),
             DestroyableCliffFamily::B => (sub_tile & 3, sub_tile >> 2),
@@ -327,6 +333,7 @@ impl ResolvedTerrainGrid {
                 animation_cells.push((x, y));
             }
         }
+        self.destroyable_cliff_catalog = Some(catalog);
         Some(DestroyableCliffMutation {
             #[cfg(any(test, feature = "test-support"))]
             family,

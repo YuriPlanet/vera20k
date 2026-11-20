@@ -579,7 +579,7 @@ fn admit_attacker_fire<'r>(
     let snap = if infantry_fire {
         let actor = world.substrate.entities.get(snap.stable_id)?;
         firing_snapshot =
-            build_attacker_snapshot(actor, actor.attack_target.target()?, snap.garrison.clone());
+            build_attacker_snapshot(actor, actor.attack_target.target()?, snap.garrison);
         &firing_snapshot
     } else {
         snap
@@ -613,7 +613,7 @@ fn admit_attacker_fire<'r>(
     };
 
     Some(AdmittedFire {
-        snap: snap.clone(),
+        snap: *snap,
         obj,
         selected,
         target_coords,
@@ -1643,7 +1643,7 @@ pub(super) fn emit_admitted_fire(
         Some((rx, ry)) => {
             area_fire_snap = AttackerSnapshot {
                 target: TargetKind::Cell(rx, ry),
-                ..snap.clone()
+                ..*snap
             };
             (&area_fire_snap, cell_center_coords(rx, ry))
         }
@@ -2315,11 +2315,11 @@ pub(super) fn emit_admitted_fire(
     }
     // `0x006FF394..0x006FF43F`, after GetROF: the muzzle anim, appended to the
     // Logic vector behind this shot's bullet.
-    if let Some(event) = out.fire_events.last().cloned() {
-        crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
+    if let Some(event) = out.fire_events.last() {
+        crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, event);
         // Sonic6FF470 precedes the independent later-effect ladder.
         if weapon.is_sonic && callbacks_enabled(world) {
-            world.commit_fired_wave(rules, &event, 0, selected.index);
+            world.commit_fired_wave(rules, event, 0, selected.index);
         }
     }
     // 6FF4CC..6FF54B: successful FireAt only, after burst advance and before
@@ -2348,9 +2348,9 @@ pub(super) fn emit_admitted_fire(
     if fire_at_effect(weapon) == FireAtEffect::MagneticWave
         && world.active_wave_id(snap.stable_id).is_none()
         && callbacks_enabled(world)
-        && let Some(event) = out.fire_events.last().cloned()
+        && let Some(event) = out.fire_events.last()
     {
-        world.commit_fired_wave(rules, &event, 3, selected.index);
+        world.commit_fired_wave(rules, event, 3, selected.index);
     }
     // Ares 3.0 TechnoClass_Fire_OtherWaves (10056E60, hook 0x6FF5F5): a
     // weapon past the four earlier effects and without IsMagBeam creates a TS
@@ -2361,9 +2361,9 @@ pub(super) fn emit_admitted_fire(
         && fire_at_effect(weapon) == FireAtEffect::None
         && let Some(wave_type) = weapon.ares_visuals.laser_wave_type()
         && callbacks_enabled(world)
-        && let Some(event) = out.fire_events.last().cloned()
+        && let Some(event) = out.fire_events.last()
     {
-        world.commit_fired_wave(rules, &event, wave_type, selected.index);
+        world.commit_fired_wave(rules, event, wave_type, selected.index);
     }
     // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
     // Aircraft's override is RET41B900; release/dock retain their own writes.
@@ -3100,18 +3100,17 @@ pub(crate) fn tick_combat(
             world
                 .substrate
                 .entities
-                .keys_sorted()
-                .into_iter()
-                .filter(|&id| {
+                .iter_sorted()
+                .filter(|&(id, actor)| {
                     !fire_suppressed.contains(&id)
-                        && world.substrate.entities.get(id).is_some_and(|actor| {
-                            matches!(
-                                actor.category(),
-                                EntityCategory::Unit | EntityCategory::Infantry
-                            ) && actor.is_ai_alive()
-                                && !actor.lifecycle.in_limbo()
-                        })
-                }),
+                        && matches!(
+                            actor.category(),
+                            EntityCategory::Unit | EntityCategory::Infantry
+                        )
+                        && actor.is_ai_alive()
+                        && !actor.lifecycle.in_limbo()
+                })
+                .map(|(id, _)| id),
         );
     }
     visits.sort_by_key(|&id| (live_index.get(&id).copied().unwrap_or(usize::MAX), id));

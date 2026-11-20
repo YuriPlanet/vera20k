@@ -267,7 +267,7 @@ impl PreparedLoad {
             crate::sim::world::SnapshotProcessState::Live(current_simulation),
             rules,
             terrain_template,
-            current_simulation.terrain_speed_config().clone(),
+            *current_simulation.terrain_speed_config(),
             crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
         )
     }
