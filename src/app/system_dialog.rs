@@ -1,6 +1,6 @@
 //! The system's own dialogs, for what the game window cannot show: a startup
 //! that never got a working window or renderer, a panic, a graphics device
-//! lost while playing, and a start on the system's software renderer, whose
+//! lost at startup or while playing, and a start on the system's software renderer, whose
 //! window stays blank for minutes. A Windows
 //! release build has no console and the app bundle and AppImage none either,
 //! so without these the game would vanish with only the log knowing why. The
@@ -94,15 +94,36 @@ fn reraised_panic_text(payload: &(dyn Any + Send), worker: &Mutex<Option<String>
         .unwrap_or_else(|| message.to_owned())
 }
 
-fn show_crash(mut what: String) {
+fn show_crash(what: String) {
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    let lost_device = crate::render::gpu::lost_device();
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    let lost_device = None;
+    let (title, text) = crash_message(what, lost_device);
+    show_fatal(&title, &text);
+}
+
+/// The box for a panic. After the graphics device was lost (`lost_device`
+/// is what the driver said), a panic is the loss's consequence: wgpu panics
+/// on the first buffer it maps on the dead device, which at startup comes
+/// before the frame loop could close the game (`App::close_after_graphics_loss`).
+/// The player then reads about the driver, not about an internal error; the
+/// log keeps the panic.
+fn crash_message(mut what: String, lost_device: Option<&str>) -> (String, String) {
+    if let Some(error) = lost_device {
+        return graphics_lost_message(&GraphicsLost {
+            error: error.to_owned(),
+            saved: None,
+        });
+    }
     if let Some((end, _)) = what.char_indices().nth(600) {
         what.truncate(end);
         what.push('…');
     }
-    show_fatal(
-        &crate::i18n::tr("VERA:CrashTitle"),
-        &crate::i18n::tr_fill("VERA:CrashText", &[("panic", &what), ("log", &log_note())]),
-    );
+    (
+        crate::i18n::tr("VERA:CrashTitle"),
+        crate::i18n::tr_fill("VERA:CrashText", &[("panic", &what), ("log", &log_note())]),
+    )
 }
 
 /// Tell the player why startup failed, before the process exits.
@@ -449,6 +470,21 @@ mod tests {
         assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
         assert!(text.contains("(Microsoft Basic Render Driver)"), "{text}");
         assert!(text.ends_with(&crate::i18n::tr(GRAPHICS_ADVICE)), "{text}");
+    }
+
+    #[test]
+    fn a_panic_after_the_device_was_lost_tells_about_the_driver() {
+        let panic = "panicked at wgpu/src/util/device.rs:72:18:\nFailed to get mapped range \
+                     for buffer created with mapped_at_creation"
+            .to_owned();
+        let (title, text) = crash_message(panic.clone(), None);
+        assert_eq!(title, crate::i18n::tr("VERA:CrashTitle"));
+        assert!(text.contains(&panic), "{text}");
+        let driver = "Unexpected error variant (driver implementation is at fault)";
+        let (title, text) = crash_message(panic.clone(), Some(driver));
+        assert_eq!(title, crate::i18n::tr("VERA:GraphicsLostTitle"));
+        assert!(text.ends_with(driver), "{text}");
+        assert!(!text.contains("mapped_at_creation"), "{text}");
     }
 
     #[test]

@@ -186,9 +186,6 @@ pub struct GpuContext {
     pub surface_format: wgpu::TextureFormat,
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
-    /// What the driver said when it lost the device ([`Self::device_lost`]).
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-    lost: Arc<std::sync::OnceLock<String>>,
     capture_target: Option<CaptureTarget>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
@@ -358,7 +355,7 @@ impl GpuContext {
             .await
             .context("Failed to create wgpu device")?;
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let lost = watch_device_loss(&device);
+        watch_device_loss(&device);
 
         // Pick the best texture format for the surface.
         // This is usually Bgra8UnormSrgb on Windows, Bgra8Unorm on some other platforms.
@@ -477,8 +474,6 @@ impl GpuContext {
             config,
             surface_format,
             adapter_info,
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            lost,
             capture_target,
             timer,
             color_vision: super::color_vision::ColorVisionFilter::new(),
@@ -550,7 +545,7 @@ impl GpuContext {
     /// run on behind a black window. `None` while the device works.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn device_lost(&self) -> Option<&str> {
-        self.lost.get().map(String::as_str)
+        lost_device()
     }
 
     /// Whether the window currently owns a render surface.
@@ -743,6 +738,23 @@ impl GpuContext {
     }
 }
 
+/// What the driver said when it lost the process's graphics device
+/// (`watch_device_loss`), for [`GpuContext::device_lost`] and for the panic
+/// hook: a panic after the loss (wgpu's own, on the first buffer it maps on
+/// the dead device, or any renderer's) is the loss's consequence, and the
+/// player is told about the driver, not about an internal error
+/// (`app::system_dialog::report_panic`). The game has one device; a second
+/// context would share this.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+static LOST_DEVICE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The driver's message once the graphics device is lost; `None` while it
+/// works. See [`GpuContext::device_lost`].
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn lost_device() -> Option<&'static str> {
+    LOST_DEVICE.get().map(String::as_str)
+}
+
 /// Watch `device` for its loss. wgpu reports a loss once, on whichever thread
 /// met the driver's error (this one, the frame hand-off thread or a loading
 /// thread); its message is kept for [`GpuContext::device_lost`] and logged.
@@ -751,17 +763,14 @@ impl GpuContext {
 /// Before a loss an error still ends the game, as wgpu's default handler
 /// (`default_error_handler`) does.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-fn watch_device_loss(device: &wgpu::Device) -> Arc<std::sync::OnceLock<String>> {
-    let lost = Arc::new(std::sync::OnceLock::new());
-    let kept = Arc::clone(&lost);
+fn watch_device_loss(device: &wgpu::Device) {
     device.set_device_lost_callback(move |reason, message| {
         log::error!("Graphics device lost ({reason:?}): {message}");
-        let _ = kept.set(message);
+        let _ = LOST_DEVICE.set(message);
     });
-    let after_loss = Arc::clone(&lost);
     let logged = std::sync::atomic::AtomicBool::new(false);
     device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
-        if after_loss.get().is_none() {
+        if lost_device().is_none() {
             log::error!("Handling wgpu errors as fatal by default");
             panic!("wgpu error: {error}\n");
         }
@@ -769,7 +778,6 @@ fn watch_device_loss(device: &wgpu::Device) -> Arc<std::sync::OnceLock<String>> 
             log::warn!("Ignoring wgpu errors on the lost device, the first: {error}");
         }
     }));
-    lost
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -879,8 +887,8 @@ mod tests {
     use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
     use super::{
-        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
-        watch_device_loss,
+        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, lost_device,
+        present_settings, watch_device_loss,
     };
 
     /// With VSync a picture over one refresh must not wait a whole refresh
@@ -904,13 +912,13 @@ mod tests {
             .expect("this test requires a wgpu adapter");
         let (device, _queue) =
             block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
-        let lost = watch_device_loss(&device);
+        watch_device_loss(&device);
         let poll = || device.poll(wgpu::PollType::wait_indefinitely());
         poll().unwrap();
-        assert_eq!(lost.get(), None);
+        assert_eq!(lost_device(), None);
         device.destroy();
         let _ = poll();
-        assert!(lost.get().is_some());
+        assert!(lost_device().is_some());
 
         let mut encoder = device.create_command_encoder(&Default::default());
         let mut pool = crate::render::batch::InstanceBufferPool::new();
