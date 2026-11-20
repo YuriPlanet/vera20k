@@ -216,6 +216,7 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
                 if presentation.message_list.add_edit("", [1.0; 3], true) {
                     presentation.chat.target = ChatTarget::Skirmish;
                     presentation.chat.overflow = None;
+                    cancel_skirmish_spawn(state);
                     apply_input(state, EditKey::Unit(u16::from(b'/')));
                     return true;
                 }
@@ -329,6 +330,9 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     if presentation.message_list.add_edit(&prefix, rgb, true) {
         presentation.chat.target = target;
         presentation.chat.overflow = None;
+        if target == ChatTarget::Skirmish {
+            cancel_skirmish_spawn(state);
+        }
     }
     true
 }

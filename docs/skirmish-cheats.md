@@ -25,6 +25,7 @@ units per order.
 To place a group, type the command and press **Enter**. You can move the camera
 to find your spot, then **left-click the battlefield** to spawn the group.
 Click water for ships. **Right-click** or press **Esc** to cancel before placing.
+Opening chat again also cancels the pending group.
 The game starts at the clicked cell, fills suitable cells around it and reports
 how many units fit. The units belong to your house, whichever side you play.
 `/money`, `/spysat` and `/help` take effect as soon as you press **Enter**.
