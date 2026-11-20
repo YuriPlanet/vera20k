@@ -351,10 +351,11 @@ evidence close to their code or tools. Update the current owner rather than
 maintaining chains of superseded reports. Retention is not proof of correctness.
 
 Every page and menu a player can open, in or out of a match, is listed in the
-[menu reference](docs/zh-CN/menu-reference.md). A change that adds, removes, renames or
+[menu reference](docs/menu-reference.md) and its
+[Chinese version](docs/zh-CN/menu-reference.md). A change that adds, removes, renames or
 moves a page, menu item, Options setting, its storage key, or a hotkey that changes a
-setting updates that file in the same change; a fix for one of its known issues removes
-the issue there.
+setting updates both files in the same change; a fix for one of their known issues
+removes the issue from both.
 
 Internet documentation lookup is allowed without routine approval. Resolve uncertain
 technical behavior using authoritative references, specifications and upstream source;
