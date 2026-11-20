@@ -15,7 +15,7 @@ use super::{WolBoxThen, WolPage, WolVisit};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::ui::wol_chat::WolChatLine;
-use crate::ui::wol_lobby::{WolChannel, WolMember};
+use crate::ui::wol_lobby::{WolChannel, WolMember, WolRoomSummary};
 use crate::ui::wol_login::WolCredential;
 use crate::ui::wol_shell::{
     BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolBoxButtons, WolMessageBox,
@@ -290,6 +290,7 @@ pub(crate) struct WolMatch {
     pub(crate) max_watchers: u32,
     /// The playing humans.
     pub(crate) names: Vec<String>,
+    pub(crate) summary: Option<WolRoomSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -402,6 +403,9 @@ pub(crate) enum WolServiceEvent {
         /// VERA: the lobby's own line, `text` from its phrases in the
         /// interface language.
         localized: bool,
+        /// VERA: the lobby's warning that a player's game differs from the
+        /// host's, shown red.
+        warning: bool,
         private: bool,
         action: bool,
         ansi: bool,
@@ -993,6 +997,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             from,
             text,
             localized,
+            warning,
             private,
             action,
             ansi,
@@ -1005,6 +1010,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning,
                     private,
                     action,
                     ansi,
@@ -1029,6 +1035,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning: false,
                     private,
                     action,
                     ansi: false,

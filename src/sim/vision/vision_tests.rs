@@ -2108,7 +2108,10 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
             .cells
             .is_empty()
     );
-    assert_eq!(world.fog.source_sight_viewers(1), vec![owner]);
+    assert_eq!(
+        world.fog.source_sight_viewers(1).collect::<Vec<_>>(),
+        vec![owner]
+    );
     world
         .substrate
         .entities

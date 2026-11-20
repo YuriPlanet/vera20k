@@ -95,16 +95,19 @@ fn write_replay_log(state: &mut AppState, session_tick: u64) {
 /// Capture the initial world before either a frame or a skirmish cheat can change it.
 pub(crate) fn prepare_replay_recording(state: &mut AppState) {
     if let Some(rt) = state.match_state.sim_runtime.runtime() {
+        use crate::sim::replay::ReplayLaunchInput;
+        let campaign = state.match_state.session.network_authored_start();
+        let launch = campaign
+            .map(|campaign| ReplayLaunchInput::MapHouses(&campaign.authored))
+            .or_else(|| {
+                state.match_state.session.network_setup()
+                    .or_else(|| state.match_state.startup.offline_launch())
+                    .map(ReplayLaunchInput::Slots)
+            });
         let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
         state.match_state.match_diagnostics.retain_replay_startup(
             rt,
-            // A network match's session owns its launch; an offline
-            // skirmish's stays with the startup that installed it.
-            state
-                .match_state
-                .session
-                .network_setup()
-                .or_else(|| state.match_state.startup.offline_launch()),
+            launch,
             state.match_state.loaded_map_source.as_ref(),
             state.match_state.loaded_map_hash,
             crate::sim::replay::ReplayStartOptions {
@@ -212,6 +215,7 @@ fn replay_flush_time() -> u64 {
 pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64) {
     if !matches!(state.frontend.screen, GameScreen::InGame)
         || state.match_state.scenario_exit.is_some()
+        || state.match_state.match_presentation.narrative_sync.pending()
     {
         return;
     }
@@ -232,6 +236,14 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     let Some(outcome) = outcome.map(|outcome| outcome.kind) else {
         return;
     };
+    // docs/spawn.md "Watching": a launcher's watcher is none of the players,
+    // so the House it stands in deciding ends the watch with no verdict or
+    // score page of that player's, and its launch with no result.
+    if state.frontend.external_launch && super::watching::active(state) {
+        log::info!("The watched match is decided; the watcher leaves it");
+        crate::app::App::leave_network_wait_to_main_menu(state);
+        return;
+    }
     // The loser gets the last word. The simulation published this result on
     // its own frame, the same one a headless or replay run publishes, and no
     // further frame runs while it waits. With `Custom End Game Movie` on, only
@@ -312,16 +324,20 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     start_verdict_theme(state, outcome, wall_ms);
     let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
     let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
-    let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
-        state.match_state.session_mode(),
-        outcome,
-        state.match_state.map_basic.skip_score.unwrap_or(false),
-        cooperative,
-        title,
-        detail,
-        || build_campaign_score_screen_model(state, elapsed_score_ticks),
-        || build_score_screen_model(state, elapsed_seconds, false),
-    );
+    let destination = if state.match_state.session.network_authored_start().is_some() {
+        super::scenario_exit::ScenarioExitDestination::AuthoredCampaignResult(outcome)
+    } else {
+        super::scenario_exit::scenario_exit_destination(
+            state.match_state.session_mode(),
+            outcome,
+            state.match_state.map_basic.skip_score.unwrap_or(false),
+            cooperative,
+            title,
+            detail,
+            || build_campaign_score_screen_model(state, elapsed_score_ticks),
+            || build_score_screen_model(state, elapsed_seconds, false),
+        )
+    };
     // Native campaign victories enter the standalone dialog `0x103`; campaign
     // defeats take a separate prompt path. Only GameMode!=0 takes the generic
     // `ScoreDialog__Run 0x5C9720` / SCORE-theme handoff.
@@ -1211,7 +1227,9 @@ fn advance_in_game_runtime_mode(
     // exact stepping. The derived predicate becomes true only after the
     // entire barrier frame, including a retained network transaction, finishes.
     // Transport and UI continue in the outer service loop.
-    if state.match_state.multiplayer_paused() {
+    if state.match_state.multiplayer_paused()
+        || state.match_state.match_presentation.narrative_sync.pending()
+    {
         return false;
     }
     if !replaying {
@@ -3193,9 +3211,17 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 index,
                 pause_simulation,
             } => {
-                crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
+                if !(*pause_simulation
+                    && super::narrative_sync::queue(state, super::narrative_sync::Clip::Radar(*index)))
+                {
+                    crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
+                }
             }
             TriggerEffect::FullscreenMovie { index } => {
+                if super::narrative_sync::queue(state, super::narrative_sync::Clip::Fullscreen(*index))
+                {
+                    continue;
+                }
                 let name = state
                     .process_assets
                     .native_rules()
@@ -4074,7 +4100,7 @@ mod modal_pump_tests {
         diagnostics.get_or_begin_replay(&scene.runtime).unwrap();
         diagnostics.retain_replay_startup(
             &scene.runtime,
-            Some(&launch),
+            Some(crate::sim::replay::ReplayLaunchInput::Slots(&launch)),
             Some(&scene.source),
             Some(scene.map.ini.content_hash()),
             Default::default(),

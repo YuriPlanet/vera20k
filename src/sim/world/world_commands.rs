@@ -3125,8 +3125,9 @@ impl Simulation {
     /// Building44377E admits HasRallyPoint OR UndeploysInto; the latter
     /// archives the move goal before SELL. The click's admission is the
     /// owner's and vt+0xA0's ([`Self::techno_player_controllable`]):
-    /// What_Action_OnCell asks it at `0x00447617`, and the cell click's
-    /// ConstructionYard gates (`0x0044374F..0x00443778`) repeat its own.
+    /// What_Action_OnCell asks it at `0x00447617`. The cell click still
+    /// applies the Construction Yard gates (`0x0044374F..0x00443778`) when
+    /// HasRallyPoint made vt+0xA0 return true.
     /// Neither reads build-up or sale, so a yard building up or repacking
     /// still takes the click: SELL during build-up starts the repack
     /// (Sell_Back `0x00447110` queues Selling unless already Selling), and a

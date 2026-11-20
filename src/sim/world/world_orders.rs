@@ -10,6 +10,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
 use crate::sim::control_authority::{CommandCapability, ControlScope, ControlScopeTable};
+use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
@@ -1324,6 +1325,24 @@ impl Simulation {
         true
     }
 
+    /// The Construction Yard repack checks in the ground-click arm
+    /// (`0x0044374F`), the rally search miss (`0x00443A8B`), and the
+    /// non-rally controllability arm (`0x0044F5F3`).
+    pub fn can_redeploy_construction_yard_from_input(
+        &self,
+        yard: &GameEntity,
+        control: Option<&ControlProjection<'_>>,
+    ) -> bool {
+        self.session
+            .rule_policy()
+            .allows_construction_yard_redeploy()
+            && self.construction_yard_redeploy_core_gate(
+                yard,
+                self.owner_is_human(yard.owner())
+                    || control.is_some_and(|view| view.has_delegated_full_control(yard.owner())),
+            )
+    }
+
     /// Virtual+A0: Building44F5C0 or Unit/Infantry/Aircraft Techno700C40.
     /// This is producer-side control admission; Event/lifecycle admission is separate.
     /// House50B6F0, bunker link, Spawned, paralysis, warp, slave ownership and
@@ -1383,16 +1402,7 @@ impl Simulation {
                 return true;
             }
             if object.construction_yard
-                && !(self
-                    .session
-                    .rule_policy()
-                    .allows_construction_yard_redeploy()
-                    && self.construction_yard_redeploy_core_gate(
-                        actor,
-                        self.owner_is_human(actor.owner())
-                            || control
-                                .is_some_and(|view| view.has_delegated_full_control(actor.owner())),
-                    ))
+                && !self.can_redeploy_construction_yard_from_input(actor, control)
             {
                 return false;
             }
@@ -1480,11 +1490,9 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
     ) -> EngineerBuildingAction {
-        use crate::sim::scenario_session::ScenarioGameMode;
-        let mode = self.session.game_mode();
-        let allow_damage = (mode != ScenarioGameMode::Skirmish
-            || self.session.game_options().multi_engineer)
-            && mode != ScenarioGameMode::Campaign;
+        let allow_damage = !self.session.uses_campaign_world()
+            && (self.session.execution_topology().is_lockstep()
+                || self.session.game_options().multi_engineer);
         let Some(building) = self.substrate.entities.get(building_id) else {
             return EngineerBuildingAction::Capture;
         };

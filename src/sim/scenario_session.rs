@@ -1468,6 +1468,13 @@ impl ScenarioSession {
     pub(crate) const fn local_view_identity(&self) -> &LocalViewIdentity {
         &self.view
     }
+
+    /// A campaign recording clears the process view. Playback keeps the view
+    /// supplied by the fresh loader while replacing the shared admission.
+    pub(super) fn with_replay_view(mut self, reconstructed: Option<&Self>) -> Self {
+        self.view = reconstructed.map_or_else(LocalViewIdentity::default, |session| session.view);
+        self
+    }
     pub const fn game_mode_nonzero(&self) -> bool {
         self.game_mode.is_nonzero()
     }
@@ -1936,6 +1943,10 @@ impl ScenarioSession {
         &self,
     ) -> &crate::sim::superweapon::chrono_screen::ChronoScreenState {
         &self.chrono_screen
+    }
+
+    pub fn chrono_screen_active(&self) -> bool {
+        self.chrono_screen.active()
     }
 
     pub(crate) fn start_chrono_screen_state(&mut self, duration: i32) -> bool {

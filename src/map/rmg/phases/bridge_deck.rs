@@ -2453,7 +2453,7 @@ mod tests {
             let theater = crate::map::theater::load_theater(&mut assets, theater_name)
                 .unwrap_or_else(|| panic!("load active-retail {theater_name} theater"));
             let identity = TileIds::resolve(&theater);
-            let blocks = TheaterTileBlocks::build(&theater.lookup, |name| assets.get(name));
+            let blocks = TheaterTileBlocks::build(&theater.lookup, |name| assets.get_ref(name));
             let end_tiles = [
                 identity.paved_roads + 10,
                 identity.paved_roads + 9,

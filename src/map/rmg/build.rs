@@ -2100,7 +2100,7 @@ mod tests {
         );
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-                assets.get(name)
+                assets.get_ref(name)
             });
         Some((settings, resolved, blocks))
     }

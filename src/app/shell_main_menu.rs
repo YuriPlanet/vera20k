@@ -1775,6 +1775,10 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 Self::advance_campaign_victory(state, *victory);
             }
+            ShellMessageBoxPurpose::AuthoredCampaignResult(choice) => {
+                Self::close_shell_message_box_from_controller(state);
+                crate::app::match_runtime::stage_result::answer(state, choice, result);
+            }
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             ShellMessageBoxPurpose::UpdateOffer(_) => {
                 Self::close_shell_message_box_from_controller(state);
@@ -2178,6 +2182,7 @@ impl App {
             Some(
                 crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_)
                     | crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
+                    | crate::app::frontend::state::ShellMessageBoxPurpose::AuthoredCampaignResult(_)
             )
         ) {
             return;

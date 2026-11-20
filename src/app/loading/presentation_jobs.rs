@@ -14,14 +14,21 @@ pub(crate) struct PresentationAtlasJob {
 impl PreparedManifest {
     /// Saved-game preparation retains its synchronous transaction. The same
     /// derived inputs and atlas owners also serve the yielding fresh-load path.
-    pub(crate) fn finish(self, gpu: &GpuContext, batch: &BatchRenderer) -> PresentationManifest {
-        PresentationManifest {
+    /// A sprite atlas the map's data cannot build fails the load.
+    pub(crate) fn finish(
+        self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+    ) -> anyhow::Result<PresentationManifest> {
+        let sprite_atlas = match self.sprite_work {
+            Some(work) => work.finish(&gpu.device, &gpu.queue, batch)?,
+            None => None,
+        };
+        Ok(PresentationManifest {
             unit_atlas: self.unit_atlas,
-            sprite_atlas: self
-                .sprite_work
-                .and_then(|work| work.finish(&gpu.device, &gpu.queue, batch)),
+            sprite_atlas,
             palette_set: self.palette_set,
-        }
+        })
     }
 
     pub(crate) fn start_loading(

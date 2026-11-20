@@ -5471,10 +5471,12 @@ fn shot_is_illegal(
             == crate::sim::combat::fire_error::FireError::Illegal
 }
 
-/// Building4436F0(1/6, cell): prepare archive event1E, then SELL16 for an
-/// UndeploysInto type. A failed FNPC emits no archive but still queues SELL,
-/// retaining an earlier archive, except that a Construction Yard archives its
-/// own Cell ([`crate::sim::world::Simulation::factory_rally_cell_input`]). A
+/// Building4436F0(1/6, cell): a Construction Yard must pass the repack
+/// checks before preparing archive event1E or SELL16. An admitted click
+/// prepares an archive, then SELL16 for an UndeploysInto type. A failed FNPC
+/// still queues SELL and retains an earlier archive, except that a Construction
+/// Yard archives its own Cell
+/// ([`crate::sim::world::Simulation::factory_rally_cell_input`]). A
 /// factory announces its rally click whether or not the search found a Cell
 /// (`0x00443A7B..0x00443A89` jumps to the announcement at `0x00443A2B`).
 ///
@@ -5507,11 +5509,10 @@ pub(super) fn building_cell_orders(
     let mut announce = false;
     let control = sim.control_projection();
     for id in selected_rally_producer_ids(sim, &control, rules, selected, owner) {
-        let Some(object) = sim
-            .entities()
-            .get(id)
-            .and_then(|entity| sim.interner().object_type(entity.type_ref(), rules))
-        else {
+        let Some(entity) = sim.entities().get(id) else {
+            continue;
+        };
+        let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
         if guard_area && cell_guard_area_action_with(sim, &control, rules, id, Some(owner), cell) {
@@ -5521,6 +5522,13 @@ pub(super) fn building_cell_orders(
             .cell_move_action_with(&control, owner, id, cell, query, rules)
             .unwrap_or(crate::sim::world::MoveAction::Move);
         if action != crate::sim::world::MoveAction::Move {
+            continue;
+        }
+        // BuildingClass::Active_Click_With_Cell @ 0x004436F0:
+        // 0x0044377A skips both orders even when the yard has a rally line.
+        if object.construction_yard
+            && !sim.can_redeploy_construction_yard_from_input(entity, Some(&control))
+        {
             continue;
         }
         match sim.factory_rally_cell_input_with(&control, id, cell, rules) {

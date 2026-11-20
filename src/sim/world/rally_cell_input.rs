@@ -107,18 +107,7 @@ impl Simulation {
         // still reaches the announcement (`0x00443A89` -> `0x00443A2B`),
         // which the click owner plays. It also queues the following SELL.
         let redeploy_yard = object.construction_yard
-            && self
-                .session
-                .rule_policy()
-                .allows_construction_yard_redeploy()
-            && self.construction_yard_redeploy_core_gate(
-                entity,
-                self.houses
-                    .get(&entity.owner())
-                    .is_some_and(|house| house.is_human())
-                    || control
-                        .is_some_and(|control| control.has_delegated_full_control(entity.owner())),
-            );
+            && self.can_redeploy_construction_yard_from_input(entity, control);
         Ok(if redeploy_yard {
             self.object_coords_cell(id)
         } else {

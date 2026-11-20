@@ -32,6 +32,9 @@ mod building_ai_sale_tag_retail_tests;
 
 use std::collections::HashMap;
 
+use crate::map::campaign_manifest::{
+    CampaignGrant, CampaignRole, CampaignStage, MAX_CAMPAIGN_PLAYERS, ManifestControlScope,
+};
 use crate::map::entities::EntityCategory;
 use crate::map::houses::{HouseRoster, normalize_house_name};
 use crate::map::map_file::{MapFile, MapHeader};
@@ -40,9 +43,12 @@ use crate::map::waypoints::Waypoint;
 use crate::rng_continuation::MapGenRngContinuation;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
 use crate::rules::ruleset::RuleSet;
+use crate::sim::campaign_carry_over::StageCarryOver;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::cell_rect::PlayfieldBounds;
+use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
 use crate::sim::find_nearby_cell::{
     NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
@@ -50,8 +56,7 @@ use crate::sim::house_state::{HouseDifficulty, HouseState};
 use crate::sim::houses::Houses;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::rng::{SimRng, SimRngLogicalState};
-use crate::sim::scenario_session::ScenarioDescriptor;
-use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode, ScenarioSession};
 use crate::sim::world::{PlacementEvidence, Simulation};
 use crate::skirmish_launch::{
     LaunchCountry, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishLaunchSession,
@@ -422,7 +427,7 @@ pub enum FreshScenarioPrefix<'a> {
         game_options: Option<&'a crate::sim::game_options::GameOptions>,
         campaign_index: i32,
         restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver,
-        network: Option<&'a AuthoredCampaignStart>,
+        network: Option<AuthoredCampaignLaunch<'a>>,
     },
 }
 
@@ -452,21 +457,31 @@ pub enum FreshScenarioPrefixError {
 
 /// Deterministic startup facts for the authored House construction path.
 /// Source indices are the order of the roles in the manifest.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthoredCampaignStart {
-    pub(crate) rule_policy: crate::rules::rule_policy::RulePolicy,
-    pub(crate) roles: Vec<crate::map::campaign_manifest::CampaignRole>,
-    pub(crate) grants: Vec<crate::map::campaign_manifest::CampaignGrant>,
+    pub(crate) rule_policy: RulePolicy,
+    pub(crate) roles: Vec<CampaignRole>,
+    pub(crate) grants: Vec<CampaignGrant>,
+    pub(crate) difficulty: i32,
     pub(crate) mission_counter: i32,
-    pub(crate) carry_over: crate::sim::campaign_carry_over::StageCarryOver,
+    pub(crate) carry_over: StageCarryOver,
+}
+
+/// Transport and local view for one client constructing the shared campaign.
+#[derive(Debug, Clone, Copy)]
+pub struct AuthoredCampaignLaunch<'a> {
+    pub start: &'a AuthoredCampaignStart,
+    pub mode: ScenarioGameMode,
+    pub local_source: Option<i8>,
 }
 
 impl AuthoredCampaignStart {
     pub fn from_stage(
-        stage: &crate::map::campaign_manifest::CampaignStage,
+        stage: &CampaignStage,
         stage_index: usize,
-        carry_over: crate::sim::campaign_carry_over::StageCarryOver,
+        difficulty: i32,
+        carry_over: StageCarryOver,
     ) -> anyhow::Result<Self> {
         let mission_counter = i32::try_from(stage_index)?
             .checked_add(1)
@@ -475,6 +490,7 @@ impl AuthoredCampaignStart {
             rule_policy: stage.rule_policy,
             roles: stage.roles.clone(),
             grants: stage.grants.clone(),
+            difficulty,
             mission_counter,
             carry_over,
         };
@@ -482,50 +498,131 @@ impl AuthoredCampaignStart {
         Ok(start)
     }
 
-    pub(crate) fn validate(&self) -> anyhow::Result<()> {
-        use crate::rules::rule_policy::BootstrapRuleProfile;
+    pub const fn difficulty(&self) -> i32 {
+        self.difficulty
+    }
+
+    pub const fn rule_policy(&self) -> RulePolicy {
+        self.rule_policy
+    }
+
+    pub const fn mission_counter(&self) -> i32 {
+        self.mission_counter
+    }
+
+    pub const fn carry_over(&self) -> &StageCarryOver {
+        &self.carry_over
+    }
+
+    pub fn roles(&self) -> &[CampaignRole] {
+        &self.roles
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
             self.rule_policy.bootstrap() == BootstrapRuleProfile::Campaign
+                && !self.rule_policy.counts_player_control_as_human()
                 && self.mission_counter > 0,
-            "authored campaign startup requires MapHouses and a positive mission number"
+            "authored campaign startup requires MapHouses, role-based player control, and a positive mission number"
         );
-        let mut names = std::collections::BTreeSet::new();
         anyhow::ensure!(
-            self.roles.len() <= i8::MAX as usize + 1
-                && self.roles.iter().all(|role| {
-                    !role.name.is_empty()
-                        && !role.house.is_empty()
-                        && names.insert(role.name.to_ascii_lowercase())
-                }),
-            "invalid or duplicate campaign roles"
+            HouseDifficulty::from_native(self.difficulty).is_some(),
+            "invalid authored campaign difficulty {}",
+            self.difficulty
         );
+        anyhow::ensure!(
+            self.roles.len() <= usize::from(MAX_CAMPAIGN_PLAYERS),
+            "too many campaign roles"
+        );
+        let mut roles = std::collections::BTreeMap::new();
+        for role in &self.roles {
+            anyhow::ensure!(
+                !role.name.is_empty()
+                    && !role.house.is_empty()
+                    && roles
+                        .insert(role.name.to_ascii_lowercase(), &role.house)
+                        .is_none(),
+                "invalid or duplicate campaign role '{}'",
+                role.name
+            );
+        }
+        let mut targets = std::collections::BTreeSet::new();
+        for grant in &self.grants {
+            let role = grant.role.to_ascii_lowercase();
+            let target = grant.house.to_ascii_lowercase();
+            let primary = roles
+                .get(&role)
+                .ok_or_else(|| anyhow::anyhow!("unknown campaign role '{}'", grant.role))?;
+            anyhow::ensure!(
+                !target.is_empty() && !primary.eq_ignore_ascii_case(&target),
+                "campaign grant for '{}' requires a distinct target House",
+                grant.role
+            );
+            anyhow::ensure!(
+                targets.insert((role, target)),
+                "campaign role '{}' repeats its grant for '{}'",
+                grant.role,
+                grant.house
+            );
+        }
         self.carry_over.validate()?;
         Ok(())
     }
 
-    fn admit_roster(&self, sim: &mut Simulation, map: &MapFile) -> anyhow::Result<()> {
-        use crate::map::campaign_manifest::ManifestControlScope;
-        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    /// Resolve the map's retained House name for every authored source.
+    pub fn primary_house_names(
+        &self,
+        roster: &HouseRoster,
+        ini: &crate::rules::ini_parser::IniFile,
+    ) -> anyhow::Result<Vec<String>> {
+        self.primary_houses(roster, ini)?
+            .into_iter()
+            .map(|index| {
+                roster
+                    .houses
+                    .get(usize::from(index))
+                    .map(|house| house.name.clone())
+                    .ok_or_else(|| anyhow::anyhow!("campaign source has no starting House"))
+            })
+            .collect()
+    }
 
-        let find_house = |name: &str| {
-            sim.interner
-                .get(name)
-                .and_then(|id| sim.houses.index_of(id))
-                .and_then(|index| u8::try_from(index).ok())
-                .ok_or_else(|| anyhow::anyhow!("unknown authored House '{name}'"))
-        };
-        let mut sources = self
-            .roles
+    fn authored_house_index(roster: &HouseRoster, name: &str) -> anyhow::Result<u8> {
+        roster
+            .houses
             .iter()
-            .map(|role| find_house(&role.house))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        if sources.is_empty() {
-            let fallback = campaign_player_house(&sim.houses, &map.ini)
-                .and_then(|id| sim.houses.index_of(id))
-                .and_then(|index| u8::try_from(index).ok())
-                .ok_or_else(|| anyhow::anyhow!("campaign has no starting House"))?;
-            sources.push(fallback);
+            .position(|house| house.name.eq_ignore_ascii_case(name))
+            .and_then(|index| u8::try_from(index).ok())
+            .ok_or_else(|| anyhow::anyhow!("unknown authored House '{name}'"))
+    }
+
+    fn primary_houses(
+        &self,
+        roster: &HouseRoster,
+        ini: &crate::rules::ini_parser::IniFile,
+    ) -> anyhow::Result<Vec<u8>> {
+        if self.roles.is_empty() {
+            anyhow::ensure!(!roster.houses.is_empty(), "campaign has no starting House");
+            let requested = campaign_player_name(ini);
+            let fallback = crate::map::houses::find_house_index(
+                roster.houses.iter().map(|house| house.name.as_str()),
+                &requested,
+            )
+            .unwrap_or(0);
+            return Ok(vec![u8::try_from(fallback)?]);
         }
+        self.roles
+            .iter()
+            .map(|role| Self::authored_house_index(roster, &role.house))
+            .collect()
+    }
+
+    fn resolve_roster(
+        &self,
+        roster: &HouseRoster,
+        ini: &crate::rules::ini_parser::IniFile,
+    ) -> anyhow::Result<(Vec<u8>, Vec<ControlGrant>)> {
+        let sources = self.primary_houses(roster, ini)?;
         let grants = self
             .grants
             .iter()
@@ -537,7 +634,7 @@ impl AuthoredCampaignStart {
                     .ok_or_else(|| anyhow::anyhow!("unknown campaign role '{}'", grant.role))?;
                 Ok(ControlGrant {
                     source: i8::try_from(source)?,
-                    house: find_house(&grant.house)?,
+                    house: Self::authored_house_index(roster, &grant.house)?,
                     level: match grant.scope {
                         ManifestControlScope::FullControl => ControlGrantLevel::FullControl,
                         ManifestControlScope::UnitsOnly => ControlGrantLevel::UnitsOnly,
@@ -545,26 +642,60 @@ impl AuthoredCampaignStart {
                 })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let local = sim.houses.order()[usize::from(sources[0])];
-        for slot in sources
-            .iter()
-            .copied()
-            .collect::<std::collections::BTreeSet<_>>()
-        {
-            let id = sim.houses.order()[usize::from(slot)];
-            let house = sim.houses.get_mut(&id).expect("resolved authored House");
-            anyhow::ensure!(
-                !house.multiplay_passive(),
-                "campaign role binds passive House '{}'",
-                sim.interner.resolve(id)
-            );
-            house.admit_campaign_role();
-        }
-        sim.session.install_current_house(Some(local));
-        sim.session.install_shared_house_sources(sources, Some(0));
-        sim.install_control_grants(grants)?;
-        Ok(())
+        Ok((sources, grants))
     }
+}
+
+impl AuthoredCampaignLaunch<'_> {
+    fn admit_sources(
+        self,
+        sim: &mut Simulation,
+        roster: &HouseRoster,
+        ini: &crate::rules::ini_parser::IniFile,
+    ) -> anyhow::Result<(usize, Vec<ControlGrant>)> {
+        self.start.validate()?;
+        anyhow::ensure!(
+            self.mode.execution_topology().is_lockstep(),
+            "an authored network campaign requires a lockstep session"
+        );
+        let (sources, grants) = self.start.resolve_roster(roster, ini)?;
+        // The first source supplies the initial camera for a connection-level
+        // watcher. No source or House is assigned to that connection.
+        let view_source = usize::try_from(self.local_source.unwrap_or(0))?;
+        let view_house = sources
+            .get(view_source)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("unknown local campaign source {view_source}"))?;
+        sim.install_session_admission(self.mode, None, self.start.rule_policy);
+        sim.session
+            .install_shared_house_sources(sources, self.local_source);
+        if self.local_source.is_none() {
+            sim.install_watcher();
+        }
+        Ok((usize::from(view_house), grants))
+    }
+}
+
+fn finish_campaign_roster(
+    sim: &mut Simulation,
+    view_house: usize,
+    grants: Vec<ControlGrant>,
+) -> anyhow::Result<()> {
+    for house in sim.houses.in_order() {
+        anyhow::ensure!(
+            !house.is_human() || !house.multiplay_passive(),
+            "campaign role binds passive House '{}'",
+            sim.interner.resolve(house.name())
+        );
+    }
+    let view_house = sim.houses.order().get(view_house).copied();
+    anyhow::ensure!(
+        view_house.is_some(),
+        "campaign view House was not constructed"
+    );
+    sim.session.install_current_house(view_house);
+    sim.install_control_grants(grants)?;
+    Ok(())
 }
 
 /// Draw-free stock-offline state retained after the prefix cursor receipt is
@@ -3560,16 +3691,18 @@ impl ScenarioBootstrapRng {
                 // Evidence: input_oracle/campaign_start.py --houses (native
                 // SuperType registration without its later body reader).
                 let mut simulation = self.into_simulation(descriptor);
-                if let Some(network) = network {
-                    network
-                        .validate()
-                        .map_err(FreshScenarioPrefixError::AuthoredCampaign)?;
-                    simulation.install_session_admission(
-                        crate::sim::scenario_session::ScenarioGameMode::Lan,
-                        None,
-                        network.rule_policy,
-                    );
-                }
+                let (difficulty, mission_counter, network_roster) = match network {
+                    Some(launch) => (
+                        launch.start.difficulty,
+                        launch.start.mission_counter,
+                        Some(
+                            launch
+                                .admit_sources(&mut simulation, house_roster, &map_data.ini)
+                                .map_err(FreshScenarioPrefixError::AuthoredCampaign)?,
+                        ),
+                    ),
+                    None => (difficulty, mission_counter, None),
+                };
                 let mut start_header = crate::map::preview::ScenarioStartHeader::default();
                 start_header.read_ini(&map_data.ini);
                 simulation.session.install_start_header(start_header);
@@ -3593,9 +3726,8 @@ impl ScenarioBootstrapRng {
                     rules,
                     Some(&map_data.ini),
                 );
-                if let Some(network) = network {
-                    network
-                        .admit_roster(&mut simulation, map_data)
+                if let Some((local_house, grants)) = network_roster {
+                    finish_campaign_roster(&mut simulation, local_house, grants)
                         .map_err(FreshScenarioPrefixError::AuthoredCampaign)?;
                 } else {
                     initialize_campaign_current_house(
@@ -3793,14 +3925,17 @@ pub fn initialize_campaign_current_house(
     }
 }
 
+fn campaign_player_name(ini: &crate::rules::ini_parser::IniFile) -> String {
+    ini.section("Basic")
+        .map(|section| section.read_string("Player", "", 20))
+        .unwrap_or_default()
+}
+
 fn campaign_player_house(
     houses: &Houses,
     ini: &crate::rules::ini_parser::IniFile,
 ) -> Option<crate::sim::intern::InternedId> {
-    let requested = ini
-        .section("Basic")
-        .map(|section| section.read_string("Player", "", 20))
-        .unwrap_or_default();
+    let requested = campaign_player_name(ini);
     // Interning folds lookup case and preserves the first spelling it saw.
     // The native strcmp reads the retained raw House name instead.
     Simulation::scenario_house_named(houses, &requested).or_else(|| houses.order().first().copied())
@@ -3853,6 +3988,14 @@ pub fn initialize_map_roster_houses(
     }
     let frame = sim.session.binary_frame() as i32;
     let mission_counter = sim.session.campaign_mission_counter().unwrap_or(1);
+    let campaign_role_houses = if campaign_difficulties.is_some() && sim.session.shares_houses() {
+        sim.session
+            .network_sources(house_roster.houses.len())
+            .map(|(_, house)| house)
+            .collect::<std::collections::BTreeSet<_>>()
+    } else {
+        std::collections::BTreeSet::new()
+    };
     for house in &house_roster.houses {
         let country_name = rules
             .scenario_country_name(house.country.as_deref())
@@ -3934,10 +4077,20 @@ pub fn initialize_map_roster_houses(
             }));
         }
         house_state.assign_player_control(house.player_control == Some(true));
+        // Admit lockstep seats before the credit tail of Read_Scenario_INI
+        // (0x00500BDD..0x00500C57) and the player/computer row selection
+        // (0x00500AAD..0x00500ADE). Keep the authored PlayerControl byte.
+        if campaign_role_houses.contains(&index) {
+            house_state.admit_campaign_role();
+        }
+        let policy = sim.session.rule_policy();
+        let controlled_by_player = house_state.is_controlled_by_human(policy);
         if let Some(ini) = map_ini {
             house_state.initialize_scenario_parameters(
                 house.read_scenario_parameters(ini, mission_counter),
-                campaign_difficulties.map(|(player, _)| player),
+                campaign_difficulties
+                    .filter(|_| controlled_by_player)
+                    .map(|(player, _)| player),
                 Some(&rules.general),
             );
             house_state
@@ -3969,8 +4122,7 @@ pub fn initialize_map_roster_houses(
         // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
         house_state.install_scenario_iq(house.scenario_current_iq(rules.general.max_iq_levels));
         if let Some((player, computer)) = campaign_difficulties {
-            let policy = sim.session.rule_policy();
-            let difficulty = if house_state.is_controlled_by_human(policy) {
+            let difficulty = if controlled_by_player {
                 player
             } else {
                 computer
