@@ -26,6 +26,8 @@ const BASE: &str = "[InfantryTypes]\n0=E1\n1=INHIB\n[VehicleTypes]\n[AircraftTyp
 [LinkSpecial]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n";
 
 fn rules_with(extra: &str) -> RuleSet {
+    // `SW.Next` and `SW.Inhibitors` are Ares keys.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = IniFile::from_str(BASE);
     ini.merge(&IniFile::from_str(extra));
     RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::empty())

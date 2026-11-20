@@ -9608,14 +9608,16 @@ impl RulesPassProcessor {
                 }
                 match family {
                     RulesTypeFamily::Building => {
-                        if ares_way
-                            && let Some(supers) = self.resolve_existing_list_from(
+                        // Phobos' `SuperWeapons=` detonation firer reads the
+                        // list in every game; the key still marks the switch.
+                        if let Some(supers) = crate::rules::phobos_switch::phobos_read(|| {
+                            self.resolve_existing_list_from(
                                 &raw,
                                 "SuperWeapons",
                                 RulesTypeFamily::SuperWeapon,
                                 2048,
                             )
-                        {
+                        }) {
                             // BuildingTypeExt1000E71B ->1000EC70: ordered
                             // lookup-only ID vector, missing/empty retains,
                             // unknown tokens are skipped, registered sentinel IDs

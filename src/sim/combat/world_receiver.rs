@@ -2409,6 +2409,9 @@ fn commit_entity(
         // Infantry returns on 0 (`0x0051805B`) and Unit skips its ping on 0
         // (`0x007384BB`), so what follows runs for 1..=3.
         if let Some((damage, survivor_tail, _hostile_source)) = positive_postlude
+            // A `StopBerzerk` hit (non-positive combined time) skips the
+            // target clear and Hunt natively.
+            && (!psychedelic || starts_berserk)
             && survivor_tail
             && matches!(
                 receive_state,
