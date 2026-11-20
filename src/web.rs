@@ -364,6 +364,13 @@ pub fn import_begin(kind: &str, name: &str, length: f64) -> Result<(), JsValue> 
         }
     };
     PENDING.with(|slot| *slot.borrow_mut() = None);
+    // Stable Rust has no fallible `Arc` slice, and an infallible one that
+    // cannot grow memory aborts the page. So reserve the length first through
+    // the fallible `Vec` call and free it: wasm memory never shrinks, and the
+    // page runs this on one thread, so the slice below reuses that space.
+    Vec::<u8>::new()
+        .try_reserve_exact(length as usize)
+        .map_err(|_| JsValue::from_str("Not enough memory for this file"))?;
     let pending = PendingImport {
         path,
         bytes: std::sync::Arc::new_uninit_slice(length as usize),
