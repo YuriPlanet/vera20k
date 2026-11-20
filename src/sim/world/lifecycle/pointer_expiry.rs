@@ -6,6 +6,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileTarget;
@@ -264,10 +265,8 @@ impl Simulation {
         }
         #[cfg(any(test, feature = "test-support"))]
         let mut cell_detaches = Vec::new();
-        let mut listeners = self.substrate.entities.keys_sorted();
-        listeners.reverse();
-
-        for listener_id in listeners {
+        let mut listeners = EntityStore::descending_ids(|_| true);
+        while let Some(listener_id) = listeners.next(&self.substrate.entities) {
             if let TargetKind::Entity(target_id) = target
                 && self.airstrike_detach_preserves_target(listener_id, target_id)
             {
@@ -358,17 +357,9 @@ impl Simulation {
         // Infantry ctor517B34 appends to its type registry. Represented
         // PointerExpired receivers do not construct/delete registry entries;
         // stable construction IDs therefore preserve its descending cursor.
-        let mut listeners = self.substrate.entities.keys_sorted();
-        listeners.reverse();
-        for listener_id in listeners {
-            if !self
-                .substrate
-                .entities
-                .get(listener_id)
-                .is_some_and(|e| e.category() == EntityCategory::Infantry)
-            {
-                continue;
-            }
+        let mut listeners =
+            EntityStore::descending_ids(|category| category == EntityCategory::Infantry);
+        while let Some(listener_id) = listeners.next(&self.substrate.entities) {
             let Some(hut) = self.substrate.entities.get(hut_id) else {
                 return;
             };

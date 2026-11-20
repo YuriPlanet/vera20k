@@ -18,6 +18,8 @@
 //!   (every hand-out enters the touch logs; see `touched`)
 //! - A walk that writes only each visited entity's own fields:
 //!   `for_each_entry_mut`, which needs no id list or lookup by id
+//! - A sweep from the highest id down whose visits mutate the world:
+//!   `descending_ids`, a cursor that copies no ids
 //!
 //! ## Dependency rules
 //! - Part of sim/ — stores sim/game_entity; the shared AirTracker query reads
@@ -872,6 +874,14 @@ impl EntityStore {
         self.stored().map(|(id, _)| id).collect()
     }
 
+    /// A walk of the stored ids whose category `keep` selects, from the
+    /// highest down, that holds no borrow of the store between steps
+    /// ([`DescendingIds::next`]): for sweeps whose visits mutate the world,
+    /// without a copy of every id.
+    pub(crate) fn descending_ids(keep: fn(EntityCategory) -> bool) -> DescendingIds {
+        DescendingIds { below: None, keep }
+    }
+
     /// The stored ids of the entities whose category `keep` selects, in
     /// ascending stable_id order, chosen by the category column without
     /// loading an entity.
@@ -1395,6 +1405,45 @@ impl<'a> EntryMut<'a> {
     }
 }
 
+/// A descending walk of an [`EntityStore`]'s stored ids
+/// ([`EntityStore::descending_ids`]). Each step looks up the highest stored id
+/// below the last one it gave, so between steps the store may change:
+///
+/// - An entity removed before the walk reaches it is not visited, as a
+///   snapshot walk's lookup of it finds nothing.
+/// - An entity stored during the walk has a fresh id, above every id the
+///   store held ([`crate::sim::world::StableIdCursor::allocate`] counts
+///   up and a load refuses a counter behind the highest id), so the walk,
+///   which only goes down, never visits it: again as a snapshot taken at
+///   the start would not.
+/// - Compaction moves slots, not ids, and the cursor is an id.
+///
+/// The walk therefore visits exactly the ids a copy of the stored ids taken
+/// at its start would, in the same order, less those removed before their
+/// turn.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DescendingIds {
+    /// The last id given; `None` before the first step.
+    below: Option<u64>,
+    keep: fn(EntityCategory) -> bool,
+}
+
+impl DescendingIds {
+    /// The next stored id down whose category the walk keeps.
+    pub(crate) fn next(&mut self, store: &EntityStore) -> Option<u64> {
+        store.check_attached();
+        let end = self.below.map_or(store.ids.len(), |below| {
+            store.ids.partition_point(|&id| id < below)
+        });
+        let slot = (0..end)
+            .rev()
+            .find(|&slot| store.entities[slot].is_some() && (self.keep)(store.categories[slot]))?;
+        let id = store.ids[slot];
+        self.below = Some(id);
+        Some(id)
+    }
+}
+
 impl serde::Serialize for EntityStore {
     /// The stored entities as a map from stable_id, in ascending order: the
     /// form the former `BTreeMap` storage wrote.
@@ -1510,6 +1559,42 @@ mod tests {
             "only read: still asleep"
         );
         assert_eq!(store.sleeps_until(8), None, "taken for writing: woken");
+    }
+
+    /// The descending cursor visits what a copy of the ids taken at its
+    /// start would, in the same order: an entity removed before its turn is
+    /// passed over, one stored during the walk (a fresh, higher id) is not
+    /// visited, unkept categories are skipped, and a compaction mid-walk
+    /// loses nothing.
+    #[test]
+    fn the_descending_cursor_walks_as_a_snapshot_would() {
+        let mut store = EntityStore::new();
+        for id in 1..=100 {
+            store.insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
+        }
+        store.insert(GameEntity::test_default_of_category(
+            101,
+            "GI",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        ));
+        let mut visited = Vec::new();
+        let mut cursor = EntityStore::descending_ids(|category| category == EntityCategory::Unit);
+        while let Some(id) = cursor.next(&store) {
+            visited.push(id);
+            if id == 90 {
+                // Enough removals below the cursor to compact the store.
+                for removed in 2..80 {
+                    store.remove(removed);
+                }
+                store.insert(GameEntity::test_default(200, "MTNK", "Americans", 5, 5));
+            }
+        }
+        assert!(store.ids.len() < 100, "the walk crossed a compaction");
+        let expected: Vec<u64> = (80..=100).rev().chain([1]).collect();
+        assert_eq!(visited, expected);
     }
 
     /// Populated original412B40 ->4137A0 controls. Buckets hold opaque

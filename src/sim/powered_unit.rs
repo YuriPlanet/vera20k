@@ -63,6 +63,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::object_location;
@@ -259,12 +260,12 @@ impl Simulation {
         mut visit: impl FnMut(&mut Self, u64),
     ) -> bool {
         let mut matched = false;
-        for id in self.substrate.entities.keys_sorted().into_iter().rev() {
+        let mut units = EntityStore::descending_ids(|category| category == EntityCategory::Unit);
+        while let Some(id) = units.next(&self.substrate.entities) {
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
             if entity.owner() != owner
-                || entity.category() != EntityCategory::Unit
                 || !self
                     .interner
                     .resolve(entity.type_ref())
