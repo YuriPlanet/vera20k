@@ -188,8 +188,6 @@ impl AttachEffectInstance {
     }
 }
 
-/// Where an effect's animation lives: attached to `owner` at its world point,
-/// drawn under `house`, and paused or running with the effect's state.
 /// One attach-effect instance's reads for this frame's update, kept at the
 /// instance's own index.
 #[cfg(feature = "phobos")]
@@ -207,6 +205,8 @@ struct InstanceFrame {
     designated: bool,
 }
 
+/// Where an effect's animation lives: attached to `owner` at its world point,
+/// drawn under `house`, and paused or running with the effect's state.
 #[cfg(feature = "phobos")]
 struct AttachEffectAnimTarget {
     owner: u64,
