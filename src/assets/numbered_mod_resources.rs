@@ -141,13 +141,28 @@ fn inspect_family(
             break;
         }
     }
-    let archives = ArchiveNames {
+    let mut archives = ArchiveNames {
         expansion_prefix: format!("expand{suffix}"),
-        map_prefix: format!("maps{suffix}"),
-        multiplayer: format!("multi{suffix}.mix"),
-        theme: format!("theme{suffix}.mix"),
-        movie_prefix: format!("mov{suffix}"),
+        ..ArchiveNames::default()
     };
+    for (stem, slot) in [
+        ("maps", &mut archives.map_prefix),
+        ("mov", &mut archives.movie_prefix),
+    ] {
+        let prefix = format!("{stem}{suffix}");
+        if (0..=99).any(|index| assets.contains(&format!("{prefix}{index:02}.mix"))) {
+            *slot = prefix;
+        }
+    }
+    for (stem, slot) in [
+        ("multi", &mut archives.multiplayer),
+        ("theme", &mut archives.theme),
+    ] {
+        let name = format!("{stem}{suffix}.mix");
+        if assets.contains(&name) {
+            *slot = name;
+        }
+    }
     ini.validate()?;
     archives.validate()?;
     Ok(Some((ini, archives)))
@@ -179,6 +194,7 @@ mod tests {
         assert!(discover(dir.path()).unwrap().is_none());
 
         write("EXPANDALT99.MIX", &[("artalt.ini", b"[Unit]\nVoxel=yes\n")]);
+        write("mapsalt03.mix", &[("delta.map", b"[Map]\n")]);
         let (ini, archives) = discover(dir.path()).unwrap().unwrap();
         assert_eq!(ini.rules.as_deref(), Some("rulesalt.ini"));
         assert_eq!(ini.art.as_deref(), Some("artalt.ini"));
@@ -188,6 +204,9 @@ mod tests {
         assert!(ini.modes.is_none() && ini.map_catalog.is_none());
         assert_eq!(archives.expansion_prefix, "expandalt");
         assert_eq!(archives.map_prefix, "mapsalt");
+        assert_eq!(archives.theme, ArchiveNames::default().theme);
+        assert_eq!(archives.multiplayer, ArchiveNames::default().multiplayer);
+        assert_eq!(archives.movie_prefix, ArchiveNames::default().movie_prefix);
 
         std::fs::write(dir.path().join("ARTALT.INI"), b"").unwrap();
         assert!(discover(dir.path()).unwrap().is_none());

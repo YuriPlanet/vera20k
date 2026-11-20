@@ -76,7 +76,15 @@ pub fn list_skirmish_scenario_records_with_assets(
     if let (Some(client), Some(root)) = (assets.client_install(), assets.mod_dir()) {
         // A client catalog owns this folder's scenarios. The retail PKT is
         // unrelated and can list maps with the wrong rules for this game.
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(assets)?;
         for map in &client.maps {
+            if !modes.iter().any(|mode| {
+                map.game_modes
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
+            }) {
+                continue;
+            }
             let Some(ini) = read_map_ini_for_metadata(&root.join(&map.file_name)) else {
                 continue;
             };
@@ -92,6 +100,9 @@ pub fn list_skirmish_scenario_records_with_assets(
             record.game_modes.clone_from(&map.game_modes);
             record.min_players = map.min_players;
             record.max_players = map.max_players;
+            if let Some(max_players) = map.max_players {
+                record.player_capacity = record.player_capacity.min(i32::from(max_players));
+            }
             records.push(record);
         }
         return Ok(records);

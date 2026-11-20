@@ -121,6 +121,8 @@ impl ClientInstall {
             if min_players
                 .zip(max_players)
                 .is_some_and(|(min, max)| min > max)
+                || catalog.enabled(name, "EnforceMinPlayers")
+                    && min_players.is_none_or(|min| min > 2)
             {
                 continue;
             }
@@ -196,14 +198,6 @@ fn unsupported(ini: &ClientIni, section: &str, mode: bool) -> bool {
         ini.value(section, key)
             .is_some_and(|value| !value.is_empty())
     };
-    let enabled = |key| {
-        ini.value(section, key).is_some_and(|value| {
-            !matches!(
-                value.to_ascii_lowercase().as_str(),
-                "" | "no" | "false" | "0"
-            )
-        })
-    };
     if [
         "ForcedOptions",
         "ForcedSpawnIniOptions",
@@ -231,7 +225,7 @@ fn unsupported(ini: &ClientIni, section: &str, mode: bool) -> bool {
             "UseDifficultyDropDown",
         ]
         .iter()
-        .any(|key| enabled(key))
+        .any(|key| ini.enabled(section, key))
         || ["Credits", "UnitCount", "NeutralColor", "SpecialColor"]
             .iter()
             .any(|key| {
@@ -244,9 +238,10 @@ fn unsupported(ini: &ClientIni, section: &str, mode: bool) -> bool {
     if !mode && has("CustomIniPath") {
         return true;
     }
-    mode && !ini
-        .entries(&format!("{section}ForcedSpawnIniOptions"))
-        .is_empty()
+    mode && (ini.enabled(section, "EnforceMinPlayers")
+        || !ini
+            .entries(&format!("{section}ForcedSpawnIniOptions"))
+            .is_empty())
 }
 
 fn player_count(ini: &ClientIni, section: &str, keys: &[&str]) -> Result<Option<u8>, ()> {
@@ -385,6 +380,15 @@ impl ClientIni {
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case(key))
             .map(|(_, value)| value.as_str())
+    }
+
+    fn enabled(&self, section: &str, key: &str) -> bool {
+        self.value(section, key).is_some_and(|value| {
+            !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "" | "no" | "false" | "0"
+            )
+        })
     }
 }
 

@@ -200,16 +200,18 @@ mod tests {
             ),
             (
                 "INI/maps.ini",
-                "[GameModes]\n0=Standard\n[Standard]\nCustomIniPath=INI\\Standard.ini\n\
-                 [MultiMaps]\n0=Maps\\Standard\\delta\n\
+                "[GameModes]\n0=Standard\n1=ClientOnly\n[Standard]\nCustomIniPath=INI\\Standard.ini\n\
+                 [MultiMaps]\n0=Maps\\Standard\\other\n1=Maps\\Standard\\delta\n\
+                 [Maps\\Standard\\other]\nGameModes=ClientOnly\n\
                  [Maps\\Standard\\delta]\nDescription=(2) River Delta\nGameModes=Standard\nMaxPlayers=2\n",
             ),
             ("INI/Map Code/Standard.ini", "[General]\nTeamRetaliate=no\n"),
             (
                 "Maps/Standard/delta.map",
                 "[Map]\nSize=0,0,25,25\nLocalSize=1,4,23,18\nTheater=TEMPERATE\n\
-                 [Waypoints]\n0=10005\n1=20015\n",
+                 [Waypoints]\n0=10005\n1=20015\n2=15007\n",
             ),
+            ("Maps/Standard/other.map", "[Waypoints]\n0=10005\n1=20015\n"),
             (
                 "MPModesMD.ini",
                 "[Battle]\n1=GUI:Battle,STT:ModeBattle,MPBattleMD.ini,standard,true\n\
@@ -243,20 +245,25 @@ mod tests {
         };
         assert_eq!(map.file_name, "Maps/Standard/delta.map");
         assert_eq!(map.display_name, "(2) River Delta");
+        assert_eq!(map.player_capacity, 2);
         assert!(crate::map::skirmish_scenarios::record_matches_mode(
             map, &modes[0]
         ));
-        let code = crate::app::mod_additions::MapAdditions::client_mode(
-            &assets,
-            &map.file_name,
-            &modes[0].map_filter,
-        )
-        .unwrap()
-        .unwrap();
+        let mut mode = crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(&modes[0]);
+        mode.map_filter.clear(); // A replay blueprint only carries the native mode identity.
+        let code =
+            crate::app::mod_additions::MapAdditions::client_mode(&assets, &map.file_name, &mode)
+                .unwrap()
+                .unwrap();
         assert!(
             !code.files()[0]
                 .section_or_empty("General")
                 .read_bool("TeamRetaliate", true)
+        );
+        mode.map_filter = "clientonly".to_string();
+        assert!(
+            crate::app::mod_additions::MapAdditions::client_mode(&assets, &map.file_name, &mode)
+                .is_err()
         );
     }
 

@@ -36,6 +36,16 @@ impl From<i32> for SkirmishModeSelection {
 }
 
 impl SkirmishModeSelection {
+    pub(crate) fn for_skirmish_row(index: usize, modes: &[SkirmishGameMode]) -> Option<Self> {
+        let mode = modes.get(index)?;
+        // The catalog is sorted by ID. Only a duplicate needs a row index.
+        let use_index = index > 0 && modes[index - 1].id == mode.id;
+        Some(Self {
+            id: mode.id,
+            catalog_index: use_index.then_some(index),
+        })
+    }
+
     pub fn resolve(self, modes: &[SkirmishGameMode]) -> Option<&SkirmishGameMode> {
         match self.catalog_index {
             Some(index) => modes.get(index).filter(|mode| mode.id == self.id),
@@ -315,15 +325,12 @@ impl ChooseMapModalState {
                 .iter()
                 .enumerate()
                 .filter(|(_, mode)| context.permits(mode))
-                .map(|(index, mode)| {
-                    // The catalog sorts by ID. Network setup exchanges only
-                    // that ID, so both peers resolve it to the first match.
-                    let use_index = context == ChooseMapContext::Skirmish
-                        && index > 0
-                        && modes[index - 1].id == mode.id;
-                    SkirmishModeSelection {
-                        id: mode.id,
-                        catalog_index: use_index.then_some(index),
+                .filter_map(|(index, mode)| {
+                    if context == ChooseMapContext::Skirmish {
+                        SkirmishModeSelection::for_skirmish_row(index, modes)
+                    } else {
+                        // Peers exchange only the ID, which resolves to the first match.
+                        Some(mode.id.into())
                     }
                 })
                 .collect(),

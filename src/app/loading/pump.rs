@@ -474,7 +474,7 @@ impl LoadingRequest {
             && let Some(additions) = crate::app::mod_additions::MapAdditions::client_mode(
                 asset_manager,
                 self.selected_map_file(),
-                &session.mode.map_filter,
+                &session.mode,
             )
             .map_err(anyhow::Error::msg)?
         {

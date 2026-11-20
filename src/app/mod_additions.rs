@@ -87,24 +87,57 @@ impl MapAdditions {
     pub(crate) fn client_mode(
         assets: &crate::assets::asset_manager::AssetManager,
         map: &str,
-        mode: &str,
+        mode: &crate::skirmish_launch::SkirmishLaunchMode,
     ) -> Result<Option<Self>, String> {
         let Some(client) = assets.client_install() else {
             return Ok(None);
         };
-        if !client.maps.iter().any(|entry| {
-            entry.file_name.eq_ignore_ascii_case(map)
-                && entry
-                    .game_modes
-                    .iter()
-                    .any(|name| name.eq_ignore_ascii_case(mode))
-        }) {
+        let Some(map) = client
+            .maps
+            .iter()
+            .find(|entry| entry.file_name.eq_ignore_ascii_case(map))
+        else {
             return Ok(None);
+        };
+        let supports_mode = |mode_name: &str| {
+            map.game_modes
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(mode_name))
+        };
+        // Blueprints retain the native mode identity, not its menu filter.
+        // Resolve its filter from the same roster to reproduce the map bytes.
+        let roster;
+        let mode_name = if mode.map_filter.is_empty() {
+            roster = crate::skirmish_modes::skirmish_modes_from_assets(assets)
+                .map_err(|error| error.to_string())?;
+            let mut matching = roster.iter().filter(|row| {
+                row.id == mode.id
+                    && row.class == mode.class
+                    && row.override_file.eq_ignore_ascii_case(&mode.override_file)
+                    && supports_mode(&row.map_filter)
+            });
+            let recorded = matching
+                .next()
+                .ok_or_else(|| format!("This mod does not have recorded mode {}.", mode.id))?;
+            if matching.any(|row| !row.map_filter.eq_ignore_ascii_case(&recorded.map_filter)) {
+                return Err(format!(
+                    "This replay does not identify which mode {} to use.",
+                    mode.id
+                ));
+            }
+            recorded.map_filter.as_str()
+        } else {
+            mode.map_filter.as_str()
+        };
+        if !supports_mode(mode_name) {
+            return Err(format!(
+                "This map does not support the {mode_name} mode. Choose another map or mode."
+            ));
         }
         let Some(path) = client
             .modes
             .iter()
-            .find(|entry| entry.name.eq_ignore_ascii_case(mode))
+            .find(|entry| entry.name.eq_ignore_ascii_case(mode_name))
             .and_then(|entry| entry.map_code.as_deref())
         else {
             return Ok(None);
@@ -123,7 +156,7 @@ impl MapAdditions {
         .any(|section| file.section(section).is_some())
         {
             return Err(format!(
-                "The {mode} mode uses map code this build cannot apply. Choose another mode."
+                "The {mode_name} mode uses map code this build cannot apply. Choose another mode."
             ));
         }
         Ok(Some(Self {
