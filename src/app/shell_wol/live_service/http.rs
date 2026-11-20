@@ -360,7 +360,9 @@ pub(super) enum Response {
         failure: CommandFailure,
     },
     /// A notice for the lobby's chat, by its `VERA:` label.
-    Notice(&'static str),
+    Failure(&'static str),
+    /// An ordinary watch-list refresh failed; the shell retains its last rows.
+    WatchListFailed,
     Offline,
     /// The first event poll of an outage failed; polling keeps retrying.
     LobbyUnreachable,
@@ -1095,22 +1097,18 @@ macro_rules! serial_driver {
                 if !platform_await!(self.session_failed(error, output))
                     && !std::mem::replace(refresh_failed, true)
                 {
-                    let _ = output.send(Response::Notice("VERA:OnlineRefreshFailed"));
+                    let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                 }
             }
         }
     }
 
-    /// The displayed watch list keeps its rows through an outage. A room
-    /// option probe carries its own revision and may already be obsolete.
     $($asynchronous)? fn matches_finished(
         &mut self,
         result: Result<MatchList, RequestFailure>,
         refused_options: Option<u64>,
-        watch_refresh_failed: &mut bool,
         output: &Sender<Response>,
     ) {
-        let refreshing = refused_options.is_none();
         let list = match result {
             Ok(list) => Some(list.matches),
             // A lobby from before watching has no watch list.
@@ -1118,19 +1116,14 @@ macro_rules! serial_driver {
             Err(error) => {
                 let outdated = matches!(error, RequestFailure::UpgradeRequired(_));
                 if !platform_await!(self.session_failed(error, output))
-                    && refreshing && !outdated && self.token.is_some()
-                    && !std::mem::replace(watch_refresh_failed, true)
+                    && refused_options.is_none() && !outdated && self.token.is_some()
                 {
-                    let _ = output.send(Response::Notice("VERA:WatchListStale"));
+                    let _ = output.send(Response::WatchListFailed);
                 }
                 return;
             }
         };
-        let recovered = refreshing && std::mem::take(watch_refresh_failed) && list.is_some();
         let _ = output.send(Response::Matches { list, refused_options });
-        if recovered {
-            let _ = output.send(Response::Notice("VERA:WatchListUpdated"));
-        }
     }
 
     $($asynchronous)? fn poll_finished(
@@ -1195,7 +1188,6 @@ macro_rules! serial_driver {
     let mut streams = stream::Streams::new(&client.base);
     let mut failed_polls = 0_u8;
     let mut refresh_failed = false;
-    let mut watch_refresh_failed = false;
     let mut next_poll = Instant::now();
     let mut queued = VecDeque::new();
     loop {
@@ -1380,7 +1372,6 @@ macro_rules! serial_driver {
                     Ok(session) => {
                         client.token = Some(session.token);
                         failed_polls = 0;
-                        watch_refresh_failed = false;
                         if output
                             .send(Response::Authenticated {
                                 attempt,
@@ -1422,7 +1413,6 @@ macro_rules! serial_driver {
                 if client.token.is_none() {
                     client.adopt_session(token, resume);
                     failed_polls = 0;
-                    watch_refresh_failed = false;
                 }
             }
             Some(Request::Channels(kind)) => {
@@ -1438,7 +1428,7 @@ macro_rules! serial_driver {
                     serde_json::from_value::<MatchList>(value)
                         .map_err(|_| RequestFailure::Status(0))
                 });
-                platform_await!(client.matches_finished(list, refused_options, &mut watch_refresh_failed, &output));
+                platform_await!(client.matches_finished(list, refused_options, &output));
             }
             Some(Request::Command {
                 id,
@@ -2076,97 +2066,34 @@ mod tests {
         for _ in 0..2 {
             client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
         }
-        assert!(matches!(input.try_recv(), Ok(Response::Notice(_))));
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
         assert!(input.try_recv().is_err());
         client.list_finished(Ok(list()), &mut failed, &output);
         assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
         client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
-        assert!(matches!(input.try_recv(), Ok(Response::Notice(_))));
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
     }
 
     #[test]
-    fn watch_list_reports_its_own_outage_until_an_ordinary_refresh_succeeds() {
+    fn watch_list_failure_keeps_the_rows_and_legacy_probes_keep_their_revision() {
         let (output, input) = std::sync::mpsc::channel();
         let mut client = signed_in_client(1);
-        let mut stale = false;
-        let unavailable = || Err(RequestFailure::Status(503));
-        let matches = || {
-            Ok(MatchList {
-                matches: Vec::new(),
-            })
-        };
-        client.matches_finished(unavailable(), None, &mut stale, &output);
-        assert!(matches!(
-            input.try_recv(),
-            Ok(Response::Notice("VERA:WatchListStale"))
-        ));
-        client.list_finished(
-            Ok(ChannelList {
-                kind: 41,
-                channels: vec![],
-            }),
-            &mut false,
-            &output,
-        );
-        assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
-        client.matches_finished(matches(), Some(9), &mut stale, &output);
-        assert!(matches!(
-            input.try_recv(),
-            Ok(Response::Matches {
-                refused_options: Some(9),
-                ..
-            })
-        ));
-        client.matches_finished(unavailable(), None, &mut stale, &output);
-        assert!(input.try_recv().is_err());
-        client.matches_finished(matches(), None, &mut stale, &output);
-        assert!(matches!(
-            input.try_recv(),
-            Ok(Response::Matches { list: Some(_), .. })
-        ));
-        assert!(matches!(
-            input.try_recv(),
-            Ok(Response::Notice("VERA:WatchListUpdated"))
-        ));
-        client.matches_finished(matches(), None, &mut stale, &output);
-        assert!(matches!(
-            input.try_recv(),
-            Ok(Response::Matches { list: Some(_), .. })
-        ));
-        assert!(input.try_recv().is_err());
-    }
-
-    #[test]
-    fn a_legacy_watch_list_clears_the_rows_without_reporting_a_recovery() {
-        let (output, input) = std::sync::mpsc::channel();
-        let mut client = signed_in_client(1);
-        let mut stale = true;
-        client.matches_finished(Err(RequestFailure::Status(404)), None, &mut stale, &output);
-        assert!(matches!(
-            input.try_recv(),
-            Ok(Response::Matches { list: None, .. })
-        ));
-        assert!(!stale);
-        client.matches_finished(
-            Err(RequestFailure::Status(503)),
-            Some(8),
-            &mut stale,
-            &output,
-        );
-        client.matches_finished(
-            Err(RequestFailure::Status(404)),
-            Some(8),
-            &mut stale,
-            &output,
-        );
+        client.matches_finished(Err(RequestFailure::Status(503)), None, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::WatchListFailed)));
+        // A failed option probe has no watch rows to refresh. A 404 still
+        // reaches the capability owner with the matching options revision.
+        client.matches_finished(Err(RequestFailure::Status(503)), Some(9), &output);
+        client.matches_finished(Err(RequestFailure::Status(404)), Some(9), &output);
         assert!(matches!(
             input.try_recv(),
             Ok(Response::Matches {
                 list: None,
-                refused_options: Some(8)
+                refused_options: Some(9)
             })
         ));
-        assert!(!stale && input.try_recv().is_err());
+        client.matches_finished(Err(RequestFailure::Status(401)), None, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Offline)));
+        assert!(input.try_recv().is_err());
     }
 
     #[test]

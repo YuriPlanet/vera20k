@@ -2716,6 +2716,9 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 channels: list.channels.into_iter().map(Into::into).collect(),
             },
         ),
+        http::Response::WatchListFailed => {
+            super::lobby::watch_list_refresh(state, super::lobby::WatchListRefresh::Failed);
+        }
         http::Response::Matches {
             list: matches,
             refused_options,
@@ -2765,7 +2768,17 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                         .map(Into::into)
                         .collect(),
                 ),
-            )
+            );
+            // Only the public list's own refresh establishes freshness. A
+            // room's option probe may belong to an older publication.
+            if refused_options.is_none() {
+                let refresh = if watches {
+                    super::lobby::WatchListRefresh::Listed
+                } else {
+                    super::lobby::WatchListRefresh::Unsupported
+                };
+                super::lobby::watch_list_refresh(state, refresh);
+            }
         }
         http::Response::Event(event) => {
             // The reason goes in the log: a guest who sees too little of the
@@ -2926,7 +2939,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
-        http::Response::Notice(label) => notice(state, &tr(label)),
+        http::Response::Failure(label) => notice(state, &tr(label)),
         http::Response::LobbyUnreachable => notice(state, &tr("VERA:OnlineNotResponding")),
         http::Response::LobbyReachable => notice(state, &tr("VERA:OnlineRespondingAgain")),
         http::Response::LobbyLost => {
