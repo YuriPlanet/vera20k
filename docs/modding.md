@@ -195,6 +195,13 @@ as **No mod**, then every folder in `Mods`. Pick one and press **Use This Mod**.
 restarts with the mod, and the main menu then shows the mod's name. To go back to the
 original game, pick **No mod** the same way. **Open Mods Folder** opens `Mods`.
 
+A mod can brand the main menu and its other movie pages with `ra2ts_l.bik` or
+`ra2ts_s.bik`. Put the movie directly in the mod folder or in one of its loaded
+MIX archives. The game tries the slot for the current window size first, and it
+can use the other size if the mod ships one. The movie needs to fit the menu's
+picture area, so its width and height must be within a factor of two. Brief,
+wide launcher messages are skipped when looking for menu artwork.
+
 Skirmish keeps your saved choices where the selected game supports them. A saved
 faction that the current rules do not offer comes back as **Random**.
 

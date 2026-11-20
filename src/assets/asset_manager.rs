@@ -1057,6 +1057,34 @@ impl AssetManager {
             .map(ResolvedAssetFile::entry))
     }
 
+    /// Copies supplied by the active mod, loose first then in registration
+    /// order. A presentation slot can try the next copy when one cannot fit.
+    pub fn mod_asset_candidates<'a>(
+        &'a self,
+        name: &str,
+        maximum: usize,
+    ) -> impl Iterator<Item = (&'a [u8], &'a str)> + use<'a> {
+        let from_mod = |path: &Path| self.mod_dir().is_some_and(|root| path.starts_with(root));
+        let loose = self
+            .loose_asset(name)
+            .filter(|loose| from_mod(&loose.path))
+            .into_iter()
+            .filter_map(move |loose| {
+                let bytes = loose.bytes_bounded(maximum).ok()??;
+                Some((bytes, loose.source_name.as_str()))
+            });
+        let entry_id = mix_hash(name);
+        let archives = self
+            .archives
+            .iter()
+            .filter(move |named| named.archive.container_path().is_some_and(from_mod))
+            .filter_map(move |named| {
+                let bytes = named.archive.get_by_id(entry_id)?;
+                (bytes.len() <= maximum).then_some((bytes, named.name.as_str()))
+            });
+        loose.chain(archives)
+    }
+
     /// Select the bytes and their physical source together, within the caller's
     /// optional read limit. An unreadable loose file can fall back to MIX.
     pub(crate) fn resolve_file_with_limit(
