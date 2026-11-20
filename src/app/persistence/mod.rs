@@ -15,6 +15,8 @@ pub(crate) mod phobos_settings;
 pub(crate) mod profile_file;
 mod resource_load;
 pub(crate) mod rules_profile;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) mod startup_backend;
 pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 

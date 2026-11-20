@@ -26,12 +26,13 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::persistence::account;
+use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
 use crate::ui::chat_translation::{ChatLanguage, ChatReply, only_repeats, without_note};
-use crate::ui::wol_account::AccountRequest;
+use crate::ui::wol_account::{AccountRequest, AccountSuccess};
 use crate::ui::wol_chat::WolChatLine;
 
 // The deployment sets this at build time; a runtime override supports staging.
@@ -132,6 +133,9 @@ pub(crate) fn lobby_get(_path: &str, _if_none_match: Option<&str>) -> Result<Lob
 #[derive(Default)]
 pub(crate) struct OnlineCleanup {
     retired: Option<RetiredService>,
+    /// Deletions completed while a visit was closing. The main thread still
+    /// clears local sign-ins, without forwarding an old reply to a new form.
+    deleted_accounts: Vec<(String, String)>,
     // Reset per retirement and set by that owner's exact logout
     // acknowledgement, unlike a deadline stop. It never controls retries.
     logout_acknowledged: bool,
@@ -191,6 +195,15 @@ impl OnlineCleanup {
                     return None;
                 }
             };
+            if let http::Response::AccountAnswered {
+                answer: Ok(AccountSuccess::Deleted(name)),
+                ..
+            } = response
+            {
+                self.deleted_accounts
+                    .push((retired.service.lobby.clone(), name));
+                continue;
+            }
             if retired.service.stopping.load(Ordering::Acquire) {
                 continue;
             }
@@ -268,6 +281,7 @@ impl OnlineCleanup {
 }
 
 pub(super) struct LiveService {
+    pub(super) campaign_rooms: bool,
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     _browser_requests: http::RequestOwner,
     stopping: Arc<AtomicBool>,
@@ -300,7 +314,7 @@ pub(super) struct LiveService {
     /// no lobby pages, and `finish` carries the local result.
     spawned: bool,
     /// VERA: the finish asks the lobby to give this player's game room back
-    /// (`back_to_room`), set from the visit when the match returns.
+    /// (`back_to_room`), projected from MatchSession when building finish.
     back_to_room: bool,
     /// The match's `finish` result (`ExternalMatchResult`): a spawned
     /// match's for its launcher, a lobby match's for the ranked ladder.
@@ -332,12 +346,6 @@ pub(super) struct LiveService {
     lobby: String,
     /// The current sign-in sends this computer's remembered sign-in.
     signing_in_remembered: bool,
-    /// The latest account request: an answer to an earlier one, whose popup
-    /// was cancelled, is dropped.
-    account_attempt: u64,
-    /// The pending Delete Account request's attempt and name. Its answer
-    /// forgets this computer's sign-in of the name, popup or not.
-    deleting: Option<(u64, String)>,
     /// VERA: the match this game watches, from its `watch_started` until it
     /// leaves with `unwatch`.
     watching: Option<Watching>,
@@ -732,6 +740,7 @@ impl LiveService {
             auth_attempt: 0,
             revision: 0,
             room: RoomAgreement::default(),
+            campaign_rooms: false,
             start_preparation: None,
             locally_refused_start: false,
             player_id: String::new(),
@@ -758,8 +767,6 @@ impl LiveService {
             ladder_lookup: None,
             lobby,
             signing_in_remembered: false,
-            account_attempt: 0,
-            deleting: None,
             watching: None,
             spawned_watch: None,
         }
@@ -1357,6 +1364,9 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     crate::app::lan_service::poll_online_retirement(state);
     let relay_pending = crate::app::lan_service::online_retirement_pending(state);
     let cleanup_deadline = state.frontend.online_cleanup.poll(Instant::now());
+    for (lobby, name) in std::mem::take(&mut state.frontend.online_cleanup.deleted_accounts) {
+        forget_deleted_account(state, &lobby, &name);
+    }
     if state
         .frontend
         .wol
@@ -1564,9 +1574,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 fail_start(state, &tr(line));
             }
         }
-        if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
-            maps::poll(state, &mut service);
-        }
+        poll_maps(state, &mut service);
         if let Err(error) = poll_watch(state, &mut service) {
             log::warn!("Could not watch the match: {error:#}");
             fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
@@ -1592,6 +1600,13 @@ fn notice(state: &mut AppState, text: &str) {
         },
     );
     state.platform.window.request_redraw();
+}
+
+/// The room's map transfer runs only between matches.
+fn poll_maps(state: &mut AppState, service: &mut LiveService) {
+    if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
+        maps::poll(state, service);
+    }
 }
 
 /// The chat a returning player lands in: the kept room once the lobby gives
@@ -1724,8 +1739,9 @@ pub(crate) fn keep_network_report(
 
 pub(super) fn match_returned(state: &mut AppState) {
     let report = match_report(state);
+    let back_to_room = state.match_state.session.awaiting_wol_room_return();
     if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.match_returned(report, Instant::now());
+        visit.match_returned(report, Instant::now(), back_to_room);
     }
 }
 
@@ -1746,12 +1762,12 @@ impl super::WolVisit {
         self.problem_line.take()
     }
 
-    fn match_returned(&mut self, report: MatchReport, now: Instant) {
+    fn match_returned(&mut self, report: MatchReport, now: Instant, back_to_room: bool) {
         if self.provider != WolProvider::Online {
             return;
         }
         if let Some(service) = self.live_service.as_mut() {
-            service.back_to_room = self.back_to_room;
+            service.back_to_room = back_to_room;
             service.match_returned(report, now);
         } else if !self.requests.contains(&WolServiceRequest::MatchReturned) {
             //poll holds the SAME service across HTTP callbacks. Loading abort
@@ -1766,8 +1782,7 @@ impl super::WolVisit {
     /// for the player who left, and asks for no room back.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn match_left_for_exit(&mut self, report: MatchReport, now: Instant) {
-        self.back_to_room = false;
-        self.match_returned(report, now);
+        self.match_returned(report, now, false);
     }
 }
 
@@ -1801,6 +1816,7 @@ pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
     else {
         return;
     };
+    state.match_state.session.take_network_room_return();
     if visit
         .live_service
         .as_ref()
@@ -1912,7 +1928,7 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     let Some(dir) = settings else {
         return;
     };
-    match account::forget(dir, &service.lobby) {
+    match account::forget(dir, &service.lobby, None) {
         Ok(Some(remembered)) => {
             let _ = service.requests.send(http::Request::ForgetSignIn {
                 name: remembered.name,
@@ -1924,38 +1940,32 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     }
 }
 
-fn send_account_request(service: &mut LiveService, request: AccountRequest) {
-    service.account_attempt = service.account_attempt.wrapping_add(1);
-    if let AccountRequest::Delete { name, .. } = &request {
-        service.deleting = Some((service.account_attempt, name.clone()));
-    }
-    let _ = service.requests.send(http::Request::Account {
-        attempt: service.account_attempt,
-        request,
-    });
-}
-
-/// The lobby answered account request `attempt`. A deletion it accepted
-/// took the account's remembered sign-ins with it, so this computer's
-/// sign-in of that name goes too, even when its popup closed meanwhile;
-/// another account's stays.
-fn account_answered(
-    settings: Option<&std::path::Path>,
-    service: &mut LiveService,
-    attempt: u64,
-    answer: &Result<(), String>,
-) {
-    let Some((_, name)) = service.deleting.take_if(|(sent, _)| *sent == attempt) else {
-        return;
-    };
-    let Some(dir) = settings.filter(|_| answer.is_ok()) else {
-        return;
-    };
-    if account::load(dir, &service.lobby)
-        .is_some_and(|remembered| remembered.name.eq_ignore_ascii_case(&name))
-        && let Err(error) = account::forget(dir, &service.lobby)
+/// The lobby has deleted this account. Forget only credentials and profile
+/// entries that still name it, even if the original form has closed.
+fn forget_deleted_account(state: &mut AppState, lobby: &str, name: &str) {
+    if let Some(dir) = settings_dir(state)
+        && let Err(error) = account::forget(dir, lobby, Some(name))
     {
         log::warn!("Could not forget the deleted account's sign-in: {error}");
+    }
+    if state
+        .persistence
+        .options_profile
+        .online_name
+        .eq_ignore_ascii_case(name)
+    {
+        remember_online_name(state, "");
+    }
+    let globals = &mut state.frontend.wol_account;
+    if globals.nickname.eq_ignore_ascii_case(name) {
+        globals.nickname.clear();
+        globals.password.clear();
+        globals.remember = false;
+    }
+    if let Some(super::WolPage::Login(login)) =
+        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+    {
+        login.account_deleted(name);
     }
 }
 
@@ -2019,7 +2029,11 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             service.sign_in(nickname, credential);
         }
-        WolServiceRequest::Account(request) => send_account_request(service, request),
+        WolServiceRequest::Account { attempt, request } => {
+            let _ = service
+                .requests
+                .send(http::Request::Account { attempt, request });
+        }
         WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
@@ -2064,11 +2078,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.leave_room(Instant::now());
         }
         WolServiceRequest::MatchReturned => {
-            service.back_to_room = state
-                .frontend
-                .wol
-                .as_ref()
-                .is_some_and(|visit| visit.back_to_room);
+            service.back_to_room = state.match_state.session.awaiting_wol_room_return();
             service.match_returned(match_report(state), Instant::now());
         }
         WolServiceRequest::Logout => {
@@ -2231,6 +2241,19 @@ fn send_chat(
 /// unverified expanded content.
 fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
     let session = &state.match_state.session;
+    if let Some(room) = session.campaign_room() {
+        let (map_digest, effective_map_digest) =
+            if campaign_room::local_map_verified(session) == Some(true) {
+                let (map, effective) = campaign_room::online_agreement(room);
+                (map.to_owned(), effective.to_owned())
+            } else {
+                (String::new(), "0".repeat(64))
+            };
+        let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+        return Ok(
+            json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":""}),
+        );
+    }
     let map_digest = session
         .network_local_map_source()
         .and_then(|source| source.physical_identity())
@@ -2246,6 +2269,9 @@ fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
 }
 
 fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
+    if let Some(verified) = campaign_room::local_map_verified(&state.match_state.session) {
+        return u8::from(verified);
+    }
     if !service.maps.current_verified(state) {
         return 0;
     }
@@ -2288,6 +2314,9 @@ fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
 struct MapTooSmall(i32);
 
 fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSmall> {
+    if options.campaign.is_some() {
+        return Ok(());
+    }
     let launch = &options.launch;
     let needed = crate::app::shell_network_setup::starts_needed(
         launch,
@@ -2304,18 +2333,40 @@ fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSmall> {
 /// admitted when the host chose it, as LAN publishes it.
 fn options(state: &AppState) -> Result<wire::Options> {
     let session = &state.match_state.session;
-    let launch = session
+    let mut launch = session
         .network_setup()
         .ok_or_else(|| anyhow!("no online setup"))?
         .clone();
-    let map_metadata = session
-        .network_map_metadata()
-        .cloned()
-        .ok_or_else(|| anyhow!("no admitted map metadata"))?;
+    let campaign = campaign_room::publication(state)?;
+    let map_metadata = if let Some(room) = &campaign {
+        let (file, metadata) = campaign_room::online_map_metadata(state, room)?;
+        launch.selected_map_file = Some(file);
+        launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(
+            crate::skirmish_launch::BATTLE_MODE_ID,
+        )
+        .expect("stock lobby mode");
+        let speed = launch.options.game_speed;
+        launch.options = crate::skirmish_launch::SkirmishLaunchOptions::default();
+        launch.options.game_speed = speed;
+        launch.opponents.clear();
+        launch.ai_player_count = 0;
+        launch.use_live_house_rows();
+        metadata
+    } else {
+        session
+            .network_map_metadata()
+            .cloned()
+            .ok_or_else(|| anyhow!("no admitted map metadata"))?
+    };
     let options = wire::Options {
+        campaign: campaign.clone(),
         launch,
         map_metadata,
-        random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
+        random_map: if campaign.is_none() {
+            crate::app::shell_network_setup::maps::host_generated_manifest(state)?
+        } else {
+            None
+        },
         vacancies: std::array::from_fn(|row| {
             session
                 .network_vacancy(row as u8)
@@ -2326,7 +2377,10 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .frontend
             .multiplayer_shell_runtime
             .cooperative_difficulty(),
-        cooperative_campaign: cooperative_campaign(state),
+        cooperative_campaign: campaign
+            .is_none()
+            .then(|| cooperative_campaign(state))
+            .flatten(),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
         // Only a host's VERA room has one; a guest publishes no options.
         watching: state
@@ -2673,6 +2727,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             motd,
             sign_in_token,
             lobby_visits,
+            campaign_rooms,
         } if attempt == service.auth_attempt => {
             // `http::decode_session` admitted this identity.
             if let Some(token) = sign_in_token {
@@ -2680,6 +2735,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
             remember_online_name(state, &nickname);
             service.player_id = player_id;
+            service.campaign_rooms = campaign_rooms;
             state.frontend.wol_account.nickname = nickname;
             state.frontend.wol_account.password.clear();
             // The operator's welcome is the only one: the game has none of its own.
@@ -2843,8 +2899,23 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service.start_preparation = None;
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
+            "options"
+                if failure == http::CommandFailure::InvalidOptions
+                    && service.is_room_publication(id)
+                    && state.match_state.session.campaign_room().is_some() =>
+            {
+                service.campaign_rooms = false;
+                notice(state, &tr("VERA:CampaignRoomOnlineUnsupported"));
+            }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                if service.is_room_publication(id) {
+                if service.is_room_publication(id)
+                    && let Some(key) =
+                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                {
+                    // The newest room rule first: a lobby from before it lists
+                    // matches, so the capability check below cannot tell.
+                    notice(state, &tr(key));
+                } else if service.is_room_publication(id) {
                     notice(state, &tr("VERA:OnlineRequestRefused"));
                     // Only a fresh 404 for this publication can confirm rollback.
                     let _ = service.requests.send(http::Request::Matches {
@@ -2928,8 +2999,15 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
-            account_answered(settings_dir(state), service, attempt, &answer);
-            if attempt == service.account_attempt {
+            if let Ok(AccountSuccess::Deleted(name)) = &answer {
+                forget_deleted_account(state, &service.lobby, name);
+            }
+            if state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.account_attempt == attempt)
+            {
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
@@ -3046,17 +3124,40 @@ impl Chat {
         (said.encode_utf16().collect(), true)
     }
 
-    /// The lobby's line that a newer release is out (`NewRelease`), which a
-    /// game older than the newest release hears once per release. Only the
+    /// Whether the line is the lobby's own and says one of `keys`. Only the
     /// lobby's own lines carry `phrases`. Only their keys are read, so values
     /// a newer lobby adds that this game cannot show still count.
-    fn announces_release(&self) -> bool {
+    fn says_any(&self, keys: &[&str]) -> bool {
         #[derive(Deserialize)]
         struct Said {
             key: String,
         }
-        Vec::<Said>::deserialize(&self.phrases)
-            .is_ok_and(|phrases| phrases.iter().any(|phrase| phrase.key == "NewRelease"))
+        Vec::<Said>::deserialize(&self.phrases).is_ok_and(|phrases| {
+            phrases
+                .iter()
+                .any(|phrase| keys.contains(&phrase.key.as_str()))
+        })
+    }
+
+    /// The lobby's line that a newer release is out (`NewRelease`), which a
+    /// game older than the newest release hears once per release.
+    fn announces_release(&self) -> bool {
+        self.says_any(&["NewRelease"])
+    }
+
+    /// VERA: the lobby's line that a player's game differs from the host's,
+    /// which no match between them can start with: another version, build or
+    /// rules (docs/lobby-protocol.md). The room shows it red
+    /// (`wol_chat::WARNING_COLOR`).
+    fn warns_of_other_game(&self) -> bool {
+        self.says_any(&[
+            "VersionMismatch",
+            "ReleaseMismatch",
+            "HostReleaseMismatch",
+            "BuildMismatch",
+            "RulesMismatch",
+            "HostRulesMismatch",
+        ])
     }
 
     /// The pairing of the matchbot's `Start` that `local` hosts; only its
@@ -3393,11 +3494,14 @@ fn apply_event(
             }
             end_room(state, service);
             service.room = RoomAgreement::default();
-            if let Some(visit) = state.frontend.wol.as_mut()
-                && visit.in_game
+            if state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.in_game)
             {
                 // The kept room closed during the match: nothing to return to.
-                visit.back_to_room = false;
+                state.match_state.session.take_network_room_return();
             }
             service_event(state, WolServiceEvent::ChannelLeft);
         }
@@ -3504,6 +3608,7 @@ fn apply_event(
                 service.room.pending_choices = None;
             }
             service.room.accepted_options = Some(canonical);
+            let authored = p.options.campaign.is_some();
             if changed {
                 service.room.last_ready_request = None;
                 crate::app::shell_network_setup::invalidate_network_agreement(state)?;
@@ -3540,7 +3645,18 @@ fn apply_event(
                     )?;
                 }
             }
-            maps::received_options(state, service, generated)?;
+            if authored {
+                maps::cancel(state, service);
+            } else {
+                maps::received_options(state, service, generated)?;
+                // VERA: a guest checks the map these options name before
+                // reporting on it, or one that has it reports 0 first and the
+                // host's room says it lacks the map. The host's own upload
+                // still waits for the poll, after the lobby's `map_available`.
+                if !state.match_state.session.host() {
+                    poll_maps(state, service);
+                }
+            }
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
             let agreement = local_agreement(state, service.revision)?;
@@ -3650,12 +3766,14 @@ fn apply_event(
             if p.announces_release() {
                 lobby_says_outdated(state);
             }
+            let warning = p.warns_of_other_game();
             service_event(
                 state,
                 WolServiceEvent::Message {
                     from: p.from.into_member(&local),
                     text,
                     localized,
+                    warning,
                     private: p.private,
                     action: p.action,
                     ansi: p.ansi,
@@ -4008,7 +4126,12 @@ fn prepare_watch(state: &mut AppState, started: wire::WatchStarted) -> Result<Wa
         .ok_or_else(|| anyhow!("the match has no player to follow"))?
         .to_owned();
     let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
+    let room = started.options.campaign.clone();
+    if let Some(room) = &room {
+        campaign_room::verify_current(state, room)?;
+    }
     let options = started.options.into_options(&followed)?;
+    let speed = options.launch.options.game_speed;
     crate::app::shell_network_setup::install_watch_setup(
         state,
         options,
@@ -4021,6 +4144,13 @@ fn prepare_watch(state: &mut AppState, started: wire::WatchStarted) -> Result<Wa
         .match_state
         .session
         .canonicalize_online_roster(&names)?;
+    if let Some(room) = room {
+        state
+            .match_state
+            .session
+            .accept_campaign_room(Some(room), speed)?;
+        campaign_room::report_local_files(state, true)?;
+    }
     Ok(WatchStart {
         version: started.version,
         rules_digest: started.rules_digest,
@@ -4818,33 +4948,19 @@ mod completion_tests {
     }
 
     #[test]
-    fn a_deleted_account_forgets_its_sign_in_even_after_its_popup_closed() {
-        let directory = crate::map::source::test_support::TestDirectory::new("live-delete");
-        let settings = Some(directory.path());
-        let (mut service, _input, _output) = control_service(None);
-        remember_sign_in(settings, &service, "Tanya", "A".repeat(43));
-        let delete = |name: &str| AccountRequest::Delete {
-            name: name.into(),
-            password: "s3cret-pw".into(),
-        };
-        send_account_request(&mut service, delete("Boris"));
-        let boris = service.account_attempt;
-        account_answered(settings, &mut service, boris, &Ok(()));
-        assert!(
-            account::load(directory.path(), &service.lobby).is_some(),
-            "another account's sign-in stays"
-        );
-        send_account_request(&mut service, delete("tanya"));
-        let tanya = service.account_attempt;
-        // Cancelled, then Forgot Password sent: the deletion's answer still counts.
-        send_account_request(
-            &mut service,
-            AccountRequest::Forgot {
-                name: "Tanya".into(),
-            },
-        );
-        account_answered(settings, &mut service, tanya, &Ok(()));
-        assert_eq!(account::load(directory.path(), &service.lobby), None);
+    fn a_completed_deletion_survives_closing_its_online_visit() {
+        let (service, _input, output) = control_service(None);
+        let lobby = service.lobby.clone();
+        let mut cleanup = OnlineCleanup::default();
+        cleanup.retire(service, Instant::now());
+        output
+            .send(http::Response::AccountAnswered {
+                attempt: 1,
+                answer: Ok(AccountSuccess::Deleted("Tanya".into())),
+            })
+            .unwrap();
+        cleanup.poll(Instant::now());
+        assert_eq!(cleanup.deleted_accounts, [(lobby, "Tanya".to_owned())]);
     }
 
     /// A lobby from before the Ranked game choice refuses the field, so a
@@ -4958,6 +5074,28 @@ mod completion_tests {
         assert!(line("VERA20k", release).announces_release());
         assert!(!line("Tanya", Value::Null).announces_release());
         assert!(!line("VERA20k", json!([{"key": "OnlyPlayerOnline"}])).announces_release());
+    }
+
+    /// The lobby's lines that a player's game differs from the host's are
+    /// warnings the room shows red, a newer lobby's values included; its
+    /// other lines and a player's are not.
+    #[test]
+    fn the_lobbys_other_game_lines_are_warnings() {
+        let line = |phrases: Value| -> Chat {
+            decode(json!({
+                "from": {"player_id": "p", "name": "VERA20k", "flags": 1},
+                "text": "the lobby's text",
+                "phrases": phrases,
+            }))
+            .unwrap()
+        };
+        let rules = json!([{"key": "RulesMismatch", "values": {"name": "Boris", "later": 1}}]);
+        assert!(line(rules).warns_of_other_game());
+        let build =
+            json!([{"key": "BuildMismatch", "values": {"name": "Boris", "version": "0.3.8"}}]);
+        assert!(line(build).warns_of_other_game());
+        assert!(!line(json!([{"key": "OnlyPlayerOnline"}])).warns_of_other_game());
+        assert!(!line(Value::Null).warns_of_other_game());
     }
 
     /// Only a line shown from the lobby's phrases counts as localized, which
@@ -5842,8 +5980,8 @@ mod completion_tests {
             channel: crate::ui::wol_lobby::WolChannel::default(),
             key: String::new(),
         });
-        visit.match_returned((None, None, None), now);
-        visit.match_returned((None, None, None), now); //Repeated abort callbacks keep one intent.
+        visit.match_returned((None, None, None), now, false);
+        visit.match_returned((None, None, None), now, false); //Repeated abort callbacks keep one intent.
         assert!(matches!(
             visit.take_service_requests().as_slice(),
             [
@@ -5857,7 +5995,7 @@ mod completion_tests {
         );
         assert_eq!(borrowed.match_id.as_deref(), Some("loading-match"));
         visit.live_service = Some(borrowed);
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, false);
         let http::Request::Command {
             id,
             operation,
@@ -5879,7 +6017,7 @@ mod completion_tests {
             Ok(http::Request::HoldMatch(None))
         ));
         service.clear_cleanup(); //Definitive Offline has retired the authority.
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, false);
         assert!(
             input.try_recv().is_err(),
             "expired authority cannot issue finish"
@@ -5891,10 +6029,9 @@ mod completion_tests {
         let (service, input, _output) = control_service(Some("room-match"));
         let mut visit = super::super::WolVisit::open(false);
         visit.provider = WolProvider::Online;
-        visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, true);
         let sent = |input: &Receiver<http::Request>| {
             let http::Request::Command {
                 id,
@@ -5928,7 +6065,6 @@ mod completion_tests {
         let (service, input, _output) = control_service(Some("closed-match"));
         let mut visit = super::super::WolVisit::open(false);
         visit.provider = WolProvider::Online;
-        visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
         visit.match_left_for_exit((Some("quit"), None, Some(now)), now);
@@ -6141,6 +6277,7 @@ mod completion_tests {
                     motd: None,
                     sign_in_token: None,
                     lobby_visits: false,
+                    campaign_rooms: false,
                 })
                 .is_ok()
         );

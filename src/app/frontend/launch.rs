@@ -723,7 +723,7 @@ mod tests {
         let root = test_directory("replay-cd-values");
         let path = root.join("record-cd.json");
         let log = crate::sim::replay::ReplayLog::new(crate::sim::replay::ReplayHeader {
-            version: 2,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 45,
             seed: 7,
             map_name: "XMP03T4.MAP".into(),

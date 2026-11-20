@@ -182,7 +182,7 @@ impl StartupAgreement {
 
 fn digest64(bytes: &[u8]) -> u64 {
     let digest = crate::util::sha256::sha256_bytes(bytes);
-    u64::from_le_bytes(digest[..8].try_into().expect("a digest of 32 bytes"))
+    u64::from_le_bytes(crate::util::read_helpers::array_at::<0, 8, _>(&digest))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

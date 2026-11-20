@@ -12,7 +12,10 @@ use crate::app::frontend::shell_transition::{
     ShellFrameWave, external_menu_wait,
 };
 use crate::app::{AppState, BUILD_STAMP};
+use crate::assets::asset_manager::AssetManager;
+use crate::assets::bink_file::BinkHeader;
 use crate::render::batch::SpriteInstance;
+use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
     self, ArtFit, ButtonPolicy, CURSOR_DEPTH, MOVIE_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton,
@@ -22,7 +25,7 @@ use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::shell_ui_style_assets::{
-    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
+    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver, mod_art_candidates,
 };
 use crate::ui::main_menu_shell::{
     MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, csf_key_for_control,
@@ -403,37 +406,52 @@ pub(crate) fn ensure_movie_for_current_layout(
             .get_or_insert_with(|| crate::i18n::tr("VERA:GameArchivesUnavailable"));
         return Ok(());
     };
-    let asset_name = layout.movie_base.asset_name();
-
-    let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
-        log::warn!("Missing main-menu movie asset {asset_name}");
-        state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
-            "VERA:MenuMovieMissing",
-            &[("movie", &asset_name)],
-        ));
-        return Ok(());
+    let load_movie = |bytes: &[u8], source: &str| {
+        BinkMovieSurface::from_bytes(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            Arc::<[u8]>::from(bytes),
+            source.to_string(),
+            true,
+            wgpu::FilterMode::Nearest,
+        )
     };
-
-    let movie = match crate::render::bink_movie::BinkMovieSurface::from_bytes(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        Arc::<[u8]>::from(bytes),
-        source.to_string(),
-        true,
-        wgpu::FilterMode::Nearest,
-    ) {
-        Ok(movie) => movie,
-        Err(err) => {
-            log::warn!("Failed to load main-menu movie {asset_name} from {source}: {err:#}");
+    let max_dimension = state.renderer.gpu.device.limits().max_texture_dimension_2d;
+    let mod_movie = mod_menu_movie_candidates(assets, layout.movie_base, max_dimension).find_map(
+        |(asset_name, bytes, source)| match load_movie(bytes, source) {
+            Ok(movie) => Some((asset_name, movie)),
+            Err(err) => {
+                log::warn!("Skipping mod menu movie {asset_name} from {source}: {err:#}");
+                None
+            }
+        },
+    );
+    let (asset_name, movie) = if let Some(movie) = mod_movie {
+        movie
+    } else {
+        let asset_name = layout.movie_base.asset_name();
+        let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
+            log::warn!("Missing main-menu movie asset {asset_name}");
             state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
-                "VERA:MenuMovieUnreadable",
-                &[
-                    ("movie", &asset_name),
-                    ("source", &source),
-                    ("error", &format!("{err:#}")),
-                ],
+                "VERA:MenuMovieMissing",
+                &[("movie", &asset_name)],
             ));
             return Ok(());
+        };
+        match load_movie(bytes, source) {
+            Ok(movie) => (asset_name, movie),
+            Err(err) => {
+                log::warn!("Failed to load main-menu movie {asset_name} from {source}: {err:#}");
+                state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                    "VERA:MenuMovieUnreadable",
+                    &[
+                        ("movie", &asset_name),
+                        ("source", &source),
+                        ("error", &format!("{err:#}")),
+                    ],
+                ));
+                return Ok(());
+            }
         }
     };
     log::info!(
@@ -443,6 +461,32 @@ pub(crate) fn ensure_movie_for_current_layout(
     state.frontend.main_menu_movie = Some(movie);
     state.frontend.main_menu_movie_identity = Some(requested_identity);
     Ok(())
+}
+
+/// The active mod can supply art for either native movie slot. A launcher can
+/// ship a short, wide status card under the same name, so look for a clip that
+/// fits the menu's picture area. Within each slot, keep the mod's search order.
+fn mod_menu_movie_candidates(
+    assets: &AssetManager,
+    preferred: MainMenuMovieBase,
+    max_dimension: u32,
+) -> impl Iterator<Item = (&'static str, &[u8], &str)> {
+    let alternative = match preferred {
+        MainMenuMovieBase::Ra2tsS => MainMenuMovieBase::Ra2tsL,
+        MainMenuMovieBase::Ra2tsL => MainMenuMovieBase::Ra2tsS,
+    };
+    [preferred, alternative].into_iter().flat_map(move |base| {
+        let name = base.asset_name();
+        mod_art_candidates(assets, name)
+            .filter(move |asset| {
+                BinkHeader::probe(asset.bytes).is_ok_and(|header| {
+                    header.width.max(header.height) <= max_dimension
+                        && header.width <= header.height * 2
+                        && header.height <= header.width * 2
+                })
+            })
+            .map(move |asset| (name, asset.bytes, asset.source))
+    })
 }
 
 /// Step the shared menu loop once for this paint.
@@ -482,7 +526,7 @@ pub(super) fn step_ra2ts_movie(state: &mut AppState, shown: bool) -> bool {
 /// [`RA2_MOVIE_ARCHIVE`]; a missing RA2 copy is reported instead of silently
 /// resolving the YR member with the same name.
 fn menu_movie_bytes<'a>(
-    assets: &'a crate::assets::asset_manager::AssetManager,
+    assets: &'a AssetManager,
     asset_name: &str,
     yr_original_style: bool,
 ) -> Option<(&'a [u8], &'a str)> {
@@ -1139,6 +1183,79 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+    use crate::assets::asset_manager::MediaArchiveMode;
+    use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+    fn bink_header(width: u32, height: u32) -> [u8; 44] {
+        let mut header = [0; 44];
+        header[..4].copy_from_slice(b"BIKi");
+        for (offset, value) in [
+            (4, 36),
+            (8, 1),
+            (20, width),
+            (24, height),
+            (28, 15),
+            (32, 1),
+        ] {
+            header[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        header
+    }
+
+    #[test]
+    fn mod_menu_uses_full_art_behind_a_launcher_warning() {
+        let install = audio_test_install("mod-menu-retail");
+        let mod_dir = TestDirectory::new("mod-menu-branding");
+        let large = MainMenuMovieBase::Ra2tsL;
+        let name = large.asset_name();
+        let stock = bink_header(632, 570);
+        let branding = bink_header(632, 568);
+        install.write_mix("expandmd98.mix", name, &stock);
+        mod_dir.write_mix("expandmd99.mix", name, &bink_header(632, 60));
+        mod_dir.write_mix("expandmd96.mix", name, &branding);
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        assert_eq!(
+            assets.get_with_source_ref(name).unwrap().1,
+            "expandmd99.mix"
+        );
+        let candidates: Vec<_> = mod_menu_movie_candidates(&assets, large, 2048).collect();
+        assert_eq!(candidates, [(name, branding.as_slice(), "expandmd96.mix")]);
+        // A mod with only the large clip also brands the compact shell.
+        assert_eq!(
+            mod_menu_movie_candidates(&assets, MainMenuMovieBase::Ra2tsS, 2048).next(),
+            candidates.first().copied()
+        );
+    }
+
+    #[test]
+    fn mod_menu_prefers_loose_art_for_the_current_slot() {
+        let install = audio_test_install("mod-menu-native-slot");
+        let mod_dir = TestDirectory::new("mod-menu-loose");
+        let small = MainMenuMovieBase::Ra2tsS;
+        let large = MainMenuMovieBase::Ra2tsL;
+        mod_dir.write_mix("expandmd99.mix", large.asset_name(), &bink_header(632, 570));
+        mod_dir.write_mix("expandmd98.mix", small.asset_name(), &bink_header(472, 448));
+        let loose = bink_header(472, 450);
+        std::fs::write(mod_dir.path().join(small.asset_name()), loose).unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let (name, bytes, source) = mod_menu_movie_candidates(&assets, small, 2048)
+            .next()
+            .unwrap();
+        assert_eq!((name, bytes), (small.asset_name(), loose.as_slice()));
+        assert!(source.starts_with("loose:"));
+    }
 
     #[test]
     fn menu_movie_resumes_at_normal_speed_after_backgrounding() {

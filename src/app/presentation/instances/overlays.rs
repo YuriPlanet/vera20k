@@ -825,8 +825,9 @@ pub(super) fn presentation_anim_frame_count(
     type_name: &str,
 ) -> Option<u16> {
     frame_counts.get(type_name).copied().or_else(|| {
-        let canonical = type_name.to_ascii_uppercase();
-        frame_counts.get(&canonical).copied()
+        crate::util::native_string::with_ascii_uppercase(type_name, |canonical| {
+            frame_counts.get(canonical).copied()
+        })
     })
 }
 
@@ -1269,7 +1270,7 @@ pub(crate) fn build_overlay_instances(
     // so the bodies' order is part of the image.
     let window = overlay_body_window(terrain, atlas.art_extent(), [cam_x, cam_y], [sw, sh]);
     let overlays = &state.match_state.match_presentation.overlays;
-    let window_entries: Vec<_> = overlays.entries_in(window).cloned().collect();
+    let window_entries: Vec<_> = overlays.entries_in(window).copied().collect();
     let start = bodies.len();
     let input = CellOverlayInputs {
         entries: &window_entries,

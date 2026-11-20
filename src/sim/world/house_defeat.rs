@@ -234,7 +234,7 @@ impl Simulation {
             .get_mut(&owner)
             .is_some_and(|house| house.take_tech_recheck())
         {
-            if self.session.current_house() == Some(owner) {
+            if self.control_projection().local_command_house() == Some(owner) {
                 for type_id in
                     crate::sim::production::construction_options_for_owner(self, rules, owner)
                 {
@@ -398,6 +398,39 @@ impl Simulation {
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) {
         use crate::sim::house_state::HouseOutcomeKind;
+        let viewed_house = self.session.current_house();
+        if self.session.watcher() {
+            // Elimination can end the watch when another House's victory
+            // timer matures. Use the shared verdict, including the
+            // Cooperative victory of an eliminated human (4FC5CF..4FC5F1).
+            // A script can finish the followed viewpoint with foes still
+            // alive or under a policy that leaves elimination disabled.
+            let decision = self
+                .session
+                .rule_policy()
+                .uses_elimination_results()
+                .then(|| self.multiplayer_decision())
+                .flatten();
+            let routed = match decision {
+                Some(decision)
+                    if kind == HouseOutcomeKind::Victory || viewed_house == Some(owner) =>
+                {
+                    decision.into_iter().find_map(|(house, won)| {
+                        (Some(house) == viewed_house).then_some(if won {
+                            HouseOutcomeKind::Victory
+                        } else {
+                            HouseOutcomeKind::Defeat
+                        })
+                    })
+                }
+                None if viewed_house == Some(owner) => Some(kind),
+                Some(_) | None => None,
+            };
+            if let Some(outcome) = routed {
+                self.session.admit_outcome(outcome);
+            }
+            return;
+        }
         if !self.handles_house_outcome_locally(owner) {
             return;
         }
@@ -405,7 +438,7 @@ impl Simulation {
         let local = if self.outcomes_follow_player_control() {
             house.is_human() || house.player_control()
         } else {
-            self.session.current_house() == Some(owner)
+            viewed_house == Some(owner)
         };
         let routed = if local {
             kind
@@ -429,8 +462,9 @@ impl Simulation {
     /// process's result. Canonical remote network results never choose its
     /// app route or restart its local Vox timer. Offline routing is unchanged.
     fn handles_house_outcome_locally(&self, owner: InternedId) -> bool {
-        !self.session.execution_topology().is_lockstep()
-            || self.session.current_house() == Some(owner)
+        !self.session.watcher()
+            && (!self.session.execution_topology().is_lockstep()
+                || self.session.current_house() == Some(owner))
     }
 
     /// MPlayer_Defeated4FC680/4FC6AC and TAction6DDD77/6DEA37 target
@@ -653,8 +687,20 @@ impl Simulation {
                     .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
             })
             .collect();
-        let living_humans = alive
+        // 0x004FC62C's final human scan checks only Defeated (+0x1F5) before
+        // IsHumanPlayer (+0x1EC) or PlayerControl (+0x1ED), so a living passive
+        // human House counts: VERA's observer keeps a match going while the
+        // person behind it watches. Counted from `alive`, which drops passive
+        // Houses, a watched match ended at the first defeated computer.
+        let living_humans = self
+            .houses
+            .order()
             .iter()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated())
+            })
             .filter(|owner| self.houses[owner].is_controlled_by_human(self.session.rule_policy()))
             .count();
         let all_allied = alive.iter().all(|left| {

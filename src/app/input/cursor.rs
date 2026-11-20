@@ -137,7 +137,6 @@ fn find_cursor_feedback_kind(
     state: &AppState,
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {
-    let selected = targets.selected.as_slice();
     // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
     // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
     // shows it over the battlefield.
@@ -176,6 +175,27 @@ fn find_cursor_feedback_kind(
     {
         return Some(CursorFeedbackKind::Default);
     }
+    if state.match_state.input.skirmish_spawn.is_some()
+        && super::camera::spawn_pointer_world_point(state).is_some()
+    {
+        return Some(CursorFeedbackKind::Deploy);
+    }
+    let runtime = state.match_state.sim_runtime.runtime();
+    let selected = runtime.map_or(
+        std::borrow::Cow::Borrowed(targets.selected.as_slice()),
+        |rt| {
+            super::context_order::projected_order_selection(
+                &rt.simulation,
+                state.rules(),
+                &targets.selected,
+                targets
+                    .hover
+                    .and_then(HoverObject::techno)
+                    .map(|target| target.stable_id),
+            )
+        },
+    );
+    let selected = selected.as_ref();
     // Superweapon targeting cursor takes precedence over building placement.
     // Sidebar/minimap hits are already short-circuited above, so the SW reticle
     // only renders on the tactical map. DetermineAction answers the armed
@@ -238,11 +258,7 @@ fn find_cursor_feedback_kind(
     if state.armed_building_type().is_some() {
         return Some(CursorFeedbackKind::Invalid);
     }
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)?;
+    let sim = &runtime?.simulation;
     // DetermineAction's no-selection path keeps Repair/Sell only when no
     // armed Super overrides it. Use the same priority as the release owner;
     // its target admission still supplies wrench/dollar or refusal feedback.
@@ -945,13 +961,15 @@ pub(super) fn capability_cursor_for_hover(
         return CursorFeedbackKind::Select;
     }
 
+    let viewer = sim.session().current_house();
+    let control = sim.control_projection();
     if let Some(kind) = unit_repair_feedback(
         sim,
         selected,
         best_id,
         hover,
         rules,
-        sim.session().current_house(),
+        viewer,
         modifier,
         force_move_key,
     ) {
@@ -965,7 +983,7 @@ pub(super) fn capability_cursor_for_hover(
     // Infantry51E462's disarm prefix precedes self post-processing too.
     if let Some(actor) = best_id.and_then(|id| sim.entities().get(id))
         && actor.category() == EntityCategory::Infantry
-        && sim.house_is_human_player(actor.owner())
+        && control.can_order(actor.owner())
         && rules
             .and_then(|rules| sim.interner().object_type(actor.type_ref(), rules))
             .is_some_and(|object| object.engineer)
@@ -986,8 +1004,8 @@ pub(super) fn capability_cursor_for_hover(
     // Techno7000B9's self action precedes Ctrl/Alt. All self consumers share
     // admission with click/deploy-key, including loaded mobile transports.
     if selected == [hover.stable_id]
-        && let (Some(rules), Some(entity)) = (rules, hovered_entity)
-        && sim.session().current_house() == Some(entity.owner())
+        && let (Some(rules), Some(entity), Some(viewer)) = (rules, hovered_entity, viewer)
+        && control.can_order_from(entity.owner(), viewer)
         && !entity.berserk.is_active()
         && !entity.is_warped_out()
     {
@@ -995,7 +1013,7 @@ pub(super) fn capability_cursor_for_hover(
             sim,
             rules,
             overlay_registry,
-            entity.owner(),
+            viewer,
             selected,
             Some(hover),
             planning,
@@ -1008,7 +1026,7 @@ pub(super) fn capability_cursor_for_hover(
             sim,
             rules,
             overlay_registry,
-            entity.owner(),
+            viewer,
             selected,
             hover,
             planning,
@@ -1102,6 +1120,7 @@ pub(super) fn capability_cursor_for_hover(
         if rules.is_some_and(|rules| {
             super::context_order::vehicle_capture_action(
                 sim,
+                &control,
                 rules,
                 best_id,
                 hover.stable_id,
@@ -1125,25 +1144,18 @@ pub(super) fn capability_cursor_for_hover(
         //    carrier, Alt's Move included, an Aircraft's NoEnter over a
         //    UnitRepair= building and a Carryall's Tote over a Unit
         //    (`context_order::entry_action`).
-        if let Some(action) = rules
-            .filter(|_| {
-                matches!(
-                    hover.kind,
-                    HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
-                )
-            })
-            .and_then(|rules| {
-                super::context_order::entry_action(
-                    sim,
-                    rules,
-                    best_id,
-                    hover.stable_id,
-                    modifier,
-                    force_move_key,
-                    overlay_registry,
-                )
-            })
-        {
+        if let Some(action) = rules.and_then(|rules| {
+            super::context_order::hovered_entry_action(
+                sim,
+                &control,
+                rules,
+                best_id,
+                hover,
+                modifier,
+                force_move_key,
+                overlay_registry,
+            )
+        }) {
             return match action {
                 crate::sim::world::EntryClickAction::NoEnter => CursorFeedbackKind::NoEnter,
                 crate::sim::world::EntryClickAction::Grind => CursorFeedbackKind::Grind,

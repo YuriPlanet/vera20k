@@ -34,6 +34,38 @@ mod web_present;
 /// clamped to the adapter's own maximum anyway.
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
+/// The edge asked for instead on a Windows or Linux GPU that draws from the
+/// system's memory (`DeviceType::IntegratedGpu`, and the processor itself).
+/// That memory is shared with the game and the system, and a driver short of
+/// it removes the device: an Intel HD 620 lost its DirectX 12 device seconds
+/// into a match whose sprite atlas was one 11721x11968 page, 134 MiB of
+/// palette indices. At 8192 a page is 64 MiB at most and the atlases pack into
+/// more pages. The cost: on a screen wider than 2048 px the zoom-out stops
+/// where the view no longer fits one page (`camera::minimum_view_zoom`), at
+/// 0.42 on a 3440 px screen instead of 0.25. Apple's unified memory is the
+/// GPU's own, so Metal keeps [`MAX_USEFUL_TEXTURE_DIM`].
+pub(crate) const SHARED_MEMORY_TEXTURE_DIM: u32 = 8_192;
+
+/// The 2D texture edge this device is asked for: what the adapter offers, up
+/// to [`MAX_USEFUL_TEXTURE_DIM`], or [`SHARED_MEMORY_TEXTURE_DIM`] on a GPU
+/// that draws from the system's memory outside Metal.
+pub(crate) fn requested_texture_dim(
+    backend: wgpu::Backend,
+    device_type: wgpu::DeviceType,
+    adapter_max: u32,
+) -> u32 {
+    let shared_memory = matches!(
+        device_type,
+        wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::Cpu
+    ) && backend != wgpu::Backend::Metal;
+    let useful = if shared_memory {
+        SHARED_MEMORY_TEXTURE_DIM
+    } else {
+        MAX_USEFUL_TEXTURE_DIM
+    };
+    adapter_max.min(useful)
+}
+
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
 /// compute or reinterpreting texture views. Renderers that use those select
 /// render-target equivalents there; every other device keeps its ordinary path.
@@ -186,9 +218,6 @@ pub struct GpuContext {
     pub surface_format: wgpu::TextureFormat,
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
-    /// What the driver said when it lost the device ([`Self::device_lost`]).
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-    lost: Arc<std::sync::OnceLock<String>>,
     capture_target: Option<CaptureTarget>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
@@ -217,7 +246,7 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
     ) -> Result<Self> {
-        Self::new_async(window, display, false).await
+        Self::new_async(window, display, false, wgpu::Backends::empty()).await
     }
 
     /// Initialize wgpu with the given window.
@@ -230,23 +259,30 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
+        backends: wgpu::Backends,
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture)).context(GraphicsUnavailable)
+        block_on(Self::new_async(window, display, hidden_capture, backends))
+            .context(GraphicsUnavailable)
     }
 
-    /// Async initialization — called by new() via block_on().
+    /// Async initialization — called by new() via block_on(). `backends` is
+    /// what this start asks wgpu for (`persistence::startup_backend`).
     async fn new_async(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
+        backends: wgpu::Backends,
     ) -> Result<Self> {
-        // The standard override selects a backend for reproducible
-        // shroud GPU comparisons while retaining primary backends by default.
-        // wgpu requires the display at instance creation for Wayland EGL:
+        // Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the
+        // first API it lists; a start record asks for one alone
+        // (`persistence::startup_backend`). wgpu's own override
+        // (`WGPU_BACKEND`) wins over either, for reproducible shroud GPU
+        // comparisons. wgpu requires the display at instance creation for
+        // Wayland EGL:
         // https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY.with_env(),
+            backends: backends.with_env(),
             ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
         });
         // Browsers without a usable WebGPU adapter fall back to WebGL2. A
@@ -254,6 +290,9 @@ impl GpuContext {
         // first: a canvas given a WebGPU context can no longer create WebGL2.
         // wgpu's own probe (util::is_browser_webgpu_supported) asks with
         // default options, which can succeed where this request fails.
+        // The browser's APIs are its own.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let _ = backends;
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let instance: wgpu::Instance = {
             let probe = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -311,15 +350,52 @@ impl GpuContext {
             adapter_info.driver,
             adapter_info.driver_info
         );
+        // wgpu compiles DirectX 12 shaders with Microsoft's DXC when
+        // dxcompiler.dll sits beside the game, where the Windows installer puts
+        // it (`.github/release/windows/fetch-dxc.ps1`), and otherwise with
+        // Windows' 2015 FXC (`Dx12Compiler::Auto`); a player's log says which.
+        #[cfg(target_os = "windows")]
+        if adapter_info.backend == wgpu::Backend::Dx12 {
+            let dxc = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|dir| dir.join("dxcompiler.dll")))
+                .is_some_and(|dll| dll.is_file());
+            log::info!(
+                "DirectX 12 shaders compile with {}",
+                if dxc {
+                    "DXC (dxcompiler.dll beside the game)"
+                } else {
+                    "FXC: no dxcompiler.dll beside the game"
+                }
+            );
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let _ = DEVICE_IDENTITY.set(DeviceIdentity {
+            backend: adapter_info.backend,
+            vendor: adapter_info.vendor,
+            device: adapter_info.device,
+            name: adapter_info.name.clone(),
+        });
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
         let adapter_limits = adapter.limits();
-        log::info!(
-            "GPU limits: max_texture_dimension_2d={} (requesting {})",
+        let texture_dim = requested_texture_dim(
+            adapter_info.backend,
+            adapter_info.device_type,
             adapter_limits.max_texture_dimension_2d,
-            adapter_limits
-                .max_texture_dimension_2d
-                .min(MAX_USEFUL_TEXTURE_DIM),
+        );
+        log::info!(
+            "GPU limits: max_texture_dimension_2d={} (requesting {texture_dim}{})",
+            adapter_limits.max_texture_dimension_2d,
+            if texture_dim
+                < adapter_limits
+                    .max_texture_dimension_2d
+                    .min(MAX_USEFUL_TEXTURE_DIM)
+            {
+                ", the shared-memory graphics cap"
+            } else {
+                ""
+            },
         );
 
         // Request a logical device and command queue from the adapter.
@@ -331,9 +407,7 @@ impl GpuContext {
         // actually offers, bounded by what the atlases can use, and fall back
         // automatically on a device that offers less.
         let required_limits = wgpu::Limits {
-            max_texture_dimension_2d: adapter_limits
-                .max_texture_dimension_2d
-                .min(MAX_USEFUL_TEXTURE_DIM),
+            max_texture_dimension_2d: texture_dim,
             ..wgpu::Limits::default()
         };
         // WebGL2 has no storage buffers or compute, so the WebGPU baseline is
@@ -358,7 +432,7 @@ impl GpuContext {
             .await
             .context("Failed to create wgpu device")?;
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let lost = watch_device_loss(&device);
+        watch_device_loss(&device);
 
         // Pick the best texture format for the surface.
         // This is usually Bgra8UnormSrgb on Windows, Bgra8Unorm on some other platforms.
@@ -477,8 +551,6 @@ impl GpuContext {
             config,
             surface_format,
             adapter_info,
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            lost,
             capture_target,
             timer,
             color_vision: super::color_vision::ColorVisionFilter::new(),
@@ -550,7 +622,7 @@ impl GpuContext {
     /// run on behind a black window. `None` while the device works.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn device_lost(&self) -> Option<&str> {
-        self.lost.get().map(String::as_str)
+        lost_device()
     }
 
     /// Whether the window currently owns a render surface.
@@ -743,6 +815,44 @@ impl GpuContext {
     }
 }
 
+/// What the driver said when it lost the process's graphics device
+/// (`watch_device_loss`), for [`GpuContext::device_lost`] and for the panic
+/// hook: a panic after the loss (wgpu's own, on the first buffer it maps on
+/// the dead device, or any renderer's) is the loss's consequence, and the
+/// player is told about the driver, not about an internal error
+/// (`app::system_dialog::report_panic`). The game has one device; a second
+/// context would share this.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+static LOST_DEVICE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The process's graphics device: the API and adapter it runs on, for the
+/// start record (`persistence::startup_backend`) when the device is lost
+/// before startup finishes, which the panic hook reports too.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) struct DeviceIdentity {
+    pub(crate) backend: wgpu::Backend,
+    /// PCI vendor and device ids, the same on every API.
+    pub(crate) vendor: u32,
+    pub(crate) device: u32,
+    pub(crate) name: String,
+}
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+static DEVICE_IDENTITY: std::sync::OnceLock<DeviceIdentity> = std::sync::OnceLock::new();
+
+/// The device the game runs on, once `GpuContext::new` chose it.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn device_identity() -> Option<&'static DeviceIdentity> {
+    DEVICE_IDENTITY.get()
+}
+
+/// The driver's message once the graphics device is lost; `None` while it
+/// works. See [`GpuContext::device_lost`].
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn lost_device() -> Option<&'static str> {
+    LOST_DEVICE.get().map(String::as_str)
+}
+
 /// Watch `device` for its loss. wgpu reports a loss once, on whichever thread
 /// met the driver's error (this one, the frame hand-off thread or a loading
 /// thread); its message is kept for [`GpuContext::device_lost`] and logged.
@@ -751,17 +861,14 @@ impl GpuContext {
 /// Before a loss an error still ends the game, as wgpu's default handler
 /// (`default_error_handler`) does.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-fn watch_device_loss(device: &wgpu::Device) -> Arc<std::sync::OnceLock<String>> {
-    let lost = Arc::new(std::sync::OnceLock::new());
-    let kept = Arc::clone(&lost);
+fn watch_device_loss(device: &wgpu::Device) {
     device.set_device_lost_callback(move |reason, message| {
         log::error!("Graphics device lost ({reason:?}): {message}");
-        let _ = kept.set(message);
+        let _ = LOST_DEVICE.set(message);
     });
-    let after_loss = Arc::clone(&lost);
     let logged = std::sync::atomic::AtomicBool::new(false);
     device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
-        if after_loss.get().is_none() {
+        if lost_device().is_none() {
             log::error!("Handling wgpu errors as fatal by default");
             panic!("wgpu error: {error}\n");
         }
@@ -769,7 +876,6 @@ fn watch_device_loss(device: &wgpu::Device) -> Arc<std::sync::OnceLock<String>> 
             log::warn!("Ignoring wgpu errors on the lost device, the first: {error}");
         }
     }));
-    lost
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -879,8 +985,8 @@ mod tests {
     use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
     use super::{
-        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
-        watch_device_loss,
+        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, lost_device,
+        present_settings, requested_texture_dim, watch_device_loss,
     };
 
     /// With VSync a picture over one refresh must not wait a whole refresh
@@ -904,13 +1010,13 @@ mod tests {
             .expect("this test requires a wgpu adapter");
         let (device, _queue) =
             block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
-        let lost = watch_device_loss(&device);
+        watch_device_loss(&device);
         let poll = || device.poll(wgpu::PollType::wait_indefinitely());
         poll().unwrap();
-        assert_eq!(lost.get(), None);
+        assert_eq!(lost_device(), None);
         device.destroy();
         let _ = poll();
-        assert!(lost.get().is_some());
+        assert!(lost_device().is_some());
 
         let mut encoder = device.create_command_encoder(&Default::default());
         let mut pool = crate::render::batch::InstanceBufferPool::new();
@@ -953,6 +1059,19 @@ mod tests {
         let (outcome, requests) = acquire_over(vec![Outdated, Outdated]);
         assert!(outcome.unwrap().is_none());
         assert_eq!(requests, [None, Some(SurfaceRecovery::Reconfigure)]);
+    }
+
+    #[test]
+    fn shared_memory_graphics_get_smaller_texture_pages_outside_metal() {
+        use wgpu::Backend::{Dx12, Metal, Vulkan};
+        use wgpu::DeviceType::{Cpu, DiscreteGpu, IntegratedGpu};
+        assert_eq!(requested_texture_dim(Dx12, IntegratedGpu, 16_384), 8_192);
+        assert_eq!(requested_texture_dim(Vulkan, Cpu, 16_384), 8_192);
+        assert_eq!(requested_texture_dim(Dx12, DiscreteGpu, 16_384), 16_384);
+        assert_eq!(requested_texture_dim(Metal, IntegratedGpu, 16_384), 16_384);
+        // The adapter's own limit still bounds every request.
+        assert_eq!(requested_texture_dim(Dx12, IntegratedGpu, 4_096), 4_096);
+        assert_eq!(requested_texture_dim(Dx12, DiscreteGpu, 32_768), 16_384);
     }
 
     #[test]

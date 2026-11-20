@@ -47,7 +47,7 @@ pub enum WolTarget {
     /// Forgot Password's code and new password popup, its username's code
     /// request answered in place.
     ModernForgotPassword,
-    /// Delete Account's username and password popup, filled in; nothing is
+    /// Delete Account's username or email and password popup, filled in; nothing is
     /// sent.
     ModernDeleteAccount,
     /// A typed nickname and an eight-character password: Login enabled.
@@ -1901,6 +1901,7 @@ impl WolCapture {
                         from: member("Hotel", MEMBER_OPERATOR, ""),
                         text: "mid-match".encode_utf16().collect(),
                         localized: false,
+                        warning: false,
                         private: false,
                         action: false,
                         ansi: false,
@@ -3411,6 +3412,7 @@ impl WolCapture {
                     from,
                     text,
                     localized: false,
+                    warning: false,
                     private: false,
                     action: false,
                     ansi: false,
@@ -3842,6 +3844,7 @@ impl WolCapture {
                 from: member(PEER, 0, ""),
                 text: "\u{4f60}\u{597d}".encode_utf16().collect(),
                 localized: false,
+                warning: false,
                 private: false,
                 action: false,
                 ansi: false,
@@ -4287,6 +4290,7 @@ impl WolCapture {
                             from: member(name, flags, ""),
                             text: text.encode_utf16().collect(),
                             localized: false,
+                            warning: false,
                             private,
                             action,
                             ansi: false,
@@ -4324,6 +4328,7 @@ impl WolCapture {
                             from: member(name, flags, tag),
                             text: text.encode_utf16().collect(),
                             localized: false,
+                            warning: false,
                             private: false,
                             action: false,
                             ansi: false,
@@ -5642,7 +5647,9 @@ impl WolCapture {
         target: WolTarget,
         layout: &crate::ui::wol_login::WolLoginLayout,
     ) -> Result<()> {
-        use crate::ui::wol_account::{AccountFormAction, AccountRequest, FORM_OK, FormKind};
+        use crate::ui::wol_account::{
+            AccountFormAction, AccountRequest, AccountSuccess, FORM_OK, FormKind,
+        };
         use crate::ui::wol_login::{CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD};
         const PASSWORD: &str = "s3cret-pw";
         let control = match target {
@@ -5662,7 +5669,7 @@ impl WolCapture {
                     matches!(
                         form.activate(FORM_OK),
                         Some(AccountFormAction::Send(AccountRequest::Forgot { .. }))
-                    ) && form.answered(Ok(())).is_none()
+                    ) && form.answered(Ok(AccountSuccess::Accepted)).is_none()
                         && form.kind == FormKind::Reset,
                     "Forgot Password did not move on to its code"
                 );
@@ -5670,8 +5677,8 @@ impl WolCapture {
                 self.event(frame, "Forgot Password: code and new password typed");
             }
             WolTarget::ModernDeleteAccount => {
-                account_type(state, &["Player", PASSWORD]);
-                self.event(frame, "Delete Account: username and password typed");
+                account_type(state, &["player+delete@example.com", PASSWORD]);
+                self.event(frame, "Delete Account: email and password typed");
             }
             _ => {
                 account_type(state, &["Player", "player@example.com", PASSWORD, PASSWORD]);
@@ -5683,7 +5690,7 @@ impl WolCapture {
                         .context("Create Account")?;
                     ensure!(
                         matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
-                            && form.answered(Ok(())).is_none()
+                            && form.answered(Ok(AccountSuccess::Accepted)).is_none()
                             && form.kind == FormKind::Verify,
                         "Create Account did not move on to its code"
                     );

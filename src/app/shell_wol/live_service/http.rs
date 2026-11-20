@@ -166,11 +166,53 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
             "/v1/accounts/reset",
             json!({"name": name, "code": code, "password": password}),
         ),
-        AccountRequest::Delete { name, password } => (
-            "/v1/accounts/delete",
-            json!({"name": name, "password": password}),
-        ),
+        AccountRequest::Delete {
+            identifier,
+            password,
+        } => {
+            let key = if identifier.contains('@') {
+                "email"
+            } else {
+                "name"
+            };
+            (
+                "/v1/accounts/delete",
+                json!({(key): identifier, "password": password}),
+            )
+        }
     }
+}
+
+fn account_result(
+    request: &super::AccountRequest,
+    response: Result<Value, RequestFailure>,
+) -> Result<super::AccountSuccess, String> {
+    use crate::ui::wol_account::valid_name;
+    let super::AccountRequest::Delete { identifier, .. } = request else {
+        return response
+            .map(|_| super::AccountSuccess::Accepted)
+            .map_err(sign_in_refusal);
+    };
+    let by_name = valid_name(identifier);
+    let reply = response.map_err(|failure| match failure {
+        RequestFailure::Account {
+            status: 400,
+            invalid_request: true,
+            ..
+        } if !by_name => crate::i18n::tr("VERA:DeleteUseUsername"),
+        other => sign_in_refusal(other),
+    })?;
+    // Older lobbies accept only usernames and return {}. Never infer a username
+    // from an email, or clear another sign-in on a malformed reply.
+    let canonical = reply["name"]
+        .as_str()
+        .filter(|name| valid_name(name) && (!by_name || name.eq_ignore_ascii_case(identifier)))
+        .or_else(|| {
+            (by_name && reply.as_object().is_some_and(|o| o.is_empty())).then_some(identifier)
+        });
+    canonical
+        .map(|name| super::AccountSuccess::Deleted(name.to_owned()))
+        .ok_or_else(|| crate::i18n::tr("VERA:DeleteNameUnavailable"))
 }
 
 impl Request {
@@ -290,6 +332,7 @@ pub(super) enum Response {
         sign_in_token: Option<String>,
         /// The lobby offers `visit_lobby`.
         lobby_visits: bool,
+        campaign_rooms: bool,
     },
     LoginFailed {
         attempt: u64,
@@ -344,7 +387,7 @@ pub(super) enum Response {
     /// The answer to a [`Request::Account`], or the message to show.
     AccountAnswered {
         attempt: u64,
-        answer: Result<(), String>,
+        answer: Result<super::AccountSuccess, String>,
     },
     StartRejected {
         id: u64,
@@ -433,6 +476,7 @@ enum RequestFailure {
         /// `wrong_password` or `no_account`: the credential signs in to no
         /// account.
         bad_credential: bool,
+        invalid_request: bool,
         message: String,
     },
 }
@@ -632,6 +676,7 @@ impl RequestFailure {
         Self::Account {
             status,
             bad_credential: matches!(code, Some("wrong_password" | "no_account")),
+            invalid_request: code == Some("invalid_request"),
             message,
         }
     }
@@ -1333,6 +1378,7 @@ macro_rules! serial_driver {
                                 nickname: session.nickname,
                                 motd: session.motd,
                                 lobby_visits: session.features.iter().any(|feature| feature == "visit_lobby"),
+                                campaign_rooms: session.features.iter().any(|feature| feature == "campaign_rooms"),
                                 sign_in_token: session
                                     .sign_in_token
                                     .filter(|_| matches!(credential, Credential::Password { remember: true, .. })),
@@ -1349,9 +1395,7 @@ macro_rules! serial_driver {
             }
             Some(Request::Account { attempt, request }) => {
                 let (path, body) = account_call(&request);
-                let answer = platform_await!(client.request(path, Some(&body)))
-                    .map(|_| ())
-                    .map_err(sign_in_refusal);
+                let answer = account_result(&request, platform_await!(client.request(path, Some(&body))));
                 let _ = output.send(Response::AccountAnswered { attempt, answer });
             }
             Some(Request::ForgetSignIn {
@@ -2286,6 +2330,44 @@ mod tests {
     /// account request's `name_unavailable` is a message, not a room's join
     /// code.
     #[test]
+    fn delete_uses_one_identifier_and_only_forgets_a_confirmed_username() {
+        use crate::ui::wol_account::{AccountRequest, AccountSuccess};
+        let delete = |identifier: &str| AccountRequest::Delete {
+            identifier: identifier.into(),
+            password: "example-password".into(),
+        };
+        let username = delete("tanya");
+        let email = delete("alias+yr@example.com");
+        assert_eq!(
+            account_call(&username).1,
+            json!({"name":"tanya","password":"example-password"})
+        );
+        assert_eq!(
+            account_call(&email).1,
+            json!({"email":"alias+yr@example.com","password":"example-password"})
+        );
+        assert_eq!(
+            account_result(&username, Ok(json!({}))),
+            Ok(AccountSuccess::Deleted("tanya".into()))
+        );
+        assert_eq!(
+            account_result(&email, Ok(json!({"name":"Tanya"}))),
+            Ok(AccountSuccess::Deleted("Tanya".into()))
+        );
+        assert!(account_result(&email, Ok(json!({}))).is_err());
+        assert!(account_result(&username, Ok(json!({"name":"SomeoneElse"}))).is_err());
+        let legacy = RequestFailure::answer(
+            "/v1/accounts/delete",
+            400,
+            br#"{"error":{"code":"invalid_request"}}"#,
+        );
+        assert_eq!(
+            account_result(&email, Err(legacy)),
+            Err(crate::i18n::tr("VERA:DeleteUseUsername"))
+        );
+    }
+
+    #[test]
     fn account_refusals_carry_the_lobby_message() {
         let refusal = |code: &str, message: &str| {
             json!({"error":{"code":code,"message":message}}).to_string()
@@ -2299,6 +2381,7 @@ mod tests {
             RequestFailure::Account {
                 status: 403,
                 bad_credential: true,
+                invalid_request: false,
                 message: "Sign in again with your password.".into(),
             }
         );

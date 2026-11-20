@@ -23,7 +23,7 @@ pub(crate) const COPIED: [&str; 6] = [
 /// The files New Mod writes for the player to fill in, every key commented
 /// out so that each changes nothing until the player takes a `;` away.
 const STARTERS: [(&str, &str); 2] = [
-    // Every line `app::mods::ModInfo` reads, so the folder's name stays the
+    // Every metadata line `util::mod_definition::ModDefinition` reads, so the folder's name stays the
     // mod's name until the player gives it one.
     (
         "mod.ini",

@@ -1421,9 +1421,9 @@ fn atlas_growth_reads_the_published_theater_palettes() {
 #[test]
 fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
     use crate::map::source::test_support::TestDirectory;
-    use crate::util::ini_roots::{IniProfile, IniRootConfig};
-    let mo = IniRootConfig {
-        profile: IniProfile::Mo,
+    use crate::util::ini_roots::IniRootConfig;
+    let roots = IniRootConfig {
+        theater_suffix: Some("alt".into()),
         ..Default::default()
     }
     .resolve(|_| true)
@@ -1434,13 +1434,42 @@ fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
     let stock_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n";
     dir.write("temperatmd.ini", stock_ini);
     let mut assets =
-        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(mo.clone());
+        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots.clone());
     let theater = load_theater(&mut assets, "TEMPERATE").expect("stock fallback");
     assert_eq!(theater.ini_data, stock_ini);
 
     let profile_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=2\n";
-    dir.write("temperatmo.ini", profile_ini);
-    let mut assets = AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(mo);
+    dir.write("temperatalt.ini", profile_ini);
+    let mut assets =
+        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots);
     let theater = load_theater(&mut assets, "TEMPERATE").expect("profile theater INI");
     assert_eq!(theater.ini_data, profile_ini);
+}
+
+/// A map cell names its subtile in one byte, so a template's cells past the
+/// 256th are not pre-loaded, and never under a wrapped subtile.
+#[test]
+fn template_cells_past_the_256th_are_not_preloaded() {
+    use crate::map::source::test_support::TestDirectory;
+    // A 17x16 template of 8x4 tiles whose only image is cell 256.
+    const CELLS: usize = 17 * 16;
+    let cell_offset = 16 + 4 * CELLS;
+    let mut tmp = vec![0u8; cell_offset + 52 + 16];
+    let header = [
+        (0, 17),
+        (4, 16),
+        (8, 8),
+        (12, 4),
+        (16 + 4 * 256, cell_offset as u32),
+    ];
+    for (offset, value) in header {
+        tmp[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let dir = TestDirectory::new("theater-wide-template");
+    dir.write("big01.tem", &tmp);
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+    let lookup = parse_tileset_ini(b"[TileSet0000]\nFileName=big\nTilesInSet=1\n", "tem").unwrap();
+    let mut needed = HashSet::new();
+    inject_template_tiles(&mut needed, 0, &lookup, &assets).unwrap();
+    assert!(needed.is_empty(), "cell 256 is not subtile 0: {needed:?}");
 }

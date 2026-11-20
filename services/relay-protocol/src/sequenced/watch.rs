@@ -71,13 +71,12 @@ impl WatchTicket {
         if bytes.len() != TICKET_LEN || bytes[0] != WATCH_TICKET_VERSION || bytes[17] != 0 {
             return Err(RelayError::Malformed);
         }
-        let field = |range: std::ops::Range<usize>| &bytes[range];
-        let delay = u64::from_le_bytes(field(58..66).try_into().expect("checked ticket length"));
+        let delay = read_u64(bytes, 58)?;
         let ticket = Self {
-            room: field(1..17).try_into().expect("checked ticket length"),
-            expires: u64::from_le_bytes(field(18..26).try_into().expect("checked ticket length")),
-            nonce: field(26..42).try_into().expect("checked ticket length"),
-            watcher: field(42..58).try_into().expect("checked ticket length"),
+            room: field(bytes, 1)?,
+            expires: read_u64(bytes, 18)?,
+            nonce: field(bytes, 26)?,
+            watcher: field(bytes, 42)?,
             delay_seconds: u32::try_from(delay).map_err(|_| RelayError::Malformed)?,
         };
         ticket.validate()?;
@@ -439,7 +438,11 @@ impl RelayServer {
         } else {
             Some(self.allocate_session()?)
         };
-        let room = self.rooms.get_mut(&watch.room).expect("checked room");
+        // Checked above; allocating a session leaves the rooms alone.
+        let room = self
+            .rooms
+            .get_mut(&watch.room)
+            .ok_or(RelayError::Unregistered)?;
         let mut retired = None;
         let reply = match (existing, session) {
             (Some(index), None) => {

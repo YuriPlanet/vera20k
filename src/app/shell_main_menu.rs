@@ -216,6 +216,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Presentation only: the next timer draw reads it.
         self.persistence.options_profile.compact_super_timers = enabled;
     }
+    fn store_grouped_super_timers(&mut self, enabled: bool) {
+        // Presentation only: the next timer draw reads it.
+        self.persistence.options_profile.grouped_super_timers = enabled;
+    }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
         self.persistence.options_profile.lock_cursor = locked;
@@ -1084,6 +1088,7 @@ impl App {
     /// The teardown every finished scenario shares, the co-op continuation
     /// included, which never reaches Main_Game's shell return.
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
@@ -1162,6 +1167,16 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
+        if state.process_assets.uses_client_catalog()
+            && (state.frontend.skirmish_modes.is_empty()
+                || state.frontend.scenario_catalog.shell_maps().is_empty())
+        {
+            Self::open_shell_notice(
+                state,
+                "No playable skirmish maps were found in this mod's client catalog. Check that the full mod folder was extracted.".into(),
+            );
+            return;
+        }
         if !Self::prepare_multiplayer_settings(
             state,
             crate::app::match_runtime::session::SessionMode::Skirmish,
@@ -1743,6 +1758,10 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 Self::advance_campaign_victory(state, *victory);
             }
+            ShellMessageBoxPurpose::AuthoredCampaignResult(choice) => {
+                Self::close_shell_message_box_from_controller(state);
+                crate::app::match_runtime::stage_result::answer(state, choice, result);
+            }
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             ShellMessageBoxPurpose::UpdateOffer(_) => {
                 Self::close_shell_message_box_from_controller(state);
@@ -2050,7 +2069,12 @@ impl App {
             }
             ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
-            ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
+            ShellExitThen::ChooseMapRandomMap(seed) => {
+                Self::commit_choose_map_random_map(state);
+                if let Some(seed) = seed {
+                    Self::load_random_map_seed(state, &seed, true);
+                }
+            }
             ShellExitThen::RandomMapUse => Self::accept_random_map_setup(state),
             ShellExitThen::RandomMapCancel => Self::cancel_random_map_setup(state),
             ShellExitThen::WolBack => Self::return_from_wol(state),
@@ -2136,6 +2160,7 @@ impl App {
             Some(
                 crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_)
                     | crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
+                    | crate::app::frontend::state::ShellMessageBoxPurpose::AuthoredCampaignResult(_)
             )
         ) {
             return;
@@ -2298,6 +2323,14 @@ impl App {
             }
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
+            }
+            MainMenuShellAction::Network | MainMenuShellAction::WwOnline
+                if state.process_assets.uses_client_catalog() =>
+            {
+                Self::open_shell_notice(
+                    state,
+                    "This mod's client catalog is available in Skirmish. Choose No mod under Options, Mods to play online or on a network.".into(),
+                );
             }
             // Both lead to a pre-match check, which compares a mod's files.
             MainMenuShellAction::Network => {

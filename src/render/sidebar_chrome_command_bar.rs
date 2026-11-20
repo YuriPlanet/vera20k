@@ -42,10 +42,7 @@ pub(super) fn load(
     route: SidebarSideRoute<'_>,
     palette: &Palette,
 ) -> CommandBarArt<RenderedChromeEntry> {
-    let render = |name: &str, frame| {
-        let source = route.resolve(name)?;
-        render_shp(&ShpFile::from_bytes(source.bytes).ok()?, palette, frame)
-    };
+    let render = |name: &str, frame| route.render(name, palette, frame);
     // InitSideMixFiles534FA0 loads UIMD.INI before674650 installs ButtonList.
     let ini = route
         .asset_manager

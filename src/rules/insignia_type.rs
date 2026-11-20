@@ -223,6 +223,13 @@ impl InsigniaVariant {
     }
 }
 
+/// VERA's bound on the passenger counts that get their own insignia variant.
+/// Phobos reads one per count up to `Passengers=` with no upper bound, so a
+/// value near `i32::MAX` exhausts memory there. A transport holding more
+/// passengers draws its base insignia. Far above any mod's transport.
+#[cfg(feature = "phobos")]
+const PASSENGER_INSIGNIA_LIMIT: i32 = 1024;
+
 /// Phobos `TechnoTypeExt`'s insignia block, accumulated pass by pass like
 /// `TechnoTypeExt::LoadFromINIFile`: a later layer resolves `InsigniaType`
 /// first and skips the direct keys, and each direct key read retains what the
@@ -296,7 +303,9 @@ impl PhobosInsignia {
         }
         self.passengers_capacity = raw.read_int("Passengers", self.passengers_capacity);
         if self.passengers_capacity > 0 {
-            let count = self.passengers_capacity as usize + 1;
+            // Phobos sizes the vector by the raw `Passengers + 1`
+            // (`TechnoTypeExt::LoadFromINIFile`); the clamp is VERA's.
+            let count = self.passengers_capacity.min(PASSENGER_INSIGNIA_LIMIT) as usize + 1;
             self.passengers.resize(count, InsigniaVariant::default());
             for slot in 0..count {
                 match type_name(&format!("InsigniaType.Passengers{slot}")) {

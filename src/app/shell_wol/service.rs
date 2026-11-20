@@ -114,7 +114,10 @@ pub(crate) enum WolServiceRequest {
     },
     /// VERA online: a lobby account request; the answer is
     /// [`WolServiceEvent::Account`].
-    Account(crate::ui::wol_account::AccountRequest),
+    Account {
+        attempt: u64,
+        request: crate::ui::wol_account::AccountRequest,
+    },
     /// VERA online: Remember password was unticked for the remembered
     /// account; this computer forgets its sign-in, here and at the lobby.
     ForgetSignIn,
@@ -385,7 +388,7 @@ pub(crate) enum WolServiceEvent {
     PageResult(Result<(), u32>),
     /// VERA online: the lobby's answer to a
     /// [`WolServiceRequest::Account`], or the message to show.
-    Account(Result<(), String>),
+    Account(Result<crate::ui::wol_account::AccountSuccess, String>),
     /// A chat or action line from another user: the chat sinks
     /// `0x007A8DA0` (public), `0x007A8FC0` (private), `0x007AB170` (public
     /// action), `0x007AAFB0` (private action) and, without `ansi`, their
@@ -399,6 +402,9 @@ pub(crate) enum WolServiceEvent {
         /// VERA: the lobby's own line, `text` from its phrases in the
         /// interface language.
         localized: bool,
+        /// VERA: the lobby's warning that a player's game differs from the
+        /// host's, shown red.
+        warning: bool,
         private: bool,
         action: bool,
         ansi: bool,
@@ -990,6 +996,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             from,
             text,
             localized,
+            warning,
             private,
             action,
             ansi,
@@ -1002,6 +1009,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning,
                     private,
                     action,
                     ansi,
@@ -1026,6 +1034,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning: false,
                     private,
                     action,
                     ansi: false,

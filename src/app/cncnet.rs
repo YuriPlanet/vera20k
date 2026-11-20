@@ -420,9 +420,20 @@ impl App {
         if let SpawnGame::Network(network) = &mut request.game {
             // VERA: a launcher's room has no host to share rules: each
             // player plays their own, which its ExpectedRulesDigest and the
-            // start agreement (`lan_service::install_gameplay`) compare.
-            network.session.options.host_rules =
+            // start agreement (`lan_service::install_gameplay`) compare. The
+            // Building Production Queue stays off: the launcher's probe
+            // leaves it out (`spawn_probe::existing_personal_rules`), and a
+            // direct launch whose players differ would only time out.
+            let mut rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
+            rules.building_production_queue = false;
+            // The expectations below hash the rules this match plays.
+            state.process_assets.use_personal_rules(
+                rules
+                    .personal_rules()
+                    .map_err(|error| anyhow::anyhow!("the player's rules do not read: {error}"))?,
+            );
+            network.session.options.host_rules = rules;
         }
         if let SpawnGame::Network(network) = &request.game {
             match &network.transport {

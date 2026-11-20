@@ -15,7 +15,7 @@ pub fn run(
     source_only: bool,
 ) -> Result<Value, ErrorReport> {
     let fail = |error: String| {
-        ErrorReport { error, hint: Some("This checks INI expansion, not MO gameplay. --all-mixes widens only this tool's archive search.".into()) }
+        ErrorReport { error, hint: Some("This checks INI expansion, not gameplay compatibility. --all-mixes widens only this tool's archive search.".into()) }
     };
     let raw = assets
         .resolve_ref(name)
@@ -81,7 +81,7 @@ mod tests {
                 dir.path(),
                 false,
                 Default::default(),
-                crate::assets::asset_manager::ArchiveFamily::Yr,
+                &crate::util::archive_names::ArchiveNames::default(),
             )
             .is_err()
         );

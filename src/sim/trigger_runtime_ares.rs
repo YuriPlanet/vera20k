@@ -211,12 +211,12 @@ impl Simulation {
                 .count();
             return found >= count as usize;
         }
-        let houses = match house {
-            Some(house) => vec![house],
-            None => self.houses.order().to_vec(),
+        let houses = match house.as_ref() {
+            Some(house) => std::slice::from_ref(house),
+            None => self.houses.order(),
         };
         let mut remaining = count;
-        for house in houses {
+        for &house in houses {
             let owned = self
                 .houses
                 .get(&house)

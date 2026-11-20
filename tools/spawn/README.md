@@ -95,7 +95,7 @@ A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 index) and `selectable` (the menu offers it), so a launcher can offer a mod's
 countries as the game does.
 `rules_digest` is Battle's. A network launch plays each player's own Terrain Deformation
-and Superweapon Limit, which the digest covers. Without these keys, players whose
+and Superweapon Limit, which the digest covers, and never the Building Production Queue. Without these keys, players whose
 builds or rules differ still never play together: a relay launch ends at its start
 with `agreement_mismatch`, a direct one as the launcher notes below say.
 `[Settings] Ares=Auto|On|Off` replaces the player's [Ares setting](../../docs/ares.md#the-ares-setting)

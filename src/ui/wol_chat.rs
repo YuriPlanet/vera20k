@@ -248,6 +248,10 @@ pub(crate) const PUBLIC_COLOR: u32 = 0xF0F0;
 pub(crate) const OPERATOR_COLOR: u32 = 0xFFFF00;
 /// The page sink's white (`[0x007EEF40]`).
 pub(crate) const PAGE_COLOR: u32 = 0xFF_FFFF;
+/// VERA: the lobby's line that a player's game differs from the host's
+/// (another version, build or rules), red, as the CnCNet client shows its
+/// modified-files warning. Not native.
+pub(crate) const WARNING_COLOR: u32 = 0x40_40FF;
 
 /// The sender record a sink receives (`User*`): flags `+0x00`, name
 /// `+0x24`, clan `+0x2E`.

@@ -105,7 +105,8 @@ impl Simulation {
         origin: (u16, u16),
         effects: FrameEffects<'_>,
     ) {
-        let cells = crate::sim::crew_survival::foundation_cells(origin.0, origin.1, foundation);
+        let cells: Vec<_> =
+            crate::sim::crew_survival::foundation_cells(origin.0, origin.1, foundation).collect();
         // The building is already unmarked, so presence cannot change between
         // cells. Before the first navigation build there is nothing to publish
         // or repair ([`Simulation::publish_recalculated_cells`]).

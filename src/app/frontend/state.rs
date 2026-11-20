@@ -176,7 +176,6 @@ pub(crate) struct FrontendState {
     /// which its next Create Game shows and its room publishes.
     pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
-    pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
     pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
@@ -341,6 +340,8 @@ pub(crate) enum ShellMessageBoxPurpose {
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
     /// MapSelect's failed Init message returns to the victory continuation.
     CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
+    /// The displayed choice is a projection of MatchSession's stage ballot.
+    AuthoredCampaignResult(Option<usize>),
     /// The updater's offer (`0x121`): Update, Skip Version or Later, over
     /// the release's change list.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

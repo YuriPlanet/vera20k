@@ -50,7 +50,12 @@ fn selling_visits_refund_one_upgrade_each_before_the_host_sale_tail() {
         .get_mut(1)
         .unwrap()
         .set_building_upgrades_for_test(2, [Some(a), Some(b), None]);
-    begin_selling(&mut sim, &rules, 1, false);
+    begin_selling(
+        &mut sim,
+        &rules,
+        1,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     let next_id = sim.next_stable_object_id();
     let native_id = sim.native_identity_cursor().unwrap();
     let mut constructor_rng = sim.clone_scenario_rng();
@@ -131,7 +136,12 @@ fn selling_a_sparse_top_slot_stays_safe_without_compacting_or_refunding() {
         .get_mut(1)
         .unwrap()
         .set_building_upgrades_for_test(3, [Some(a), None, None]);
-    begin_selling(&mut sim, &rules, 1, false);
+    begin_selling(
+        &mut sim,
+        &rules,
+        1,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     let next_id = sim.next_stable_object_id();
     let native_id = sim.native_identity_cursor();
     let rng = sim.scenario_rng().logical_state();
@@ -160,7 +170,12 @@ fn ares_pack_up_starts_at_the_bound_sale_rate() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, mut rules, _) = sale_world();
     rules.set_buildup_sell_rate_for_test("HOST", 3);
-    begin_selling(&mut sim, &rules, 1, false);
+    begin_selling(
+        &mut sim,
+        &rules,
+        1,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     for frame in [1, 2] {
         sim.session.set_binary_frame_for_test(frame);
         sim.visit_building_down(1, &rules, None, FrameEffects::default());

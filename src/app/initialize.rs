@@ -429,6 +429,11 @@ impl App {
                 crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
             })
             .unwrap_or_default();
+        let base_ini = game_config
+            .as_ref()
+            .map(|config| config.ini.clone())
+            .unwrap_or_default();
+        let (resources, ares_setting) = mods.select_resources(&base_ini, ares_setting);
         // VERARULES.INI is no longer read: a file that still holds settings
         // is named once the main menu is up, in the language just chosen.
         if capture_dimensions.is_none()
@@ -555,14 +560,36 @@ impl App {
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
-        let gpu = GpuContext::new(
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let backends = crate::app::persistence::startup_backend::backends(
+            game_config
+                .as_ref()
+                .map(|config| config.paths.settings_dir()),
+        );
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let gpu = match GpuContext::new(
             window.clone(),
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
-        )?;
+            backends,
+        ) {
+            // The API the start record asks for has no adapter here (DirectX
+            // 12 on a Windows without it): the default set; the record stays.
+            Err(error) if backends != wgpu::Backends::PRIMARY => {
+                log::warn!(
+                    "No graphics adapter through {backends:?} ({error:#}); starting on the default graphics APIs"
+                );
+                GpuContext::new(
+                    window.clone(),
+                    event_loop.owned_display_handle(),
+                    capture || hidden_spawn_window,
+                    wgpu::Backends::PRIMARY,
+                )?
+            }
+            result => result?,
+        };
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
         // player is told why while the start goes on.
@@ -597,6 +624,7 @@ impl App {
                 profile_screen,
                 external_launch,
                 quickplay_allowed,
+                resources,
                 ares_setting,
             )
         };
@@ -625,6 +653,7 @@ impl App {
         launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
+        resources: crate::util::mod_definition::ResourceConfig,
         ares_setting: crate::util::ares_launch::AresSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
@@ -662,11 +691,9 @@ impl App {
                     mods.dir(),
                     startup_options.media_archive_mode,
                     ares_setting,
-                    crate::assets::asset_manager::ArchiveFamily::for_ini_profile(
-                        config.ini.profile,
-                    ),
+                    &resources.archives,
                 )
-                .and_then(|assets| assets.with_ini_roots(&config.ini))
+                .and_then(|assets| assets.with_resource_config(&resources))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
@@ -697,13 +724,9 @@ impl App {
                 &mut main_menu_shell_error,
             )
         });
-        let startup_fnt = startup_asset_manager.as_ref().and_then(|assets| {
-            assets.get_ref("GAME.FNT").and_then(|data| {
-                crate::assets::fnt_file::FntFile::from_bytes(data)
-                    .map_err(|err| log::warn!("Failed to parse startup GAME.FNT: {err}"))
-                    .ok()
-            })
-        });
+        let startup_fnt = startup_asset_manager
+            .as_ref()
+            .and_then(crate::render::shell_ui_style_assets::load_game_font);
         let bit_font = match startup_fnt.as_ref() {
             Some(fnt) => BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt),
             None => BitFont::without_fnt(&gpu.device, &gpu.queue, &batch_renderer),
@@ -786,14 +809,11 @@ impl App {
             // screen: the presented swapchain frame stays composited while this
             // thread blocks.
             let mut process_assets =
-                crate::app::process_assets::ProcessAssets::new_with_ini_config(
+                crate::app::process_assets::ProcessAssets::new(
                     startup_options.media_archive_mode,
                     startup_audio.load_audio_indices,
-                    game_config
-                        .as_ref()
-                        .map(|config| config.ini.clone())
-                        .unwrap_or_default(),
                 )
+                .with_resources(resources)
                 .with_personal_rules(personal_rules)
                 .with_mod_dir(mods.dir().map(Path::to_path_buf))
                 .with_ares_setting(ares_setting);
@@ -850,7 +870,11 @@ impl App {
                         log::warn!("Could not list Skirmish scenario records: {err:#}");
                         Vec::new()
                     });
-                let skirmish_scenario_records = if skirmish_scenario_records.is_empty() {
+                let skirmish_scenario_records = if skirmish_scenario_records.is_empty()
+                    && startup_asset_manager
+                        .as_ref()
+                        .is_none_or(|assets| assets.client_install().is_none())
+                {
                     scenario_sources::list_available_maps()
                 .unwrap_or_else(|err| {
                     log::warn!("Could not list fallback maps: {:#}", err);
@@ -1133,6 +1157,7 @@ impl App {
                     commander_feedback: Default::default(),
                     chrono_screen: Default::default(),
                     scenario_pause: Default::default(),
+                    narrative_sync: Default::default(),
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,
@@ -1309,7 +1334,6 @@ impl App {
                 wol_room_name: None,
                 wol_room_unranked: false,
                 wol_room_watching: Default::default(),
-                lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,

@@ -154,6 +154,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) commander_feedback: crate::app::commander_feedback::CommanderFeedback,
     pub(crate) chrono_screen: crate::app::chrono_screen::ChronoScreenPresentation,
     pub(crate) scenario_pause: crate::app::match_runtime::scenario_pause::ScenarioPauseClock,
+    pub(crate) narrative_sync: crate::app::match_runtime::narrative_sync::NarrativeSync,
     /// Requested-versus-resolved atlas identity used to construct `radar_anim`.
     ///
     /// Kept beside the animation so tactical evidence never reconstructs

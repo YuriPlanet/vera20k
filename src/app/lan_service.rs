@@ -283,11 +283,11 @@ impl LanService {
 
     /// Physical source, effective map and generated preview/staging are one
     /// admission through the retained transfer owner, for this exact options.
-    fn setup_maps_verified(&self) -> bool {
+    fn setup_maps_verified(&self, campaign_verified: Option<bool>) -> bool {
         // A direct spawn's map is the launcher's file beside spawn.ini; the
         // selected-mode agreement still compares the rules digest at GO.
         self.setup_scope
-            .is_some_and(|scope| self.preadmitted || self.maps.current_verified(scope))
+            .is_some_and(|scope| self.preadmitted || campaign_verified.unwrap_or_else(|| self.maps.current_verified(scope)))
     }
 
     pub(super) fn setup_roster_complete(
@@ -1337,9 +1337,9 @@ pub(crate) fn install_online_transport(
     );
     // A watcher has no source of its own: it stands in the seat of the
     // player it follows (relay README "Watchers").
+    let watching = transport.relay_watch_delay().is_some();
     anyhow::ensure!(
-        transport.relay_watch_delay().is_some()
-            || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
+        watching || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
         "relay identity differs from the admitted local participant"
     );
     for source in 0..launch.humans.len() {
@@ -1359,6 +1359,12 @@ pub(crate) fn install_online_transport(
         .session
         .network_endpoint(host_source)
         .ok_or_else(|| anyhow::anyhow!("online host has no admitted endpoint"))?;
+    if watching {
+        state
+            .match_state
+            .session
+            .admit_local_network_watcher(transport.primary_addr()?)?;
+    }
     let mut service = LanService::with_transport(transport);
     // The setup dialog is discarded before loading. Retain the same admitted
     // host binding as LAN so timing authority survives that handoff.
@@ -1403,8 +1409,9 @@ impl DirectAdmission {
         // Hash the launch every participant shares, so a different map,
         // option or roster can never enter another participant's scope. It
         // also holds each player's own Terrain Deformation and Superweapon
-        // Limit (`start_spawn_session`), so players whose Options rules
-        // differ never share one either.
+        // Limit (`start_spawn_session`, which leaves the Building Production
+        // Queue off), so players whose Options rules differ never share one
+        // either.
         let mut shared = launch.clone();
         shared.local_player_index = 0;
         shared.selected_map_file = None;
@@ -1585,7 +1592,8 @@ fn poll_direct_start(state: &mut AppState) {
         return;
     }
     if let Err(error) = super::shell_network_setup::begin_external_lan_go(state) {
-        super::App::fail_external_launch(state, &format!("direct start: {error:#}"));
+        log::warn!("Direct LAN start failed: {error:#}");
+        super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
     }
 }
 
@@ -2054,6 +2062,9 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         incoming.product_id == LAN_PRODUCT_ID,
         "different LAN product"
     );
+    if crate::net::lan_messages::extended_setup::campaign::is_control(&incoming.payload) {
+        return receive_campaign_control(state, incoming);
+    }
     if state
         .match_state
         .lan_service
@@ -2115,15 +2126,16 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     }
     let message = LanMessage::decode(&incoming.payload)?;
     if super::loading::pump::network_loading_active(state)
+        && let Some(departed) = state.match_state.lan_service.as_ref().and_then(|service| {
+            service
+                .loading_departure_source(&state.match_state.session, incoming.source, &message)
+                .ok()
+                .flatten()
+        })
         && state
             .match_state
-            .lan_service
-            .as_ref()
-            .is_some_and(|service| {
-                service
-                    .loading_departure_source(&state.match_state.session, incoming.source, &message)
-                    .is_ok_and(|source| source.is_some())
-            })
+            .session
+            .retire_network_start_on_departure(departed)
     {
         //Native48D81A->5DA750 has already-bound private Houses. VERA builds
         //those after synchronous loading: cancel this attempt at its safe
@@ -2137,6 +2149,15 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     }
     if state.match_state.live_network.is_some() {
         if message.kind() == LanMessageKind::Departure {
+            let session = &mut state.match_state.session;
+            if session.campaign_result().is_some() {
+                if let Some(source) = session.network_endpoint_source(incoming.source) {
+                    session.disconnect_network_participant(source);
+                } else {
+                    session.disconnect_network_watcher(incoming.source);
+                }
+                return Ok(());
+            }
             //ProcessGlobalPackets48D81A uses the active private endpoint;
             //the packet name is irrelevant. This is not a synchronized EXIT.
             let matched = &mut state.match_state;
@@ -2419,7 +2440,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 .as_ref()
                 .is_some_and(|service| {
                     service.validate_peer_agreement(&proof)
-                        && service.setup_maps_verified()
+                        && service.setup_maps_verified(super::shell_network_setup::campaign_room::local_map_verified(&state.match_state.session))
                         && service.setup_roster_complete(&state.match_state.session)
                 })
             {
@@ -2469,7 +2490,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .as_ref()
                     .is_some_and(|service| {
                         service.validate_peer_agreement(&proof)
-                            && service.setup_maps_verified()
+                            && service.setup_maps_verified(super::shell_network_setup::campaign_room::local_map_verified(&state.match_state.session))
                             && service.setup_roster_complete(&state.match_state.session)
                     })
                 {
@@ -3562,9 +3583,11 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .enumerate()
         .map(|(source, human)| {
-            let row = human
-                .raw_slot_index
-                .ok_or_else(|| anyhow::anyhow!("admitted human has no shared setup row"))?;
+            let row = if state.match_state.session.campaign_room().is_some() {
+                state.match_state.session.network_source_sender(source).and_then(|sender| u8::try_from(sender).ok())
+            } else {
+                human.raw_slot_index
+            }.ok_or_else(|| anyhow::anyhow!("admitted human has no shared setup row"))?;
             let house = super::match_runtime::network_match::source_house(
                 &state.match_state.session,
                 sim,
@@ -3584,13 +3607,13 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .network_connected_source_indices()
         .iter()
         .map(|&source| {
-            state
-                .match_state
-                .session
-                .network_setup()
-                .and_then(|launch| launch.humans.get(source))
-                .and_then(|human| human.raw_slot_index)
-                .ok_or_else(|| anyhow::anyhow!("active human has no shared setup row"))
+            let session = &state.match_state.session;
+            let row = if session.campaign_room().is_some() {
+                session.network_source_sender(source).and_then(|sender| u8::try_from(sender).ok())
+            } else {
+                session.network_setup().and_then(|launch| launch.humans.get(source)).and_then(|human| human.raw_slot_index)
+            };
+            row.ok_or_else(|| anyhow::anyhow!("active human has no shared setup row"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     let mode = if state.match_state.session_mode() == SessionMode::Wol {
@@ -3739,6 +3762,14 @@ pub(crate) fn return_transport(state: &mut AppState) {
     let Some(live) = state.match_state.live_network.take() else {
         return;
     };
+    if live.watching()
+        && let Ok(endpoint) = live.primary_addr()
+    {
+        state
+            .match_state
+            .session
+            .disconnect_network_watcher(endpoint);
+    }
     if let Some(service) = state.match_state.lan_service.as_mut() {
         let mut transport = live.into_transport();
         transport.connections_mut().reset();
@@ -3750,6 +3781,38 @@ pub(crate) fn return_transport(state: &mut AppState) {
         service.transport = Some(transport);
         service.clear_setup();
     }
+}
+
+/// A LAN stage continues on the same socket and admitted global scope.
+/// Clear private command traffic before loading its successor.
+pub(crate) fn hold_transport_for_continuation(state: &mut AppState) {
+    if state.match_state.session_mode() != SessionMode::Lan {
+        return;
+    }
+    if let (Some(service), Some(live)) = (
+        state.match_state.lan_service.as_mut(),
+        state.match_state.live_network.take(),
+    ) {
+        let mut transport = live.into_transport();
+        transport.connections_mut().reset();
+        service.transport = Some(transport);
+    }
+}
+
+pub(crate) fn advance_campaign_transport(
+    state: &mut AppState,
+    receipts: Vec<GlobalMessage>,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let service = state.match_state.lan_service.as_mut().context("no LAN campaign service")?;
+    let scope = service.setup_scope.context("no LAN campaign scope")?;
+    let live = state.match_state.live_network.take().context("no LAN campaign transport")?;
+    let mut transport = live.into_transport();
+    let next = transport.advance_lan_stage_scope(scope, receipts);
+    service.transport = Some(transport);
+    service.setup_scope = Some(next?);
+    service.pending_setup.clear();
+    Ok(())
 }
 
 pub(crate) mod cooperative;
@@ -3783,6 +3846,121 @@ fn send_sources(state: &mut AppState, bytes: &[u8], sources: impl IntoIterator<I
     }
 }
 
+fn campaign_control_scope(
+    state: &AppState,
+) -> Option<(Option<crate::net::lan_messages::SessionScope>, u32)> {
+    let session = &state.match_state.session;
+    let attempt = session.campaign_room()?.attempt;
+    let scope = match session.network_return_context()?.session_mode() {
+        SessionMode::Lan => Some(state.match_state.lan_service.as_ref()?.setup_scope()?),
+        SessionMode::Wol if state.match_state.live_network.is_some() => None,
+        _ => return None,
+    };
+    Some((scope, attempt))
+}
+
+/// The admitted transport peer, not the role source sorted by the manifest.
+pub(crate) fn campaign_host_source(state: &AppState) -> Option<usize> {
+    let session = &state.match_state.session;
+    if session.host() {
+        return super::match_runtime::network_match::local_source(session);
+    }
+    let (_, endpoint) = state.match_state.lan_service.as_ref()?.admitted_host.as_ref()?;
+    session.network_endpoint_source(*endpoint)
+}
+
+pub(crate) enum CampaignControlSend {
+    Immediate,
+    Queued(u64),
+}
+
+pub(crate) fn send_campaign_control(
+    state: &mut AppState,
+    recipients: &[usize],
+    signal: crate::net::lan_messages::extended_setup::campaign::Signal,
+) -> Option<CampaignControlSend> {
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal};
+    let (scope, attempt) = campaign_control_scope(state)?;
+    let bytes = Record {
+        scope,
+        attempt,
+        signal,
+    }
+    .encode();
+    let endpoints = recipients
+        .iter()
+        .map(|&source| state.match_state.session.network_endpoint(source))
+        .collect::<Option<Vec<_>>>()?;
+    if matches!(signal, Signal::StageAbort | Signal::NarrativeAbort { .. }) {
+        // Both callers reset the match transport before the next I/O poll.
+        // Write these terminal records on the still-admitted route now.
+        let sent = if let Some(live) = state.match_state.live_network.as_mut() {
+            live.send_terminal_global(&bytes, &endpoints)
+        } else if let Some(transport) = state
+            .match_state
+            .lan_service
+            .as_mut()
+            .and_then(|service| service.transport.as_mut())
+        {
+            transport.send_terminal_global(&bytes, &endpoints)
+        } else {
+            return None;
+        };
+        if let Err(error) = sent {
+            log::warn!("Cannot send campaign abort before leaving the match: {error}");
+            return None;
+        }
+        return Some(CampaignControlSend::Immediate);
+    }
+    let discarded_at_enqueue = if let Some(live) = state.match_state.live_network.as_mut() {
+        live.enqueue_reliable_globals(&bytes, &endpoints)
+    } else {
+        state
+            .match_state
+            .lan_service
+            .as_mut()?
+            .transport
+            .as_mut()?
+            .enqueue_reliable_globals(&bytes, &endpoints)
+    }?;
+    Some(CampaignControlSend::Queued(discarded_at_enqueue))
+}
+
+fn receive_campaign_control(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal};
+    let Some(record) = Record::decode(&incoming.payload) else {
+        anyhow::bail!("invalid campaign control record");
+    };
+    if campaign_control_scope(state) != Some((record.scope, record.attempt)) {
+        return Ok(());
+    }
+    let session = &state.match_state.session;
+    let Some(source) = session
+        .network_endpoint_source(incoming.source)
+        .filter(|source| session.network_connected_source_indices().contains(source))
+    else {
+        return Ok(());
+    };
+    match record.signal {
+        Signal::NarrativeReady { .. }
+        | Signal::NarrativeRelease { .. }
+        | Signal::NarrativeAbort { .. } => {
+            super::match_runtime::narrative_sync::receive(state, source, record.signal);
+        }
+        Signal::StageVote(_)
+        | Signal::StagePrepare { .. }
+        | Signal::StageAccepted(_)
+        | Signal::StageBegin(_)
+        | Signal::StageBegun(_)
+        | Signal::StageAbort => {
+            let receipt = (record.scope.is_some() && matches!(record.signal, Signal::StageBegun(_)))
+                .then_some(incoming);
+            super::match_runtime::stage_result::receive(state, source, record.signal, receipt);
+        }
+    }
+    Ok(())
+}
+
 fn drain_match_requests(state: &mut AppState) {
     use super::match_runtime::session::NetworkSendRequest;
     if let Some(service) = state.match_state.lan_service.as_mut()
@@ -3790,10 +3968,7 @@ fn drain_match_requests(state: &mut AppState) {
     {
         // The held loader fails its load on the same error.
         log::warn!("Loading report failed: {error:#}");
-        super::loading::pump::cancel_network_loading(
-            state,
-            &format!("{}: {error:#}", crate::i18n::tr("VERA:LoadingFailed")),
-        );
+        super::loading::pump::cancel_network_loading(state, &crate::i18n::tr("VERA:LoadingFailed"));
     }
     let requests = state.match_state.session.take_network_send_requests();
     for request in requests {
@@ -4052,7 +4227,7 @@ fn drain_setup_requests(state: &mut AppState, now: u32) {
                 if super::shell_network_setup::external(state) {
                     super::App::fail_external_launch(
                         state,
-                        &format!("direct setup request: {error:#}"),
+                        &crate::i18n::tr("VERA:StartRefusedSetup"),
                     );
                     return;
                 }
@@ -4102,7 +4277,7 @@ fn setup_request(
                 .as_ref()
                 .is_some_and(|service| {
                     service.setup_agreement.is_some()
-                        && service.setup_maps_verified()
+                        && service.setup_maps_verified(super::shell_network_setup::campaign_room::local_map_verified(&state.match_state.session))
                         && service.setup_roster_complete(&state.match_state.session)
                         && service.can_queue_go(recipients)
                 })
@@ -4236,7 +4411,7 @@ fn setup_request(
                 .lan_service
                 .as_ref()
                 .is_some_and(|service| {
-                    service.setup_maps_verified()
+                    service.setup_maps_verified(super::shell_network_setup::campaign_room::local_map_verified(&state.match_state.session))
                         && service.setup_roster_complete(&state.match_state.session)
                         && service.can_queue_go(1)
                 })
@@ -4285,7 +4460,7 @@ fn setup_request(
             .as_ref()
             .is_none_or(|service| {
                 service.setup_agreement.is_none()
-                    || !service.setup_maps_verified()
+                    || !service.setup_maps_verified(super::shell_network_setup::campaign_room::local_map_verified(&state.match_state.session))
                     || !service.setup_roster_complete(&state.match_state.session)
             })
     {
@@ -4639,8 +4814,8 @@ pub(crate) fn loading_test_pair() -> (
     }
     host_session.prepare_network_timing(2, || 0).unwrap();
     guest_session.prepare_network_timing(2, || 0).unwrap();
-    let host_startup = host_session.freeze_network_start(77).unwrap();
-    let guest_startup = guest_session.freeze_network_start(77).unwrap();
+    let host_startup = host_session.freeze_network_start(77, None).unwrap();
+    let guest_startup = guest_session.freeze_network_start(77, None).unwrap();
     (
         host,
         host_session,
@@ -5073,7 +5248,7 @@ mod tests {
         let guest_session = session(false, host_address);
         let ordinary = service();
         assert!(!ordinary.setup_roster_complete(&host_session));
-        assert!(!ordinary.setup_maps_verified());
+        assert!(!ordinary.setup_maps_verified(None));
         host.adopt_direct_admission(&host_admission);
         guest.adopt_direct_admission(&guest_admission);
         let agreement = super::super::shell_network_setup::agreement::MultiplayerAgreement {
@@ -5084,7 +5259,7 @@ mod tests {
         guest.setup_agreement = Some(agreement);
         assert!(host.setup_roster_complete(&host_session));
         assert!(guest.setup_roster_complete(&guest_session));
-        assert!(host.setup_maps_verified() && guest.setup_maps_verified());
+        assert!(host.setup_maps_verified(None) && guest.setup_maps_verified(None));
         assert_eq!(guest.admitted_host, Some(("Host".to_owned(), host_address)));
         assert!(!host.direct_peers_heard(), "GO waits for every guest");
 
@@ -5838,7 +6013,7 @@ mod tests {
         }
 
         session.prepare_network_timing(2, || 0).unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         let progress =
             crate::net::lan_messages::ingame::LoadingProgressMessage::new("Host", 100).unwrap();
         assert!(sender.send(progress.as_bytes(), direct(guest), true));
@@ -6116,7 +6291,7 @@ mod tests {
         let host = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30123);
         session.bind_network_endpoint(&host_name, host).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         let (local_house, seed, connections) =
             gameplay_connections(&session, &sim, LOBBY_RETRY_TIMING).unwrap();
         assert_eq!((local_house, seed), (0, 19));
@@ -6148,7 +6323,7 @@ mod tests {
         session.bind_network_endpoint("Host", host).unwrap();
         session.bind_network_endpoint("Third", third).unwrap();
         session.prepare_wol_timing([0; 3], false).unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         let mut sim = Simulation::with_seed(19);
         for (house, source) in [1, 2, 0].into_iter().enumerate() {
             let owner = sim.intern(&session.network_source_owner(source).unwrap());

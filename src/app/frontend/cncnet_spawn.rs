@@ -49,19 +49,6 @@ pub(crate) struct SpawnRequest {
     text: String,
 }
 
-/// The stock Battle row, `GameMode`'s default; `--probe` digests the rules
-/// through its mode file.
-pub(crate) fn spawn_battle_mode() -> SkirmishLaunchMode {
-    SkirmishLaunchMode::stock(crate::skirmish_launch::BATTLE_MODE_ID).expect("stock Battle row")
-}
-
-/// The stock rows a network spawn may select. A Cooperative launch is one mission: it
-/// holds no campaign progress record for its Start (`0x005C1D80`) to bind, so
-/// `+0xA0` (`0x005C3710`) records nothing and no next mission follows.
-pub(crate) fn spawn_modes() -> impl Iterator<Item = SkirmishLaunchMode> {
-    (1..=9).filter_map(SkirmishLaunchMode::stock)
-}
-
 /// One MPModesMD.ini row by id, or none.
 type ModeRow<'a> = &'a dyn Fn(i32) -> Option<SkirmishLaunchMode>;
 
@@ -843,7 +830,7 @@ fn skirmish(
                 session.humans[source].role = role;
             }
         }
-        // No progress record to bind the partners into (see `spawn_modes`).
+        // External Cooperative launches have no campaign progress record to bind partners into.
         Ok(ModeStartEffect::None | ModeStartEffect::CooperativePartners) => {}
         Err(_) => bail!(
             "GameMode={} cannot start with these settings",

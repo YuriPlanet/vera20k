@@ -121,6 +121,8 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
+        // VERA right-click orders: a double-click cannot span a focus change.
+        state.match_state.input.last_selection_click = None;
         // VERA formation line: a line being drawn goes with the band box.
         state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();
@@ -406,22 +408,31 @@ impl App {
             }
             Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
+                // Startup built every renderer and its shaders on this device:
+                // its API works here, and a loss from now on is play's
+                // (`persistence::startup_backend`).
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                crate::app::persistence::startup_backend::start_finished();
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {
-                    let loading = crate::app::loading::pump::LoadingRequest::replay(
-                        request
-                            .replay
-                            .standalone_startup()
-                            .expect("validated replay request"),
-                        request.map_beside.as_deref(),
-                    );
-                    state.match_state.match_diagnostics.begin_playback(
-                        request.replay,
-                        request.capture_output,
-                        request.replay_sha256,
-                    );
-                    crate::app::loading::pump::begin_loading(&mut state, loading);
+                    let loading = request.replay.standalone_startup().and_then(|startup| {
+                        crate::app::loading::pump::LoadingRequest::replay(
+                            startup,
+                            request.map_beside.as_deref(),
+                        )
+                    });
+                    match loading {
+                        Ok(loading) => {
+                            state.match_state.match_diagnostics.begin_playback(
+                                request.replay,
+                                request.capture_output,
+                                request.replay_sha256,
+                            );
+                            crate::app::loading::pump::begin_loading(&mut state, loading);
+                        }
+                        Err(error) => log::error!("The diagnostic replay cannot start: {error:#}"),
+                    }
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 let mut browser_spawn_failure = None;

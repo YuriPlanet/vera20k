@@ -1652,12 +1652,12 @@ impl MapLoadInitial {
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
-        session_mode: crate::sim::scenario_session::ScenarioGameMode,
+        topology: crate::sim::scenario_session::ExecutionTopology,
     ) {
         self.retained_campaign_special_flags = resident
             .as_deref()
             .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = if session_mode.is_network() {
+        self.retained_local_variables = if topology.is_lockstep() {
             None
         } else {
             resident
@@ -1804,7 +1804,11 @@ mod fresh_transport_tests {
         );
         let before = resident.state_hash();
         let mut initial = MapLoadInitial::from_test_map_source(map, source);
-        initial.retain_process_state(&mut Default::default(), Some(&mut resident), mode);
+        initial.retain_process_state(
+            &mut Default::default(),
+            Some(&mut resident),
+            mode.execution_topology(),
+        );
         assert_eq!(resident.state_hash(), before, "preparation is read-only");
         let mut staged = Simulation::new();
         if let Some(prior) = initial.retained_local_variables {
@@ -1948,15 +1952,21 @@ pub(super) fn install_startup_session_mode(
     simulation: &mut crate::sim::world::Simulation,
     startup: &LoadingStartup,
 ) {
-    simulation.install_session_admission(
-        startup.session_mode(),
-        startup.launch_session().map(|launch| launch.mode.class),
-        startup.match_spec().rules(),
-    );
+    if startup.authored_campaign().is_none() {
+        simulation.install_session_admission(
+            startup.session_mode(),
+            startup.launch_session().map(|launch| launch.mode.class),
+            startup.match_spec().rules(),
+        );
+    }
     if let LoadingStartup::Network(accepted) = startup {
         simulation.install_network_timing(accepted.max_ahead_frames());
         let wol = accepted.wol_start();
         simulation.install_wol_start(wol.tournament, wol.squad_lists.clone());
+    } else if let LoadingStartup::Replay { launch, .. } = startup
+        && let Some(network) = launch.network_start()
+    {
+        network.install(simulation);
     }
 }
 
@@ -2414,6 +2424,7 @@ impl MapLoadInitial {
             &house_roster,
             rule_policy,
             Some(&match_launch_descriptor),
+            None,
         )
         .expect("generated scenario post-map initialization");
         let crate_name_id =
@@ -2673,7 +2684,7 @@ pub(crate) fn load_map_initial_with_assets(
         // real TMP data — the shore tiler and zone classifier read these.
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-                asset_manager.get(name)
+                asset_manager.get_ref(name)
             });
 
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
@@ -3076,6 +3087,13 @@ fn load_map_first_step(
                     Some(startup),
                 )
             }
+            FreshScenarioParts::AuthoredCampaign { match_seed } => (
+                FreshMapMaterialization::Authored,
+                match_seed,
+                None,
+                None,
+                None,
+            ),
         };
     validate_fresh_transport_before_effects(
         materialization,
@@ -3084,7 +3102,7 @@ fn load_map_first_step(
     )?;
     // Fresh construction follows the admitted scenario family. A replay's
     // recorded session mode is installed later for the simulation.
-    let construction_profile = if campaign.is_some() {
+    let construction_profile = if campaign.is_some() || startup.authored_campaign().is_some() {
         BootstrapRuleProfile::Campaign
     } else {
         BootstrapRuleProfile::Multiplayer
@@ -3189,10 +3207,10 @@ fn load_map_first_step(
                         )
                     }
                 } else {
-                    assert!(
-                        prepared_prefix.is_none(),
-                        "campaign loading cannot consume an ordinary prefix"
-                    );
+                    if let Some(preparation) = prepared_prefix {
+                        native_rules_owner.cancel_prepared_noncampaign_scenario_prefix(preparation);
+                        anyhow::bail!("campaign loading cannot consume an ordinary prefix");
+                    }
                     crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
                         campaign_named_ini.as_ref(),
                     )
@@ -3279,9 +3297,15 @@ fn load_map_first_step(
                             {
                                 bootstrap_rng.install_process_mapgen_continuation(continuation);
                             }
-                            let campaign_game_options = campaign
-                                .as_ref()
-                                .and_then(|campaign| campaign.game_options());
+                            let authored_campaign = startup.authored_campaign();
+                            let campaign_game_options = if let Some(game_speed) = startup.authored_campaign_speed() {
+                                Some(crate::sim::game_options::GameOptions {
+                                    game_speed,
+                                    ..Default::default()
+                                })
+                            } else {
+                                campaign.as_ref().and_then(|campaign| campaign.game_options())
+                            };
                             let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
                                 FreshScenarioPrefix::StockOffline(
                                     plan.bind_native_rules_receipt(
@@ -3292,11 +3316,25 @@ fn load_map_first_step(
                                         &rules,
                                     )?,
                                 )
+                            } else if let Some(network) = authored_campaign {
+                                FreshScenarioPrefix::Campaign {
+                                    difficulty: network.start.difficulty(),
+                                    mission_counter: network.start.mission_counter(),
+                                    network: Some(network),
+                                    native_rules_receipt,
+                                    rules: &rules,
+                                    map_data: &map_data,
+                                    house_roster: &house_roster,
+                                    game_options: campaign_game_options.as_ref(),
+                                    campaign_index: 0,
+                                    restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                                }
                             } else {
                                 let campaign = campaign
                                     .as_ref()
                                     .expect("campaign admission supplies its startup");
                                 FreshScenarioPrefix::Campaign {
+                                    network: None,
                                     native_rules_receipt,
                                     rules: &rules,
                                     map_data: &map_data,
@@ -3312,8 +3350,9 @@ fn load_map_first_step(
                             };
                             let scenario_descriptor = crate::sim::scenario_session::ScenarioDescriptor {
                         seed: match_seed,
-                        map_name: skirmish_launch_session
-                            .and_then(|launch| launch.selected_map_file.clone())
+                        map_name: authored_campaign.map(|_| startup.selected_map_file().to_owned())
+                            .or_else(|| skirmish_launch_session
+                            .and_then(|launch| launch.selected_map_file.clone()))
                             .or_else(|| {
                                 campaign
                                     .as_ref()
@@ -3323,23 +3362,6 @@ fn load_map_first_step(
                             .unwrap_or_default(),
                         theater: map_data.header.theater.clone(),
                         rule_policy,
-                        // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
-                        // replace active SpecialFlags from session staging.
-                        no_damage: !rule_policy.uses_room_options()
-                            && map_data.special_flags.inert.unwrap_or(false),
-                        // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
-                        // HarvesterImmune=`; a nonzero game mode replaces the map's flags
-                        // with the session staging word (`0x00687C16..0x00687C29`), whose
-                        // PregameSetup arm stores the session's Harvester Truce byte
-                        // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
-                        // lobby never sets the truce (`0x006AD89D` clears it), so every
-                        // skirmish leaves the bit off.
-                        harvester_immune: if rule_policy.uses_room_options() {
-                            skirmish_launch_session
-                                .is_some_and(|launch| launch.options.harvester_truce)
-                        } else {
-                            map_data.special_flags.harvester_immune.unwrap_or(false)
-                        },
                         free_radar: map_data.basic.free_radar.unwrap_or(false),
                         ignore_global_ai_triggers: map_data
                             .basic
@@ -3352,12 +3374,6 @@ fn load_map_first_step(
                         truck_crate: map_data.basic.truck_crate.unwrap_or(false),
                         ice_growth_enabled: map_data.basic.ice_growth_enabled,
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
-                        // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-                        // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: rule_policy.uses_room_options()
-                            || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: rule_policy.uses_room_options()
-                            || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,
                         map_height: scenario_cell_extent,
@@ -3374,7 +3390,13 @@ fn load_map_first_step(
                         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(
                             &lighting_profiles,
                         ),
-                    };
+                        ..Default::default()
+                    }
+                    .with_authored_special_flags(
+                        &map_data.special_flags,
+                        skirmish_launch_session
+                            .is_some_and(|launch| launch.options.harvester_truce),
+                    );
                             log::info!("Match seed: 0x{:08X}", scenario_descriptor.seed);
                             // Consume the paired RNG/native-ID prefix here: Fill and every later load
                             // constructor now mutate the same Simulation identity that reaches gameplay.
@@ -3995,7 +4017,14 @@ fn load_map_first_step(
             &house_roster,
             rule_policy,
             match_launch_descriptor.as_ref(),
+            startup.authored_campaign().map(|campaign| campaign.start.carry_over()),
         )?;
+                                                                            if let LoadingStartup::AuthoredCampaignReplay { native_id_prefix, .. } = &startup {
+            anyhow::ensure!(
+                sim.native_identity_prefix_checkpoint() == Some(*native_id_prefix),
+                "replay campaign native-ID prefix differs from the reconstructed House roster"
+            );
+        }
                                                                             if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");
         }

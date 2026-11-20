@@ -154,7 +154,6 @@ enum Step {
     },
     /// VERA: after a match from VERA's own room, behind a wait box until the
     /// lobby gives the room back or closes it.
-    ReturningToRoom,
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
@@ -1020,8 +1019,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         // first, and a failed login ends it (the welcome).
         visit.relogin = Some(postmatch);
         // The lost connection took the kept game room with it.
-        visit.back_to_room = false;
-        visit.cooperative_resume = None;
+        state.match_state.session.take_network_room_return();
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
         state.frontend.wol_lobby_art = None;
@@ -1044,9 +1042,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG, false);
     let now = Instant::now();
-    let returning = postmatch && visit.back_to_room;
+    let returning = postmatch && state.match_state.session.awaiting_wol_room_return();
     if !returning {
-        visit.cooperative_resume = None;
+        state.match_state.session.take_network_room_return();
     }
     let resume = !postmatch && visit.lobby.is_some();
     if resume {
@@ -1130,7 +1128,8 @@ fn list_lobbies(state: &mut AppState) {
 /// box shows, whose button gives up the room for the chat lobby.
 fn await_room(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
-        lobby.step = Step::ReturningToRoom;
+        // MatchSession owns the room return. This list only fills the rows.
+        lobby.step = Step::Ready;
     }
     // The chat lobbies still come, so leaving the room later finds one.
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
@@ -1151,17 +1150,14 @@ pub(super) fn room_refused(state: &mut AppState) {
 }
 
 pub(super) fn awaiting_room(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
+    state.match_state.session.awaiting_wol_room_return()
 }
 
 /// VERA: the kept room is gone (it closed, or the player gave up waiting).
 /// The runner goes on as after any match: the chat-lobby list, then a join.
 /// The join itself leaves the room on the lobby if it is still there.
 fn room_not_returned(state: &mut AppState, closed: bool) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-        visit.cooperative_resume = None;
-    }
+    state.match_state.session.take_network_room_return();
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -1188,11 +1184,10 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         log::debug!("WOL room reopened after the wait ended");
         return;
     }
-    let mut resume = None;
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-        resume = visit.cooperative_resume.take();
-    }
+    let (resume, campaign) = match state.match_state.session.take_network_room_return() {
+        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative, campaign } => (cooperative, campaign),
+        _ => (None, None),
+    };
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
     if let Some(lobby) = lobby_mut(state) {
@@ -1207,7 +1202,17 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         .frontend
         .multiplayer_shell_runtime
         .lan_create_observer();
-    open_game_room(state, &listed, observe, resume);
+    if open_game_room(state, &listed, observe, resume)
+        && let Some(campaign) = campaign
+        && let Err(error) = setup::campaign_room::resume_after_wol_result(
+            state,
+            *campaign,
+            listed.iter().map(|member| member.name.as_str()),
+        )
+    {
+        log::warn!("WOL campaign continuation refused: {error:#}");
+        message_line(state, crate::i18n::tr("VERA:CampaignRoomUnavailable"));
+    }
 }
 
 /// The others in a room this game hosts again take rows as joiners would,
@@ -1249,7 +1254,7 @@ fn open_game_room(
     state: &mut AppState,
     listed: &[WolMember],
     observe: bool,
-    resume: Option<crate::app::shell_network_setup::CooperativeResume>,
+    resume: Option<crate::app::match_runtime::session::CooperativeResume>,
 ) -> bool {
     let me = nickname(state);
     let host = listed
@@ -2712,9 +2717,7 @@ pub(crate) fn watch_admitted(state: &mut AppState) -> bool {
     }
     lobby.step = Step::Ready;
     close_wait(state);
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-    }
+    state.match_state.session.take_network_room_return();
     true
 }
 
@@ -3168,6 +3171,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
 
 /// A lobby box or wait-box button released.
 pub(super) fn box_command(state: &mut AppState, control: u16) {
+    let returning_to_room = awaiting_room(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -3216,8 +3220,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             super::buddy::stopped(state);
         }
         WAIT_DISCONNECT
-            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
-                && matches!(lobby.step, Step::ReturningToRoom) =>
+            if lobby.wait.as_ref().is_some_and(|wait| wait.shown) && returning_to_room =>
         {
             room_not_returned(state, false);
         }
@@ -3874,6 +3877,9 @@ pub(super) struct ReceivedMessage {
     /// VERA: the lobby's own line, `text` from its phrases in the interface
     /// language.
     pub(super) localized: bool,
+    /// VERA: the lobby's warning that a player's game differs from the
+    /// host's, shown red (`wol_chat::WARNING_COLOR`).
+    pub(super) warning: bool,
     pub(super) private: bool,
     pub(super) action: bool,
     pub(super) ansi: bool,
@@ -3896,6 +3902,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         from,
         text,
         localized,
+        warning,
         private,
         action,
         ansi,
@@ -3930,6 +3937,11 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         return;
     }
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
+    let color = if warning {
+        wol_chat::WARNING_COLOR
+    } else {
+        color
+    };
     let line = LanChatLine { text: line, color };
     if visit {
         crate::app::shell_lan::append_wol_lobby_chat(state, line, sent_at);

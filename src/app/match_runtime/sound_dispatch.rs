@@ -601,7 +601,7 @@ pub(super) fn dispatch_sim_sound_events(
                     continue;
                 }
                 GameSoundEvent::Eva {
-                    event: outcome_eva_event(kind, !sim.session().game_mode_nonzero()).to_string(),
+                    event: outcome_eva_event(kind, sim.session().uses_campaign_world()).to_string(),
                     type_override: None,
                 }
             }
