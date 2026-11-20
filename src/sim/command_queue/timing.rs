@@ -43,8 +43,14 @@ impl NetworkCommandTiming {
         // The authenticated WOL publisher can already be absent after the
         // loading wait's DestroyConnection684596. Session697E70 then falls
         // back to a remaining source; installation must keep those live rows.
-        assert!(host_house >= 0 && !processing_millis.is_empty());
-        assert!(processing_millis.keys().all(|house| *house >= 0));
+        assert!(
+            host_house >= 0 && !processing_millis.is_empty(),
+            "network timing is installed for an admitted host House and roster"
+        );
+        assert!(
+            processing_millis.keys().all(|house| *house >= 0),
+            "every admitted network House has an index"
+        );
         Self {
             host_house,
             frame_send_rate,
