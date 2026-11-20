@@ -422,6 +422,7 @@ pub enum FreshScenarioPrefix<'a> {
         game_options: Option<&'a crate::sim::game_options::GameOptions>,
         campaign_index: i32,
         restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver,
+        network: Option<&'a AuthoredCampaignStart>,
     },
 }
 
@@ -433,8 +434,12 @@ pub enum FreshScenarioPrefixError {
     Campaign(#[from] crate::sim::scenario_session::CampaignScenarioStartupError),
     #[error(transparent)]
     Identity(#[from] crate::sim::native_identity::NativeIdentityError),
+    #[error("invalid authored campaign roster: {0}")]
+    AuthoredCampaign(#[source] anyhow::Error),
     #[error("campaign House construction requires an authored [Houses] roster")]
     MissingCampaignHouseRoster,
+    #[error("campaign [Houses] repeats the name '{0}'")]
+    DuplicateCampaignHouse(String),
     #[error("campaign House construction requires a registered entry0 Country")]
     MissingCampaignCountryRegistry,
     #[error("campaign House {house} requires unsupported Country constructor {country}")]
@@ -443,6 +448,123 @@ pub enum FreshScenarioPrefixError {
         "campaign Super constructors have {allocated} native types but {projected} registry identities"
     )]
     SuperWeaponRegistryMismatch { allocated: usize, projected: usize },
+}
+
+/// Deterministic startup facts for the authored House construction path.
+/// Source indices are the order of the roles in the manifest.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthoredCampaignStart {
+    pub(crate) rule_policy: crate::rules::rule_policy::RulePolicy,
+    pub(crate) roles: Vec<crate::map::campaign_manifest::CampaignRole>,
+    pub(crate) grants: Vec<crate::map::campaign_manifest::CampaignGrant>,
+    pub(crate) mission_counter: i32,
+    pub(crate) carry_over: crate::sim::campaign_carry_over::StageCarryOver,
+}
+
+impl AuthoredCampaignStart {
+    pub fn from_stage(
+        stage: &crate::map::campaign_manifest::CampaignStage,
+        stage_index: usize,
+        carry_over: crate::sim::campaign_carry_over::StageCarryOver,
+    ) -> anyhow::Result<Self> {
+        let mission_counter = i32::try_from(stage_index)?
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("campaign stage index is too large"))?;
+        let start = Self {
+            rule_policy: stage.rule_policy,
+            roles: stage.roles.clone(),
+            grants: stage.grants.clone(),
+            mission_counter,
+            carry_over,
+        };
+        start.validate()?;
+        Ok(start)
+    }
+
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        use crate::rules::rule_policy::BootstrapRuleProfile;
+        anyhow::ensure!(
+            self.rule_policy.bootstrap() == BootstrapRuleProfile::Campaign
+                && self.mission_counter > 0,
+            "authored campaign startup requires MapHouses and a positive mission number"
+        );
+        let mut names = std::collections::BTreeSet::new();
+        anyhow::ensure!(
+            self.roles.len() <= i8::MAX as usize + 1
+                && self.roles.iter().all(|role| {
+                    !role.name.is_empty()
+                        && !role.house.is_empty()
+                        && names.insert(role.name.to_ascii_lowercase())
+                }),
+            "invalid or duplicate campaign roles"
+        );
+        self.carry_over.validate()?;
+        Ok(())
+    }
+
+    fn admit_roster(&self, sim: &mut Simulation, map: &MapFile) -> anyhow::Result<()> {
+        use crate::map::campaign_manifest::ManifestControlScope;
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+
+        let find_house = |name: &str| {
+            sim.interner
+                .get(name)
+                .and_then(|id| sim.houses.index_of(id))
+                .and_then(|index| u8::try_from(index).ok())
+                .ok_or_else(|| anyhow::anyhow!("unknown authored House '{name}'"))
+        };
+        let mut sources = self
+            .roles
+            .iter()
+            .map(|role| find_house(&role.house))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        if sources.is_empty() {
+            let fallback = campaign_player_house(&sim.houses, &map.ini)
+                .and_then(|id| sim.houses.index_of(id))
+                .and_then(|index| u8::try_from(index).ok())
+                .ok_or_else(|| anyhow::anyhow!("campaign has no starting House"))?;
+            sources.push(fallback);
+        }
+        let grants = self
+            .grants
+            .iter()
+            .map(|grant| {
+                let source = self
+                    .roles
+                    .iter()
+                    .position(|role| role.name.eq_ignore_ascii_case(&grant.role))
+                    .ok_or_else(|| anyhow::anyhow!("unknown campaign role '{}'", grant.role))?;
+                Ok(ControlGrant {
+                    source: i8::try_from(source)?,
+                    house: find_house(&grant.house)?,
+                    level: match grant.scope {
+                        ManifestControlScope::FullControl => ControlGrantLevel::FullControl,
+                        ManifestControlScope::UnitsOnly => ControlGrantLevel::UnitsOnly,
+                    },
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let local = sim.houses.order()[usize::from(sources[0])];
+        for slot in sources
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let id = sim.houses.order()[usize::from(slot)];
+            let house = sim.houses.get_mut(&id).expect("resolved authored House");
+            anyhow::ensure!(
+                !house.multiplay_passive(),
+                "campaign role binds passive House '{}'",
+                sim.interner.resolve(id)
+            );
+            house.admit_campaign_role();
+        }
+        sim.session.install_current_house(Some(local));
+        sim.session.install_shared_house_sources(sources, Some(0));
+        sim.install_control_grants(grants)?;
+        Ok(())
+    }
 }
 
 /// Draw-free stock-offline state retained after the prefix cursor receipt is
@@ -3388,6 +3510,7 @@ impl ScenarioBootstrapRng {
                 game_options,
                 campaign_index,
                 restart_carry_over,
+                network,
             } => {
                 NativeStartBounds::from_map_header(&map_data.header)
                     .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
@@ -3399,7 +3522,13 @@ impl ScenarioBootstrapRng {
                 // registry/ID owner; the selected stock route has only known
                 // or missing tokens. Reject it before any House IDs/RNG,
                 // rather than silently binding another Country's defaults.
+                let mut names = std::collections::BTreeSet::new();
                 for house in &house_roster.houses {
+                    if !names.insert(house.name.to_ascii_lowercase()) {
+                        return Err(FreshScenarioPrefixError::DuplicateCampaignHouse(
+                            house.name.clone(),
+                        ));
+                    }
                     if rules
                         .scenario_country_name(house.country.as_deref())
                         .is_none()
@@ -3431,6 +3560,16 @@ impl ScenarioBootstrapRng {
                 // Evidence: input_oracle/campaign_start.py --houses (native
                 // SuperType registration without its later body reader).
                 let mut simulation = self.into_simulation(descriptor);
+                if let Some(network) = network {
+                    network
+                        .validate()
+                        .map_err(FreshScenarioPrefixError::AuthoredCampaign)?;
+                    simulation.install_session_admission(
+                        crate::sim::scenario_session::ScenarioGameMode::Lan,
+                        None,
+                        network.rule_policy,
+                    );
+                }
                 let mut start_header = crate::map::preview::ScenarioStartHeader::default();
                 start_header.read_ini(&map_data.ini);
                 simulation.session.install_start_header(start_header);
@@ -3454,11 +3593,17 @@ impl ScenarioBootstrapRng {
                     rules,
                     Some(&map_data.ini),
                 );
-                initialize_campaign_current_house(
-                    &mut simulation.session,
-                    &mut simulation.houses,
-                    &map_data.ini,
-                );
+                if let Some(network) = network {
+                    network
+                        .admit_roster(&mut simulation, map_data)
+                        .map_err(FreshScenarioPrefixError::AuthoredCampaign)?;
+                } else {
+                    initialize_campaign_current_house(
+                        &mut simulation.session,
+                        &mut simulation.houses,
+                        &map_data.ini,
+                    );
+                }
                 initialize_campaign_scenario_side(&mut simulation, &map_data.ini, rules);
                 simulation
                     .native_unique_ids
@@ -3638,14 +3783,7 @@ pub fn initialize_campaign_current_house(
     houses: &mut Houses,
     ini: &crate::rules::ini_parser::IniFile,
 ) {
-    let requested = ini
-        .section("Basic")
-        .map(|section| section.read_string("Player", "", 20))
-        .unwrap_or_default();
-    // Interning folds lookup case and preserves the first spelling it saw.
-    // The native strcmp reads the retained raw House name instead.
-    let current_house = Simulation::scenario_house_named(houses, &requested)
-        .or_else(|| houses.order().first().copied());
+    let current_house = campaign_player_house(houses, ini);
     session.install_current_house(current_house);
     if let Some(owner) = session.current_house() {
         // Original 68AD0C/68AD18 set the selected House's +1EC/+1ED.
@@ -3653,6 +3791,19 @@ pub fn initialize_campaign_current_house(
         let house = houses.get_mut(&owner).expect("registered current House");
         house.make_campaign_player();
     }
+}
+
+fn campaign_player_house(
+    houses: &Houses,
+    ini: &crate::rules::ini_parser::IniFile,
+) -> Option<crate::sim::intern::InternedId> {
+    let requested = ini
+        .section("Basic")
+        .map(|section| section.read_string("Player", "", 20))
+        .unwrap_or_default();
+    // Interning folds lookup case and preserves the first spelling it saw.
+    // The native strcmp reads the retained raw House name instead.
+    Simulation::scenario_house_named(houses, &requested).or_else(|| houses.order().first().copied())
 }
 
 /// Full_Init687874..6878C5/68792A reads Basic.Player independently of the
@@ -4652,6 +4803,7 @@ mod tests {
             construction_rules: sim.session.rule_policy(),
             skirmish_session: Some(&launch),
             campaign_map: None,
+            stage_home_global: None,
         })
         .unwrap();
         sim.hash_state_every(std::num::NonZeroU64::MIN);
@@ -5483,6 +5635,7 @@ mod tests {
             &roster,
             construction_rules,
             Some(&descriptor),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -7517,6 +7670,7 @@ mod tests {
             construction_rules,
             skirmish_session: Some(&launch),
             campaign_map: None,
+            stage_home_global: None,
         };
         let stock = sim.session.rule_policy();
         let no_slots = sim

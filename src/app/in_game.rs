@@ -494,7 +494,7 @@ impl App {
             .runtime()
             .map(|runtime| &runtime.simulation);
         let latch = Self::state_machine_admission(
-            state.match_state.session_mode().is_nonzero(),
+            sim.is_some_and(|sim| !sim.session().uses_campaign_world()),
             state.match_state.match_presentation.modal_latch,
             sim.and_then(|sim| {
                 sim.session()
@@ -515,11 +515,11 @@ impl App {
     /// sets the latch again (`0x0048C911`). `None` refuses; `Some` admits
     /// with the latch's new value.
     pub(crate) fn state_machine_admission(
-        game_mode_nonzero: bool,
+        uses_match_latch: bool,
         latch: bool,
         local: Option<&crate::sim::house_state::HouseState>,
     ) -> Option<bool> {
-        let Some(house) = local.filter(|_| game_mode_nonzero) else {
+        let Some(house) = local.filter(|_| uses_match_latch) else {
             return Some(latch);
         };
         if house.has_won() || house.has_lost() || house.is_to_die() {
@@ -754,7 +754,7 @@ impl App {
             .match_state
             .sim_runtime
             .runtime()
-            .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
+            .is_some_and(|runtime| !runtime.simulation.session().uses_campaign_world())
             && state.match_state.live_network.is_none()
             && !crate::app::cooperative_round::applies(state)
             && !state.match_state.map_basic.skip_score.unwrap_or(false);

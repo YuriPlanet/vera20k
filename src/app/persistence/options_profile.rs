@@ -163,8 +163,10 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
-    /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
-    /// VERA-only input preference; off by default.
+    /// `[VERA] RightClickOrders=`: left selects, right issues context orders,
+    /// and a double-click on an object selects its type on screen (the T key's
+    /// screen pass, done without the key). VERA-only input preference; off by
+    /// default.
     pub(crate) right_click_orders: bool,
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. Off
     /// unless the player turns it on, so a new install leaves the pointer free.
@@ -303,7 +305,7 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) skipped_update: String,
     /// `[VERA] OnlineName=`: the name of the last successful online sign-in,
     /// as a guest or an account; empty, the default, until one succeeds.
-    /// Only that sign-in changes it ([`Self::commit_online_name`]).
+    /// A successful sign-in sets it and deleting that account clears it.
     pub(crate) online_name: String,
     /// `[VERA] OnlineLocale=`: the country (`WOL:Locale%02d`) the player chose
     /// on their player card, which every online sign-in sends; 0, the
@@ -340,6 +342,13 @@ pub(crate) struct RetailOptionsProfile {
     /// list stacks every line as gamemd does (`TacticalClass::Draw`
     /// `0x006D4941..0x006D4B25`). Client presentation only.
     pub(crate) compact_super_timers: bool,
+    /// `[VERA] GroupedSuperTimers=`: the timer list shows one line per
+    /// team and super weapon type, with how many are ready and the nearest
+    /// countdown, in place of one line per Super
+    /// (`app::presentation::super_timer_groups`). Takes precedence over
+    /// `CompactSuperTimers`. Off by default, so the list stacks every line
+    /// as gamemd does. Client presentation only.
+    pub(crate) grouped_super_timers: bool,
     /// `[VERA] SuperweaponBuildingTimers=`: every building that provides one
     /// of the player's super weapons draws its countdown above itself
     /// (`app::presentation::ui_overlays`). A scenario starts from this value
@@ -440,6 +449,7 @@ impl Default for RetailOptionsProfile {
             convenience_help: false,
             building_production_queue: false,
             compact_super_timers: false,
+            grouped_super_timers: false,
             superweapon_building_timers: false,
         }
     }
@@ -457,7 +467,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 40],
+    pub(crate) vera: [(&'static str, String); 41],
 }
 
 impl RetailOptionsLoad {
@@ -705,6 +715,8 @@ impl RetailOptionsProfile {
                 vera.read_bool("BuildingProductionQueue", self.building_production_queue);
             self.compact_super_timers =
                 vera.read_bool("CompactSuperTimers", self.compact_super_timers);
+            self.grouped_super_timers =
+                vera.read_bool("GroupedSuperTimers", self.grouped_super_timers);
             self.superweapon_building_timers = vera.read_bool(
                 "SuperweaponBuildingTimers",
                 self.superweapon_building_timers,
@@ -907,6 +919,10 @@ impl RetailOptionsProfile {
                 (
                     "CompactSuperTimers",
                     format_bool(self.compact_super_timers).to_string(),
+                ),
+                (
+                    "GroupedSuperTimers",
+                    format_bool(self.grouped_super_timers).to_string(),
                 ),
                 (
                     "SuperweaponBuildingTimers",

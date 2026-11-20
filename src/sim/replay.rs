@@ -791,7 +791,7 @@ pub const REPLAY_VERSION: u32 = 6;
 const REPLAY_STARTUP_VERSION: u32 = 5;
 
 mod blueprint;
-pub use blueprint::{MatchStartBlueprint, ReplayLaunch};
+pub use blueprint::{MatchStartBlueprint, ReplayLaunch, ReplayLaunchInput};
 
 /// Accepted inputs needed in addition to the authored setup and frame-zero world.
 #[derive(Debug, Default)]
@@ -869,7 +869,7 @@ impl ReplayStartup {
 
     pub fn capture(
         runtime: &crate::sim::runtime::SimRuntime,
-        launch: &crate::skirmish_launch::SkirmishLaunchSession,
+        launch: ReplayLaunchInput<'_>,
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
         tick_ms: u32,
@@ -889,11 +889,15 @@ impl ReplayStartup {
             "standalone replay requires the normal App's batched paths, target scans and \
              presentation effect anims"
         );
-        let map_name = launch
-            .selected_map_file
-            .as_deref()
-            .context("replay launch map")?;
-        let map_name = crate::map::source::portable_map_name(map_name);
+        let map_name = match launch {
+            ReplayLaunchInput::Slots(session) => crate::map::source::portable_map_name(
+                session
+                    .selected_map_file
+                    .as_deref()
+                    .context("replay launch map")?,
+            ),
+            ReplayLaunchInput::MapHouses(_) => sim.session().map_name(),
+        };
         crate::map::source::validate_network_map_name(map_name)?;
         anyhow::ensure!(
             map_name == sim.session().map_name(),
@@ -1107,7 +1111,7 @@ impl ReplayLog {
         Ok((replay, crate::util::sha256::sha256_hex(&bytes)))
     }
 
-    fn decode_json(bytes: &[u8]) -> Result<Self> {
+    pub(crate) fn decode_json(bytes: &[u8]) -> Result<Self> {
         // Use only version fields before decoding the startup/session shape.
         #[derive(Deserialize)]
         struct Version {
@@ -1467,6 +1471,13 @@ impl ReplayPlayback {
     }
 }
 
+fn prepare_authored_replay_world(sim: &mut Simulation) {
+    sim.batch_path_searches();
+    sim.batch_target_scans();
+    sim.present_effect_anims();
+    sim.sleep_idle_objects_in_match();
+}
+
 impl ReplayRunner {
     /// Reconstruct with the same authored loader and playback cursor as the client.
     pub fn verify(
@@ -1476,26 +1487,32 @@ impl ReplayRunner {
     ) -> Result<ReplayVerification> {
         let startup = replay.standalone_startup()?;
         let map_file = map_beside.unwrap_or(&replay.header.map_name);
-        let launch = startup.launch_descriptor(map_file)?;
-        let mut loaded = crate::headless_scenario::load_with_launch_and_ini(
-            retail_dir,
-            map_file,
-            startup.seed(),
-            launch,
-            &Default::default(),
-            startup.game_mode(),
-            Some(startup.native_id_prefix()?),
-            None,
-        )
+        let accepted_prefix = Some(startup.native_id_prefix()?);
+        let mut loaded = match startup.blueprint().map_houses() {
+            Some(start) => crate::headless_scenario::load_campaign_stage(
+                retail_dir,
+                map_file,
+                startup.seed(),
+                start,
+                accepted_prefix,
+            ),
+            None => crate::headless_scenario::load_with_launch_and_ini(
+                retail_dir,
+                map_file,
+                startup.seed(),
+                startup.launch_descriptor(map_file)?,
+                &Default::default(),
+                startup.game_mode(),
+                accepted_prefix,
+                None,
+            ),
+        }
         .map_err(anyhow::Error::msg)?;
         // The ordinary App handoff enables the path-search and target-scan
         // batches before recording frame zero. They change movement and
         // acquisition timing and are hashed. Presentation anims change the
         // unique ids later objects take.
-        loaded.runtime.simulation.batch_path_searches();
-        loaded.runtime.simulation.batch_target_scans();
-        loaded.runtime.simulation.present_effect_anims();
-        loaded.runtime.simulation.sleep_idle_objects_in_match();
+        prepare_authored_replay_world(&mut loaded.runtime.simulation);
         let mut playback = ReplayPlayback::prepare(
             &mut loaded.runtime,
             std::sync::Arc::new(replay.clone()),
@@ -1509,6 +1526,61 @@ impl ReplayRunner {
             )?;
         }
         playback.verification(&loaded.runtime)
+    }
+
+    pub(crate) fn record_campaign_stage(
+        scene: &mut crate::headless_scenario::HeadlessScenario,
+        start: &crate::sim::scenario_bootstrap::AuthoredCampaignStart,
+        frames: u32,
+    ) -> Result<ReplayLog> {
+        let sim = &mut scene.runtime.simulation;
+        prepare_authored_replay_world(sim);
+        sim.hash_state_every(std::num::NonZeroU64::MIN);
+        let tick_hz = crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
+        let tick_ms = crate::headless_scenario::SIM_TICK_MS;
+        let mut log = ReplayLog::new(ReplayHeader {
+            version: REPLAY_VERSION,
+            tick_hz,
+            seed: sim.session().seed(),
+            map_name: sim.session().map_name().to_owned(),
+            rules_hash: scene.runtime.resources.rules.simulation_config_hash(),
+            pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
+        });
+        log.startup = Some(Box::new(ReplayStartup::capture(
+            &scene.runtime,
+            ReplayLaunchInput::MapHouses(start),
+            &scene.source,
+            scene.map.ini.content_hash(),
+            tick_ms,
+            ReplayStartOptions {
+                every_frame_network: true,
+                ..Default::default()
+            },
+        )?));
+        let network = ReplayNetworkBoundary {
+            checksum: Default::default(),
+            every_frame_network: true,
+        };
+        for index in 0..frames {
+            let mut frame = scene.runtime.advance_frame(
+                &[],
+                tick_ms,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::empty().with_network_commands(&network),
+            )?;
+            anyhow::ensure!(
+                frame.tick.frame_committed && frame.tick.state_hash.is_some(),
+                "campaign stopped before frame {}; reduce the requested frame count or inspect the stage's trigger holds",
+                index + 1
+            );
+            log.record_tick(
+                frame.tick.tick,
+                frame.take_admitted_commands(),
+                frame.tick.state_hash,
+            );
+        }
+        log.finish(scene.sim());
+        Ok(log)
     }
 
     /// Diagnostic fixtures retain their preconstructed world, but consume
@@ -1692,7 +1764,7 @@ mod tests {
         launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(3).unwrap();
         let carry_over = CampaignCarryOver::CLEARED;
         let blueprint = MatchStartBlueprint::capture(
-            &launch,
+            ReplayLaunchInput::Slots(&launch),
             sim.session(),
             ReplayStartOptions {
                 campaign_carry_over: Some(carry_over),
@@ -1871,7 +1943,7 @@ mod tests {
         assert!(
             ReplayStartup::capture(
                 &scene.runtime,
-                &launch,
+                ReplayLaunchInput::Slots(&launch),
                 &scene.source,
                 scene.map.ini.content_hash(),
                 22,
@@ -1909,7 +1981,7 @@ mod tests {
             .stable_id();
         let startup = ReplayStartup::capture(
             &scene.runtime,
-            &launch,
+            ReplayLaunchInput::Slots(&launch),
             &scene.source,
             scene.map.ini.content_hash(),
             22,

@@ -1652,12 +1652,12 @@ impl MapLoadInitial {
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
-        session_mode: crate::sim::scenario_session::ScenarioGameMode,
+        topology: crate::sim::scenario_session::ExecutionTopology,
     ) {
         self.retained_campaign_special_flags = resident
             .as_deref()
             .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = if session_mode.is_network() {
+        self.retained_local_variables = if topology.is_lockstep() {
             None
         } else {
             resident
@@ -1804,7 +1804,11 @@ mod fresh_transport_tests {
         );
         let before = resident.state_hash();
         let mut initial = MapLoadInitial::from_test_map_source(map, source);
-        initial.retain_process_state(&mut Default::default(), Some(&mut resident), mode);
+        initial.retain_process_state(
+            &mut Default::default(),
+            Some(&mut resident),
+            mode.execution_topology(),
+        );
         assert_eq!(resident.state_hash(), before, "preparation is read-only");
         let mut staged = Simulation::new();
         if let Some(prior) = initial.retained_local_variables {
@@ -2418,6 +2422,7 @@ impl MapLoadInitial {
             &house_roster,
             rule_policy,
             Some(&match_launch_descriptor),
+            None,
         )
         .expect("generated scenario post-map initialization");
         let crate_name_id =
@@ -3301,6 +3306,7 @@ fn load_map_first_step(
                                     .as_ref()
                                     .expect("campaign admission supplies its startup");
                                 FreshScenarioPrefix::Campaign {
+                                    network: None,
                                     native_rules_receipt,
                                     rules: &rules,
                                     map_data: &map_data,
@@ -3982,6 +3988,7 @@ fn load_map_first_step(
             &house_roster,
             rule_policy,
             match_launch_descriptor.as_ref(),
+            None,
         )?;
                                                                             if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");

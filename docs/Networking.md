@@ -27,6 +27,11 @@ press OK. Names use 1–24 ASCII letters, digits, underscores or hyphens;
 each active player needs a different name. No password or account creation is
 required. Players then create or join a game. A host can
 select Easy, Normal or Hard AI from an open player slot in Battle or Free For All.
+
+On the Internet login page, players can delete their own account with its username
+or registered email and current password. Older clients and a rolled-back lobby
+support the username form. [Account protocol](lobby-protocol.md#accounts)
+
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
@@ -525,6 +530,11 @@ The guest also reads the agreement before decoding the options body, so it can s
 `VERA:LanOptionsInvalid` and ends that setup. After a rollback, two games running
 the earlier build exchange its earlier layout. The lobby, relay, and VS31
 fragment framing keep their existing formats.
+
+In VERA Online game rooms, the lobby sends rank badges as part of the join. The
+newcomer sees the room's badges, and everyone already there sees the newcomer's badge
+as their name appears. Released clients use the same ladder messages. After a lobby
+rollback the badge arrives with the client's usual lookup. [Lobby protocol](lobby-protocol.md#ranked-games)
 
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as

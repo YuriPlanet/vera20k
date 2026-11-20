@@ -25,6 +25,10 @@ this directory:
 - `payload`: `signpath-payload.xml`
 - `installer`: `signpath-installer.xml`
 
+The payload also carries Microsoft's `dxcompiler.dll` (`fetch-dxc.ps1`), which
+the payload configuration verifies rather than signs. Update the project's
+configuration in SignPath whenever these files change.
+
 Use the prepared `test-signing` policy with the provided self-signed certificate.
 The policy permits only builds from `main` using exactly
 `.github/workflows/windows-signing-check.yml`, and requires maintainer approval.

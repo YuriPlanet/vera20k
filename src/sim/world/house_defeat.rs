@@ -400,20 +400,34 @@ impl Simulation {
         use crate::sim::house_state::HouseOutcomeKind;
         let viewed_house = self.session.current_house();
         if self.session.watcher() {
-            // A connection has no House result of its own. Use the shared
-            // elimination decision, even when another House's timer settles
-            // it. Scripted exits outside that decision end with the relay.
-            if (kind == HouseOutcomeKind::Victory || viewed_house == Some(owner))
-                && self.multiplayer_decision().is_some()
-            {
-                let followed_lost = viewed_house
-                    .and_then(|house| self.houses.get(&house))
-                    .is_some_and(|house| house.is_defeated() || house.has_lost());
-                self.session.admit_outcome(if followed_lost {
-                    HouseOutcomeKind::Defeat
-                } else {
-                    kind
-                });
+            // Elimination can end the watch when another House's victory
+            // timer matures. Use the shared verdict, including the
+            // Cooperative victory of an eliminated human (4FC5CF..4FC5F1).
+            // A script can finish the followed viewpoint with foes still
+            // alive or under a policy that leaves elimination disabled.
+            let decision = self
+                .session
+                .rule_policy()
+                .uses_elimination_results()
+                .then(|| self.multiplayer_decision())
+                .flatten();
+            let routed = match decision {
+                Some(decision)
+                    if kind == HouseOutcomeKind::Victory || viewed_house == Some(owner) =>
+                {
+                    decision.into_iter().find_map(|(house, won)| {
+                        (Some(house) == viewed_house).then_some(if won {
+                            HouseOutcomeKind::Victory
+                        } else {
+                            HouseOutcomeKind::Defeat
+                        })
+                    })
+                }
+                None if viewed_house == Some(owner) => Some(kind),
+                Some(_) | None => None,
+            };
+            if let Some(outcome) = routed {
+                self.session.admit_outcome(outcome);
             }
             return;
         }

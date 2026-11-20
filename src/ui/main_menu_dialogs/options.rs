@@ -148,6 +148,9 @@ pub(crate) const BUILDING_PRODUCTION_QUEUE_HELP: &str = "VERA:BuildingProduction
 /// VERA's timer box: retail's string table has nothing for it.
 pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
 pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
+/// VERA's grouped timer box: retail's string table has nothing for it.
+pub(crate) const GROUPED_SUPER_TIMERS_LABEL: &str = "VERA:GroupedSuperTimers";
+pub(crate) const GROUPED_SUPER_TIMERS_HELP: &str = "VERA:GroupedSuperTimersHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
@@ -934,6 +937,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's box: the super weapon timer list shows six lines and pages the
     /// rest. Default off; the next timer draw reads it.
     CompactSuperTimers,
+    /// VERA's box: the super weapon timer list shows one line per team and
+    /// super weapon type instead of one per Super. Default off; the next
+    /// timer draw reads it.
+    GroupedSuperTimers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1002,6 +1009,7 @@ pub(crate) enum LauncherOptionsEvent {
     ConvenienceHelpChanged(bool),
     BuildingProductionQueueChanged(bool),
     CompactSuperTimersChanged(bool),
+    GroupedSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -1087,6 +1095,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) building_production_queue: bool,
     /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
     pub(crate) compact_super_timers: bool,
+    /// The grouped timer box; see [`LauncherCheckboxId::GroupedSuperTimers`].
+    pub(crate) grouped_super_timers: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     /// The Sidebar Columns list's choice; it applies at once too.
@@ -1142,6 +1152,7 @@ impl Default for LauncherOptionsValues {
             convenience_help: false,
             building_production_queue: false,
             compact_super_timers: false,
+            grouped_super_timers: false,
             sidebar: SidebarSize::Normal,
             sidebar_columns: SidebarColumns::Two,
             health_bars: HealthBarMode::Vanilla,
@@ -1629,6 +1640,7 @@ impl OptionsDialogState {
                 &mut self.values.building_production_queue
             }
             LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
+            LauncherCheckboxId::GroupedSuperTimers => &mut self.values.grouped_super_timers,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1716,6 +1728,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::CompactSuperTimers => self
                 .pending_events
                 .push(LauncherOptionsEvent::CompactSuperTimersChanged(checked)),
+            LauncherCheckboxId::GroupedSuperTimers => self
+                .pending_events
+                .push(LauncherOptionsEvent::GroupedSuperTimersChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1974,6 +1989,7 @@ impl Category {
                 Setting::Checkbox(Check::TargetLines),
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::CompactSuperTimers),
+                Setting::Checkbox(Check::GroupedSuperTimers),
                 Setting::Checkbox(Check::DetailedEvaText),
                 Setting::Checkbox(Check::ConvenienceHelp),
             ],
@@ -2699,6 +2715,7 @@ mod tests {
                 Check::ConvenienceHelp,
                 Check::BuildingProductionQueue,
                 Check::CompactSuperTimers,
+                Check::GroupedSuperTimers,
             ]
             .map(Setting::Checkbox),
         )

@@ -1903,6 +1903,7 @@ fn initial_house_sight_matches_original_update_tail() {
                         house_roster: &roster,
                         skirmish_session: None,
                         campaign_map: None,
+                        stage_home_global: None,
                     },
                 )
                 .unwrap();

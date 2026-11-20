@@ -9,6 +9,58 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::world::{SimSoundEvent, Simulation, SoundBoundary};
 
+#[test]
+fn verdict_eva_follows_authored_campaign_construction_in_lockstep() {
+    use crate::audio::events::GameSoundEvent;
+    use crate::rules::rule_policy::RulePolicy;
+    use crate::sim::house_state::{HouseOutcomeKind, HouseState};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::skirmish_modes::MpModeClass;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    sim.register_house(HouseState::new(owner, 0, Some(owner), true, 0, 0));
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    // A scripted slot launch can also play the campaign RulePolicy.
+    // Its original Cooperative result announcement still comes from its slots.
+    for (class, victory, defeat) in [
+        (None, "EVA_MissionAccomplished", "EVA_MissionFailed"),
+        (
+            Some(MpModeClass::Cooperative),
+            "EVA_YouAreVictorious",
+            "EVA_YouHaveLost",
+        ),
+    ] {
+        sim.install_session_admission(ScenarioGameMode::Lan, class, RulePolicy::stock_campaign());
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [
+                SimSoundEvent::MatchOutcome {
+                    owner,
+                    kind: HouseOutcomeKind::Victory,
+                },
+                SimSoundEvent::MatchOutcome {
+                    owner,
+                    kind: HouseOutcomeKind::Defeat,
+                },
+            ],
+            &sim,
+            &rules,
+            Some("Americans"),
+            &mut |_| false,
+            &mut output,
+            None,
+        );
+        assert!(matches!(
+            output.drain().as_slice(),
+            [GameSoundEvent::Eva { event: won, .. }, GameSoundEvent::Eva { event: lost, .. }]
+                if won == victory && lost == defeat
+        ));
+    }
+}
+
 /// Foot4DADF0/750D40 must use the reached phase coordinate and must not
 /// recreate a handle released by a later lifecycle callback. No PCM service
 /// runs here; this checks the production client/SFX handle and gain boundary.

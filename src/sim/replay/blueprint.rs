@@ -9,7 +9,9 @@ use crate::rules::personal_rules::PersonalRules;
 use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::campaign_carry_over::CampaignCarryOver;
 use crate::sim::game_options::GameOptions;
-use crate::sim::scenario_bootstrap::{MatchLaunchDescriptor, MatchNetworkStart};
+use crate::sim::scenario_bootstrap::{
+    AuthoredCampaignStart, MatchLaunchDescriptor, MatchNetworkStart,
+};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::skirmish_launch::{
     PreFillHouseRoster, SKIRMISH_MAX_SLOT_COUNT, SkirmishAiSlot, SkirmishHumanSlot,
@@ -33,7 +35,28 @@ pub struct MatchStartBlueprint {
 pub enum ReplayLaunch {
     Skirmish(AuthoredMatchStart),
     Cooperative(AuthoredMatchStart),
-    Campaign(AuthoredMatchStart),
+    Campaign(CampaignReplayStart),
+}
+
+/// Old scripted slot launches retain their original Campaign payload.
+/// Authored House launches carry the role roster that built their world.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CampaignReplayStart {
+    MapHouses(MapHouseReplayStart),
+    Slots(AuthoredMatchStart),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapHouseReplayStart {
+    map_houses: AuthoredCampaignStart,
+}
+
+#[derive(Clone, Copy)]
+pub enum ReplayLaunchInput<'a> {
+    Slots(&'a SkirmishLaunchSession),
+    MapHouses(&'a AuthoredCampaignStart),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,10 +87,31 @@ struct MatchMode {
 
 impl MatchStartBlueprint {
     pub(super) fn capture(
-        launch: &SkirmishLaunchSession,
+        launch: ReplayLaunchInput<'_>,
         admitted: &ScenarioSession,
         options: ReplayStartOptions,
     ) -> Result<Self> {
+        let launch = match launch {
+            ReplayLaunchInput::Slots(launch) => launch,
+            ReplayLaunchInput::MapHouses(start) => {
+                anyhow::ensure!(
+                    !options.quick_coop_starts
+                        && options.campaign_carry_over.is_none()
+                        && !options.personal_rules.in_effect(),
+                    "MapHouses playback does not use stock slot launch options"
+                );
+                let blueprint = Self {
+                    admitted: admitted.clone(),
+                    launch: ReplayLaunch::Campaign(CampaignReplayStart::MapHouses(
+                        MapHouseReplayStart {
+                            map_houses: start.clone(),
+                        },
+                    )),
+                };
+                blueprint.validate()?;
+                return Ok(blueprint);
+            }
+        };
         let mode = &launch.mode;
         let facts = AuthoredMatchStart {
             mode: MatchMode {
@@ -88,7 +132,7 @@ impl MatchStartBlueprint {
             campaign_carry_over: options.campaign_carry_over,
         };
         let launch = if scripted_lockstep(admitted) {
-            ReplayLaunch::Campaign(facts)
+            ReplayLaunch::Campaign(CampaignReplayStart::Slots(facts))
         } else if mode.class == MpModeClass::Cooperative {
             ReplayLaunch::Cooperative(facts)
         } else {
@@ -102,11 +146,23 @@ impl MatchStartBlueprint {
         Ok(blueprint)
     }
 
-    fn facts(&self) -> &AuthoredMatchStart {
+    fn slot_facts(&self) -> Option<&AuthoredMatchStart> {
         match self.launch() {
             ReplayLaunch::Skirmish(facts)
             | ReplayLaunch::Cooperative(facts)
-            | ReplayLaunch::Campaign(facts) => facts,
+            | ReplayLaunch::Campaign(CampaignReplayStart::Slots(facts)) => Some(facts),
+            ReplayLaunch::Campaign(CampaignReplayStart::MapHouses(_)) => None,
+        }
+    }
+
+    pub(super) fn map_houses(&self) -> Option<&AuthoredCampaignStart> {
+        match self.launch() {
+            ReplayLaunch::Campaign(CampaignReplayStart::MapHouses(start)) => {
+                Some(&start.map_houses)
+            }
+            ReplayLaunch::Skirmish(_)
+            | ReplayLaunch::Cooperative(_)
+            | ReplayLaunch::Campaign(CampaignReplayStart::Slots(_)) => None,
         }
     }
 
@@ -119,11 +175,25 @@ impl MatchStartBlueprint {
     }
 
     pub(super) fn campaign_carry_over(&self) -> Option<&CampaignCarryOver> {
-        self.facts().campaign_carry_over.as_ref()
+        self.slot_facts()?.campaign_carry_over.as_ref()
     }
 
     pub(super) fn validate(&self) -> Result<()> {
-        let facts = self.facts();
+        if let Some(start) = self.map_houses() {
+            start.validate()?;
+            anyhow::ensure!(
+                self.admitted.execution_topology().is_lockstep()
+                    && self.admitted.multiplayer_mode_class().is_none()
+                    && self.admitted.campaign_mission_counter() == Some(start.mission_counter)
+                    && self.admitted.rule_policy()
+                        == start.rule_policy.with_counts_player_control_as_human(false),
+                "MapHouses replay disagrees with admitted campaign startup"
+            );
+            return Ok(());
+        }
+        let facts = self
+            .slot_facts()
+            .context("replay launch has no slot startup")?;
         let scripted = scripted_lockstep(&self.admitted);
         anyhow::ensure!(
             match self.launch() {
@@ -131,7 +201,8 @@ impl MatchStartBlueprint {
                     facts.mode.class != MpModeClass::Cooperative && !scripted,
                 ReplayLaunch::Cooperative(_) =>
                     facts.mode.class == MpModeClass::Cooperative && !scripted,
-                ReplayLaunch::Campaign(_) => scripted,
+                ReplayLaunch::Campaign(CampaignReplayStart::Slots(_)) => scripted,
+                ReplayLaunch::Campaign(CampaignReplayStart::MapHouses(_)) => false,
             } && self.admitted.multiplayer_mode_class() == Some(facts.mode.class),
             "replay launch kind disagrees with its admitted mode"
         );
@@ -171,7 +242,9 @@ impl MatchStartBlueprint {
 
     pub(super) fn launch_descriptor(&self, map_file: &str) -> Result<MatchLaunchDescriptor> {
         self.validate()?;
-        let facts = self.facts();
+        let facts = self
+            .slot_facts()
+            .context("MapHouses campaign replays use headless verification")?;
         let mode = SkirmishLaunchMode {
             class: facts.mode.class,
             id: facts.mode.id,

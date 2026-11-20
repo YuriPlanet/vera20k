@@ -45,7 +45,14 @@ pub enum Verb {
     IniType { type_id: String },
     IniRoots,
     IniExpand { name: String },
+    CampaignCheck(CampaignCheckArgs),
     Help,
+}
+
+pub struct CampaignCheckArgs {
+    pub manifest: PathBuf,
+    pub stage: String,
+    pub frames: u32,
 }
 
 pub struct Cli {
@@ -90,6 +97,8 @@ VERBS
   ini-type <TYPE>          Inspect final scenario ObjectType movement/flight fields.
   ini-roots               Inspect the selected Rules/Art/AI roots and byte sources.
   ini-expand <FILE>        Probe production Include/Inherits expansion and sources.
+  campaign-check <MANIFEST> <STAGE> <FRAMES>
+                       Validate a campaign stage and verify each replayed frame.
   find <NAME>          Which archive wins, what shadows it, and what is
                        catalogued but unreachable by name lookup.
   ls <ARCHIVE>         Paged listing of one archive's entries.
@@ -264,7 +273,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
 
     if matches!(
         verb_word.as_str(),
-        "ini-get" | "ini-type" | "ini-roots" | "ini-expand"
+        "ini-get" | "ini-type" | "ini-roots" | "ini-expand" | "campaign-check"
     ) && args
         .peek()
         .is_some_and(|arg| matches!(arg.as_str(), "-h" | "--help"))
@@ -298,6 +307,15 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         "ini-expand" => Verb::IniExpand {
             name: require_target(target, "ini-expand", "<FILE>")?,
         },
+        "campaign-check" => Verb::CampaignCheck(CampaignCheckArgs {
+            manifest: PathBuf::from(require_target(
+                target,
+                "campaign-check",
+                "<MANIFEST> <STAGE> <FRAMES>",
+            )?),
+            stage: value(&mut args, "campaign-check stage")?,
+            frames: number(&mut args, "campaign-check frames")?,
+        }),
         "find" => Verb::Find {
             name: require_target(target, "find", "<NAME>")?,
         },
@@ -400,6 +418,11 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 flag.as_str(),
                 "--all-mixes" | "--ra2-dir" | "--out" | "-h" | "--help"
             )
+        {
+            return Err(flag_not_valid(&flag, &cli.verb));
+        }
+        if matches!(cli.verb, Verb::CampaignCheck(_))
+            && !matches!(flag.as_str(), "--ra2-dir" | "-h" | "--help")
         {
             return Err(flag_not_valid(&flag, &cli.verb));
         }
@@ -656,6 +679,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::IniType { .. } => "ini-type",
         Verb::IniRoots => "ini-roots",
         Verb::IniExpand { .. } => "ini-expand",
+        Verb::CampaignCheck(_) => "campaign-check",
         Verb::Help => "help",
     };
     format!("{flag} is not valid for `{verb_name}`")
@@ -690,6 +714,42 @@ mod tests {
                 cli.mod_dir.as_deref(),
                 Some(std::path::Path::new("mods/example"))
             );
+        }
+    }
+
+    #[test]
+    fn campaign_check_requires_three_positionals_and_accepts_only_its_retail_root() {
+        let cli = parse(args(&[
+            "campaign-check",
+            "campaigns/series/campaign.ini",
+            "Opening",
+            "24",
+            "--ra2-dir",
+            "D:/Game Dir",
+        ]))
+        .unwrap();
+        assert!(matches!(
+            cli.verb,
+            Verb::CampaignCheck(CampaignCheckArgs { manifest, stage, frames: 24 })
+                if manifest == std::path::Path::new("campaigns/series/campaign.ini")
+                    && stage == "Opening"
+        ));
+        assert_eq!(
+            cli.ra2_dir.as_deref(),
+            Some(std::path::Path::new("D:/Game Dir"))
+        );
+        for words in [
+            &["campaign-check", "campaign.ini", "Opening"][..],
+            &["campaign-check", "campaign.ini", "Opening", "-1"],
+            &[
+                "campaign-check",
+                "campaign.ini",
+                "Opening",
+                "24",
+                "--all-mixes",
+            ],
+        ] {
+            assert!(parse(args(words)).is_err(), "{words:?}");
         }
     }
 

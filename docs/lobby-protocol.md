@@ -860,13 +860,18 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   `invalid_password`.
 - `/v1/accounts/forget` `{name,sign_in_token}` returns 200 and drops that remembered
   sign-in.
-- `/v1/accounts/delete` `{name,password}` returns 200, deletes the account with its
-  email, remembered sign-ins, ratings and standings, signs out its player and mails the
-  owner; anyone may then take the name. Records of its ranked games stay 90 days for
-  disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
-  `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
-  It refuses with 409 `match_active` while its player is in a match or a ranked game of
-  theirs has not ended for every player.
+- `/v1/accounts/delete` accepts either `{name,password}` or `{email,password}`. Both
+  require the current password. An email identifies the registered account
+  case-insensitively. Successful deletion by email returns `{name}` with the account's
+  username so the game can clear that account's remembered sign-in. Deletion by
+  username keeps its empty JSON success response. Deletion removes the email, remembered
+  sign-ins, ratings and standings, signs the player out and mails the owner. Anyone
+  may then take the name. Ranked game records stay 90 days for disputes, and no
+  profile names the deleted account. Wrong passwords count toward the sign-in limits.
+  An unknown email and an incorrect password both return 403 `wrong_password`.
+  A name without an account returns 404 `no_account`. Deletion returns 409
+  `match_active` while the player is in a match or a ranked game of theirs is still
+  waiting for results.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
@@ -885,9 +890,12 @@ shows the players online and the last 24 hours' games (`GET /v1/stats`, read eac
 the page opens), leaving out a count of none. Every other button opens a popup that
 starts from the form's username. Create Account asks for the name, email and password,
 then the mailed code, and signs in. Forgot Password asks for the name and mails its
-code, then asks for it and a new password, and signs in. Delete Account asks for the name
-and its password, then says the account is deleted and forgets a remembered sign-in of
-it. A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
+code, then asks for it and a new password, and signs in. Delete Account accepts the
+username or registered email and asks for the current password. After success it
+forgets that account's remembered sign-in. Older games send the username as before.
+A lobby rollback accepts deletion by username.
+
+A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
 sign_in_token}` per lobby, readable only by its owner; the form then opens on the name
 with a masked password, and Play needs none.
 Unticking Remember password forgets it here and at the lobby, and so does a password
@@ -945,6 +953,15 @@ the rank and OS. Until the operator starts the first season no one has a rating,
 and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
 lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
+
+A game-room join sends the existing `ladder` event immediately before the
+membership event in the same transaction. The guest receives the roster's records
+before `joined`. Existing members receive the newcomer's records before
+`member_joined`. Creation and reopening send the roster's records before
+`created` and `room_reopened`. These ladder events have the same retention as the
+membership events. The transport delivers them in sequence, so the game already
+has the badges when it displays the names.
+
 After a ranked game each of its players hears from `VERA20k` how it counted: their new OS,
 their place in the season and the badge the game brought them, such as `Ranked game won:
 your OS is now 19.57 (+2.90), rank 1 of 2 in season 1. Promoted to Corporal.`, with why a
