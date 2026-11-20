@@ -141,14 +141,22 @@ def find_game_folder(path: Path) -> Path:
     """The folder in PATH that holds the retail archives.
 
     A Steam installation keeps the game in a subfolder of the install
-    directory, so a path that holds no `ra2md.mix` is searched one level down.
+    directory — `steamapps/common/<game>/` — so a path that holds no
+    `ra2md.mix` is searched for one.
     """
     if (path / 'ra2md.mix').is_file():
         return path
-    if path.is_dir():
-        for child in sorted(path.iterdir()):
-            if child.is_dir() and (child / 'ra2md.mix').is_file():
+    if not path.is_dir():
+        return path
+    frontier = [path]
+    for _ in range(3):
+        children = []
+        for parent in frontier:
+            children += [child for child in sorted(parent.iterdir()) if child.is_dir()]
+        for child in children:
+            if (child / 'ra2md.mix').is_file():
                 return child
+        frontier = children
     return path
 
 

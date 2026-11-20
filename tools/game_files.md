@@ -59,6 +59,15 @@ python -m tools.game_files slim --source game-files/steam --target game-files/yr
 python -m tools.game_files config --dir game-files/yr
 ```
 
+`tools/game_files_setup.sh` does the whole chain in one go:
+
+```sh
+sh tools/game_files_setup.sh
+```
+
+It installs `steamcmd`, runs the Steam login, slims the installation, writes
+`config.toml` and prints the executable to launch.
+
 ## Inventory a copy
 
 ```sh
