@@ -1331,3 +1331,23 @@ fn a_tanks_body_draw_looks_no_type_up_by_name() {
     assert_eq!(model, "MTNK");
     assert_eq!(RuleSet::type_name_lookups() - before, 0);
 }
+
+#[test]
+fn retail_no_spawn_alt_draw_borrows_the_rules_wo_name() {
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut checked = 0;
+    for id in &rules.vehicle_ids {
+        let object = rules.object(id).expect("listed vehicle");
+        if !object.no_spawn_alt() {
+            continue;
+        }
+        let drawn = no_spawn_alt_type_id(id, Some(object), Some(0)).expect("empty rack");
+        assert!(matches!(drawn, Cow::Borrowed(_)), "{id} borrows its name");
+        assert_eq!(drawn, format!("{id}WO"), "{id}");
+        checked += 1;
+    }
+    assert!(checked > 0, "retail rules carry NoSpawnAlt vehicles");
+}
