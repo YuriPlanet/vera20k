@@ -242,14 +242,34 @@ pub(super) struct Match {
     pub map: Option<String>,
     pub watchers: u32,
     pub max_watchers: u32,
+    #[serde(default, deserialize_with = "listed_count")]
+    pub observers: Option<u8>,
+    #[serde(default, deserialize_with = "listed_count")]
+    pub computers: Option<u8>,
     #[serde(default)]
     pub names: Vec<String>,
     #[serde(default, rename = "room_summary", deserialize_with = "room_summary")]
     pub summary: Option<WolRoomSummary>,
 }
 
+fn listed_count<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u8>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .and_then(|n| u8::try_from(n).ok())
+        .filter(|&n| usize::from(n) <= crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT))
+}
+
 impl From<Match> for crate::app::shell_wol::WolMatch {
     fn from(value: Match) -> Self {
+        // Older watch lists carry these seat totals on the match itself.
+        let summary = value.summary.or_else(|| {
+            (value.observers.is_some() || value.computers.is_some()).then_some(WolRoomSummary {
+                observers: value.observers,
+                computers: value.computers,
+                ..Default::default()
+            })
+        });
         Self {
             match_id: value.match_id,
             name: value.name.unwrap_or_default(),
@@ -257,7 +277,7 @@ impl From<Match> for crate::app::shell_wol::WolMatch {
             watchers: value.watchers,
             max_watchers: value.max_watchers,
             names: value.names,
-            summary: value.summary,
+            summary,
         }
     }
 }
@@ -463,6 +483,20 @@ mod tests {
         let record = WolChannel::from(serde_json::from_value::<Channel>(room).unwrap());
         assert_eq!(record.name, "Friday Night");
         assert!(record.summary.is_none());
+
+        let watch: Match = serde_json::from_value(json!({
+            "match_id":"running","map":"Snow Valley","watchers":1,"max_watchers":10,
+            "observers":2,"computers":1
+        }))
+        .unwrap();
+        let watch = crate::app::shell_wol::WolMatch::from(watch);
+        let seats = watch
+            .summary
+            .expect("older lobbies already list seated spectators and AI");
+        assert_eq!(
+            (seats.observers, seats.computers, seats.teams),
+            (Some(2), Some(1), None)
+        );
     }
 
     fn human(row: u8, team: LaunchTeam) -> SkirmishHumanSlot {

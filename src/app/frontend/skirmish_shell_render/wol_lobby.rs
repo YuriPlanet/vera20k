@@ -117,7 +117,6 @@ pub(crate) fn paint_wol_lobby_children(
     layout: &WolLobbyLayout,
     art: Option<&WolPageArt>,
     base_names: &[String; 8],
-    room_tooltip: Option<&str>,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
@@ -320,54 +319,6 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_LABEL_TEXT_RGB,
         ));
     }
-    // Keep room help within the game's scrollable content, on the side
-    // with the most space above or below the active row. An unchanged
-    // selection can keep its help open while the pointer is off controls.
-    let room_tip = room_tooltip.map(|caption| {
-        const PAD: i32 = 5;
-        let content = scale.base_rect(games.content);
-        let active = ui
-            .game_list
-            .hot_row
-            .or(ui.game_list.selected)
-            .and_then(|index| index.checked_sub(ui.game_list.top_index))
-            .filter(|&visible| visible < games.visible_rows)
-            .map(|visible| scale.base_rect(games.row(visible)));
-        let above = active.map_or(0, |row| row.y - content.y);
-        let below = active.map_or(content.h, |row| content.y + content.h - (row.y + row.h));
-        let width = (content.w - 2 * PAD).max(1) as u32;
-        let available = (above.max(below) - 2 * PAD).max(1) as u32;
-        let fit = font.fit_box(caption, width, available);
-        let measured = font.fitted(fit, |font| font.wrap_layout(caption, width));
-        let height = measured.height.min(available) as i32 + 2 * PAD;
-        let panel = RectPx::new(
-            content.x,
-            if above > below {
-                content.y
-            } else {
-                content.y + content.h - height
-            },
-            content.w,
-            height,
-        );
-        let body = scale.scale_rect(RectPx::new(
-            panel.x + PAD,
-            panel.y + PAD,
-            width as i32,
-            height - 2 * PAD,
-        ));
-        let draw = shell_text::draw_in_rect_scaled(
-            font,
-            caption,
-            rect_to_text_rect(body),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::NONE,
-            [0.0; 2],
-            SHELL_DROPDOWN_TEXT_DEPTH,
-            scale.factor(),
-        );
-        (scale.scale_rect(panel), draw)
-    });
     let ping_header = layout.control_rect(SORT_PING);
     for (visible, row) in ui
         .game_rows
@@ -377,14 +328,6 @@ pub(crate) fn paint_wol_lobby_children(
         .enumerate()
     {
         let rect = games.row(visible);
-        // The shell paints every glyph after the control plates. Suppress
-        // covered game cells so their text and icons cannot bleed through.
-        if room_tip
-            .as_ref()
-            .is_some_and(|(panel, _)| rect.y < panel.y + panel.h && rect.y + rect.h > panel.y)
-        {
-            continue;
-        }
         let rgb = if row.greyed {
             GREYED_RGB
         } else {
@@ -578,15 +521,70 @@ pub(crate) fn paint_wol_lobby_children(
             row_rgb(line.color),
         ));
     }
-    if let Some((panel, draw)) = room_tip {
+    if let Some(panel) = layout.game_details {
         push_solid_rect(
             &mut paint.controls,
             atlas,
             panel,
             [0.025, 0.035, 0.045],
-            SHELL_DROPDOWN_DEPTH,
+            SHELL_CONTROL_DEPTH,
         );
-        paint.texts.push(draw);
+        push_rect_outline(
+            &mut paint.controls,
+            atlas,
+            panel,
+            [0.35, 0.40, 0.42],
+            SHELL_CONTROL_DEPTH - 0.00001,
+        );
+        if let Some(details) = crate::app::shell_wol::lobby::room_details(state) {
+            let pane = scale.base_rect(panel);
+            let width = (pane.w - 10).max(1) as u32;
+            let height = (pane.h - 8).max(1) as u32;
+            let line = font.cell_height().ceil() as u32;
+            // Reserve the counts first, leaving at least one line for the
+            // heading. A maximal map/room name cannot displace spectators.
+            let count_limit = height.saturating_sub(line + 2).max(1);
+            let count_fit = font.fit_box(&details.counts, width, count_limit);
+            let count_h = font
+                .fitted(count_fit, |font| {
+                    font.wrap_layout(&details.counts, width).height
+                })
+                .min(count_limit);
+            let title_limit = height.saturating_sub(count_h + 2).max(1);
+            let full_fits = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
+                font.wrap_layout(details.title, width).height <= title_limit
+            });
+            // The selected row already names the room. If the full heading
+            // cannot fit, keep the format and map ahead of a long room name.
+            let title = if full_fits {
+                details.title
+            } else {
+                details
+                    .title
+                    .strip_prefix(details.room_name)
+                    .and_then(|tail| tail.strip_prefix(" - "))
+                    .unwrap_or(details.title)
+            };
+            let fit = font.fit_box(title, width, title_limit);
+            let title_h = font
+                .fitted(fit, |font| font.wrap_layout(title, width).height)
+                .min(title_limit);
+            let title_rect = RectPx::new(pane.x + 5, pane.y + 4, width as i32, title_h as i32);
+            let counts_rect = RectPx::new(
+                title_rect.x,
+                title_rect.y + title_rect.h + 2,
+                width as i32,
+                count_h as i32,
+            );
+            for (caption, rect) in [(title, title_rect), (details.counts.as_str(), counts_rect)] {
+                paint.texts.push(text(
+                    caption,
+                    scale.scale_rect(rect),
+                    ShellAlign::NONE,
+                    SHELL_LABEL_TEXT_RGB,
+                ));
+            }
+        }
     }
     paint
 }

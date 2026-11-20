@@ -717,13 +717,15 @@ display-only. A client never sends them on create or advertise.
 order, counting playing humans and AI. For example, `[0,4,0,4]` means four
 on team 2 and four on team 4. An empty array means a known free-for-all.
 `forming:true` means an open room is still being set up. If it also carries
-partial team counts, the list says “Teams forming” and the tooltip shows
+partial team counts, the list says “Teams forming” and the details below the list show
 the occupied seats. Missing team data leaves the layout unknown, including
 setups where opposing team assignments share a starting House. `observers`
 counts seated human spectators and
 `computers` counts AI. Remote watchers remain in the existing `watchers`
 field. Older clients ignore the extra summary; on an older lobby or rollback
 a new client uses the original map and occupancy information it has.
+A watch list without a summary can still supply seated spectator and AI
+counts on the match itself. Those counts establish no team assignments.
 
 ## Visiting the lobby
 

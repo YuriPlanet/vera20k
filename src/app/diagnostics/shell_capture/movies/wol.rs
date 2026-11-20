@@ -151,7 +151,7 @@ pub enum WolTarget {
     ModernLobby,
     /// One open room and one running match from the list service, with the
     /// pointer resting on the requested row. Both retain the same two rows.
-    ModernLobbySummary { watch: bool },
+    ModernLobbySummary { watch_teams: Option<usize> },
     /// The same, then Create Game: `0xC3` on Red Alert 2's box art, its
     /// Ranked game box's help hovered.
     ModernCreate,
@@ -735,11 +735,19 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-modern-lobby", WolTarget::ModernLobby),
     (
         "wol-modern-game-summary",
-        WolTarget::ModernLobbySummary { watch: false },
+        WolTarget::ModernLobbySummary { watch_teams: None },
     ),
     (
         "wol-modern-watch-summary",
-        WolTarget::ModernLobbySummary { watch: true },
+        WolTarget::ModernLobbySummary {
+            watch_teams: Some(2),
+        },
+    ),
+    (
+        "wol-modern-many-team-summary",
+        WolTarget::ModernLobbySummary {
+            watch_teams: Some(15),
+        },
     ),
     ("wol-modern-create", WolTarget::ModernCreate),
     ("wol-modern-player-card", WolTarget::ModernPlayerCard),
@@ -2232,8 +2240,8 @@ impl WolCapture {
                     self.settle();
                     return Ok(());
                 }
-                if let WolTarget::ModernLobbySummary { watch } = self.target {
-                    self.lobby_summary(state, frame, watch)?;
+                if let WolTarget::ModernLobbySummary { watch_teams } = self.target {
+                    self.lobby_summary(state, frame, watch_teams)?;
                     return Ok(());
                 }
                 if self.target == WolTarget::ModernLobby {
@@ -5529,14 +5537,41 @@ impl WolCapture {
         Ok(())
     }
 
-    fn lobby_summary(&mut self, state: &mut AppState, frame: u32, watch: bool) -> Result<()> {
+    fn lobby_summary(
+        &mut self,
+        state: &mut AppState,
+        frame: u32,
+        watch_teams: Option<usize>,
+    ) -> Result<()> {
         use crate::app::shell_wol::WolMatch;
         use crate::ui::wol_lobby::WolRoomSummary;
 
         const MATCH_ID: &str = "00000000-0000-4000-8000-000000000042";
-        let summary = |map: &str, side| WolRoomSummary {
+        let watch = watch_teams.is_some();
+        let many = watch_teams == Some(15);
+        let (watch_room, watch_map, watch_format, teams, names) = if many {
+            // The lobby's published limits: 80 bytes of room name and 64
+            // characters of map name. Fourteen human players and one AI
+            // fill fifteen independent teams; the two observers are seated.
+            (
+                "Friday Night Invitational Championship Finals at the Red Alert World Open Series",
+                "Northern Frontier Crossing at the Foot of the Forgotten Mountain",
+                "1v1v1v1v1v1v1v1v1v1v1v1v1v1v1",
+                vec![1; 15],
+                (1..=14).map(|i| format!("Player{i}")).collect(),
+            )
+        } else {
+            (
+                "Team Practice",
+                "Tour of Egypt",
+                "2v2",
+                vec![2, 2],
+                ["Tanya", "Boris", "Yuri"].map(String::from).into(),
+            )
+        };
+        let summary = |map: &str, teams| WolRoomSummary {
             map: Some(map.into()),
-            teams: Some(vec![side, side]),
+            teams: Some(teams),
             observers: Some(2),
             computers: Some(1),
             ..Default::default()
@@ -5547,7 +5582,7 @@ impl WolCapture {
             users: 9,
             max_users: 10,
             ping: 42,
-            summary: Some(summary("Heck Freezes Over", 4)),
+            summary: Some(summary("Heck Freezes Over", vec![4, 4])),
             ..Default::default()
         };
         service_event(
@@ -5561,12 +5596,12 @@ impl WolCapture {
             state,
             WolServiceEvent::Matches(vec![WolMatch {
                 match_id: MATCH_ID.into(),
-                name: "Team Practice".into(),
-                map: "Tour of Egypt".into(),
-                names: ["Tanya", "Boris", "Yuri"].map(String::from).into(),
+                name: watch_room.into(),
+                map: watch_map.into(),
+                names,
                 watchers: 1,
                 max_watchers: 8,
-                summary: Some(summary("Tour of Egypt", 2)),
+                summary: Some(summary(watch_map, teams)),
             }]),
         );
 
@@ -5579,11 +5614,8 @@ impl WolCapture {
         );
         let titles = rows.iter().map(|row| row.text.clone()).collect::<Vec<_>>();
         ensure!(
-            titles
-                == [
-                    "Friday Night - 4v4 - Heck Freezes Over",
-                    "Team Practice - 2v2 - Tour of Egypt"
-                ],
+            titles[0] == "Friday Night - 4v4 - Heck Freezes Over"
+                && titles[1] == format!("{watch_room} - {watch_format} - {watch_map}"),
             "unexpected lobby titles: {titles:?}"
         );
         let index = usize::from(watch);
@@ -5602,7 +5634,7 @@ impl WolCapture {
                 "the pointer missed the game row at {x}"
             );
         }
-        let help = crate::app::shell_wol::lobby::status_help(state);
+        let help = crate::app::shell_wol::lobby::room_details(state).context("room details")?;
         let (size, seats, limit, capacity_key) = if watch {
             (2, 1, 8, "VERA:LobbyWatchCapacity")
         } else {
@@ -5610,20 +5642,27 @@ impl WolCapture {
         };
         let team =
             |number| crate::i18n::tr_count("VERA:LobbyTeamSeats", size as u8, &[("team", &number)]);
-        let details = [
-            team(1),
-            team(2),
+        let mut details = if many {
+            vec![format!("{}: 15", crate::i18n::tr("VERA:Teams"))]
+        } else {
+            vec![team(1), team(2)]
+        };
+        details.extend([
             crate::i18n::tr_count("VERA:LobbySpectators", 2u32, &[]),
             crate::i18n::tr_fill("VERA:LobbyAiCount", &[("count", &1)]),
             crate::i18n::tr_fill(capacity_key, &[("count", &seats), ("max", &limit)]),
-        ];
+        ]);
         ensure!(
-            help == format!("{}\n{}", titles[index], details.join(" - ")),
-            "incomplete help for row {index}: {help:?}"
+            help.room_name == if watch { watch_room } else { "Friday Night" }
+                && help.title == titles[index]
+                && help.counts == details.join(" - "),
+            "incomplete details for row {index}: {} / {}",
+            help.title,
+            help.counts
         );
         self.event(
             frame,
-            json!({"room and watch titles": titles, "hovered row": index, "status help": help}),
+            json!({"room and watch titles": titles, "hovered row": index, "status help": format!("{}\n{}", help.title, help.counts)}),
         );
         self.settle();
         Ok(())

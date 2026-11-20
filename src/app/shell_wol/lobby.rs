@@ -4956,7 +4956,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
     let ui = &lobby.ui;
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
-            Some(row) if ui.is_modern() => modern_game_help(state, lobby, row),
+            Some(_) if ui.is_modern() => String::new(),
             Some(row) => game_help(state, row),
             _ => csf(state, "STT:LobbyListGames"),
         },
@@ -4975,22 +4975,45 @@ pub(crate) fn status_help(state: &AppState) -> String {
         Some(control) => tooltip_key(control, ui.page_spec())
             .map(|key| csf(state, key))
             .unwrap_or_default(),
-        None if ui.is_modern() => ui
-            .selected_game()
-            .map(|row| modern_game_help(state, lobby, row))
-            .unwrap_or_default(),
         None => String::new(),
     }
 }
 
+pub(crate) struct RoomDetails<'a> {
+    pub(crate) title: &'a str,
+    /// Start of the displayed heading, before its published format and map.
+    pub(crate) room_name: &'a str,
+    pub(crate) counts: String,
+}
+
+/// The modern games pane shows the hovered room, or keeps the selected
+/// room visible while the pointer moves to its details or another control.
+pub(crate) fn room_details(state: &AppState) -> Option<RoomDetails<'_>> {
+    let lobby = lobby(state)?;
+    let ui = &lobby.ui;
+    if !ui.is_modern() || ui.popup.is_some() || ui.card.is_some() {
+        return None;
+    }
+    let row = ui
+        .game_list
+        .hot_row
+        .filter(|_| ui.buttons.hovered == Some(GAMES))
+        .and_then(|index| ui.game_rows.get(index))
+        .or_else(|| ui.selected_game())?;
+    modern_game_help(state, lobby, row)
+}
+
 /// The team numbers retain their original slots, including gaps. Room
 /// spectators have seats; a running match's viewers connect separately.
-fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> String {
-    let (summary, capacity, campaign) = if row.watch {
-        let Some(watch) = lobby.matches.get(row.record) else {
-            return String::new();
-        };
+fn modern_game_help<'a>(
+    state: &AppState,
+    lobby: &'a WolLobby,
+    row: &'a WolGameRow,
+) -> Option<RoomDetails<'a>> {
+    let (room_name, summary, capacity, campaign) = if row.watch {
+        let watch = lobby.matches.get(row.record)?;
         (
+            watch.name.as_str(),
             watch.summary.as_ref(),
             crate::i18n::tr_fill(
                 "VERA:LobbyWatchCapacity",
@@ -4999,9 +5022,7 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Str
             None,
         )
     } else {
-        let Some(room) = lobby.games.get(row.record) else {
-            return String::new();
-        };
+        let room = lobby.games.get(row.record)?;
         let campaign = cooperative_campaign(state, room)
             .and_then(|campaign| {
                 state
@@ -5011,6 +5032,7 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Str
             })
             .map(|key| csf(state, key));
         (
+            room.name.as_str(),
             room.summary.as_ref(),
             crate::i18n::tr_fill(
                 "VERA:LobbyRoomCapacity",
@@ -5022,12 +5044,19 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Str
     let mut details = Vec::new();
     if let Some(summary) = summary {
         if let Some(teams) = &summary.teams {
-            for (team, count) in teams.iter().enumerate().filter(|(_, count)| **count > 0) {
-                details.push(crate::i18n::tr_count(
-                    "VERA:LobbyTeamSeats",
-                    *count,
-                    &[("team", &(team + 1))],
-                ));
+            let occupied = teams.iter().filter(|&&count| count > 0).count();
+            if occupied > 4 {
+                // The header already gives the matchup. With many sides,
+                // leave room for the map, spectators and occupancy.
+                details.push(format!("{}: {occupied}", crate::i18n::tr("VERA:Teams")));
+            } else {
+                for (team, count) in teams.iter().enumerate().filter(|(_, count)| **count > 0) {
+                    details.push(crate::i18n::tr_count(
+                        "VERA:LobbyTeamSeats",
+                        *count,
+                        &[("team", &(team + 1))],
+                    ));
+                }
             }
         }
         if let Some(count) = summary.observers {
@@ -5042,7 +5071,11 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Str
     }
     details.push(capacity);
     details.extend(campaign);
-    format!("{}\n{}", row.text, details.join(" - "))
+    Some(RoomDetails {
+        title: &row.text,
+        room_name,
+        counts: details.join(" - "),
+    })
 }
 
 /// VERA's help for a modern player row ([`badge_help`]); the name alone

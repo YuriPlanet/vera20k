@@ -213,9 +213,10 @@ the map name, separated by ` - `. A running match uses the teams it started
 with. For example, two teams of four on Heck Freezes Over can appear as
 `Friday Night - 4v4 - Heck Freezes Over`. While the host is still seating
 players, the format can read “Teams forming”. A room's capacity includes
-spectators, so it cannot determine team size. The row help gives the team
-counts and distinguishes seated spectators from people watching a running
-match through the relay. See the [lobby protocol](lobby-protocol.md#room-list-summaries).
+spectators, so it cannot determine team size. Hovering or selecting a row
+shows its details below the scrollable list. They distinguish seated
+spectators from people watching through the relay. Large lineups keep the
+full matchup in the title and show the number of teams in the details. See the [lobby protocol](lobby-protocol.md#room-list-summaries).
 
 The online lobby asks for its game list, and the matches to watch with it, every
 5 seconds while it is the front window, so a game someone creates shows up within
