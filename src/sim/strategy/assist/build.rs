@@ -32,6 +32,7 @@ use std::collections::BTreeSet;
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
+use crate::sim::behavior::goal::Goal;
 use crate::sim::control::brain::Outbox;
 use crate::sim::control::intent::Intent;
 use crate::sim::control::observation::Observation;
@@ -234,6 +235,20 @@ fn place_finished(
                 continue;
             }
         }
+        // Clear the foundation before asking to build on it. The house's own
+        // tanks standing there would make the placement refuse, and they are
+        // the house's to move — the player's equivalent click is a band-box and
+        // a scatter. One order per unit, and the placement goes out in the same
+        // frame: the simulation judges the site when the command executes, by
+        // which time the scatter has already been admitted.
+        for unit in own_units_on_foundation(obs, rules, type_id, cell) {
+            log::info!(
+                "auto play: {unit} stands on the foundation for {} at {cell:?}; scattering it",
+                obs.object_type(rules, type_id)
+                    .map_or("?", |ty| ty.id.as_str())
+            );
+            out.order(unit, Goal::Scatter);
+        }
         log::debug!(
             "auto play: place {} at {cell:?} (attempt {attempt})",
             obs.object_type(rules, type_id)
@@ -244,6 +259,52 @@ fn place_finished(
         brain.site_attempts.insert(type_id, next);
     }
     brain.site_attempts.retain(|id, _| waiting.contains(id));
+}
+
+/// The house's own ground units standing on the foundation a building of
+/// `type_id` would occupy at `cell`.
+///
+/// A player placing a 5x3 near their own yard does the same thing by hand: the
+/// tanks are in the way, so they click them out and place again. Native has no
+/// such step for a player — `HouseClass::Place_Production` judges the site as
+/// it stands and refuses — while the computer's own yard runs
+/// `BuildingTypeClass::Flush_For_Placement @ 0x0045EE70` first. This is that
+/// step taken by the hand that is placing, which is what an assist is: the
+/// house decides to move its own units, then places.
+///
+/// Structures are not included: only `Scatter` moves units, and a foundation an
+/// own structure occupies is a site this pass does not fix by moving anything.
+fn own_units_on_foundation(
+    obs: &Observation<'_>,
+    rules: &RuleSet,
+    type_id: InternedId,
+    cell: (u16, u16),
+) -> Vec<u64> {
+    let Some(ty) = obs.object_type(rules, type_id) else {
+        return Vec::new();
+    };
+    let occupied: BTreeSet<(u16, u16)> = ty
+        .foundation
+        .cell_offsets()
+        .into_iter()
+        .filter_map(|(dx, dy)| {
+            let x = u16::try_from(i32::from(cell.0) + i32::from(dx)).ok()?;
+            let y = u16::try_from(i32::from(cell.1) + i32::from(dy)).ok()?;
+            Some((x, y))
+        })
+        .collect();
+    obs.own_entities()
+        .filter(|unit| unit.orderable && occupied.contains(&unit.cell))
+        .filter(|unit| {
+            obs.object_type(rules, unit.type_id).is_some_and(|ty| {
+                matches!(
+                    ty.category,
+                    ObjectCategory::Infantry | ObjectCategory::Vehicle
+                )
+            })
+        })
+        .map(|unit| unit.entity_id)
+        .collect()
 }
 
 /// The cells a wall would stand on around the house's own buildings that retail

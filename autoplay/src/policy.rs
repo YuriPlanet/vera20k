@@ -1429,34 +1429,6 @@ impl Brain for Policy {
                 render_ledger(&self.lost),
                 render_ledger(&self.destroyed)
             );
-            // What each type earned, per credit it cost to build.
-            //
-            // The user's benchmark: a unit is worth what it destroys, in money, and
-            // a two-thousand-credit building knocked from full to nine tenths pays
-            // two hundred to whatever knocked it. `destroyed` above is the whole
-            // army's earnings; this splits them by the type that did the damage, so
-            // a type that costs 600 and earns nothing can be seen next to one that
-            // costs 700 and earns its price back.
-            let earned = obs.damage_value();
-            let mut per_credit: Vec<String> = earned
-                .iter()
-                .filter_map(|(name, value)| {
-                    let spent = self.built.get(name).map_or(0, |tally| tally.value());
-                    (spent > 0).then(|| {
-                        format!(
-                            "{name}${value}/{spent}={:?}",
-                            value.saturating_mul(100) / spent
-                        )
-                    })
-                })
-                .collect();
-            per_credit.sort();
-            if !per_credit.is_empty() {
-                log::info!(
-                    "ledger: tick={tick} earned_per_credit=[{}]",
-                    per_credit.join(" ")
-                );
-            }
         }
         if tick % 3600 == 0 && self.engineers.built > 0 {
             // An engineer is spent by success and by failure alike, so its count

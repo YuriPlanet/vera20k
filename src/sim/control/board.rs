@@ -572,6 +572,23 @@ impl ControlBoard {
             self.rejected += 1;
             return false;
         }
+        // A build the house has no factory for is refused here rather than by
+        // the simulation.
+        //
+        // `HouseClass::Begin_Production` answers false when `FindFactory` finds
+        // nothing, and the click that asked for it has already written the
+        // cameo's request record: the refusal leaves the button drawing a clock
+        // that never starts and never clears. A player cannot reach that state —
+        // the sidebar only offers cameos the house can build — but a brain asks
+        // for what its plan wants, so it can. The plan is the brain's business;
+        // this gate is what keeps its mistakes off the simulation.
+        if let Command::QueueProduction { type_id } = command
+            && !has_a_factory_for(sim, rules, self.owner, type_id)
+        {
+            log::debug!("auto play: refused, no factory builds {type_id:?}");
+            self.rejected += 1;
+            return false;
+        }
         // The player's own objects: a unit in a control group stays under the
         // player's hand, whatever half of the work is switched on.
         if actor_of(&command).is_some_and(|actor| self.excluded.contains(&actor)) {
@@ -603,6 +620,25 @@ impl ControlBoard {
         issued.push(command);
         true
     }
+}
+
+/// Whether the house owns any factory that could start `type_id`.
+///
+/// The production path's own probe, reused rather than restated: the same
+/// `FindFactory` `Begin_Production` calls. The question here is narrower than
+/// "may it start right now" — a busy line or a full build limit is a wait, not
+/// a mistake — so only "is there a producer of the right category at all" is
+/// asked.
+fn has_a_factory_for(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    type_id: InternedId,
+) -> bool {
+    let Some(object) = sim.interner().object_type(type_id, rules) else {
+        return false;
+    };
+    crate::sim::production::find_factory(sim, rules, owner, object, false, false, false).is_some()
 }
 
 /// Whether a click could have reached this object: the player's to command.

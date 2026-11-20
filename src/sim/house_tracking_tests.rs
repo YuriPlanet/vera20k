@@ -788,31 +788,3 @@ fn a_captured_human_construction_yard_cancels_placement() {
     );
 }
 
-#[test]
-fn damage_credit_is_the_share_of_the_price_the_hit_removed() {
-    // The ledger behind the autoplay policy's effectiveness reading. A
-    // two-thousand-credit building knocked from full to nine tenths is worth two
-    // hundred to whoever knocked it, and finishing it off is worth the rest - so
-    // partial damage earns its share and the unit that did the work is paid even
-    // if it never lands the last hit.
-    //
-    // VERA-only: gamemd keeps no such counter, so there is no native comparison
-    // for this and the test states the arithmetic rather than a corpus.
-    let mut tracking = crate::sim::house_tracking::HouseTracking::default();
-    let attacker = InternedId::default();
-
-    tracking.credit_damage_value(attacker, 200);
-    tracking.credit_damage_value(attacker, 1_800);
-    assert_eq!(tracking.damage_value().get(&attacker), Some(&2_000));
-}
-
-#[test]
-fn a_hit_that_takes_nothing_earns_nothing() {
-    // Spending on a target that cannot be hurt is the wish list's oldest
-    // complaint, and it has to read as zero rather than as a small positive.
-    let mut tracking = crate::sim::house_tracking::HouseTracking::default();
-    let attacker = InternedId::default();
-    tracking.credit_damage_value(attacker, 0);
-    tracking.credit_damage_value(attacker, -5);
-    assert_eq!(tracking.damage_value().get(&attacker), None);
-}

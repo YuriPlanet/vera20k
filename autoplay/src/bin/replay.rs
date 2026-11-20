@@ -33,9 +33,7 @@
 //!   * the army — counted per type off the entity store at each sample, valued
 //!     at the rules' own cost through `Simulation::cost_of`;
 //!   * the losses — `HouseTracking`'s per-pair totals (exact for the whole
-//!     match) and its retained death rows (tick, mission, health at the kill);
-//!   * the damage — `HouseTracking::damage_value`, the credits of damage each
-//!     attacker type is credited with.
+//!     match) and its retained death rows (tick, mission, health at the kill).
 //!
 //! Two readings are deliberately *not* here: a per-house kill count (the
 //! engine credits a kill to the victim's ledger by killer *type*, never by
@@ -1709,18 +1707,6 @@ fn build_report(
                     worn_down += 1;
                 }
             }
-            let mut damage: Vec<(i64, String)> = tracking
-                .damage_value()
-                .iter()
-                .map(|(attacker, value)| (*value, type_name(sim, *attacker)))
-                .collect();
-            damage.sort_by(|left, right| right.0.cmp(&left.0));
-            let damage: Vec<Value> = damage
-                .into_iter()
-                .map(|(damage_value, attacker)| {
-                    json!({ "attacker": attacker, "damage_value": damage_value })
-                })
-                .collect();
             let final_counts = final_row.map_or(Value::Null, |row| {
                 json!({
                     "units": row.units,
@@ -1762,7 +1748,6 @@ fn build_report(
                     "at_full_strength": one_shot,
                     "worn_down": worn_down,
                 },
-                "damage": damage,
                 "result": {
                     "defeated": house.is_defeated(),
                     "defeat_tick": facts.first_defeat_tick,
@@ -2131,24 +2116,6 @@ fn render_markdown(report: &Value) -> String {
                 losses["at_full_strength"].as_i64().unwrap_or(0),
                 losses["worn_down"].as_i64().unwrap_or(0)
             ));
-        }
-        let damage: Vec<String> = house["damage"]
-            .as_array()
-            .map(|rows| {
-                rows.iter()
-                    .take(8)
-                    .map(|row| {
-                        format!(
-                            "{} {}",
-                            row["attacker"].as_str().unwrap_or("?"),
-                            row["damage_value"].as_i64().unwrap_or(0)
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        if !damage.is_empty() {
-            out.push_str(&format!("- Damage credited: {}\n", damage.join(", ")));
         }
         // What the house actually fielded, read off its sampled roster: the
         // engine keeps production clicks as raw native records, so the roster

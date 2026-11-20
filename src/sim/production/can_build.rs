@@ -237,13 +237,7 @@ pub(crate) fn requirements_met(
         sim.interner.resolve(house.house_type_id()),
     );
     let required = obj.required_houses_mask(rules);
-    if required != u32::MAX
-        && required & house_bit == 0
-        // A yard the house holds is a country the house holds: the
-        // captured base builds, or the capture was a raid and nothing
-        // more. See [`holds_a_captured_yard_of`].
-        && !holds_a_captured_yard_of(sim, rules, house, required)
-    {
+    if required != u32::MAX && required & house_bit == 0 {
         return RequirementStatus::Forbidden;
     }
     // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
@@ -276,43 +270,6 @@ pub(crate) fn requirements_met(
         return RequirementStatus::Incomplete;
     }
     RequirementStatus::Complete
-}
-
-/// Whether `house` holds a `BuildConst=` structure belonging to one of the
-/// countries `required` asks for — a Construction Yard taken from another side.
-///
-/// `RequiredHouses=` is a country's own list and CanBuild reads it against the
-/// house's own country bit (`0x004F79E7..0x004F79FF`), so a yard captured from
-/// another side is a yard its new owner cannot build out of: the base is taken
-/// and produces nothing, and the capture was a raid rather than a second
-/// economy. Holding the yard is holding the country, so what that country may
-/// build the holder may build too.
-///
-/// The gate this relaxes is the country gate alone: `Prerequisite=`, the tech
-/// level and the stolen-tech byte are still asked, so a captured yard does not
-/// hand over a tree the house has not built the rest of.
-fn holds_a_captured_yard_of(
-    sim: &Simulation,
-    rules: &RuleSet,
-    house: &HouseState,
-    required: u32,
-) -> bool {
-    rules.build_const_types().iter().any(|name| {
-        let Some(id) = sim.interner.get(name) else {
-            return false;
-        };
-        if house.tracking().owned_count(EntityCategory::Structure, id) == 0 {
-            return false;
-        }
-        // Only a yard that names countries of its own counts: a `BuildConst=`
-        // structure with an empty `RequiredHouses=` answers u32::MAX, and
-        // letting it through would relax the country gate for every house that
-        // merely has a yard.
-        rules.object(name).is_some_and(|yard| {
-            let mask = yard.required_houses_mask(rules);
-            mask != u32::MAX && mask & required != 0
-        })
-    })
 }
 
 /// Whether `house` has every `Prerequisite=` entry of `obj` on the map
@@ -732,21 +689,7 @@ fn stock_check_build_limit(
     obj: &ObjectType,
 ) -> bool {
     let strip = primary_factory_category(obj);
-    // The pad arm asks the native list as well as the type's own flag.
-    //
-    // `[General] PadAircraft=` is what gamemd reads to decide which aircraft
-    // need a dock, and `[ORCA]` in the retail rules carries no `AirportBound=`
-    // at all — so a check gated on that flag silently did not apply to the
-    // Harrier, and the house built them past the airfield's capacity. The two
-    // readings disagree only where the flag is missing, which is the case that
-    // has to be covered; either is enough to make the type a docked aircraft.
-    let pad_bound = obj.airport_bound
-        || rules
-            .general
-            .pad_aircraft_types
-            .iter()
-            .any(|name| *name == obj.id);
-    if obj.category == ObjectCategory::Aircraft && pad_bound {
+    if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
         return airport_docks_full(sim, rules, owner, strip);
     }
     let limit = obj.build_limit;

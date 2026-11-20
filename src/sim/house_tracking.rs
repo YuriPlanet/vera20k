@@ -577,18 +577,6 @@ pub struct HouseTracking {
     active_aircraft_types: BTreeMap<InternedId, i32>,
     /// `HouseClass+0x5550`, the on-map count of each BuildingType.
     active_building_types: BTreeMap<InternedId, i32>,
-    /// Credits of damage this house's objects have dealt, by attacker type.
-    ///
-    /// VERA-only: gamemd keeps no such ledger. It is an analytic counter, written
-    /// by the damage commit and read by the autoplay policy, and it never
-    /// influences play. The credit is the fraction of a target's `Cost=` that
-    /// matches the fraction of its `Strength=` the hit removed, so a two-thousand
-    /// credit building knocked from full to nine tenths pays two hundred to
-    /// whoever knocked it, and the same building finished off pays two thousand.
-    /// Counting at the kill instead would credit nothing to the units that did
-    /// most of the work and never landed the last hit.
-    #[serde(default)]
-    damage_value: BTreeMap<InternedId, i64>,
     /// How this house's objects died, one row per loss.
     ///
     /// VERA-only: gamemd keeps no such ledger. `losses` above counts how many
@@ -943,20 +931,6 @@ impl HouseTracking {
     /// The sum of the four on-map counters' totals (`CounterClass+0x10` of
     /// `+0x5550`, `+0x5564`, `+0x5578` and `+0x558C`), as the co-op score
     /// rows add them (`0x0049B7E0`).
-    /// Record credits of damage dealt by one type of object.
-    pub(crate) fn credit_damage_value(&mut self, type_id: InternedId, value: i64) {
-        if value <= 0 {
-            return;
-        }
-        let entry = self.damage_value.entry(type_id).or_insert(0);
-        *entry = entry.wrapping_add(value);
-    }
-
-    /// Credits of damage this house's objects have dealt, by attacker type.
-    pub fn damage_value(&self) -> &BTreeMap<InternedId, i64> {
-        &self.damage_value
-    }
-
     /// Record one of this house's objects dying, and what killed it.
     ///
     /// Called from the kill commit, which is the one place that already holds

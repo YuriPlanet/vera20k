@@ -296,25 +296,6 @@ impl<'a> Observation<'a> {
 
     /// Credits of damage this house's objects have dealt, by attacker type name.
     ///
-    /// The other half of what a unit is worth: `own_entities` and the price say
-    /// what an army costs, and this says what it bought. A two-thousand credit
-    /// building knocked from full to nine tenths pays two hundred to whatever
-    /// knocked it, so a unit that does most of the work is paid even when it never
-    /// lands the last hit.
-    ///
-    /// Empty for a house that has not dealt damage yet, and VERA-only: gamemd
-    /// keeps no such ledger, so nothing in play reads it.
-    pub fn damage_value(&self) -> std::collections::BTreeMap<String, i64> {
-        let mut out = std::collections::BTreeMap::new();
-        let Some(house) = self.sim.houses().get(&self.house) else {
-            return out;
-        };
-        for (type_id, value) in house.tracking().damage_value() {
-            out.insert(self.sim.interner().resolve(*type_id).to_string(), *value);
-        }
-        out
-    }
-
     /// Whether `rx, ry` is ground a unit can stand on, rather than the fog grid's
     /// frame or the map buffer's padding.
     ///

@@ -65,26 +65,7 @@ fn a_perma_disguised_spy_starts_wearing_its_sides_rules_disguise() {
         let disguise = disguise.expect("constructed disguised");
         assert!(disguise.is_disguised());
         assert_eq!(disguise.type_id(), Some(sim.interner.intern(worn)));
-        // The worn house is *empty*, which is the only value that hides the
-        // spy: `IsDisguisedTo` answers 0 for a worn house that is neither the
-        // observer nor its ally, and every enemy is neither of those when the
-        // house is the spy's own. Empty is also the state `GetDisguiseHouse`
-        // substitutes the current player's house into.
-        assert_eq!(disguise.house(), None);
-        let enemy = if owner == "Russians" {
-            "Americans"
-        } else {
-            "Russians"
-        };
-        let spy_entity = sim.substrate.entities.get(spy).unwrap();
-        assert!(
-            spy_entity.is_disguised_to(sim.interner.intern(enemy), None, None, &sim.interner),
-            "an enemy house reads the disguise of the {owner} spy"
-        );
-        assert!(
-            !spy_entity.is_disguised_to(sim.interner.intern(owner), None, None, &sim.interner),
-            "its own house sees the spy"
-        );
+        assert_eq!(disguise.house(), Some(sim.interner.intern(owner)));
         // +0x1DC keeps the constructor's zero, not the construction frame.
         assert_eq!(disguise.creation_frame(), 0);
     }

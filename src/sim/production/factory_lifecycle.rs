@@ -191,43 +191,6 @@ pub(crate) fn enqueue_selected(
     };
     let type_interned = sim.interner.intern(type_id);
     let building = obj.category == ObjectCategory::Building;
-    // A docked aircraft past the airfield's pads is refused at the producer.
-    //
-    // `check_build_limit` was consulted only by the queue arm of
-    // `FactoryRegistry::enqueue`, so it bounded the *queue* and never the
-    // *start*: a house with an idle aircraft line started one more every time,
-    // finished it, and started another — the wishlist's "超出机场容量上限造
-    //战机，无视了UI最大上限". The check belongs at BeginProduction, which is
-    // where this is.
-    //
-    // The refusal has to be the *same* refusal the queue arm makes, not a quiet
-    // `false`: the click already wrote the cameo's request record, and a start
-    // that returns false without a factory visit leaves that record set, so the
-    // button draws a clock for a build that was never admitted. That is the
-    // wishlist's "战机生产UI出BUG".
-    //
-    // Scoped to the idle start: a held or paused product of the same type takes
-    // the resume branch below, which is native's own path for finishing what was
-    // already paid for.
-    let at_build_limit = check_build_limit(sim, rules, owner_id, obj);
-    if obj.category == ObjectCategory::Aircraft
-        && at_build_limit
-        && sim
-            .production
-            .factories()
-            .view(owner_id, category)
-            .is_none_or(|factory| factory.object.is_none())
-    {
-        sim.sound_events
-            .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
-        // The click already wrote the cameo's request record, and the button
-        // draws its clock from that record. Refusing without clearing it is how
-        // the sidebar showed a build that was never admitted — the wishlist's
-        // "战机生产UI出BUG了", reported twice. Native clears the request on the
-        // refused PRODUCE, and the client turns this into the same clear.
-        effects.clear_production_request(type_interned);
-        return false;
-    }
     #[cfg(feature = "phobos")]
     let building_production_queue = rules.general.building_production_queue;
     #[cfg(not(feature = "phobos"))]
@@ -301,23 +264,17 @@ pub(crate) fn enqueue_selected(
     if outcome == EnqueueOutcome::AppendRefused {
         sim.sound_events
             .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
-        // Same clear the aircraft refusal above makes, for the same reason.
+        // The append is refused — the queue is at `[General]
+        // MaximumQueuedObjects=` or the type is at its build limit — and the
+        // caller already wrote the cameo's request record for the press.
+        // Returning `false` with that record still set draws a clock that never
+        // finishes and never clears. Native clears the request on the refused
+        // PRODUCE, and the client turns this into the same clear.
         //
-        // This is the other half of the wishlist's "生产飞机（入侵者战机）UI
-        // 还是会出BUG". The aircraft type refuses two ways: at BeginProduction
-        // when the airfield's pads are full and nothing is held, and here when
-        // the append is refused — the queue is at `[General]
-        // MaximumQueuedObjects=` or the type is at its build limit. Only the
-        // first cleared the cameo's request record. The second returned `false`
-        // with the record still set, and the button draws its clock from that
-        // record: a "building" state that never finishes and never clears.
-        //
-        // Measured with the record's own reader: without this line the refused
-        // append leaves the cameo's request unset-cleared, so the client redraws
-        // the clock on every frame it is asked.
-        //
-        // Native clears the request on the refused PRODUCE whichever arm
-        // refused it; the client turns this into the same clear.
+        // The arms that refuse before the queue — no factory, a busy building
+        // line — deliberately do not clear: a brain asking for what it cannot
+        // build yet is a caller bug, and `ControlBoard`'s gate keeps it from
+        // reaching this function at all.
         effects.clear_production_request(type_interned);
         return false;
     }

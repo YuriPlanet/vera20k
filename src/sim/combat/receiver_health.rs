@@ -298,9 +298,6 @@ pub(super) fn commit_receiver_health(
     } else {
         receive_outcome.post_object_damage.unwrap_or(packet)
     };
-    credit_attacker_damage_value(
-        world, rules, target_id, attacker_id, final_packet, event.source_house,
-    );
     let reached_survivor_postlude = receive_outcome.reached_survivor_postlude;
     let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
         .then(|| {
@@ -512,52 +509,3 @@ impl BerserkState {
     }
 }
 
-/// Credit the attacker for the share of the target's price its hit removed.
-///
-/// VERA-only analytic (see `HouseTracking::damage_value`); it reads state and
-/// writes one counter, and no play path consults it. `applied` is the strength
-/// this call actually took off, so the credit is proportional to the work done
-/// and partial damage earns its share instead of only the finishing hit.
-///
-/// A target whose `Strength=` is zero is skipped rather than guarded: there is
-/// no fraction of nothing to divide, and the native data has no such target.
-fn credit_attacker_damage_value(
-    world: &mut Simulation,
-    rules: &RuleSet,
-    target_id: u64,
-    attacker_id: u64,
-    applied: i32,
-    source_house: Option<InternedId>,
-) {
-    if applied <= 0 || attacker_id == RAD_NO_ATTACKER {
-        return;
-    }
-    let Some(source) = source_house else {
-        return;
-    };
-    let Some(target_type) = world
-        .substrate
-        .entities
-        .get(target_id)
-        .and_then(|target| world.interner.object_type(target.type_ref(), rules))
-    else {
-        return;
-    };
-    if target_type.strength <= 0 || target_type.cost <= 0 {
-        return;
-    }
-    let Some(attacker_type) = world
-        .substrate
-        .entities
-        .get(attacker_id)
-        .map(|attacker| attacker.type_ref())
-    else {
-        return;
-    };
-    let value = i64::from(applied)
-        .saturating_mul(i64::from(target_type.cost))
-        / i64::from(target_type.strength);
-    if let Some(house) = world.houses.get_mut(&source) {
-        house.tracking_mut().credit_damage_value(attacker_type, value);
-    }
-}

@@ -370,22 +370,13 @@ impl Simulation {
             session.binary_frame(),
         );
         // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
-        // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
-        // SPY) starts disguised, wearing the Rules disguise of the owner's
-        // side (House+0x1E8: 0, 1, else Third) — `AlliedDisguise=E1`,
-        // `SovietDisguise=E2`, `ThirdDisguise=INIT` are what a spy looks like
-        // when no MakeupKit has picked a soldier. The worn house is left empty:
-        // `InfantryClass::IsDisguisedTo @ 0x005227F0` answers 0 for a worn
-        // house that is neither the observer nor its ally, so a disguise worn
-        // as the owner would be transparent to every enemy and the spy would be
-        // never disguised at all; empty is the state
-        // `InfantryClass::GetDisguiseHouse @ 0x005226C0` fills with the current
-        // player's house. Native has no owner guard; a Techno without a
-        // represented house is a fixture case. Rust never re-runs this
-        // InitFromType tail (Unit slot +0x24 can); only retail [SPY], an
-        // Infantry, sets the keys. Ares 3.0 Sides_Disguise (1002F9C0, hook
-        // 0x6F422F) wears the owner house's GetDisguise instead, which
-        // `side_disguise` answers.
+        // SPY) starts disguised as its owner, wearing the Rules disguise
+        // of the owner's side (House+0x1E8: 0, 1, else Third). Native has
+        // no owner guard; a Techno without a represented house is a
+        // fixture case. Rust never re-runs this InitFromType tail (Unit
+        // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        // Ares 3.0 Sides_Disguise (1002F9C0, hook 0x6F422F) wears the owner
+        // house's GetDisguise instead, which `side_disguise` answers.
         if obj.can_disguise
             && obj.perma_disguise
             && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
@@ -400,8 +391,9 @@ impl Simulation {
                 .as_deref()
                 .map(|name| interner.intern(name)),
             };
+            let owner = ge.owner();
             let frame = session.binary_frame();
-            ge.disguise_mut(frame).wear_from_construction(worn, None);
+            ge.disguise_mut(frame).wear_from_construction(worn, owner);
         }
         // After the managers, InitFromType makes the object veteran
         // (`SetVeteran(1)`, `0x00750090`) where its house's spies entered a

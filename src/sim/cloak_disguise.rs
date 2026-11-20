@@ -910,25 +910,13 @@ impl DisguiseRuntime {
     /// `CanDisguise=`/`PermaDisguise=` type: the flag (`+0x1D8`), house
     /// (`+0x51C`) and type (`+0x518`), leaving the constructor's creation
     /// frame (`+0x1DC`).
-    ///
-    /// `house` is the worn house, and the construction tail leaves it empty.
-    /// It has to be: `InfantryClass::IsDisguisedTo @ 0x005227F0` answers 0 when
-    /// the worn house is neither the observer nor its ally, so a disguise worn
-    /// as the *owner* is transparent to every enemy — the spy that is never
-    /// disguised. Worn empty, the query's `fake &&` guard is skipped and every
-    /// house but the owner's own side reads the disguise, which is the retail
-    /// spy; `InfantryClass::GetDisguiseHouse @ 0x005226C0` then substitutes the
-    /// current player's house for the empty one, so each observer draws the
-    /// disguise in its own colours. The MakeupKit's `MakesDisguise=` warhead is
-    /// the other writer and *does* name a house: that is the spy picking whose
-    /// soldier to look like.
     pub(crate) fn wear_from_construction(
         &mut self,
         disguise_type: Option<InternedId>,
-        house: Option<InternedId>,
+        house: InternedId,
     ) {
         self.disguised = true;
-        self.disguised_as_house = house;
+        self.disguised_as_house = Some(house);
         self.disguise_type = disguise_type;
     }
 
