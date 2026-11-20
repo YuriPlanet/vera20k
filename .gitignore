@@ -4,6 +4,7 @@
 **/graphify-out/
 
 config.toml
+/game-files/
 /VERA.INI
 /VERARULES.INI
 
