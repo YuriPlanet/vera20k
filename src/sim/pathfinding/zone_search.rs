@@ -91,8 +91,6 @@
 pub(crate) mod native_path_entry;
 mod precheck_retry;
 
-use std::cell::Cell;
-
 use super::{BlockerNeighborCounts, MoverSearchFacts, RouteProgress, SearchMarkerOverlay};
 
 use super::zone_hierarchy::{
@@ -202,18 +200,22 @@ struct HierarchyCorridor<'a> {
     /// Each level's route, start zone first (`PathfinderClass+0xBC`, 500
     /// words a level; lengths at `+0xC74`).
     routes: [Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
-    progress: Cell<RouteProgress>,
+    /// Written by the search, read by the retry after it fails.
+    progress: RouteProgress,
 }
 
 impl HierarchyCorridor<'_> {
-    fn gate(&self) -> HierarchyGate<'_> {
-        HierarchyGate {
-            level0_zones: self.level0_zones,
-            marked_level0: &self.marked_level0,
-            blocker_neighbor_counts: self.blocker_neighbor_counts,
-            level0_route: &self.routes[0],
-            progress: &self.progress,
-        }
+    /// The search's gate, and the progress it writes.
+    fn gate(&mut self) -> (HierarchyGate<'_>, &mut RouteProgress) {
+        (
+            HierarchyGate {
+                level0_zones: self.level0_zones,
+                marked_level0: &self.marked_level0,
+                blocker_neighbor_counts: self.blocker_neighbor_counts,
+                level0_route: &self.routes[0],
+            },
+            &mut self.progress,
+        )
     }
 }
 
@@ -265,10 +267,10 @@ impl<'a> CorridorPrecheck<'a> {
             marked_level0,
             blocker_neighbor_counts: self.blocker_neighbor_counts,
             routes: paths,
-            progress: Cell::new(RouteProgress {
+            progress: RouteProgress {
                 index: 0,
                 cell: start,
-            }),
+            },
         }))
     }
 }
@@ -520,13 +522,13 @@ fn find_layered_path_after_entry(
         },
         facts.foot_entry,
     )?;
-    let search = |gate: Option<HierarchyGate<'_>>| {
+    let search = |hierarchy: Option<(HierarchyGate<'_>, &mut RouteProgress)>| {
         find_layered_path_marker(
             grid,
             start,
             start_layer,
             goal,
-            gate,
+            hierarchy,
             resolved_terrain,
             marker_overlay,
             facts,
@@ -558,7 +560,7 @@ fn find_layered_path_after_entry(
         let hierarchy_usable = precheck_retry::update_hierarchical_edges(
             &retry,
             &corridor.routes,
-            corridor.progress.get().cell,
+            corridor.progress.cell,
             &mut exclusions,
         )?;
         if tries >= CELL_SEARCH_TRIES {

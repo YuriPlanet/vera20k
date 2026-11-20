@@ -172,7 +172,7 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
         movement_zone: MovementZone::Normal,
         threat_coefficient: NativeF64Bits::POSITIVE_ZERO,
     };
-    let corridor = precheck
+    let mut corridor = precheck
         .run(&ZonePrecheckExclusions::default(), &foot, (1, 1))
         .expect("a precheck")
         .expect("the top pass is the precheck's route");
@@ -193,7 +193,7 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
 
     // The furthest route zone the search reached is the last before the
     // refused cells, and it floods from the first cell it gave a node there.
-    let progress = corridor.progress.get();
+    let progress = corridor.progress;
     assert_eq!(corridor.routes[0][progress.index], map.zone(0, (6, 0)));
     assert_eq!(map.zone(0, progress.cell), map.zone(0, (6, 0)));
 
@@ -242,7 +242,7 @@ fn a_split_zone_on_a_one_zone_route_runs_the_plain_search() {
         movement_zone: MovementZone::Normal,
         threat_coefficient: NativeF64Bits::POSITIVE_ZERO,
     };
-    let corridor = precheck
+    let mut corridor = precheck
         .run(&ZonePrecheckExclusions::default(), &foot, (1, 1))
         .expect("a precheck")
         .expect("a corridor");
@@ -263,7 +263,7 @@ fn a_split_zone_on_a_one_zone_route_runs_the_plain_search() {
     let usable = update_hierarchical_edges(
         &map.retry_inputs(&foot),
         &corridor.routes,
-        corridor.progress.get().cell,
+        corridor.progress.cell,
         &mut ZonePrecheckExclusions::default(),
     );
     assert_eq!(usable, Ok(false), "the split clears +0x38");
