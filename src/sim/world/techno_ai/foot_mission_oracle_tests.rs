@@ -529,9 +529,7 @@ impl SuppliedFootFixture {
         // cursor, including pre-fixture Main/MapGen history; no seed fitting.
         sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
         sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
         let friendly = sim.interner.intern("SuppliedFriendlyHouse");

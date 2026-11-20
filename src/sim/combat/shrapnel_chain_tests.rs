@@ -863,7 +863,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::native_identity::NativeUniqueIdCursor;
     use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
-    use crate::sim::rng::{MainRng, SimRng};
+    use crate::sim::rng::SimRng;
     use crate::util::fixed_math::SimFixed;
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -1027,7 +1027,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
         world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_id_before"].as_u64().unwrap() as u32,
         ));
-        world.main_rng = MainRng::new(seed);
+        world.main_rng = SimRng::new(seed);
         world.scenario_rng = SimRng::new(seed + 1);
         world.mapgen_rng = SimRng::new(seed + 2);
         assert_eq!(

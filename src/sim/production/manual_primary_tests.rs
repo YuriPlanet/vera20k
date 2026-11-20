@@ -492,7 +492,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         }
         sim.sound_events.clear_for_test();
         let seed = corpus["seed"].as_u64().unwrap();
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.scenario_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         let assert_rng = |sim: &Simulation, expected: &serde_json::Value| {

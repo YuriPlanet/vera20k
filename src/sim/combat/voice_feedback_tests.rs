@@ -94,8 +94,7 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
             });
         let warhead = sim.interner.intern(weapon.warhead.as_deref().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "main"))
-                .into();
+            SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "main"));
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_state(&hits[0], "rng_before", "scenario"));
         sim.mapgen_rng =
@@ -297,8 +296,7 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
         ));
         sim.substrate.entities.insert(target);
         let warhead = sim.interner.intern("FeedbackWH");
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(boundary(row, "before", "main")).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(boundary(row, "before", "main"));
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(boundary(row, "before", "scenario"));
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(boundary(row, "before", "mapgen"));

@@ -430,7 +430,10 @@ mod main_draw_tests {
         let scenario = installed.rng_state().scenario;
         let mut reference = SimRng::new(42);
         for _ in 0..7 {
-            assert_eq!(installed.main_rng().next_u32(), reference.next_u32());
+            assert_eq!(
+                installed.main_rng_mut_for_test().next_u32(),
+                reference.next_u32()
+            );
         }
         installed.install_fresh_process_main(&frontend);
         // The app's cell takes the bootstrap cursor ...
@@ -442,7 +445,10 @@ mod main_draw_tests {
             process_main_draws(&frontend).ranged(0, 4),
             reference.next_range_i32_inclusive(0, 4)
         );
-        assert_eq!(installed.main_rng().next_u32(), world.next_u32());
+        assert_eq!(
+            installed.main_rng_mut_for_test().next_u32(),
+            world.next_u32()
+        );
         assert_eq!(retained.next_u32(), reference.next_u32());
         assert_eq!(installed.rng_state().main, world.logical_state());
         assert_eq!(installed.rng_state().scenario, scenario);

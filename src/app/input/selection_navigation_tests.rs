@@ -903,7 +903,7 @@ fn replay_category_history(
                 }
                 for draw in step["main_draws"].as_array().unwrap() {
                     assert_eq!(
-                        u64::from(sim.main_rng().next_u32()),
+                        u64::from(sim.main_rng_mut_for_test().next_u32()),
                         draw.as_u64().unwrap(),
                         "{label}: supplied TypeSelect continuation"
                     );
@@ -928,7 +928,7 @@ fn replay_category_history(
         }
         assert_navigation_boundary(&input, &sim, step, &label);
         assert_navigation_rng(&sim, &step["rng_after_hex"], &label);
-        let mut continuation = sim.main_rng().snapshot_for_test();
+        let mut continuation = sim.main_rng().clone();
         for draw in step["main_next_four"].as_array().unwrap() {
             assert_eq!(
                 u64::from(continuation.next_u32()),
@@ -965,7 +965,7 @@ fn replay_category_history(
     );
     for &draw in &history.main_next_four {
         assert_eq!(
-            sim.main_rng().next_u32(),
+            sim.main_rng_mut_for_test().next_u32(),
             draw,
             "{}: final Main continuation",
             history.id
@@ -1211,7 +1211,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
             );
             for native_draw in &history.main_next_four {
                 assert_eq!(
-                    sim.main_rng().next_u32(),
+                    sim.main_rng_mut_for_test().next_u32(),
                     *native_draw,
                     "{label}: next raw Main"
                 );
@@ -1370,7 +1370,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
                 input = boundary_mode(step);
                 for draw in step["main_draws"].as_array().unwrap() {
                     assert_eq!(
-                        u64::from(sim.main_rng().next_u32()),
+                        u64::from(sim.main_rng_mut_for_test().next_u32()),
                         draw.as_u64().unwrap(),
                         "{label} step {index}"
                     );
@@ -1569,7 +1569,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
         );
         for &expected in &history.main_next_four {
             assert_eq!(
-                sim.main_rng().next_u32(),
+                sim.main_rng_mut_for_test().next_u32(),
                 expected,
                 "{label}: following raw draw"
             );

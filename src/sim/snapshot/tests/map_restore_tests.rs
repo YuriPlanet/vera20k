@@ -323,23 +323,22 @@ fn terrain_asset_restore_fixture() -> (
 fn snapshot_restore_prepares_live_terrain_assets_before_map_publication() {
     let (mut sim, rules, registry) = terrain_asset_restore_fixture();
     let rng_before = sim.rng_state();
-    let mut expected_main = sim.main_rng.snapshot_for_test();
+    let mut expected_main = sim.main_rng.clone();
     let expected_word = expected_main.next_u32();
     let mut calls = 0;
-    let mut prepare = |terrain: &mut ResolvedTerrainGrid,
-                       main: crate::sim::rng::MainRngDraws,
-                       size_width: i32| {
-        calls += 1;
-        assert_eq!(
-            size_width, 2,
-            "the native iterator uses Size, not grid width"
-        );
-        assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
-        assert_eq!(terrain.cell(1, 2).unwrap().bridge_facts.raw_flags, 0);
-        assert!(!terrain.cell(2, 2).unwrap().overlay_blocks);
-        assert_eq!(main.next_u32(), expected_word);
-        Ok(())
-    };
+    let mut prepare =
+        |terrain: &mut ResolvedTerrainGrid, main: &mut crate::sim::rng::SimRng, size_width: i32| {
+            calls += 1;
+            assert_eq!(
+                size_width, 2,
+                "the native iterator uses Size, not grid width"
+            );
+            assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
+            assert_eq!(terrain.cell(1, 2).unwrap().bridge_facts.raw_flags, 0);
+            assert!(!terrain.cell(2, 2).unwrap().overlay_blocks);
+            assert_eq!(main.next_u32(), expected_word);
+            Ok(())
+        };
 
     sim.restore_map_authority_after_snapshot_load(&rules, &registry, Some(&mut prepare))
         .expect("prepare assets from dynamic cells before final map publication");
@@ -360,10 +359,10 @@ fn snapshot_restore_prepares_live_terrain_assets_before_map_publication() {
 #[test]
 fn snapshot_restore_terrain_asset_error_stops_map_publication() {
     let (mut sim, rules, registry) = terrain_asset_restore_fixture();
-    let mut expected_main = sim.main_rng.snapshot_for_test();
+    let mut expected_main = sim.main_rng.clone();
     let expected_word = expected_main.next_u32();
     let mut prepare =
-        |terrain: &mut ResolvedTerrainGrid, main: crate::sim::rng::MainRngDraws, _: i32| {
+        |terrain: &mut ResolvedTerrainGrid, main: &mut crate::sim::rng::SimRng, _: i32| {
             assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
             assert_eq!(main.next_u32(), expected_word);
             Err("missing selected TMP".to_string())

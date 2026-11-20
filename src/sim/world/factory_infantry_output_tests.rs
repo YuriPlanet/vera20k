@@ -663,7 +663,7 @@ fn ground_command_fixture(
         }
     }
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "main")).into();
+        SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "main"));
     sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "mapgen"));
     sim.scenario_rng =

@@ -621,7 +621,7 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     sim.session
         .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     sim.mapgen_rng =

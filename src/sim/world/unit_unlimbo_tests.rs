@@ -966,9 +966,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
             ));
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
         sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
         sim.mapgen_rng =

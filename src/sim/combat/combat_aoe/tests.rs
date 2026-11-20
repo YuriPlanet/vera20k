@@ -3168,7 +3168,7 @@ fn gsi_04_07_damage_nonfatal_infantry_scatter_precedes_fear() {
             ));
         }
         world.session.set_binary_frame_for_test(100);
-        world.main_rng = SimRng::new(7).into();
+        world.main_rng = SimRng::new(7);
         world.scenario_rng = SimRng::new(1);
         // Some(false) models campaign PlayerControl without IsHuman.
         world.session.set_game_mode(

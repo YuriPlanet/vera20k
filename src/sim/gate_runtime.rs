@@ -477,7 +477,7 @@ mod tests {
                 CellListInsertion::PrependNonBuilding,
             );
         }
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.scenario_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         (sim, rules)

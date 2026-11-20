@@ -1285,8 +1285,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
@@ -1663,8 +1662,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
@@ -1827,8 +1825,7 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
@@ -2114,7 +2111,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
     sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
     sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());

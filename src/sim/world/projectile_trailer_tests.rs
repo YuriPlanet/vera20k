@@ -131,7 +131,7 @@ fn counts(sim: &Simulation) -> Value {
 
 fn scene(row: &Value, terminal: bool, rules: &RuleSet) -> (Simulation, u64) {
     let mut sim = Simulation::with_seed(31);
-    sim.main_rng = SimRng::new(31).into();
+    sim.main_rng = SimRng::new(31);
     sim.scenario_rng = SimRng::new(31);
     sim.session
         .set_binary_frame_for_test(row["supplied"]["frame"].as_i64().unwrap() as u32);
@@ -420,7 +420,7 @@ fn restored(sim: &Simulation) -> Simulation {
     // Production restores live process streams around the native Scenario
     // seed-zero reset. This continuation has no constructor RNG left to draw.
     // These loaded controls run as independent test processes.
-    result.main_rng = sim.main_rng.snapshot_for_test().into();
+    result.main_rng = sim.main_rng.clone();
     result.mapgen_rng = sim.mapgen_rng.clone();
     result.restore_after_snapshot_load().unwrap();
     result

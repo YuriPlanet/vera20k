@@ -254,7 +254,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             .unwrap()
     };
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(first_stream("scenario"));
-    sim.main_rng = SimRng::from_native_state_hex_for_test(first_stream("main")).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(first_stream("main"));
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(first_stream("mapgen"));
     for input in &definitions {
         sim.trigger_runtime

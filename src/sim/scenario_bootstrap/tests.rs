@@ -3374,11 +3374,10 @@ fn gsi_04_12_prefix_fill_and_generated_trace_share_one_scenario_owner() {
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
-        let (mut scenario_fill, main) = sim.terrain_load_draws();
+        let (mut scenario_fill, _main) = sim.terrain_load_draws();
         let actual = scenario_fill.next_range_u32_inclusive(5, 17);
         let expected = reference.next_range_u32_inclusive(5, 17);
         assert_eq!(actual, expected);
-        drop(main);
     }
 
     let mut trace = RmgConstructionTrace::default();
@@ -3514,11 +3513,10 @@ fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate()
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
-        let (mut scenario_fill, main) = sim.terrain_load_draws();
+        let (mut scenario_fill, _main) = sim.terrain_load_draws();
         let actual = scenario_fill.next_range_u32_inclusive(5, 17);
         let expected = reference.next_range_u32_inclusive(5, 17);
         assert_eq!(actual, expected, "terrain Fill continues the prefix");
-        drop(main);
     }
 
     let mut trace = RmgConstructionTrace::default();

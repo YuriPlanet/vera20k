@@ -1050,9 +1050,7 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
             })
             .unwrap();
         let entry = &class["rng_at_entry"];
-        sim.main_rng = serde_json::from_value::<SimRng>(entry["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(entry["main"].clone()).unwrap();
         sim.scenario_rng = serde_json::from_value::<SimRng>(entry["scenario"].clone()).unwrap();
         sim.mapgen_rng = serde_json::from_value::<SimRng>(entry["mapgen"].clone()).unwrap();
         let requested = NavTargetRef::Object { id: 2 };

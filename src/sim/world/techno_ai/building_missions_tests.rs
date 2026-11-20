@@ -663,8 +663,7 @@ fn hidden_startup_matches_original_mission_and_rng() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         assert_hidden_startup_state(&sim, building, &row["initial"], name);

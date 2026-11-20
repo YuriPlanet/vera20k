@@ -423,7 +423,7 @@ impl Fixture {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["mapgen"].as_str().unwrap());
         Self {

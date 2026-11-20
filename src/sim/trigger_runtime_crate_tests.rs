@@ -47,7 +47,7 @@ fn integer(value: &Value) -> i32 {
 
 fn supply_rng(sim: &mut Simulation, state: &Value) {
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
 }
 

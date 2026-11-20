@@ -431,7 +431,7 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
 /// (5197E5/51984D): one Main draw even for a singleton, none for an empty list.
 pub(crate) fn select_death_sound(
     choices: &[String],
-    main_rng: &crate::sim::rng::MainRng,
+    main_rng: &mut crate::sim::rng::SimRng,
 ) -> Option<String> {
     if choices.is_empty() {
         None

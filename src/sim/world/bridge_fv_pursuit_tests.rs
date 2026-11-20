@@ -323,7 +323,7 @@ fn command_paid_fv(
             .game_options_mut_for_test()
             .apply_in_game_speed(game_speed)
     );
-    sim.main_rng = crate::sim::rng::SimRng::new(0).into();
+    sim.main_rng = crate::sim::rng::SimRng::new(0);
     sim.mapgen_rng = crate::sim::rng::SimRng::new(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(scenario_seed);
     let id = spawn_fv(scene, xyz);

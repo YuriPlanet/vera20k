@@ -754,9 +754,8 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
                     grinder,
                     "victim Tag48 follows refund and precedes EnterGrinderSound"
                 );
+                // Playback draws the app's own Main cell, never this one.
                 self.sounds.borrow_mut().push(sound_id.clone());
-                // A reached audio consumer shares Main with list selection.
-                sim.main_rng.next_u32();
             }
             self.delivered.set(events.len());
         }
@@ -808,20 +807,17 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     sim.attach_object_trigger_tag(civ, Some("DONE_TAG"));
     sim.clear_tag_dispatch_trace_for_test();
     sim.sound_events.clear_for_test();
-    sim.main_rng = crate::sim::rng::MainRng::new(60);
+    sim.main_rng = crate::sim::rng::SimRng::new(60);
     let mut expected = crate::sim::rng::SimRng::new(60);
     let voice = ["VoiceA", "VoiceB"][(expected.next_u32() % 2) as usize];
     let voice_state = expected.logical_state();
-    expected.next_u32();
     let die = ["DieA", "DieB"][(expected.next_u32() % 2) as usize];
     let die_state = expected.logical_state();
-    expected.next_u32();
-    let grinder_state = expected.logical_state();
-    expected.next_u32();
+    // A flush after the next list's draw would show that draw's state here.
     let playback = Playback {
         delivered: Cell::new(0),
         sounds: RefCell::new(Vec::new()),
-        before_play: [voice_state, die_state, grinder_state],
+        before_play: [voice_state, die_state.clone(), die_state],
     };
     assert!(sim.foot_per_cell_eaten(civ, &rules, None, FrameEffects::for_sound(&playback)));
     assert_eq!(*playback.sounds.borrow(), [voice, die, "GrinderGrinding"]);

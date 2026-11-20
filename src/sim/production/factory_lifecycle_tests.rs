@@ -404,8 +404,7 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
             let before = &row["observation"]["rng_before"];
             sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-            sim.main_rng =
-                SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+            sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
             sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
 

@@ -3097,7 +3097,7 @@ fn native_first_head_building_warning_and_release_corpus() {
         // never reset the streams between start and either release.
         let seed = input["rng_seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);

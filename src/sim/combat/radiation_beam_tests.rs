@@ -456,8 +456,7 @@ fn assert_native_births(
         assert_eq!(source_entity.veterancy.rank(), 0, "{name} rookie input");
         let facing_before = source_entity.body_facing;
         let rng_before = &native["birth_rng_before"];
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
         sim.mapgen_rng =
@@ -665,7 +664,7 @@ fn native_eruption_births_and_main_draws_match_the_original() {
         }
         let source = place_native_actor(&mut sim, rules, "DESO", "Americans", &input["source"]);
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["main_rng_before"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(row["main_rng_before"].as_str().unwrap());
         sim.lifecycle_outputs.clear_for_test();
         super::radiation_beam::erupted(&mut sim, rules, source, weapon);
         let births: Vec<_> = sim
