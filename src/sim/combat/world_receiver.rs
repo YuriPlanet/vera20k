@@ -722,7 +722,8 @@ pub(crate) fn apply_area_damage(
     effects: FrameEffects<'_>,
 ) -> AreaDamageApply {
     let mut run = ReceiverRun::default().with_effects(effects);
-    let (death, pings, crit_active, area_result) = apply_area_damage_in_run(
+    let mut pings = Vec::new();
+    let (death, crit_active, area_result) = apply_area_damage_in_run(
         world,
         &mut run,
         rules,
@@ -732,6 +733,7 @@ pub(crate) fn apply_area_damage(
         warhead,
         affects_tiberium,
         origin,
+        &mut pings,
     );
     let navigation = run.finish();
     let receipt = world.absorb_noncombat_damage_effects(rules, death, pings, navigation, effects);
@@ -757,8 +759,9 @@ pub(crate) struct AreaDamageApply {
 
 /// [`apply_area_damage`] inside a damage transaction (a TerrainClass death's
 /// C4 at `0x0071BABF`, a dying carrier's bomb at `0x0070267F`): the receivers
-/// commit in `run`, then area rocking and bridge damage. Their effects and pings go
-/// back to the receiver that set the area off.
+/// commit in `run`, then area rocking and bridge damage. Their effects go
+/// back to the receiver that set the area off, their pings onto `pings` in
+/// order.
 pub(crate) fn apply_area_damage_in_run(
     world: &mut Simulation,
     run: &mut ReceiverRun,
@@ -769,7 +772,8 @@ pub(crate) fn apply_area_damage_in_run(
     warhead: &WarheadType,
     affects_tiberium: bool,
     origin: (u64, Option<InternedId>, InternedId),
-) -> (DeathEffects, Vec<UnderAttackEvent>, bool, AreaDamageResult) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> (DeathEffects, bool, AreaDamageResult) {
     apply_area_damage_in_run_with_target(
         world,
         run,
@@ -781,6 +785,7 @@ pub(crate) fn apply_area_damage_in_run(
         affects_tiberium,
         origin,
         None,
+        pings,
     )
 }
 
@@ -800,7 +805,8 @@ pub(crate) fn apply_area_damage_in_run_with_target(
     affects_tiberium: bool,
     origin: (u64, Option<InternedId>, InternedId),
     area_target: Option<u64>,
-) -> (DeathEffects, Vec<UnderAttackEvent>, bool, AreaDamageResult) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> (DeathEffects, bool, AreaDamageResult) {
     let area = collect_area_at(
         world,
         rules,
@@ -843,20 +849,26 @@ pub(crate) fn apply_area_damage_in_run_with_target(
     let _ = area_target;
     #[cfg(not(feature = "phobos"))]
     let crit_active = false;
-    let (nested, mut pings, area_result) =
-        commit_area_with_dispatch(world, run, &area.aoe.receivers, rules, overlay_registry);
+    let (nested, area_result) = commit_area_with_dispatch(
+        world,
+        run,
+        &area.aoe.receivers,
+        rules,
+        overlay_registry,
+        pings,
+    );
     effects.append(nested);
-    let (tail, mut tail_pings) = continue_area_damage(
+    let tail = continue_area_damage(
         world,
         run,
         rules,
         overlay_registry,
         area.continuation,
         area_result,
+        pings,
     );
     effects.append(tail);
-    pings.append(&mut tail_pings);
-    (effects, pings, crit_active, area_result)
+    (effects, crit_active, area_result)
 }
 
 /// Original AreaDamage call arguments and the layer selected at489357..48958D,
@@ -1004,10 +1016,9 @@ pub(crate) fn commit_area(
     receivers: &[combat_aoe::AreaDamageReceiver],
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) -> (DeathEffects, Vec<UnderAttackEvent>) {
-    let (effects, pings, _) =
-        commit_area_with_dispatch(world, run, receivers, rules, overlay_registry);
-    (effects, pings)
+    pings: &mut Vec<UnderAttackEvent>,
+) -> DeathEffects {
+    commit_area_with_dispatch(world, run, receivers, rules, overlay_registry, pings).0
 }
 
 /// Apply_area_damage48935C initializes its receiver flag to zero, sets it
@@ -1022,19 +1033,22 @@ pub(crate) enum AreaDamageResult {
     IronCurtain = 2,
 }
 
+/// Dispatch an area's receivers in order. Their pings go onto the caller's
+/// `pings` as each receiver raises them, the order the House dispatcher
+/// later reads; their other effects come back.
 pub(crate) fn commit_area_with_dispatch(
     world: &mut Simulation,
     run: &mut ReceiverRun,
     receivers: &[combat_aoe::AreaDamageReceiver],
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) -> (DeathEffects, Vec<UnderAttackEvent>, AreaDamageResult) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> (DeathEffects, AreaDamageResult) {
     let current_tick = receiver_tick(world);
 
     let isolation_armed =
         area_near_center_ic_isolation_armed(receivers, &world.substrate.entities, current_tick);
     let mut effects = DeathEffects::default();
-    let mut under_attack_events = Vec::new();
     let mut dispatched = false;
 
     for receiver in receivers {
@@ -1058,10 +1072,8 @@ pub(crate) fn commit_area_with_dispatch(
             }
         }
         dispatched = true;
-        let (nested, mut pings, _) =
-            commit_receiver(world, run, *receiver, rules, overlay_registry);
+        let (nested, _) = commit_receiver(world, run, *receiver, rules, overlay_registry, pings);
         effects.append(nested);
-        under_attack_events.append(&mut pings);
     }
 
     let result = if isolation_armed {
@@ -1071,7 +1083,7 @@ pub(crate) fn commit_area_with_dispatch(
     } else {
         AreaDamageResult::NoReceiver
     };
-    (effects, under_attack_events, result)
+    (effects, result)
 }
 
 fn area_isolation_dispatches(
@@ -1128,12 +1140,12 @@ pub(crate) fn commit_receiver(
     receiver: combat_aoe::AreaDamageReceiver,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) -> (DeathEffects, Vec<UnderAttackEvent>, i32) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> (DeathEffects, i32) {
     match receiver {
         combat_aoe::AreaDamageReceiver::Entity(event) => {
             let frame = ReceiverFrame::capture(world);
             let mut death = DeathEffects::default();
-            let mut under_attack_events = Vec::new();
             let damage = commit_entity(
                 world,
                 run,
@@ -1142,12 +1154,12 @@ pub(crate) fn commit_receiver(
                 rules,
                 overlay_registry,
                 &mut death,
-                &mut under_attack_events,
+                pings,
             );
-            (death, under_attack_events, damage)
+            (death, damage)
         }
         combat_aoe::AreaDamageReceiver::Terrain(event) => {
-            commit_terrain(world, run, event, false, rules, overlay_registry)
+            commit_terrain(world, run, event, false, rules, overlay_registry, pings)
         }
     }
 }
@@ -1162,17 +1174,13 @@ pub(crate) fn commit_terrain(
     ignore_defenses: bool,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) -> (DeathEffects, Vec<UnderAttackEvent>, i32) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> (DeathEffects, i32) {
     let mut effects = DeathEffects::default();
-    let mut under_attack_events = Vec::new();
     let mut caller_damage =
         super::receiver_call::ReceiverDamage::new(event.damage, event.damage_writeback);
     let Some(warhead) = world.interner.warhead_type(event.warhead_ref, rules) else {
-        return (
-            effects,
-            under_attack_events,
-            caller_damage.read(world, rules),
-        );
+        return (effects, caller_damage.read(world, rules));
     };
     let mut packet = event.damage;
     let receive = world.terrain_objects.receive_damage(
@@ -1203,11 +1211,7 @@ pub(crate) fn commit_terrain(
         if ignites {
             world.terrain_catch_fire(event.stable_id, rules);
         }
-        return (
-            effects,
-            under_attack_events,
-            caller_damage.read(world, rules),
-        );
+        return (effects, caller_damage.read(world, rules));
     };
 
     // ObjectReceiveDamage5F57AF calls DetachAll before returning lethal4
@@ -1252,7 +1256,7 @@ pub(crate) fn commit_terrain(
         {
             crate::sim::world::damage_consequences::admit_explosion_effect(world, rules, effect);
         }
-        let (nested, mut pings, _crit_active, _area_result) = apply_area_damage_in_run(
+        let (nested, _crit_active, _area_result) = apply_area_damage_in_run(
             world,
             run,
             rules,
@@ -1262,9 +1266,9 @@ pub(crate) fn commit_terrain(
             c4_warhead,
             true,
             (RAD_NO_ATTACKER, None, c4_id),
+            pings,
         );
         effects.append(nested);
-        under_attack_events.append(&mut pings);
         // The following CellChainReaction request (71BAD5) on the terrain's
         // cell calls 489270, whose active-YR body is RET. Ares 3.0 fills it
         // with CellChainReact (10050DD0).
@@ -1280,11 +1284,7 @@ pub(crate) fn commit_terrain(
     }
 
     world.terrain_lethal_uninit(lethal, &mut run.finalizing_terrain, uninit_context);
-    (
-        effects,
-        under_attack_events,
-        caller_damage.read(world, rules),
-    )
+    (effects, caller_damage.read(world, rules))
 }
 
 pub(crate) fn commit_entities(
@@ -1294,11 +1294,11 @@ pub(crate) fn commit_entities(
     near_center_ic_isolation_override: Option<bool>,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-) -> (DeathEffects, Vec<UnderAttackEvent>) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> DeathEffects {
     let frame = ReceiverFrame::capture(world);
 
     let mut death = DeathEffects::default();
-    let mut under_attack_events = Vec::new();
     // Apply_area_damage finishes collecting its fixed target/distance records
     // before dispatch. A qualifying near-center Iron Curtain therefore
     // isolates the entire eligible transaction, including records collected
@@ -1320,10 +1320,10 @@ pub(crate) fn commit_entities(
             rules,
             overlay_registry,
             &mut death,
-            &mut under_attack_events,
+            pings,
         );
     }
-    (death, under_attack_events)
+    death
 }
 
 #[derive(Clone, Copy)]
@@ -2676,10 +2676,13 @@ pub(crate) fn handle_death(
             }
             // `0x0070267F`: after its death weapon, the bomb it carries goes
             // off (`BombClass::Detonate @ 0x00438720`).
-            if let Some((effects, pings)) =
-                world.bomb_detonate_in_run(run, dead_id, rules, overlay_registry)
-            {
-                under_attack_events.extend(pings);
+            if let Some(effects) = world.bomb_detonate_in_run(
+                run,
+                dead_id,
+                rules,
+                overlay_registry,
+                &mut under_attack_events,
+            ) {
                 blast_effects.append(effects);
             }
         }
@@ -3551,11 +3554,11 @@ fn continue_area_damage(
     overlay_registry: Option<&OverlayTypeRegistry>,
     context: AreaDamageContinuation<'_>,
     area_result: AreaDamageResult,
-) -> (DeathEffects, Vec<UnderAttackEvent>) {
+    pings: &mut Vec<UnderAttackEvent>,
+) -> DeathEffects {
     let mut death = DeathEffects::default();
-    let mut pings = Vec::new();
     if !context.entered || area_result == AreaDamageResult::IronCurtain {
-        return (death, pings);
+        return death;
     }
     area_rocker::apply(
         world,
@@ -3625,7 +3628,7 @@ fn continue_area_damage(
         //Keep the same receiver run across this recursive gameplay chain.
         if let Some(c4) = rules.warhead(&rules.bridge_warheads.c4_name) {
             let reference = world.interner.intern(&c4.id);
-            let (nested, mut nested_pings, _crit_active, _area_result) = apply_area_damage_in_run(
+            let (nested, _crit_active, _area_result) = apply_area_damage_in_run(
                 world,
                 run,
                 rules,
@@ -3635,9 +3638,9 @@ fn continue_area_damage(
                 c4,
                 true,
                 (RAD_NO_ATTACKER, context.source_house, reference),
+                pings,
             );
             death.append(nested);
-            pings.append(&mut nested_pings);
         }
         //48A38A..48A3D8: ordered trials stop after the FIRST success. The
         //selected Voxel constructor finishes its RNG before the particle trial.
@@ -3712,7 +3715,7 @@ fn continue_area_damage(
     {
         world.spawn_particle_in_system(system, position, position, rules);
     }
-    (death, pings)
+    death
 }
 
 /// Installed46920B ->100536E0's local extension-effect coordinate. The
@@ -3869,8 +3872,18 @@ fn ares_damage_occupants(
                 arg6: true,
             },
         );
-        let (death, mut pings) =
-            commit_entities(world, run, &[event], None, rules, overlay_registry);
+        // The pings follow the receiver's effects in `effects`, so they
+        // gather apart first.
+        let mut pings = Vec::new();
+        let death = commit_entities(
+            world,
+            run,
+            &[event],
+            None,
+            rules,
+            overlay_registry,
+            &mut pings,
+        );
         effects.append(death);
         effects.under_attack_events.append(&mut pings);
     }
@@ -4523,24 +4536,30 @@ pub(crate) fn commit_projectile_detonations_inline(
             );
             let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
             let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-            let (inline_death, mut pings, area_result) = commit_area_with_dispatch(
+            let (inline_death, area_result) = commit_area_with_dispatch(
                 world,
                 run,
                 &emit.damage_events[damage_start..],
                 rules,
                 overlay_registry,
+                under_attack_events,
             );
             emit.effects.append(inline_death);
             if let Some(context) = area_continuation {
-                let (tail, mut tail_pings) =
-                    continue_area_damage(world, run, rules, overlay_registry, context, area_result);
+                let tail = continue_area_damage(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    context,
+                    area_result,
+                    under_attack_events,
+                );
                 emit.effects.append(tail);
-                pings.append(&mut tail_pings);
             }
             emit.effects
                 .explosion_effects
                 .extend(outer_explosion_effects);
-            under_attack_events.append(&mut pings);
             //469A88..469A94: ordinary AreaDamage may synchronously remove
             // its Bullet. Return before Inviso/selection/debris; the outer
             //469038 alive gate also skips all remaining cluster draws.

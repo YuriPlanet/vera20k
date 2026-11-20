@@ -2728,12 +2728,13 @@ impl FireCommitBoundary {
         } = self;
         let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
         let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-        let (inline_death, mut pings) = commit_area(
+        let inline_death = commit_area(
             world,
             run,
             &emit.damage_events[damage_start..],
             rules,
             overlay_registry,
+            under_attack_events,
         );
         emit.effects.append(inline_death);
         emit.effects
@@ -2746,7 +2747,6 @@ impl FireCommitBoundary {
             outer_anim_requests,
             &mut emit.effects.smudge_spawn_requests,
         );
-        under_attack_events.append(&mut pings);
         commit_fire_bookkeeping(world, rules, emit, overlay_registry, run.effects());
         #[cfg(any(test, feature = "test-support"))]
         for event in &emit.fire_events[fire_event_start..] {

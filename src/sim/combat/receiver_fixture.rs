@@ -579,14 +579,17 @@ pub(crate) fn commit_damage_events(
             *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_binary_frame_for_test(current_tick as u32);
-            world_receiver::commit_entities(
+            let mut pings = Vec::new();
+            let effects = world_receiver::commit_entities(
                 world,
                 run,
                 damage_events,
                 None,
                 rules,
                 overlay_registry,
-            )
+                &mut pings,
+            );
+            (effects, pings)
         },
     )
 }
@@ -631,7 +634,16 @@ pub(crate) fn commit_area_damage_receivers(
             *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_binary_frame_for_test(current_tick as u32);
-            world_receiver::commit_area(world, run, receivers, rules, overlay_registry)
+            let mut pings = Vec::new();
+            let effects = world_receiver::commit_area(
+                world,
+                run,
+                receivers,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
+            (effects, pings)
         },
     )
 }

@@ -1219,6 +1219,7 @@ mod tests {
             None,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         let building = sim.substrate.entities.get(bunker).unwrap();

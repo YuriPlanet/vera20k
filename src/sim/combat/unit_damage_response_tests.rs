@@ -142,6 +142,7 @@ fn hit_by(
         None,
         rules,
         None,
+        &mut Vec::new(),
     );
 }
 

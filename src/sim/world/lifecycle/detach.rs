@@ -278,16 +278,16 @@ impl Simulation {
                         arg6: true,
                     },
                 );
-                let (nested, mut pings) = crate::sim::combat::world_receiver::commit_entities(
+                let nested = crate::sim::combat::world_receiver::commit_entities(
                     self,
                     run,
                     &[event],
                     Some(false),
                     rules,
                     overlay_registry,
+                    &mut under_attack_events,
                 );
                 death_effects.append(nested);
-                under_attack_events.append(&mut pings);
             }
         }
         (death_effects, under_attack_events)

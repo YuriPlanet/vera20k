@@ -817,6 +817,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
         None,
         &s.rules,
         Some(crate::sim::tiberium::test_support::overlay_registry()),
+        &mut Vec::new(),
     );
     let after = sample(&s, s.miner);
     assert!(!after.unloading);

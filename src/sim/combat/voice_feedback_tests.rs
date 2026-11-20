@@ -117,7 +117,7 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
                 hit["health_before"],
                 "{phase}: no authored HP or per-hit reseed"
             );
-            let ((result, _), draws) = crate::sim::rng::trace_draws(|| {
+            let (result, draws) = crate::sim::rng::trace_draws(|| {
                 world_receiver::commit_entities(
                     &mut sim,
                     &mut world_receiver::ReceiverRun::default(),
@@ -132,6 +132,7 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
                     None,
                     rules,
                     None,
+                    &mut Vec::new(),
                 )
             });
             assert!(
@@ -315,10 +316,11 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
                 None,
                 &rules,
                 None,
+                &mut Vec::new(),
             )
         });
         assert!(
-            result.0.despawned_ids.is_empty(),
+            result.despawned_ids.is_empty(),
             "{label}: surviving result fixture"
         );
         assert_eq!(

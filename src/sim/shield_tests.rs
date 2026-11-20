@@ -512,12 +512,13 @@ fn the_dispatched_receiver_returns_the_damage_left_by_the_shield() {
     let (mut sim, _) = scene(&rules);
     let warhead = sim.interner.intern("WH");
     let event = EntityDamageEvent::area(1, 40, 0, RAD_NO_ATTACKER, None, warhead);
-    let (_, _, packet) = world_receiver::commit_receiver(
+    let (_, packet) = world_receiver::commit_receiver(
         &mut sim,
         &mut world_receiver::ReceiverRun::default(),
         AreaDamageReceiver::Entity(event),
         &rules,
         None,
+        &mut Vec::new(),
     );
     assert_eq!(packet, 0);
     assert_eq!(health(&sim), 200);

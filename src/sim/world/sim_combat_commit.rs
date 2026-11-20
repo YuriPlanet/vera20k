@@ -659,17 +659,16 @@ impl Simulation {
                                 scenario_rng_state: self.scenario_rng.state(),
                             },
                         );
-                        let (nested, mut pings, damage) =
-                            crate::sim::combat::world_receiver::commit_receiver(
-                                self,
-                                &mut run,
-                                receiver,
-                                rules,
-                                overlay_registry,
-                            );
+                        let (nested, damage) = crate::sim::combat::world_receiver::commit_receiver(
+                            self,
+                            &mut run,
+                            receiver,
+                            rules,
+                            overlay_registry,
+                            &mut under_attack_events,
+                        );
                         shared_damage = damage;
                         effects.append(nested);
-                        under_attack_events.append(&mut pings);
                     }
 
                     // Native loads current->NextObject only after its callback.
@@ -907,13 +906,15 @@ impl Simulation {
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events) = crate::sim::combat::world_receiver::commit_entities(
+        let mut under_attack_events = Vec::new();
+        let effects = crate::sim::combat::world_receiver::commit_entities(
             self,
             &mut run,
             std::slice::from_ref(&event),
             Some(false),
             rules,
             overlay_registry,
+            &mut under_attack_events,
         );
         let terrain_navigation_changed_cells = run.finish();
         self.absorb_noncombat_damage_effects(
@@ -974,13 +975,15 @@ impl Simulation {
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events, _) = crate::sim::combat::world_receiver::commit_terrain(
+        let mut under_attack_events = Vec::new();
+        let (effects, _) = crate::sim::combat::world_receiver::commit_terrain(
             self,
             &mut run,
             event,
             ignore_defenses,
             rules,
             overlay_registry,
+            &mut under_attack_events,
         );
         let terrain_navigation_changed_cells = run.finish();
         self.absorb_noncombat_damage_effects(
@@ -1023,14 +1026,15 @@ impl Simulation {
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events, area_result) =
-            crate::sim::combat::world_receiver::commit_area_with_dispatch(
-                self,
-                &mut run,
-                receivers,
-                rules,
-                overlay_registry,
-            );
+        let mut under_attack_events = Vec::new();
+        let (effects, area_result) = crate::sim::combat::world_receiver::commit_area_with_dispatch(
+            self,
+            &mut run,
+            receivers,
+            rules,
+            overlay_registry,
+            &mut under_attack_events,
+        );
         let terrain_navigation_changed_cells = run.finish();
         let mut receipt = self.absorb_noncombat_damage_effects(
             rules,

@@ -705,6 +705,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             false,
             &scene.rules,
             None,
+            &mut Vec::new(),
         );
         run.finish();
         check(&scene, &expected["after_receiver"]);
