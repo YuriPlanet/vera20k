@@ -33,6 +33,7 @@ pub mod lepton;
 pub mod logging;
 pub mod lookup_hash;
 pub mod mod_definition;
+pub mod mod_package;
 pub mod lzo;
 pub(crate) mod native_ballistics;
 pub mod native_color;

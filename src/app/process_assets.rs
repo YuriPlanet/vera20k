@@ -36,9 +36,6 @@ pub(crate) fn transfer_outgoing_simulation_rules(
 pub(crate) struct ProcessAssets {
     /// Selected at launch, retained even if initial archive loading fails.
     media_archive_mode: MediaArchiveMode,
-    /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
-    /// lease reads the same files.
-    mod_dir: Option<std::path::PathBuf>,
     /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
     /// the mod folder is.
     ares_setting: crate::util::ares_launch::AresSetting,
@@ -128,7 +125,6 @@ impl ProcessAssets {
     pub(crate) fn new(media_archive_mode: MediaArchiveMode, load_audio_index: bool) -> Self {
         Self {
             media_archive_mode,
-            mod_dir: None,
             ares_setting: Default::default(),
             mod_files: Default::default(),
             mod_files_ahead: Default::default(),
@@ -171,11 +167,6 @@ impl ProcessAssets {
         self
     }
 
-    pub(crate) fn with_mod_dir(mut self, mod_dir: Option<std::path::PathBuf>) -> Self {
-        self.mod_dir = mod_dir;
-        self
-    }
-
     pub(crate) fn with_ares_setting(
         mut self,
         setting: crate::util::ares_launch::AresSetting,
@@ -196,7 +187,7 @@ impl ProcessAssets {
     /// Where no thread starts, that check reads them itself.
     pub(crate) fn read_mod_files_ahead(&self) {
         use std::sync::atomic::Ordering;
-        let Some(dir) = self.mod_dir.clone() else {
+        let Some(dir) = self.resources.mod_folder.clone() else {
             return;
         };
         if self.mod_files_ahead.swap(true, Ordering::Relaxed) {
@@ -213,7 +204,7 @@ impl ProcessAssets {
     /// The launch's mod folder as one digest, or why it could not be read;
     /// `None` without a mod.
     fn mod_files(&self) -> Option<&Result<[u8; 32], String>> {
-        let dir = self.mod_dir.as_deref()?;
+        let dir = self.resources.mod_folder.as_deref()?;
         Some(self.mod_files.get_or_init(|| mod_files_digest(dir)))
     }
 
@@ -226,7 +217,7 @@ impl ProcessAssets {
         &self,
         assets: &AssetManager,
     ) -> Result<Option<std::sync::Arc<crate::app::mod_additions::MapAdditions>>, String> {
-        let Some(dir) = self.mod_dir.as_deref() else {
+        let Some(dir) = self.resources.mod_folder.as_deref() else {
             return Ok(None);
         };
         self.map_additions
@@ -344,12 +335,12 @@ impl ProcessAssets {
     ) -> anyhow::Result<AssetManager> {
         let assets = AssetManager::with_mod_and_ares(
             root,
-            self.mod_dir.as_deref(),
+            self.resources.mod_folder.as_deref(),
             self.media_archive_mode,
             self.ares_setting,
             &self.resources.archives,
         )?
-        .with_client_install(self.resources.client_install.clone());
+        .with_mod_sources(&self.resources);
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
@@ -1182,7 +1173,12 @@ mod tests {
         let digest = |folder: Option<&str>| {
             let mod_dir = folder.map(|folder| mods.join(folder));
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_mod_dir(mod_dir.clone());
+                .with_resources(crate::util::mod_definition::ResourceConfig {
+                    mod_folder: mod_dir
+                        .clone()
+                        .map(crate::util::mod_package::ModFolder::loose),
+                    ..Default::default()
+                });
             let assets = AssetManager::with_mod(
                 dir.path(),
                 mod_dir.as_deref(),
@@ -1216,7 +1212,10 @@ mod tests {
         std::fs::write(hard.join("AI teams.ini"), "[AI]\nValue=2\n").unwrap();
         let start = || {
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_mod_dir(Some(hard.clone()));
+                .with_resources(crate::util::mod_definition::ResourceConfig {
+                    mod_folder: Some(crate::util::mod_package::ModFolder::loose(hard.clone())),
+                    ..Default::default()
+                });
             let assets =
                 AssetManager::with_mod(dir.path(), Some(&hard), MediaArchiveMode::STOCK_DIGITAL)
                     .unwrap();

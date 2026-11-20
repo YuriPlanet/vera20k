@@ -1,7 +1,7 @@
 //! VERA's Mods page, opened by the Mods button of Options; gamemd has none.
 //! A family page shaped like the movie list `0x129`: the mods in the `Mods`
 //! folder with the original game first, what the selected one says of itself,
-//! and Use This Mod, Open Mods Folder, Check Files, New Mod and Back
+//! and Use This Mod, Add Mod, Open Mods Folder, Check Files, New Mod and Back
 //! (docs/modding.md).
 //!
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
@@ -20,6 +20,8 @@ pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
 pub(crate) const CHECK: u16 = 0x7E34;
 pub(crate) const NEW: u16 = 0x7E35;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+pub(crate) const ADD: u16 = 0x7E36;
 
 /// The Options button's caption and the page's heading.
 pub(crate) const TITLE_KEY: &str = "VERA:Mods";
@@ -27,8 +29,7 @@ pub(crate) const BUTTON_HELP_KEY: &str = "VERA:ModsHelp";
 /// The caption over the list, and the list's status help.
 pub(crate) const PROMPT_KEY: &str = "VERA:ModsPrompt";
 
-/// Use This Mod, Open Mods Folder, Check Files and New Mod on the column's
-/// first rungs, Back on the bottom row.
+/// The mod actions in the right column, Back on the bottom row.
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: TITLE_KEY,
@@ -59,6 +60,14 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
             dlu_top: 203,
             csf_key: "VERA:ModNew",
             tooltip_key: "VERA:ModNewHelp",
+            result: None,
+        },
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        MenuPageButtonSpec {
+            id: ADD,
+            dlu_top: 230,
+            csf_key: "VERA:ModAdd",
+            tooltip_key: "VERA:ModAddHelp",
             result: None,
         },
     ],
@@ -167,6 +176,16 @@ mod tests {
     fn the_list_and_the_details_fit_beside_the_panel_at_both_retail_sizes() {
         for (size, rows) in [((800, 600), 9), ((640, 480), 7)] {
             let layout = compute_layout(size.0, size.1);
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            {
+                let add = layout.page.button_rect(ADD).unwrap();
+                let new = layout.page.button_rect(NEW).unwrap();
+                let back = layout.page.button_rect(BACK).unwrap();
+                assert!(
+                    add.y >= new.y + new.h && add.y + add.h <= back.y,
+                    "{size:?}"
+                );
+            }
             let right = layout.page.right_panel.top.x;
             let bottom = layout.page.lower_strip.y;
             let mut above = 0;

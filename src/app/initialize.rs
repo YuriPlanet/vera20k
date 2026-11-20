@@ -818,7 +818,6 @@ impl App {
                 )
                 .with_resources(resources)
                 .with_personal_rules(personal_rules)
-                .with_mod_dir(mods.dir().map(Path::to_path_buf))
                 .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager

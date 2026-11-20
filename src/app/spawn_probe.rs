@@ -220,10 +220,9 @@ pub(crate) fn load_process_sources(
     let (resources, ares_setting) =
         crate::app::mods::resources_for(active_mod.as_ref(), &config.ini, ares_setting)
             .map_err(anyhow::Error::msg)?;
-    let mod_dir = active_mod.map(|active| active.dir);
     let mut assets = AssetManager::with_mod_and_ares(
         &config.paths.ra2_dir,
-        mod_dir.as_deref(),
+        resources.mod_folder.as_deref(),
         media_archive_mode,
         ares_setting,
         &resources.archives,
@@ -233,7 +232,6 @@ pub(crate) fn load_process_sources(
     let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
         .with_resources(resources)
         .with_personal_rules(personal_rules)
-        .with_mod_dir(mod_dir)
         .with_ares_setting(ares_setting);
     let (startup_rules, projection) = process
         .initialize_sources_if_needed(&assets)
