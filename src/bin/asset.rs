@@ -19,6 +19,17 @@ use vera20k::assets::asset_manager::ArchiveFamily;
 const EXIT_FAILED: i32 = 1;
 const EXIT_USAGE: i32 = 2;
 
+enum RunError {
+    Asset(ErrorReport),
+    Campaign(anyhow::Error),
+}
+
+impl From<ErrorReport> for RunError {
+    fn from(report: ErrorReport) -> Self {
+        Self::Asset(report)
+    }
+}
+
 fn main() {
     // Logs go to stderr; stdout is reserved for the JSON payload.
     let _ = vera20k::util::logging::init_stderr_logger("warn");
@@ -38,12 +49,15 @@ fn main() {
     }
 
     if let Err(error) = run(cli) {
-        print_error(&error.error, error.hint.as_deref());
+        match error {
+            RunError::Asset(report) => println!("{}", to_json(&report)),
+            RunError::Campaign(error) => print_campaign_error(&error),
+        }
         std::process::exit(EXIT_FAILED);
     }
 }
 
-fn run(cli: Cli) -> Result<(), ErrorReport> {
+fn run(cli: Cli) -> Result<(), RunError> {
     let (ra2_dir, source) =
         root::resolve_ra2_dir(cli.ra2_dir.as_deref()).map_err(|error| ErrorReport {
             error,
@@ -54,6 +68,18 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
             ),
         })?;
     log::info!("retail root {} (from {source:?})", ra2_dir.display());
+
+    if let Verb::CampaignCheck(args) = &cli.verb {
+        let report = vera20k::headless_scenario::check_campaign_stage(
+            &ra2_dir,
+            &args.manifest,
+            &args.stage,
+            args.frames,
+        )
+        .map_err(RunError::Campaign)?;
+        println!("{}", to_json(&report));
+        return Ok(());
+    }
 
     let source_only = matches!(cli.verb, Verb::IniExpand { .. }) && cli.ini_source_only;
     let manager = if source_only {
@@ -80,7 +106,7 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
     })?;
 
     match cli.verb {
-        Verb::Help => unreachable!("handled before dispatch"),
+        Verb::Help | Verb::CampaignCheck(_) => unreachable!("handled before archive dispatch"),
         Verb::IniRoots => {
             let sources = manager.ini_roots().names().into_iter().map(|name| {
                 vera20k::rules::retail_sources::select_ini(&manager, name).map(|selected| selected.source)
@@ -246,4 +272,26 @@ fn print_error(error: &str, hint: Option<&str>) {
         hint: hint.map(str::to_string),
     };
     println!("{}", to_json(&report));
+}
+
+fn print_campaign_error(error: &anyhow::Error) {
+    let Some(manifest) = error.downcast_ref::<vera20k::map::campaign_manifest::ManifestError>()
+    else {
+        print_error(&format!("{error:#}"), None);
+        return;
+    };
+    println!(
+        "{}",
+        to_json(&serde_json::json!({
+            "error": manifest.to_string(),
+            "hint": manifest.hint,
+            "detail": {
+                "file": manifest.file.display().to_string(),
+                "section": manifest.section,
+                "key": manifest.key,
+                "line": manifest.line,
+                "problem": manifest.problem,
+            }
+        }))
+    );
 }

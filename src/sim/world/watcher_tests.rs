@@ -11,7 +11,7 @@ use crate::sim::house_state::HouseState;
 use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::{
     FrameEffects, LifecycleOutput, NetworkCommandBoundary, NetworkCommandError,
-    NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass, TickLane,
+    NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass, PlayerOutcomeRequest, TickLane,
 };
 
 /// Ann, Bob and a computer; the world follows Ann, as a watcher's when
@@ -213,9 +213,7 @@ fn the_followed_house_can_lose_before_the_watch_ends() {
             .tracking_mut_for_test()
             .set_for_test(1, &[], (0, 0, 0), &[]);
     }
-    let house = sim.houses.get_mut(&ann).unwrap();
-    house.mark_defeated();
-    house.supply_result_flags_for_test(false, true, CdTimer::default());
+    sim.houses.get_mut(&ann).unwrap().mark_defeated();
     let first = sim
         .advance_app_frame(
             &[],
@@ -251,5 +249,100 @@ fn the_followed_house_can_lose_before_the_watch_ends() {
     assert_eq!(
         sim.ready_outcome_for_owner(ann).unwrap().kind,
         HouseOutcomeKind::Defeat
+    );
+}
+
+#[test]
+fn a_watcher_admits_scripted_win_and_loss_while_hostile_houses_remain() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::rule_policy::RulePolicy;
+    use crate::sim::house_state::HouseOutcomeKind;
+    use crate::skirmish_modes::MpModeClass;
+
+    let mode = ScenarioGameMode::Wol;
+    let cooperative = Some(MpModeClass::Cooperative);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Americans\n[Americans]\nSide=Allies\n",
+    ))
+    .unwrap();
+    for (class, policy) in [
+        (cooperative, mode.stock_rule_policy(cooperative)),
+        (None, RulePolicy::stock_campaign()),
+    ] {
+        for kind in [HouseOutcomeKind::Victory, HouseOutcomeKind::Defeat] {
+            let (mut sim, followed, partner, _) = players(mode, true);
+            sim.install_session_admission(mode, class, policy);
+            sim.session.install_network_timing(10);
+            let country = sim.interner.intern("Americans");
+            for owner in [followed, partner] {
+                sim.houses
+                    .get_mut(&owner)
+                    .unwrap()
+                    .set_country_for_test(Some(country));
+            }
+            let outcome = if class.is_some() {
+                PlayerOutcomeRequest::Country {
+                    country_index: 0,
+                    win_on_match: kind == HouseOutcomeKind::Victory,
+                }
+            } else {
+                PlayerOutcomeRequest::Flag {
+                    kind,
+                    skip_timer: true,
+                }
+            };
+            assert!(sim.request_player_outcome(outcome, &rules, FrameEffects::empty(),));
+            assert!(sim.network_match_winners().is_none());
+            let timer = sim.houses[&followed].outcome_timer();
+            sim.session.set_binary_frame_for_test(
+                timer.start_frame().wrapping_add(timer.duration()) as u32,
+            );
+            sim.house_rung(&rules, None, false, FrameEffects::empty(), None)
+                .unwrap();
+            assert_eq!(
+                sim.ready_outcome_for_owner(followed)
+                    .map(|result| result.kind),
+                Some(kind)
+            );
+        }
+    }
+}
+
+#[test]
+fn an_eliminated_cooperative_viewpoint_shares_the_survivors_victory() {
+    use crate::sim::house_state::HouseOutcomeKind;
+    use crate::skirmish_modes::MpModeClass;
+
+    let mode = ScenarioGameMode::Wol;
+    let class = Some(MpModeClass::Cooperative);
+    let (mut sim, ann, bob, computer) = players(mode, true);
+    sim.install_session_admission(mode, class, mode.stock_rule_policy(class));
+    sim.session.install_network_timing(10);
+    sim.session.set_binary_frame_for_test(1);
+    for (owner, has_unit) in [(ann, 0), (bob, 1), (computer, 1)] {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .tracking_mut_for_test()
+            .set_for_test(has_unit, &[], (0, 0, 0), &[]);
+    }
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&ann].is_defeated());
+    assert!(sim.ready_outcome_for_owner(ann).is_none());
+
+    sim.houses
+        .get_mut(&computer)
+        .unwrap()
+        .tracking_mut_for_test()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert_eq!(sim.network_match_winners(), Some(vec![ann, bob]));
+    let timer = sim.houses[&ann].outcome_timer();
+    sim.session
+        .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
+    sim.check_defeat(None, None);
+    assert_eq!(
+        sim.ready_outcome_for_owner(ann).map(|result| result.kind),
+        Some(HouseOutcomeKind::Victory)
     );
 }

@@ -1785,6 +1785,7 @@ pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
     else {
         return;
     };
+    state.match_state.session.take_network_room_return();
     if visit
         .live_service
         .as_ref()

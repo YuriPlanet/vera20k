@@ -156,6 +156,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
             house_roster: &crate::map::houses::HouseRoster::default(),
             skirmish_session: None,
             campaign_map: None,
+            stage_home_global: None,
         })
         .unwrap();
     };

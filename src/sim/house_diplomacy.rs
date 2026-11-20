@@ -392,7 +392,7 @@ impl Simulation {
                     "ScenarioInit diplomacy precedes map objects"
                 );
                 assert!(
-                    !self.session.game_mode_nonzero(),
+                    self.session.uses_campaign_world(),
                     "this ScenarioInit admission is the campaign map-read family"
                 );
                 assert_eq!(
@@ -753,7 +753,7 @@ impl Simulation {
             return;
         };
         // 0x004F9FA9..0x004F9FC9.
-        if self.session.game_mode_nonzero()
+        if !self.session.rule_policy().uses_campaign_diplomacy()
             && (other_house.multiplay_passive() || house.multiplay_passive())
         {
             return;
@@ -838,7 +838,7 @@ impl Simulation {
         formed: bool,
         voice: bool,
     ) {
-        let game_mode_nonzero = self.session.game_mode_nonzero();
+        let uses_match_diplomacy = !self.session.rule_policy().uses_campaign_diplomacy();
         let human = self
             .houses
             .get(&owner)
@@ -847,7 +847,7 @@ impl Simulation {
             .houses
             .get(&other)
             .is_some_and(|house| house.multiplay_passive());
-        let line = game_mode_nonzero && human && (!formed || !passive_target);
+        let line = uses_match_diplomacy && human && (!formed || !passive_target);
         let local = self.session.current_house();
         let allied = |asker, house| {
             is_ally_by_object(Some(&self.house_alliances), &self.interner, asker, house)
@@ -867,17 +867,15 @@ impl Simulation {
                 }
             }
             // 0x004F9E8A..0x004F9F35: one way, only the two Houses hear it.
-            (true, true, Some(local)) if game_mode_nonzero && local == owner => {
+            (true, true, Some(local)) if local == owner => {
                 Some(crate::sim::world::AllianceEva::Requesting)
             }
-            (true, true, Some(local)) if game_mode_nonzero && local == other => {
+            (true, true, Some(local)) if local == other => {
                 Some(crate::sim::world::AllianceEva::Requested)
             }
             (true, true, _) => None,
             // 0x004FA186..0x004FA1D5.
-            (true, false, Some(local))
-                if game_mode_nonzero && (local == owner || local == other) =>
-            {
+            (true, false, Some(local)) if local == owner || local == other => {
                 Some(crate::sim::world::AllianceEva::Broken)
             }
             (true, false, _) => None,
@@ -905,7 +903,9 @@ impl Simulation {
         };
         // 0x0050157C..0x0050159E: a house type of the `Civilian` side, in a
         // nonzero game mode.
-        if self.session.game_mode_nonzero() && self.house_type_is_civilian(other, rules) {
+        if !self.session.rule_policy().uses_campaign_diplomacy()
+            && self.house_type_is_civilian(other, rules)
+        {
             return false;
         }
         if self.object_placement_scope_active() {

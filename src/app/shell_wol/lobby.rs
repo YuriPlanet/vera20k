@@ -154,7 +154,6 @@ enum Step {
     },
     /// VERA: after a match from VERA's own room, behind a wait box until the
     /// lobby gives the room back or closes it.
-    ReturningToRoom,
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
@@ -1129,7 +1128,8 @@ fn list_lobbies(state: &mut AppState) {
 /// box shows, whose button gives up the room for the chat lobby.
 fn await_room(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
-        lobby.step = Step::ReturningToRoom;
+        // MatchSession owns the room return. This list only fills the rows.
+        lobby.step = Step::Ready;
     }
     // The chat lobbies still come, so leaving the room later finds one.
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });

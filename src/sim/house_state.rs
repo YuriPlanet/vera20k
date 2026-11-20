@@ -1226,6 +1226,12 @@ impl HouseState {
         self.player_control = true;
     }
 
+    /// An authored lockstep role makes its primary House human. The map's
+    /// PlayerControl byte remains independent of the source's order authority.
+    pub(crate) fn admit_campaign_role(&mut self) {
+        self.is_human = true;
+    }
+
     /// The House's reinforcement edge ([`determine_waypoint_edge`]).
     pub(crate) fn assign_waypoint_edge(&mut self, edge: u8) {
         self.waypoint_edge = edge;

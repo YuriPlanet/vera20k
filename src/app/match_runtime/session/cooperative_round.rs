@@ -292,6 +292,9 @@ impl MatchSession {
     /// `0x0046FB50`: Continue is enabled while every row's player is still
     /// connected and the local player is not ready.
     pub(crate) fn cooperative_round_continue_enabled(&self) -> bool {
+        if self.local_connection_watches() {
+            return false;
+        }
         match self.network.as_ref().map(|network| &network.phase) {
             Some(NetworkPhase::CooperativeRound {
                 connections,
@@ -383,7 +386,7 @@ impl MatchSession {
         &mut self,
         difficulty: i32,
         now: u32,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<CooperativeRoundStep> {
         anyhow::ensure!(self.host, "only the master assigns the round");
         let RoundParts {
             requests,
@@ -396,19 +399,24 @@ impl MatchSession {
             round.start == RoundStart::Assigning,
             "no co-op handoff to assign"
         );
+        let pending: Vec<_> = connections
+            .playing_sources
+            .iter()
+            .copied()
+            .filter(|source| *source != launch.local_player_index)
+            .collect();
+        if pending.is_empty() {
+            round.outcome = Some(true);
+            return Ok(CooperativeRoundStep::Exit(true));
+        }
         requests.push(NetworkSendRequest::CooperativeBegin);
         round.start = RoundStart::HostAwaiting {
-            pending: connections
-                .playing_sources
-                .iter()
-                .copied()
-                .filter(|source| *source != launch.local_player_index)
-                .collect(),
+            pending,
             deadline: WallBucketTimer::start(now, ROUND_START_WAIT),
         };
         let options = round_options(launch, difficulty);
         requests.push(NetworkSendRequest::CooperativeOptions(options));
-        Ok(())
+        Ok(CooperativeRoundStep::None)
     }
 
     /// Quit `0x5C0` (`0x0046E28C`): `0x24` to every node and result 0.
@@ -817,6 +825,50 @@ mod tests {
             panic!("network start");
         };
         (session, startup)
+    }
+
+    #[test]
+    fn a_watcher_cannot_enable_or_submit_the_followed_sources_vote() {
+        let (mut session, _) = frozen_in(NetworkReturnContext::Wol, 1);
+        session
+            .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 2, 1, None)
+            .unwrap();
+        assert!(session.cooperative_round_continue_enabled());
+        let endpoint = std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 1237);
+        session.admit_local_network_watcher(endpoint).unwrap();
+        assert!(!session.cooperative_round_continue_enabled());
+        assert!(session.continue_cooperative_round().is_err());
+        assert!(session.take_network_send_requests().is_empty());
+        assert!(session.disconnect_network_watcher(endpoint));
+        assert!(session.cooperative_round_continue_enabled());
+    }
+
+    #[test]
+    fn a_solo_lan_host_continues_when_its_assignment_completes() {
+        let mut launch = super::super::tests::network_fixture();
+        launch.humans.truncate(1);
+        launch.local_player_index = 0;
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, true, Some(7), false)
+            .unwrap();
+        session.prepare_network_timing(2, || 0).unwrap();
+        session.freeze_network_start(SEED).unwrap();
+        session
+            .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 1, 1, None)
+            .unwrap();
+        assert_eq!(
+            session.continue_cooperative_round().unwrap(),
+            CooperativeRoundStep::Assign
+        );
+        session.take_network_send_requests();
+        assert_eq!(
+            session.cooperative_round_assigned(1, 100).unwrap(),
+            CooperativeRoundStep::Exit(true)
+        );
+        assert!(session.take_network_send_requests().is_empty());
+        assert!(session.freeze_cooperative_round(30, 2).is_ok());
     }
 
     #[test]
