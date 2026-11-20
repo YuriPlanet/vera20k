@@ -36,6 +36,24 @@ pub(crate) struct CellClassProjectionView {
 /// own authority. Their shared allocation keeps one live identity safe to carry
 /// through app loading workers without copying native's global mutable object
 /// architecture.
+///
+/// Why saved state is written through `&self`: a miss stamp is part of every
+/// `Get_CellClass` port ([`NativeCellQuery::lookup`],
+/// [`ResolvedTerrainGrid::native_cell_identity`] and their callers), which
+/// about 170 simulation files, the presentation and the input reach through
+/// `&ResolvedTerrainGrid` or `&Simulation`, many of them on the worker pool
+/// (path batch, target scans) or drawing from the live simulation. A
+/// retained `NativeCellIdentity::Dummy` reads the latest stamp of its query's
+/// Dummy, as native's aliased object does, so readers need the same Dummy as
+/// stampers: a plain value with one `&mut` owner means passing the Dummy
+/// through every query chain, not only the stamping ones. Until then the
+/// rules are: only the simulation thread stamps or writes the canonical
+/// Dummy; work on the pool, and presentation or input reads of the live
+/// simulation, that can miss run inside [`Self::detached`] (or
+/// [`Self::detached_stamps`]) or query through [`NativeCellQuery::isolated`].
+/// A pool task that stamps outside a run, or writes any other word, races on
+/// state that is saved ([`SavedSharedCellDummy`]) and read by later lookups,
+/// so peers desync; nothing but review catches it today.
 #[derive(Debug, Clone)]
 pub struct SharedCellDummy {
     state: Arc<SharedCellDummyState>,
@@ -596,6 +614,12 @@ impl SharedCellDummy {
     /// thread: a worker waiting on nested parallel work can run another
     /// task there, so starting from the enclosing copy would make a run's
     /// start depend on where it landed. The enclosing copy resumes after.
+    ///
+    /// Only the coordinate/level/slope word is private to the run: work
+    /// inside it may read the other words but must not write them (see the
+    /// type's rules). The run finds its copy by this Dummy's address, so a
+    /// query that stamps a fork ([`NativeCellQuery::isolated`]) is not
+    /// redirected.
     pub fn detached<R>(&self, work: impl FnOnce() -> R) -> R {
         self.detached_stamps(work).0
     }
