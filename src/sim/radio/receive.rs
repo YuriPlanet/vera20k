@@ -399,6 +399,23 @@ pub(crate) fn can_load(
             RadioResponse::Roger
         });
     }
+    // An Armory takes an infantry trainee while it still has promotions.
+    // Native reads the absolute value of Ammo, so the constructor's -1 still
+    // admits exactly one soldier. Captives and mind-controlled infantry are
+    // refused just as they are at the Hospital.
+    if building_type.armory() && unit.category() == EntityCategory::Infantry {
+        let refused = unit
+            .capture_manager
+            .as_ref()
+            .is_some_and(|manager| manager.has_any())
+            || unit.mind_control.is_mind_controlled()
+            || crate::sim::docking::armory::promotions_remaining(building) <= 0;
+        return CanLoad::Answer(if refused {
+            RadioResponse::Negatory
+        } else {
+            RadioResponse::Roger
+        });
+    }
     // 0x0043C620: a Helipad takes an Aircraft and nothing else.
     if building_type.helipad {
         return CanLoad::Answer(if unit.category() == EntityCategory::Aircraft {
@@ -826,8 +843,9 @@ fn building_dock_now(
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue
     // their own mission; the radio contacts retain the admitted sender.
     // Hospital43C746 also queues Repair/Sleep; cargo arrival is owned by
-    // Infantry PerCell51A21F. Armory remains a separate training mechanism.
-    if object.unit_repair || object.unit_reload || object.hospital {
+    // Infantry PerCell51A21F. An Armory uses this same service contact;
+    // its MissionRepair arm promotes the trainee instead of healing it.
+    if object.unit_repair || object.unit_reload || object.hospital || object.armory() {
         // Building43C7B5..C7DC: service request and the occupant's Sleep
         // queue. The Building mission owns the admitted pad contact.
         if let Some(building) = sim.substrate.entities.get_mut(building_id) {
