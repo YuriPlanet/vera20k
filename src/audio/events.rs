@@ -18,7 +18,7 @@
 //! - sim/ has its own neutral event transport and never imports audio/.
 
 use crate::rules::ruleset::{SoundName, SoundNames};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Once;
 
 /// Where a positional sound plays: the world-pixel point the presentation
 /// frame draws it at, and the cell it occupies.
@@ -708,41 +708,25 @@ impl SoundEventQueue {
     }
 }
 
-/// The (making table, read table) generation pairs a listed sound name has
-/// failed to read across, each logged once: a stale queue holds many events
-/// of one pair, and a warning per event would flood the log.
-static UNREAD_SOUND_TABLES: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
-
 /// A listed sound name read against a table other than the one that made it:
 /// every table rebuild finishes before a Simulation is staged, so this is a
-/// programming error. Debug builds stop on it; a release build logs it once
-/// per table pair and plays nothing, so the game carries on.
+/// programming error. Debug builds stop on it; a release build logs the first
+/// one and plays nothing, so the game carries on. A stale queue holds many
+/// such events, and a warning for each would flood the log.
 fn report_unread_sound(sound: &SoundName, names: Option<&SoundNames>) {
+    static WARNED: Once = Once::new();
     let SoundName::Listed(id) = sound else {
         return;
     };
-    let pair = (id.generation(), names.map_or(0, SoundNames::generation));
-    let first = {
-        let mut seen = UNREAD_SOUND_TABLES
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let first = !seen.contains(&pair);
-        if first {
-            seen.push(pair);
-        }
-        first
-    };
-    if first {
+    let (made, read) = (id.generation(), names.map_or(0, SoundNames::generation));
+    WARNED.call_once(|| {
         log::warn!(
-            "a sound name of table {} was read against table {}: those sounds play nothing",
-            pair.0,
-            pair.1
+            "a sound name of table {made} was read against table {read}: those sounds play nothing"
         );
-    }
+    });
     debug_assert!(
         false,
-        "sound name of table {} read against table {}",
-        pair.0, pair.1
+        "sound name of table {made} read against table {read}"
     );
 }
 
