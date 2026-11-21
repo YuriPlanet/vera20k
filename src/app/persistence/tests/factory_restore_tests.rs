@@ -684,6 +684,10 @@ fn factory_restore_rejects_inconsistent_roots() {
                 source_registry: "FactoryRegistry",
                 ..
             })) if label == "missing-entity" => {}
+            // The snapshot's saved-id walk refuses an owner id past the
+            // save's name table before the factory checks run.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownSavedId(_)))
+                if label == "idle-owner-index" => {}
             Err(error) => panic!("{label}: unexpected earlier failure {error}"),
             Ok(_) => panic!("{label}: inconsistent factory was admitted"),
         }
