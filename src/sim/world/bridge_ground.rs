@@ -211,7 +211,7 @@ mod tests {
                     SimSoundEvent::VocAt { sound_id, .. }
                     | SimSoundEvent::VocAtCoord { sound_id, .. }
                     | SimSoundEvent::EntityDied { die_sound_id: sound_id, .. }
-                        if sound_id == "GIDie"
+                        if sound_id.name_in(&rules) == "GIDie"
                 )
             })
             .count();

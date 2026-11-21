@@ -691,7 +691,7 @@ fn the_invoke_anim_plays_its_report() {
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::AnimationStarted { sound_id, .. }
-            if sound_id.eq_ignore_ascii_case("IronCurtainBlast")
+            if sound_id.name_in(&rules).eq_ignore_ascii_case("IronCurtainBlast")
     )));
 }
 

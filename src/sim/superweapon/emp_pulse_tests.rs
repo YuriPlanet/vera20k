@@ -234,7 +234,7 @@ fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
     assert!(velocity[0] > 0.0 && velocity[1] > 0.0 && velocity[2] > 0.0);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocAt { sound_id, .. } if sound_id == "PulseSound"
+        SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "PulseSound"
     )));
     for _ in 0..3 {
         step(&mut sim, &rules);

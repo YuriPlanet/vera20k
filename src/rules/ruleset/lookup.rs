@@ -133,6 +133,7 @@ impl RuleSet {
     pub(crate) fn with_fresh_serial(mut self) -> Self {
         self.serial = next_rule_set_serial();
         self.resolve_handles();
+        self.rebuild_sound_names();
         self
     }
 

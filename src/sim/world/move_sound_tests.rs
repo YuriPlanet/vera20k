@@ -121,7 +121,7 @@ fn native_effects(step: &Value, coordinates: bool) -> Vec<Value> {
         .collect()
 }
 
-fn effects(id: u64, events: &[SimSoundEvent], coordinates: bool) -> Vec<Value> {
+fn effects(rules: &RuleSet, id: u64, events: &[SimSoundEvent], coordinates: bool) -> Vec<Value> {
     events
         .iter()
         .filter_map(|event| match event {
@@ -138,9 +138,13 @@ fn effects(id: u64, events: &[SimSoundEvent], coordinates: bool) -> Vec<Value> {
                 sound_id,
                 world,
             } if *anim_id == id => Some(if coordinates {
-                json!(["playback", sound_id, [world.x, world.y, world.z]])
+                json!([
+                    "playback",
+                    sound_id.name_in(rules),
+                    [world.x, world.y, world.z]
+                ])
             } else {
-                json!(["playback", sound_id])
+                json!(["playback", sound_id.name_in(rules)])
             }),
             SimSoundEvent::ObjectSoundReleased { owner } if *owner == id => {
                 Some(json!(["release"]))
@@ -221,7 +225,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         native_draws,
         "{context}: raw draw count/order"
     );
-    let actual = effects(id, &sim.sound_events, true);
+    let actual = effects(&rules, id, &sim.sound_events, true);
     assert_eq!(
         actual.len(),
         sim.sound_events.len(),
@@ -374,7 +378,7 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
             MoveSoundState::from_raw_for_test(active, 3);
         sim.uninit_with_rules(id, &rules);
         assert_eq!(
-            effects(id, &sim.sound_events, true),
+            effects(&rules, id, &sim.sound_events, true),
             native_effects(original_limbo, true)
         );
         assert!(sim.substrate.pending_delete.contains_object(&id));
@@ -387,7 +391,7 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
             false,
         );
         assert_eq!(
-            effects(id, &sim.sound_events, true),
+            effects(&rules, id, &sim.sound_events, true),
             expected,
             "latch {active}: original Limbo then physical Foot release; Object+3C/+50 are different handles"
         );
@@ -531,7 +535,7 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
     assert_eq!(phase.visits.borrow().len(), 2);
     assert!(output.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-            if *anim_id == actor && sound_id.eq_ignore_ascii_case("YuriPrimeMoveLoop"))));
+            if *anim_id == actor && sound_id.name_in(&rules).eq_ignore_ascii_case("YuriPrimeMoveLoop"))));
 }
 
 fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
@@ -614,7 +618,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
             "{name}: paid original frame {native_frame}"
         );
         assert_eq!(
-            effects(id, &output.sound_events, false),
+            effects(&runtime.resources.rules, id, &output.sound_events, false),
             native_effects(step, false),
             "{name}: paid original frame {native_frame}: captured-before-Process counter reaches sound owner"
         );

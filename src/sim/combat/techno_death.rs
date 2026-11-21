@@ -438,14 +438,14 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
 
 /// Shared list selection in Techno's death block and Infantry's Eaten arm
 /// (5197E5/51984D): one Main draw even for a singleton, none for an empty list.
-pub(crate) fn select_death_sound(
-    choices: &[String],
+pub(crate) fn select_death_sound<'a>(
+    choices: &'a [String],
     main_rng: &mut crate::sim::rng::SimRng,
-) -> Option<String> {
+) -> Option<&'a str> {
     if choices.is_empty() {
         None
     } else {
-        Some(choices[(main_rng.next_u32() % choices.len() as u32) as usize].clone())
+        Some(&choices[(main_rng.next_u32() % choices.len() as u32) as usize])
     }
 }
 

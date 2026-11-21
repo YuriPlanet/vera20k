@@ -100,6 +100,8 @@ impl RuleSet {
             buildings_checked,
         );
         self.rebuild_animation_sequences();
+        // The anims' start and stop sounds came with the ART.
+        self.rebuild_sound_names();
     }
 
     /// Read the same bound ART owner used during construction and gameplay.

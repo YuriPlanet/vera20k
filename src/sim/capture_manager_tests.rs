@@ -199,24 +199,24 @@ fn victims(sim: &Simulation, controller: u64) -> Vec<u64> {
         .unwrap_or_default()
 }
 
-fn voc_sounds(sim: &Simulation) -> Vec<String> {
+fn voc_sounds(rules: &RuleSet, sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.clone()),
+            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(rules).to_string()),
             _ => None,
         })
         .collect()
 }
 
 /// The `VocAt` sounds with the cell each plays at.
-fn voc_cells(sim: &Simulation) -> Vec<(String, u16, u16)> {
+fn voc_cells(rules: &RuleSet, sim: &Simulation) -> Vec<(String, u16, u16)> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
             SimSoundEvent::VocAt {
                 sound_id, rx, ry, ..
-            } => Some((sound_id.clone(), *rx, *ry)),
+            } => Some((sound_id.name_in(rules).to_string(), *rx, *ry)),
             _ => None,
         })
         .collect()
@@ -589,7 +589,7 @@ fn a_single_link_controller_releases_its_victim_first() {
     assert!(sim.anim(ring).is_none_or(|anim| {
         !anim.in_logic_vector() && sim.substrate.pending_delete.contains_object(&ring)
     }));
-    assert_eq!(voc_sounds(&sim), ["MindCleared"]);
+    assert_eq!(voc_sounds(&rules, &sim), ["MindCleared"]);
     assert_eq!(victims(&sim, yuri), [second]);
     assert_eq!(owner(&sim, second), "YuriCountry");
     assert_eq!(sim.scenario_rng.state(), replay.state());
@@ -773,7 +773,7 @@ fn the_controllers_death_frees_its_captives_newest_first() {
     // Newest node first: the second captive's MindCleared plays first, at
     // its own cell.
     assert_eq!(
-        voc_cells(&sim),
+        voc_cells(&rules, &sim),
         [
             ("MindCleared".to_string(), 12, 12),
             ("MindCleared".to_string(), 12, 10),
@@ -799,7 +799,7 @@ fn a_captives_death_drops_its_node_silently() {
     sim.sound_events.clear_for_test();
     sim.uninit_with_rules(gi, &rules);
     assert!(victims(&sim, tower).is_empty());
-    assert!(voc_sounds(&sim).is_empty());
+    assert!(voc_sounds(&rules, &sim).is_empty());
 }
 
 /// Foot UnInit (a crushed or removed controller) frees its captives first.
@@ -1257,11 +1257,13 @@ fn native_overload_update_corpus() {
                         sub_y,
                         world_z_leptons,
                         ..
-                    } if sound_id == "MasterMindOverloadVoice" => Some(glam::IVec3::new(
-                        i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
-                        i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
-                        *world_z_leptons,
-                    )),
+                    } if sound_id.name_in(&rules) == "MasterMindOverloadVoice" => {
+                        Some(glam::IVec3::new(
+                            i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
+                            i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
+                            *world_z_leptons,
+                        ))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -1939,7 +1941,7 @@ fn retail_rules_bind_the_stock_controllers() {
     sim.sound_events.clear_for_test();
     let rng = sim.scenario_rng.native_state_hex();
     assert!(sim.free_unit(yuri, gi, &rules, None, &mut FrameEffects::default()));
-    assert_eq!(voc_sounds(&sim), ["MindCleared"]);
+    assert_eq!(voc_sounds(&rules, &sim), ["MindCleared"]);
     assert_eq!(owner(&sim, gi), "Americans");
     assert!(
         sim.substrate
@@ -2089,7 +2091,7 @@ fn selling_a_psychic_tower_frees_its_captives() {
             .mind_control
             .is_mind_controlled()
     );
-    assert_eq!(voc_sounds(&sim), ["MindCleared"]);
+    assert_eq!(voc_sounds(&rules, &sim), ["MindCleared"]);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "sold_tower", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("snapshot")
@@ -2245,7 +2247,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
     assert_eq!(owner(&sim, gi), "Americans");
     assert!(entity.passenger_role().is_inside_transport());
     assert!(victims(&sim, yuri).is_empty());
-    assert_eq!(voc_sounds(&sim), ["MindCleared"]);
+    assert_eq!(voc_sounds(&rules, &sim), ["MindCleared"]);
 }
 
 /// UnitClass::Receive_Radio refuses a controlled passenger (`0x007375F3`)

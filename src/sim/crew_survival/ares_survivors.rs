@@ -312,9 +312,9 @@ impl Simulation {
                                 self.substrate
                                     .queue_crew_mission(id, super::MissionType::Guard);
                             }
-                            if let Some(sound_id) = kind.leave_transport_sound.clone() {
+                            if let Some(sound_id) = kind.leave_transport_sound.as_deref() {
                                 self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                                    sound_id,
+                                    sound_id: rules.sound_name(sound_id),
                                     coordinate: origin,
                                     flags: 0,
                                 });

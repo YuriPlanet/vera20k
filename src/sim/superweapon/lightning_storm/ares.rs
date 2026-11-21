@@ -252,11 +252,12 @@ pub(super) fn start(
     }
     let sound = rules
         .super_weapon(sim.interner.resolve(sw_type))
-        .and_then(|sw| sw.presentation.activation_sound.clone())
-        .unwrap_or_else(|| general.storm_sound.clone());
+        .and_then(|sw| sw.presentation.activation_sound.as_ref())
+        .map_or(general.storm_sound.as_deref(), Option::as_deref);
     if let Some(sound_id) = sound {
-        sim.sound_events
-            .emit(SimSoundEvent::VocCentered { sound_id });
+        sim.sound_events.emit(SimSoundEvent::VocCentered {
+            sound_id: rules.sound_name(sound_id),
+        });
     }
     if launch.radar_event() {
         sim.sound_events.emit(SimSoundEvent::RadarEvent {
@@ -623,7 +624,7 @@ pub(super) fn ground_strike(
         }
         .to_cell_sub_z();
         sim.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sounds[pick as usize].clone(),
+            sound_id: rules.sound_name(&sounds[pick as usize]),
             audible_to: None,
             rx,
             ry,

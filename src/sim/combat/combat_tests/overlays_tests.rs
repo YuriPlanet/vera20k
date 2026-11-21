@@ -414,7 +414,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
                     sound_id, rx, ry, ..
                 } => {
                     assert_eq!((*rx, *ry), (5, 5));
-                    Some(sound_id.clone())
+                    Some(sound_id.name_in(&rules).to_string())
                 }
                 _ => None,
             })

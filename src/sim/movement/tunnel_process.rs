@@ -146,7 +146,7 @@ impl Simulation {
         if let Some(sound) = sound {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                    sound,
+                    rules.sound_name(&sound),
                     entity,
                     self.resolved_terrain.as_ref(),
                 ));

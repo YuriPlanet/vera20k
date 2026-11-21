@@ -519,7 +519,7 @@ fn entire_grapple(elite: bool) {
             assert!(
                 !scene.last_sound_events.iter().any(|event| matches!(event,
                 super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound))),
+                    if *anim_id == scene.ship && sound_id.name_in(&scene.rules).eq_ignore_ascii_case(&sinking_sound))),
                 "culling cannot retroactively run the earlier sinking-sound edge"
             );
             scene.assert_released(anim);
@@ -538,7 +538,7 @@ fn entire_grapple(elite: bool) {
             assert!(
                 scene.last_sound_events.iter().any(|event| matches!(event,
                 super::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
-                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound)
+                    if *anim_id == scene.ship && sound_id.name_in(&scene.rules).eq_ignore_ascii_case(&sinking_sound)
                         && world.z == lowered_z)),
                 "next Foot visit uses the already-lowered hull coordinate"
             );

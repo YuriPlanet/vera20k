@@ -859,7 +859,7 @@ pub(crate) fn emit_configured_cloak_sound(
         return;
     };
     sound_events.emit(crate::sim::world::SimSoundEvent::cloak_sound(
-        sound_name.to_owned(),
+        rules.sound_name(sound_name),
         &position,
     ));
 }

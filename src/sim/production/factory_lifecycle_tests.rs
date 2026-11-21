@@ -705,7 +705,7 @@ fn record_last_built_uses_class_fallbacks_type_overrides_and_the_existing_tech_o
                     panic!("unexpected RecordLastBuilt output {event:?}");
                 };
                 assert!(audible_to.is_none());
-                sound_id.as_str()
+                sound_id.name_in(&rules)
             })
             .collect::<Vec<_>>();
         assert_eq!(actual, expected.into_iter().collect::<Vec<_>>(), "{name}");
@@ -1587,7 +1587,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
                 sub_y,
                 world_z_leptons,
             } = event
-                && sound_id == "BorisCreated"
+                && sound_id.name_in(&runtime.resources.rules) == "BorisCreated"
             {
                 assert!(audible_to.is_none(), "native has no local-House gate");
                 cues.push((rx, ry, sub_x, sub_y, world_z_leptons));
@@ -1646,7 +1646,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
             .unwrap();
         assert!(
             !output.sound_events.iter().any(|event| {
-                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "BorisCreated")
+                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&runtime.resources.rules) == "BorisCreated")
             }),
             "later publication/frames do not replay creation"
         );
@@ -3346,7 +3346,7 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
     assert!(
         !sim.sound_events.iter().any(|event| {
             matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "FixtureCreated")
+            if sound_id.name_in(&rules) == "FixtureCreated")
         }),
         "missing producer retains the paid head without creation output"
     );
@@ -3662,7 +3662,7 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
             .iter()
             .filter(|event| {
                 matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "FixtureCreated")
+            if sound_id.name_in(&rules) == "FixtureCreated")
             })
             .count(),
         1,
@@ -3805,7 +3805,7 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
     assert!(
         !sim.sound_events[event_start..].iter().any(|event| {
             matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "FixtureCreated")
+            if sound_id.name_in(&rules) == "FixtureCreated")
         }),
         "refunded/disposed head and newly promoted limbo head play no creation cue"
     );

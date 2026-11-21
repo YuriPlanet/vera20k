@@ -332,7 +332,7 @@ fn replay_crew_row(row: &Value) {
             } => {
                 let index = SOUNDS
                     .iter()
-                    .find(|(_, name)| name == sound_id)
+                    .find(|(_, name)| *name == sound_id.name_in(&rules))
                     .map(|(index, _)| *index)?;
                 assert_eq!(*audible_to, Some([owner, owner]), "{context}: the owner's");
                 Some(json!([

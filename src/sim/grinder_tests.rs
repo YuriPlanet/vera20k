@@ -670,7 +670,7 @@ fn infantry_arrival_switches_active_to_special_without_a_foot_tail() {
             .object_alive()
     );
     assert_eq!(sim.sound_events.iter().filter(|event| matches!(event,
-        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "GrinderGrinding"
+        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "GrinderGrinding"
     )).count(), 1);
 }
 
@@ -733,13 +733,13 @@ fn arrival_callbacks_precede_refund_and_each_flush_precedes_the_next_list_draw()
         before_play: [crate::sim::rng::SimRngLogicalState; 3],
     }
     impl SoundBoundary for Playback {
-        fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             let owner = sim.interner.get("Americans").unwrap();
             for event in &events[self.delivered.get()..] {
                 let SimSoundEvent::VocAt { sound_id, .. } = event else {
                     continue;
                 };
-                let grinder = sound_id == "GrinderGrinding";
+                let grinder = sound_id.name_in(rules) == "GrinderGrinding";
                 assert_eq!(
                     sim.main_rng.logical_state(),
                     self.before_play[self.sounds.borrow().len()],
@@ -755,7 +755,9 @@ fn arrival_callbacks_precede_refund_and_each_flush_precedes_the_next_list_draw()
                     "victim Tag48 follows refund and precedes EnterGrinderSound"
                 );
                 // Playback draws the app's own Main cell, never this one.
-                self.sounds.borrow_mut().push(sound_id.clone());
+                self.sounds
+                    .borrow_mut()
+                    .push(sound_id.name_in(rules).to_string());
             }
             self.delivered.set(events.len());
         }

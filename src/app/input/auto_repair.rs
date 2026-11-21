@@ -82,9 +82,9 @@ fn start_sounds(sim: &Simulation, rules: &RuleSet, building: u64) -> Vec<QuietSo
         owner: entity.owner(),
         type_id: entity.type_ref(),
     }];
-    if let Some(sound_id) = rules.general.generic_click_sound.clone() {
+    if let Some(sound_id) = rules.general.generic_click_sound.as_deref() {
         sounds.push(QuietSound::VocAt {
-            sound_id,
+            sound_id: rules.sound_name(sound_id),
             rx: entity.position.rx(),
             ry: entity.position.ry(),
             sub_x: entity.position.sub_x(),

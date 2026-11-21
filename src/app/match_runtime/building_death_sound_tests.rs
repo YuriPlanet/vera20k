@@ -153,13 +153,13 @@ fn audio_runtime(with_device: bool) -> AppAudioRuntime {
     }
 }
 
-fn cue_id(event: &SimSoundEvent) -> Option<&str> {
+fn cue_id<'a>(rules: &'a RuleSet, event: &'a SimSoundEvent) -> Option<&'a str> {
     match event {
         // Untouched714 emits EntityDied; candidate uses native-shaped VocAt.
-        SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id),
+        SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id.name_in(rules)),
         SimSoundEvent::VocAt { sound_id, .. }
         | SimSoundEvent::VocAtCoord { sound_id, .. }
-        | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id),
+        | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.name_in(rules)),
         _ => None,
     }
 }
@@ -213,6 +213,8 @@ struct History {
     coordinate_requests: Vec<serde_json::Value>,
     prepared: Option<serde_json::Value>,
     audio_main_advances: usize,
+    /// The scenario that played it, whose rules read its sound names.
+    scene: HeadlessScenario,
 }
 
 fn history(
@@ -523,7 +525,10 @@ fn history(
                     anim_id,
                     sound_id,
                     world,
-                } if sound_id.eq_ignore_ascii_case("Explosion14") => {
+                } if sound_id
+                    .name_in(&scene.runtime.resources.rules)
+                    .eq_ignore_ascii_case("Explosion14") =>
+                {
                     let (rx, ry, _, _, _) = world.to_cell_sub_z();
                     if !(31..=33).contains(&rx) || !(85..=86).contains(&ry) {
                         return None; // Other actors elsewhere on the loaded Hills map.
@@ -567,12 +572,10 @@ fn history(
         // published twice. No lifecycle method or disposal setter is called.
         let (next, _) = frame(&mut scene, &mut audio, assets, catalog, listener, &local);
         assert!(scene.sim().entities().get(victim).is_none());
-        assert!(
-            !next
-                .sound_events
-                .iter()
-                .any(|event| cue_id(event).is_some_and(|id| id.eq_ignore_ascii_case(case.cue)))
-        );
+        assert!(!next.sound_events.iter().any(|event| {
+            cue_id(&scene.runtime.resources.rules, event)
+                .is_some_and(|id| id.eq_ignore_ascii_case(case.cue))
+        }));
         let prepared = audio.sfx_player.as_mut().map(|player| {
             player
                 .finish_pcm_observation()
@@ -588,9 +591,12 @@ fn history(
             output
                 .sound_events
                 .iter()
-                .filter_map(cue_id)
+                .filter_map(|event| cue_id(&scene.runtime.resources.rules, event))
                 .collect::<Vec<_>>(),
-            copied.iter().filter_map(cue_id).collect::<Vec<_>>()
+            copied
+                .iter()
+                .filter_map(|event| cue_id(&scene.runtime.resources.rules, event))
+                .collect::<Vec<_>>()
         );
         return History {
             case,
@@ -603,6 +609,7 @@ fn history(
             coordinate_requests,
             prepared,
             audio_main_advances,
+            scene,
         };
     }
     panic!("{} did not die through the actual MTNK attack", case.kind);
@@ -651,7 +658,8 @@ fn stock_building_death_cues_precede_the_fatal_ap_impact() {
                 .iter()
                 .enumerate()
                 .filter(|(_, event)| {
-                    cue_id(event).is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue))
+                    cue_id(&history.scene.runtime.resources.rules, event)
+                        .is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue))
                 })
                 .collect();
             assert_eq!(
@@ -693,7 +701,10 @@ fn stock_building_death_cues_precede_the_fatal_ap_impact() {
         let cue = history
             .produced
             .iter()
-            .find(|event| cue_id(event).is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue)))
+            .find(|event| {
+                cue_id(&history.scene.runtime.resources.rules, event)
+                    .is_some_and(|id| id.eq_ignore_ascii_case(history.case.cue))
+            })
             .unwrap();
         if history.case.kind == "GAPILE" {
             assert!(matches!(cue, SimSoundEvent::VocAtCoord { flags: 0, .. }));

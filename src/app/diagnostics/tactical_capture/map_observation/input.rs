@@ -250,7 +250,10 @@ impl MapLocalInputObservation {
                         sound_id,
                     } => Some(MapSelectionVoiceRequest {
                         speaker_id: *speaker_id,
-                        sound_id: sound_id.clone(),
+                        sound_id: sound_id
+                            .resolve(state.rules().map(|rules| rules.sound_names()))
+                            .unwrap_or_default()
+                            .to_string(),
                     }),
                     _ => None,
                 })

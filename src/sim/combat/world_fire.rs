@@ -2317,7 +2317,7 @@ pub(super) fn emit_admitted_fire(
         && sound_enabled(world)
     {
         world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            world.interner.resolve(report_id).to_owned(),
+            rules.sound_name(world.interner.resolve(report_id)),
             crate::sim::anim_class::AnimWorldCoord {
                 x: launch_source.coord.x,
                 y: launch_source.coord.y,

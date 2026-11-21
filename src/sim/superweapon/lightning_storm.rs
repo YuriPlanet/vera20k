@@ -748,7 +748,7 @@ pub(super) fn ground_strike(
         }
         .to_cell_sub_z();
         sim.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sounds[pick as usize].clone(),
+            sound_id: rules.sound_name(&sounds[pick as usize]),
             audible_to: None,
             rx,
             ry,

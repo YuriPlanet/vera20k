@@ -995,7 +995,7 @@ fn fire_laser(sim: &mut Simulation, rules: &RuleSet, id: u64, to: ProjectileCoor
                 {
                     sim.sound_events
                         .emit(crate::sim::world::SimSoundEvent::voc_at_world_coord(
-                            report.to_owned(),
+                            rules.sound_name(report),
                             crate::sim::anim_class::AnimWorldCoord {
                                 x: from.x,
                                 y: from.y,

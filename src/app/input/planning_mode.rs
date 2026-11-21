@@ -118,10 +118,11 @@ impl PlanningInputState {
         selection.cancel_drag();
         let sound = rules.and_then(|rules| {
             if active {
-                rules.general.start_planning_mode_sound.clone()
+                rules.general.start_planning_mode_sound.as_deref()
             } else {
-                rules.general.end_planning_mode_sound.clone()
+                rules.general.end_planning_mode_sound.as_deref()
             }
+            .map(|name| rules.sound_name(name))
         });
         if let Some(sound_id) = sound {
             sounds.push(GameSoundEvent::UiSound { sound_id });
@@ -328,7 +329,7 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
     crate::app::input::messages::post_planning_message(state, csf_key);
     let sound = state
         .rules()
-        .and_then(|rules| rules.general.scold_sound.clone());
+        .and_then(|rules| Some(rules.sound_name(rules.general.scold_sound.as_deref()?)));
     ui_sound(state, sound);
 }
 
@@ -351,7 +352,7 @@ pub(crate) fn refuse_clicked_event(state: &mut AppState, action: PlanningRefusal
     }
     let sound = state
         .rules()
-        .and_then(|rules| rules.general.scold_sound.clone());
+        .and_then(|rules| Some(rules.sound_name(rules.general.scold_sound.as_deref()?)));
     for _ in 0..scolds {
         ui_sound(state, sound.clone());
     }
@@ -409,7 +410,7 @@ pub(crate) fn release_on_focus_change(state: &mut AppState) {
     set_active(state, false, None);
 }
 
-fn ui_sound(state: &mut AppState, sound: Option<String>) {
+fn ui_sound(state: &mut AppState, sound: Option<crate::rules::ruleset::SoundName>) {
     if let Some(sound_id) = sound {
         state
             .match_state
@@ -1418,7 +1419,7 @@ mod tests {
                         let GameSoundEvent::UiSound { sound_id } = event else {
                             panic!("unexpected planning cue")
                         };
-                        sound_id
+                        sound_id.name_in(rules).to_string()
                     })
                     .collect();
                 let native_cues: Vec<_> = phase["effects"]

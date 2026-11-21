@@ -658,15 +658,15 @@ impl Simulation {
         let object = interner.object_type(entity.type_ref(), rules);
         let sound = if water {
             object
-                .and_then(|object| object.impact_water_sound.clone())
-                .or_else(|| rules.general.impact_water_sound.clone())
+                .and_then(|object| object.impact_water_sound.as_deref())
+                .or(rules.general.impact_water_sound.as_deref())
         } else {
             object
-                .and_then(|object| object.impact_land_sound.clone())
-                .or_else(|| rules.general.impact_land_sound.clone())
+                .and_then(|object| object.impact_land_sound.as_deref())
+                .or(rules.general.impact_land_sound.as_deref())
         };
         if let Some(sound_id) = sound {
-            let event = super::SimSoundEvent::voc_at(sound_id, &entity.position);
+            let event = super::SimSoundEvent::voc_at(rules.sound_name(sound_id), &entity.position);
             sound_events.emit(event);
         }
     }
@@ -708,18 +708,21 @@ impl Simulation {
             let entity = substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_crashing.clone());
-            let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
+            let voice = object.and_then(|object| object.voice_crashing.as_deref());
+            let crashing_sound = object.and_then(|object| object.crashing_sound.as_deref());
             if let Some(voice) = voice
                 && Simulation::is_human_player(session, houses, owner)
             {
-                sound_events.emit(super::SimSoundEvent::voc_at(voice, &entity.position));
+                sound_events.emit(super::SimSoundEvent::voc_at(
+                    rules.sound_name(voice),
+                    &entity.position,
+                ));
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
                 sound_events.emit(super::SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world,
                 });
             }

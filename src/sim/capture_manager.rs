@@ -1238,7 +1238,7 @@ impl Simulation {
         ) {
             return;
         }
-        let Some(sound) = rules.mind_control.mind_control_sound.clone() else {
+        let Some(sound) = rules.mind_control.mind_control_sound.as_deref() else {
             return;
         };
         // 4692F0 rereads the bullet source after CaptureUnit's callbacks.
@@ -1284,7 +1284,7 @@ impl Simulation {
         };
         let (rx, ry, sub_x, sub_y, _) = location.to_cell_sub_z();
         self.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sound,
+            sound_id: rules.sound_name(sound),
             audible_to: Some([firer_owner, target_owner.unwrap_or(firer_owner)]),
             rx,
             ry,
@@ -1449,10 +1449,10 @@ impl Simulation {
             if let Some(victim) = self.substrate.entities.get(victim_id) {
                 let sound = self
                     .object_type(victim.type_ref(), rules)
-                    .and_then(|object| object.mind_cleared_sound.clone())
-                    .or_else(|| rules.mind_control.mind_cleared_sound.clone());
+                    .and_then(|object| object.mind_cleared_sound.as_deref())
+                    .or(rules.mind_control.mind_cleared_sound.as_deref());
                 if let Some(sound) = sound {
-                    let event = SimSoundEvent::voc_at(sound, &victim.position);
+                    let event = SimSoundEvent::voc_at(rules.sound_name(sound), &victim.position);
                     self.sound_events.emit(event);
                 }
             }
@@ -1760,9 +1760,9 @@ impl Simulation {
         );
         self.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
         if !sound_played {
-            if let Some(sound) = rules.mind_control.overload_sound.clone() {
+            if let Some(sound) = rules.mind_control.overload_sound.as_deref() {
                 self.sound_events
-                    .emit(SimSoundEvent::voc_at(sound, &position));
+                    .emit(SimSoundEvent::voc_at(rules.sound_name(sound), &position));
             }
             if let Some(manager) = self
                 .substrate

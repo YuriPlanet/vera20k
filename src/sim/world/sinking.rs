@@ -127,14 +127,14 @@ impl Simulation {
         }
         if state.active {
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_sinking.clone());
+            let voice = object.and_then(|object| object.voice_sinking.as_deref());
             let sound = object
-                .and_then(|object| object.sinking_sound.clone())
-                .or_else(|| rules.general.sinking_sound.clone());
+                .and_then(|object| object.sinking_sound.as_deref())
+                .or(rules.general.sinking_sound.as_deref());
             let coord = position_world_coord(&entity.position);
             if let Some(sound_id) = voice {
                 sound_events.emit(SimSoundEvent::VocAt {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     audible_to: None,
                     rx: entity.position.rx(),
                     ry: entity.position.ry(),
@@ -146,7 +146,7 @@ impl Simulation {
             if let Some(sound) = sound {
                 sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world: AnimWorldCoord {
                         x: coord.x,
                         y: coord.y,

@@ -640,7 +640,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::VocCentered { sound_id } => {
-                    Some(sound_id.as_str())
+                    Some(sound_id.name_in(&rules))
                 }
                 _ => None,
             })

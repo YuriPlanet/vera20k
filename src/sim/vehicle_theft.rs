@@ -240,7 +240,9 @@ impl Simulation {
                 &actor_type.id,
             )
             .ok_or("capture actor has no InfantryType array index")?;
-        let enter_sound = actor_type.vehicle_thief_sound(false).map(str::to_owned);
+        let enter_sound = actor_type
+            .vehicle_thief_sound(false)
+            .map(|sound| rules.sound_name(sound));
         let mut context = UninitContext::new(rules).with_effects(effects);
         let Some(mode) = self.ares_vehicle_capture_mode(actor_id, target_id, rules) else {
             self.assign_destination_represented(actor_id, None, rules, effects)

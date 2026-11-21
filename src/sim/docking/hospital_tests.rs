@@ -16,7 +16,7 @@ struct Heard {
 }
 
 impl SoundBoundary for Heard {
-    fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+    fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
         for event in &events[self.delivered.get()..] {
             if let SimSoundEvent::UnitRepaired { owner_admitted, .. } = event {
                 assert!(*owner_admitted, "hospital already passed House50B6F0");
@@ -30,7 +30,7 @@ impl SoundBoundary for Heard {
                 world_z_leptons,
                 ..
             } = event
-                && sound_id.eq_ignore_ascii_case("HealCrate")
+                && sound_id.name_in(rules).eq_ignore_ascii_case("HealCrate")
             {
                 let hospital = sim.entities().get(self.hospital).unwrap();
                 assert_eq!(
@@ -40,7 +40,11 @@ impl SoundBoundary for Heard {
                 );
                 let patient = sim.entities().get(self.patient).unwrap();
                 assert!(patient.lifecycle.in_limbo());
-                assert_eq!(sound_id, "HealCrate", "fixed SOUNDMD identity");
+                assert_eq!(
+                    sound_id.name_in(rules),
+                    "HealCrate",
+                    "fixed SOUNDMD identity"
+                );
                 assert_eq!((*rx, *ry), (hospital.position.rx(), hospital.position.ry()));
                 assert_eq!(
                     (*sub_x, *sub_y),

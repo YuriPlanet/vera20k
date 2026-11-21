@@ -896,6 +896,7 @@ impl RuleSet {
         rules.project_house_masks();
         rules.rebuild_animation_sequences();
         rules.resolve_handles();
+        rules.rebuild_sound_names();
         Ok(rules)
     }
 
@@ -1268,6 +1269,7 @@ impl RuleSet {
                 object.bind_sequence_sounds(sounds);
             }
         }
+        self.rebuild_sound_names();
     }
 
     pub(crate) fn bind_terrain_type_sound_references(
@@ -1908,6 +1910,7 @@ impl RuleSet {
             object_list,
             object_index,
             serial: next_rule_set_serial(),
+            sound_names: Default::default(),
             object_category_index,
             native_techno_type_order: Vec::new(),
             ares_techno_type_first: LookupMap::default(),

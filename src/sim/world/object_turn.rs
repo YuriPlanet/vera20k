@@ -819,10 +819,13 @@ impl Simulation {
             && let Some(voice) = sim
                 .interner
                 .object_type(entity.type_ref(), rules)
-                .and_then(|object| object.voice_falling.clone())
+                .and_then(|object| object.voice_falling.as_deref())
         {
-            let event =
-                super::SimSoundEvent::voc_at_location(voice, entity, sim.resolved_terrain.as_ref());
+            let event = super::SimSoundEvent::voc_at_location(
+                rules.sound_name(voice),
+                entity,
+                sim.resolved_terrain.as_ref(),
+            );
             sim.sound_events.emit(event);
         }
         Self::sinking_edge_sounds(
