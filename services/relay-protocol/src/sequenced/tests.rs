@@ -3543,3 +3543,5 @@ fn failed_archive_creation_and_removal_release_their_slot() {
     server.advance_clock(1000, unix(1000));
     assert!(!room.exists());
 }
+
+mod pace_replay;

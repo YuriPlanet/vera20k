@@ -878,12 +878,14 @@ impl Federation {
                 return Err(RelayError::Malformed);
             }
             let tick = read_u32(entry, 4)?;
-            ordering.sources[usize::from(source)].pace = Some(PaceReport {
+            let slot = &mut ordering.sources[usize::from(source)].pace;
+            *slot = Some(PaceReport::new(
+                *slot,
                 pace,
-                frames_per_second: u16::from_le_bytes([entry[2], entry[3]]),
-                tick_micros: (tick != 0).then_some(tick),
-                at_ms: now_ms.saturating_sub(u64::from(read_u32(entry, 8)?)),
-            });
+                u16::from_le_bytes([entry[2], entry[3]]),
+                tick,
+                now_ms.saturating_sub(u64::from(read_u32(entry, 8)?)),
+            ));
         }
         Ok(())
     }

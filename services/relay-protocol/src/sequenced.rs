@@ -104,6 +104,11 @@ const PACE_STEP_MS: u64 = 5_000;
 // slowdown this soon after a raise doubles the wait, up to the cap.
 const PACE_RAISE_MS: u64 = 30_000;
 const PACE_RAISE_MAX_MS: u64 = 300_000;
+// Behind this long without a break, a player's tick cost no longer speaks
+// for it: what it ran does. A PC whose ticks are quick can still fall behind
+// when drawing and copying the world leave it too little of each second
+// (2026-11-21, match 1e9fac21: 8 ms ticks, 55 frames a second at 60 Hz).
+const SUSTAINED_BEHIND_MS: u64 = 2_000;
 const PUSH_WINDOW: u64 = 64;
 const PUSH_LEASE_MS: u64 = 3_000;
 const PUSH_STATUS_MS: u64 = 250;
@@ -1044,9 +1049,77 @@ struct PaceReport {
     // The reporter's 90th-percentile tick cost; legacy reports carry none.
     tick_micros: Option<u32>,
     at_ms: u64,
+    // When its unbroken run of Behind reports began.
+    behind_since: Option<u64>,
+    // Its latest Behind report's frames run, time and tick cost: with frames
+    // waiting on it, all its PC could run at that tick cost.
+    capacity: Option<(u16, u64, u32)>,
 }
 
 impl PaceReport {
+    /// A report received at `at_ms`, after the source's `previous` one. A
+    /// federation follower forwards the latest report again and again, so
+    /// this keeps times, not counts.
+    fn new(
+        previous: Option<PaceReport>,
+        pace: OrderPace,
+        frames_per_second: u16,
+        tick_micros: u32,
+        at_ms: u64,
+    ) -> Self {
+        let behind_since = (pace == OrderPace::Behind).then(|| {
+            previous
+                .and_then(|previous| previous.behind_since)
+                .unwrap_or(at_ms)
+        });
+        let capacity = if pace == OrderPace::Behind && frames_per_second > 0 && tick_micros != 0 {
+            Some((frames_per_second, at_ms, tick_micros))
+        } else {
+            previous.and_then(|previous| previous.capacity)
+        };
+        Self {
+            pace,
+            frames_per_second,
+            tick_micros: (tick_micros != 0).then_some(tick_micros),
+            at_ms,
+            behind_since,
+            capacity,
+        }
+    }
+
+    /// What it can hold by what it ran rather than by its tick cost, once it
+    /// has been behind for `SUSTAINED_BEHIND_MS` running fewer
+    /// frames than the clock's `rate`: nine tenths of it, to drain the frames
+    /// waiting on it.
+    fn measured_rate(&self, rate: u16) -> Option<u32> {
+        (self.tick_micros.is_some()
+            && self
+                .behind_since
+                .is_some_and(|since| self.at_ms.saturating_sub(since) >= SUSTAINED_BEHIND_MS)
+            && self.frames_per_second < rate)
+            .then(|| u32::from(self.frames_per_second) * 9 / 10)
+    }
+
+    /// [`Self::sustainable_rate`], or less when what it ran says so.
+    fn holdable_rate(&self, rate: u16) -> u32 {
+        let sustainable = self.sustainable_rate();
+        self.measured_rate(rate)
+            .map_or(sustainable, |measured| measured.min(sustainable))
+    }
+
+    /// Whether what it ran while behind, within the longest raise wait and
+    /// with ticks no quicker by a tenth since, says it cannot hold `rate`.
+    /// Quicker ticks mean less to simulate, and its tick cost speaks again.
+    fn ran_below(&self, rate: u16, now_ms: u64) -> bool {
+        self.tick_micros.is_some_and(|micros| {
+            self.capacity.is_some_and(|(ran, at, then)| {
+                now_ms.saturating_sub(at) < PACE_RAISE_MAX_MS
+                    && micros >= then - then / 10
+                    && u32::from(ran) * 9 / 10 < u32::from(rate)
+            })
+        })
+    }
+
     /// The fastest rate this reporter can hold while it keeps
     /// `100 - SUSTAIN_PERCENT` percent of each second for everything else
     /// (drawing, catching up); legacy reports: nine tenths of what it ran,
@@ -1440,12 +1513,14 @@ impl OrderingRoom {
     /// A reader's pace segment (spec §3.2), the latest report wins; a zero
     /// tick cost is none.
     fn report_pace(&mut self, source: u8, report: crate::link::PaceSegment, now_ms: u64) {
-        self.sources[usize::from(source)].pace = Some(PaceReport {
-            pace: report.pace,
-            frames_per_second: report.frames_per_second,
-            tick_micros: (report.tick_micros != 0).then_some(report.tick_micros),
-            at_ms: now_ms,
-        });
+        let slot = &mut self.sources[usize::from(source)].pace;
+        *slot = Some(PaceReport::new(
+            *slot,
+            report.pace,
+            report.frames_per_second,
+            report.tick_micros,
+            now_ms,
+        ));
     }
 
     /// Slows the clock while a player reports it cannot keep up: to the
@@ -1487,10 +1562,12 @@ impl OrderingRoom {
             if now_ms.saturating_sub(report.at_ms) > PACE_REPORT_MS {
                 continue;
             }
-            let sustainable = report.sustainable_rate();
+            let sustainable = report.holdable_rate(self.pace.rate);
             // A tick-cost reporter that holds the current rate is only
             // drawing slowly: its own catch-up recovers it, and it neither
-            // slows the clock nor holds back a raise.
+            // slows the clock nor holds back a raise. Unless it stays behind
+            // running fewer frames than the clock: then what it ran is what
+            // it holds (`PaceReport::measured_rate`).
             let simulation_bound =
                 report.tick_micros.is_none() || sustainable < u32::from(self.pace.rate);
             lagging |= report.pace != OrderPace::KeepingUp && simulation_bound;
@@ -1504,7 +1581,8 @@ impl OrderingRoom {
             }
             raise_blocked |= report.tick_micros.is_some()
                 && step > 0
-                && sustainable < u32::from(rates[step - 1]);
+                && (sustainable < u32::from(rates[step - 1])
+                    || report.ran_below(rates[step - 1], now_ms));
         }
         if lagging {
             self.pace.lagging_at = now_ms;

@@ -398,7 +398,12 @@ that ran no frames never count as behind. The relay then seals at the fastest
 Game Speed rate at most nine tenths of what that player ran, so it also drains
 the frames waiting on it: at least one row slower but never more than two rows
 below the match's own speed (60 frames a second goes no lower than 30), with at
-least five seconds between changes. After 30 seconds with nobody behind or
+least five seconds between changes. A client also reports its 90th-percentile tick
+cost: a player whose ticks would hold the rate only draws slowly and slows nobody,
+unless it stays behind for two seconds running fewer frames than the relay seals,
+when what it ran decides. Nor does the match speed up past nine tenths of what such a
+player ran while behind, for five minutes, unless its ticks got a tenth quicker since.
+After 30 seconds with nobody behind or
 catching up, not counting paused time, it tries one row faster; a slowdown
 within 30 seconds of that doubles the wait, up to five minutes. Every client
 shows "<player> is slowing the game down." and, once the match is back at its
