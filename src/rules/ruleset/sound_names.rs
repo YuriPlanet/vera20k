@@ -85,12 +85,16 @@ impl SoundNames {
             ..Self::default()
         };
         for name in names {
-            if !table.index.contains_key(name) {
-                let index = u32::try_from(table.names.len())
-                    .expect("a rules set names fewer than 2^32 sounds");
-                table.names.push(name.into());
-                table.index.insert(name.into(), index);
+            if table.index.contains_key(name) {
+                continue;
             }
+            // VERA's own bound, unreachable in practice: names past 2^32 stay
+            // out of the table and travel Unlisted, so they still play.
+            let Ok(index) = u32::try_from(table.names.len()) else {
+                break;
+            };
+            table.names.push(name.into());
+            table.index.insert(name.into(), index);
         }
         table
     }
