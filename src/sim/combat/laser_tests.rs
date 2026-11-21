@@ -546,7 +546,7 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let relevant = frame
@@ -659,7 +659,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
                 rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let update = frame

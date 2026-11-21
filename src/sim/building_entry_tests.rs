@@ -147,7 +147,7 @@ fn absorb(sim: &mut Simulation, rules: &RuleSet, building: u64, count: usize) {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("absorbed infantry");
         sim.substrate
@@ -172,12 +172,12 @@ fn can_load(sim: &mut Simulation, rules: &RuleSet, from: u64, building: u64) -> 
         RadioMessage::CanEnter,
         RadioPayload::default(),
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
 fn seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_bio_reactor(id, rules, FrameEffects::default())
+    sim.foot_enter_bio_reactor(id, rules, &mut FrameEffects::default())
 }
 
 fn entity(sim: &Simulation, id: u64) -> &GameEntity {
@@ -226,15 +226,15 @@ fn seek_team(sim: &mut Simulation, action_id: i32, members: Vec<u64>) -> u64 {
 }
 
 fn garrison_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_battle_bunker(id, rules, FrameEffects::default())
+    sim.foot_enter_battle_bunker(id, rules, &mut FrameEffects::default())
 }
 
 fn whole_map_garrison_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_nearest_occupiable(id, rules, FrameEffects::default())
+    sim.foot_enter_nearest_occupiable(id, rules, &mut FrameEffects::default())
 }
 
 fn tank_bunker_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_tank_bunker(id, rules, FrameEffects::default())
+    sim.foot_enter_tank_bunker(id, rules, &mut FrameEffects::default())
 }
 
 /// The bunker's native install status and its first radio contact.
@@ -654,7 +654,7 @@ fn script_action_62_sends_the_members_a_reactor_takes() {
     let tank = spawn(&mut sim, &rules, "LTNK", "YuriCountry", 10, 12);
     let team = seek_team(&mut sim, 62, vec![infantry, tank]);
 
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
 
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.members().collect::<Vec<_>>(), [tank]);
@@ -967,7 +967,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         serde_json::to_value(entity(&sim, reactor).passenger_role().cargo()).unwrap(),
@@ -1037,7 +1037,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         entity(&sim, reactor)
@@ -1155,7 +1155,7 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let released = entity(&sim, passenger);
@@ -1247,7 +1247,7 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(
@@ -1300,7 +1300,7 @@ fn a_bio_reactor_scan_uses_infantry_cell_entry_with_building_height() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(
@@ -1378,7 +1378,7 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(
@@ -1438,7 +1438,7 @@ fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
         &mut sim,
         &rules,
         reactor,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(!entity(&sim, passenger).lifecycle.in_limbo());
@@ -1501,7 +1501,7 @@ fn absorbed_infantry_tracking_is_restored_after_building_death_and_sale() {
                 None,
                 reactor,
                 |_, _| {},
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
 
@@ -1543,7 +1543,7 @@ fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
             &mut sim,
             &rules,
             reactor,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert!(
@@ -1658,7 +1658,7 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
         foot,
         Some(NavTargetRef::object(reactor)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         entity(&sim, foot).seldom.radio_contacts.slot(0),
@@ -1670,7 +1670,7 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
         cell_centre(16, 10),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 
     sim.per_cell_process(
@@ -1678,7 +1678,7 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 
@@ -1708,7 +1708,7 @@ fn a_unit_absorber_takes_a_unit_arriving_on_its_foundation() {
         &mut sim,
         &rules,
         tank,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(entity(&sim, tank).pending_entry(), None);
     assert_eq!(
@@ -1729,7 +1729,7 @@ fn a_unit_absorber_takes_a_unit_arriving_on_its_foundation() {
         cell_centre(16, 10),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 
     sim.per_cell_process(
@@ -1737,7 +1737,7 @@ fn a_unit_absorber_takes_a_unit_arriving_on_its_foundation() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 
@@ -1929,7 +1929,7 @@ fn script_action_63_sends_the_members_a_bunker_admits() {
     let tank = spawn(&mut sim, &rules, "LTNK", "YuriCountry", 10, 12);
     let team = seek_team(&mut sim, 63, vec![infantry, tank]);
 
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
 
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.members().collect::<Vec<_>>(), [tank]);
@@ -1972,7 +1972,7 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
                 id,
                 bunker,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
         );
@@ -2098,7 +2098,7 @@ fn an_ejected_human_occupant_drops_its_seek() {
                 occupant,
                 bunker,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
         );
@@ -2117,7 +2117,7 @@ fn an_ejected_human_occupant_drops_its_seek() {
             None,
             bunker,
             crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
 
         assert_eq!(out, 1);
@@ -2158,7 +2158,7 @@ fn the_guard_head_garrison_seek_answers_captures_rate() {
     sim.object_ai_visit_one(
         infantry,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
 
     let foot = entity(&sim, infantry);
@@ -2240,7 +2240,7 @@ fn the_nearest_free_own_tank_bunker_takes_the_tank() {
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Roger
     );
@@ -2346,7 +2346,7 @@ fn script_action_61_sends_the_members_a_tank_bunker_takes() {
     let second = spawn(&mut sim, &rules, "YTNK", "YuriCountry", 14, 12);
     let team = seek_team(&mut sim, 61, vec![first, drone, second]);
 
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
 
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.members().collect::<Vec<_>>(), [drone, second]);
@@ -2759,7 +2759,7 @@ fn script64_enters_a_neutral_civilian_building_outside_the_own_house_list() {
     assert_eq!(sim.house_occupiables(owner, &rules), [own]);
     let team = seek_team(&mut sim, 64, vec![occupier]);
 
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
 
     assert!(sim.team_script_vm.team(team).unwrap().advance_pending());
     assert_eq!(sim.team_script_vm.team_for_member(occupier), None);
@@ -2830,7 +2830,7 @@ fn guard_and_area_guard_retry_script64_without_a_scenario_draw() {
         sim.object_ai_visit_one(
             occupier,
             Some(&rules),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
 
         assert_eq!(
@@ -2931,7 +2931,7 @@ fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -2954,7 +2954,7 @@ fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
     sim.object_ai_visit_one(
         armory,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     assert!(
         entity(&sim, armory)

@@ -344,7 +344,7 @@ fn gsi_04_05_house_and_techno_base_defense_state_roundtrip_with_hash() {
         1,
         1800,
         &resources.rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.team_script_vm.team_for_member(1).is_none());
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);

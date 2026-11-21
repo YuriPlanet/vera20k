@@ -485,7 +485,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                 envelope.as_slice(),
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let lifetime = &scene.sim().lifecycle_test_events_for_test()[lifetime_start..];
@@ -706,7 +706,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                     &[],
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert!(

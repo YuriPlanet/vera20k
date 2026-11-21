@@ -127,7 +127,7 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
             Some(transport)
         );
     }
-    sim.create_ares_initial_payload(transport, &rules, FrameEffects::default());
+    sim.create_ares_initial_payload(transport, &rules, &mut FrameEffects::default());
     assert_eq!(cargo(&sim).len(), 3);
 
     let bunker = spawn(&mut sim, &rules, "NABNKR", "Americans", 16, 10);
@@ -194,7 +194,7 @@ fn armory_capture_and_sale_each_kick_out_one_trainee() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -215,7 +215,7 @@ fn armory_capture_and_sale_each_kick_out_one_trainee() {
     let in_limbo =
         |sim: &Simulation, id: u64| sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo();
     let yuri = sim.interner.get("YuriCountry").unwrap();
-    sim.change_owner_with_rules(armory, yuri, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(armory, yuri, &rules, None, &mut FrameEffects::default());
     assert!(!in_limbo(&sim, trainees[0]) && in_limbo(&sim, trainees[1]));
     let _ = crate::sim::production::sell_back(
         &mut sim,
@@ -223,7 +223,7 @@ fn armory_capture_and_sale_each_kick_out_one_trainee() {
         armory,
         crate::sim::production::SellOrder::Player,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(!in_limbo(&sim, trainees[1]));
     assert!(

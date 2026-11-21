@@ -151,7 +151,7 @@ fn attack_cursor_disguise_rule_and_firing_blink_reach_click_admission() {
         },
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let timer = sim
         .entities()

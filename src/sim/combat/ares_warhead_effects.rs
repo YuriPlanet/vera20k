@@ -179,7 +179,7 @@ impl Simulation {
         warhead: &WarheadType,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !warhead
             .ares_combat()

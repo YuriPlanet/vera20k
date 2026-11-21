@@ -198,7 +198,7 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
                     &mut scene.sim,
                     &scene.rules,
                     scene.miner,
-                    super::FrameEffects::default(),
+                    &mut super::FrameEffects::default(),
                 );
                 let entity = scene.sim.entities().get(scene.miner).unwrap();
                 assert!(entity.miner.as_ref().unwrap().cargo().is_empty());
@@ -719,7 +719,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
             crate::sim::components::NavTargetRef::cell(nav.0, nav.1),
             &s.rules,
             true,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         if input["moving"] != true {
             let entity = s.sim.substrate.entities.get_mut(miner).unwrap();
@@ -982,7 +982,7 @@ fn docking_handshake_and_radio_core_match_the_original_transmits() {
                 msg,
                 RadioPayload::default(),
                 &s.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 u64::from(reply.code()),
@@ -1021,7 +1021,7 @@ fn mission_enter_matches_the_original_dispatch() {
             &s.rules,
             None,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
@@ -1080,7 +1080,7 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
             &mut s.sim,
             s.miner,
             &s.rules,
-            crate::sim::world::ObjectAiCtx {
+            &mut crate::sim::world::ObjectAiCtx {
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },
@@ -1137,7 +1137,7 @@ fn mission_unload_matches_the_original_harvester_branch() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
@@ -1168,7 +1168,7 @@ fn ares_mission_unload_faces_the_dock_exactly() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let miner = s.sim.substrate.entities.get(s.miner).unwrap();
         let unloading = miner.miner.as_ref().unwrap().unload_active();
@@ -1193,7 +1193,7 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
             s.miner,
             &s.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         let mut expected = row.clone();
@@ -1242,7 +1242,7 @@ fn per_cell_release_matches_the_original_track_end_arm() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_state(&s, row, &context);

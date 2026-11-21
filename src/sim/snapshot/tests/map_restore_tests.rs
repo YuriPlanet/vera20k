@@ -80,7 +80,7 @@ fn retail_static_tree_display_survives_load_without_logic_membership() {
             near_center_ic_isolation_eligible: false,
         },
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         loaded.substrate.display.members(DisplayLayer::GROUND),

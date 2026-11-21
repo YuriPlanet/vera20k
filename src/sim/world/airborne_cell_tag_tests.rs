@@ -227,7 +227,7 @@ fn airborne_cell_tag_damage_and_remaining_actions_run_synchronously() {
     sim.advance_live_object_turn(
         actor,
         &rules,
-        techno_ai::ObjectAiCtx {
+        &mut techno_ai::ObjectAiCtx {
             overlay_registry: Some(&registry),
             ..Default::default()
         },
@@ -316,7 +316,7 @@ fn stationary_hostile_rocketeer_raises_the_airborne_cell_tag_on_frame_16() {
     sim.advance_live_object_turn(
         actor,
         &rules,
-        techno_ai::ObjectAiCtx {
+        &mut techno_ai::ObjectAiCtx {
             overlay_registry: Some(&registry),
             effects: FrameEffects::default(),
             ..Default::default()

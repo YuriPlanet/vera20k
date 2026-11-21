@@ -394,7 +394,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
         mut commit_cell_smudge: impl FnMut(&mut Simulation, (u16, u16)),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
@@ -487,7 +487,7 @@ impl Simulation {
         building_id: u64,
         cell: (u16, u16),
         c4_source: Option<u64>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return false;
@@ -580,7 +580,7 @@ impl Simulation {
         building_id: u64,
         killer: Option<u64>,
         cells: &[(u16, u16)],
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> usize {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return 0;
@@ -635,7 +635,7 @@ impl Simulation {
         cell: Option<(u16, u16)>,
         no_survivor: bool,
         killer: Option<u64>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(infantry) = self
             .substrate
@@ -754,7 +754,7 @@ impl Simulation {
         unit_id: u64,
         prevent_escape: bool,
         selected_by_player: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
@@ -874,7 +874,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         unit_id: u64,
         dying: DyingTransport,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -919,7 +919,7 @@ impl Simulation {
             rules,
             unit_id,
             crate::sim::passenger::DepartureRoute::DeathEscape,
-            |sim, passenger| {
+            |sim, passenger, effects| {
                 sim.escape_dying_unit(rules, registry, unit_id, passenger, dying, effects);
                 Ok(())
             },
@@ -945,7 +945,7 @@ impl Simulation {
         unit_id: u64,
         passenger: u64,
         dying: DyingTransport,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coord};
         // VERA's carrier relation keeps the passenger off its cell's
@@ -1108,7 +1108,7 @@ impl Simulation {
         crew: &str,
         owner: InternedId,
         unlimbo: CrewUnlimbo,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let (rx, ry, z) = unlimbo.cell_level();
         let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z, effects)?;
@@ -1128,7 +1128,7 @@ impl Simulation {
         owner: InternedId,
         cell: (u16, u16),
         z: u8,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let owner_name = self.interner.resolve(owner).to_string();
         self.construct_object_limbo_at_height(
@@ -1155,7 +1155,7 @@ impl Simulation {
         id: u64,
         unlimbo: CrewUnlimbo,
         facing: Option<u8>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let infantry = self
             .substrate
@@ -1281,7 +1281,7 @@ impl Simulation {
         building_id: u64,
         count: i32,
         cells: &[(u16, u16)],
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self
             .substrate
@@ -1416,7 +1416,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         id: u64,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Err(cause) = self.scatter(
             id,

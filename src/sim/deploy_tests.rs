@@ -207,7 +207,7 @@ fn deploy_mcv_on(
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let mcv_remains = sim.substrate.entities.get(mcv).is_some();
     (applied, mcv_remains, sim.sound_events.len())
@@ -267,7 +267,7 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
                 mcv,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "clear ConYard footprint should deploy"
         );
@@ -346,7 +346,7 @@ fn a_deploy_conversion_hands_the_voice_on_before_the_old_object_is_destroyed() {
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     tick_n(&mut sim, &rules, 60);
     let yard = deployed_type(&sim, "GACNST").stable_id();
@@ -381,7 +381,7 @@ fn a_lit_yard_lights_as_it_opens_and_goes_dark_as_it_undeploys() {
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.flush_pending_delete();
     let yard = deployed_type(&sim, "GACNST").stable_id();
@@ -460,7 +460,7 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
             mcv,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let yard = deployed_type(&sim, "GACNST");
         let id = yard.stable_id();
@@ -478,7 +478,11 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
         for frame in row["frames"].as_array().unwrap() {
             let now = deployed_at + frame["frame"].as_u64().unwrap() as u32;
             sim.session.set_binary_frame_for_test(now);
-            sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                id,
+                Some(&rules),
+                &mut crate::sim::world::ObjectAiCtx::default(),
+            );
             let yard = sim.substrate.entities.get(id).unwrap();
             if native_route::assert_frame(yard, frame, &format!("{name} frame {now}")) {
                 break;
@@ -506,7 +510,7 @@ fn deploy_mcv_accepts_mixed_height_clear_foundation() {
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         applied,
@@ -566,7 +570,7 @@ Buildable=yes
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let entity = sim
@@ -638,7 +642,7 @@ fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let allies = |name: &str| sim.house_alliances.as_map()[&name.to_ascii_uppercase()].clone();
     assert!(allies("Americans").contains("COMPUTER2"));
@@ -690,7 +694,7 @@ fn base_plan_recalc_deploy_generates_and_anchors_nonhuman_conyard() {
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let yard = deployed_type(&sim, "GACNST");
@@ -760,7 +764,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.flush_pending_delete();
     let yard = deployed_type(&sim, "GACNST").stable_id();
@@ -827,7 +831,7 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
             mcv,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert!(deployed_type(&sim, "GACNST").building_up());
         // UnitClass::Deploy marks a computer's building AI-repairable in a
@@ -871,7 +875,7 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
         miner,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(deployed_type(&sim, "YAREFN").building_up());
     assert!(
@@ -917,7 +921,7 @@ fn a_human_deploy_empties_the_base_cell_until_the_next_building_counts_the_yard(
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(deployed_type(&sim, "GACNST").building_up());
     assert_eq!(sim.houses[&owner].base_center(), None);
@@ -965,7 +969,7 @@ fn base_plan_recalc_deploy_countryless_nonempty_plan_only_reanchors_node_zero() 
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(deployed_type(&sim, "GACNST").building_up());
     let house = &sim.houses[&owner];
@@ -1015,7 +1019,12 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
         }
         let rng_before = sim.scenario_rng.state();
 
-        assert!(!sim.deploy_mcv(mcv, rules, None, crate::sim::world::FrameEffects::default()));
+        assert!(!sim.deploy_mcv(
+            mcv,
+            rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        ));
         assert!(!sim.substrate.entities.get(mcv).unwrap().death.is_dying());
         let house = &sim.houses[&owner];
         assert_eq!(house.base_center(), None);
@@ -1550,7 +1559,7 @@ fn guard_auto_deploy_reaches_the_native_action_from_infantry_ai() {
         })
         .unwrap();
     let (mut sim, rules, id) = native_deploy_fixture(row);
-    sim.object_ai_visit_one(id, Some(&rules), Default::default());
+    sim.object_ai_visit_one(id, Some(&rules), &mut Default::default());
     let actor = sim.substrate.entities.get(id).unwrap();
     assert_eq!(
         actor.mission_leaf.as_infantry().unwrap().doing(),
@@ -1580,13 +1589,13 @@ fn walk_stop_and_pending_callback_match_original_deployment_rows() {
         let (mut sim, rules, id) = native_deploy_fixture(row);
         let untouched = (sim.main_rng.logical_state(), sim.mapgen_rng.logical_state());
         if row["input"]["kind"] == "stop" {
-            sim.walk_stop_moving(id, &rules, crate::sim::world::FrameEffects::default())
+            sim.walk_stop_moving(id, &rules, &mut crate::sim::world::FrameEffects::default())
                 .unwrap();
         } else {
             sim.infantry_pending_deploy_stop_callback(
                 id,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1615,7 +1624,7 @@ fn deploy_completion_keeps_suffix_effects_when_next_action_refuses() {
     {
         let (mut sim, rules, id) = native_deploy_fixture(row);
         assert!(
-            !sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()),
+            !sim.infantry_sequencer(id, &rules, &mut crate::sim::world::FrameEffects::default()),
             "deployment does not UnInit"
         );
         assert_native_deploy_state(&sim, id, row);
@@ -1669,7 +1678,7 @@ fn infantry_unload_full_original_handler_matches52_supplied_controls() {
             row["rng_streams_before"]["mapgen"].as_str().unwrap()
         );
         let result = sim
-            .infantry_mission_unload(id, &rules, crate::sim::world::FrameEffects::default())
+            .infantry_mission_unload(id, &rules, &mut crate::sim::world::FrameEffects::default())
             .unwrap();
         // Ares InfantryClass_Mi_Unload_Undeploy (1005CD20, hook 0x51F716):
         // a Deployer's deployed arm (Doing 27..30) returns 1, not 450.
@@ -1948,7 +1957,7 @@ fn a_chaos_drone_deploy_fires_its_weapon_at_its_own_cell() {
         drone,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(drone).unwrap();
     assert!((14..=16).contains(&delay), "{delay}");

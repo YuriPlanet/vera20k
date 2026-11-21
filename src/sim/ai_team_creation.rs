@@ -132,7 +132,7 @@ pub(crate) fn update_team_creation(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame() as i32;
     let Some(house) = sim.houses.get(&owner) else {
@@ -193,7 +193,7 @@ fn select_team_types(
     rules: &RuleSet,
     owner: InternedId,
     admission: AiTriggerAdmission,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Vec<InternedId> {
     select_team_types_with(
         sim,
@@ -215,7 +215,7 @@ pub(crate) fn select_team_types_with(
     owner: InternedId,
     eligible: impl FnMut(&Simulation, &TeamAiTriggerDefinition, Option<InternedId>, bool) -> bool,
     mut draw: impl FnMut(&mut Simulation, i32, i32) -> i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Vec<InternedId> {
     let Some(house) = sim.houses.get(&owner) else {
         return Vec::new();

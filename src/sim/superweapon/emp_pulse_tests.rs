@@ -118,7 +118,7 @@ fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> 
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -407,7 +407,7 @@ fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(sim.try_install_building_upgrade(
@@ -425,7 +425,7 @@ fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let tank = sim.substrate.entities.get(tank).unwrap();
     assert!(crate::sim::superweapon::invulnerability::is_invulnerable(

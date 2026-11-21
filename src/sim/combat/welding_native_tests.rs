@@ -414,7 +414,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
             36,
             &mut out,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         None
     );
@@ -485,7 +485,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     roles["owner"],
                     target(&roles, requested),
                     rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
                 let actor = sim.entities().get(roles["owner"]).unwrap();

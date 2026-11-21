@@ -125,7 +125,12 @@ impl Simulation {
     }
 
     /// `ObjectClass::AI`'s sound block for one visit of a Techno or Terrain.
-    pub(crate) fn object_ai_sounds(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    pub(crate) fn object_ai_sounds(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         // `+0x1F4` and `+0x64` are read before `Location`, so an object
         // with neither costs no coordinate.
         let ambient = self.object_ambient_sound(id, rules);
@@ -163,7 +168,7 @@ impl Simulation {
         &mut self,
         sound: Option<&SoundReference>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Ares 3.0 TActionClass_PlayAudioAtRandomWP (10039B60, hook 0x6E1780,
         // #1004906) replaces the scan: every defined slot is a candidate,
@@ -247,7 +252,7 @@ impl Simulation {
         sound: Option<&SoundReference>,
         waypoint: Option<u32>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
             waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))
@@ -283,7 +288,7 @@ impl Simulation {
         &mut self,
         waypoint: Option<u32>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
             waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))

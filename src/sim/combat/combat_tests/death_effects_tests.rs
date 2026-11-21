@@ -278,7 +278,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
             EntityDamageEvent::area(middle, 10, 512, RAD_NO_ATTACKER, None, oil_wh),
             EntityDamageEvent::area(edge, 10, 1024, RAD_NO_ATTACKER, None, oil_wh),
         ],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let pending = |sim: &crate::sim::world::Simulation, id| {
@@ -329,7 +329,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         center,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.substrate.entities.get(center).is_some());
     assert_eq!(
@@ -342,7 +342,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         center,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     // An `Explodes=` barrel's DestructionEffects arms a zero death fuse
     // (`0x00441C43`), so the forced C4 hit leaves it alive at Health 0
@@ -358,7 +358,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
     sim.object_ai_visit_one(
         center,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx {
+        &mut crate::sim::world::ObjectAiCtx {
             overlay_registry: Some(&registry),
             ..Default::default()
         },
@@ -437,7 +437,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
                 Some(source_owner),
                 delay_wh,
             )],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     hit(&mut sim);
@@ -630,7 +630,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
             EntityDamageEvent::area(expiry_target, 10, 0, source_a, Some(owner_a), delay_wh),
             EntityDamageEvent::area(later_target, 10, 0, source_a, Some(owner_a), delay_wh),
         ],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.houses[&owner_a].stats().buildings_killed(), 2);
     assert_eq!(sim.houses[&owner_a].economy().score(), 1_400);
@@ -654,7 +654,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
             Some(owner_b),
             ordinary_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let later = sim.substrate.entities.get(later_target).unwrap();
     assert_eq!(later.health.current(), 0);
@@ -671,7 +671,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
         expiry_target,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let expired = sim.substrate.entities.get(expiry_target).unwrap();
     assert_eq!(expired.health.current(), 0);
@@ -1121,7 +1121,7 @@ fn a_buildings_death_weapon_detonates_at_its_foundation_centre() {
             None,
             kill_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.substrate.entities.get(1).unwrap().health.current(), 0);
     assert_eq!(

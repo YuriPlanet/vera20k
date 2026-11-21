@@ -506,14 +506,14 @@ fn ordinary_and_recursive_walk_responses_match_original_decoder() {
                     &request,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )?;
                 if found {
                     let again = sim.run_walk_admission_request(
                         request.into_walk_admission_for_test(),
                         &rules,
                         Some(&registry),
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )?;
                     assert!(again.is_none(), "recursive refusal recursed twice: {input}");
                 }
@@ -588,7 +588,7 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
             &request,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
         assert!(!result.unwrap());

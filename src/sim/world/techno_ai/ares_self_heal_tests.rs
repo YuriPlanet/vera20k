@@ -80,7 +80,7 @@ fn ares_self_heal_amount_max_rate_and_combat_delay() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     let damaged = sim.substrate.entities.get(1).unwrap().health.current();
     assert_eq!(damaged, 120);
     sim.session.set_binary_frame_for_test(930);

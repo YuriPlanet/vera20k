@@ -105,7 +105,7 @@ fn retail_bunker_docking_forgets_control_group_through_release_and_saved_view() 
                 &commands,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                Default::default(),
+                &mut Default::default(),
             )
             .unwrap();
         let sim = &runtime.simulation;
@@ -155,7 +155,7 @@ fn retail_bunker_docking_forgets_control_group_through_release_and_saved_view() 
                 &commands,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                Default::default(),
+                &mut Default::default(),
             )
             .unwrap();
         let sim = &runtime.simulation;

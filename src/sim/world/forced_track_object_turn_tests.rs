@@ -68,7 +68,7 @@ fn fixture(selector: i32) -> Simulation {
         head,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -85,7 +85,7 @@ fn tick(sim: &mut Simulation, rules: &RuleSet, frame: u32) -> movement::Movement
     // The track end's own-cell request searches; a reloaded save carries no
     // map inputs.
     crate::sim::arena_fixture::supply_native_map(sim);
-    sim.advance_live_object_turn(1, rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap()
         .movement
 }

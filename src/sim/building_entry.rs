@@ -202,7 +202,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(foot) = self.substrate.entities.get(id) else {
             return false;
@@ -237,7 +237,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::combat::TargetKind;
         use crate::sim::movement::locomotor::MovementLayer;
@@ -267,8 +267,8 @@ impl Simulation {
             y: coordinate.y,
             z: coordinate.z,
         };
-        let context = UninitContext::new(rules).with_effects(effects);
-        self.dispatch_object_tag_event(building_id, 1, Some(id), None, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        self.dispatch_object_tag_event(building_id, 1, Some(id), None, context.reborrow());
 
         //519790..519865: VoiceDie (local human only), then DieSound.
         //Playback may draw Main too, so flush before selecting the next list.
@@ -287,7 +287,7 @@ impl Simulation {
             {
                 self.sound_events
                     .emit(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
-                effects.flush_sound(self, rules);
+                context.effects().flush_sound(self, rules);
             }
         }
         // Infantry51986A / Unit73A0A5: the actor's refund comes first.
@@ -295,7 +295,7 @@ impl Simulation {
         if unit {
             //73A0BC..73A13C explicitly pops two cargo levels through Foot's
             //RemoveFirstPassenger (including RemoveGunner), child before parent.
-            self.grind_cargo(id, building_id, true, rules, registry, effects);
+            self.grind_cargo(id, building_id, true, rules, registry, context.effects());
             //73A13E..73A18D credits the eater before suppression50 + ExitUnit.
             if let Some(eater) = self
                 .substrate
@@ -308,11 +308,11 @@ impl Simulation {
                     eater,
                     crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
                     rules,
-                    effects,
+                    context.effects(),
                 );
             }
         }
-        self.dispatch_object_tag_event(id, 48, Some(id), None, context);
+        self.dispatch_object_tag_event(id, 48, Some(id), None, context.reborrow());
         let grinding = self
             .substrate
             .entities
@@ -322,7 +322,7 @@ impl Simulation {
         // Ares 3.0 100498D0 (hook 0x5198AD) / 1004C460 (hook 0x73A1BC), first
         // in the Grinding arm: reverse engineering and the hijacker refund.
         if rules.ares_form() && grinding {
-            self.ares_entered_grinder(id, building_id, rules, context);
+            self.ares_entered_grinder(id, building_id, rules, context.reborrow());
         }
         if grinding
             && let Some(building) = self.substrate.entities.get(building_id)
@@ -347,7 +347,7 @@ impl Simulation {
                         z: coordinate.z,
                     },
                 ));
-                effects.flush_sound(self, rules);
+                context.effects().flush_sound(self, rules);
             }
             //5198CE gates the animation switch on the existing Active3
             //instance, not on the presence of a SpecialAnim declaration.
@@ -377,10 +377,9 @@ impl Simulation {
         include_nested: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         while self
             .substrate
             .entities
@@ -393,12 +392,15 @@ impl Simulation {
                 rules,
                 transport,
                 DepartureRoute::Vehicle,
-                |sim, passenger| {
+                |sim, passenger, effects| {
                     if include_nested {
                         sim.grind_cargo(passenger, building, false, rules, registry, effects);
                     }
                     sim.credit_grinder_refund(passenger, building, rules);
-                    sim.uninit_with_context(passenger, context);
+                    sim.uninit_with_context(
+                        passenger,
+                        crate::sim::world::UninitContext::new(rules).with_effects(effects),
+                    );
                     Ok(())
                 },
                 effects,
@@ -438,7 +440,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self.substrate.entities.get(id).map(GameEntity::owner) else {
             return false;
@@ -517,7 +519,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(foot) = self.substrate.entities.get(id) else {
             return false;
@@ -562,7 +564,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
         if rules.ares_form()
@@ -637,7 +639,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !can_auto_deploy_here(self, id, rules) {
             return false;

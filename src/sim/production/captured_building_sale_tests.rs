@@ -219,9 +219,21 @@ fn compare(row: &Value, joined: bool) {
     let native_id = sim.native_identity_cursor();
     let rng = sim.scenario_rng().logical_state();
     if joined {
-        sim.change_owner_with_rules(BUILDING, new_owner, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(
+            BUILDING,
+            new_owner,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
     } else {
-        sell_after_owner_change(&mut sim, &rules, BUILDING, None, FrameEffects::default());
+        sell_after_owner_change(
+            &mut sim,
+            &rules,
+            BUILDING,
+            None,
+            &mut FrameEffects::default(),
+        );
     }
     assert_eq!(
         state(&sim, &rules, new_owner),
@@ -286,7 +298,13 @@ fn ai_capture_sale_uses_admitted_rules_on_the_owner_transition() {
             .get_mut(&new_owner)
             .unwrap()
             .set_player_control_for_test(player_control);
-        sim.change_owner_with_rules(BUILDING, new_owner, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(
+            BUILDING,
+            new_owner,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
         let building = sim.entities().get(BUILDING).unwrap();
         assert_eq!(
             building.mission.current().known() == Some(MissionType::Selling),
@@ -331,7 +349,7 @@ fn turret_upgrade_selling_matches_original_refund_constructor_and_rng_visits() {
             constructors += draws.len() as u64;
             sim.session
                 .set_binary_frame_for_test(phase["frame"].as_u64().unwrap() as u32);
-            sim.visit_building_down(BUILDING, &rules, None, FrameEffects::default());
+            sim.visit_building_down(BUILDING, &rules, None, &mut FrameEffects::default());
             assert_eq!(state(&sim, &rules, owner), phase["state"]);
             for (actual, stream) in [
                 (sim.scenario_rng().logical_state(), "scenario"),

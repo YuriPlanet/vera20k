@@ -265,7 +265,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             supplied(case),
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(
             mirrored_state(direct.substrate.entities.get(UNIT).unwrap()),
@@ -325,7 +325,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(UNIT).unwrap();
         assert_eq!(

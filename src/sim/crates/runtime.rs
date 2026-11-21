@@ -205,7 +205,7 @@ pub(crate) fn tick_crate_regeneration(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<CrateRegeneration, RuntimeOverlayError> {
     let mut result = CrateRegeneration::default();
     if !sim.session.rule_policy().uses_match_crates() || !sim.session.game_options().crates {
@@ -724,7 +724,7 @@ mod tests {
             let rng_before = sim.scenario_rng.state();
 
             let regen =
-                tick_crate_regeneration(&mut sim, &rules, registry, FrameEffects::default())
+                tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
                     .unwrap();
 
             assert_eq!(regen, CrateRegeneration::default());
@@ -767,7 +767,8 @@ mod tests {
         let untouched = sim.crate_authority().slots()[0];
 
         let regen =
-            tick_crate_regeneration(&mut sim, &rules, registry, FrameEffects::default()).unwrap();
+            tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
+                .unwrap();
 
         assert_eq!(regen.expired, 1, "only the due slot expires");
         assert_eq!(regen.accepted, 1, "one replacement placer call");
@@ -815,7 +816,8 @@ mod tests {
         };
 
         let regen =
-            tick_crate_regeneration(&mut sim, &rules, registry, FrameEffects::default()).unwrap();
+            tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
+                .unwrap();
 
         assert_eq!(regen.expired, 1);
         assert_eq!(regen.visible, 1);

@@ -30,7 +30,7 @@ fn scene(self_effect: bool) -> (Simulation, RuleSet, u64) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, actor: u64, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.object_ai_visit_one(actor, Some(rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(actor, Some(rules), &mut ObjectAiCtx::default());
 }
 
 #[test]

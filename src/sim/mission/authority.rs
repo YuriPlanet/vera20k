@@ -533,12 +533,12 @@ impl Simulation {
         receiver: u64,
         requested: Option<TargetKind>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         if !self.substrate.entities.contains(receiver) {
             return Err(MissionAuthorityError::MissingReceiver(receiver));
         }
-        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow());
         let prepared =
             effects.preflight(self, receiver, ConcreteSetterRequest::Target { requested })?;
         effects.apply_target(self, &prepared, requested);
@@ -554,10 +554,10 @@ impl Simulation {
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         self.assign_destination_through(
-            RepresentedConcreteMissionEffects::new(rules, frame_effects),
+            RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow()),
             receiver,
             requested,
         )
@@ -572,10 +572,10 @@ impl Simulation {
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         self.assign_destination_through(
-            RepresentedConcreteMissionEffects::new(rules, frame_effects).keeping_queue(),
+            RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow()).keeping_queue(),
             receiver,
             requested,
         )
@@ -615,9 +615,9 @@ impl Simulation {
         &mut self,
         receiver: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow());
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
@@ -629,9 +629,9 @@ impl Simulation {
         receiver: u64,
         packet: OverridePacket,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow());
         self.mission_override_exact_with_effects(receiver, packet, &mut effects)
     }
 
@@ -650,7 +650,7 @@ impl Simulation {
         receiver: u64,
         attacker: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(attacker)
             || !self.substrate.entities.contains(receiver)
@@ -685,7 +685,7 @@ impl Simulation {
         mover: u64,
         target: TargetKind,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(mover) {
             return false;
@@ -1436,14 +1436,14 @@ mod tests {
                         1,
                         2,
                         rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                 } else {
                     sim.mission_override_movement_blocker(
                         1,
                         TargetKind::Entity(2),
                         rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                 };
                 assert!(ran, "{name}, damage={damage_response}");

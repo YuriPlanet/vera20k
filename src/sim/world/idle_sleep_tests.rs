@@ -204,7 +204,7 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) {
         rules,
         33,
         super::TickLane::Ordinary,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     )
     .expect("an ordinary frame");
 }

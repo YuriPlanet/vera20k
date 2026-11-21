@@ -622,7 +622,7 @@ impl Simulation {
                 let (stable_id, outcome) =
                     sim.unlimbo_authored_techno(ge, map_ent.health, rules, overlay_registry);
                 if !matches!(outcome, RevealOutcome::Revealed { .. } | RevealOutcome::Consumed) {
-                    sim.discard_constructed_limbo(stable_id, rules, FrameEffects::default());
+                    sim.discard_constructed_limbo(stable_id, rules, &mut FrameEffects::default());
                     continue;
                 }
                 if matches!(outcome, RevealOutcome::Revealed { .. }) {
@@ -651,9 +651,9 @@ impl Simulation {
                         );
                     }
                     if map_ent.structure_online {
-                        sim.go_building_online(stable_id, rules, FrameEffects::default());
+                        sim.go_building_online(stable_id, rules, &mut FrameEffects::default());
                     } else {
-                        sim.go_building_offline(stable_id, rules, FrameEffects::default());
+                        sim.go_building_offline(stable_id, rules, &mut FrameEffects::default());
                     }
                 }
                 sim.finish_authored_building_enable(stable_id, rules);
@@ -822,7 +822,7 @@ impl Simulation {
         temporary: u64,
         position: RevealPosition,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         game_active: bool,
     ) -> Option<RevealOutcome> {
         let entity = self.substrate.entities.get(temporary)?;
@@ -884,7 +884,7 @@ impl Simulation {
             facing,
             z,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )?;
         // ReadBuildings44FD93..44FDB9 passes the host pose to the usual
         // Building Unlimbo, without assigning a forced slot/level. Successful
@@ -903,13 +903,13 @@ impl Simulation {
             rules,
             Some(rules.overlay_registry()),
             true,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         if !matches!(
             outcome,
             RevealOutcome::Revealed { .. } | RevealOutcome::Consumed
         ) {
-            self.discard_constructed_limbo(stable_id, rules, FrameEffects::default());
+            self.discard_constructed_limbo(stable_id, rules, &mut FrameEffects::default());
             return None;
         }
         Some(stable_id)
@@ -1169,7 +1169,7 @@ impl Simulation {
                 ge,
                 rules,
                 overlay_registry,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             if matches!(outcome, RevealOutcome::Revealed { .. }) {
                 // This tests/tools/debug adapter explicitly promises a finished
@@ -1187,7 +1187,7 @@ impl Simulation {
                         false,
                         rules,
                         overlay_registry,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                 }
             }
@@ -1199,7 +1199,7 @@ impl Simulation {
         if !matches!(outcome, RevealOutcome::Revealed { .. }) {
             // This convenience path owns its transient constructor result.
             // Held production objects use the separate limbo/retry boundary.
-            self.discard_constructed_limbo(stable_id, rules, FrameEffects::default());
+            self.discard_constructed_limbo(stable_id, rules, &mut FrameEffects::default());
             return None;
         }
         Self::initialize_cloak_after_unlimbo(
@@ -1237,7 +1237,7 @@ impl Simulation {
             z,
             rules,
             TechnoConstructorInit::FreshScenario,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("fresh Techno constructor initialization cannot fail")
     }
@@ -1252,7 +1252,7 @@ impl Simulation {
         z: u8,
         rules: &RuleSet,
         init: TechnoConstructorInit,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<u64>, GeneratedTechnoInitError> {
         let Some(obj) = rules.object(type_id) else {
             return Ok(None);
@@ -1282,7 +1282,7 @@ impl Simulation {
         z: u8,
         rules: &RuleSet,
         init: TechnoConstructorInit,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<u64>, GeneratedTechnoInitError> {
         let Some(ge) = self.construct_resolved_runtime_techno(
             obj, type_id, owner, rx, ry, facing, z, rules, init,
@@ -1326,7 +1326,7 @@ impl Simulation {
             facing,
             z,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -1342,7 +1342,7 @@ impl Simulation {
         facing: u8,
         z: u8,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         self.spawn_object_limbo_at_height_with_init(
             type_id,
@@ -1369,7 +1369,7 @@ impl Simulation {
         facing: u8,
         z: u8,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         self.spawn_resolved_object_limbo_at_height_with_init(
             obj,
@@ -1399,7 +1399,7 @@ impl Simulation {
         z: u8,
         placement: PlacementEvidence,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         self.reveal_constructed_object_at_height_with_overlay_context(
             stable_id,
@@ -1426,7 +1426,7 @@ impl Simulation {
         placement: PlacementEvidence,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let position = self
             .substrate
@@ -1455,7 +1455,7 @@ impl Simulation {
         placement: PlacementEvidence,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let requested_position = RevealPosition::new(
             rx,
@@ -1494,7 +1494,7 @@ impl Simulation {
         on_bridge: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let entity = self.substrate.entities.get_mut(stable_id)?;
         entity.on_bridge.store(on_bridge);
@@ -1542,7 +1542,7 @@ impl Simulation {
         placement: PlacementEvidence,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         if let Some(outcome) = self.unlimbo_constructed_upgrade(
             stable_id,
@@ -1626,7 +1626,7 @@ impl Simulation {
         facing: u8,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         use crate::map::cell_index::NativeCellIdentity;
         let building = self.substrate.entities.get(stable_id)?;
@@ -1645,7 +1645,7 @@ impl Simulation {
             crate::util::lepton::lepton_to_cell_packed(coord.x),
             crate::util::lepton::lepton_to_cell_packed(coord.y),
         );
-        let context = super::lifecycle::UninitContext::new(rules).with_effects(frame_effects);
+        let mut context = super::lifecycle::UninitContext::new(rules).with_effects(frame_effects);
         let mut displaced = Vec::new();
         for (dx, dy) in foundation {
             let terrain = self.resolved_terrain.as_ref()?;
@@ -1669,7 +1669,7 @@ impl Simulation {
                     }
                 }
             }
-            if !self.clear_mobile_placement_cell(cell, &mut displaced, context) {
+            if !self.clear_mobile_placement_cell(cell, &mut displaced, context.reborrow()) {
                 self.restore_displaced_placement_technos(
                     displaced,
                     false,
@@ -1688,7 +1688,7 @@ impl Simulation {
             PlacementEvidence::EvaluateMark,
             rules,
             overlay_registry,
-            frame_effects,
+            context.effects(),
         );
         if placed.is_none() {
             //458C3A internally uninitializes the new Building before rollback.
@@ -1717,7 +1717,7 @@ impl Simulation {
         facing: u8,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let foot = self.substrate.entities.get(stable_id)?;
         if !matches!(
@@ -1731,9 +1731,9 @@ impl Simulation {
             crate::util::lepton::lepton_to_cell_packed(coord.y),
         );
         let cell = self.resolved_terrain.as_ref()?.native_cell_identity(at);
-        let context = super::lifecycle::UninitContext::new(rules).with_effects(frame_effects);
+        let mut context = super::lifecycle::UninitContext::new(rules).with_effects(frame_effects);
         let mut displaced = Vec::new();
-        if !self.clear_mobile_placement_cell(cell, &mut displaced, context) {
+        if !self.clear_mobile_placement_cell(cell, &mut displaced, context.reborrow()) {
             self.restore_displaced_placement_technos(
                 displaced,
                 false,
@@ -1750,7 +1750,7 @@ impl Simulation {
             PlacementEvidence::EvaluateMark,
             rules,
             overlay_registry,
-            frame_effects,
+            context.effects(),
         );
         if placed.is_none() {
             //4DF674: this failure already UnInits the new Foot;50D507 may
@@ -1775,7 +1775,7 @@ impl Simulation {
         &mut self,
         cell: crate::map::cell_index::NativeCellIdentity,
         displaced: &mut Vec<u64>,
-        context: super::lifecycle::UninitContext<'_>,
+        mut context: super::lifecycle::UninitContext<'_>,
     ) -> bool {
         use crate::map::cell_index::NativeCellIdentity;
         use crate::sim::movement::locomotor::MovementLayer;
@@ -1814,7 +1814,7 @@ impl Simulation {
                 return false;
             };
             displaced.push(id);
-            self.techno_limbo_with_context(id, context);
+            self.techno_limbo_with_context(id, context.reborrow());
         }
     }
 
@@ -1827,7 +1827,7 @@ impl Simulation {
         nearby: bool,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::rules::locomotor_type::MovementZone;
         use crate::sim::movement::ground_pose;
@@ -2021,7 +2021,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
@@ -2108,7 +2108,7 @@ impl Simulation {
         ge: GameEntity,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (u64, RevealOutcome) {
         let (stable_id, position) = self.store_with_constructor_managers(ge, rules, frame_effects);
         self.unlimbo_constructed_parent(
@@ -2125,7 +2125,7 @@ impl Simulation {
         &mut self,
         ge: GameEntity,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (u64, RevealPosition) {
         let position = ge.position;
         let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge);
@@ -2147,7 +2147,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         scenario_initialization: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (u64, RevealOutcome) {
         // ScenarioFullInit686B4F raises A8E7AC before InfantryRead51FB00
         // at687ACB, retaining it until687C2B..687C44 after all map objects.
@@ -2375,7 +2375,7 @@ impl Simulation {
         &mut self,
         parent_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // InitManagers6F3F83 registers the typed parent before constructing
         // its Spawn/Slave manager children. Load/NoInit bypasses this owner.
@@ -2492,7 +2492,7 @@ impl Simulation {
         cell: (u16, u16),
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(house) = self.houses.get(&owner_id) else {
             return;
@@ -2556,7 +2556,7 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Native early exits on a NavCom (0x7393E4) or the locomotor's
         // Is_Moving (vt+0x10 at 0x00739405, 0x73940A) retain runtime +0x68C.
@@ -3018,7 +3018,7 @@ impl Simulation {
         delegated: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let order = if delegated {
             production::SellOrder::DelegatedRedeploy { explicit: true }
@@ -3055,7 +3055,7 @@ impl Simulation {
         sid: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((unit_type, owner_id, rx, ry, z, was_selected, unlimbo_facing)) =
             self.substrate.entities.get(sid).and_then(|entity| {

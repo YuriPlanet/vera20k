@@ -205,7 +205,7 @@ impl SlotScene {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound frame");
         if !commands.is_empty() || !output.tick.frame_committed {

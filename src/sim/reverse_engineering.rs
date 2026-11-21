@@ -43,7 +43,7 @@ impl Simulation {
         victim: u64,
         grinder: u64,
         rules: &RuleSet,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(victim) else {
             return;
@@ -72,7 +72,13 @@ impl Simulation {
             }
             // RaiseEvent(0x50, grinder, -, false, victim), then 0x4F with
             // no source while the grinder still has a Tag.
-            self.dispatch_object_tag_event(grinder, 80, Some(grinder), Some(victim), context);
+            self.dispatch_object_tag_event(
+                grinder,
+                80,
+                Some(grinder),
+                Some(victim),
+                context.reborrow(),
+            );
             self.dispatch_object_tag_event(grinder, 79, Some(grinder), None, context);
         }
         if vehicle {

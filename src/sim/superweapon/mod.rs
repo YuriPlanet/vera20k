@@ -1851,7 +1851,7 @@ pub(crate) fn tick_house_superweapon_instances(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let current_frame = sim.session.binary_frame();
     let ares = rules.ares_form();
@@ -2002,7 +2002,7 @@ pub(super) fn deactivate_ares_handler(
     typ: InternedId,
     sw: &SuperWeaponType,
     is_player: bool,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if !sw.kind.has_ares_handler() {
         return;
@@ -2037,7 +2037,7 @@ pub(super) fn raise_ares_activation_events(
     typ: InternedId,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::trigger_runtime::AresEventSource;
     let launch = AresEventSource::Launch {
@@ -2130,7 +2130,7 @@ pub(crate) fn tick_active_superweapon_effects(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let frame = sim.session.binary_frame() as i32;
     if sim.session.lighting_mut().step_nuke_flash(frame) {
@@ -2696,7 +2696,7 @@ pub(crate) fn update_owned_supers(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let paid_before = sim.paid_super_weapon_selection(owner);
     let Some(house) = sim.houses.get(&owner) else {

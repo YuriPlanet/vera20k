@@ -144,7 +144,7 @@ fn techno_curtain_scales_by_the_type_modifier() {
         EntityCategory::Unit,
         None,
         101,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(curtain_left(&sim, target), 151);
 }
@@ -205,7 +205,7 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     assert_eq!(fire_error(&sim), FireError::Rearm);
     let timer = sim
         .entities()
@@ -238,7 +238,8 @@ fn sonar_duration_extends_the_sonar_timer() {
                 arg6: false,
             },
         );
-        let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+        let _ =
+            sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     };
     let left = |sim: &Simulation| {
         let frame = sim.session.binary_frame() as i32;
@@ -298,7 +299,7 @@ fn inf_death_anim_replaces_the_table_and_takes_the_invoker_house() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     let goo = sim.interner.get("GOO").expect("anim type interned");
     let anims: Vec<_> = sim
         .substrate
@@ -359,7 +360,8 @@ fn inf_death_table_anim_takes_its_make_infantry_owner() {
                 arg6: false,
             },
         );
-        let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+        let _ =
+            sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
         let flame = sim.interner.get("FLAME").expect("anim type interned");
         let anims: Vec<_> = sim
             .substrate

@@ -121,7 +121,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
         let Some(debris) = self.substrate.voxel_anims.get_mut(id) else {
             return Ok(false);
@@ -131,7 +131,7 @@ impl Simulation {
         }
         let step = debris.begin_ai_visit();
         let type_id = debris.type_id();
-        let context = UninitContext::new(rules).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         match step {
             VoxelAnimAiStep::Delete => {
                 self.uninit_with_context(id, context);
@@ -141,7 +141,7 @@ impl Simulation {
                 // Native expiry always reaches UnInit (`0x0074A700`). Ore
                 // VERA cannot place is the expiry's last step: log it, keep
                 // the area damage's bridge notice and retire the piece.
-                let changed = self.voxel_anim_expiry(id, rules, effects);
+                let changed = self.voxel_anim_expiry(id, rules, context.effects());
                 self.uninit_with_context(id, context);
                 return Ok(changed);
             }
@@ -247,7 +247,12 @@ impl Simulation {
     /// Natural Voxel expiry749FA2..74A6FC. The land/deck query reads the
     /// retained Location; the dry Anim, area, light, children and ore read
     /// Bounce coords. A water landing below the deck ends at its splash.
-    fn voxel_anim_expiry(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) -> bool {
+    fn voxel_anim_expiry(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
         let debris = self.substrate.voxel_anims.get(id).unwrap();
         let type_id = debris.type_id();
         let location = debris.world_coord();
@@ -364,7 +369,7 @@ impl Simulation {
         type_id: VoxelAnimTypeId,
         impact: IVec3,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let kind = rules.voxel_anim_type(type_id);
         let Some(expire) = kind.expire_anim.as_deref() else {
@@ -413,7 +418,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         cells: &[(u16, u16)],
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), RuntimeOverlayError> {
         use crate::sim::tiberium::{NewTiberiumAdmission, TiberiumPlacementObjectContext};
 
@@ -476,7 +481,7 @@ impl Simulation {
         source: BounceContactDamage,
         warhead_ref: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(cell) = Self::map_coord_cell(&self.resolved_terrain, position.x, position.y)
         else {

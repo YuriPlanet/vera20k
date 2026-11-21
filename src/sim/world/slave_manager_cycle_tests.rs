@@ -248,7 +248,7 @@ fn kill(s: &mut SlaveScene, target: u64, attacker: Option<u64>) {
             &s.scene.rules,
             Some(registry()),
             &[hit],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     panic!("{target} survived ten hits");
@@ -458,7 +458,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
             smin,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "deploy to YAREFN"
     );
@@ -518,7 +518,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
             false,
             &rules,
             Some(registry()),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "undeploy to SMIN"
     );
@@ -531,7 +531,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         yarefn,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         std::mem::take(&mut sim.mission_spawned_entities),
@@ -769,7 +769,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         false,
         &rules,
         Some(registry()),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -780,7 +780,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         refinery,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         std::mem::take(&mut sim.mission_spawned_entities),

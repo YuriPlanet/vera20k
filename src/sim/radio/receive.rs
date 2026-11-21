@@ -70,7 +70,7 @@ pub(crate) fn receive_radio(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(category) = sim.substrate.entities.get(target_sid).map(|t| t.category()) else {
         return RadioResponse::None;
@@ -99,7 +99,7 @@ fn building_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         // Original43CD01: Begin_Mode(IDLE) precedes the common teardown.
@@ -414,7 +414,7 @@ fn building_can_load(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -513,7 +513,7 @@ fn building_docking(
     building_id: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -793,7 +793,7 @@ fn building_dock_now(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -886,7 +886,7 @@ fn unit_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         // 0x00737B14: a unit on Return queues Guard, then the Foot receiver;
@@ -939,7 +939,7 @@ fn unit_hold_still(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let _ = foot_receive(
         sim,
@@ -1045,7 +1045,7 @@ fn unit_docking(
     from: u64,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some((transport, sender)) = sim
         .substrate
@@ -1353,7 +1353,7 @@ fn unit_prepare_to_dock(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     // 0x007376BA: the Foot receiver first (Techno sends TETHER back).
     let _ = foot_receive(
@@ -1409,7 +1409,7 @@ fn unit_prepare_to_dock(
 /// a `Harvester=`/`Weeder=` unit with its unload latch up drops it, scatters
 /// (forced, not no-kidding — the Unit Scatter refuses while Unload is still
 /// current), queues Harvest and commences it when ready.
-fn unit_run_away(sim: &mut Simulation, unit: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+fn unit_run_away(sim: &mut Simulation, unit: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
     let latched_harvester = sim.substrate.entities.get(unit).is_some_and(|entity| {
         entity
             .miner
@@ -1474,7 +1474,7 @@ fn aircraft_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get(aircraft) else {
         return RadioResponse::None;
@@ -1645,7 +1645,7 @@ fn aircraft_dock_now(
     aircraft: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(entity) = sim.substrate.entities.get(aircraft)
         && let Some(object) = sim.entity_object_type(entity, rules)
@@ -1688,7 +1688,7 @@ fn aircraft_docking(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let _ = foot_receive(
         sim,
@@ -1773,7 +1773,7 @@ fn aircraft_move_here(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let _ = foot_receive(
         sim,
@@ -1861,7 +1861,7 @@ fn foot_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         RadioMessage::MoveToCell => foot_move_here(sim, foot, payload, rules, effects),
@@ -1901,7 +1901,7 @@ fn foot_move_here(
     foot: u64,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get(foot) else {
         return RadioResponse::None;
@@ -1961,7 +1961,7 @@ fn foot_move_here(
 /// the first contact is dropped; a unit asleep queues Guard and commences it
 /// when ready, one on Enter queues Guard; one with no NavCom and no turret
 /// swing (`+0x6AF`) scatters (forced, no-kidding). The Techno receiver follows.
-fn foot_run_away(sim: &mut Simulation, foot: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+fn foot_run_away(sim: &mut Simulation, foot: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(foot) else {
         return;
@@ -2040,7 +2040,7 @@ fn techno_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         RadioMessage::Break => techno_over_out(sim, techno, sender, payload, rules, effects),
@@ -2171,7 +2171,7 @@ fn techno_repair_tick(
     sim: &mut Simulation,
     techno: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
@@ -2245,7 +2245,7 @@ fn techno_over_out(
     sender: Option<u64>,
     _payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(from) = sender {
         #[cfg(any(test, feature = "test-support"))]
@@ -2287,7 +2287,7 @@ fn techno_tether(
     techno: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -2323,7 +2323,7 @@ fn techno_untether(
     techno: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get_mut(techno) else {
         return RadioResponse::None;
@@ -2587,7 +2587,7 @@ mod tests {
             RadioMessage::Hello,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -2604,7 +2604,7 @@ mod tests {
             RadioMessage::CanEnter,
             RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -2674,7 +2674,7 @@ mod tests {
                 RadioMessage::Tether,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2703,7 +2703,7 @@ mod tests {
                 RadioMessage::Break,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -2723,7 +2723,7 @@ mod tests {
                 RadioMessage::Hello,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -2735,7 +2735,7 @@ mod tests {
                 RadioMessage::TetherBack,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -2790,7 +2790,7 @@ mod tests {
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2833,7 +2833,7 @@ mod tests {
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Queued
         );
@@ -2865,7 +2865,7 @@ mod tests {
                 RadioMessage::AnimStop,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2902,7 +2902,7 @@ mod tests {
                 RadioMessage::AnimStop,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2962,7 +2962,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Roger);
     }
@@ -2984,7 +2984,7 @@ mod tests {
                 RadioMessage::CanDock,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         assert_eq!(docking(&mut sim), RadioResponse::Roger);
@@ -3027,7 +3027,7 @@ mod tests {
                 RadioMessage::DockNow,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         let runtime = |sim: &Simulation| {
@@ -3175,7 +3175,7 @@ mod tests {
             1,
             RadioMessage::Tether,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
@@ -3234,7 +3234,7 @@ mod tests {
             &mut sim,
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let trace = take_test_trace();
 
@@ -3284,7 +3284,7 @@ mod tests {
             RadioMessage::Tether,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         clear_test_trace();
@@ -3295,7 +3295,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
@@ -3373,7 +3373,7 @@ mod tests {
                 RadioMessage::Break,
                 RadioPayload::default(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
 
             assert!(
@@ -3417,7 +3417,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         transmit(
             &mut sim,
@@ -3426,7 +3426,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert!(
@@ -3566,7 +3566,7 @@ mod tests {
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 u64::from(response.code()),
@@ -3642,7 +3642,7 @@ mod tests {
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::None
         );

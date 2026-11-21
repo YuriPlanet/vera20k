@@ -181,7 +181,7 @@ fn compare_state(actual: &Value, expected: &Value, label: &str) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, id: AnimId, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.visit_anim(id, rules, None, FrameEffects::default())
+    sim.visit_anim(id, rules, None, &mut FrameEffects::default())
         .unwrap();
 }
 
@@ -503,7 +503,7 @@ fn stock_oil_derrick_death_weapon_produces_a_running_flameguy_in_master_frames()
                 &rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary oil combat frame");
         assert!(output.tick.frame_committed);

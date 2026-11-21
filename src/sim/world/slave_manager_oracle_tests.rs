@@ -338,7 +338,7 @@ fn place_slave(
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("slave");
     // make_slave supplies Object+9C's full XYZ after construction, including
@@ -723,7 +723,7 @@ fn ai_update_matches_the_original_node_machine() {
                 s.master,
                 &s.scene.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         compare_state(&s, row, &name);
@@ -753,7 +753,7 @@ fn manager_machine_matches_the_original_owner_states_and_relocation() {
                     s.master,
                     &s.scene.rules,
                     Some(registry()),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             compare_state(&s, row, &name);
@@ -771,7 +771,7 @@ fn placed_hand_off_matches_the_original() {
         s.scene.sim.slave_manager_hand_off(
             s.master,
             &s.scene.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         compare_state(&s, row, &name);
     }
@@ -786,7 +786,7 @@ fn deploy_slaves_matches_the_original_unlimbo_and_scatter() {
             s.master,
             &s.scene.rules,
             Some(registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         compare_state(&s, row, &name);
     }
@@ -805,7 +805,7 @@ fn slave_mission_harvest_matches_the_original_dig() {
                 slave,
                 &s.scene.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         if guard {
@@ -861,16 +861,20 @@ fn slave_miner_helpers_match_the_original() {
                     "{name}: ShouldRecallSlaves"
                 );
             }
-            "begin_hunt" => {
-                sim.begin_slave_hunt(master, rules, crate::sim::world::FrameEffects::default())
-            }
-            "reset" => {
-                sim.reset_slave_manager(master, rules, crate::sim::world::FrameEffects::default())
-            }
+            "begin_hunt" => sim.begin_slave_hunt(
+                master,
+                rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            ),
+            "reset" => sim.reset_slave_manager(
+                master,
+                rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            ),
             "handle_returned" => sim.handle_returned_slaves(
                 master,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             other => panic!("{name}: helper {other}"),
         }
@@ -892,7 +896,7 @@ fn slave_miner_kick_matches_the_original_guard_and_area_guard() {
                 mission,
                 &s.scene.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

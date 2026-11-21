@@ -400,7 +400,7 @@ impl AuthoredReplay {
                 commands,
                 TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::empty().with_network_commands(&self.network),
+                &mut FrameEffects::empty().with_network_commands(&mut self.network),
             )
             .unwrap();
         let admitted = output.take_admitted_commands();

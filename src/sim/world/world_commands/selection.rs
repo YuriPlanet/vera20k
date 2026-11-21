@@ -88,7 +88,7 @@ impl Simulation {
     pub(super) fn apply_selection_snapshot(
         &mut self,
         stable_ids: &[u64],
-        context: super::super::UninitContext<'_>,
+        mut context: super::super::UninitContext<'_>,
     ) -> bool {
         let requested: BTreeSet<u64> = stable_ids.iter().copied().collect();
         // Deselect only omitted old members. Requested old members remain set,
@@ -104,7 +104,7 @@ impl Simulation {
         // Iterate the original payload, not the membership set: source order is
         // authoritative even though this sim layer stores only selected bits.
         for &stable_id in stable_ids {
-            self.try_select_object(stable_id, context);
+            self.try_select_object(stable_id, context.reborrow());
         }
         true
     }
@@ -311,9 +311,11 @@ impl Simulation {
     pub(crate) fn techno_select(
         &mut self,
         stable_id: u64,
-        context: super::super::UninitContext<'_>,
+        mut context: super::super::UninitContext<'_>,
     ) -> bool {
-        if !self.techno_select_admits(stable_id) || !self.object_select(stable_id, true, context) {
+        if !self.techno_select_admits(stable_id)
+            || !self.object_select(stable_id, true, context.reborrow())
+        {
             return false;
         }
         let rules = context.rules();

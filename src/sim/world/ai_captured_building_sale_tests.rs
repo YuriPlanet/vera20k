@@ -166,7 +166,7 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
             &command,
             &runtime.resources.rules,
             Some(runtime.resources.rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
     }
     let mut walked = false;

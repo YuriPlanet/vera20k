@@ -481,7 +481,7 @@ fn terrain_projectile_target_cell_repair_survives_pending_delete_roundtrip() {
         rules.warhead("WH").unwrap(),
         true,
         (RAD_NO_ATTACKER, None, warhead_id),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let cell_target = ProjectileTarget::Cell { rx: 1, ry: 1 };
     assert_eq!(

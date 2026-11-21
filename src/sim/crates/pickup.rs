@@ -370,7 +370,7 @@ pub(crate) fn pickup_crate(
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
     actor_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(actor) = sim.substrate.entities.get(actor_id) else {
         return true;

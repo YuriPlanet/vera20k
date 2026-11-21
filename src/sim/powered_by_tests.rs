@@ -23,7 +23,7 @@ fn scene(owner: &str) -> (Simulation, RuleSet, u64, u64) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.object_ai_visit_one(id, Some(rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(id, Some(rules), &mut ObjectAiCtx::default());
 }
 
 #[test]

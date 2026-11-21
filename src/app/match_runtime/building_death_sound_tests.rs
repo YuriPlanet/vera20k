@@ -23,7 +23,6 @@ use crate::sim::world::{
     FrameEffects, SimFrameOutput, SimSoundEvent, Simulation, SoundBoundary, TickLane,
 };
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
-use std::cell::RefCell;
 
 #[derive(Clone, Copy)]
 struct Case {
@@ -51,14 +50,13 @@ const CASES: [Case; 2] = [
 /// Copies only newly delivered real facts, then delegates the production owner.
 /// No synthetic event, admission answer, receiver or replacement RNG is supplied.
 struct ObservingBoundary<'a, 'b> {
-    client: &'a FrameClientBoundary<'b>,
-    copied: RefCell<Vec<SimSoundEvent>>,
+    client: &'a mut FrameClientBoundary<'b>,
+    copied: Vec<SimSoundEvent>,
 }
 
 impl SoundBoundary for ObservingBoundary<'_, '_> {
-    fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+    fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
         self.copied
-            .borrow_mut()
             .extend_from_slice(&events[self.client.delivered()..]);
         self.client.consume(sim, rules, events);
     }
@@ -67,7 +65,7 @@ impl SoundBoundary for ObservingBoundary<'_, '_> {
         self.client.delivered()
     }
 
-    fn update_looping_sound(&self, sim: &Simulation, owner: u64, world: AnimWorldCoord) {
+    fn update_looping_sound(&mut self, sim: &Simulation, owner: u64, world: AnimWorldCoord) {
         self.client.update_looping_sound(sim, owner, world);
     }
 }
@@ -93,10 +91,10 @@ fn frame(
             },
         )
     });
-    let client = FrameClientBoundary::new(playback, Some(local), &mut queue, &mut radar);
-    let observed = ObservingBoundary {
-        client: &client,
-        copied: RefCell::new(Vec::new()),
+    let mut client = FrameClientBoundary::new(playback, Some(local), &mut queue, &mut radar);
+    let mut observed = ObservingBoundary {
+        client: &mut client,
+        copied: Vec::new(),
     };
     let output = scene
         .runtime
@@ -104,7 +102,7 @@ fn frame(
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&observed),
+            &mut FrameEffects::for_sound(&mut observed),
         )
         .expect("ordinary bound-resource frame");
     assert!(output.tick.frame_committed && !output.network_waiting && !output.outcome_waiting);
@@ -117,7 +115,7 @@ fn frame(
         &output.sound_events,
     );
     assert_eq!(observed.delivered(), output.sound_events.len());
-    let copied = observed.copied.into_inner();
+    let copied = observed.copied;
     assert_eq!(
         copied.len(),
         output.sound_events.len(),

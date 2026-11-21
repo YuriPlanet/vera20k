@@ -170,7 +170,7 @@ fn ground_transport_deploy_event_and_empty_unload_match_native_state_and_rng() {
                 &mut sim,
                 rules,
                 id,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(json!(delay), row["unload_returned_delay"]);
             assert_mission_state(&sim, id, &row["after_first_empty_unload"]);

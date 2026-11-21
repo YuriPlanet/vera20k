@@ -184,7 +184,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
                     // retaining the expired object's Alive and Health fields.
                     sim.object_conceal(1);
                 } else {
-                    sim.detach_all_pointer_expired(1, &rules, super::FrameEffects::default());
+                    sim.detach_all_pointer_expired(1, &rules, &mut super::FrameEffects::default());
                 }
             };
             if placement_scope {
@@ -646,7 +646,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 owner,
                 PointerExpiryControl::DetachAll,
                 &rules,
-                super::FrameEffects::default(),
+                &mut super::FrameEffects::default(),
             );
         }
         let actor = sim.substrate.entities.get(listener).unwrap();
@@ -730,7 +730,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 owner,
                 PointerExpiryControl::DetachAll,
                 &rules,
-                super::FrameEffects::default(),
+                &mut super::FrameEffects::default(),
             );
         }
         let actor = sim.substrate.entities.get(listener).unwrap();
@@ -776,7 +776,7 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
                 doing,
                 true,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -914,7 +914,7 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             None,
             control,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            super::FrameEffects::default(),
+            &mut super::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate

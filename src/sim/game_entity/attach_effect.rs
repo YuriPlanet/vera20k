@@ -507,12 +507,12 @@ mod tests {
             },
             &rules,
             None,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
         let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
         assert_eq!(bullets.len(), 1);
         for id in bullets {
-            sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
         }
         let victim = sim.entities().get(target).unwrap();
         assert_eq!(victim.seldom.ares.attach_effects.entries[0].remaining, 5);
@@ -562,7 +562,7 @@ mod tests {
             hasher.finish()
         };
         assert_eq!(anim_digest(&restored), anim_digest(&sim));
-        restored.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+        restored.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
         assert_eq!(
             restored
                 .entities()
@@ -604,7 +604,7 @@ mod tests {
         );
         // Ordinary UnInit and its deferred drain reach the shared Techno DTOR.
         restored.uninit_with_rules(target, &rules);
-        restored.process_pending_delete_with(&rules, FrameEffects::empty(), 1, false);
+        restored.process_pending_delete_with(&rules, &mut FrameEffects::empty(), 1, false);
         assert!(restored.entities().get(target).is_none());
     }
 }

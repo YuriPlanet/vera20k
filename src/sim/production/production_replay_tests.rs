@@ -171,7 +171,7 @@ fn record(
                 rules,
                 TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         hashes.push(output.tick.state_hash);

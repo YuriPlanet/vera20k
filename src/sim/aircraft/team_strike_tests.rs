@@ -202,7 +202,12 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             .into_iter()
             .collect();
         let output = runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(
             !output.outcome_waiting,

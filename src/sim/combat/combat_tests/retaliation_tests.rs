@@ -96,7 +96,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
             rules,
             Some(&registry),
             EntityDamageEvent::area(victim, 1, 0, source, Some(source_owner), warhead),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let actor = sim.substrate.entities.get(victim).unwrap();
         assert!(
@@ -942,7 +942,7 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
         &rules,
         None,
         &hits,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     for id in protected {
@@ -1048,7 +1048,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             Some(source_owner),
             hit_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let victim = sim.substrate.entities.get(victim_id).unwrap();
@@ -1125,7 +1125,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             Some(source_owner),
             hit_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.particle_systems().len(),
@@ -1154,7 +1154,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             Some(source_owner),
             hit_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate

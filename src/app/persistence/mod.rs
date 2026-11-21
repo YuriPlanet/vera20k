@@ -1234,7 +1234,7 @@ mod tests {
                 &[],
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(runtime.simulation.session().tick(), tick_before + 1);
@@ -1317,7 +1317,7 @@ mod tests {
                 &[],
                 1,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored current-house frame");
         assert_eq!(runtime.simulation.session().tick(), tick + 1);
@@ -1389,7 +1389,7 @@ mod tests {
                     &[],
                     1,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("restored collision-safe current-house frame");
             assert_eq!(runtime.simulation.session().tick(), tick + 1);

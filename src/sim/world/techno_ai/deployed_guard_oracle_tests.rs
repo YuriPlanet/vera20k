@@ -190,7 +190,7 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
@@ -409,7 +409,7 @@ fn native_gi_reacquire_uses_deployed_weapon_range_and_clears_firing_latch() {
     assert_eq!(rows.len(), 10);
     for row in rows {
         let (mut sim, rules, id) = supplied_fixture(row);
-        dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
+        dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default()).unwrap();
         assert_actor(
             sim.substrate.entities.get(id).unwrap(),
             &row["guard_after"],
@@ -551,7 +551,7 @@ fn native_deployed_guard_full_returns_match_state_cadence_and_three_rng_streams(
             );
         }
         let (_, observations) = trace_fire_visits(|| {
-            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap()
+            dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default()).unwrap()
         });
         assert!(
             observations.iter().all(|state| state["phase"] != "entry"),
@@ -607,7 +607,7 @@ fn native_deployed_guard_accepted_prefix_matches_actual_fireat_entry() {
         assert!(row["return_signed"].is_null());
         let (mut sim, rules, id) = supplied_fixture(row);
         let (_, observations) = trace_fire_visits(|| {
-            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap()
+            dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default()).unwrap()
         });
         let entry = observation(&observations, "entry", row);
         let _return = observation(&observations, "return", row);
@@ -637,7 +637,7 @@ fn native_deployed_guard_callback_tail_matches_projected_class_effects() {
         assert_eq!(row["execution"]["base_fire_callback_count"], 1);
         let (mut sim, rules, id) = supplied_fixture(row);
         let (_, observations) = trace_fire_visits(|| {
-            dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap()
+            dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default()).unwrap()
         });
         let _entry = observation(&observations, "entry", row);
         let _return = observation(&observations, "return", row);

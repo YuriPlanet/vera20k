@@ -1680,7 +1680,7 @@ fn run_recorded_handler(
     fixture: &mut SuppliedFootFixture,
     rules: &RuleSet,
     row: &Value,
-    ctx: super::super::ObjectAiCtx<'_>,
+    ctx: &mut super::super::ObjectAiCtx<'_>,
 ) {
     let name = row["input"]["name"].as_str().unwrap();
     for event in row["events"].as_array().unwrap() {
@@ -1766,7 +1766,7 @@ fn original_rescue_and_area_guard_complete_represented_handler_rows() {
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx::default(),
+            &mut super::super::ObjectAiCtx::default(),
         );
         compared += 1;
     }
@@ -1801,7 +1801,7 @@ fn original_physical_retail_area_guard_idle_runs_before_cadence() {
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx::default(),
+            &mut super::super::ObjectAiCtx::default(),
         );
         compared += 1;
     }
@@ -1842,7 +1842,7 @@ fn original_full_retail_cell_leash_matches_move_idle_and_cadence_boundaries() {
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx::default(),
+            &mut super::super::ObjectAiCtx::default(),
         );
         compared += 1;
     }
@@ -1874,7 +1874,7 @@ fn original_full_retail_rescue_matches_native_scan_hit_and_empty_prefix() {
                 &mut fixture,
                 &rules,
                 row,
-                super::super::ObjectAiCtx::default(),
+                &mut super::super::ObjectAiCtx::default(),
             );
             assert_destination_projection(&fixture, row);
             complete_hits += 1;
@@ -2021,7 +2021,7 @@ fn original_retail_foot_stray_and_empty_rescue_home_complete_destination_transac
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx {
+            &mut super::super::ObjectAiCtx {
                 overlay_registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
@@ -2076,7 +2076,7 @@ fn original_initial_stationary_e1_action_enters_ready_without_rng() {
     assert!(!fixture.sim.infantry_sequencer(
         fixture.actor,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_foot_projection(&fixture, &row);
 }
@@ -2136,7 +2136,7 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
                     4,
                     false,
                     &rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
         );
@@ -2198,7 +2198,7 @@ fn original_idle_completion_releases_doing_at_existing_completion_owner() {
         assert!(!fixture.sim.infantry_sequencer(
             fixture.actor,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_foot_projection(&fixture, row);
         compared += 1;
@@ -2296,7 +2296,7 @@ fn dying_infantry_visits_shared_native_clock() {
         fixture.actor,
         crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let actor = fixture
         .sim
@@ -2309,7 +2309,7 @@ fn dying_infantry_visits_shared_native_clock() {
     fixture.sim.object_ai_visit_one(
         fixture.actor,
         Some(&rules),
-        super::super::ObjectAiCtx::default(),
+        &mut super::super::ObjectAiCtx::default(),
     );
     assert_eq!(
         *fixture
@@ -2424,7 +2424,7 @@ fn original_do_action_restart_preserves_independent_stage_fields() {
                 signed(&args[0]),
                 args[1] != 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

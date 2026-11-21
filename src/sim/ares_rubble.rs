@@ -45,7 +45,7 @@ impl Simulation {
         switch: &RubbleSwitch,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let building = self.substrate.entities.get(building_id)?;
         let owner = building.owner();
@@ -156,7 +156,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(switch) = self.rubble_destroyed_switch(building_id, rules) else {
             return;
@@ -177,7 +177,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if self.rubble_destroyed_switch(building_id, rules).is_none() {
             return;
@@ -189,7 +189,7 @@ impl Simulation {
             return;
         };
         let origin = (building.position.rx(), building.position.ry());
-        let context = UninitContext::new(rules).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         let mut removed = Vec::new();
         for cell in
             crate::sim::crew_survival::foundation_cells(origin.0, origin.1, &object.foundation)
@@ -217,7 +217,9 @@ impl Simulation {
                     .entities
                     .get(foot)
                     .is_some_and(|entity| entity.seldom.selection.is_selected());
-                if self.techno_limbo_with_context(foot, context) == ConcealOutcome::Concealed {
+                if self.techno_limbo_with_context(foot, context.reborrow())
+                    == ConcealOutcome::Concealed
+                {
                     removed.push((foot, selected));
                 }
             }
@@ -231,14 +233,14 @@ impl Simulation {
                 foot,
                 exit_cell,
                 registry,
-                effects,
+                context.effects(),
             );
             if exit == crate::sim::ai_base_building::BuildingExit::Placed {
                 if selected {
-                    self.techno_select(foot, context);
+                    self.techno_select(foot, context.reborrow());
                 }
             } else {
-                self.uninit_with_context(foot, context);
+                self.uninit_with_context(foot, context.reborrow());
             }
         }
     }
@@ -259,11 +261,11 @@ impl Simulation {
         switch: &RubbleSwitch,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let new = self.ares_switch_rubble(building_id, switch, rules, registry, effects);
-        let context = UninitContext::new(rules).with_effects(effects);
-        self.uninit_with_context(building_id, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        self.uninit_with_context(building_id, context.reborrow());
         let Some(new) = new else {
             return false;
         };
@@ -272,7 +274,7 @@ impl Simulation {
             .entities
             .get(engineer_id)
             .is_some_and(|entity| entity.seldom.selection.is_selected());
-        let _ = self.techno_limbo_with_context(engineer_id, context);
+        let _ = self.techno_limbo_with_context(engineer_id, context.reborrow());
         // GetMapCoords after Remove: the cell of his retained Location.
         let Some(cell) = self
             .substrate
@@ -290,7 +292,7 @@ impl Simulation {
             engineer_id,
             cell,
             registry,
-            effects,
+            context.effects(),
         );
         if selected {
             self.techno_select(engineer_id, context);

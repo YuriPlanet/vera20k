@@ -635,7 +635,7 @@ mod tests {
         let mut tracker = super::super::tracker::RetainedRadarTracker::default();
         tracker.update_object(update(&sim), false);
         assert!(tracker.is_registered(id));
-        sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
+        sim.begin_ship_sinking(id, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(sim.entities().get(id).unwrap().lifecycle.object_alive());
         tracker.update_object(update(&sim), false);
         assert!(

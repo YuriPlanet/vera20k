@@ -170,7 +170,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlays: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut bridge_changed = false;
         for index in (0..self.ion_blasts.len()).rev() {
@@ -207,7 +207,7 @@ impl Simulation {
         blast: &IonBlast,
         rules: &RuleSet,
         overlays: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (bool, bool) {
         let coord = blast.coord;
         let general = &rules.general;

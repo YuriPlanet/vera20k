@@ -175,7 +175,7 @@ fn commit_receiver_authority_lethal_hit(sim: &mut Simulation, target_id: u64) {
         &rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 

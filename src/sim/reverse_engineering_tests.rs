@@ -70,7 +70,7 @@ fn grind(sim: &mut Simulation, rules: &RuleSet, foot: u64, grinder: u64) {
     entity
         .attack_target
         .set_for_test(Some(TargetKind::Entity(grinder)));
-    assert!(sim.foot_per_cell_eaten(foot, rules, None, FrameEffects::default()));
+    assert!(sim.foot_per_cell_eaten(foot, rules, None, &mut FrameEffects::default()));
 }
 
 fn eva_lines(sim: &mut Simulation) -> Vec<&'static str> {

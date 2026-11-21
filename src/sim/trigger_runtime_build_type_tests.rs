@@ -395,7 +395,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     let tag = sim.shared_trigger_tag(tag_type);
     let previous = sim.houses[&house].last_built_type_index(ObjectCategory::Building);
     assert_ne!(previous, expected_index);
-    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
     let product = sim.interner.get("GAWEAP").unwrap();
     production::complete_held_building_for_test(&mut sim, &rules, house, product);
     assert_eq!(
@@ -412,7 +412,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
             cell: (18, 18)
         },
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(
         sim.houses[&house].last_built_type_index(ObjectCategory::Building),
@@ -428,7 +428,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
             cell: (23, 19)
         },
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(
         sim.houses[&house].last_built_type_index(ObjectCategory::Building),
@@ -436,7 +436,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     );
     for (frame, heard) in [(8, false), (149, false), (152, true), (160, true)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+        sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
         sim.flush_pending_delete();
         assert_eq!(
             sim.sound_events

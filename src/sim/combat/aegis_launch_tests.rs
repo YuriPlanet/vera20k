@@ -55,7 +55,7 @@ impl AegisScene {
                     aegis,
                     Some(TargetKind::Entity(target)),
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .is_ok()
         );
@@ -144,7 +144,7 @@ impl AegisScene {
             frame,
             &mut emitted,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("admitted retail Medusa creates a Bullet");
         assert_eq!(emitted.fire_events.len(), 1);
@@ -222,7 +222,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(other)),
                 &scene.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
@@ -230,7 +230,12 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
     assert!(
         scene
             .world
-            .assign_target_represented(scene.aegis, None, &scene.rules, FrameEffects::default(),)
+            .assign_target_represented(
+                scene.aegis,
+                None,
+                &scene.rules,
+                &mut FrameEffects::default(),
+            )
             .is_ok()
     );
     // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps the
@@ -248,7 +253,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(scene.target)),
                 &scene.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
@@ -435,7 +440,7 @@ fn retail_normal_and_elite_aegis_unit_fire_enrolls_each_returned_bullet() {
             };
             scene
                 .world
-                .commit_fire_visit(visit, &scene.rules, None, FrameEffects::default());
+                .commit_fire_visit(visit, &scene.rules, None, &mut FrameEffects::default());
             assert_eq!(scene.world.projectiles.len(), before + 1);
         }
         let ids: Vec<_> = scene.world.projectiles.iter().map(|(&id, _)| id).collect();

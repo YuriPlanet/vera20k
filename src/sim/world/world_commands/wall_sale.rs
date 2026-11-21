@@ -118,7 +118,7 @@ impl Simulation {
         suppress_local_cue: bool,
         rules: &RuleSet,
         overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((rx, ry, cell)) = self.wall_sale_cell(x, y) else {
             return false;

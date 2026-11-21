@@ -49,7 +49,7 @@ fn fixture(category: &str, declared: bool) -> (Simulation, RuleSet, InternedId, 
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap_or_else(|| panic!("ALT constructor for category={category}, declared={declared}"));
     assert!(
@@ -89,10 +89,10 @@ fn reached_alternate_events_match_executed_hook_controls() {
                 ));
             }
             "unit_dtor" | "infantry_dtor" | "aircraft_dtor" => {
-                assert!(sim.discard_constructed_limbo(id, &rules, FrameEffects::default()));
+                assert!(sim.discard_constructed_limbo(id, &rules, &mut FrameEffects::default()));
             }
             "change_owner" => {
-                sim.change_owner_with_rules(id, other, &rules, None, FrameEffects::default());
+                sim.change_owner_with_rules(id, other, &rules, None, &mut FrameEffects::default());
             }
             "discovered" => {
                 // Use the common Techno body directly: Building's separate
@@ -126,10 +126,10 @@ fn alternate_dtor_rechecks_with_another_copy_and_obeys_game_state_gate() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
-        assert!(sim.discard_constructed_limbo(first, &rules, FrameEffects::default()));
+        assert!(sim.discard_constructed_limbo(first, &rules, &mut FrameEffects::default()));
         let type_id = sim.interner.get("ALT").unwrap();
         let category = sim.entities().get(second).unwrap().category();
         assert_eq!(
@@ -267,7 +267,7 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     for id in [owner, other] {
@@ -278,10 +278,10 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
         !crate::sim::production::construction_options_for_owner(&sim, &rules, owner)
             .contains(&query)
     );
-    sim.change_owner_with_rules(alternate, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(alternate, owner, &rules, None, &mut FrameEffects::default());
     assert!(sim.houses[&owner].tech_recheck_pending());
     assert!(
-        sim.recheck_house_tech_tree(owner, &rules, Default::default())
+        sim.recheck_house_tech_tree(owner, &rules, &mut Default::default())
             .is_empty()
     );
     let outputs = sim.lifecycle_outputs.take();
@@ -295,7 +295,7 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
         &rules,
         "H0",
         "Q",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     assert!(
@@ -304,9 +304,9 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
             .view(owner, ProductionCategory::Vehicle)
             .is_some()
     );
-    sim.change_owner_with_rules(alternate, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(alternate, other, &rules, None, &mut FrameEffects::default());
     assert!(sim.houses[&owner].tech_recheck_pending());
-    let events = sim.recheck_house_tech_tree(owner, &rules, Default::default());
+    let events = sim.recheck_house_tech_tree(owner, &rules, &mut Default::default());
     let cancellation_order = events
         .iter()
         .map(|event| {

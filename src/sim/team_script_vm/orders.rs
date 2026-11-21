@@ -51,7 +51,7 @@ impl Simulation {
     /// `vt+0x3C8` `Assign_Target(NULL)`: `TechnoClass::Assign_Target @
     /// 0x006FCDB0`, Infantry's `0x0051B1F0`.
     pub(super) fn team_member_clear_target(&mut self, id: u64, rules: &RuleSet) {
-        let _ = self.assign_target_represented(id, None, rules, FrameEffects::default());
+        let _ = self.assign_target_represented(id, None, rules, &mut FrameEffects::default());
     }
 
     /// `vt+0x3C8` `Assign_Target(target)`.
@@ -60,7 +60,7 @@ impl Simulation {
         id: u64,
         target: TeamTarget,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let _ =
             self.assign_target_represented(id, Some(target.target_kind()), rules, frame_effects);
@@ -73,7 +73,7 @@ impl Simulation {
         id: u64,
         target: Option<TeamTarget>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let requested = target.map(|target| match target {
             TeamTarget::Cell { x, y } => {

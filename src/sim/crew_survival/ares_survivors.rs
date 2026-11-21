@@ -27,7 +27,7 @@ impl Simulation {
         mut point: DriveCoord,
         radius: i32,
         selected: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let direction = self.scenario_rng.next_range_u32_inclusive(0, 7) as usize;
         let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
@@ -70,7 +70,7 @@ impl Simulation {
         mut point: DriveCoord,
         spot: u8,
         selected: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
@@ -206,7 +206,7 @@ impl Simulation {
         id: u64,
         dying: DyingTransport,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.record_the_kill(
             id,
@@ -225,7 +225,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         unit_id: u64,
         dying: DyingTransport,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -427,7 +427,7 @@ impl Simulation {
                 rules,
                 unit_id,
                 DepartureRoute::DeathEscape,
-                |sim, id| {
+                |sim, id, effects| {
                     let admitted = !dying.ignore_defenses
                         && if chance > 0 {
                             sim.scenario_rng.next_range_u32_inclusive(1, 100) as i32 <= chance

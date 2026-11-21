@@ -129,7 +129,7 @@ fn padded_ai_handle_does_not_turn_an_enemy_refinery_into_an_allied_target() {
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound-resource command frame");
         cash_entries += frame.sound_events.iter().filter(|event| matches!(

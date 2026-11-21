@@ -258,7 +258,7 @@ fn the_selector_matches_the_original() {
                 answers[slot]
             },
             |_, low, high| draws.draw(low, high),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let slot_of = |id: InternedId| team_types.iter().position(|&tt| tt == id).unwrap();
         let picked: Vec<usize> = picked.into_iter().map(slot_of).collect();
@@ -408,7 +408,7 @@ fn the_team_block_matches_the_original() {
             &mut sim,
             &rules,
             owner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let timer = sim.houses[&owner].team_creation().timer;
         assert_eq!(
@@ -457,7 +457,7 @@ fn a_command_driven_house_stands_down_from_team_creation() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         rng_digest(&sim.scenario_rng),

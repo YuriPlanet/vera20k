@@ -262,7 +262,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
                     &rules,
                     None,
                     id,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             }))
             .expect_err("both implementations stop before the selected action body");
@@ -288,7 +288,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
                 &rules,
                 None,
                 id,
-                FrameEffects::default()
+                &mut FrameEffects::default()
             ));
         }
         assert_eq!(
@@ -434,7 +434,7 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         assert_eq!(initial_techno_state(&sim, &[id]), case["after_transfer"]);
         if case["input"]["clear_foreign_resident"].as_bool().unwrap() {
@@ -476,7 +476,7 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             u8::from(returned),

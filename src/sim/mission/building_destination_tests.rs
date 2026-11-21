@@ -131,7 +131,7 @@ fn building_destination_matches_64_native_mode_one_rows_for_all_target_shapes() 
                 1,
                 target(input["requested"].as_str().unwrap(), shape),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let actor = sim.substrate.entities.get(1).unwrap();

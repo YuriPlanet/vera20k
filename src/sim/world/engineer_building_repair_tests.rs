@@ -260,7 +260,7 @@ impl Fixture {
                 },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             // The native command witness follows Event4C6CB0 with the
             // ordinary Mission5B3570 Commence receiver before its snapshot.
@@ -291,7 +291,7 @@ impl Fixture {
                 new_owner,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let entity = sim.substrate.entities.get_mut(building).unwrap();
             entity
@@ -608,7 +608,7 @@ impl Fixture {
             },
             &self.rules,
             Some(&self.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = self.sim.substrate.entities.get_mut(id).unwrap();
         install_mission(entity, &native["engineer"]);
@@ -752,7 +752,7 @@ fn original_half_threshold_and_friendly_repair_object_actions() {
         enemy,
         &fixture.rules,
         Some(&fixture.registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     for row in controls["enemy_rows"].as_array().unwrap() {
         fixture
@@ -822,7 +822,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
                         head,
                         &fixture.rules,
                         Some(&fixture.registry),
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap()
             });
@@ -879,7 +879,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
         }
         fixture.sim.process_pending_delete_with(
             &fixture.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -962,7 +962,7 @@ fn original_engineer_receiver_terminal_branches_return_before_foot_tail() {
                 head,
                 &fixture.rules,
                 Some(&fixture.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             fixture
                 .sim
@@ -980,7 +980,7 @@ fn original_engineer_receiver_terminal_branches_return_before_foot_tail() {
                     id,
                     &fixture.rules,
                     Some(&fixture.registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let foot_tail = arrival["trace"]

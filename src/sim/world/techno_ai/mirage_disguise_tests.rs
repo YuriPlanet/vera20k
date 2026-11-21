@@ -538,7 +538,7 @@ fn native_whole_unit_ai_preserves_foot_then_mirage_rng_order_and_retention() {
         assert_whole_unit_state(&fixture, row, "before");
         fixture
             .sim
-            .advance_live_object_turn(fixture.actor, &rules, ObjectAiCtx::default())
+            .advance_live_object_turn(fixture.actor, &rules, &mut ObjectAiCtx::default())
             .unwrap();
         assert_whole_unit_state(&fixture, row, "after");
     }

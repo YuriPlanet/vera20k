@@ -74,7 +74,7 @@ fn flag_to_die_destroys_owned_objects_at_frame_zero_before_defeat_gate() {
     );
     assert!(sim.houses[&owner].is_to_die());
     let generated = sim
-        .house_rung(&rules, None, false, FrameEffects::default(), None)
+        .house_rung(&rules, None, false, &mut FrameEffects::default(), None)
         .expect("headless outcome waits complete synchronously");
     assert!(generated.is_empty());
     assert!(!sim.houses[&owner].is_to_die());
@@ -574,7 +574,13 @@ fn a_captured_war_factory_takes_its_contact_along() {
         entity.seldom.tether.attach(partner);
     }
     let russians = sim.interner.intern("Russians");
-    sim.change_owner_with_rules(factory, russians, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(
+        factory,
+        russians,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     for (id, partner) in [(factory, tank), (tank, factory)] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.owner(), russians, "{id}");

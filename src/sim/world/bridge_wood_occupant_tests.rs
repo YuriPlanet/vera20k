@@ -538,7 +538,7 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
                     115,
                     59,
                     &runtime.resources.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
             assert_eq!(
@@ -637,7 +637,7 @@ fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() 
             &mut runtime.simulation,
             &runtime.resources.rules,
             hut,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         let sim = &runtime.simulation;
         assert_state(

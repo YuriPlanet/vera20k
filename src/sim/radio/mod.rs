@@ -109,7 +109,7 @@ pub(crate) fn broadcast_break(
     sim: &mut Simulation,
     sender_sid: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     broadcast(sim, sender_sid, RadioMessage::Break, rules, effects);
 }
@@ -121,7 +121,7 @@ pub(crate) fn broadcast(
     sender_sid: u64,
     message: RadioMessage,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let capacity = sim
         .substrate
@@ -178,7 +178,7 @@ pub fn transmit(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     #[cfg(any(test, feature = "test-support"))]
     let log_index = TRANSMIT_LOG.with(|log| {
@@ -217,7 +217,7 @@ pub(crate) fn transmit_to_contact(
     sender_sid: u64,
     msg: RadioMessage,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(target_sid) = sim
         .substrate
@@ -261,7 +261,7 @@ fn transmit_hello(
     target_sid: u64,
     filtered: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(sender) = sim.substrate.entities.get(sender_sid) else {
         return RadioResponse::Negatory;
@@ -312,7 +312,7 @@ fn transmit_over_out(
     target_sid: u64,
     filtered: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
         while sender.seldom.radio_contacts.remove(target_sid).is_some() {}

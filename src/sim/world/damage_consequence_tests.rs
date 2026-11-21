@@ -243,7 +243,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
         .get_mut(projectile)
         .unwrap()
         .set_position_for_test(impact);
-    assert!(sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile, Some(&rules), &mut ObjectAiCtx::default()));
     let ids = delivered_ids(&sim);
     assert_eq!(ids, vec![projectile + 1, projectile + 2, projectile + 3]);
     assert_eq!(
@@ -272,7 +272,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     assert_eq!(sim.main_rng.state(), 6706932826526710953);
     // Retired objects remain physically resolvable until the shared drain.
     // Visiting again must not deliver another death transaction.
-    let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());
+    let _ = sim.object_ai_visit_one(projectile, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         delivery_sounds(&sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]

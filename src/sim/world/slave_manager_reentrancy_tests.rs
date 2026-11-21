@@ -187,7 +187,7 @@ impl Scene {
                 self.team_type,
                 &self.rules,
                 Some(&self.overlays),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("authored TeamType and Country resolve")
     }

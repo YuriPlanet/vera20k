@@ -103,7 +103,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
                     &commands,
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -181,7 +181,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let admitted = output.take_admitted_commands();

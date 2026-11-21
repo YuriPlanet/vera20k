@@ -34,7 +34,7 @@ pub(crate) fn apply_foot_radiation(
     rules: &RuleSet,
     stable_id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<crate::sim::world::damage_consequences::DamageCommitReceipt> {
     if !radiation_enabled(world) {
         return None;
@@ -343,7 +343,7 @@ pub(crate) fn apply_building_radiation(
     rules: &RuleSet,
     stable_id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<crate::sim::world::damage_consequences::DamageCommitReceipt> {
     if !radiation_enabled(world) {
         return None;
@@ -471,7 +471,7 @@ fn respond_to_base_attack(
     _site: BaseDefenseResponseCallSite,
     victim_id: u64,
     attacker_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     #[cfg(test)]
     if let Some(fixture) = world.receiver_fixture.as_mut() {
@@ -541,7 +541,7 @@ pub(crate) fn collect_area(
     origin: (u64, Option<InternedId>, InternedId),
     air_impact: Option<combat_aoe::AoEAirImpact>,
     impact_z: i32,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> combat_aoe::AoEDamageResult {
     #[cfg(not(test))]
     let include_terrain_objects = true;
@@ -719,7 +719,7 @@ pub(crate) fn apply_area_damage(
     warhead: &WarheadType,
     affects_tiberium: bool,
     origin: (u64, Option<InternedId>, InternedId),
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> AreaDamageApply {
     let mut run = ReceiverRun::default().with_effects(effects);
     let mut pings = Vec::new();
@@ -905,7 +905,7 @@ fn collect_area_at<'r>(
     warhead: &'r WarheadType,
     affects_tiberium: bool,
     origin: (u64, Option<InternedId>, InternedId),
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> AreaAtImpact<'r> {
     // Observe the shared entry, including Bullet and nested receiver calls;
     // an external-only wrapper misses those paths and must not double-count.
@@ -994,13 +994,13 @@ pub(crate) struct ReceiverRun<'a> {
 }
 
 impl<'a> ReceiverRun<'a> {
-    pub(crate) fn with_effects(mut self, effects: FrameEffects<'a>) -> Self {
-        self.effects = effects;
+    pub(crate) fn with_effects(mut self, effects: &'a mut FrameEffects<'_>) -> Self {
+        self.effects = effects.reborrow();
         self
     }
 
-    pub(crate) const fn effects(&self) -> FrameEffects<'a> {
-        self.effects
+    pub(crate) fn effects(&mut self) -> &mut FrameEffects<'a> {
+        &mut self.effects
     }
 
     pub(crate) fn finish(self) -> Vec<(u16, u16)> {
@@ -1216,8 +1216,10 @@ pub(crate) fn commit_terrain(
     // ObjectReceiveDamage5F57AF calls DetachAll before returning lethal4
     // to Terrain71B920. Its observers run before Terrain's nested C4 and
     // the three later DetachAll/UnInit/Limbo announcements.
-    let uninit_context = crate::sim::world::UninitContext::new(rules).with_effects(run.effects());
-    world.notify_pointer_expired(lethal.stable_id, uninit_context);
+    world.notify_pointer_expired(
+        lethal.stable_id,
+        crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
+    );
     if ignites {
         world.terrain_catch_fire(lethal.stable_id, rules);
     }
@@ -1282,7 +1284,11 @@ pub(crate) fn commit_terrain(
         }
     }
 
-    world.terrain_lethal_uninit(lethal, &mut run.finalizing_terrain, uninit_context);
+    world.terrain_lethal_uninit(
+        lethal,
+        &mut run.finalizing_terrain,
+        crate::sim::world::UninitContext::new(rules).with_effects(&mut run.effects),
+    );
     (effects, caller_damage.read(world, rules))
 }
 
@@ -2783,7 +2789,7 @@ fn finish_concrete_death(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: &mut DeathEffects,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = world.substrate.entities.get(dead_id) else {
         return;
@@ -3273,7 +3279,7 @@ fn run_special_detonation_arm(
     action: SpecialDetonationAction,
     detonation: &ProjectileDetonation,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let owner = detonation.source_id;
     let target = match detonation.target {
@@ -3919,7 +3925,6 @@ fn emit_detonation_receivers<'r>(
     warhead: &'r WarheadType,
     out: &mut CombatEmit,
 ) -> (Option<AreaDamageContinuation<'r>>, bool) {
-    let effects = run.effects();
     let (impact_rx, impact_ry, ..) = projectile_impact_cell(detonation.impact);
 
     // Named location: `BulletClass::Detonate @ 0x004690b0`. Radiation is
@@ -3981,7 +3986,7 @@ fn emit_detonation_receivers<'r>(
                     weapon,
                     rules,
                     overlay_registry,
-                    effects,
+                    run.effects(),
                 )
             }
             _ => false,
@@ -4007,7 +4012,7 @@ fn emit_detonation_receivers<'r>(
                 Some(detonation.source_id),
                 warhead,
                 rules,
-                effects,
+                run.effects(),
             );
             world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
             // applyOccupantDamage, snapped bullets only: a shot that passes
@@ -4037,7 +4042,7 @@ fn emit_detonation_receivers<'r>(
             warhead,
             rules,
             overlay_registry,
-            effects,
+            run.effects(),
         ) {
             return (None, false);
         }
@@ -4100,7 +4105,7 @@ fn emit_detonation_receivers<'r>(
                     source_house,
                     detonation.payload.warhead,
                 ),
-                effects,
+                run.effects(),
             );
             #[cfg(test)]
             append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
@@ -4146,7 +4151,7 @@ fn emit_detonation_receivers<'r>(
                 claimed,
                 detonation,
                 overlay_registry,
-                effects,
+                run.effects(),
             );
             (None, false)
         }

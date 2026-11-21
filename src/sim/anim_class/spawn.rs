@@ -164,7 +164,7 @@ impl Simulation {
             descriptor,
             world_coord,
             constructor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     }
 
@@ -261,7 +261,7 @@ impl Simulation {
             descriptor,
             world_coord,
             constructor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ) {
             Ok(id) => {
                 if let Some(house) = owner_house {
@@ -338,7 +338,7 @@ impl Simulation {
             descriptor,
             world_coord,
             AnimConstructorInput::Runtime,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     }
 
@@ -358,7 +358,7 @@ impl Simulation {
         anim_type_index: i32,
         waypoint: i32,
         house: Option<InternedId>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(type_name) = rules.anim_type_runtime_key_by_index(anim_type_index) else {
             return false;
@@ -478,7 +478,7 @@ impl Simulation {
             descriptor,
             world_coord,
             constructor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ) {
             Ok(_) => true,
             Err(AnimSpawnError::Tiberium(error)) => {
@@ -632,7 +632,7 @@ impl Simulation {
         descriptor: AnimClassSpawnDescriptor,
         world_coord: AnimWorldCoord,
         constructor: AnimConstructorInput,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<AnimId, AnimSpawnError> {
         // Anim42203D assigns before registry insertion and RandomRate4221F5.
         // Death debris may already have constructed at its pick/draw boundary.

@@ -130,7 +130,7 @@ pub(crate) fn launch(
     target_ry: u16,
     kind: ParaDropKind,
     sw_type: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -196,7 +196,7 @@ pub(super) fn ares_launch(
     sw_type: InternedId,
     sw: &SuperWeaponType,
     target: (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -225,7 +225,7 @@ fn send_paradrop(
     owner: InternedId,
     sw: &SuperWeaponType,
     cell: (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let house = sim.houses.get(&owner);
     let side = house.map_or(-1, |house| house.side_index());
@@ -429,7 +429,7 @@ pub(super) fn send_planes(
     mission: MissionType,
     target: (u16, u16),
     payload: Payload<'_>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if let Payload::Ares(types, counts) = payload
         && (counts.len() != types.len() || counts.is_empty())
@@ -560,7 +560,7 @@ fn board_passengers(
     category: ObjectCategory,
     type_id: &str,
     count: u32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(object) = rules.object_in_category(category, type_id) else {
         return;

@@ -134,7 +134,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             &[10, 20],
             &BTreeSet::new(),
             &[detonation],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let rng = sim.scenario_rng.state();
         (sim, result, rng)
@@ -343,7 +343,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         &[],
         &BTreeSet::new(),
         &[detonation],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(
@@ -366,10 +366,11 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
             .is_empty()
     );
     // The receiver transaction's commit constructs the AnimList anim.
-    let _ =
-        result
-            .consequences
-            .commit(&mut sim, &rules, crate::sim::world::FrameEffects::default());
+    let _ = result.consequences.commit(
+        &mut sim,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert!(
         sim.smudge_grid
             .as_ref()
@@ -455,7 +456,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         let _ = expected_rng.next_range_i32_inclusive(0, 99);
     }
 
-    sim.process_rocket(1, &rules, crate::sim::world::FrameEffects::default());
+    sim.process_rocket(1, &rules, &mut crate::sim::world::FrameEffects::default());
 
     assert!(
         !sim.substrate.entities.get(1).unwrap().is_object_alive(),
@@ -836,11 +837,15 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     // order once its AI reaches Delete.
     let first = first_id;
     let before = sim.substrate.voxel_anims.get(first).unwrap().world_coord();
-    sim.visit_voxel_anim(first, &rules, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_voxel_anim(
+        first,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.process_pending_delete_with(
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         1,
         sim.session().started(),
     );
@@ -850,11 +855,15 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
         if !sim.substrate.voxel_anims.contains_key(first) {
             break;
         }
-        sim.visit_voxel_anim(first, &rules, crate::sim::world::FrameEffects::default())
-            .unwrap();
+        sim.visit_voxel_anim(
+            first,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         sim.process_pending_delete_with(
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),
         );

@@ -242,7 +242,7 @@ impl Simulation {
         &mut self,
         detach_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.stop_all_targeting_target(TargetKind::Entity(detach_id), rules, effects);
     }
@@ -255,7 +255,7 @@ impl Simulation {
         rx: u16,
         ry: u16,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> TargetingSweepReceipt {
         self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules, effects)
     }
@@ -264,7 +264,7 @@ impl Simulation {
         &mut self,
         target: TargetKind,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> TargetingSweepReceipt {
         // VERA-only: the sweep releases a batched target scan's pick as it
         // does a TarCom (`techno_ai::scan_batch`).
@@ -360,7 +360,7 @@ impl Simulation {
         &mut self,
         hut_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // Infantry ctor517B34 appends to its type registry. Represented
         // PointerExpired receivers do not construct/delete registry entries;
@@ -445,7 +445,7 @@ impl Simulation {
         expired_owner: Option<InternedId>,
         control: PointerExpiryControl,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // ObjectClass::PointerExpired5F5268 clears +88 regardless of control.
         if self
@@ -904,7 +904,7 @@ impl Simulation {
         &mut self,
         expired_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.announce_detach_all(expired_id, UninitContext::new(rules).with_effects(effects));
     }
@@ -1069,7 +1069,7 @@ impl Simulation {
         &mut self,
         expired_id: u64,
         control: PointerExpiryControl,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         // VERA-only: a batched target scan holds its pick across the turns
         // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
@@ -1581,7 +1581,7 @@ impl Simulation {
                     .get(listener_id)
                     .is_some_and(|projectile| projectile.target().object_id() == Some(expired_id));
                 let projectile_replacement_target = if target_matches {
-                    self.projectile_lost_target(expired_id, context)
+                    self.projectile_lost_target(expired_id, context.reborrow())
                 } else {
                     ProjectileTarget::None
                 };

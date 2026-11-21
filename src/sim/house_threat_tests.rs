@@ -146,7 +146,7 @@ fn retained_grid_and_initialized_zero_both_affect_simulation_hash() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let initial = sim.state_hash();
@@ -187,7 +187,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(
@@ -220,7 +220,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
                 0,
                 placement,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             None
         );
@@ -243,7 +243,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Some(id)
     );
@@ -289,7 +289,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..64 {
@@ -346,7 +346,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         Some(&registry),
         building,
         crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate

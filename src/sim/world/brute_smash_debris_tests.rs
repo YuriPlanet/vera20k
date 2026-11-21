@@ -155,7 +155,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                 &rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary Brute combat frame");
         assert!(output.tick.frame_committed);
@@ -329,7 +329,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                     &rules,
                     33,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("live debris continuation frame");
                 if let Some(loaded) = &mut restored {
@@ -340,7 +340,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                             &rules,
                             33,
                             TickLane::Ordinary,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )
                         .expect("restored live debris continuation frame");
                     assert_eq!(
@@ -1100,7 +1100,7 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
                         arg6: input["prevent_passenger_escape"].as_bool().unwrap(),
                     },
                 ),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         let native_words: Vec<_> = row["rng_requests"]

@@ -80,7 +80,7 @@ fn a_short_entry_weighs_only_objects_of_a_task_force_type() {
     let before = sim.substrate.entities.lookups().0;
 
     let mut walks = membership::RecruitWalks::default();
-    assert!(sim.team_recruit(team, 0, &mut walks, &rules, FrameEffects::default()));
+    assert!(sim.team_recruit(team, 0, &mut walks, &rules, &mut FrameEffects::default()));
 
     let lookups = sim.substrate.entities.lookups().0 - before;
     assert!(
@@ -105,7 +105,7 @@ fn short_entries_of_one_class_walk_the_house_once() {
     let owned = 64;
     let before = sim.substrate.entities.lookups().0;
 
-    sim.team_recruit_short_entries(team, &rules, FrameEffects::default());
+    sim.team_recruit_short_entries(team, &rules, &mut FrameEffects::default());
 
     let lookups = sim.substrate.entities.lookups().0 - before;
     assert!(

@@ -204,7 +204,7 @@ fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
         crate::sim::components::NavTargetRef::cell(target.0, target.1),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 
@@ -498,7 +498,7 @@ fn fresh_arm_rows_match_the_original_responses() {
             family,
             ProcessMovementArgs::OUTER,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (records, unused) = fresh_oracle_seam::finish();
         let out = out.unwrap();
@@ -553,7 +553,7 @@ fn crusher_all_non_wall_overlay_uses_ground_unit_for_straight_latch() {
             TrackFamily::Drive,
             ProcessMovementArgs::OUTER,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
         result.unwrap();
@@ -618,7 +618,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
                 force_single: false,
             },
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
         result.unwrap();

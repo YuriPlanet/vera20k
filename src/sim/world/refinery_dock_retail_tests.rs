@@ -195,7 +195,12 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
                 1,
                 1,
             ));
-        crate::sim::miner::mission_unload(&mut sim, &rules, miner, super::FrameEffects::default());
+        crate::sim::miner::mission_unload(
+            &mut sim,
+            &rules,
+            miner,
+            &mut super::FrameEffects::default(),
+        );
         assert_eq!(
             sim.houses[&owner].economy().credits(),
             credits,

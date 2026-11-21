@@ -431,7 +431,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 s.miner,
                 &s.rules,
-                super::ObjectAiCtx {
+                &mut super::ObjectAiCtx {
                     overlay_registry: Some(registry()),
                     ..Default::default()
                 },
@@ -454,7 +454,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &s.rules,
                 None,
                 s.miner,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             int(&step["returned"]),
             "{context}: delay"
@@ -464,7 +464,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 &s.rules,
                 s.miner,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             int(&step["returned"]),
             "{context}: delay"
@@ -479,7 +479,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 dock_types,
                 op["wide"] == 1,
                 op["bypass"] == 1,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 found.map_or(Value::Null, |id| s.name(id)),
@@ -508,7 +508,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     message,
                     RadioPayload::default(),
                     &s.rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .code() as i32,
                 int(&step["returned"]["reply"]),
@@ -522,7 +522,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 s.miner,
                 &s.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             step["returned"]["early_return_before_unit_tail"]
                 .as_bool()
@@ -542,7 +542,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 &s.rules,
                 s.miner,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         "break_other_contact" => {
@@ -551,7 +551,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 s.other,
                 RadioMessage::Break,
                 &s.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         "arrival" => {
@@ -593,7 +593,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 s.miner,
                 &s.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             s.sim
                 .per_cell_process(
@@ -601,7 +601,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     crate::sim::movement::PerCellReason::Arrival,
                     &s.rules,
                     Some(registry()),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -634,7 +634,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 Some(owner),
                 PointerExpiryControl::Uninit,
                 &s.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         other => panic!("{context}: operation {other}"),

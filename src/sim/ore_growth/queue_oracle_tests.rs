@@ -638,7 +638,7 @@ fn compare_case(row: &Value) {
                         receiver,
                         &rules,
                         &registry,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
             }
@@ -648,18 +648,18 @@ fn compare_case(row: &Value) {
                         receiver,
                         &rules,
                         &registry,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
             }
             "spread_driver" | "growth_then_spread_driver" => {
                 if input["entry"] == "growth_then_spread_driver" {
                     constructors
-                        .tick_native_growth_driver(&rules, &registry, FrameEffects::default())
+                        .tick_native_growth_driver(&rules, &registry, &mut FrameEffects::default())
                         .unwrap();
                 }
                 constructors
-                    .tick_native_spread_driver(&rules, &registry, FrameEffects::default())
+                    .tick_native_spread_driver(&rules, &registry, &mut FrameEffects::default())
                     .unwrap();
             }
             other => panic!("unhandled native entry {other}"),
@@ -710,7 +710,7 @@ fn compare_case(row: &Value) {
             );
             constructors.process_pending_delete_with(
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );
@@ -1050,10 +1050,10 @@ fn compare_authored_natural_phases(
         actual.session.set_binary_frame_for_test(frame);
         let ((growth, spread), draws) = crate::sim::rng::trace_draws(|| {
             let growth = actual
-                .tick_native_growth_driver(rules, registry, FrameEffects::default())
+                .tick_native_growth_driver(rules, registry, &mut FrameEffects::default())
                 .unwrap();
             let spread = actual
-                .tick_native_spread_driver(rules, registry, FrameEffects::default())
+                .tick_native_spread_driver(rules, registry, &mut FrameEffects::default())
                 .unwrap();
             (growth, spread)
         });
@@ -1147,7 +1147,7 @@ fn compare_authored_natural_phases(
             "{name}: every changed cell"
         );
         previous_cells.clone_from_slice(&actual.overlay_grid.as_ref().unwrap().cells().to_vec());
-        actual.process_pending_delete_with(rules, FrameEffects::default(), 1, false);
+        actual.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, false);
     }
     assert_eq!(json!(construction_count), native["constructed_overlays"]);
     assert_eq!(
@@ -1400,7 +1400,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     let (output, draws) = crate::sim::rng::trace_draws(|| {
         scene
             .runtime
-            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap()
     });
     assert!(output.tick.frame_committed);

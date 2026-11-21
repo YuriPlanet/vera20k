@@ -210,7 +210,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
             67,
             TickLane::Ordinary,
             true,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary campaign fixture frame");
         heard_stallone |= sim.sound_events().iter().any(

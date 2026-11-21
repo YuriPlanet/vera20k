@@ -354,7 +354,12 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     let (mut sim, rules, owner) = fixture();
     let gapper = sim.interner.intern("Soviet");
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     insert_sight_unit(&mut sim, 2, owner, 12, 12);
     reveal_inserted_sight(&mut sim, 1);
     reveal_inserted_sight(&mut sim, 2);
@@ -402,7 +407,12 @@ fn shroud_current_sight_new_generator_identity_consumes_pending() {
     let (mut sim, rules, owner) = fixture();
     let gapper = sim.interner.intern("Soviet");
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     insert_sight_unit(&mut sim, 2, owner, 12, 12);
     reveal_inserted_sight(&mut sim, 1);
     reveal_inserted_sight(&mut sim, 2);
@@ -436,7 +446,7 @@ fn shroud_current_sight_new_generator_identity_consumes_pending() {
         3,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     restored.reconcile_active_vision_structures(&rules);
     assert!(!restored.fog.is_cell_revealed(owner, 12, 12));
@@ -449,7 +459,12 @@ fn shroud_current_sight_psychic_under_existing_gap_waits_for_native_boundary() {
     let sw = charge_psychic_reveal(&mut sim, owner);
     sim.fog.reveal_all_for_owner(owner);
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.fog.is_cell_revealed(owner, 12, 12));
     assert!(crate::sim::superweapon::psychic_reveal::launch(
@@ -489,7 +504,12 @@ fn shroud_current_sight_fresh_direct_allied_psychic_reaches_authoritative_view()
         sim.fog.reveal_all_for_owner(owner);
     }
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.fog.is_cell_revealed(a, 12, 12));
     assert!(crate::sim::superweapon::psychic_reveal::launch(
@@ -558,7 +578,7 @@ fn shroud_current_sight_psychic_never_gapped_and_mixed_views_are_nontransitive()
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         sim.reconcile_active_vision_structures(&rules);
@@ -647,7 +667,12 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     );
     sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     sim.reconcile_active_vision_structures(&rules);
     // The fixture models native ReReveal before leaving, not a frame
     // discovering an absent source and inventing its lifecycle event.
@@ -660,7 +685,12 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         .set_in_limbo_for_test(true);
     sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     insert_structure(&mut sim, 3, gapper, "GAGAP", 12);
-    sim.visit_building_operational(3, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        3,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     sim.reconcile_active_vision_structures(&rules);
     sim.substrate
         .entities
@@ -715,7 +745,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     sim.advance_live_object_pass(
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("fixture frame must complete");
     let clocks = &sim
@@ -784,7 +814,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -838,7 +868,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -868,7 +898,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -896,7 +926,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -919,7 +949,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -941,7 +971,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -996,7 +1026,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             first_gap,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         sim.reconcile_active_vision_structures(&rules);
         // The fixture models native ReReveal before leaving, not a frame
@@ -1010,7 +1040,12 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             .set_in_limbo_for_test(true);
         sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         insert_structure(&mut sim, 3, gapper, "GAGAP", 12);
-        sim.visit_building_operational(3, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.visit_building_operational(
+            3,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         sim.reconcile_active_vision_structures(&rules);
         sim.substrate
             .entities
@@ -1126,7 +1161,12 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         let admission = sim.fog.sight_admissions_for_test()[&(1, viewer)].clone();
         insert_structure(&mut sim, 2, hostile, "GAGAP", 12);
-        sim.visit_building_operational(2, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.visit_building_operational(
+            2,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         sim.reconcile_active_vision_structures(&rules);
         assert!(sim.fog.is_cell_visible(viewer, 12, 12));
         insert_structure(&mut sim, 3, viewer, "GASPYSAT", 2);

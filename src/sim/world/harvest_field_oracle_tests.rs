@@ -517,7 +517,7 @@ fn search_for_tiberium_matches_the_original_search_and_move() {
             Some(registry()),
             s.miner,
             input["range"].as_i64().unwrap() as i32,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -562,7 +562,7 @@ fn mission_harvest_states_zero_and_one_match_the_original_dispatch() {
             &mut s.sim,
             s.miner,
             &s.rules,
-            crate::sim::world::ObjectAiCtx {
+            &mut crate::sim::world::ObjectAiCtx {
                 overlay_registry: Some(registry()),
                 ..Default::default()
             },

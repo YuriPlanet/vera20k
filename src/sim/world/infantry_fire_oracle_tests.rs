@@ -327,7 +327,7 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
             fixture.actor,
             target,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let queue = &case["input"]["attack_queue"];
@@ -367,7 +367,7 @@ fn recorded_fire_error(fixture: &SuppliedFootFixture, case: &Value, rules: &Rule
 }
 
 fn source_ai_visit(sim: &mut Simulation, actor: u64, rules: &RuleSet) {
-    sim.advance_live_object_turn(actor, rules, ObjectAiCtx::default())
+    sim.advance_live_object_turn(actor, rules, &mut ObjectAiCtx::default())
         .unwrap();
 }
 
@@ -946,7 +946,7 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
                     Some(owner),
                     PointerExpiryControl::Uninit,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert_source(&fixture, &expiry["after"], name);
                 assert_rng(&fixture.sim, &expiry["rng_after"], name);
@@ -1063,7 +1063,7 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
                 case["original_actor_prefix"]["count"].as_u64().unwrap() + 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_emission_boundary(&fixture, &suffix["after_pass"], &ids, name);
             let start = suffix["event_range"][0].as_u64().unwrap() as usize;
@@ -1087,7 +1087,7 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );

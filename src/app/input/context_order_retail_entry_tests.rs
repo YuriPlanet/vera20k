@@ -281,8 +281,14 @@ fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
     queue.commit_local_mirrors(&records).unwrap();
     for _ in 0..900 {
         let commands = sim.take_due_commands();
-        sim.advance_app_frame(&commands, rules, 67, TickLane::Ordinary, Default::default())
-            .unwrap();
+        sim.advance_app_frame(
+            &commands,
+            rules,
+            67,
+            TickLane::Ordinary,
+            &mut Default::default(),
+        )
+        .unwrap();
         if sim.entities().get(infantry).is_none() {
             break;
         }

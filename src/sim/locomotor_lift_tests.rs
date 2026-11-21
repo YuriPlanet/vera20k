@@ -203,7 +203,7 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, victim: u64, attacker: u64) {
                 },
             ),
         )],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -338,7 +338,7 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
         player,
         &runtime.resources.rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(runtime.simulation.fog.sensors_by_house(), &counters);
     // Unit's actual airborne damage/UnInit owns the current-coordinate remove.
@@ -1127,7 +1127,7 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
                 &rules,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("admitted drop frame");
         if !sim.substrate.entities.contains(tank) {
@@ -1441,7 +1441,7 @@ fn retail_locomotor_arm_admission() {
             &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(entity(&sim, tank).lift.swap_active(), lifted);
         assert_eq!(
@@ -1470,7 +1470,7 @@ fn retail_locomotor_arm_admission() {
             &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     };
     shoot(&mut sim, LocomotorShotTarget::Object(gi));
@@ -1521,7 +1521,7 @@ fn retail_lifted_team_member_commences_guard_at_once() {
         &crate::rules::jumpjet_params::JumpjetOverride::default(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let lifted = entity(&sim, tank);
     assert!(lifted.lift.swap_active());
@@ -1559,7 +1559,7 @@ fn retail_magnetron_admission_reads_fractional_type_size() {
             &crate::rules::jumpjet_params::JumpjetOverride::default(),
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             entity(&sim, tank).lift.swap_active(),
@@ -1675,7 +1675,7 @@ fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
             &warhead.jumpjet_override,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let params = entity(&sim, tank)
             .locomotor

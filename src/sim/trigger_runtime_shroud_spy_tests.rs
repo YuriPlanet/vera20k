@@ -227,7 +227,7 @@ fn agent_arrival_keeps_the_cached_tag_for_linked_house_then_type_events() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let native = native_spy_entry();
@@ -359,7 +359,7 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
                     &rules,
                     67,
                     crate::sim::world::TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             assert!(output.tick.frame_committed);
@@ -507,7 +507,7 @@ fn non_agent_arrival_does_not_raise_the_spy_cell_event() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -653,7 +653,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -662,7 +662,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -745,7 +745,12 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     );
     sim.fog.set_ground_bits_for_test(houses[0], 8, 11, 8);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[1],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 8, 11));
     assert!(sim.trigger_runtime.globals_set.contains(&7));
 }

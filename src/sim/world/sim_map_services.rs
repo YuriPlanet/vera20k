@@ -354,7 +354,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let native_growth_ready = !rules.tiberium_types.is_empty()
             && self.ore_growth_state.native_tiberium_state().classes.len()
@@ -482,7 +482,7 @@ impl Simulation {
     pub fn change_visible_map_area(
         &mut self,
         raw_local_size: [i32; 4],
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         let (Some(current), Some(size_height)) =
             (self.playfield_bounds, self.playfield_size_height)
@@ -563,11 +563,17 @@ impl Simulation {
                         false,
                         false,
                         Some(client),
-                        context,
+                        context.reborrow(),
                     );
                 }
             } else if !clients.is_empty() {
-                self.reveal_uncached_object_sight(stable_id, false, false, None, context);
+                self.reveal_uncached_object_sight(
+                    stable_id,
+                    false,
+                    false,
+                    None,
+                    context.reborrow(),
+                );
             }
         }
 
@@ -602,7 +608,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // YR LogicClass::Update polls scenario triggers before the live-object walk.
         let effects = self.advance_triggers(rules, overlay_registry, frame_effects);

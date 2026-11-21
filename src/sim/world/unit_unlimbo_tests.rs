@@ -453,7 +453,7 @@ fn compare_factory_radio_call(
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         } else {
             // The caller-CMP control stops after Unit73A943's original CMP
@@ -465,7 +465,7 @@ fn compare_factory_radio_call(
                 ids.0,
                 RadioMessage::RequestClearance,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         assert_eq!(
@@ -514,7 +514,7 @@ fn retail_unit_unlimbo_matches_original_admission_and_caller_pose() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_actor(&sim, id, &row["before"]["actor"], name);
@@ -547,7 +547,7 @@ fn retail_unit_unlimbo_matches_original_admission_and_caller_pose() {
                     PlacementEvidence::EvaluateMark,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             },
         );
@@ -670,7 +670,7 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_actor(&sim, id, &row["before"], name);
@@ -687,7 +687,7 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
                 PlacementEvidence::EvaluateMark,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 json!(u8::from(result.is_some())),
@@ -757,7 +757,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let on_bridge = case["on_bridge"].as_bool().unwrap();
@@ -789,7 +789,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
                     PlacementEvidence::EvaluateMark,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .is_some()
             }),
@@ -924,7 +924,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
                 0,
                 0,
                 &base_rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let initial = &row["initial_placement"];
@@ -940,7 +940,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
                 PlacementEvidence::EvaluateMark,
                 &base_rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );
@@ -982,7 +982,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
             PlacementEvidence::EvaluateMark,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             json!(u8::from(result.is_some())),
@@ -1109,7 +1109,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let producer_coord = coord(&input["producer_xyz"]);
@@ -1217,7 +1217,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 id,
                 (0, 0),
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.object_placement_scope_active(),
@@ -1325,7 +1325,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             owner,
             ProductionCategory::Vehicle,
             production::ProductionCancellation::Category(ProductionCategory::Vehicle),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.production
@@ -1380,7 +1380,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let producer = sim
@@ -1392,7 +1392,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let ids = (unit, producer);
@@ -1430,7 +1430,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 PlacementEvidence::EvaluateMark,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         }));
@@ -1450,7 +1450,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 RadioMessage::Hello,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .code(),
             1,
@@ -1464,7 +1464,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 RadioMessage::Tether,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .code(),
             1,
@@ -1589,7 +1589,7 @@ fn nested_placement_scope_restores_the_caller_after_failed_reveal() {
                 0,
                 PlacementEvidence::RejectedEarly,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
         assert!(result.is_none());

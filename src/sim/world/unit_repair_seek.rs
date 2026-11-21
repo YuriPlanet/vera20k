@@ -52,7 +52,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> i32 {
         use crate::sim::miner::miner_system::find_docking_bay;
 
@@ -126,7 +126,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if self.session.binary_frame() & 0xF != 0 {
             return;
@@ -193,7 +193,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let owner = self.substrate.entities.get(id)?.owner();
         let reach = unit_repair_reach();

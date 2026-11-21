@@ -47,7 +47,7 @@ impl Simulation {
         id: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(requested) = requested else {
             self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
@@ -146,7 +146,7 @@ impl Simulation {
         id: u64,
         building: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> ControlFlow<(), Option<NavTargetRef>> {
         let dock = NavTargetRef::object(building);
         let Some(object) = self
@@ -293,7 +293,7 @@ impl Simulation {
         id: u64,
         destination: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let entity = self
             .substrate
@@ -578,7 +578,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -636,7 +636,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let order = self.fly_stop_order(id, rules);
         #[cfg(any(test, feature = "test-support"))]

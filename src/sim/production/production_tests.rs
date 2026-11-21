@@ -706,7 +706,7 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
         &rules,
         10,
         produced,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -813,7 +813,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("construct the original ExitObject receiver");
         assert_eq!(
@@ -824,7 +824,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 produced,
                 (0, 0),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             crate::sim::ai_base_building::BuildingExit::Placed,
             "naval factory delivers its actual held Unit through shared ExitObject"
@@ -1427,7 +1427,7 @@ fn an_infantry_corpse_in_the_rally_cell_refuses_the_naval_fast_path() {
         50,
         crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let corpse = sim.substrate.entities.get(50).unwrap();
     assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);

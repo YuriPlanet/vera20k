@@ -263,7 +263,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         1,
                         requested,
                         rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -280,7 +280,11 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                             sim.session.binary_frame(),
                         )
                         .unwrap();
-                    sim.reset_orders_to_guard(1, rules, crate::sim::world::FrameEffects::default());
+                    sim.reset_orders_to_guard(
+                        1,
+                        rules,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    );
                     let actor = sim.substrate.entities.get(1).unwrap();
                     assert_eq!(actor.archive_target(), None, "{name}: Guard archive");
                     assert_eq!(
@@ -315,7 +319,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         4,
                         requested,
                         rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 TargetConsumer::OwnerChange => {
@@ -329,7 +333,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         new_owner,
                         rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                     assert_eq!(
                         sim.substrate.entities.get(1).unwrap().owner(),

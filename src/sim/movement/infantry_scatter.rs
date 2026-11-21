@@ -108,7 +108,7 @@ impl Simulation {
         id: u64,
         flags: ScatterFlags,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let infantry = self
             .substrate
@@ -190,7 +190,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if !self.infantry_scatter_admitted(id, flags, rules, frame_effects)? {
             return Ok(false);
@@ -244,7 +244,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         if !self.infantry_scatter_admitted(id, flags, rules, frame_effects)? {
             return Ok(());
@@ -296,7 +296,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         process_now: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let infantry = self
             .substrate
@@ -333,9 +333,9 @@ impl Simulation {
             .process_active_locomotor(
                 id,
                 rules,
-                crate::sim::world::ObjectAiCtx {
+                &mut crate::sim::world::ObjectAiCtx {
                     overlay_registry: registry,
-                    effects: frame_effects,
+                    effects: frame_effects.reborrow(),
                     ..Default::default()
                 },
             )
@@ -550,7 +550,7 @@ impl Simulation {
         requested: NavTargetRef,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let actor = self
             .substrate
@@ -703,7 +703,7 @@ impl Simulation {
         id: u64,
         target: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> EnterRadioArm {
         use crate::map::entities::EntityCategory;
         use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse};
@@ -803,7 +803,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;

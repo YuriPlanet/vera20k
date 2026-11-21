@@ -252,7 +252,7 @@ impl Simulation {
                 crate::sim::anim_class::AnimConstructorInput::Runtime,
                 crate::sim::anim_class::AnimConstructorInput::Preconsumed,
             ),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ) {
             Ok(anim) => anim,
             Err(error) => {
@@ -463,7 +463,7 @@ impl Simulation {
         unit_id: u64,
         anims: &mut Vec<ExplosionEffect>,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
@@ -563,7 +563,7 @@ impl Simulation {
         ignore_defenses: bool,
         anims: &mut Vec<ExplosionEffect>,
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // 1. `0x004415F9..0x00441617`.
         self.clear_building_damage_fire_slots(building_id, rules);

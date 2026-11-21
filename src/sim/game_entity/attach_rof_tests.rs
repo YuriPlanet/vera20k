@@ -17,7 +17,7 @@ fn shoot(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64) -> u64 
         },
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let bullets: Vec<_> = sim
         .projectiles
@@ -72,7 +72,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
     let ordinary_timer = sim.entities().get(firer).unwrap().seldom.rearm_timer;
     assert!((45..=47).contains(&ordinary_timer.duration()));
     let parent = shoot(&mut sim, &rules, emitter, firer);
-    sim.object_ai_visit_one(parent, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(parent, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         sim.entities().get(firer).unwrap().seldom.rearm_timer,
         ordinary_timer,
@@ -122,7 +122,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
 
     for frame in [47, 48] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.object_ai_visit_one(firer, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(firer, Some(&rules), &mut ObjectAiCtx::default());
     }
     let actor = sim.entities().get(firer).unwrap();
     assert_eq!(actor.attached_rof_multiplier(), NativeF64Bits::ONE);

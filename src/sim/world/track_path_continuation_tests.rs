@@ -115,7 +115,7 @@ fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
         crate::sim::components::NavTargetRef::cell(target.0, target.1),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 
@@ -271,7 +271,7 @@ fn supplied_find_path_results_take_the_native_continuations() {
                 found,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         compare(&sim, id, &row, Some(outcome));
@@ -345,7 +345,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
             id,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.finish_find_path_failure(
@@ -353,7 +353,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
             DriveCoord::cell(11, 10, 0),
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let e = sim.substrate.entities.get(id).unwrap();
@@ -367,7 +367,7 @@ fn near_native_rows_stop_through_the_continuation_null_setter() {
                 FindPathResult::Failed,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         compare(&sim, id, &row, Some(outcome));
@@ -406,7 +406,7 @@ fn post_warp_rows_refuse_the_own_cell_search() {
             own,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         sim.session.set_binary_frame_for_test(101);
         let rng = sim.rng_state();
@@ -578,7 +578,7 @@ fn teleporter_bound_for_its_refinery(
         miner,
         Some(NavTargetRef::cell(16, 10)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let e = sim.substrate.entities.get_mut(miner).unwrap();
@@ -614,7 +614,7 @@ fn teleporter_behind_a_moving_tank() -> (
         tank,
         Some(NavTargetRef::cell(14, 2)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -635,7 +635,7 @@ fn process_drive(sim: &mut Simulation, miner: u64, rules: &RuleSet) -> Result<bo
         crate::sim::movement::track_process::TrackFamily::Drive,
         crate::sim::movement::ProcessMovementArgs::OUTER,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -923,7 +923,7 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
         head,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     for frame in 101..300 {
         visit(&mut sim, &rules, &registry, id, frame);
@@ -1109,7 +1109,7 @@ fn after_active_rows_gate_the_same_call_continuation() {
                     id,
                     family,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         let events = row["events"].as_array().unwrap();
@@ -1221,7 +1221,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
             "retaliation" => {
@@ -1232,7 +1232,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     id,
                     attacker,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 ));
                 assert_eq!(
                     sim.substrate
@@ -1255,7 +1255,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     owner,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
         }
@@ -1336,7 +1336,7 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         id,
         attacker,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     sim.session.set_binary_frame_for_test(frame);
     order(&mut sim, &rules, id, (10, 16));
@@ -1347,8 +1347,12 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         .attack_target
         .set_for_test(None);
     assert!(
-        sim.mission_restore_represented(id, &rules, crate::sim::world::FrameEffects::default(),)
-            .unwrap()
+        sim.mission_restore_represented(
+            id,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap()
     );
     let e = sim.substrate.entities.get(id).unwrap();
     assert_eq!(e.navigation.nav_com(), Some(NavTargetRef::cell(20, 10)));

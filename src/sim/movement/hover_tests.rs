@@ -505,9 +505,9 @@ fn a_route_search_starts_at_the_cell_of_the_live_head() {
         NavTargetRef::cell(14, 10),
         &rules,
         true,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
-    sim.process_hover_locomotor(id, &rules, None, FrameEffects::default())
+    sim.process_hover_locomotor(id, &rules, None, &mut FrameEffects::default())
         .expect("first step");
     sim.substrate
         .entities
@@ -526,7 +526,7 @@ fn a_route_search_starts_at_the_cell_of_the_live_head() {
     )
     .expect("live hover");
     let found = sim
-        .foot_find_path(&request, &rules, None, FrameEffects::default())
+        .foot_find_path(&request, &rules, None, &mut FrameEffects::default())
         .expect("searches");
 
     assert_ne!(found, FindPathResult::Failed);
@@ -569,7 +569,7 @@ fn an_order_leaves_the_first_search_to_the_next_process() {
         NavTargetRef::cell(14, 10),
         &rules,
         true,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
 
     let entity = sim.substrate.entities.get(id).unwrap();
@@ -593,7 +593,7 @@ fn an_order_leaves_the_first_search_to_the_next_process() {
         "the setter's tail leaves the next Process free to search"
     );
 
-    sim.process_hover_locomotor(id, &rules, None, FrameEffects::default())
+    sim.process_hover_locomotor(id, &rules, None, &mut FrameEffects::default())
         .expect("hover process");
 
     let entity = sim.substrate.entities.get(id).unwrap();

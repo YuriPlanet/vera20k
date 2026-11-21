@@ -85,10 +85,10 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64, selected: bool) 
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let result = sim
-        .infantry_per_cell_building_entry(engineer, rules, None, FrameEffects::default())
+        .infantry_per_cell_building_entry(engineer, rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(result.return_before_foot);
     engineer
@@ -116,7 +116,7 @@ fn a_destroyed_building_turns_into_its_rubble() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, hit, &mut FrameEffects::default());
 
     let ruins = placed(&sim, "RUIN");
     assert_eq!(ruins.len(), 1, "one rubble");

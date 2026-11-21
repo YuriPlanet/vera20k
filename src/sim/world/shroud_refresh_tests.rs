@@ -716,7 +716,7 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
             "[BuildingTypes]\n0=GTGCAN\n[GTGCAN]\nStrength=100\n",
         ))
         .unwrap();
-    let context = UninitContext::new(&rules);
+    let mut context = UninitContext::new(&rules);
     for row in corpus["building_placement_controls"].as_array().unwrap() {
         let input = &row["input"];
         let (mut sim, _, owner) = fixture(&input["topology"]);
@@ -737,7 +737,7 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
             crate::sim::building_art::trace_grand_opening_calls(|| {
                 sim.with_object_placement_scope(|sim| {
                     sim.with_object_placement_scope(|sim| {
-                        sim.discover_building_owner_after_unlimbo(id, context);
+                        sim.discover_building_owner_after_unlimbo(id, context.reborrow());
                     })
                 });
             })
@@ -757,12 +757,12 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
                 if history["stage"] == "ai_unlimbo_owner" {
                     sim.with_object_placement_scope(|sim| {
                         sim.with_object_placement_scope(|sim| {
-                            sim.discover_building_owner_after_unlimbo(id, context);
+                            sim.discover_building_owner_after_unlimbo(id, context.reborrow());
                         })
                     });
                     None
                 } else {
-                    Some(sim.discover_techno(id, player, context))
+                    Some(sim.discover_techno(id, player, context.reborrow()))
                 }
             })
         });
@@ -1247,7 +1247,9 @@ fn edge_updates_with_callbacks() -> Vec<Value> {
         let viewers = script.viewers.clone();
         for (index, &viewer) in viewers.iter().enumerate() {
             let other = viewers[(index + 1) % viewers.len()];
-            let mut callback = |sim: &mut Simulation, change: vision::MapCellNotification| {
+            let mut callback = |sim: &mut Simulation,
+                                change: vision::MapCellNotification,
+                                _: &mut UninitContext<'_>| {
                 count += 1;
                 let seen = |sim: &Simulation, nested: bool| {
                     json!([
@@ -1280,7 +1282,7 @@ fn edge_updates_with_callbacks() -> Vec<Value> {
                         sim.update_shroud_edges_notifying(
                             nested,
                             UninitContext::default(),
-                            &mut |sim, change| {
+                            &mut |sim, change, _| {
                                 log.push(json!([change.cell, change.fresh, true]));
                                 sim.notify_cell_change(
                                     change.cell,
@@ -1617,7 +1619,7 @@ fn a_sight_discovery_runs_the_discovered_tags_create_crate_action() {
     // It arrives four cells from the enemy (E1 Sight=5).
     let entity = sim.substrate.entities.get_mut(scout).unwrap();
     entity.position.set_rx_for_test(16);
-    sim.refresh_object_sight(scout, &rules, 0, FrameEffects::default());
+    sim.refresh_object_sight(scout, &rules, 0, &mut FrameEffects::default());
 
     assert!(sim.techno_discovered_by_viewer(enemy, player));
     assert_eq!(crates(&sim), 1, "the Discovered Tag's crate");
@@ -1784,7 +1786,12 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
             .unwrap();
         assert!(sim.entities().get(id).unwrap().seldom.sight.is_zero());
         // Supplied native camera cache, before its current position changes.
-        sim.refresh_object_sight(id, &rules, 6, crate::sim::world::FrameEffects::default());
+        sim.refresh_object_sight(
+            id,
+            &rules,
+            6,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         assert!(sim.fog.sight_is_latched(id, player));
         let input = &row["inputs"];
         let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -1802,7 +1809,13 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
             .unwrap()
             .set_multiplay_passive_for_test(input["passive"].as_bool().unwrap());
         let (_, calls) = trace_reveal_calls(|| {
-            sim.make_enemy(computer, player, &rules, FrameEffects::default(), false);
+            sim.make_enemy(
+                computer,
+                player,
+                &rules,
+                &mut FrameEffects::default(),
+                false,
+            );
         });
         assert_eq!(
             u8::from(sim.fog.sight_is_latched(id, player)),
@@ -1868,13 +1881,13 @@ fn initial_house_sight_matches_original_update_tail() {
         sim.session.set_current_house_for_test(Some(player));
         if !input["pending"].as_bool().unwrap() {
             // Consume the first House visit before the supplied source exists.
-            sim.house_rung(&rules, None, false, FrameEffects::default(), None)
+            sim.house_rung(&rules, None, false, &mut FrameEffects::default(), None)
                 .expect("headless outcome waits complete synchronously");
         }
         let id = sim
             .spawn_object("SCOUT", "Americans", 40, 40, 0, &rules)
             .unwrap_or_else(|| panic!("source placement refused: {input}"));
-        sim.refresh_object_sight(id, &rules, 6, FrameEffects::default());
+        sim.refresh_object_sight(id, &rules, 6, &mut FrameEffects::default());
         if !input["latched"].as_bool().unwrap() {
             sim.fog.clear_sight_latch(id, player);
         }
@@ -1933,7 +1946,7 @@ fn initial_house_sight_matches_original_update_tail() {
         }
         for visit in row["visits"].as_array().unwrap() {
             let (_, calls) = trace_reveal_calls(|| {
-                sim.house_rung(&rules, None, false, FrameEffects::default(), None)
+                sim.house_rung(&rules, None, false, &mut FrameEffects::default(), None)
                     .expect("headless outcome waits complete synchronously");
             });
             let events = visit["events"].as_array().unwrap();
@@ -2119,7 +2132,7 @@ fn an_arrival_reads_the_reveal_settings_once() {
     let (mut sim, rules, _, theirs, ours) = arrival_scene();
     for id in [theirs, ours] {
         let ((), trace) = trace_reveal_calls(|| {
-            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+            sim.refresh_object_sight(id, &rules, 0, &mut FrameEffects::default());
         });
         assert_eq!(trace.settings_reads, 1);
     }
@@ -2133,7 +2146,7 @@ fn an_arrival_derives_a_footprint_only_for_an_admitting_map() {
     let (mut sim, rules, player, theirs, ours) = arrival_scene();
     for (id, footprints) in [(theirs, 0), (ours, 1)] {
         let ((), trace) = trace_reveal_calls(|| {
-            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+            sim.refresh_object_sight(id, &rules, 0, &mut FrameEffects::default());
         });
         assert_eq!(trace.footprints, footprints);
         let source = sim.fog.source_sight(id, player).expect("a published cache");

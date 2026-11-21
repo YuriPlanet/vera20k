@@ -110,7 +110,7 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
                     "the global request precedes the centre mark"
                 );
             },
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
         assert_eq!(
             sim.main_rng.state(),
@@ -829,7 +829,7 @@ fn retail_area_damage_delivers_miner_warning_before_neighboring_base_warning() {
         building: u64,
     }
     impl SoundBoundary for Warnings {
-        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if let SimSoundEvent::UnderAttack { miner, .. } = event {
                     let hp = sim.entities().get(self.building).unwrap().health.current();
@@ -872,12 +872,12 @@ fn retail_area_damage_delivers_miner_warning_before_neighboring_base_warning() {
         &sim.entities().get(miner).unwrap().position,
     );
     let warhead_id = sim.intern("BlimpHE");
-    let warnings = Warnings {
+    let mut warnings = Warnings {
         delivered: Cell::new(0),
         seen: RefCell::new(Vec::new()),
         building,
     };
-    let effects = FrameEffects::for_sound(&warnings);
+    let mut effects = FrameEffects::for_sound(&mut warnings);
     crate::sim::combat::world_receiver::apply_area_damage(
         &mut sim,
         &rules,
@@ -887,7 +887,7 @@ fn retail_area_damage_delivers_miner_warning_before_neighboring_base_warning() {
         warhead,
         true,
         (source, Some(source_owner), warhead_id),
-        effects,
+        &mut effects,
     );
     effects.flush_sound(&sim, &rules);
     let after_building = sim.entities().get(building).unwrap().health.current();

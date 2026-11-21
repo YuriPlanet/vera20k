@@ -784,7 +784,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let sells = self
             .substrate
@@ -945,7 +945,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(carrier) else {
             return false;
@@ -1014,7 +1014,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Every entity in the store is a Techno.
         let Some(entity) = self.substrate.entities.get(carrier) else {
@@ -1037,7 +1037,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(blast) = Self::take_bomb_blast(
             &self.interner,
@@ -1139,7 +1139,7 @@ impl Simulation {
         warhead: &WarheadType,
         rules: &RuleSet,
         crit_active: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let land = crate::sim::combat::detonation_anim::land_at(self, blast.location);
         if let Some(effect) = crate::sim::combat::detonation_anim::effect(

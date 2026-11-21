@@ -111,7 +111,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         !sim.super_weapons[&owner][&sw_type_id].is_ready,
@@ -127,7 +127,7 @@ fn held_infantry_survives_launch(name: &str) {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let held = sim
@@ -148,7 +148,7 @@ fn held_infantry_survives_launch(name: &str) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     // Supplied unmarked Cell0,0 pose, independent of the fresh constructor.
@@ -384,7 +384,7 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
                 &rules,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(
@@ -494,7 +494,7 @@ fn zero_count_death_request_leaves_an_infantryman_the_health_reset_revives() {
             0,
             true,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -596,7 +596,7 @@ fn genetic_converter_command_uses_selected_bridge_membership() {
                 0,
                 4,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         {
@@ -655,7 +655,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let wounded = sim
@@ -667,7 +667,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     // Supplied already-present mixed membership isolates the IC damage
@@ -764,7 +764,7 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
             0,
             4,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -793,7 +793,7 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -966,7 +966,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             0,
             7,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -996,7 +996,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             0,
             7,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -1027,7 +1027,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             0,
             7,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {

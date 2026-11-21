@@ -103,7 +103,7 @@ fn frame(
             commands,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap()
         .take_admitted_commands()

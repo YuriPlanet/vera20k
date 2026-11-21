@@ -359,7 +359,7 @@ mod map_wall_owner_candidate_tests {
                     &[],
                     crate::app::types::SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             if let Some(id) = crate::sim::production::ready_building_entity_for_owner(
@@ -399,7 +399,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -434,7 +434,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(
@@ -951,7 +951,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 16,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(matches!(frame.lighting_events.as_slice(),
@@ -979,7 +979,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 16,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(

@@ -347,9 +347,10 @@ mod tests {
         shrouded
             .houses_mut_for_test()
             .register(HouseState::new(human, 0, None, true, 10_000, 10));
-        let context =
-            crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test());
-        apply_launch_shroud_option(&mut shrouded, context);
+        let context = || {
+            crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
+        };
+        apply_launch_shroud_option(&mut shrouded, context());
         assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
 
         // RevealEntireMap(NULL) reveals to PlayerPtr alone.
@@ -357,7 +358,7 @@ mod tests {
             .session_mut_for_test()
             .game_options_mut_for_test()
             .shroud = false;
-        apply_launch_shroud_option(&mut shrouded, context);
+        apply_launch_shroud_option(&mut shrouded, context());
         assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
         assert!(!shrouded.fog().whole_map_revealed_for_owner(human));
     }

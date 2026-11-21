@@ -339,7 +339,7 @@ pub(crate) fn enter_idle_mode_for(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     enter_idle_mode_with(sim, id, rules, frame_effects, true);
 }
@@ -354,7 +354,7 @@ pub(crate) fn enter_idle_mode_after_attack(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     enter_idle_mode_with(sim, id, rules, frame_effects, false);
 }
@@ -364,7 +364,7 @@ fn enter_idle_mode_with(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     planning_arrival: bool,
 ) {
     #[cfg(any(test, feature = "test-support"))]
@@ -425,7 +425,7 @@ fn enter_idle_mode_with(
             sim,
             id,
             rules,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
             planning_arrival,
         },
     );
@@ -450,8 +450,12 @@ impl WorldIdle<'_> {
     }
 
     fn assign_destination(&mut self, destination: Option<NavTargetRef>) {
-        self.sim
-            .assign_aircraft_destination(self.id, destination, self.rules, self.frame_effects);
+        self.sim.assign_aircraft_destination(
+            self.id,
+            destination,
+            self.rules,
+            &mut self.frame_effects,
+        );
     }
 }
 
@@ -469,7 +473,7 @@ impl IdleHost for WorldIdle<'_> {
         // leaves the override in place and the caller reads that mission.
         if let Err(error) =
             self.sim
-                .mission_restore_represented(self.id, self.rules, self.frame_effects)
+                .mission_restore_represented(self.id, self.rules, &mut self.frame_effects)
         {
             log::error!(
                 "idle entry: aircraft {} kept its override: {error}",
@@ -496,7 +500,7 @@ impl IdleHost for WorldIdle<'_> {
             self.id,
             self.rules,
             Some(self.rules.overlay_registry()),
-            self.frame_effects,
+            &mut self.frame_effects,
             self.planning_arrival,
         )
     }
@@ -516,7 +520,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, self.rules, self.frame_effects);
+            .leave_team(self.id, false, self.rules, &mut self.frame_effects);
     }
 
     fn target(&mut self) -> bool {
@@ -537,7 +541,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(self.id, None, self.rules, FrameEffects::default())
+            .assign_target_represented(self.id, None, self.rules, &mut FrameEffects::default())
             .expect("idle-mode aircraft");
     }
 
@@ -547,7 +551,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn find_dock(&mut self) -> Option<u64> {
         self.sim
-            .aircraft_find_docking_bay(self.id, self.rules, self.frame_effects)
+            .aircraft_find_docking_bay(self.id, self.rules, &mut self.frame_effects)
     }
 
     fn hello(&mut self, dock: u64) -> bool {
@@ -558,7 +562,7 @@ impl IdleHost for WorldIdle<'_> {
             RadioMessage::Hello,
             RadioPayload::default(),
             self.rules,
-            self.frame_effects,
+            &mut self.frame_effects,
         ) == RadioResponse::Roger
     }
 
@@ -575,7 +579,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn crash(&mut self) {
         self.sim
-            .foot_crash(self.id, None, self.rules, self.frame_effects);
+            .foot_crash(self.id, None, self.rules, &mut self.frame_effects);
     }
 
     fn in_radio_contact(&mut self) -> bool {

@@ -88,7 +88,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // Native always has the type; a call without its rules (a fixture's
         // empty set) leaves the payload pending rather than spend it.
@@ -131,7 +131,7 @@ impl Simulation {
         let owner = entity.owner();
         let owner_name = self.interner.resolve(owner).to_owned();
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-        let context = UninitContext::new(rules).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         for (index, reference) in types.iter().enumerate() {
             if matches!(
                 reference.category,
@@ -156,7 +156,7 @@ impl Simulation {
                     0,
                     0,
                     rules,
-                    effects,
+                    context.effects(),
                 ) else {
                     continue;
                 };
@@ -188,11 +188,15 @@ impl Simulation {
                             crate::sim::radio::RadioMessage::Hello,
                             crate::sim::radio::RadioPayload::default(),
                             rules,
-                            effects,
+                            context.effects(),
                         );
                     }
                     // A building's cargo shares VERA's carrier relation.
-                    let _ = self.add_cargo_members(id, &[(payload, payload_type.size)], context);
+                    let _ = self.add_cargo_members(
+                        id,
+                        &[(payload, payload_type.size)],
+                        context.reborrow(),
+                    );
                     if let Some(passenger) = self.substrate.entities.get_mut(payload) {
                         // AbortMotion (`0x004DF0D0`).
                         passenger.navigation.stop_moving();
@@ -211,7 +215,7 @@ impl Simulation {
                         payload_type.size,
                         open_topped,
                         false,
-                        context,
+                        context.reborrow(),
                     );
                 }
             }
@@ -238,7 +242,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .substrate
@@ -254,7 +258,7 @@ impl Simulation {
             rules,
             id,
             crate::sim::passenger::DepartureRoute::Hospital,
-            |sim, patient| {
+            |sim, patient, effects| {
                 let _ = crate::sim::production::exit_produced_object(
                     sim,
                     rules,

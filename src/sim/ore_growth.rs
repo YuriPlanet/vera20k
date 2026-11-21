@@ -1168,7 +1168,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeGrowthProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let current_frame = self.session.binary_frame();
@@ -1223,7 +1223,7 @@ impl Simulation {
         type_id: TiberiumTypeId,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeGrowthProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let current_frame = self.session.binary_frame();
@@ -1408,7 +1408,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeSpreadProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let current_frame = self.session.binary_frame();
@@ -1464,7 +1464,7 @@ impl Simulation {
         type_id: TiberiumTypeId,
         rules: &RuleSet,
         overlay_registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<NativeSpreadProcessStats, RuntimeOverlayError> {
         let tiberium_types = &rules.tiberium_types;
         let spread_enabled = self.ore_growth_config.spreads();
@@ -1693,7 +1693,7 @@ impl OreGrowthState {
                     type_id,
                     rules,
                     registry,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             },
         )
@@ -1737,7 +1737,7 @@ impl OreGrowthState {
             |sim, rules, registry| {
                 sim.ore_growth_config =
                     OreGrowthConfig::for_test(growth_enabled, spread_enabled, tiberium_grows_flag);
-                sim.tick_native_growth_driver(rules, registry, FrameEffects::default())
+                sim.tick_native_growth_driver(rules, registry, &mut FrameEffects::default())
             },
         )
         .expect("valid queue fixture")
@@ -1778,7 +1778,7 @@ impl OreGrowthState {
                     type_id,
                     rules,
                     registry,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             },
         )
@@ -1821,7 +1821,7 @@ impl OreGrowthState {
             |sim, rules, registry| {
                 sim.ore_growth_config =
                     OreGrowthConfig::for_test(growth_enabled, spread_enabled, false);
-                sim.tick_native_spread_driver(rules, registry, FrameEffects::default())
+                sim.tick_native_spread_driver(rules, registry, &mut FrameEffects::default())
             },
         )
         .expect("valid queue fixture")
@@ -1865,7 +1865,7 @@ impl OreGrowthState {
                     type_id,
                     rules,
                     registry,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             },
         )

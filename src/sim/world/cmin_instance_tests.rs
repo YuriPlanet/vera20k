@@ -476,7 +476,7 @@ fn replay(row: &Value) {
                     target,
                     &scene.rules,
                     call["args"][1].as_u64().unwrap() != 0,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             "original_stop" => {

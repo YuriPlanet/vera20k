@@ -119,7 +119,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
                 17,
                 &mut emitted,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );

@@ -9,7 +9,7 @@ use crate::sim::world::{FrameStep, OutcomeWaitBoundary, TickLane};
 struct VoxIdle(std::cell::Cell<bool>);
 
 impl OutcomeWaitBoundary for VoxIdle {
-    fn wait_complete(&self, _owner: InternedId, _kind: HouseOutcomeKind) -> bool {
+    fn wait_complete(&mut self, _owner: InternedId, _kind: HouseOutcomeKind) -> bool {
         self.0.get()
     }
 }
@@ -66,14 +66,14 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
     // admits it at 0x004F85BE with idle Vox, setting the flag at 0x004F8692.
     // The later House raises BuildingsLost15 (0x004F8F87); Action2
     // (0x006DEA67) -> Flag_To_Lose (0x004FCBD0) changes only PlayerPtr.
-    let vox = VoxIdle(std::cell::Cell::new(false));
+    let mut vox = VoxIdle(std::cell::Cell::new(false));
     let waiting = sim
         .advance_app_frame(
             &[],
             &rules,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_outcome_wait(&vox),
+            &mut FrameEffects::default().with_outcome_wait(&mut vox),
         )
         .unwrap();
     assert!(waiting.outcome_waiting);
@@ -83,7 +83,10 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
     assert!(sim.ready_outcome_for_owner(player).is_none());
     vox.0.set(true);
     let frame = sim
-        .resume_outcome_wait(&rules, FrameEffects::default().with_outcome_wait(&vox))
+        .resume_outcome_wait(
+            &rules,
+            &mut FrameEffects::default().with_outcome_wait(&mut vox),
+        )
         .unwrap();
     assert!(!frame.outcome_waiting);
     assert_eq!(sim.trigger_runtime.action_trace, vec![(67, 0), (2, 8)]);
@@ -164,10 +167,15 @@ fn allow_win_gates_live_and_restored_victory_waits() {
         );
         assert_eq!(sim.houses[&player].allow_win_tag_state().0, 1);
 
-        let vox = VoxIdle(std::cell::Cell::new(false));
-        let effects = FrameEffects::default().with_outcome_wait(&vox);
+        let mut vox = VoxIdle(std::cell::Cell::new(false));
         let frame = sim
-            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, effects)
+            .advance_app_frame(
+                &[],
+                &rules,
+                67,
+                TickLane::Ordinary,
+                &mut FrameEffects::default().with_outcome_wait(&mut vox),
+            )
             .unwrap();
         assert!(sim.houses[&player].has_won());
         assert_eq!(frame.outcome_waiting, waits_for_vox);
@@ -194,7 +202,12 @@ fn allow_win_gates_live_and_restored_victory_waits() {
         );
 
         vox.0.set(true);
-        let frame = restored.resume_outcome_wait(&rules, effects).unwrap();
+        let frame = restored
+            .resume_outcome_wait(
+                &rules,
+                &mut FrameEffects::default().with_outcome_wait(&mut vox),
+            )
+            .unwrap();
         assert!(!frame.outcome_waiting);
         assert_eq!(
             restored

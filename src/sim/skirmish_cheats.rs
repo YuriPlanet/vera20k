@@ -352,7 +352,7 @@ mod tests {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty(),
+                &mut crate::sim::world::FrameEffects::empty(),
             )
             .unwrap();
         let sim = &scene.runtime.simulation;
@@ -414,7 +414,7 @@ mod tests {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty(),
+                &mut crate::sim::world::FrameEffects::empty(),
             )
             .unwrap();
         let admitted = frame.take_admitted_commands();

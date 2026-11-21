@@ -24,7 +24,12 @@ fn home_action_uses_current_player_and_preserves_no_target_success() {
         sim.resolved_terrain.as_ref(),
     );
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[1],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.drain_trigger_effects(),
         [TriggerEffect::HomeCamera {
@@ -47,7 +52,7 @@ fn home_action_uses_current_player_and_preserves_no_target_success() {
         &mut effects,
         &rules,
         Some(&registry),
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(effects, [TriggerEffect::HomeCamera { coord: None }]);
     assert_eq!(sim.rng_state(), rng);
@@ -91,7 +96,7 @@ fn a_network_home_action_leaves_the_shared_dummy_alone() {
             &mut effects,
             &rules,
             Some(&registry),
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         let expected = if network { (7, 9) } else { (500, 500) };
         assert_eq!(dummy.snapshot().coord, expected, "network: {network}");

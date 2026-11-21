@@ -382,7 +382,7 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
         expected.extend(native_effects(original_destructor, true));
         sim.process_pending_delete_with(
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -423,14 +423,14 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
         visits: RefCell<Vec<(u64, u32, crate::sim::anim_class::AnimWorldCoord, bool)>>,
     }
     impl super::SoundBoundary for LoopPhase {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             self.delivered.set(events.len());
         }
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
         fn update_looping_sound(
-            &self,
+            &mut self,
             sim: &Simulation,
             owner: u64,
             world: crate::sim::anim_class::AnimWorldCoord,
@@ -476,14 +476,14 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
     let main = sim.main_rng.native_state_hex();
     let scenario = sim.scenario_rng.native_state_hex();
     let before = Simulation::movement_sound_world(sim.substrate.entities.get(actor).unwrap());
-    let phase = LoopPhase::default();
+    let mut phase = LoopPhase::default();
     let output = sim
         .advance_app_frame(
             &[],
             &rules,
             33,
             TickLane::Ordinary,
-            super::FrameEffects::for_sound(&phase),
+            &mut super::FrameEffects::for_sound(&mut phase),
         )
         .unwrap();
     let entity = sim.substrate.entities.get(actor).unwrap();
@@ -516,7 +516,7 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
             &rules,
             33,
             TickLane::Ordinary,
-            super::FrameEffects::for_sound(&phase),
+            &mut super::FrameEffects::for_sound(&mut phase),
         )
         .unwrap();
     assert!(
@@ -595,7 +595,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("paid ordinary production frame");
         assert!(output.tick.frame_committed);

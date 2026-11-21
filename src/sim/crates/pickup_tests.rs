@@ -304,7 +304,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             registry,
             cell,
             actor,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(u64::from(answer), returned, "{name}: AL");
@@ -398,7 +398,7 @@ fn solo_money_pays_saved_current_house_for_foreign_controlled_collector() {
             rules.overlay_registry(),
             CELL,
             Some(0),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     );
@@ -428,7 +428,7 @@ fn solo_money_pays_saved_current_house_for_foreign_controlled_collector() {
         rules.overlay_registry(),
         CELL,
         actor,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     assert_eq!(sim.houses[&current].economy().credits(), balances[0] + 1500);
     assert_eq!(sim.houses[&collector].economy().credits(), balances[1]);
@@ -463,7 +463,7 @@ fn money_crate_draws_once_pays_the_owner_and_sounds() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(sim.houses[&owner].economy().credits(), expected);
@@ -499,7 +499,7 @@ fn multiplayer_pickup_places_one_replacement_crate() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let cells = crate_cells(&sim, &registry);
@@ -540,7 +540,7 @@ fn authored_crates_are_consumed_even_with_runtime_slots_enabled() {
             &registry,
             CELL,
             actor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
 
         assert_eq!(overlay_at(&sim, CELL).is_some(), remaining);
@@ -593,7 +593,7 @@ fn cloak_crate_grants_foot_stealth_inside_the_strict_radius_and_then_falls_back(
         &registry,
         CELL,
         actor,
-        Default::default()
+        &mut Default::default()
     ));
     assert_eq!(
         sim.scenario_rng.native_state_hex(),
@@ -642,7 +642,7 @@ fn cloak_crate_grants_foot_stealth_inside_the_strict_radius_and_then_falls_back(
         &registry,
         CELL,
         actor,
-        Default::default()
+        &mut Default::default()
     ));
     assert!(
         sim.houses[&owner].economy().credits() > credits,
@@ -661,7 +661,7 @@ fn cloak_crate_ability_survives_save_load_and_does_not_edit_the_type() {
         &registry,
         CELL,
         actor,
-        Default::default()
+        &mut Default::default()
     ));
     let untouched = place_actor(
         &mut sim,
@@ -734,7 +734,7 @@ fn veteran_crate_promotes_trainable_technos_within_the_radius() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let raw = |id: u64| {
@@ -784,7 +784,7 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let armor =
         |sim: &Simulation, id: u64| sim.substrate.entities.get(id).unwrap().armor_multiplier();
@@ -806,7 +806,7 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(armor(&sim, actor).bits(), 1.5_f64.to_bits());
     assert!(
@@ -821,7 +821,7 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let firepower = sim
         .substrate
@@ -860,7 +860,7 @@ fn reveal_crate_reveals_the_whole_map_for_the_owner() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert!(sim.fog.whole_map_revealed_for_owner(owner));
@@ -885,7 +885,7 @@ fn guards_leave_the_crate_and_the_rng_alone() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(overlay_at(&sim, CELL).is_some());
     sim.houses
@@ -898,7 +898,7 @@ fn guards_leave_the_crate_and_the_rng_alone() {
         &registry,
         CELL,
         99,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(overlay_at(&sim, CELL).is_some());
     assert!(pickup_crate(
@@ -907,7 +907,7 @@ fn guards_leave_the_crate_and_the_rng_alone() {
         &registry,
         (11, 11),
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(sim.scenario_rng.native_state_hex(), before);
     assert!(sim.sound_events.is_empty());
@@ -991,7 +991,7 @@ fn unit_crate_places_a_goodie_vehicle_and_returns_false() {
         &registry,
         (21, 22),
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(tanks(&sim), 2);
@@ -1037,7 +1037,7 @@ fn unit_crate_under_its_picker_lands_the_goodie_on_the_first_ring_at_any_level()
         &registry,
         (20, 22),
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let free = sim
@@ -1074,7 +1074,7 @@ fn mcv_preempt_grants_the_base_unit_with_bases_on() {
         &registry,
         (21, 22),
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let mcv = sim
@@ -1102,7 +1102,7 @@ fn heal_base_crate_restores_the_owners_buildings() {
         health_at_sound: RefCell<Vec<(i32, i32)>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.eq_ignore_ascii_case("HealCrate"))
                 {
@@ -1142,7 +1142,7 @@ fn heal_base_crate_restores_the_owners_buildings() {
         .unwrap()
         .health
         .set_for_test(180);
-    let heard = Heard {
+    let mut heard = Heard {
         actor,
         building: own,
         delivered: Cell::new(0),
@@ -1156,7 +1156,7 @@ fn heal_base_crate_restores_the_owners_buildings() {
         &registry,
         (21, 22),
         actor,
-        FrameEffects::for_sound(&heard)
+        &mut FrameEffects::for_sound(&mut heard)
     ));
 
     assert_eq!(
@@ -1238,7 +1238,7 @@ fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
         &registry,
         (21, 22),
         tank,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let health = |id| sim.substrate.entities.get(id).unwrap().health.current();
@@ -1366,7 +1366,7 @@ fn force_track_onto_a_unit_crate_drops_the_head() {
         DriveCoord::cell(21, 22, 0),
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let tank = sim.substrate.entities.get(actor).unwrap();
@@ -1644,7 +1644,7 @@ fn retained_powerup_ordinal_keeps_a_late_duplicate_anim_constructor() {
         )
         .is_empty()
     );
-    sim.visit_anim(id, &rules, None, FrameEffects::default())
+    sim.visit_anim(id, &rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(sim.anim(id).is_some());
     assert_eq!(sim.scenario_rng.native_state_hex(), rng);
@@ -1705,7 +1705,7 @@ fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
                 rules.overlay_registry(),
                 (21, 22),
                 Some(0),
-                FrameEffects::default()
+                &mut FrameEffects::default()
             )
             .unwrap()
         );
@@ -1715,7 +1715,7 @@ fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
             rules.overlay_registry(),
             (21, 22),
             actor,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         (sim.houses[&owner].economy().credits(), anim_briefs(&sim))
     };
@@ -1877,7 +1877,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
                 input
                     .get("scalar")
                     .map(|value| value.as_u64().unwrap() as u8),
-                FrameEffects::default()
+                &mut FrameEffects::default()
             )
             .unwrap()
         );
@@ -1949,7 +1949,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
                 &registry,
                 cell,
                 actor,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             row["returned"].as_u64().unwrap() != 0
         );
@@ -2024,7 +2024,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
                 anim,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             if let Some(control) = history
@@ -2150,7 +2150,7 @@ fn gas_crate_hits_the_nine_cells_with_the_gas_warhead_without_rng() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(
@@ -2210,7 +2210,7 @@ fn gas_crate_without_a_gas_warhead_leaves_the_nine_cells_unharmed() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(
@@ -2280,7 +2280,7 @@ fn tiberium_crate_with_the_drawn_type_one_clamps_to_type_zero_and_places_anyway(
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(
@@ -2335,7 +2335,7 @@ fn explosion_crate_hurts_the_picker_then_blasts_five_scattered_cells() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(
@@ -2403,7 +2403,7 @@ fn napalm_crate_burns_at_the_midpoint_with_the_flame_warhead_without_rng() {
         &registry,
         CELL,
         picker,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(
@@ -2458,7 +2458,7 @@ fn retail_icbm_crate_grants_the_owner_a_one_time_nuke() {
         &registry,
         CELL,
         actor,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     assert_eq!(

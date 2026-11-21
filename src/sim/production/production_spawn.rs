@@ -161,7 +161,7 @@ pub fn mark_war_factory_spawn_contact(
     rules: &RuleSet,
     producer_id: u64,
     produced_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     for message in [
         crate::sim::radio::RadioMessage::Hello,
@@ -375,7 +375,7 @@ pub(super) fn unlimbo_held_naval_unit(
     stable_id: u64,
     cell: (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     // The selected Cell's GetCoords (`0x00486840`).
     let coord = crate::sim::movement::target_cell_coord(
@@ -632,7 +632,7 @@ mod tests {
                 stable_id,
                 (8, 8),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(stable_id)
         );

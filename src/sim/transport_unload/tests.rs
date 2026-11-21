@@ -514,7 +514,7 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
         arrival,
         &fx.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = fx.sim.substrate.entities.get_mut(passenger).unwrap();
     entity
@@ -531,7 +531,7 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
             crate::sim::movement::PerCellReason::Arrival,
             &fx.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(fx.cargo_ids(transport), vec![passenger]);
@@ -573,7 +573,7 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
             &mut fx.sim,
             &fx.rules,
             transport,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert_eq!(fx.frame(), frame);
@@ -751,15 +751,15 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
         if other_house {
             fx.sim.substrate.entities.change_owner(passenger, other);
         }
-        let effects = crate::sim::world::FrameEffects::default();
+        let mut effects = crate::sim::world::FrameEffects::default();
         if transport_type == "SHAD" {
             assert!(
-                super::eject_from_aircraft(&mut fx.sim, &fx.rules, None, transport, effects)
+                super::eject_from_aircraft(&mut fx.sim, &fx.rules, None, transport, &mut effects)
                     .is_some()
             );
         } else {
             assert!(matches!(
-                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, effects),
+                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, &mut effects),
                 super::EjectOutcome::Placed
             ));
         }
@@ -944,7 +944,7 @@ fn hover_unload_failed_shore_search_assigns_the_retained_fallback_cell() {
             .set_exact_z_leptons_for_test(Some(input["height"].as_i64().unwrap() as i32));
         let rng = serde_json::to_value(&fx.sim.scenario_rng).unwrap();
         assert_eq!(
-            super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, FrameEffects::default()),
+            super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, &mut FrameEffects::default()),
             expected["delay"].as_i64().unwrap() as i32
         );
         let entity = fx.sim.substrate.entities.get(lcrf).unwrap();
@@ -1077,7 +1077,12 @@ fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
         // nonnull handoff BEFORE Hover Process consumes it. This is not an
         // assertion that the target survives a completed ordinary frame.
         assert_eq!(
-            super::unit_mission_unload(&mut fx.sim, &fx.rules, carrier, FrameEffects::default(),),
+            super::unit_mission_unload(
+                &mut fx.sim,
+                &fx.rules,
+                carrier,
+                &mut FrameEffects::default(),
+            ),
             10
         );
         assert_eq!(
@@ -1145,7 +1150,7 @@ fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
             // The current handler waits on the existing Hover destination;
             // it does not search again or drop cargo into the water.
             assert_eq!(
-                super::unit_mission_unload(sim, &fx.rules, carrier, FrameEffects::default()),
+                super::unit_mission_unload(sim, &fx.rules, carrier, &mut FrameEffects::default()),
                 10
             );
         }
@@ -1232,7 +1237,12 @@ fn nighthawk_unloads_only_when_landed() {
             shad,
             600,
         );
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
@@ -1256,7 +1266,12 @@ fn nighthawk_unloads_only_when_landed() {
     };
     pitch(&mut fx, SimFixed::from_num(1));
     for _ in 0..30 {
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
@@ -1270,7 +1285,7 @@ fn nighthawk_unloads_only_when_landed() {
                 &mut fx.sim,
                 shad,
                 &fx.rules,
-                Default::default(),
+                &mut Default::default(),
             );
             fx.sim
                 .session
@@ -1300,7 +1315,7 @@ fn nighthawk_unloads_only_when_landed() {
         pax[1],
         crate::sim::radio::RadioMessage::RequestClearance,
         &fx.rules,
-        Default::default(),
+        &mut Default::default(),
     );
     assert_eq!(tether(&fx), None);
     dispatch(&mut fx, 16);
@@ -1461,7 +1476,7 @@ fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
         shad,
         BoardingArm::InfantryTransport,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     let transporter = |fx: &Fixture| {
         let soldier = fx.sim.substrate.entities.get(soldier).unwrap();
@@ -1892,7 +1907,7 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
 
     // First dispatch: state 0 → 2 with exactly one epilogue draw.
     let before = fx.sim.scenario_rng.state();
-    crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+    crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, &mut Default::default());
     fx.sim
         .session
         .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
@@ -1910,7 +1925,12 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
         altitude -= 20;
         set_altitude(&mut fx, shad, altitude);
         let before = fx.sim.scenario_rng.state();
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
@@ -1927,7 +1947,7 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_EJECT);
     assert_eq!(fx.cargo_ids(shad).len(), 2);
     let before = fx.sim.scenario_rng.state();
-    crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+    crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, &mut Default::default());
     assert!(
         fx.revealed(pax[1]),
         "cargo head ejected on the state-3 dispatch"
@@ -1953,7 +1973,7 @@ fn unit_unload_waits_on_the_locomotors_is_moving() {
             &mut fx.sim,
             &fx.rules,
             bfrt,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         (delay, handler_state(&fx, bfrt))
     };
@@ -2004,7 +2024,7 @@ fn jumpjet_transport_unload_waits_on_the_moving_byte_in_the_hold() {
             &mut fx.sim,
             &fx.rules,
             hind,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         (delay, handler_state(&fx, hind))
     };
@@ -2106,7 +2126,12 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
         fx.board(shad, 2);
         set_altitude(&mut fx, shad, 600);
         assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
@@ -2119,7 +2144,7 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
                 &mut fx.sim,
                 shad,
                 &fx.rules,
-                Default::default(),
+                &mut Default::default(),
             );
             fx.sim
                 .session
@@ -2183,7 +2208,7 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     // State 0 → 3 (landed, team-less), one draw.
-    crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+    crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, &mut Default::default());
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_EJECT);
     // Advance to the state-3 dispatch: the ejection is refused, and the idle
     // mode's tail queues Guard and commences it when ready (`0x00417B44`).
@@ -2191,7 +2216,12 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
         if fx.mission(shad) == MissionId::from_known(MissionType::Guard) {
             break;
         }
@@ -2218,7 +2248,12 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
     }
     assert_eq!(
         fx.sim.scenario_rng.state(),
@@ -2266,7 +2301,12 @@ fn nighthawk_passenger_is_refused_by_an_enemy_in_the_aircraft_cell() {
         fx.sim
             .session
             .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(
+            &mut fx.sim,
+            shad,
+            &fx.rules,
+            &mut Default::default(),
+        );
         if fx.mission(shad) == MissionId::from_known(MissionType::Guard) {
             break;
         }
@@ -2338,7 +2378,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                         &fx.rules,
                         None,
                         transport,
-                        crate::sim::world::FrameEffects::default()
+                        &mut crate::sim::world::FrameEffects::default()
                     )
                     .is_none()
                 );
@@ -2348,7 +2388,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                         &mut fx.sim,
                         &fx.rules,
                         transport,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     ),
                     super::EjectOutcome::Failed
                 ));
@@ -2450,7 +2490,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
             &mut fx.sim,
             &fx.rules,
             carrier,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             fx.sim

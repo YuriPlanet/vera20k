@@ -262,7 +262,7 @@ pub(crate) fn scan(
     id: u64,
     rules: &RuleSet,
     mask: ScanMission,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     scan_coord: Option<[i32; 3]>,
 ) -> bool {
     if !sim.substrate.entities.contains(id) {
@@ -273,7 +273,7 @@ pub(crate) fn scan(
             sim,
             rules,
             id,
-            ctx,
+            ctx: ctx.reborrow(),
             scan_coord,
         },
         mask,
@@ -296,7 +296,7 @@ pub(super) fn passive_acquire_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -380,7 +380,7 @@ pub(crate) fn passive_target_acquire(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) -> bool {
     let Some(mission) = sim
         .substrate
@@ -787,14 +787,14 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             self.sim,
             self.id,
             self.rules,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
     fn assign_target(&mut self, target: Option<TargetKind>) {
-        let _ = self
-            .sim
-            .assign_target_represented(self.id, target, self.rules, self.ctx.effects);
+        let _ =
+            self.sim
+                .assign_target_represented(self.id, target, self.rules, &mut self.ctx.effects);
     }
 
     /// Through the object's `+0x3C4` override, or this pass's batched answer
@@ -1034,11 +1034,11 @@ mod tests {
                 .passive_scan
                 .timer_mut_for_test()
                 .clear();
-            let ctx = ObjectAiCtx {
+            let mut ctx = ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..ObjectAiCtx::default()
             };
-            passive_acquire_step(&mut sim, scanner, rules, ctx);
+            passive_acquire_step(&mut sim, scanner, rules, &mut ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(
                 actor.attack_target.target(),
@@ -1080,7 +1080,7 @@ mod tests {
             let jitter = expected_scenario.next_range_u32_inclusive(0, 2);
             let main = sim.main_rng.state();
             let mapgen = sim.mapgen_rng.state();
-            passive_acquire_step(&mut sim, scanner, rules, ctx);
+            passive_acquire_step(&mut sim, scanner, rules, &mut ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(actor.passive_scan.last_scan_frame(), 100);
             assert_eq!(actor.passive_scan.timer().start_frame(), 100);
@@ -1098,7 +1098,7 @@ mod tests {
             );
             assert_eq!(actor.passive_scan.acquired(), !blocked);
             let after_scan = sim.scenario_rng.state();
-            passive_acquire_step(&mut sim, scanner, rules, ctx);
+            passive_acquire_step(&mut sim, scanner, rules, &mut ctx);
             assert_eq!(
                 sim.scenario_rng.state(),
                 after_scan,
@@ -1163,7 +1163,7 @@ mod tests {
                 scanner,
                 &rules,
                 mask,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 None,
             );
             let entity = sim.substrate.entities.get(scanner).unwrap();

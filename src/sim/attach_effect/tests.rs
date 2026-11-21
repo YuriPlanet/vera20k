@@ -987,7 +987,7 @@ fn event_discards_remove_after_their_counts() {
         target,
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(count(&sim), 0, "limbo entry discards ENTRY");
 }
@@ -1058,7 +1058,7 @@ fn owner_change_and_invoker_death_flag_the_effect() {
         russians,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.update_phobos_attach_effects(target, &rules);
     assert!(
@@ -1164,7 +1164,7 @@ fn out_of_range_discard_reads_the_held_target() {
             target,
             Some(crate::sim::combat::TargetKind::Cell(30, 30)),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_ok()
     );
@@ -2116,7 +2116,7 @@ fn an_expired_invokers_shot_keeps_the_attaching_house() {
             Some(attacker),
             Some(house),
             &rules,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
             None,
         );
         assert_eq!(attach_count(&sim, target), 1, "{attacker_house}: attached");
@@ -2167,7 +2167,7 @@ fn a_dying_effect_owner_fires_its_revenge_weapon_at_the_killer() {
         &rules,
         None,
         event,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert!(
         sim.substrate.entities.get(victim).is_none() || health(&sim, victim) == 0,
@@ -2219,7 +2219,7 @@ fn a_dying_effect_owner_fires_its_death_expire_weapon_once() {
         &rules,
         None,
         event,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(
         health(&sim, bystander),
@@ -2258,7 +2258,7 @@ fn reflect_damage_returns_the_received_packet_by_override_or_multiplier() {
             &rules,
             None,
             event,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
         assert_eq!(health(&sim, victim), 990, "{keys}");
         assert_eq!(health(&sim, attacker), expected, "{keys}");
@@ -2293,7 +2293,7 @@ fn reflect_damage_delay_blocks_the_next_hit_until_it_runs_out() {
             &rules,
             None,
             event,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
     };
     hit(&mut sim);
@@ -2340,7 +2340,7 @@ fn suppress_reflect_damage_stops_the_return_hit() {
         &rules,
         None,
         event,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(health(&sim, victim), 990);
     assert_eq!(health(&sim, attacker), 1000, "the suppressor refused it");
@@ -2375,7 +2375,7 @@ fn a_reflected_hit_never_reflects_again() {
         &rules,
         None,
         event,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(health(&sim, victim), 990, "the incoming hit only");
     assert_eq!(
@@ -2411,7 +2411,7 @@ fn reflect_damage_returns_the_post_verses_packet() {
         &rules,
         None,
         event,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(health(&sim, victim), 995, "50% of 10");
     assert_eq!(
@@ -2459,7 +2459,7 @@ fn received_damage_discard_counts_positive_hits_with_ignore_defenses() {
             &rules,
             None,
             event,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
         sim.update_phobos_attach_effects(victim, &rules);
         attach_count(sim, victim)
@@ -2501,7 +2501,7 @@ fn limbo_entry_discard_recalculates_and_fires_the_discard_weapon() {
         target,
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(attach_count(&sim, target), 0);
     assert_eq!(firepower(&sim), 1.0, "the effect's factor is gone");
@@ -2670,7 +2670,7 @@ fn warhead_removal_boundaries_follow_min_max_counts_and_groups() {
             &[detonation],
             &rules,
             None,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
     };
 
@@ -2727,7 +2727,7 @@ fn a_removed_effect_fires_its_remove_weapon() {
         &[detonation],
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert_eq!(attach_count(&sim, target), 0, "the warhead removed it");
     assert_eq!(

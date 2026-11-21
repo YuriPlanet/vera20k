@@ -237,7 +237,7 @@ pub(super) fn ares_place_starting_construction_yard(
         STARTING_MCV_FACING,
         initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ) else {
         return Some(false);
     };
@@ -261,7 +261,7 @@ pub(super) fn ares_place_starting_construction_yard(
             cell,
             rules,
             overlay_registry,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let (rx, ry) = sim.houses[&owner_id].base_origin();
@@ -404,7 +404,7 @@ fn construct_starting_object(
         facing,
         initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )?;
     Some((stable_id, category))
 }
@@ -482,7 +482,11 @@ fn unlimbo_starting_object_near_base(
         }
     }
 
-    sim.discard_constructed_limbo(stable_id, rules, crate::sim::world::FrameEffects::default());
+    sim.discard_constructed_limbo(
+        stable_id,
+        rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     None
 }
 
@@ -512,7 +516,7 @@ fn unlimbo_starting_object_at(
         PlacementEvidence::EvaluateMark,
         rules,
         overlay_registry,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .is_some()
 }

@@ -230,7 +230,7 @@ fn magnetron_aircraft_hit_and_release_match_original_composition() {
             &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         scene.assert_state(&row["after_hit"], &format!("{name} hit"));
         if let Some(height) = row["input"]["release_height"].as_i64() {
@@ -238,12 +238,16 @@ fn magnetron_aircraft_hit_and_release_match_original_composition() {
                 scene.victim,
                 height as i32,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             scene.assert_state(&row["before_release"], &format!("{name} release input"));
-            scene
-                .sim
-                .release_locomotor(scene.firer, false, &rules, None, FrameEffects::default());
+            scene.sim.release_locomotor(
+                scene.firer,
+                false,
+                &rules,
+                None,
+                &mut FrameEffects::default(),
+            );
             scene.assert_state(&row["after_release"], &format!("{name} release"));
             if height == 0 {
                 assert!(!scene.sim.try_end_piggyback(scene.victim, &rules));

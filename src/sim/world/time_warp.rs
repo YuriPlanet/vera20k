@@ -29,7 +29,7 @@ impl Simulation {
             return false;
         }
         let context = UninitContext::new(rules);
-        while let Some(source) = self.next_allocated_map_cell(context) {
+        while let Some(source) = self.next_allocated_map_cell(&context) {
             if let (Some(grid), Some(terrain)) =
                 (self.smudge_grid.as_mut(), self.resolved_terrain.as_ref())
                 && grid
@@ -104,7 +104,7 @@ impl Simulation {
         recreate_all: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(house) = self.houses.get(&owner) else {
             return false;
@@ -285,7 +285,7 @@ mod tests {
                     0,
                     0,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             sim.substrate

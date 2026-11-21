@@ -90,7 +90,7 @@ fn apply(sim: &mut Simulation, rules: &RuleSet, raw: &str) -> bool {
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 

@@ -43,7 +43,7 @@ fn scene(rules: &RuleSet, kind: &str) -> (Simulation, u64) {
 
 fn visit(sim: &mut Simulation, id: u64, rules: &RuleSet, frame: u32) -> i32 {
     sim.session.set_binary_frame_for_test(frame);
-    tick_stock_cloak_producer(sim, id, rules, None, FrameEffects::default());
+    tick_stock_cloak_producer(sim, id, rules, None, &mut FrameEffects::default());
     sim.substrate
         .entities
         .get(id)

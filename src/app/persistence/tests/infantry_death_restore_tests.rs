@@ -56,7 +56,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(!output.tick.frame_committed);
@@ -125,7 +125,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     // Exit requests are transient: production load resumes the match and the
@@ -172,7 +172,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
             victim,
             sequence,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         // DoAction starts the native one-frame countdown at frame0.
         // Its frame0 Logic visit holds; frame1 performs the first step.

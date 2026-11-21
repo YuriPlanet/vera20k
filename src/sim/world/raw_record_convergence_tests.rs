@@ -128,7 +128,7 @@ fn wall_sale_respects_the_admitted_player_control_rule_in_skirmish() {
             false,
             &rules,
             &overlays,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         )
     };
     assert!(!sell(&mut sim));
@@ -163,7 +163,7 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
             &envelope.payload,
             rules,
             Some(overlays),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -299,7 +299,7 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
                 rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("scene frame completes")
             .multiplayer_checksum

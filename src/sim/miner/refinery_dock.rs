@@ -97,7 +97,7 @@ pub(crate) fn mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -161,7 +161,7 @@ fn unload_dumping(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(building) = unload_building(sim, id) else {
@@ -233,7 +233,7 @@ fn unload_finishing(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     if let Some(building) = unload_building(sim, id)
@@ -285,7 +285,7 @@ pub(crate) fn per_cell_release_dock_contact(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let unload = MissionId::from_known(MissionType::Unload);
     let enter = MissionId::from_known(MissionType::Enter);

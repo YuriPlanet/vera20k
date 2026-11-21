@@ -138,7 +138,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
         crate::sim::components::NavTargetRef::cell(12, 8),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -188,7 +188,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
                 DriveCoord::cell(9, 8, 731),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         }
 
@@ -266,7 +266,7 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
         DriveCoord::cell(9, 8, 731),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let before = owned_state(entity);
@@ -395,7 +395,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
             &rules,
             1,
             (12, 8),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let entity = sim.substrate.entities.get(1).unwrap();

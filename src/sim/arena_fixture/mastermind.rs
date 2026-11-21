@@ -163,7 +163,7 @@ impl MindScene {
                 &self.rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary stock Mastermind frame");
         assert!(output.tick.frame_committed);

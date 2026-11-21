@@ -117,7 +117,7 @@ impl Scene {
         let due = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&due, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(
             output.network_failure.is_none() && !output.network_waiting && !output.outcome_waiting

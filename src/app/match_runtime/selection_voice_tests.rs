@@ -149,7 +149,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         &mut sim,
         &retail.rules,
         1,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let requests = sim.take_sound_events_for_test();
     sound_dispatch::dispatch_sim_sound_events(
@@ -171,7 +171,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
     assert!(player.pending_unit_voice_owners().contains(&1));
     sim.process_pending_delete_with(
         &retail.rules,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
         1,
         true,
     );

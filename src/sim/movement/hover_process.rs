@@ -218,7 +218,7 @@ impl Simulation {
     /// `0x005152D7..0x0051531E` and its twin `0x0051541F..0x0051546D`: the
     /// Foot's path head (+0x5E0 = -1), the dummy head, `SetDestination(NULL,
     /// 1)`, the four zeroed speeds and `SetSpeedFraction(0.0)`.
-    fn hover_drop_track(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn hover_drop_track(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.navigation.path_replay_mut().clear_live_head();
             if let Some(hover) = runtime_mut(entity) {
@@ -362,7 +362,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let registry = Some(rules.overlay_registry());
         self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
@@ -378,7 +378,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<HoverProcessOutcome, FrameAdvanceError> {
         let mut out = HoverProcessOutcome::default();
         if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
@@ -396,7 +396,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let frame = self.session.binary_frame();
         self.hover_speed_update(id, rules, registry, out, effects)?;
@@ -463,7 +463,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<Arrival, FrameAdvanceError> {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.foot_occupation_enabled.resume();
@@ -572,7 +572,7 @@ impl Simulation {
         speed: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(location) = self.hover_location(id) else {
@@ -651,7 +651,7 @@ impl Simulation {
 
     /// Process 0x00514A21..0x00514C12: the altitude controller and the
     /// Shove tail and the water DropAsBomb gate.
-    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         Self::hover_altitude(
             &self.session,
             &mut self.substrate,
@@ -663,7 +663,7 @@ impl Simulation {
     }
 
     /// Original Process suffix514AD0..514C12, after altitude adjustment.
-    fn hover_spin_tail(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn hover_spin_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         //514AD0..514AD5: an object not spinning on entry skips the entire
         // tail, including water admission. Power_Off516BF0 starts the spin.
         let was_spinning = self
@@ -786,7 +786,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let frame = self.session.binary_frame();
         let terrain = self.resolved_terrain.as_ref();
@@ -875,7 +875,7 @@ impl Simulation {
         urgency: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let frame = self.session.binary_frame();
         self.hover_trim_path(id, rules, registry);
@@ -946,7 +946,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -982,7 +982,7 @@ impl Simulation {
         cell: (i32, i32),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -1048,7 +1048,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         //5166BD..5166DD: the zone precheck on the live destination, which the
         //failed search's +500 receiver (Stop_Moving) may have nulled.
@@ -1165,7 +1165,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<u8, FrameAdvanceError> {
         let frame = self.session.binary_frame();
         //514F83..514FCA: the old head's claim goes first.
@@ -1500,7 +1500,7 @@ mod tests {
             hover.shove_steps = input["steps"].as_i64().unwrap_or(2) as i32;
             entity.locomotor = Some(loco);
             sim.substrate.entities.insert(entity);
-            sim.hover_spin_tail(1, &rules, FrameEffects::default());
+            sim.hover_spin_tail(1, &rules, &mut FrameEffects::default());
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
                 entity.was_dropped_as_bomb(),

@@ -78,7 +78,7 @@ impl Simulation {
         target: crate::sim::intern::InternedId,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut found = false;
         for powered_pass in [false, true] {
@@ -126,7 +126,7 @@ impl Simulation {
         type_name: &str,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(at) = self.session.waypoint_cell(waypoint) else {
             return false;
@@ -199,7 +199,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         if self.trigger_runtime.stop_before_action == Some(action.entry.kind) {
@@ -260,7 +260,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Ares 3.0 TActionExt::Execute (100396C0, hook 0x6DD8D7) answers its
         // own kinds before the stock switch.
@@ -778,7 +778,7 @@ impl Simulation {
                         crate::sim::world::bridge_orchestrator::BridgeDamageDrivers::new(
                             self,
                             rules,
-                            frame_effects,
+                            frame_effects.reborrow(),
                         );
                     for _ in 0..4 {
                         if driver.apply_damage_to_cell(context.input.cell) {

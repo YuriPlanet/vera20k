@@ -851,7 +851,7 @@ impl HeadlessScenario {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed; prior world mutations remain");
     }
@@ -1310,7 +1310,7 @@ mod retail_construction_tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            Default::default(),
+            &mut Default::default(),
         );
         assert_eq!(
             loaded.terrain_objects().get(alias_id).unwrap().health(),
@@ -1326,7 +1326,7 @@ mod retail_construction_tests {
             [ordinary_id]
         );
         assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
-        loaded.process_pending_delete_with(rules, Default::default(), 1, true);
+        loaded.process_pending_delete_with(rules, &mut Default::default(), 1, true);
         assert!(loaded.terrain_objects().get(alias_id).is_none());
         assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
         assert_eq!(
@@ -2142,7 +2142,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -2393,7 +2393,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -3154,7 +3154,7 @@ mod retail_construction_tests {
                 &commands,
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed")
     }
@@ -3300,7 +3300,7 @@ mod retail_construction_tests {
             rhino,
             Some(TargetKind::Entity(gi)),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
@@ -3659,7 +3659,7 @@ mod retail_construction_tests {
             tanya,
             Some(TargetKind::Entity(reactor)),
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let (mut sabotage, mut planted, mut died) = (None, None, None);

@@ -43,7 +43,7 @@ fn prior_building(sim: &mut Simulation, rules: &RuleSet, name: &str, x: u16, y: 
             0,
             PlacementEvidence::EvaluateMark,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_some()
     );
@@ -108,7 +108,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
             RadioMessage::Hello,
             RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     sim.substrate
@@ -124,14 +124,14 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
             RadioMessage::DockArrived,
             RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         transmit_to_contact(
             &mut sim,
             yard,
             RadioMessage::Break,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     (sim, id)
@@ -458,7 +458,7 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
                             stable_id,
                             rules,
                             None,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         )
                         .unwrap();
                     } else {
@@ -471,11 +471,17 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
                             stable_id,
                             rules,
                             None,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         );
                         update_animation(sim, stable_id, rules);
                         ready_commence(&sim.session, &mut sim.substrate, stable_id, true);
-                        dispatch(sim, stable_id, rules, ObjectAiCtx::default(), &mut false);
+                        dispatch(
+                            sim,
+                            stable_id,
+                            rules,
+                            &mut ObjectAiCtx::default(),
+                            &mut false,
+                        );
                         ready_commence(&sim.session, &mut sim.substrate, stable_id, false);
                         apply_queued_body(&sim.session, &mut sim.substrate, stable_id);
                     }

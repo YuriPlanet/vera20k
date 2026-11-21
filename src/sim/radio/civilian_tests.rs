@@ -176,14 +176,14 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         .unwrap();
     assert_eq!(rules.object("CARGOPLANE").unwrap().passengers, 0);
     let now = sim.session.binary_frame();
-    let effects = FrameEffects::default();
+    let mut effects = FrameEffects::default();
     let target = TargetKind::Cell(22, 20);
     let destination = NavTargetRef::cell(23, 20);
-    sim.assign_target_represented(plane, Some(target), rules, effects)
+    sim.assign_target_represented(plane, Some(target), rules, &mut effects)
         .unwrap();
-    sim.assign_aircraft_destination(plane, Some(destination), rules, effects);
+    sim.assign_aircraft_destination(plane, Some(destination), rules, &mut effects);
     let queued = sim.substrate.entities.get(plane).unwrap().mission.queued();
-    let dock = |sim: &mut Simulation, sender| {
+    let mut dock = |sim: &mut Simulation, sender| {
         super::receive::receive_radio(
             sim,
             plane,
@@ -191,7 +191,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
             RadioMessage::DockNow,
             super::RadioPayload::default(),
             rules,
-            effects,
+            &mut effects,
         )
     };
     let door_ticks = rules.object("CARGOPLANE").unwrap().deploy_time_ticks as i32;

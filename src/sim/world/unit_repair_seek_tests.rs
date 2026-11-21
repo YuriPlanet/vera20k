@@ -99,7 +99,7 @@ fn useless_harvester_contact() -> Option<(Simulation, RuleSet, PathGrid, u64, u6
                 arg6: false,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         !sim.substrate
@@ -182,14 +182,20 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
     let americans = sim.interner.get("Americans").unwrap();
     let russians = sim.interner.get("Russians").unwrap();
     let old_owner_credits = sim.houses[&americans].economy().credits();
-    sim.change_owner_with_rules(harvester, russians, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(
+        harvester,
+        russians,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     let _ = crate::sim::team_script_vm::join_team_for_test(&mut sim, &[harvester], false, false);
     assert!(
         sim.assign_target_represented(
             targeter,
             Some(TargetKind::Entity(harvester)),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .is_ok()
     );
@@ -435,7 +441,7 @@ fn an_archive_destination_clears_a_stale_useless_latch_after_a_scan_miss() {
         &mut sim,
         harvester,
         &rules,
-        crate::sim::world::ObjectAiCtx {
+        &mut crate::sim::world::ObjectAiCtx {
             overlay_registry: Some(
                 crate::sim::tiberium::test_support::overlay_registry_with_land(),
             ),
@@ -481,7 +487,7 @@ fn damaged_tank(
 }
 
 fn seek(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    sim.unit_ai_seek_repair(id, rules, FrameEffects::default());
+    sim.unit_ai_seek_repair(id, rules, &mut FrameEffects::default());
 }
 
 /// Unit743270 accepts Repair; Unit740EF0 establishes contact and queues Enter
@@ -625,7 +631,7 @@ fn repair_mission_hello_queues_enter_without_commencing_or_setting_destination()
     );
     let before_rng = sim.scenario_rng.logical_state();
     assert_eq!(
-        sim.unit_mission_repair(tank, &rules, FrameEffects::default()),
+        sim.unit_mission_repair(tank, &rules, &mut FrameEffects::default()),
         1
     );
     let unit = sim.substrate.entities.get(tank).unwrap();
@@ -651,7 +657,7 @@ fn repair_mission_without_a_bay_waits_at_its_unjittered_rate() {
     );
     let before_rng = sim.scenario_rng.logical_state();
     assert_eq!(
-        sim.unit_mission_repair(tank, &rules, FrameEffects::default()),
+        sim.unit_mission_repair(tank, &rules, &mut FrameEffects::default()),
         rules.mission_control.rate_frames(MissionType::Repair)
     );
     let unit = sim.substrate.entities.get(tank).unwrap();
@@ -698,7 +704,7 @@ fn repair_mission_keeps_waiting_for_an_occupied_retail_depot() {
         .radio_contacts
         .set_slot(0, depot);
     let before_rng = sim.scenario_rng.logical_state();
-    let delay = sim.unit_mission_repair(waiting, &rules, FrameEffects::default());
+    let delay = sim.unit_mission_repair(waiting, &rules, &mut FrameEffects::default());
     assert_eq!(
         sim.substrate
             .entities
@@ -773,7 +779,7 @@ fn a_damaged_computer_tank_on_guard_heads_for_its_depot() {
         tank,
         Some(TargetKind::Cell(30, 30)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 
     seek(&mut sim, &rules, tank);
@@ -973,7 +979,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
             RadioMessage::CanEnter,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Negatory
     );
@@ -982,7 +988,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
     // the yard, of the other Naval kind, and takes the depot.
     let expected = if rules.ares() { depot } else { yard };
     assert_eq!(
-        sim.nearest_unit_repair_station(tank, &rules, FrameEffects::default()),
+        sim.nearest_unit_repair_station(tank, &rules, &mut FrameEffects::default()),
         Some(expected)
     );
 
@@ -997,7 +1003,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
     );
     let _ = depot;
     assert_eq!(
-        sim.nearest_unit_repair_station(far, &rules, FrameEffects::default()),
+        sim.nearest_unit_repair_station(far, &rules, &mut FrameEffects::default()),
         None
     );
 }

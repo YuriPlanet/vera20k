@@ -567,7 +567,7 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
             assert_eq!(sim.houses[&owner].tracking().navy(), 1);
             sim.flush_pending_delete();
         }
-        sim.raise_house_tags(owner, &rules, None, FrameEffects::default());
+        sim.raise_house_tags(owner, &rules, None, &mut FrameEffects::default());
         sim.flush_pending_delete();
         assert_eq!(enabled(&sim, chain[1]), expected, "frame{frame}");
         assert_eq!(enabled(&sim, chain[2]), expected, "frame{frame}");
@@ -742,9 +742,14 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             if mixed {
                 // Logic runs before House; the original mixed trigger can
                 // succeed on frame3750, which is not an eighth-frame poll.
-                sim.advance_triggers(&rules, Some(&overlay), FrameEffects::default());
+                sim.advance_triggers(&rules, Some(&overlay), &mut FrameEffects::default());
             }
-            sim.raise_house_tags(houses[0], &rules, Some(&overlay), FrameEffects::default());
+            sim.raise_house_tags(
+                houses[0],
+                &rules,
+                Some(&overlay),
+                &mut FrameEffects::default(),
+            );
             let runtime = &sim.trigger_runtime;
             let trigger = runtime.trigger(live).unwrap();
             let actual = json!({
@@ -769,9 +774,14 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             }
         }
         if integer(&case["repeat"]) == 0 {
-            sim.process_pending_delete_with(&rules, FrameEffects::default(), 0, false);
+            sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 0, false);
             sim.session.set_binary_frame_for_test(40);
-            sim.raise_house_tags(houses[0], &rules, Some(&overlay), FrameEffects::default());
+            sim.raise_house_tags(
+                houses[0],
+                &rules,
+                Some(&overlay),
+                &mut FrameEffects::default(),
+            );
         }
         let cleanup = json!({
             "wallet": crate::sim::credit_income::available_money(&sim.houses, houses[0]),
@@ -871,7 +881,7 @@ fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.sound_events
@@ -1051,7 +1061,7 @@ fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sim.trigger_runtime.locals_set.contains(&10), expected);
     }
@@ -1216,7 +1226,7 @@ fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
             victim,
             source,
             integer(&case["input"]["damage"]),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             json!(sim.substrate.entities.get(victim).unwrap().health.current()),
@@ -1399,7 +1409,7 @@ fn per_cell_arrival_uses_native_bridge_admission_and_keeps_the_cached_tag() {
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(sim.trigger_runtime.dispatch_trace.is_empty());
@@ -1408,7 +1418,7 @@ fn per_cell_arrival_uses_native_bridge_admission_and_keeps_the_cached_tag() {
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let native: Vec<_> = case["calls"]
@@ -1546,7 +1556,7 @@ fn fresh_line_marker_writer_and_arrival_consumers_match_original_sparse_cells() 
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         // Native starts at the line slice, after direct1/59. Remove only the
@@ -1761,8 +1771,14 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         .0;
     let identity = sim.super_weapons[&owner][&dominator].native_unique_id();
     for _ in 0..15 {
-        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-            .unwrap();
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
     }
     assert_eq!(sim.session.binary_frame(), 15);
     assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
@@ -1775,8 +1791,14 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     assert!(!sim.super_weapons[&owner][&dominator].is_suspended());
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        &rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.trigger_runtime.action_trace, vec![(129, 7), (63, 364)]);
     let reactor = sim.entities().get(reactor).unwrap();
     assert_eq!(
@@ -1835,8 +1857,14 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     assert!(!before_pause.is_empty());
     assert!(before_pause.iter().all(|(_, _, paused)| !paused));
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        &rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     let paused = super_slots(&sim);
     assert!(!paused.is_empty());
     assert!(paused.iter().all(|(_, _, paused)| *paused));
@@ -2009,7 +2037,7 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             u8::from(returned),
@@ -2118,7 +2146,7 @@ fn native_damage_at_waypoint_dispatch_matches_original_controls() {
                 &mut Vec::new(),
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(
@@ -2342,7 +2370,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     });
     assert!(returned);
@@ -2600,7 +2628,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 &mut effects,
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(
@@ -2931,7 +2959,7 @@ fn action_11_inline_labels_and_ordered_effects_match_original_controls() {
             &mut effects,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(json!(i32::from(result)), control["returned"]);
         let mut expected = vec![preceding];
@@ -3241,7 +3269,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             })
             .unwrap();
@@ -3293,7 +3321,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let (added, add_draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
-                sim.team_add_member(team, member, false, &rules, FrameEffects::default())
+                sim.team_add_member(team, member, false, &rules, &mut FrameEffects::default())
             })
         });
         assert_eq!(i32::from(added), integer(&control["added_al"]), "{input}");
@@ -3310,7 +3338,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             "{input}: retained attachments/membership through save"
         );
         let (_, remove_draws) = crate::sim::rng::trace_draws(|| {
-            sim.team_remove_member(team, member, false, &rules, FrameEffects::default());
+            sim.team_remove_member(team, member, false, &rules, &mut FrameEffects::default());
         });
         assert!(add_draws.is_empty() && remove_draws.is_empty(), "{input}");
         let rng_after = &control["member_rng_after"];
@@ -3651,7 +3679,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
         compare_stock_state(&sim, draw_count, &row["history"][1]);
         sim.trigger_runtime.stop_before_action = Some(integer(&row["first_poll"]["action_kind"]));
         let boundary = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            sim.advance_triggers(&rules, None, FrameEffects::default())
+            sim.advance_triggers(&rules, None, &mut FrameEffects::default())
         }))
         .expect_err("same original first gameplay-action boundary must stop the prefix");
         assert_eq!(*boundary.downcast::<i32>().unwrap(), 46);
@@ -3699,7 +3727,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
                         &mut Vec::new(),
                         &rules,
                         None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                 } else {
                     sim.register_live_trigger_event(
@@ -4180,7 +4208,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         assert!(sim.discard_constructed_limbo(
                             objects[integer(&args[1]) as usize],
                             &rules,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         ));
                     }
                     "supply_pending" => {
@@ -4225,7 +4253,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             &mut effects,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )));
                     }
                     "periodic_cell" => sim.dispatch_airborne_cell_tag_event(
@@ -4263,7 +4291,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             &mut effects,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )));
                     }
                     "mark_tag" => crate::sim::world::Simulation::mark_live_tag_for_delete(
@@ -4285,7 +4313,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                     }
                     "drain" => sim.process_pending_delete_with(
                         &rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                         integer(&flags[0]),
                         integer(&flags[1]) != 0,
                     ),
@@ -4310,7 +4338,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         ]
                     }
                     "poll" => {
-                        effects = sim.advance_triggers(&rules, None, FrameEffects::default());
+                        effects = sim.advance_triggers(&rules, None, &mut FrameEffects::default());
                     }
                     kind => panic!("unhandled native operation {name}/{step}/{kind}"),
                 }

@@ -428,9 +428,11 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                     let output_start = scene.sim.lifecycle_outputs.len();
                     let sound_start = scene.sim.sound_events.len();
                     let (_, receipts) = trace_area_visits(|| {
-                        scene
-                            .sim
-                            .tick_disk_lasers(rules, Some(&registry), FrameEffects::default())
+                        scene.sim.tick_disk_lasers(
+                            rules,
+                            Some(&registry),
+                            &mut FrameEffects::default(),
+                        )
                     });
                     let lasers: Vec<_> = scene.sim.lifecycle_outputs[output_start..]
                         .iter()
@@ -507,9 +509,12 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                 "laser_update" => {}
                 "drain" => {
                     let begin = scene.sim.lifecycle_test_events_for_test().len();
-                    scene
-                        .sim
-                        .process_pending_delete_with(rules, FrameEffects::default(), 1, false);
+                    scene.sim.process_pending_delete_with(
+                        rules,
+                        &mut FrameEffects::default(),
+                        1,
+                        false,
+                    );
                     selected.extend(
                         scene.sim.lifecycle_test_events_for_test()[begin..]
                             .iter()
@@ -590,7 +595,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
             scene.sim.session.set_tick_for_test(u64::from(frame));
             scene
                 .sim
-                .tick_disk_lasers(rules, Some(&registry), FrameEffects::default());
+                .tick_disk_lasers(rules, Some(&registry), &mut FrameEffects::default());
         }
         if pending {
             for _ in 0..2 {
@@ -657,7 +662,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                     let output_start = sim.lifecycle_outputs.len();
                     let sound_start = sim.sound_events.len();
                     let (_, area) = trace_area_visits(|| {
-                        sim.tick_disk_lasers(rules, Some(&registry), FrameEffects::default())
+                        sim.tick_disk_lasers(rules, Some(&registry), &mut FrameEffects::default())
                     });
                     let lasers: Vec<_> = sim.lifecycle_outputs[output_start..]
                         .iter()
@@ -667,7 +672,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                         })
                         .collect();
                     let sound = sounds(sim, sound_start);
-                    sim.process_pending_delete_with(rules, FrameEffects::default(), 1, false);
+                    sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, false);
                     (
                         lasers,
                         sound,
@@ -738,7 +743,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
                 &std::mem::take(&mut commands),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary frame");
         assert!(
@@ -817,7 +822,7 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
                     &std::mem::take(&mut commands),
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             flashed |= output.combat_lights.iter().any(|request| {

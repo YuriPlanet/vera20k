@@ -238,7 +238,7 @@ fn retail_process_steps_match_native() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let state = sim.psychic_dominator;
@@ -813,7 +813,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
         sw_type,
         TARGET,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         true,
     ));
     let mut frames = 0;
@@ -862,7 +862,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(sim.psychic_dominator.status_number(), 1);
@@ -879,7 +879,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.super_weapons[&russians][&sw_type].is_ready);
     assert_eq!(sim.psychic_dominator.cell(), cell);
@@ -922,7 +922,7 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         tank,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(owner_name(&sim, tank), "YuriCountry");
     assert!(attached_anim(&sim, tank, "MINDANIM"));

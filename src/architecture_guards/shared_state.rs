@@ -330,12 +330,6 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
          order fills it, and this thread's precheck scratch",
     ),
     (
-        "sim/replay.rs",
-        2,
-        "the replay's frame checksum state, lent to the frame effects' `&dyn` network \
-         boundary",
-    ),
-    (
         "sim/rng.rs",
         4,
         "`MainRng`, the app's process cell of the unsynced stream outside the hash \
@@ -347,12 +341,6 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
         8,
         "a path batch's facts table, each entry kept once and read by every worker; \
          emptied each batch, never saved or hashed",
-    ),
-    (
-        "sim/world/frame_effects.rs",
-        1,
-        "the network boundary for a lent `RefCell` of the checksum owner, which the \
-         simulation reaches through `&dyn`",
     ),
 ];
 

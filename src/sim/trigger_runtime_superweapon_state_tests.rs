@@ -204,12 +204,12 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                         &mut sim,
                         &rules,
                         owner,
-                        Default::default(),
+                        &mut Default::default(),
                     )
                 }
                 "npc_ai_fire" => {
                     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-                    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+                    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
                     let log = ai_fire::AI_FIRE_LOG.take().unwrap();
                     let calls: Vec<Value> = log.into_iter().filter_map(|event| match event {
                         ai_fire::AiFireEvent::Fire(fired, target) => Some(json!({
@@ -277,7 +277,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                         &mut Vec::new(),
                         &rules,
                         None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                     assert_eq!(i32::from(returned), int(&row["returned"]), "{stage}");
                 }
@@ -383,7 +383,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
                 &mut effects,
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(

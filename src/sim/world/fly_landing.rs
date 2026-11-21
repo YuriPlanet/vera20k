@@ -74,7 +74,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let has_target = |sim: &Self| {
@@ -124,7 +124,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if rules.ares()
             && self
@@ -341,7 +341,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let entity = self.substrate.entities.get(id).unwrap();
         if !air_movement::fly_coordinate_admitted(entity) {
@@ -374,7 +374,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
     }
@@ -499,7 +499,7 @@ impl Simulation {
         id: u64,
         layer: Option<DisplayLayer>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::radio::{self, RadioMessage};
         if layer == Some(DisplayLayer::GROUND) {
@@ -531,7 +531,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -1126,9 +1126,9 @@ mod tests {
                 .clone()
         };
         let (mut sim, rules) = fixture(row);
-        sim.apply_fly_landing_callback(1, &hunter, crate::sim::world::FrameEffects::default());
+        sim.apply_fly_landing_callback(1, &hunter, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
-        sim.apply_fly_landing_callback(1, &rules, crate::sim::world::FrameEffects::default());
+        sim.apply_fly_landing_callback(1, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).target_speed_is_zero());
     }
 
@@ -1142,7 +1142,12 @@ mod tests {
         for row in rows {
             let (mut sim, rules) = fixture(&row);
             let rng = sim.scenario_rng.logical_state();
-            sim.complete_fly_phase(1, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.complete_fly_phase(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             let e = sim.substrate.entities.get(1).unwrap();
             let l = e.locomotor.as_ref().unwrap();
             let f = l.fly_runtime().unwrap();
@@ -1257,7 +1262,7 @@ mod tests {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let e = sim.substrate.entities.get(1).unwrap();
@@ -1286,7 +1291,7 @@ mod tests {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             }

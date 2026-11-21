@@ -209,7 +209,7 @@ impl Simulation {
                 rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                 registry,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 None,
             )
             .expect("headless House wait completes immediately");
@@ -224,7 +224,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<crate::sim::command::CommandEnvelope> {
         let mut generated = Vec::new();
         // House4F927C/4F92ED clears1FC before either pass; a status
@@ -275,7 +275,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         defeat_pass: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         cursor: Option<HouseOutcomeCursor>,
     ) -> Result<Vec<crate::sim::command::CommandEnvelope>, HouseOutcomeCursor> {
         let (mut index, mut generated, mut resumed_kind) = match cursor {
@@ -550,7 +550,7 @@ impl Simulation {
     fn mplayer_defeated(
         &mut self,
         owner: InternedId,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> Option<crate::sim::command::CommandEnvelope> {
         if let Some(house) = self.houses.get_mut(&owner) {
             house.mark_defeated();
@@ -582,10 +582,9 @@ impl Simulation {
             // Earlier death cues precede EndPlanningModeSound; the reached
             // Radar setter then delivers it before RadarOn and the local EVA.
             // Executable controls: spatial_oracle/planning_local_defeat.
-            context.effects().flush_sound(self, context.rules());
-            let commit = context
-                .effects()
-                .leave_local_planning(self, context.rules());
+            let rules = context.rules();
+            context.effects().flush_sound(self, rules);
+            let commit = context.effects().leave_local_planning(self, rules);
             commit
         } else {
             None
@@ -603,7 +602,7 @@ impl Simulation {
             self.session.current_house() == Some(owner)
         };
         if represented_view {
-            self.reveal_entire_map(Some(owner), context);
+            self.reveal_entire_map(Some(owner), context.reborrow());
             self.power_states
                 .house_mut(owner)
                 .set_tactical_map_available();
@@ -632,7 +631,11 @@ impl Simulation {
     /// continues watching while hostile survivors and a human remain. Only
     /// this process's PlayerPtr receives native's final Win/Lose flags.
     /// VERA network worlds retain the same per-human result on every client.
-    fn complete_multiplayer_after_defeat(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn complete_multiplayer_after_defeat(
+        &mut self,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         let Some(decision) = self.multiplayer_decision() else {
             return;
         };
@@ -777,7 +780,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         skip_timer: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
@@ -802,7 +805,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         skip_timer: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
@@ -829,7 +832,7 @@ impl Simulation {
         owner: InternedId,
         kind: crate::sim::house_state::HouseOutcomeKind,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let follow_player_control = self.outcomes_follow_player_control();
         let announce = if follow_player_control {
@@ -875,7 +878,7 @@ impl Simulation {
         &mut self,
         request: PlayerOutcomeRequest,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut handled = false;
         for owner in self.outcome_viewpoints() {
@@ -942,7 +945,7 @@ impl Simulation {
                 skip_timer: true,
             },
             rules,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         )
     }
 
@@ -972,7 +975,7 @@ impl Simulation {
         subset: HouseBlowupSubset,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
         //All four bodies re-read the current slot/count after ReceiveDamage.
@@ -1048,7 +1051,7 @@ impl Simulation {
         house: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.session.rule_policy().uses_elimination_results() {
             return false;

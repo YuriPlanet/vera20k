@@ -178,7 +178,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
             coord,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         ids.insert(name.clone(), id);
         native_ids.insert(actor["id"].as_u64().unwrap(), id);

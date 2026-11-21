@@ -289,7 +289,7 @@ fn transferred_held_infantry_uses_its_owner_for_rates_and_survives_restore() {
         .find(|f| f.owner() == owner && f.category() == ProductionCategory::Infantry)
         .unwrap()
         .balance();
-    assert!(sim.go_building_offline(pile2, &rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(pile2, &rules, &mut FrameEffects::default()));
     assert!(
         sim.production
             .factories()
@@ -297,7 +297,7 @@ fn transferred_held_infantry_uses_its_owner_for_rates_and_survives_restore() {
             .unwrap()
             .suspended
     );
-    assert!(sim.go_building_online(pile2, &rules, FrameEffects::default()));
+    assert!(sim.go_building_online(pile2, &rules, &mut FrameEffects::default()));
     let resumed = sim
         .production
         .factories()
@@ -352,7 +352,7 @@ fn transfer(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, target: In
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
 }
 
@@ -411,7 +411,7 @@ fn transferred_held_tank_refund_values_its_owner_but_credits_factory_house() {
             naval: false
         },
         true,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     let actual = sim.houses[&owner].economy().credits().wrapping_sub(f_money);
     assert!(sim.substrate.entities.get(tank).is_none());

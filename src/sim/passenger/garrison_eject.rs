@@ -129,7 +129,7 @@ fn sellbuilding_direct_scatter_handoff(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     passenger_id: u64,
     building_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(pax) = sim.substrate.entities.get(passenger_id) else {
         return;
@@ -186,7 +186,7 @@ fn place_garrison_passenger_at_cell(
     // publication and Foot4D72F4 coefficient copy. Keep the enclosing borrowed
     // MapClass/overlay context and supply the RuleSet this receiver already has.
     // 4580AF..4580BD passes direction0; successful alive Techno6F6DAA snaps it.
-    let context = context.with_unlimbo_facing(Some(0));
+    let mut context = context.with_unlimbo_facing(Some(0));
     // InfantryClass::Unlimbo places the man in the exit Cell (`0x0051DFF0`
     // -> `0x00481180`, the priority arm inside the `0x00A8E7AC` bracket),
     // which also skips Object's class query. No spot leaves him in limbo.
@@ -205,7 +205,7 @@ fn place_garrison_passenger_at_cell(
             placement,
             logic_eligible: true,
         },
-        context,
+        context.reborrow(),
     );
     if !matches!(reveal, RevealOutcome::Revealed { .. }) {
         return false;
@@ -277,7 +277,7 @@ fn eject_garrison_passengers_at_edges(
     width: u16,
     height: u16,
     mode: GarrisonEjectMode,
-    uninit_context: UninitContext<'_>,
+    mut uninit_context: UninitContext<'_>,
 ) -> Option<usize> {
     if width == 0 || height == 0 {
         return Some(0);
@@ -330,12 +330,12 @@ fn eject_garrison_passengers_at_edges(
                 exit,
                 building_id,
                 mode,
-                uninit_context,
+                uninit_context.reborrow(),
             ) {
                 ejected += 1;
             } else {
                 //458193..458197: failed Unlimbo is followed by UnInit.
-                uninit_garrison_passenger_without_exit(sim, pax_id, uninit_context);
+                uninit_garrison_passenger_without_exit(sim, pax_id, uninit_context.reborrow());
             }
         }
     });
@@ -361,7 +361,7 @@ pub(crate) fn kill_building_occupants(
     sim: &mut Simulation,
     building_id: u64,
     assaulter: Option<u64>,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let ares = context.rules().ares_form();
     let Some(building) = sim.substrate.entities.get_mut(building_id) else {
@@ -403,7 +403,7 @@ pub(crate) fn kill_building_occupants(
                     id,
                     crate::sim::combat::KillSource::Techno(Some(assaulter)),
                     crate::sim::combat::KillCallback::Terminal,
-                    context,
+                    context.reborrow(),
                 );
             } else {
                 // The assaulter lives on: a callback that leaves its victim
@@ -412,11 +412,11 @@ pub(crate) fn kill_building_occupants(
                     assaulter,
                     crate::sim::combat::KillSource::Techno(Some(id)),
                     crate::sim::combat::KillCallback::OwnerChange,
-                    context,
+                    context.reborrow(),
                 );
             }
         }
-        uninit_garrison_passenger_without_exit(sim, id, context);
+        uninit_garrison_passenger_without_exit(sim, id, context.reborrow());
     }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role_mut().occupants.clear();
@@ -445,7 +445,7 @@ pub(crate) fn sell_building_occupants(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     building_id: u64,
     mode: GarrisonEjectMode,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> usize {
     let (rx, ry, width, height) = {
         let Some(entity) = sim.substrate.entities.get(building_id) else {
@@ -805,7 +805,7 @@ pub(crate) mod tests {
                         None,
                         id,
                         building_id,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                 }
             });
@@ -874,7 +874,14 @@ pub(crate) mod tests {
             // later movement, using the existing placement/facing owner.
             sim.substrate.entities.get_mut(21).unwrap().body_facing = FacingClass::new(0x4000, 0);
             assert_eq!(
-                sell_building_occupants(&mut sim, &rules, None, 20, mode, FrameEffects::default()),
+                sell_building_occupants(
+                    &mut sim,
+                    &rules,
+                    None,
+                    20,
+                    mode,
+                    &mut FrameEffects::default()
+                ),
                 1
             );
             assert_eq!(
@@ -940,7 +947,7 @@ pub(crate) mod tests {
                     &rules,
                     owner,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
             } else {
                 assert_eq!(
@@ -950,7 +957,7 @@ pub(crate) mod tests {
                         None,
                         20,
                         mode,
-                        FrameEffects::default()
+                        &mut FrameEffects::default()
                     ),
                     2
                 );
@@ -1011,7 +1018,7 @@ pub(crate) mod tests {
             &rules,
             owner,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let pax = sim.substrate.entities.get(21).unwrap();
         assert!(!pax.lifecycle.object_alive());
@@ -1059,7 +1066,7 @@ pub(crate) mod tests {
                 None,
                 20,
                 GarrisonEjectMode::Hunt,
-                FrameEffects::default()
+                &mut FrameEffects::default()
             ),
             1
         );
@@ -1152,7 +1159,7 @@ pub(crate) mod tests {
                 None,
                 building_id,
                 GarrisonEjectMode::Release,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             3
         );
@@ -1243,7 +1250,7 @@ pub(crate) mod tests {
                 None,
                 building_id,
                 GarrisonEjectMode::Release,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             3
         );
@@ -1317,7 +1324,7 @@ pub(crate) mod tests {
                         id,
                         building,
                         None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap()
                 );
@@ -1342,7 +1349,7 @@ pub(crate) mod tests {
                 },
             );
             let (_, draws) = crate::sim::rng::trace_draws(|| {
-                sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::default());
+                sim.commit_direct_damage_receiver(&rules, None, hit, &mut FrameEffects::default());
             });
             let phase = |caller: &str| {
                 draws
@@ -1407,7 +1414,7 @@ pub(crate) mod tests {
                 None,
                 building_id,
                 GarrisonEjectMode::Release,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             1
         );
@@ -1454,7 +1461,7 @@ pub(crate) mod tests {
                 None,
                 building_id,
                 GarrisonEjectMode::PlayerSell,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             1
         );
@@ -1502,7 +1509,7 @@ pub(crate) mod tests {
                 None,
                 building_id,
                 GarrisonEjectMode::Release,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             1
         );
@@ -1546,7 +1553,7 @@ pub(crate) mod tests {
                 None,
                 building_id,
                 GarrisonEjectMode::Release,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             0
         );

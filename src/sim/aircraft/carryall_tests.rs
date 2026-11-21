@@ -209,7 +209,7 @@ fn a_tethered_unit_refuses_want_ride() {
             RadioMessage::WantRide,
             RadioPayload::default(),
             &fx.rules,
-            Default::default(),
+            &mut Default::default(),
         )
     };
     assert_eq!(want_ride(&mut fx), RadioResponse::Roger);

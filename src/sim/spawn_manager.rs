@@ -1035,7 +1035,7 @@ pub(crate) fn spawn_manager_ai(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1055,7 +1055,7 @@ pub(crate) fn commit_spawn_manager_pool(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1088,7 +1088,7 @@ pub(crate) fn notify_pointer_expired(
     listener_id: u64,
     expired_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1107,7 +1107,7 @@ pub(crate) fn clear_all_spawn_targets(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1403,7 +1403,10 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         };
         requested.put_location(launch);
         requested.copy_level_from(&owner_position);
-        let context = self.context.with_unlimbo_facing(Some(launch_dir));
+        let context = self
+            .context
+            .reborrow()
+            .with_unlimbo_facing(Some(launch_dir));
         let Some((position, placement)) =
             self.sim
                 .unlimbo_class_entry(child, requested, PlacementEvidence::EvaluateMark, rules)
@@ -1504,7 +1507,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child,
             target,
             self.context.rules(),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -1518,7 +1521,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .get(child)
             .is_none_or(|child| child.lifecycle.in_limbo());
         if !in_limbo {
-            self.sim.techno_limbo_with_context(child, self.context);
+            self.sim
+                .techno_limbo_with_context(child, self.context.reborrow());
         }
     }
 
@@ -1566,7 +1570,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn uninit(&mut self, child: u64) {
-        self.sim.uninit_with_context(child, self.context);
+        self.sim.uninit_with_context(child, self.context.reborrow());
     }
 
     fn push(&mut self, child: u64, target: Option<TargetKind>) {

@@ -1066,7 +1066,7 @@ mod tests {
             americans,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             credits(&sim, americans),
@@ -1118,7 +1118,7 @@ mod tests {
             soviets,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(credits(&sim, soviets), before);
         run_ticks(&mut sim, &rules, 99 * 2);

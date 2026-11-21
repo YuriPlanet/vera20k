@@ -364,7 +364,7 @@ fn tick_building_cloak(
     id: u64,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some((edge, state)) = sim
         .substrate
@@ -569,7 +569,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
         // sensor-count resident callback `0x006F4EB0`, argument zero.
         .map(|cloak| cloak.start_cloaking(facts.current_frame, facts.cloaking_speed, false));
     if start.is_some_and(|start| start.transitioned) {
-        start_cloaking_detach(sim, id, rules, FrameEffects::default());
+        start_cloaking_detach(sim, id, rules, &mut FrameEffects::default());
     }
     if start.is_some_and(|start| start.play_sound) {
         emit_cloak_transition_sound(sim, id, rules, false);
@@ -579,7 +579,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
             targeter_id,
             Some(TargetKind::Entity(id)),
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     SensorCloakReevaluation {
@@ -683,7 +683,7 @@ fn start_cloaking_detach(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
     let player = sim.session.current_house();
@@ -949,7 +949,7 @@ pub(super) fn tick_stock_cloak_producer(
     id: u64,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;

@@ -319,14 +319,14 @@ fn eject_head_passenger(
     sim: &mut Simulation,
     rules: &RuleSet,
     transport_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> EjectOutcome {
     match depart_cargo_head(
         sim,
         rules,
         transport_id,
         DepartureRoute::Vehicle,
-        |sim, pax_id| {
+        |sim, pax_id, effects| {
             let now = sim.session.binary_frame();
             let (base, facing16, transport_z, height, leave_sound) = {
                 let transport = sim
@@ -607,7 +607,7 @@ pub(crate) fn building_mission_unload_absorber(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some((base, facing16, building_owner, extra_power, height)) =
@@ -640,7 +640,7 @@ pub(crate) fn building_mission_unload_absorber(
         rules,
         id,
         DepartureRoute::Absorber,
-        |sim, passenger_id| {
+        |sim, passenger_id, effects| {
             let Some(passenger_category) = sim
                 .substrate
                 .entities
@@ -811,7 +811,7 @@ pub(crate) fn ares_tunnel_mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<i32> {
     let tunnel = sim.ares_tunnel_type(id, rules)?;
     let owner = sim.substrate.entities.get(id)?.owner();
@@ -851,7 +851,7 @@ fn ares_tunnel_unload_one(
     owner: crate::sim::intern::InternedId,
     tunnel: usize,
     member: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let now = sim.session.binary_frame();
     let Some((base, facing16, height, fallback_z, sound, coords)) =
@@ -988,7 +988,7 @@ pub(crate) fn unit_mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -1215,7 +1215,7 @@ pub(crate) fn mission_unload(
     id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let entity = sim.substrate.entities.get(id).expect("dispatched aircraft");
     match entity.mission.handler_state() {
@@ -1368,7 +1368,7 @@ fn eject_from_aircraft(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     aircraft_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     let mut picked_up = false;
     let mut passenger = None;
@@ -1377,7 +1377,7 @@ fn eject_from_aircraft(
         rules,
         aircraft_id,
         DepartureRoute::LandedAircraft,
-        |sim, pax_id| {
+        |sim, pax_id, effects| {
             // `0x0041552E`: with the head popped, the aircraft leaves its Cell
             // (`MapClass::Pick_Up`), taking its list entry and raw bit along.
             sim.foot_pick_up(aircraft_id, rules, overlay_registry);

@@ -54,7 +54,7 @@ fn stock_cloak_producer_healthy_trace_uses_type_speed_and_no_rng() {
         id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -96,7 +96,7 @@ fn stock_cloak_producer_healthy_trace_uses_type_speed_and_no_rng() {
             id,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert_eq!(
@@ -134,7 +134,7 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
         id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -159,7 +159,7 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
         id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -197,7 +197,7 @@ fn chrono_warp_surfaces_a_fully_cloaked_sub() {
         id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -241,7 +241,7 @@ fn stock_cloak_producer_honors_rank_selected_cloak_ability() {
         ranked,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -537,7 +537,7 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
             id,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -558,7 +558,7 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
         id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -660,7 +660,7 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
         cloaker,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -774,7 +774,7 @@ fn a_dive_reaches_every_registered_object_but_leaves_radio_contacts_intact() {
         cloaker,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(
@@ -847,7 +847,7 @@ fn a_sensing_house_keeps_both_target_and_destination_across_a_dive() {
         cloaker,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let sensing_after = sim.substrate.entities.get(sensing).unwrap();
@@ -1145,7 +1145,7 @@ fn a_dive_breaks_contact_zero_only_with_a_house_its_owner_is_not_allied_with() {
             cloaker,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let cloaker = sim.substrate.entities.get(cloaker).unwrap();
@@ -1197,7 +1197,7 @@ fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
         tank,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate.entities.get(tank).unwrap().cloak.is_some(),
@@ -1216,7 +1216,7 @@ fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
         sub,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let facts = stock_cloak_tick_facts(&sim, sub, &rules, None).expect("sub facts");
     assert!(!facts.can_auto_cloak, "ForceDecloak vetoes the ready check");
@@ -1259,7 +1259,7 @@ fn a_cloak_granted_building_fades_out_and_a_sensor_beside_it_brings_it_back() {
             id,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(id).unwrap();
         let cloak = entity.cloak.as_ref().unwrap();
@@ -1359,7 +1359,7 @@ fn a_natural_particle_system_goes_with_the_cloak_and_comes_back_with_it() {
             id,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         sim.substrate
             .entities

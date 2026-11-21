@@ -73,7 +73,7 @@ pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !sim.substrate.entities.get(id).is_some_and(|e| {
         e.lifecycle.object_alive()
@@ -203,7 +203,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (i32, bool) {
         let mut bridge_changed = false;
         // Native always has a cell; without one VERA fires at nothing rather
@@ -451,7 +451,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -484,7 +484,7 @@ impl Simulation {
         id: u64,
         completed_doing: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let next = match completed_doing {
             27 => 28,
@@ -527,7 +527,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
         let actor = self
             .substrate

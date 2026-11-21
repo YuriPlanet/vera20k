@@ -60,7 +60,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         type_id: InternedId,
         origin: (u16, u16),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(registry) = registry else {
             return;
@@ -103,7 +103,7 @@ impl Simulation {
         type_id: InternedId,
         foundation: &crate::rules::foundation::Foundation,
         origin: (u16, u16),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let cells: Vec<_> =
             crate::sim::crew_survival::foundation_cells(origin.0, origin.1, foundation).collect();

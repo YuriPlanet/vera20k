@@ -22,7 +22,7 @@ impl Simulation {
         building: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let mut index = 0;
         let mut changed = false;

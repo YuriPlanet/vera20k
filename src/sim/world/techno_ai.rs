@@ -89,10 +89,22 @@ use crate::sim::world::SimSoundEvent;
 /// and Terrain state from the Simulation). Empty in
 /// barebones fixtures — handlers that need an absent piece degrade the same
 /// way the legacy global phases did with `None` arguments.
-#[derive(Default, Clone, Copy)]
+/// It holds the frame's effects handle by value; callers lend it as
+/// `&mut ObjectAiCtx`.
+#[derive(Default)]
 pub(crate) struct ObjectAiCtx<'a> {
     pub(crate) effects: super::FrameEffects<'a>,
     pub(crate) overlay_registry: Option<&'a OverlayTypeRegistry>,
+}
+
+impl ObjectAiCtx<'_> {
+    /// The same context for a holder that keeps it by value for one call.
+    pub(crate) fn reborrow(&mut self) -> ObjectAiCtx<'_> {
+        ObjectAiCtx {
+            effects: self.effects.reborrow(),
+            overlay_registry: self.overlay_registry,
+        }
+    }
 }
 
 /// Ephemeral outputs of a single live AI visit, forwarded to the frame result.
@@ -301,7 +313,7 @@ impl Simulation {
     /// per-category AI position (see `Simulation::mission_host_promote`).
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn object_ai_stage(&mut self, rules: Option<&RuleSet>) {
-        self.object_ai_stage_with(rules, ObjectAiCtx::default());
+        self.object_ai_stage_with(rules, &mut ObjectAiCtx::default());
     }
 
     /// The post-movement Ready→Commence checkpoint.
@@ -396,7 +408,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
         // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
@@ -542,12 +554,12 @@ impl Simulation {
             rules,
             ctx.overlay_registry,
             &result.detonations,
-            ctx.effects,
+            &mut ctx.effects,
         );
         if terminal {
             let retired = self.retire_non_entity_object(
                 id,
-                super::UninitContext::new(rules).with_effects(ctx.effects),
+                super::UninitContext::new(rules).with_effects(&mut ctx.effects),
             );
             debug_assert!(retired);
         }
@@ -559,7 +571,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         // Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50) replaces
         // WaveClass::AI: a wave whose weapon has AmbientDamage first damages
@@ -575,7 +587,7 @@ impl Simulation {
                 rules,
                 ctx.overlay_registry,
                 &request,
-                ctx.effects,
+                &mut ctx.effects,
             );
         }
         let context =
@@ -595,13 +607,13 @@ impl Simulation {
                 rules,
                 ctx.overlay_registry,
                 &request,
-                ctx.effects,
+                &mut ctx.effects,
             );
         }
         if !result.alive {
             let retired = self.retire_non_entity_object(
                 id,
-                super::UninitContext::new(rules).with_effects(ctx.effects),
+                super::UninitContext::new(rules).with_effects(&mut ctx.effects),
             );
             debug_assert!(retired);
         }
@@ -615,7 +627,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
         let kind = self.classify_object(id);
@@ -636,7 +648,7 @@ impl Simulation {
         match kind {
             Some(ObjectKind::Entity) => {}
             Some(ObjectKind::Anim) => {
-                match self.visit_anim(id, rules, ctx.overlay_registry, ctx.effects) {
+                match self.visit_anim(id, rules, ctx.overlay_registry, &mut ctx.effects) {
                     Ok(changed) => outcome.bridge_state_changed = changed,
                     Err(error) => {
                         outcome.frame_error = Some(super::FrameAdvanceError::new(
@@ -653,12 +665,12 @@ impl Simulation {
                 self.visit_spotlight(
                     id,
                     rules,
-                    super::UninitContext::new(rules).with_effects(ctx.effects),
+                    super::UninitContext::new(rules).with_effects(&mut ctx.effects),
                 );
                 return outcome;
             }
             Some(ObjectKind::VoxelAnim) => {
-                match self.visit_voxel_anim(id, rules, ctx.effects) {
+                match self.visit_voxel_anim(id, rules, &mut ctx.effects) {
                     Ok(changed) => outcome.bridge_state_changed = changed,
                     Err(error) => {
                         outcome.frame_error = Some(super::FrameAdvanceError::new(
@@ -676,20 +688,20 @@ impl Simulation {
                     self,
                     rules,
                     id,
-                    super::UninitContext::new(rules).with_effects(ctx.effects),
+                    super::UninitContext::new(rules).with_effects(&mut ctx.effects),
                 );
                 return outcome;
             }
             Some(ObjectKind::Terrain) => {
                 // TerrainClass::AI @ 0x0071C730 calls ObjectClass::AI first
                 // (`0x0071C738`).
-                self.object_ai_sounds(id, rules, ctx.effects);
+                self.object_ai_sounds(id, rules, &mut ctx.effects);
                 if let Err(error) = crate::sim::terrain_spawn::tick_terrain_object_ai(
                     self,
                     id,
                     rules,
                     ctx.overlay_registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 ) {
                     outcome.frame_error = Some(super::FrameAdvanceError::new(
                         self.session.tick(),
@@ -710,7 +722,7 @@ impl Simulation {
 
         // Building43FB20 samples its operational edge before delayed Health0
         // cleanup. A live dying-animation diversion must not skip that edge.
-        self.visit_building_operational(id, rules, ctx.overlay_registry, ctx.effects);
+        self.visit_building_operational(id, rules, ctx.overlay_registry, &mut ctx.effects);
         // `BuildingClass_AI_Radiation @ 0x43FB23` follows that edge sample and
         // runs for every live building each frame. Phobos owns the branch;
         // retail leaves buildings untouched by radiation.
@@ -725,7 +737,7 @@ impl Simulation {
                 rules,
                 id,
                 ctx.overlay_registry,
-                ctx.effects,
+                &mut ctx.effects,
             )
         {
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
@@ -786,7 +798,7 @@ impl Simulation {
             if finished {
                 self.uninit_with_context(
                     id,
-                    super::UninitContext::new(rules).with_effects(ctx.effects),
+                    super::UninitContext::new(rules).with_effects(&mut ctx.effects),
                 );
             }
             return outcome;
@@ -817,7 +829,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: Option<&RuleSet>,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> bool {
         self.object_ai_visit_one_with_effects(
             id,
@@ -830,7 +842,11 @@ impl Simulation {
     /// [`Simulation::object_ai_stage`] with the world context the dispatched
     /// mission handler bodies need (the production spine entry).
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn object_ai_stage_with(&mut self, rules: Option<&RuleSet>, ctx: ObjectAiCtx<'_>) {
+    pub(crate) fn object_ai_stage_with(
+        &mut self,
+        rules: Option<&RuleSet>,
+        ctx: &mut ObjectAiCtx<'_>,
+    ) {
         let visited = self.object_ai_walk(cfg!(debug_assertions), rules, ctx);
 
         #[cfg(debug_assertions)]
@@ -859,7 +875,7 @@ impl Simulation {
         &mut self,
         record: bool,
         rules: Option<&RuleSet>,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> Vec<u64> {
         let mut visited: Vec<u64> = Vec::new();
         self.for_each_live_object(|sim, id| {
@@ -902,7 +918,7 @@ fn techno_ai_shell(
     id: u64,
     category: EntityCategory,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) {
     // AircraftClass::AI's first act, ahead of its TemporalClass::Update
@@ -940,7 +956,7 @@ fn techno_ai_shell(
     }
     // Unit73635B..7363A3: the art `DeathFrames=` count, which may end it.
     if category == EntityCategory::Unit
-        && sim.unit_death_count(id, rules, ctx.overlay_registry, ctx.effects)
+        && sim.unit_death_count(id, rules, ctx.overlay_registry, &mut ctx.effects)
     {
         return;
     }
@@ -976,7 +992,7 @@ fn techno_ai_shell(
     // ApplyMindControlRangeLimit`, after the leaf's own steps and before the
     // common Techno body's estimated-health recover.
     #[cfg(feature = "phobos")]
-    sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, ctx.effects);
+    sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, &mut ctx.effects);
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.
@@ -1008,7 +1024,7 @@ fn techno_ai_shell(
         // (`BuildingClass::GetWeapon @ 0x004526F0`).
         // The supported Foot mission cadence branches run here as well.
         EntityCategory::Infantry => {
-            if !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None) {
+            if !techno_common_steps(sim, id, rules, ctx.overlay_registry, &mut ctx.effects, None) {
                 return;
             }
             clear_passive_target_off_mission(sim, id, rules);
@@ -1031,8 +1047,8 @@ fn techno_ai_shell(
             if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
                 return;
             }
-            target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-            techno_common_post(sim, id, rules, ctx.effects);
+            target_reach_step(sim, id, rules, ctx.overlay_registry, &mut ctx.effects);
+            techno_common_post(sim, id, rules, &mut ctx.effects);
         }
         EntityCategory::Structure => {
             // Building43FC39 damage-fire (run above, before the warp
@@ -1056,7 +1072,7 @@ fn techno_ai_shell(
                 id,
                 rules,
                 ctx.overlay_registry,
-                ctx.effects,
+                &mut ctx.effects,
                 Some(turret_rotate_sample),
             ) {
                 return;
@@ -1084,7 +1100,7 @@ fn techno_ai_shell(
                 return;
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
-            techno_common_post(sim, id, rules, ctx.effects);
+            techno_common_post(sim, id, rules, &mut ctx.effects);
             // Ares BuildingClass_Update_SensorArray10016E30 (hook43FE69),
             // after Update's IsAlive test.
             if rules.ares() && ai_alive(&sim.substrate, id) {
@@ -1144,8 +1160,9 @@ fn techno_ai_shell(
                         })
                 });
                 if ready {
-                    let context = super::UninitContext::new(rules).with_effects(ctx.effects);
-                    sim.techno_limbo_with_context(id, context);
+                    let mut context =
+                        super::UninitContext::new(rules).with_effects(&mut ctx.effects);
+                    sim.techno_limbo_with_context(id, context.reborrow());
                     // `0x004400CB..0x004400D4`: SpawnSurvivors(C4AppliedBy).
                     sim.spawn_building_survivors(
                         rules,
@@ -1161,7 +1178,7 @@ fn techno_ai_shell(
                                 },
                             )
                         },
-                        ctx.effects,
+                        context.effects(),
                     );
                     sim.apply_fatal_lifecycle_stage(
                         rules,
@@ -1206,7 +1223,7 @@ fn techno_ai_shell(
                         rules,
                         ctx.overlay_registry,
                         id,
-                        ctx.effects,
+                        &mut ctx.effects,
                     );
             }
             crate::sim::production::update_repair_and_power(
@@ -1214,7 +1231,7 @@ fn techno_ai_shell(
                 rules,
                 id,
                 ctx.overlay_registry,
-                ctx.effects,
+                &mut ctx.effects,
             );
             // A `Factory=` type's own production (`0x004401BB..0x004401CD`).
             let has_factory = sim
@@ -1229,14 +1246,18 @@ fn techno_ai_shell(
                     rules,
                     id,
                     ctx.overlay_registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 );
             }
             // BuildingClass::Update consumes the shared C4/PostMortem latch at
             // its late tail. Keep the forced receiver inline in this object's
             // LogicVector visit so nested death effects precede the next slot.
-            outcome.bridge_state_changed |=
-                sim.tick_pending_building_detonation(id, rules, ctx.overlay_registry, ctx.effects);
+            outcome.bridge_state_changed |= sim.tick_pending_building_detonation(
+                id,
+                rules,
+                ctx.overlay_registry,
+                &mut ctx.effects,
+            );
             // Ares BuildingClass_Update_FirestormWall (10014B40, hook
             // 0x440378) ahead of the range drop: a `Firestorm.Wall` section's
             // flicker and victims (`UpdateFirewall(false)`).
@@ -1246,7 +1267,7 @@ fn techno_ai_shell(
                         .is_some_and(|object| object.building_type_ext().firestorm_wall)
                 })
             {
-                sim.ares_update_firewall(id, false, rules, ctx.overlay_registry, ctx.effects);
+                sim.ares_update_firewall(id, false, rules, ctx.overlay_registry, &mut ctx.effects);
             }
             // The range drop that ends the Update (`0x00440378`).
             building_missions::range_drop(sim, id, rules, ctx);
@@ -1270,11 +1291,12 @@ fn techno_ai_shell(
             // Ares 3.0 AACombat (1005C190, hook 0x414D36) jumps past the
             // airborne drop to the cloaked-target test: an aircraft keeps an
             // airborne Target.
-            let dropped = !rules.ares() && drop_airborne_target_step(sim, id, rules, ctx.effects);
+            let dropped =
+                !rules.ares() && drop_airborne_target_step(sim, id, rules, &mut ctx.effects);
             if !dropped {
-                drop_unsensed_cloaked_target_step(sim, id, rules, ctx.effects);
+                drop_unsensed_cloaked_target_step(sim, id, rules, &mut ctx.effects);
             }
-            if !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None) {
+            if !techno_common_steps(sim, id, rules, ctx.overlay_registry, &mut ctx.effects, None) {
                 return;
             }
             clear_passive_target_off_mission(sim, id, rules);
@@ -1291,7 +1313,7 @@ fn techno_ai_shell(
             if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
                 return;
             }
-            techno_common_post(sim, id, rules, ctx.effects);
+            techno_common_post(sim, id, rules, &mut ctx.effects);
         }
     }
 }

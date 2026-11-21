@@ -285,7 +285,7 @@ fn ares_nuke_without_a_silo_drops_its_payload() {
         typ,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let bullets: Vec<_> = sim.projectiles.iter().collect();
@@ -478,7 +478,7 @@ fn ares_dominator_captures_through_its_state_machine() {
             typ,
             cell,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         )
     };
@@ -488,7 +488,7 @@ fn ares_dominator_captures_through_its_state_machine() {
             sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     tick(&mut sim);
@@ -560,7 +560,7 @@ fn ares_mutator_spares_cyborgs_and_kills_natural_infantry() {
         typ,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(

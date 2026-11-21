@@ -398,7 +398,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
                 &snap,
                 &weapon,
                 bullet,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
         assert!(draws.is_empty());
@@ -414,7 +414,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
             restored.run_team_ai_pass(
                 &retail.rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let state = restored.team_script_vm.team(team.unwrap()).unwrap();
             assert_eq!(state.cursor(), 1);

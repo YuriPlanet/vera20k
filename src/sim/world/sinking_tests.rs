@@ -52,7 +52,7 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
         crate::sim::world::UninitContext::new(&rules),
     );
     Simulation::close_kill_record(&mut sim.substrate, id);
-    sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
+    sim.begin_ship_sinking(id, &rules, &mut crate::sim::world::FrameEffects::default());
     (sim, rules, id)
 }
 
@@ -75,8 +75,12 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         sim.mapgen_rng = SimRng::new(seed);
         sim.substrate.entities.get_mut(id).unwrap().sinking.active =
             input["sinking"].as_u64().unwrap_or(1) != 0;
-        let terminal =
-            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+        let terminal = sim.tick_ship_sinking(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         let entity = sim.substrate.entities.get(id).unwrap();
         let coord = position_world_coord(&entity.position);
         assert_eq!(
@@ -186,10 +190,19 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     for frame in 1..=60 {
         sim.session.set_binary_frame_for_test(frame);
         loaded.session.set_binary_frame_for_test(frame);
-        let terminal =
-            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+        let terminal = sim.tick_ship_sinking(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         assert_eq!(
-            loaded.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default()),
+            loaded.tick_ship_sinking(
+                id,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            ),
             terminal
         );
         assert_eq!(loaded.state_hash(), sim.state_hash(), "frame {frame}");
@@ -540,7 +553,7 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
     // A second Stun (Unit setter, Path[0] = -1, Stop_Driver) clears the
     // destination, retaining the committed head.
     sim.stun(id, UninitContext::new(&rules));
-    sim.advance_live_object_turn(id, &rules, ObjectAiCtx::default())
+    sim.advance_live_object_turn(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     let hull = sim.substrate.entities.get(id).unwrap();
     assert_eq!(

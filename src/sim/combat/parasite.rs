@@ -347,7 +347,7 @@ impl Simulation {
         owner: u64,
         victim: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         // AttachTo629A989..629A9D4 clears old grapple progress and its
@@ -406,7 +406,7 @@ impl Simulation {
         &mut self,
         owner: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(cell) = self
             .substrate
@@ -425,8 +425,8 @@ impl Simulation {
                 .map(NativeCellQuery::canonical)
                 .as_ref(),
         );
-        let context = UninitContext::new(rules).with_effects(effects);
-        if !self.parasite_unlimbo_owner(owner, coords, 0, rules, effects) {
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        if !self.parasite_unlimbo_owner(owner, coords, 0, rules, context.effects()) {
             self.uninit_with_context(owner, context);
             return;
         }
@@ -450,7 +450,7 @@ impl Simulation {
         owner: u64,
         clear_archive: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.mega_mission(owner).is_attack_move() {
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
@@ -477,7 +477,12 @@ impl Simulation {
     /// A successful ExitUnit or PointerExpired release re-adds the owner to
     /// its team to rejoin (`+0x434`, `Add_Member(owner, 0)` at `0x0062A759`
     /// and `0x0062A3BC`), which asks `Can_Add`.
-    fn parasite_rejoin_team(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn parasite_rejoin_team(
+        &mut self,
+        owner: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         if let Some(team) = self.team_script_vm.team_to_rejoin(owner) {
             self.team_add_member(team, owner, false, rules, effects);
         }
@@ -487,7 +492,7 @@ impl Simulation {
     /// (`0x0062A71C`, `0x0062A37F`) for a human player's house
     /// (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), then Select (vt+0x14C,
     /// `0x0062A744`/`0x0062A3A7`) with the current voice latch.
-    fn parasite_reselect(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn parasite_reselect(&mut self, owner: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         let Some(entity) = self.substrate.entities.get(owner) else {
             return;
         };
@@ -507,7 +512,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(owner) = self
@@ -681,7 +686,7 @@ impl Simulation {
         &mut self,
         owner: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(owner_entity) = self.substrate.entities.get(owner) else {
@@ -788,7 +793,7 @@ impl Simulation {
         owner: u64,
         expired: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(state) = self
@@ -1137,7 +1142,7 @@ impl Simulation {
         coord: DriveCoord,
         facing: u8,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::world::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest};
         let rx = (coord.x / 256) as u16;
@@ -1187,7 +1192,7 @@ impl Simulation {
         weapon: &crate::rules::weapon_type::WeaponType,
         bullet: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(firer) else {
@@ -1282,7 +1287,7 @@ impl Simulation {
         expired: u64,
         removed: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let removed = !rules.ares() || removed;
         let Some(eater) = self
@@ -1341,7 +1346,7 @@ impl Simulation {
         raw_damage: i32,
         warhead: crate::sim::intern::InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(eater) = self
@@ -1395,7 +1400,7 @@ impl Simulation {
         eater: u64,
         suppression: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         if let Some(state) = self

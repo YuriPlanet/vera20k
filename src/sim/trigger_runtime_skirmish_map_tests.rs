@@ -154,7 +154,7 @@ fn advance_queued_frame(runtime: &mut SimRuntime) -> crate::sim::world::SimFrame
             &due,
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("the production order and master frame complete")
 }

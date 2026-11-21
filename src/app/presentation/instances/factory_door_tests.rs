@@ -76,7 +76,7 @@ fn unloading_factory(rules: &RuleSet, product: &str, unload: bool) -> (Simulatio
         rules,
         factory,
         product,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     if unload {
         sim.queue_order_mission(factory, MissionType::Unload, rules);

@@ -736,7 +736,7 @@ mod tests {
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("empty frame completes")
         };
@@ -806,7 +806,7 @@ mod tests {
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("the frame completes");
             output.multiplayer_checksum.unwrap().checksum.unwrap().value
@@ -958,7 +958,7 @@ mod tests {
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("the frame completes");
 

@@ -70,7 +70,7 @@ pub(super) fn resolve_attacker_fire(
     binary_frame: u32,
     has_active_wave: bool,
     out: &mut CombatEmit,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> FireReach {
     let mut reach = FireReach::default();
     if let Some(shot) = admit_attacker_fire(
@@ -127,7 +127,7 @@ fn admit_attacker_fire<'r>(
     has_active_wave: bool,
     reach: &mut FireReach,
     out: &mut CombatEmit,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<AdmittedFire<'r>> {
     let sound_enabled = sound_enabled(world);
     let delayed_building_slot = match snap.building_shot {
@@ -655,7 +655,7 @@ fn unit_fire_tail(
     fire_error: Option<fire_error::FireError>,
     fire_hull: Option<u16>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if unit_reaches_fire_update(world, id) {
         world.unit_fire_update_tail(
@@ -712,7 +712,7 @@ fn visit_without_target(
     world: &mut Simulation,
     visit: &FireVisit,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let holds_target = |world: &Simulation, id: u64| {
         world
@@ -1227,7 +1227,7 @@ fn reveal_on_fire(
         FireDisclosurePath::Shot if admitted.is_empty() => return,
         FireDisclosurePath::Shot => admitted,
     };
-    let context = crate::sim::world::UninitContext::new(rules);
+    let mut context = crate::sim::world::UninitContext::new(rules);
     let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
     // FireAt6FDE73..6FDF5A / 6FF66C..6FF73D may read PlayerPtr's
@@ -1299,7 +1299,7 @@ fn reveal_on_fire(
                 Some(&heights),
                 false,
                 &config,
-                context,
+                context.reborrow(),
                 crate::sim::vision::MapRevealProjection::Fire,
                 Some(house),
             );
@@ -1310,7 +1310,7 @@ fn reveal_on_fire(
                     house,
                     local_origin,
                     6,
-                    context,
+                    context.reborrow(),
                 );
             }
         }
@@ -1321,7 +1321,7 @@ fn reveal_on_fire(
             house,
             origin,
             4,
-            context,
+            context.reborrow(),
         );
     }
 }
@@ -1470,7 +1470,7 @@ pub(super) fn emit_admitted_fire(
     binary_frame: u32,
     out: &mut CombatEmit,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     // Infantry51DF70 clears68D for every direct FireAt caller, including
     // Guard521432 and a launch subsequently refused by Techno6FDD50.
@@ -2504,7 +2504,7 @@ fn fireat_tail(
     snap: &AttackerSnapshot,
     weapon: &WeaponType,
     bullet: Option<u64>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if weapon.limbo_launch {
         world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, bullet, rules, effects);
@@ -2644,7 +2644,7 @@ fn commit_fire_bookkeeping(
     rules: &RuleSet,
     emit: &mut CombatEmit,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let spawn_target_updates = std::mem::take(&mut emit.spawn_target_updates);
     let drain_links = std::mem::take(&mut emit.drain_links);
@@ -2837,7 +2837,7 @@ fn infantry_fire_tail(
     id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(actor) = world.substrate.entities.get(id) else {
         return;
@@ -3041,7 +3041,7 @@ pub(crate) fn visit_fire(
     boundary.commit(world, run, rules, overlay_registry, emit, pings);
     for removed in emit.remove_attack.drain(remove_start..) {
         world
-            .assign_target_represented(removed, None, rules, FrameEffects::default())
+            .assign_target_represented(removed, None, rules, &mut FrameEffects::default())
             .expect("FireAt target receiver remains retained");
     }
     if let Some(id) = infantry_tail {
@@ -3182,7 +3182,8 @@ pub(crate) fn tick_combat(
     remove_attack.sort_unstable();
     remove_attack.dedup();
     for &attacker_id in &remove_attack {
-        let _ = world.assign_target_represented(attacker_id, None, rules, FrameEffects::default());
+        let _ =
+            world.assign_target_represented(attacker_id, None, rules, &mut FrameEffects::default());
     }
 
     // Push the synchronously selected death sounds to the presentation sink.
@@ -3380,7 +3381,7 @@ mod reveal_on_fire_tests {
             &sim.interner,
             sim.session.binary_frame(),
         );
-        sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+        sim.visit_building_operational(gap, &rules, None, &mut FrameEffects::default());
         assert!(!sim.fog.is_cell_revealed(viewer, cell.0, cell.1));
         assert_eq!(
             sim.fog.by_owner()[&viewer].ground_flags_raw()[index] & 0x18,

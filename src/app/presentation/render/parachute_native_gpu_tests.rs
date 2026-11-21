@@ -179,7 +179,7 @@ impl Scene {
                     self.canopy,
                     &self.runtime.resources.rules,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
         }

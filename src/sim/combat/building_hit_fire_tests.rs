@@ -173,7 +173,7 @@ fn sparky_attached_fire_survives_save_and_healing_then_uses_owner_expiry() {
         assert_eq!(fire.owner_entity(), None);
         assert!(fire.runtime().inactive);
         restored
-            .visit_anim(id, &rules, None, FrameEffects::default())
+            .visit_anim(id, &rules, None, &mut FrameEffects::default())
             .unwrap();
         restored.process_pending_delete();
         assert!(restored.anim(id).is_none());

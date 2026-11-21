@@ -188,7 +188,7 @@ impl Simulation {
         tunnel: usize,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if crate::sim::radio::transmit(
             self,
@@ -222,7 +222,7 @@ impl Simulation {
         tunnel: usize,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(category) = self.substrate.entities.get_mut(foot).map(|entity| {
             entity.set_archive_target(None);
@@ -322,7 +322,7 @@ impl Simulation {
         &mut self,
         building: u64,
         killer: Option<u64>,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         let rules = context.rules();
         let Some(tunnel) = self.ares_tunnel_type(building, rules) else {
@@ -343,7 +343,7 @@ impl Simulation {
         }
         while let Some(foot) = self.ares_tunnels.pop(owner, tunnel) {
             self.leave_team(foot, false, rules, context.effects());
-            self.record_kill_and_uninit(foot, killer, context);
+            self.record_kill_and_uninit(foot, killer, context.reborrow());
         }
     }
 
@@ -360,7 +360,7 @@ impl Simulation {
         building: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(tunnel) = self.ares_tunnel_type(building, rules) else {
             return;

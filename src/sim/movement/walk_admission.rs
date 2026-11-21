@@ -42,7 +42,7 @@ impl Simulation {
         request: WalkAdmissionRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         if self.walk_tube_head(id, rules, registry, frame_effects)? {
@@ -126,7 +126,7 @@ impl Simulation {
         code: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         let packed = coord_cell(candidate);
@@ -250,7 +250,7 @@ impl Simulation {
             code,
             rules,
             registry,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -301,7 +301,7 @@ impl Simulation {
         request: WalkAdmissionRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -376,7 +376,7 @@ impl Simulation {
         cell: NativeCellIdentity,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -440,7 +440,7 @@ impl Simulation {
         blocker: Option<BlockingObject>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let target = match blocker {
             Some(BlockingObject::Entity(blocker)) => {
@@ -508,7 +508,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate

@@ -176,7 +176,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     0,
                     0,
                     rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
             sim.substrate
@@ -287,7 +287,7 @@ fn replay_crew_row(row: &Value) {
         rules,
         Some(super::harvest_field_oracle_tests::registry()),
         refinery,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     // The crew in construction order; a deleted crewman left nothing.
@@ -489,7 +489,7 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
                     building,
                     production::SellOrder::Player,
                     Some(overlay),
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             let grid = s.sim.path_grid_snapshot();
@@ -682,7 +682,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             cursors(&sim),

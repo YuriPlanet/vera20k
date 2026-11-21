@@ -624,7 +624,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
             &command,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
     };
     let frame = |sim: &mut Simulation| {

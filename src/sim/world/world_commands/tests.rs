@@ -349,7 +349,7 @@ fn network_match_refuses_selling_another_houses_wall() {
             &sale,
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     };
     let wall = |sim: &Simulation| sim.overlay_grid.as_ref().unwrap().cell(1, 1).overlay_id;
@@ -391,7 +391,7 @@ fn accepted_archive_keeps_its_tokens_after_capture_and_resolves_missing_target_t
         ArchiveRecord::decode(&record).unwrap().target,
         MegaMissionTarget::Object { id: 43 }
     );
-    sim.change_owner_with_rules(42, new_owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(42, new_owner, &rules, None, &mut FrameEffects::default());
     sim.substrate.entities.remove(43);
     let queued = sim.take_frame_commands_for_test();
     assert_eq!(queued.len(), 1);
@@ -450,7 +450,13 @@ fn queued_sale_retains_issuer_across_capture_and_does_not_readmit_can_sell() {
         )
         .unwrap();
     assert!(sim.admit_native_command_record(record.clone()));
-    sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(
+        building,
+        new_owner,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "sale", 0);
     let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -531,7 +537,13 @@ fn accepted_repair_resolves_the_captured_building_and_stale_target_at_dispatch()
         .set(300);
     let record = sim.encode_repair_record(old_owner, building).unwrap();
     assert!(sim.admit_native_command_record(record.clone()));
-    sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(
+        building,
+        new_owner,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(
         !sim.substrate
             .entities
@@ -1190,12 +1202,12 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
         .seldom
         .radio_contacts
         .set_slot(0, 1);
-    assert!(sim.unit_dock_now(1, &rules, None, FrameEffects::default()));
+    assert!(sim.unit_dock_now(1, &rules, None, &mut FrameEffects::default()));
     // This fixture starts at a completed, stopped arrival. Give the
     // building its first visit before a new Drive Process: a fresh
     // Process with Enter/NavCom but no retained destination re-aims the
     // Drive (4B0971..4B09A6), so it is no longer this stopped boundary.
-    update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+    update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
     assert_eq!(
         sim.substrate
             .entities
@@ -1223,7 +1235,7 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let state = sim
             .substrate
@@ -1318,7 +1330,7 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
             &mut sim,
             1,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     );
     assert_eq!(
