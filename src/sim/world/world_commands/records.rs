@@ -988,6 +988,7 @@ impl Simulation {
             // not replace the native record held by queues/replay/snapshots.
             let entity_id = u64::try_from(event.entity_id).ok()?;
             return match event.target {
+                // The Cell words are carried as the MegaMission arm's below.
                 MegaMissionTarget::Cell { x, y } => envelope(Command::SetRally {
                     rx: x as u16,
                     ry: y as u16,
@@ -1046,7 +1047,7 @@ impl Simulation {
         }
         if record.opcode() == crate::sim::command::LATENCY_FUDGE_OPCODE {
             return envelope(Command::SetLatencyFudge {
-                value: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
+                value: i32::from_le_bytes(record.payload_field::<0, 4>()),
             });
         }
         // PlanMgr637E00/638120 owns the payload and validates live actors.
@@ -1076,6 +1077,11 @@ impl Simulation {
             if typed.auxiliary != MegaMissionTarget::Null {
                 return raw();
             }
+            // A Cell word is the native signed short, carried bit for bit
+            // in the u16 (-1 is 0xFFFF): every consumer reads it back as i16
+            // (`TargetKind::cell_identity`), and a cell off the map, which a
+            // peer may name, resolves to the shared fallback CellClass as
+            // `MapClass::Get_CellClass` does (`Self::resolve_event_token`).
             let target = |token: MegaMissionTarget| -> Option<Option<combat::TargetKind>> {
                 Some(match token {
                     MegaMissionTarget::Null => None,
@@ -1115,8 +1121,8 @@ impl Simulation {
                 },
                 MegaMissionOrder::Move { target_x, target_y } => Command::Move {
                     entity_id,
-                    target_rx: u16::try_from(target_x).ok()?,
-                    target_ry: u16::try_from(target_y).ok()?,
+                    target_rx: target_x as u16,
+                    target_ry: target_y as u16,
                 },
                 MegaMissionOrder::MoveToObject { id } => Command::MoveToObject {
                     entity_id,
@@ -1158,7 +1164,7 @@ impl Simulation {
             _ => None,
         };
         if let Some(command) = house_index_event {
-            let other = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
+            let other = i32::from_le_bytes(record.payload_field::<0, 4>());
             return envelope(command(other));
         }
 
