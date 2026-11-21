@@ -383,7 +383,6 @@ impl PerformanceOverlay {
 
     /// Upload `instances` and draw each `(texture, start, count)` range of
     /// them in order over the window surface.
-    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         gpu: &GpuContext,

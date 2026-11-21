@@ -1132,7 +1132,6 @@ impl Simulation {
     /// `BridgeRepairHut=` carrier's bridge (`0x0043896A`/`0x00438982`), then
     /// detach the cue (`0x00438995`, VocHandle405FD0).
     /// Returns whether a bridge changed.
-    #[allow(clippy::too_many_arguments)]
     fn bomb_blast_tail(
         &mut self,
         blast: &BombBlast,

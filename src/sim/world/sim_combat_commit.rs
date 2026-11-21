@@ -771,7 +771,13 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-        #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_variables))]
+        #[cfg_attr(
+            not(any(test, feature = "test-support")),
+            allow(
+                unused_variables,
+                reason = "only the test-support receiver records into it"
+            )
+        )]
         effects: &mut crate::sim::combat::DeathEffects,
     ) {
         let destroyable_cliff = self

@@ -482,7 +482,6 @@ pub(super) fn mission_attack_prism(
 /// `cPrismForwarding::AcquireSlaves_MultiStage @ 100185B0`: stage 0 recruits
 /// for `target` itself one chain link further; a later stage recurses into
 /// each tower already feeding it, rereading the list as it grows.
-#[allow(clippy::too_many_arguments)]
 fn acquire_slaves_multi_stage(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -731,7 +730,6 @@ fn set_charge_delay(sim: &mut Simulation, rules: &RuleSet, master: u64, longest_
 /// raises that link's charge delay to its type's `ChargeDelay` plus the next
 /// link's (unless `end` is the last link) and its countdown to its own
 /// `+0x714`; signed compares against the zeroed arrays.
-#[allow(clippy::too_many_arguments)]
 fn charge_delay_get(
     sim: &Simulation,
     rules: &RuleSet,

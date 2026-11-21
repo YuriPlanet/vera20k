@@ -1543,7 +1543,10 @@ impl UnitModel {
 
     /// What a posed draw rasterizes, its parameters and its native draw
     /// bounds: a ground part alone, or the body with its gun parts.
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "one private draw tuple, named by its doc"
+    )]
     fn pose_draw(
         &self,
         key: &UnitSpriteKey,
@@ -1680,7 +1683,6 @@ impl UnitModel {
     /// instead selects no HVA and separately renders its shadow. Neither
     /// stores the image: `use_buffer` is 0xB43180 at the draw, and `depth`
     /// the shared depth map it reads and writes (None: a clear one).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn render_matrix(
         &self,
         matrix: glam::Mat4,

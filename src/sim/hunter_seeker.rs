@@ -534,7 +534,6 @@ impl crate::sim::world::Simulation {
     }
 
     /// `ReceiveDamage(&damage, 0, warhead, attacker, true, true, NULL)`.
-    #[allow(clippy::too_many_arguments)]
     fn hunter_seeker_strike(
         &mut self,
         victim: u64,

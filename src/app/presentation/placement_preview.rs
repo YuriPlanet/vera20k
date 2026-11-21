@@ -75,7 +75,6 @@ impl PlacementPreviewArt {
 
     /// Build the one preview instance for this frame, loading and retaining
     /// the resolved SHP on first use.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_instance(
         &mut self,
         device: &wgpu::Device,
@@ -130,7 +129,6 @@ impl PlacementPreviewArt {
         Some(instance)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn load_preview(
         &mut self,
         device: &wgpu::Device,

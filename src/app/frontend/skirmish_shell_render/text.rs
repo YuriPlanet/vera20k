@@ -264,7 +264,6 @@ pub(super) const fn validation_modal_body_text_align() -> ShellAlign {
 /// the authored numbers and the glyphs are emitted at `scale` x, so a stretched
 /// page keeps gamemd's text metrics instead of re-wrapping a resized rect.
 /// `1.0` is the retail path, byte-for-byte.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn push_text_draw(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,

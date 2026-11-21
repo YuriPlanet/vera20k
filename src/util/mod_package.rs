@@ -3,6 +3,17 @@
 //! Keep the returned folder alive while using paths resolved within it. The
 //! package files stay in place and a failed preparation publishes no files.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::io;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -818,6 +829,7 @@ mod native {
             // SAFETY: both arguments are NUL-terminated and live for the call.
             #[cfg(target_os = "macos")]
             let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+            // SAFETY: both arguments are NUL-terminated and live for the call.
             #[cfg(target_os = "linux")]
             let result = unsafe {
                 libc::renameat2(

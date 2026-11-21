@@ -1304,7 +1304,6 @@ impl FactoryRegistry {
     /// A freshly-armed build has no rate yet; the caller constructs its Techno
     /// and [`Factory::resume`] arms it. `cost` is resolved by the caller
     /// (which holds `&rules`) so this stays `&sim`-free.
-    #[allow(clippy::too_many_arguments)]
     fn enqueue(
         &mut self,
         owner: InternedId,

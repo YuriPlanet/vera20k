@@ -5,6 +5,17 @@
 //! Theme catalog scan `7207F0` stores the resulting whole seconds. Its IMA rate
 //! is deliberately different from both the WAV average rate and playback length.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::ops::Range;
 
 use crate::assets::ima_adpcm::ImaBlockDecoder;

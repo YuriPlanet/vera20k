@@ -1213,7 +1213,6 @@ mod tests {
 
     /// The one Mark port on load-local cells through the production load
     /// host, outside a reader row (handle 0, synthetic Recalc inputs).
-    #[allow(clippy::too_many_arguments)]
     fn mark_live(
         terrain: &mut ResolvedTerrainGrid,
         cells: &mut LiveOverlayCells,

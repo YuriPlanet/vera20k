@@ -165,7 +165,6 @@ pub(super) fn push_new_edit_instances(
 /// inside the frame from the first visible unit, and an open IME composition
 /// is spliced in at the caret in the composition colour (`app::input::ime`),
 /// the rest in `rgb`.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn push_new_edit(
     controls: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,

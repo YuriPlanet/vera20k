@@ -844,7 +844,6 @@ pub(crate) fn ares_tunnel_mission_unload(
 /// search fails, and drops a member whose Put fails; VERA keeps that
 /// member in the network. Trigger: no free cell for its SpeedType, or a
 /// refused Unlimbo. Frequency: rare.
-#[allow(clippy::too_many_arguments)]
 fn ares_tunnel_unload_one(
     sim: &mut Simulation,
     rules: &RuleSet,

@@ -236,7 +236,6 @@ impl Simulation {
     ///
     /// RESIDUAL: 3.0 keeps (leaks) an object whose Put fails and still
     /// returns true; VERA deletes it. A coordinate off the map creates none.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_spawn_visceroid(
         &mut self,
         coord: DriveCoord,
@@ -599,7 +598,6 @@ impl Simulation {
     /// through the same `MapClass::GetCellAt` lookup the walk uses; the
     /// shared Dummy has no overlay. A non-tiberium overlay passes the hook
     /// but CellChainReact ignores it.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_area_damage_chain_reaction(
         &mut self,
         impact: (u16, u16),

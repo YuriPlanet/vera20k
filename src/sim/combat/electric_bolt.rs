@@ -190,7 +190,6 @@ pub(crate) fn create_effect(
 }
 
 /// `ares_ext` is whether the bolt carries the weapon's Ares WeaponTypeExt.
-#[allow(clippy::too_many_arguments)]
 fn emit(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,

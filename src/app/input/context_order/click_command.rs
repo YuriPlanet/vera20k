@@ -557,7 +557,6 @@ pub(super) fn cell_harvest_order(
 /// receiver's destination resolves. Planning Mode clicks reach the same
 /// receiver loop (`0x004ABF94`), so they flash too; a plan's execution clears
 /// the latch around its own ClickedAction (`0x004DC96F..0x004DC984`).
-#[allow(clippy::too_many_arguments)]
 pub(super) fn push_move_flash(
     queued: &mut Vec<CommandEnvelope>,
     sim: &crate::sim::world::Simulation,

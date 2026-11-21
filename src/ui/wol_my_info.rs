@@ -511,7 +511,7 @@ pub(crate) struct WolMyInfoLayout {
     pub(crate) labels: [RectPx; 10],
     /// [`COMBOS`] order: the whole window (checked against the oracle) and
     /// its closed face.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "only the oracle tests read it"))]
     pub(crate) combos: [RectPx; 5],
     pub(crate) faces: [RectPx; 5],
     pub(crate) auto_login: RectPx,

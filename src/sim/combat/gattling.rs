@@ -171,7 +171,6 @@ impl GattlingState {
     /// `GetWeapon(2 * stage)` names no WeaponType (a stage past the authored
     /// weapons); VERA plays nothing and leaves the latch clear. Unreachable
     /// with retail data.
-    #[allow(clippy::too_many_arguments)]
     pub fn increase<C>(
         &mut self,
         table: &GattlingStages,

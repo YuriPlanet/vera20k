@@ -692,7 +692,7 @@ impl PreparedScenarioLoad {
     }
 }
 
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "one stage per loading session; Prepared carries the Selected request onward"
 )]

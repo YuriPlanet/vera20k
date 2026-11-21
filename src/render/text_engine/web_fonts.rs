@@ -23,7 +23,7 @@
 //! fetched there.
 #![cfg_attr(
     not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
-    allow(dead_code)
+    expect(dead_code, reason = "only the browser build fetches fonts")
 )]
 
 use std::path::Path;
@@ -99,7 +99,10 @@ pub(super) fn fetched(place: usize) -> Option<Blob<u8>> {
 /// browser package, or elsewhere from `folder`.
 #[cfg_attr(
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
-    allow(unused_variables)
+    expect(
+        unused_variables,
+        reason = "the browser build fetches from its package"
+    )
 )]
 pub(super) fn fetch(place: usize, folder: Option<&Path>) {
     {

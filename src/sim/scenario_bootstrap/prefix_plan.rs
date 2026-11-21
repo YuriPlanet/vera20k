@@ -76,7 +76,7 @@ pub struct BoundStockOfflineFreshPrefixPlan {
 /// Family-specific inputs to the one pre-Fill Simulation handoff. Campaigns
 /// construct the authored House array on this owner; they never synthesize an
 /// offline start assignment or a draw-free projection of that assignment.
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "built once per scenario load and consumed immediately"
 )]

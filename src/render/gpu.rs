@@ -740,6 +740,7 @@ impl GpuContext {
         // defines for a lost device, and the guard is dropped before the
         // device could be.
         let hal = unsafe { self.device.as_hal::<wgpu::hal::api::Dx12>() }?;
+        // SAFETY: as above: a read of the live hal device.
         let result = unsafe { hal.raw_device().GetDeviceRemovedReason() };
         let error = match result {
             Ok(()) => return Some("DirectX reports no removal".to_owned()),

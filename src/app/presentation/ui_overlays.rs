@@ -1585,7 +1585,6 @@ fn shield_pip_frame(
 /// `bracket` is the native bracket anchor after the class fixed offsets;
 /// `bracket_delta` is the shield's own `BracketDelta` (foot only).
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn shield_bar_instances(
     entity: &ObjectRecord,
     rules: &RuleSet,
@@ -1751,7 +1750,6 @@ fn phobos_insignia_type<'r>(
 /// hook replaces the native rank block whenever the Phobos capability is
 /// compiled in, so the stock negative-rank frame19 arm is not reached.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn phobos_insignia_draw<'a>(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,

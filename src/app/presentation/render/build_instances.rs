@@ -354,8 +354,10 @@ pub(super) fn build_world_instances(
             let slot = match member.kind {
                 ObjectKind::Record { slot, span } if window.reaches(span) => slot,
                 ObjectKind::Record { slot, .. } => {
-                    debug_assert!(
-                        frame
+                    // The cross-check runs the visitors on the passed-by
+                    // object into a scratch list: debug builds only.
+                    if cfg!(debug_assertions) {
+                        let draws_nothing = frame
                             .record_at(slot)
                             .zip(instances::layer_draw_band(member.layer))
                             .is_none_or(|(entity, band)| {
@@ -367,10 +369,13 @@ pub(super) fn build_world_instances(
                                     visit(&mut scratch, entity);
                                 }
                                 scratch.is_empty()
-                            }),
-                        "object {} was passed by but draws",
-                        member.id
-                    );
+                            });
+                        assert!(
+                            draws_nothing,
+                            "object {} was passed by but draws",
+                            member.id
+                        );
+                    }
                     continue;
                 }
                 ObjectKind::Debris => {

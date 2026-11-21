@@ -180,7 +180,6 @@ impl Simulation {
     /// `TunnelData::CanEnterTunnel @ 100097D0`: `foot` asks `building`
     /// CAN_LOAD (RadioCommand QueryCanEnter) and, on ROGER, enters `house`'s
     /// network of type `tunnel`. Answers whether it went in.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_can_enter_tunnel(
         &mut self,
         foot: u64,
@@ -215,7 +214,6 @@ impl Simulation {
     ///
     /// RESIDUAL: native clears OnBridge before Limbo; VERA clears it after,
     /// as [`crate::sim::passenger::board_passenger`] does (see there).
-    #[allow(clippy::too_many_arguments)]
     fn ares_enter_tunnel(
         &mut self,
         foot: u64,

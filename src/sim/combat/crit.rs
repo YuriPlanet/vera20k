@@ -89,7 +89,6 @@ pub(crate) struct CritRoll {
 /// `DamageArea` without one takes the owner's (`0x489286`). Returns
 /// `Crit_Active`, which the damage-animation selection reads.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn detonate(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -333,7 +332,6 @@ fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> 
 /// One `ApplyCrit`: dice, immunity/health/house/cell/techno gates in native
 /// order, then the crit's animations and damage.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn apply_one(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -440,7 +438,6 @@ fn apply_one(
 }
 
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn crit_effects(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,

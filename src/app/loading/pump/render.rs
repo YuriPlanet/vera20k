@@ -545,7 +545,6 @@ fn push_loading_participant_row(
 /// DrawLoading552F65..553057: unscaled frame0 at the three executed rectangle
 /// origins. Missing title/bar shapes fill the original black background
 /// (4E8120 initializesA83CD9..DB), with no country layers.
-#[allow(clippy::too_many_arguments)]
 fn push_campaign_loading_chrome(
     out: &mut Vec<SpriteInstance>,
     layout: &CampaignLoadingLayout,

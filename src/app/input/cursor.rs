@@ -776,7 +776,6 @@ fn unforced_cell_attack_feedback(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn empty_cell_cursor(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -867,7 +866,6 @@ fn move_action_feedback(
 /// live gamemd session always has a map and a selection here.
 ///
 /// [`Simulation::cell_move_action`]: crate::sim::world::Simulation::cell_move_action
-#[allow(clippy::too_many_arguments)]
 fn what_action_on_cell(
     sim: &crate::sim::world::Simulation,
     viewer: Option<crate::sim::intern::InternedId>,
@@ -1524,7 +1522,6 @@ fn no_selection_cursor(
 /// `0x51E710`) set InfantryHeal (0x5A) over an Organic or Infantry target and
 /// UnitRepair (0x5B) otherwise: a Unit's GRepair (0x1D) takes the override, an
 /// Infantryman's Heal (0x1B) shows it.
-#[allow(clippy::too_many_arguments)]
 fn unit_repair_feedback(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -2249,6 +2246,8 @@ fn current_cursor_clip() -> Option<(i32, i32, i32, i32)> {
         right: 0,
         bottom: 0,
     };
+    // SAFETY: `rect` is a live local RECT for GetClipCursor to write; the
+    // metric reads take no pointers.
     unsafe {
         if GetClipCursor(&mut rect) == 0 {
             return None;
@@ -2308,6 +2307,7 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
         // that starts behind its launcher, which would leave
         // `window_active` at its "starts true" default and trap the pointer
         // inside a window the player cannot see.
+        // SAFETY: GetForegroundWindow takes no arguments; only its handle is compared.
         let window_foreground = unsafe { GetForegroundWindow() } == hwnd;
         let mut rect: RECT = RECT {
             left: 0,
@@ -2315,6 +2315,8 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
             right: 0,
             bottom: 0,
         };
+        // SAFETY: `hwnd` is winit's live window, and `rect`, `tl` and `br` are
+        // live locals the calls write.
         unsafe {
             // Clip the *client* area, not the whole window: GetWindowRect would
             // include the title bar and the resize border, so the pointer could
@@ -2512,6 +2514,7 @@ pub(crate) fn release_cursor_confinement(state: &mut AppState) {
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor;
+        // SAFETY: a null rectangle is ClipCursor's documented release.
         unsafe {
             ClipCursor(std::ptr::null());
         }

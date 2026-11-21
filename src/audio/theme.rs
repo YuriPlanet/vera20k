@@ -383,10 +383,6 @@ impl ThemeRuntime {
     /// Play(saved +4) and Queue(saved +8). Reuse those same owners and observe
     /// the physical output after Play before Queue decides whether to fade.
     /// Native controls: tools/storage_oracle/sound_theme_metadata.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "native load inputs plus physical output handoff"
-    )]
     pub(crate) fn restore_saved_slots(
         &mut self,
         saved: [i32; 2],

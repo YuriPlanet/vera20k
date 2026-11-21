@@ -662,7 +662,6 @@ impl TextEngine {
     /// One glyph drawn `pixel_size` pixels tall, `native` its native size and
     /// pen phase ([`split_phase`]), with `pen` (device pixels, on the
     /// baseline) at the corner of the native pixel the pen lies in.
-    #[allow(clippy::too_many_arguments)]
     fn place_glyph(
         &mut self,
         font: u16,

@@ -661,7 +661,6 @@ impl Simulation {
     /// unprotected Foot dies, and anything else sends the arrival to
     /// another cell. Every kill is the victim's Strength as `C4Warhead=`,
     /// ignoring defenses, with no attacker or house.
-    #[allow(clippy::too_many_arguments)]
     fn ares_chrono_make_room(
         &mut self,
         id: u64,

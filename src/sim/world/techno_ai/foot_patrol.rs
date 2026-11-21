@@ -413,7 +413,6 @@ fn should_bridge(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     .expect("Patrol bridge ground")
 }
 
-#[allow(clippy::too_many_arguments)]
 fn qualifies(
     sim: &Simulation,
     id: u64,

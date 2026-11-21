@@ -292,7 +292,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 /// anywhere in that path. A Rocketeer standing on the ground is therefore an
 /// ordinary ground target and draws the ground gun; it becomes an air target
 /// only once it climbs past two levels.
-#[allow(clippy::items_after_statements)]
 fn considered_aircraft_infantry_is_air_only_while_high_flying() {
     // One fresh engagement per altitude — the attacker's ROF cooldown makes a
     // second shot in the same sim unobservable.

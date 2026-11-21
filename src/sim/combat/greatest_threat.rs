@@ -2191,11 +2191,15 @@ fn scan_cell_for_target(
                 .map(|_| id),
             _ => None,
         });
-    debug_assert!(
-        !crate::sim::touch_log::live_read_check_enabled()
-            || offered == walk_cell_list(ctx, state, rx, ry, layer),
-        "the owner-column walk disagrees with the full walk at ({rx}, {ry})"
-    );
+    // The cross-check walks the list again and so writes `state`'s memos and
+    // counters a second time: debug builds with the live-read check only.
+    if cfg!(debug_assertions) && crate::sim::touch_log::live_read_check_enabled() {
+        let full = walk_cell_list(ctx, state, rx, ry, layer);
+        assert!(
+            offered == full,
+            "the owner-column walk disagrees with the full walk at ({rx}, {ry})"
+        );
+    }
     offered
 }
 

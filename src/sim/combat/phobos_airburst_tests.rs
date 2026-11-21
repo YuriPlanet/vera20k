@@ -29,7 +29,6 @@ fn rules_ini(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rules_ini_full(
     parent: &str,
     child_weapon: &str,
@@ -74,7 +73,6 @@ struct Scene {
     victims: Vec<u64>,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_scene(
     ini: &IniFile,
     source_cell: (u16, u16),

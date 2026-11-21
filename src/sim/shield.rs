@@ -92,7 +92,10 @@ pub struct ShieldState {
     self_healing_enabled: bool,
     /// `ShieldClass::LastBreakFrame`: retained state for the later
     /// `Shield.MinimumReplaceDelay`/idle-anim chain; no consumer in this one.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(feature = "phobos"),
+        expect(dead_code, reason = "only the Phobos state hash reads it so far")
+    )]
     last_break_frame: u32,
     timers: ShieldTimers,
 }

@@ -96,7 +96,6 @@ impl DropPodFlight {
 /// the first of the eight neighbours of that cell, walked from it, the
 /// object may enter (`IsCellOccupied`, vt+0x1AC, `(-1, -1, NULL, 1)`), which
 /// becomes the current cell; an object still in limbo is deleted.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -514,7 +513,6 @@ impl Simulation {
     /// `Apply_area_damage @ 0x00489280` deals twice the weapon's Damage with
     /// its Warhead from the Foot, and the Warhead's explosion for that damage
     /// on Clear plays there (`0x0048A4F0`, `0x2600`).
-    #[allow(clippy::too_many_arguments)]
     fn drop_pod_strafe(
         &mut self,
         id: u64,
@@ -589,7 +587,6 @@ impl Simulation {
     /// warhead's explosion for that damage on Clear at the coordinate
     /// (`0x0048A4F0`, flags `0x2600`, the `0x0048ACE0` Z adjust): the strafe
     /// and a refused landing (100 `C4Warhead=`).
-    #[allow(clippy::too_many_arguments)]
     fn drop_pod_blast(
         &mut self,
         id: u64,

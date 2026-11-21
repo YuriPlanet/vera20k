@@ -160,7 +160,6 @@ pub fn draw_in_rect(
 /// divided back by `scale`) and every glyph and advance is emitted at
 /// `scale`x, so a stretched shell's caption still centres in its stretched
 /// cell. The scissor stays in window pixels.
-#[allow(clippy::too_many_arguments)]
 pub fn draw_in_rect_scaled(
     font: &BitFont,
     text: &str,
@@ -235,7 +234,6 @@ pub fn draw_in_rect_path_a(
 }
 
 /// [`draw_in_rect_path_a`] with a glyph scale; see [`draw_in_rect_scaled`].
-#[allow(clippy::too_many_arguments)]
 pub fn draw_in_rect_path_a_scaled(
     font: &BitFont,
     text: &str,

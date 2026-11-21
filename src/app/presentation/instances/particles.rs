@@ -325,7 +325,6 @@ pub(super) fn build_particle_instance(
 /// depth `-15 - AdjustForZ` and the vertical Z gradient, with the `flags`
 /// translucency selector. Ares' ExtData::Draw (`10026430`) passes the same for
 /// its smoke records. Returns the piece and its atlas page.
-#[allow(clippy::too_many_arguments)]
 fn particle_shp_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     image: &str,
