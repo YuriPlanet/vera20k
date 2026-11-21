@@ -316,6 +316,8 @@ impl Simulation {
         rules: &RuleSet,
         type_id: InternedId,
     ) -> AnimConstructorInput {
+        // The set of types that affect play is keyed by name: one probe with
+        // the name uppercased on the stack, no allocation.
         if self.effect_anims_presented()
             && rules
                 .art()

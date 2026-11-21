@@ -1161,7 +1161,12 @@ impl ScenarioSession {
     /// The Rules `[General] HarvesterUnit=` types (`+0xB3C`, filled at
     /// `0x0066F973`, VehicleTypes only) that bit `0x800` protects, as
     /// interned ids for native's type-pointer compares; empty while the bit
-    /// is clear.
+    /// is clear, which allocates nothing.
+    ///
+    /// Resolved per scan and per splash, not once when the bit is set: a
+    /// `HarvesterUnit=` name gets its id only when the first such unit is
+    /// made, and `get` adds no ids, so a list resolved earlier would miss a
+    /// type interned since. With the bit set it is one short list per call.
     pub fn truce_harvester_types(
         &self,
         rules: &crate::rules::ruleset::RuleSet,

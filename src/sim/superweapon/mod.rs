@@ -1864,6 +1864,7 @@ pub(crate) fn tick_house_superweapon_instances(
         let Some(type_id) = house_super(sim, owner, name) else {
             continue;
         };
+        // An exact-name hit in the rules' map for the order's own name.
         let sw = rules.super_weapon(name);
         let (fade, ready, drain_ended) = {
             let instance = sim
@@ -2112,7 +2113,9 @@ pub(crate) fn shorten_ares_firestorm_drain(
 /// a House's set never changes after [`construct_house_supers`], and an
 /// interned name keeps its id, so asking as the walk goes answers as a copy
 /// of the order taken before it would, without building one per House per
-/// tick.
+/// tick. Each entry is one probe of the name, uppercased on the stack, with
+/// no allocation: the rules hold the order as names and the ids are the
+/// interner's, which gives a name its id only when it is first interned.
 fn house_super(sim: &Simulation, owner: InternedId, name: &str) -> Option<InternedId> {
     let id = sim.interner.get(name)?;
     sim.super_weapons

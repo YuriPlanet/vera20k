@@ -2454,8 +2454,10 @@ pub(super) fn emit_admitted_fire(
         {
             entity.start_reloading_ammo(live_type, binary_frame as i32);
         }
-        let frames = rules
-            .unit_shp_read_state(world.interner.resolve(snap.type_id))
+        let frames = world
+            .interner
+            .object_type(snap.type_id, rules)
+            .and_then(|object| rules.unit_shp_read_state_of(object))
             .map_or(0, |layout| layout.firing_frames());
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
             crate::sim::animation::commit_unit_firing_counter(entity, frames);

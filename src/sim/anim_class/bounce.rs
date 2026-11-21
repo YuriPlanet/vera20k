@@ -224,8 +224,8 @@ impl Simulation {
         if self.bounce_cell_is_water(position, rules) && !above_deck {
             //423CDB..423DE2: a meteor uses the LAST splash, without a Wake.
             if !config.is_meteor {
-                let wake = rules.general.wake.name.clone();
-                self.spawn_named_anim(rules, &wake, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
+                let wake = &rules.general.wake.name;
+                self.spawn_named_anim(rules, wake, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
             }
             let splash = if config.is_meteor {
                 rules.combat_damage.splash_list.last()

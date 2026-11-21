@@ -282,6 +282,8 @@ impl Simulation {
                     .ok_or(TiberiumImageError::MissingOverlay(i32::from(overlay)))?
                     .cell_anim
                     .as_deref()
+                    // The overlay type holds its CellAnim= as a name, not an
+                    // AnimType handle; the compare allocates nothing.
                     .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
             } else {
                 false
@@ -1108,12 +1110,11 @@ impl Simulation {
         if stored.z.wrapping_sub(ground) >= ANIM_MIDDLE_MAX_HEIGHT {
             return;
         }
-        let type_name = self
+        // The middle frame's size is on the ART entry, which the lookup
+        // finds by the name in ASCII uppercase, on the stack.
+        let (width, height) = self
             .anim(id)
-            .map(|anim| self.interner.resolve(anim.type_id).to_ascii_uppercase());
-        let (width, height) = type_name
-            .as_deref()
-            .and_then(|name| rules.art().get(name))
+            .and_then(|anim| rules.art().get(self.interner.resolve(anim.type_id)))
             .map_or((30, 30), |entry| {
                 (i32::from(entry.frame_width), i32::from(entry.frame_height))
             });

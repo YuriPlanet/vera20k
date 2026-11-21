@@ -172,8 +172,8 @@ impl Simulation {
         anims: &mut Vec<ExplosionEffect>,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let native_unique_id = self.next_native_runtime_id();
-        let config =
-            name.and_then(|name| rules.art().anim_runtime_config(&name.to_ascii_uppercase()));
+        // The lookup matches the name in ASCII uppercase, on the stack.
+        let config = name.and_then(|name| rules.art().anim_runtime_config(name));
         let mut draws = if let Some(config) = config {
             crate::sim::anim_class::anim_constructor_draws(config, coord, &mut self.scenario_rng)?
         } else {
@@ -329,9 +329,9 @@ impl Simulation {
         rules: &RuleSet,
     ) -> crate::rules::ares_warhead::HouseSelector {
         use crate::rules::ares_warhead::HouseSelector;
-        let (selector, make_infantry) = rules
-            .art()
-            .anim_runtime_config(&self.interner.resolve(type_id).to_ascii_uppercase())
+        let (selector, make_infantry) = self
+            .interner
+            .anim_type_config(type_id, rules)
             .map_or((HouseSelector::Invoker, -1), |config| {
                 (config.ares_make_infantry_owner, config.make_infantry)
             });
