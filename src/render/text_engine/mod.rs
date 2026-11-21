@@ -45,10 +45,11 @@ pub(crate) use atlas::SUBPIXEL_STEPS;
 use atlas::{GlyphAtlas, GlyphKey, SIZE_STEPS};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
 
-/// How far a text is squeezed to fit the box it draws in: narrower letters
-/// first, along the bundled fonts' width axis, then smaller ones. VERA's own:
-/// gamemd cuts off what does not fit, and translations run longer than the
-/// English the boxes were drawn for.
+/// How far a text is squeezed to fit the box it draws in: narrower letters,
+/// along the bundled fonts' width axis. VERA's own: gamemd cuts off what does
+/// not fit, and translations run longer than the English the boxes were drawn
+/// for. What the narrowest letters still do not fit is cut off as gamemd cuts
+/// it. Only a status line's help shrinks them too ([`Fit::SHRUNK`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Fit(u8);
 
@@ -65,12 +66,17 @@ const FIT_STEPS: [(f32, f32); 5] = [
 impl Fit {
     /// The text as designed.
     pub const NONE: Self = Self(0);
-    /// The last step, where a word too long for a line splits.
-    pub const TIGHTEST: Self = Self(FIT_STEPS.len() as u8 - 1);
+    /// The narrowest letters at their own height: the last step a text
+    /// takes, where a word too long for a line splits.
+    pub const TIGHTEST: Self = Self(2);
+    /// The last step a status line's help takes, with smaller letters, so a
+    /// whole help stays on its one line. Shrunk, GAME.FNT's whole-pixel
+    /// strokes run together, so nothing else goes past [`Self::TIGHTEST`].
+    pub const SHRUNK: Self = Self(FIT_STEPS.len() as u8 - 1);
 
-    /// The next step, or `None` past the tightest.
-    pub fn tighter(self) -> Option<Self> {
-        (self < Self::TIGHTEST).then_some(Self(self.0 + 1))
+    /// The next step up to `last`, or `None` past it.
+    pub fn tighter(self, last: Self) -> Option<Self> {
+        (self < last).then_some(Self(self.0 + 1))
     }
 
     fn width(self) -> f32 {
@@ -935,11 +941,12 @@ mod tests {
     }
 
     /// A squeeze narrows GAME.FNT's own letters by the width it narrows the
-    /// bundled fonts to, before shrinking them; GAME.FNT has no width axis.
+    /// bundled fonts to (GAME.FNT has no width axis), and even the tightest
+    /// keeps their height: shrunk, their whole-pixel strokes run together.
     #[test]
-    fn a_squeeze_narrows_game_fnt_letters() {
+    fn a_squeeze_narrows_game_fnt_letters_and_keeps_their_height() {
         let mut engine = engine_with_tiny_fnt();
-        let narrowest = Fit(2);
+        let narrowest = Fit::TIGHTEST;
         let designed = engine.shape("AAAA", 0, Fit::NONE);
         let narrowed = engine.shape("AAAA", 0, narrowest);
         let slots = &engine.slots;
@@ -951,7 +958,9 @@ mod tests {
         );
         let share = narrowed.width() / designed.width();
         assert!((share - narrowest.width()).abs() < 0.01, "{share}");
-        assert!(narrowest.width() < 0.8 && narrowest.size() == 1.0);
+        assert!(narrowest.width() < 0.8);
+        let size = |shaped: &ShapedText| shaped.lines[0].glyphs[0].size;
+        assert_eq!(size(&narrowed), size(&designed));
     }
 
     /// A letter GAME.FNT lacks draws from it in its style ([`fnt_fill`]); a
@@ -1007,7 +1016,11 @@ mod tests {
         let mut engine = engine_with_tiny_fnt();
         let after_thai = engine.shape("กA", 0, Fit::NONE);
         assert!(after_thai.lines[0].glyphs[1].x.fract() != 0.0);
-        for (text, fit) in [("AAAA", Fit(2)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
+        for (text, fit) in [
+            ("AAAA", Fit::TIGHTEST),
+            ("AAAA", Fit::SHRUNK),
+            ("กA", Fit::NONE),
+        ] {
             let alpha = draw_fit(&mut engine, text, fit, 1.0, 64, 16);
             assert!(alpha.contains(&255), "{text} {fit:?}");
             assert!(alpha.iter().all(|&a| a == 0 || a == 255), "{text} {fit:?}");

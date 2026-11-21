@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use crate::render::batch::{
     BatchRenderer, BatchTexture, CameraUniform, InstanceBufferPool, SpriteInstance,
 };
-use crate::render::bit_font::BitFont;
+use crate::render::bit_font::{BitFont, Fit};
 use crate::render::gpu::GpuContext;
 
 use super::state::FrameTimer;
@@ -481,7 +481,7 @@ fn layout_rows(
     let max_width = placement.max_width / scale;
     for row in rows.iter_mut() {
         let fit = font
-            .first_fit(|font| row_width(font, row) <= max_width)
+            .first_fit(Fit::TIGHTEST, |font| row_width(font, row) <= max_width)
             .unwrap_or_else(|tightest| tightest);
         font.fitted(fit, |font| {
             fit_row(font, row, max_width);

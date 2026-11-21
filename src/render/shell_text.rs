@@ -7,7 +7,8 @@
 //! ([`BitFont::fit_box`]); only what the tightest squeeze still leaves over
 //! is cut off as gamemd cuts it. A right-panel caption flagged
 //! [`ShellAlign::PANEL_FACE`] squeezes onto one line on the art it labels,
-//! which is narrower than its rect.
+//! which is narrower than its rect. A status line's help, flagged
+//! [`ShellAlign::STATUS_LINE`], may also shrink its letters to stay whole.
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit, LineSpan, TextRaster};
@@ -32,6 +33,9 @@ impl ShellAlign {
     pub const BUTTON_CAPTION: ShellAlign = ShellAlign(0x01 | 0x04 | 0x08);
     /// The right panel's title, centred in its window.
     pub const PANEL_TITLE: ShellAlign = ShellAlign(0x01 | 0x08);
+    /// VERA's own: a status line's help, which squeezes on to smaller
+    /// letters ([`Fit::SHRUNK`]) to keep the whole help on its one line.
+    pub const STATUS_LINE: ShellAlign = ShellAlign(0x10);
 
     pub fn contains(self, flag: ShellAlign) -> bool {
         (self.0 & flag.0) != 0
@@ -104,6 +108,8 @@ fn squeeze(font: &BitFont, text: &str, native: TextRect, flags: ShellAlign) -> F
     if flags.contains(ShellAlign::PANEL_FACE) {
         let face = font.fit_line(text, native.w.min(RIGHT_PANEL_FACE_W));
         font.fitted(face, |font| font.fit_box(text, native.w, native.h))
+    } else if flags.contains(ShellAlign::STATUS_LINE) {
+        font.fit_box_until(text, native.w, native.h, Fit::SHRUNK)
     } else {
         font.fit_box(text, native.w, native.h)
     }
@@ -366,9 +372,10 @@ mod tests {
     }
 
     /// VERA's status help, the longest text a shell line holds, fits the
-    /// status line's text box on one line at the tightest squeeze in every
-    /// shipped language and the pseudo-language, in both font options (the
-    /// Original one from retail GAME.FNT), so none loses its end.
+    /// status line's text box on one line at a status line's tightest
+    /// squeeze ([`Fit::SHRUNK`]) in every shipped language and the
+    /// pseudo-language, in both font options (the Original one from retail
+    /// GAME.FNT), so none loses its end.
     #[test]
     fn every_status_help_fits_the_status_line_in_every_language() {
         use crate::render::bit_font::tests::{make_original_test_font, make_vector_test_font};
@@ -390,7 +397,7 @@ mod tests {
         let texts = crate::i18n::shipped_texts(|label| label.ends_with("HELP"));
         assert!(texts.len() > 40 * 3, "{}", texts.len());
         let fits = |font: &BitFont, text: &str| {
-            font.fitted(Fit::TIGHTEST, |font| {
+            font.fitted(Fit::SHRUNK, |font| {
                 let layout = font.wrap_layout(text, text_box.w as u32);
                 layout.lines.len() == 1 && !layout.split_word && layout.width <= text_box.w as u32
             })
@@ -483,7 +490,7 @@ mod tests {
     #[test]
     fn a_button_caption_too_long_for_the_face_is_squeezed_onto_it() {
         let font = crate::render::bit_font::tests::make_vector_test_font();
-        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~~~]";
+        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~]";
         let natural = font.text_width(text);
         assert!(natural > RIGHT_PANEL_FACE_W && natural < 154, "{natural}");
         let rect = TextRect {
