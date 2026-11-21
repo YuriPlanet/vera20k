@@ -23,17 +23,21 @@ fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     )
 }
 
-/// Where VERA's roster's entries end in this window, in 800x600 pixels:
-/// over the team bar, which holds the Teams count in a room with teams and
-/// the host's Room size.
-pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i32 {
+/// Where VERA's roster's entries fit in this window: over the team bar,
+/// which holds the Teams count in a room with teams and the host's Room
+/// size, and two groups abreast on a wide one.
+pub(crate) fn roster_frame(
+    state: &AppState,
+    teams: bool,
+    room_size: bool,
+) -> crate::ui::multiplayer_setup::RosterFrame {
     let mut layout = page_layout(state);
     layout.fit_team_bar(
         crate::app::shell_network_setup::dialog(state),
         teams,
         room_size,
     );
-    layout.roster_bottom
+    layout.roster_frame()
 }
 
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {

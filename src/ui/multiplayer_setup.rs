@@ -91,6 +91,11 @@ const ROSTER_BOX_MARGIN: (i32, i32) = (5, 3);
 /// when they do not all fit.
 const ROSTER_INSET: i32 = 5;
 const ROSTER_SPARE_W: i32 = 34;
+/// On a window wide enough that each half of the roster's width holds
+/// entries this wide (a 16:9 one, with the chat at its least), its groups
+/// stand two abreast, their boxes [`ROSTER_GROUP_GAP`] apart.
+const ROSTER_PAIR_MIN_W: i32 = 260;
+const ROSTER_PAIR_GAP: i32 = 2 * ROSTER_BOX_MARGIN.0 + ROSTER_GROUP_GAP;
 /// The roster's entries at their full width, from their left edge: a row's
 /// Player, Side, Colour, Start and Team cells, as left edge and width; a
 /// header's caption, the host's Add AI and, at the row's right end, its Join:
@@ -138,18 +143,59 @@ struct RosterColumns {
 }
 impl RosterColumns {
     fn new(column: RectPx) -> Self {
-        let w = column.w - ROSTER_SPARE_W;
+        Self::across(column.x + ROSTER_INSET, column.w - ROSTER_SPARE_W)
+    }
+    /// Entries `w` wide from `x`.
+    fn across(x: i32, w: i32) -> Self {
         let narrow = |length: i32| length * w.clamp(0, ROSTER_W) / ROSTER_W;
         let first = ROSTER_CELLS[0].0;
         let at = |dx: i32| first + narrow(dx - first);
         Self {
-            x: column.x + ROSTER_INSET,
+            x,
             w,
             cells: ROSTER_CELLS.map(|(dx, width)| (at(dx), narrow(width))),
             caption_w: narrow(ROSTER_CAPTION_W),
             add_ai: (at(ROSTER_ADD_AI.0), narrow(ROSTER_ADD_AI.1)),
             join_w: narrow(ROSTER_JOIN_W),
         }
+    }
+    fn half_w(self) -> i32 {
+        (self.w - ROSTER_PAIR_GAP) / 2
+    }
+    /// Whether the roster's groups stand two abreast here.
+    fn pairs(self) -> bool {
+        self.half_w() >= ROSTER_PAIR_MIN_W
+    }
+    /// The entries of `span`: the whole width, or one half of it.
+    fn span(self, span: RosterSpan) -> Self {
+        let half = self.half_w();
+        match span {
+            RosterSpan::Full => self,
+            RosterSpan::Left => Self::across(self.x, half),
+            RosterSpan::Right => Self::across(self.x + self.w - half, half),
+        }
+    }
+    /// The column labels over the cells. The narrow cells' (Colour, Start
+    /// and Team) centre on their cell over the step from one to the next,
+    /// so their words still read where the cells are narrower than them.
+    fn labels(self, scale: ShellScale) -> impl Iterator<Item = (&'static str, RectPx)> {
+        let step = self.cells[3].0 - self.cells[2].0;
+        [
+            "GUI:Players",
+            "GUI:Side",
+            "GUI:Color",
+            "GUI:StartPosition",
+            "GUI:Team",
+        ]
+        .into_iter()
+        .zip(self.cells)
+        .enumerate()
+        .map(move |(index, (key, (dx, w)))| {
+            let wide = if index < 2 { w } else { step.max(w) };
+            let x = self.x + dx - (wide - w) / 2;
+            let label = RectPx::new(x, ROSTER_LABEL_Y, wide, ROSTER_LABEL_H);
+            (key, scale.scale_rect(label))
+        })
     }
 }
 /// The roster's text, as a share of the shell's own size.
@@ -167,93 +213,190 @@ pub(crate) enum RosterItem {
     Row,
     Header(SetupGroup),
 }
-impl RosterItem {
-    const fn height(self) -> i32 {
-        match self {
-            Self::Row => ROSTER_ROW_H,
-            Self::Header(_) => ROSTER_HEADER_H,
-        }
-    }
+
+/// Which part of VERA's roster's width an entry takes: all of it, or where
+/// its groups stand two abreast ([`RosterFrame::pairs`]), one half.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RosterSpan {
+    Full,
+    Left,
+    Right,
 }
 
-/// Where an entry of VERA's roster stands: which entry, and its top at
-/// 800x600.
+/// Where an entry of VERA's roster stands: which entry, its top at 800x600,
+/// and its part of the roster's width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RosterPlace {
     pub(crate) item: usize,
     pub(crate) y: i32,
     pub(crate) header: bool,
+    pub(crate) span: RosterSpan,
 }
 
-/// The entries VERA's roster shows from entry `top` down its one column,
-/// until one no longer fits above `bottom` (800x600 pixels: over the team
-/// bar in a room with one, [`MultiplayerSetupLayout::roster_bottom`]). When `top` is a player under
-/// a header above it, that header stays pinned first, so the group keeps
-/// its caption and Join. A header under another group leaves
+/// Where VERA's roster's entries fit: above `bottom` (800x600 pixels: over
+/// the team bar in a room with one), and whether the window is wide enough
+/// for its groups to stand two abreast
+/// ([`MultiplayerSetupLayout::roster_frame`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RosterFrame {
+    pub(crate) bottom: i32,
+    pub(crate) pairs: bool,
+}
+
+/// A line of VERA's roster: one entry across it, or, where its groups stand
+/// two abreast, a group's entry on each half, either missing beside a
+/// longer group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RosterLine {
+    entries: [Option<usize>; 2],
+    paired: bool,
+    header: bool,
+}
+impl RosterLine {
+    fn height(self) -> i32 {
+        if self.header {
+            ROSTER_HEADER_H
+        } else {
+            ROSTER_ROW_H
+        }
+    }
+    fn first(self) -> Option<usize> {
+        self.entries.into_iter().flatten().next()
+    }
+    fn places(self, y: i32) -> impl Iterator<Item = RosterPlace> {
+        let spans = if self.paired {
+            [RosterSpan::Left, RosterSpan::Right]
+        } else {
+            [RosterSpan::Full; 2]
+        };
+        self.entries
+            .into_iter()
+            .zip(spans)
+            .filter_map(move |(item, span)| {
+                Some(RosterPlace {
+                    item: item?,
+                    y,
+                    header: self.header,
+                    span,
+                })
+            })
+    }
+}
+
+/// VERA's roster's lines: with `pairs` and two groups or more, each group
+/// beside the next, the first on the left half, in pairs down the roster
+/// (Teams A and B, then C and D); otherwise one entry a line.
+fn roster_lines(items: &[RosterItem], pairs: bool) -> Vec<RosterLine> {
+    let line = |index: usize| RosterLine {
+        entries: [Some(index), None],
+        paired: false,
+        header: matches!(items[index], RosterItem::Header(_)),
+    };
+    let starts: Vec<usize> = (0..items.len())
+        .filter(|&index| matches!(items[index], RosterItem::Header(_)))
+        .collect();
+    if !pairs || starts.len() < 2 {
+        return (0..items.len()).map(line).collect();
+    }
+    // Rows before the first header stand alone; each group runs from its
+    // header to the next one.
+    let groups: Vec<std::ops::Range<usize>> = starts
+        .iter()
+        .zip(starts[1..].iter().chain([&items.len()]))
+        .map(|(&start, &end)| start..end)
+        .collect();
+    let mut lines: Vec<RosterLine> = (0..starts[0]).map(line).collect();
+    for pair in groups.chunks(2) {
+        let (left, right) = (&pair[0], pair.get(1));
+        let len = right.map_or(0, |group| group.len()).max(left.len());
+        lines.extend((0..len).map(|k| {
+            let at = |group: &std::ops::Range<usize>| {
+                Some(group.start + k).filter(|i| group.contains(i))
+            };
+            RosterLine {
+                entries: [at(left), right.and_then(at)],
+                paired: true,
+                header: k == 0,
+            }
+        }));
+    }
+    lines
+}
+
+/// The entries VERA's roster shows from entry `top` down, until a line no
+/// longer fits above the frame's bottom. When `top` is a player under a
+/// header above it, that header stays pinned first, so the group keeps its
+/// caption and Join. A header under another group leaves
 /// [`ROSTER_GROUP_GAP`] between their boxes, and none stands at the foot
 /// without its first row.
-pub(crate) fn roster_page(items: &[RosterItem], top: usize, bottom: i32) -> Vec<RosterPlace> {
-    let pinned = items
+pub(crate) fn roster_page(
+    items: &[RosterItem],
+    top: usize,
+    frame: RosterFrame,
+) -> Vec<RosterPlace> {
+    let lines = roster_lines(items, frame.pairs);
+    let top = lines
+        .iter()
+        .position(|line| line.entries.contains(&Some(top)))
+        .unwrap_or(lines.len());
+    lines_page(&lines, top, frame.bottom)
+}
+fn lines_page(lines: &[RosterLine], top: usize, bottom: i32) -> Vec<RosterPlace> {
+    let pinned = lines
         .get(top)
-        .filter(|item| **item == RosterItem::Row)
-        .and_then(|_| {
-            items[..top]
-                .iter()
-                .rposition(|item| matches!(item, RosterItem::Header(_)))
-        });
+        .filter(|line| !line.header)
+        .and_then(|_| lines[..top].iter().rposition(|line| line.header));
     let mut places = Vec::new();
     let mut y = ROSTER_TOP;
-    for index in pinned
-        .into_iter()
-        .chain(top..items.len())
-        .take(MODERN_SETUP_ROWS)
-    {
-        let item = items[index];
-        let header = matches!(item, RosterItem::Header(_));
-        if header && y > ROSTER_TOP {
+    for index in pinned.into_iter().chain(top..lines.len()) {
+        let line = lines[index];
+        if line.header && y > ROSTER_TOP {
             y += ROSTER_GROUP_GAP;
         }
-        let first_row = if header && items.get(index + 1) == Some(&RosterItem::Row) {
+        let first_row = if line.header && lines.get(index + 1).is_some_and(|next| !next.header) {
             ROSTER_ROW_H
         } else {
             0
         };
-        if y + item.height() + first_row > bottom {
+        let count = line.entries.iter().flatten().count();
+        if y + line.height() + first_row > bottom || places.len() + count > MODERN_SETUP_ROWS {
             break;
         }
-        places.push(RosterPlace {
-            item: index,
-            y,
-            header,
-        });
-        y += item.height();
+        places.extend(line.places(y));
+        y += line.height();
     }
     places
 }
 
 /// Where VERA's roster scrolls: the entries it can show first ([`roster_page`]'s
-/// `top`), and the first of them from which every entry to the last shows.
-/// Each player's row is one, its header pinned over it; a header only when
-/// no row is under it, as it would show the same as its first row.
+/// `top`), and the first of them from which every line to the last shows.
+/// Each line of players' rows is one, its headers pinned over it; a header
+/// only when no row is under it, as it would show the same as its first
+/// row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RosterScroll {
     pub(crate) stops: Vec<usize>,
     pub(crate) max_top: usize,
 }
-pub(crate) fn roster_scroll(items: &[RosterItem], bottom: i32) -> RosterScroll {
-    let stops: Vec<usize> = (0..items.len())
+pub(crate) fn roster_scroll(items: &[RosterItem], frame: RosterFrame) -> RosterScroll {
+    let lines = roster_lines(items, frame.pairs);
+    let tops: Vec<usize> = (0..lines.len())
         .filter(|&index| {
-            items[index] == RosterItem::Row || items.get(index + 1) != Some(&RosterItem::Row)
+            !lines[index].header || lines.get(index + 1).is_none_or(|next| next.header)
         })
         .collect();
-    let max_top = stops
+    let last = lines.last().copied();
+    let max_top = tops
         .iter()
         .position(|&top| {
-            roster_page(items, top, bottom)
+            lines_page(&lines, top, frame.bottom)
                 .last()
-                .is_some_and(|place| place.item + 1 == items.len())
+                .is_some_and(|place| {
+                    last.is_some_and(|line| line.entries.contains(&Some(place.item)))
+                })
         })
         .unwrap_or(0);
+    let stops = tops.iter().filter_map(|&top| lines[top].first()).collect();
     RosterScroll { stops, max_top }
 }
 
@@ -1640,7 +1783,14 @@ impl MultiplayerSetupLayout {
         let left = window.x + ROOM_FRAME_W + ROOM_GAP;
         let right = window.x + window.w - ROOM_RIGHT_PANEL_W - ROOM_MARGIN;
         let width = right - left;
-        let chat_w = (width * CHAT_SHARE.0 / CHAT_SHARE.1).clamp(CHAT_W.0, CHAT_W.1);
+        // Where the roster's groups can stand two abreast with the chat at
+        // its least, the chat takes no more.
+        let narrow_chat = width - ROOM_GAP - CHAT_W.0;
+        let chat_w = if RosterColumns::new(RectPx::new(left, 0, narrow_chat, 0)).pairs() {
+            CHAT_W.0
+        } else {
+            (width * CHAT_SHARE.0 / CHAT_SHARE.1).clamp(CHAT_W.0, CHAT_W.1)
+        };
         let roster_w = width - ROOM_GAP - chat_w;
         let chat_x = right - chat_w;
         // Where the shell's menu boxes sit on the 800x600 page, centred
@@ -1718,17 +1868,7 @@ impl MultiplayerSetupLayout {
         );
         self.roster_area = scale.scale_rect(area);
         self.roster_columns = columns;
-        self.labels = [
-            "GUI:Players",
-            "GUI:Side",
-            "GUI:Color",
-            "GUI:StartPosition",
-            "GUI:Team",
-        ]
-        .into_iter()
-        .zip(columns.cells)
-        .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, ROSTER_LABEL_H)))
-        .collect();
+        self.labels = columns.labels(scale).collect();
         self.arrange_team_bar(true, host, host);
         // The chat's column: the log from as high as the roster's area,
         // then the edit line, and online the emote button at its right end.
@@ -1803,6 +1943,13 @@ impl MultiplayerSetupLayout {
         self.team_menu = (menus && teams).then(|| menu(0));
         self.seat_menu = menus.then(|| menu(i32::from(teams)));
     }
+    /// Where VERA's roster's entries fit ([`roster_page`]).
+    pub(crate) fn roster_frame(&self) -> RosterFrame {
+        RosterFrame {
+            bottom: self.roster_bottom,
+            pairs: self.roster && self.roster_columns.pairs(),
+        }
+    }
     /// VERA's team bar for the room: with or without teams, and with or
     /// without the host's Room size ([`Self::arrange_team_bar`]).
     pub(crate) fn fit_team_bar(&mut self, dialog: SetupDialog, teams: bool, room_size: bool) {
@@ -1812,14 +1959,21 @@ impl MultiplayerSetupLayout {
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
     /// header's caption, Add AI and Join along its band, and a row's cells
-    /// along its line.
+    /// along its line. Groups standing two abreast have the column labels
+    /// over each half.
     pub(crate) fn arrange_roster(&mut self, places: &[RosterPlace]) {
         let scale = self.page.scale;
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
-        let columns = self.roster_columns;
-        let x = columns.x;
+        if places.iter().any(|place| place.span != RosterSpan::Full) {
+            let halves = [RosterSpan::Left, RosterSpan::Right];
+            self.labels = halves
+                .into_iter()
+                .flat_map(|span| self.roster_columns.span(span).labels(scale))
+                .collect();
+        }
         for (position, place) in places.iter().enumerate().take(MODERN_SETUP_ROWS) {
-            let y = place.y;
+            let columns = self.roster_columns.span(place.span);
+            let (x, y) = (columns.x, place.y);
             if place.header {
                 self.combos[position][0] = rect(x, y, columns.caption_w, ROSTER_HEADER_H);
                 let (dx, w) = columns.add_ai;
@@ -1840,19 +1994,28 @@ impl MultiplayerSetupLayout {
                 self.roster_rows[position] = rect(x, y, columns.w, ROSTER_ROW_H);
             }
         }
-        // Each header's group: it and the rows under it.
+        // Each header's group: it and the rows under it, the entries up to
+        // the next header's.
         for (position, place) in places.iter().enumerate().take(MODERN_SETUP_ROWS) {
             if !place.header {
                 continue;
             }
-            let last = places[position + 1..]
+            let end = places
                 .iter()
-                .take_while(|next| !next.header)
-                .last()
-                .map_or(place.y + ROSTER_HEADER_H, |row| row.y + ROSTER_ROW_H);
+                .filter(|next| next.header && next.item > place.item)
+                .map(|next| next.item)
+                .min()
+                .unwrap_or(usize::MAX);
+            let last = places
+                .iter()
+                .filter(|row| (place.item + 1..end).contains(&row.item))
+                .map(|row| row.y + ROSTER_ROW_H)
+                .max()
+                .unwrap_or(place.y + ROSTER_HEADER_H);
+            let columns = self.roster_columns.span(place.span);
             let (mx, my) = ROSTER_BOX_MARGIN;
             self.group_boxes[position] = Some(rect(
-                x - mx,
+                columns.x - mx,
                 place.y - my,
                 columns.w + 2 * mx,
                 last - place.y + 2 * my,
@@ -2258,36 +2421,39 @@ mod tests {
             .collect();
         let mut layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
-        let bottom = layout.roster_bottom;
+        let frame = layout.roster_frame();
+        assert!(!frame.pairs);
         let team_bar = layout.team_bar.unwrap();
         let area = layout.roster_area;
         assert!(area.y + area.h < team_bar.y && team_bar.x == area.x);
-        let scroll = roster_scroll(&full, bottom);
+        let scroll = roster_scroll(&full, frame);
         // Each player's row and the empty spectators' header.
         assert_eq!(scroll.stops.len(), 46);
-        let top = roster_page(&full, scroll.stops[0], bottom);
+        let top = roster_page(&full, scroll.stops[0], frame);
         assert_eq!(
             top[..2],
             [
                 RosterPlace {
                     item: 0,
                     y: ROSTER_TOP,
-                    header: true
+                    header: true,
+                    span: RosterSpan::Full,
                 },
                 RosterPlace {
                     item: 1,
                     y: ROSTER_TOP + ROSTER_HEADER_H,
-                    header: false
+                    header: false,
+                    span: RosterSpan::Full,
                 }
             ]
         );
         assert!(top.last().unwrap().item < full.len() - 1);
-        let last = roster_page(&full, scroll.stops[scroll.max_top], bottom);
+        let last = roster_page(&full, scroll.stops[scroll.max_top], frame);
         assert_eq!(last.last().unwrap().item, full.len() - 1);
-        let before = roster_page(&full, scroll.stops[scroll.max_top - 1], bottom);
+        let before = roster_page(&full, scroll.stops[scroll.max_top - 1], frame);
         assert!(before.last().unwrap().item < full.len() - 1);
         // Scrolled into Team B, its header stays on top.
-        let into_b = roster_page(&full, 20, bottom);
+        let into_b = roster_page(&full, 20, frame);
         assert_eq!((into_b[0].item, into_b[0].header), (16, true));
         assert_eq!(into_b[1].item, 20);
 
@@ -2386,14 +2552,75 @@ mod tests {
         // Fifteen teams of two: from every place, the column ends above
         // its bottom with no header left without its first row.
         let many: Vec<_> = (0..15).flat_map(|index| team(index, 2)).collect();
-        let scroll = roster_scroll(&many, bottom);
+        let scroll = roster_scroll(&many, frame);
         assert_eq!(scroll.stops.len(), 30);
         for top in scroll.stops {
-            let places = roster_page(&many, top, bottom);
+            let places = roster_page(&many, top, frame);
             let foot = places.last().unwrap();
             assert!(!foot.header);
-            assert!(foot.y + ROSTER_ROW_H <= bottom);
+            assert!(foot.y + ROSTER_ROW_H <= frame.bottom);
         }
+    }
+
+    /// On a 16:9 window VERA's roster stands its groups two abreast, Team A
+    /// beside Team B and the next two under them, with the column labels
+    /// over each half and both headers pinned over a line of their rows; a
+    /// 16:10 window keeps one group under another.
+    #[test]
+    fn vera_roster_pairs_its_groups_on_a_wide_window() {
+        use RosterItem::{Header, Row};
+        use RosterSpan::{Left, Right};
+        let room =
+            |w, h| MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), w, h, true);
+        assert!(!room(1920, 1200).roster_frame().pairs);
+        let mut layout = room(1920, 1080);
+        let frame = layout.roster_frame();
+        assert!(frame.pairs);
+        let team = |team: u8, rows: usize| {
+            std::iter::once(Header(SetupGroup::Team(team))).chain(std::iter::repeat_n(Row, rows))
+        };
+        let items: Vec<_> = team(0, 5)
+            .chain(team(1, 5))
+            .chain(team(2, 6))
+            .chain([Header(SetupGroup::Spectators)])
+            .collect();
+        let places = roster_page(&items, 0, frame);
+        assert_eq!(places.len(), items.len());
+        let at = |item| places.iter().find(|place| place.item == item).unwrap();
+        assert_eq!((at(0).span, at(6).span), (Left, Right));
+        assert_eq!((at(12).span, at(19).span), (Left, Right));
+        assert_eq!((at(6).y, at(19).y), (at(0).y, at(12).y));
+        assert_eq!(at(12).y, at(5).y + ROSTER_ROW_H + ROSTER_GROUP_GAP);
+        // Team C's sixth row stands beside no other.
+        assert_eq!(at(18).y, at(17).y + ROSTER_ROW_H);
+        assert_eq!(roster_scroll(&items, frame).stops.len(), 11);
+
+        layout.arrange_roster(&places);
+        let group_box = |item| {
+            let position = places.iter().position(|place| place.item == item);
+            layout.group_boxes[position.unwrap()].unwrap()
+        };
+        let (a, b) = (group_box(0), group_box(6));
+        assert_eq!((a.y, a.h), (b.y, b.h));
+        assert!((a.w - b.w).abs() <= 1, "{a:?} {b:?}");
+        let area = layout.roster_area;
+        assert!(a.x >= area.x && a.x + a.w < b.x && b.x + b.w <= area.x + area.w);
+        let players: Vec<i32> = layout
+            .labels
+            .iter()
+            .filter(|(key, _)| *key == "GUI:Players")
+            .map(|(_, rect)| rect.x)
+            .collect();
+        assert_eq!(players.len(), 2);
+        assert!(players[0] < b.x && players[1] > b.x);
+        // Scrolled to a line of Team A's and B's rows, both headers stay on
+        // top.
+        let into_b = roster_page(&items, 9, frame);
+        let firsts: Vec<_> = into_b[..4]
+            .iter()
+            .map(|place| (place.item, place.header))
+            .collect();
+        assert_eq!(firsts, [(0, true), (6, true), (3, false), (9, false)]);
     }
 
     /// VERA's online room puts a player's badge in front of the name, in
@@ -2403,7 +2630,12 @@ mod tests {
     fn a_room_players_badge_stands_in_front_of_the_name() {
         let mut layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
-        let place = |item, y, header| RosterPlace { item, y, header };
+        let place = |item, y, header| RosterPlace {
+            item,
+            y,
+            header,
+            span: RosterSpan::Full,
+        };
         layout.arrange_roster(&[
             place(0, ROSTER_TOP, true),
             place(1, ROSTER_TOP + ROSTER_HEADER_H, false),
