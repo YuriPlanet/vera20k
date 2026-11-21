@@ -508,6 +508,13 @@ fn build_next(
     // thousand credits of reserve is thirty seconds of no infantry at all, and
     // a house with no infantry loses the army while it is saving. Only the
     // entries whose whole point is what they unlock are worth that price.
+    //
+    // The bays are one of them, and they were not: measured on Death.mmx seed
+    // 10, the list answered `Refinery` on 18 of 54 samples and the house still
+    // finished the match on one bay and two harvesters (income 1943/min against
+    // 8613 for the seed that won at tick 32491), because every credit the
+    // factories did not commit went into one more soldier. A second bay is not
+    // more army, it is the income the rest of the list is paced by.
     brain.yard_reserve = match chosen.item {
         Item::Aircraft | Item::Radar | Item::Tech | Item::Superweapon => {
             price.saturating_sub(budget.free).max(0)
@@ -655,6 +662,22 @@ fn next_building<'r>(
         }
         None => return None,
     };
+    // What the base decided on, once every forty seconds while
+    // `AUTOPLAY_TRACE_BUILD` is set: "the house builds nothing" has to name the
+    // step that is holding the list before it can be fixed, and reading the
+    // plan's own choice out of a match log is cheaper than guessing which gate
+    // never opened.
+    if std::env::var("AUTOPLAY_TRACE_BUILD").is_ok() && obs.tick() % 600 == 0 {
+        log::info!(
+            "build trace: item={:?} step={:?} free={} income={} refineries={} harvesters={}",
+            chosen.item,
+            chosen.step,
+            budget.free,
+            budget.income.unwrap_or(-1),
+            census.refineries,
+            census.harvesters,
+        );
+    }
     // `Power=` is the type's net contribution: negative is what it draws, and
     // the plant that would feed it is counted at the output it will have. The
     // lab's own `-100` is a plant the base needs before it starts the lab.

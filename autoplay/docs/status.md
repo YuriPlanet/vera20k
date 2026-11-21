@@ -46,6 +46,12 @@
 
 ### 试过并且更差的（不要重试）
 
+- **把 `Item::Refinery` 加进 `yard_reserve`**（想让第二个精炼厂也能存钱买到）：
+  同一命令下 seed 24301 从 own=158 / credits=20145 掉到 own=141 / credits=9820，
+  全局 `auto play: build` 行从 785 掉到 242——步兵被钱荒饿死，
+  `src/sim/strategy/assist/build.rs` 里那段注释早就写过这个价。
+  结论：第二个精炼厂确实一直没建（seed 10 整局 1 个），但 `yard_reserve` 不是
+  该用的工具，瓶颈不在「存不下钱」而是在别处。
 - **`ARMY_TO_ATTACK` 10 → 20**（军队门槛抬高，想「屯更多兵再出门」）：三局
   全部 timeout，连原本 32491 胜的那局也丢了。原因不是门槛本身——`army at first
   push` 三局都还是 10，说明门不是它在把；抬它把 `fist_needs` 一起抬到 20，
