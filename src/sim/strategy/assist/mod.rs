@@ -799,7 +799,7 @@ impl Brain for AssistBrain {
                     .collect(),
             );
             log::info!(
-                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{} limbo_missions=[{}] idle_missions=[{}]",
+                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{} limbo_missions=[{}] idle_missions=[{}] enemy_structures={}",
                 self.census.describe(),
                 unclaimed,
                 roster.join(","),
@@ -822,7 +822,8 @@ impl Brain for AssistBrain {
                 seen,
                 self.census.enemies.len(),
                 limbo_missions.join(","),
-                idle_missions.join(",")
+                idle_missions.join(","),
+                self.census.enemy_structures
             );
         }
         expand::deploy_yard_maker(self, rules, obs, out);

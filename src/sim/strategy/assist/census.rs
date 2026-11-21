@@ -525,6 +525,14 @@ pub(super) struct Census {
     /// building (`FootClass::ClickedAction`'s depot arm), and a cell cannot be
     /// entered.
     pub(super) repair_building: Option<u64>,
+    /// How many enemy buildings are standing, strike sites or not.
+    ///
+    /// `enemies.len()` mixes units and buildings, and the two end a match
+    /// differently: a unit is replaced from a factory that still stands, a
+    /// building is not. The status line has always shown only the mixed count,
+    /// so a seed that ended with twelve objects left could not be told apart
+    /// from one that ended with twelve rebuildable units.
+    pub(super) enemy_structures: usize,
     pub(super) harvesters: usize,
     pub(super) refineries: usize,
     pub(super) yards: usize,
@@ -706,6 +714,7 @@ impl Census {
         self.threat = [0; ROLES.len()];
         self.able = [0; ROLES.len()];
         self.enemy_strike_sites = 0;
+        self.enemy_structures = 0;
         self.own_strike_sites = 0;
         self.enemy_houses = obs.enemy_house_count();
 
@@ -860,8 +869,11 @@ impl Census {
             // The strike sites are the one enemy building count that changes a
             // posture: a base that can be erased from across the map cannot be
             // out-waited, and a base that cannot is worth defending.
-            if ty.category == ObjectCategory::Building && super::build::grants_a_strike(rules, ty) {
-                self.enemy_strike_sites += 1;
+            if ty.category == ObjectCategory::Building {
+                self.enemy_structures += 1;
+                if super::build::grants_a_strike(rules, ty) {
+                    self.enemy_strike_sites += 1;
+                }
             }
             self.enemies.push(enemy);
         }
