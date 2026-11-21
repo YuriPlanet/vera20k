@@ -16,7 +16,7 @@ struct Heard {
 }
 
 impl SoundBoundary for Heard {
-    fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+    fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
         for event in &events[self.delivered.get()..] {
             if let SimSoundEvent::UnitRepaired { owner_admitted, .. } = event {
                 assert!(*owner_admitted, "hospital already passed House50B6F0");
@@ -30,7 +30,7 @@ impl SoundBoundary for Heard {
                 world_z_leptons,
                 ..
             } = event
-                && sound_id.eq_ignore_ascii_case("HealCrate")
+                && sound_id.name_in(rules).eq_ignore_ascii_case("HealCrate")
             {
                 let hospital = sim.entities().get(self.hospital).unwrap();
                 assert_eq!(
@@ -40,7 +40,11 @@ impl SoundBoundary for Heard {
                 );
                 let patient = sim.entities().get(self.patient).unwrap();
                 assert!(patient.lifecycle.in_limbo());
-                assert_eq!(sound_id, "HealCrate", "fixed SOUNDMD identity");
+                assert_eq!(
+                    sound_id.name_in(rules),
+                    "HealCrate",
+                    "fixed SOUNDMD identity"
+                );
                 assert_eq!((*rx, *ry), (hospital.position.rx(), hospital.position.ry()));
                 assert_eq!(
                     (*sub_x, *sub_y),
@@ -104,7 +108,7 @@ fn retail_hospital_heal_sound_is_delivered_before_the_patient_leaves_cargo() {
                 arg6: false,
             },
         ),
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     assert_eq!(
         sim.entities().get(patient).unwrap().health.current(),
@@ -135,7 +139,7 @@ fn retail_hospital_heal_sound_is_delivered_before_the_patient_leaves_cargo() {
                 message,
                 RadioPayload::default(),
                 &rules,
-                FrameEffects::empty()
+                &mut FrameEffects::empty()
             ),
             RadioResponse::Roger
         );
@@ -147,22 +151,30 @@ fn retail_hospital_heal_sound_is_delivered_before_the_patient_leaves_cargo() {
         hospital,
         BoardingArm::InfantryBuilding,
         None,
-        FrameEffects::empty()
+        &mut FrameEffects::empty()
     ));
     let now = sim.session.binary_frame();
     assert!(sim.substrate.mission_commence_exact(hospital, now).unwrap());
     let _ = sim.take_sound_events_for_test();
-    let heard = Heard {
+    let mut heard = Heard {
         hospital,
         patient,
         ..Default::default()
     };
-    let effects = FrameEffects::for_sound(&heard);
-    let _ = super::building_dock::mission_repair(&mut sim, &rules, hospital, None, effects);
+    let repair = |sim: &mut Simulation, heard: &mut Heard| {
+        let _ = super::building_dock::mission_repair(
+            sim,
+            &rules,
+            hospital,
+            None,
+            &mut FrameEffects::for_sound(heard),
+        );
+    };
+    repair(&mut sim, &mut heard);
     // First tick repairs one point without completing; the next completes.
     for (health, cues, cargo) in [(strength - 1, 0, 1), (strength, 1, 0)] {
-        let _ = super::building_dock::mission_repair(&mut sim, &rules, hospital, None, effects);
-        effects.flush_sound(&sim, &rules);
+        repair(&mut sim, &mut heard);
+        FrameEffects::for_sound(&mut heard).flush_sound(&sim, &rules);
         let building = sim.entities().get(hospital).unwrap();
         assert_eq!(
             sim.entities().get(patient).unwrap().health.current(),

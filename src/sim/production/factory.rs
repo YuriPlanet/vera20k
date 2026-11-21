@@ -23,7 +23,7 @@
 mod state;
 pub use state::ProductionState;
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
 
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectType};
@@ -947,8 +947,36 @@ pub enum FactoryHolder {
 /// Deterministic registry of all factories, keyed by their holder rather
 /// than gamemd's global factory array, so it needs no fixed-size player array.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(from = "SavedFactoryRegistry")]
 pub struct FactoryRegistry {
     factories: BTreeMap<FactoryHolder, Factory>,
+    /// gamemd's Factories vector order: each factory's construction order
+    /// (`insertion_seq`) with its holder, in the order `LogicClass` runs
+    /// `FactoryClass::AI`. An index derived from `factories`: only
+    /// [`Self::insert`] and [`Self::remove`] change either, a load rebuilds
+    /// it ([`SavedFactoryRegistry`]), and saves and the state hash leave it
+    /// out. Two factories of one construction order (the strictly increasing
+    /// enqueue stamp never makes them) follow holder order.
+    #[serde(skip)]
+    construction_order: BTreeSet<(u64, FactoryHolder)>,
+}
+
+/// A saved [`FactoryRegistry`]: its factories, from which a load rebuilds the
+/// construction-order index.
+#[derive(serde::Deserialize)]
+#[serde(rename = "FactoryRegistry")]
+struct SavedFactoryRegistry {
+    factories: BTreeMap<FactoryHolder, Factory>,
+}
+
+impl From<SavedFactoryRegistry> for FactoryRegistry {
+    fn from(saved: SavedFactoryRegistry) -> Self {
+        let mut registry = Self::default();
+        for (holder, factory) in saved.factories {
+            registry.insert(holder, factory);
+        }
+        registry
+    }
 }
 
 /// An edit of existing factories cannot replace the registry or create a
@@ -960,6 +988,24 @@ pub(super) struct FactoryEdit<'a> {
 impl FactoryRegistry {
     fn edit(&mut self) -> FactoryEdit<'_> {
         FactoryEdit { registry: self }
+    }
+
+    /// Register `factory` under `holder`, in its construction order. A
+    /// factory it replaces leaves the order with it.
+    fn insert(&mut self, holder: FactoryHolder, factory: Factory) {
+        let order = factory.insertion_seq;
+        if let Some(replaced) = self.factories.insert(holder, factory) {
+            self.construction_order
+                .remove(&(replaced.insertion_seq, holder));
+        }
+        self.construction_order.insert((order, holder));
+    }
+
+    fn remove(&mut self, holder: FactoryHolder) -> Option<Factory> {
+        let factory = self.factories.remove(&holder)?;
+        self.construction_order
+            .remove(&(factory.insertion_seq, holder));
+        Some(factory)
     }
 
     /// Supply a specific construction order to attachment and placement fixtures.
@@ -1061,52 +1107,47 @@ impl FactoryRegistry {
         self.factories.is_empty()
     }
 
-    /// Iterate factories in construction (`insertion_seq`) order, the order
-    /// `LogicClass` runs `FactoryClass::AI` in (not the BTreeMap key order).
+    /// The factories in construction (`insertion_seq`) order, the order
+    /// `LogicClass` runs `FactoryClass::AI` in (not the BTreeMap key order),
+    /// as a list for validation and diagnostics; a walk takes
+    /// [`Self::holders_insertion_ordered`], which allocates nothing.
     pub fn iter_insertion_ordered(&self) -> Vec<&Factory> {
-        self.holders_insertion_ordered()
-            .into_iter()
-            .map(|(_, f)| f)
-            .collect()
+        self.holders_insertion_ordered().map(|(_, f)| f).collect()
     }
 
-    /// [`Self::iter_insertion_ordered`] with each factory's holder.
-    pub(crate) fn holders_insertion_ordered(&self) -> Vec<(FactoryHolder, &Factory)> {
-        let mut all: Vec<(FactoryHolder, &Factory)> = self
-            .factories
+    /// [`Self::iter_insertion_ordered`] with each factory's holder, read from
+    /// the stored construction order.
+    pub(crate) fn holders_insertion_ordered(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (FactoryHolder, &Factory)> {
+        debug_assert_eq!(self.construction_order.len(), self.factories.len());
+        self.construction_order
             .iter()
-            .map(|(&holder, f)| (holder, f))
-            .collect();
-        all.sort_by_key(|(_, f)| f.insertion_seq);
-        all
+            .filter_map(|&(_, holder)| Some((holder, self.factories.get(&holder)?)))
     }
 
-    /// The House-slot factories in construction order: a player's production,
-    /// which the house revalidates and delivers.
-    fn house_factories_insertion_ordered(&self) -> impl Iterator<Item = &Factory> {
-        self.holders_insertion_ordered()
-            .into_iter()
-            .filter(|(holder, _)| matches!(holder, FactoryHolder::House(..)))
-            .map(|(_, f)| f)
-    }
-
-    /// Each House factory's owner and category with its types: the object's,
-    /// then each queued one not yet listed, in construction order.
+    /// Each of `owner`'s House-slot factories (a player's production, which
+    /// the house revalidates and delivers), in construction order, with its
+    /// category and types: the object's, then each queued one not yet listed.
     pub(super) fn house_build_types(
         &self,
-    ) -> Vec<(InternedId, ProductionCategory, Vec<InternedId>)> {
-        self.house_factories_insertion_ordered()
-            .map(|f| {
-                let mut types: Vec<InternedId> = Vec::new();
-                let held = f.object.iter().map(|o| o.type_id);
-                for type_id in held.chain(f.queue.iter().map(|e| e.type_id)) {
-                    if !types.contains(&type_id) {
-                        types.push(type_id);
-                    }
-                }
-                (f.owner, f.category, types)
+        owner: InternedId,
+    ) -> impl Iterator<Item = (ProductionCategory, impl Iterator<Item = InternedId>)> {
+        self.holders_insertion_ordered()
+            .filter_map(move |(holder, f)| {
+                (matches!(holder, FactoryHolder::House(..)) && f.owner == owner).then_some(f)
             })
-            .collect()
+            .map(|f| {
+                let types = move || {
+                    let held = f.object.iter().map(|o| o.type_id);
+                    held.chain(f.queue.iter().map(|e| e.type_id))
+                };
+                let first_listings = types()
+                    .enumerate()
+                    .filter(move |&(index, type_id)| !types().take(index).any(|t| t == type_id))
+                    .map(|(_, type_id)| type_id);
+                (f.category, first_listings)
+            })
     }
 
     pub(super) fn factory(&self, holder: FactoryHolder) -> Option<&Factory> {
@@ -1148,7 +1189,7 @@ impl FactoryRegistry {
         insertion_seq: u64,
         cost: i32,
     ) {
-        self.factories.insert(
+        self.insert(
             FactoryHolder::Building(building),
             Factory {
                 owner,
@@ -1174,14 +1215,11 @@ impl FactoryRegistry {
     /// The holders of the factories house `owner` owns (`Factory+0x6C`),
     /// from the last in construction order to the first.
     pub(super) fn owner_holders_last_first(&self, owner: InternedId) -> Vec<FactoryHolder> {
-        let mut holders: Vec<FactoryHolder> = self
-            .holders_insertion_ordered()
-            .into_iter()
+        self.holders_insertion_ordered()
+            .rev()
             .filter(|(_, factory)| factory.owner == owner)
             .map(|(holder, _)| holder)
-            .collect();
-        holders.reverse();
-        holders
+            .collect()
     }
 
     /// Test-only mutable access to the first factory in sweep order (the `factories`
@@ -1241,6 +1279,14 @@ impl FactoryRegistry {
     /// (the caller's `HouseClass::CheckBuildLimit`, `0x004C9CEA`, asked
     /// before the append).
     ///
+    /// The limit is asked on the start arm too, not only on the append: native
+    /// `StartProduction` reads `CheckBuildLimit` at `0x004C9CEA` before it
+    /// arms anything, and an idle factory is the case where the limit binds
+    /// hardest — a house at its `AirportDocks=` keeps an empty aircraft line,
+    /// and every frame's PRODUCE would start another. `force` is
+    /// StartNextQueued's own reissue of a type the house already paid for, and
+    /// it does not waive the limit.
+    ///
     /// Idle means `0x004C9C95..0x004C9CCF`: no held object, rate clear or
     /// +70 set, and an empty queue, unless `force` (StartNextQueued's
     /// Begin_Production, `0x004CA60A`, passes it as `shouldQueue`). So a
@@ -1258,7 +1304,6 @@ impl FactoryRegistry {
     /// A freshly-armed build has no rate yet; the caller constructs its Techno
     /// and [`Factory::resume`] arms it. `cost` is resolved by the caller
     /// (which holds `&rules`) so this stays `&sim`-free.
-    #[allow(clippy::too_many_arguments)]
     fn enqueue(
         &mut self,
         owner: InternedId,
@@ -1274,6 +1319,13 @@ impl FactoryRegistry {
         if let Some(f) = self.factories.get_mut(&holder) {
             let idle = f.object.is_none()
                 && (force || (f.queue.is_empty() && (f.step_rate_frames == 0 || f.suspended)));
+            // 0x004C9CEA reads CheckBuildLimit before either arm. An idle line
+            // is where it binds hardest: nothing is building, so the house asks
+            // again every frame, and an AirportBound aircraft at its
+            // AirportDocks would otherwise start one more each time.
+            if idle && at_build_limit {
+                return EnqueueOutcome::AppendRefused;
+            }
             if !idle {
                 if i32::try_from(f.queue.len()).unwrap_or(i32::MAX) >= max_queued || at_build_limit
                 {
@@ -1300,8 +1352,14 @@ impl FactoryRegistry {
             f.changed = true;
             return EnqueueOutcome::Started;
         }
-        // No factory yet -> create one with the active build armed.
-        self.factories.insert(
+        // No factory yet -> create one with the active build armed, under the
+        // same 0x004C9CEA limit. Native StartProduction reads CheckBuildLimit
+        // before its create arm too, so a house at its limit keeps its line
+        // from being armed even though FindFactory answered.
+        if at_build_limit {
+            return EnqueueOutcome::AppendRefused;
+        }
+        self.insert(
             holder,
             Factory {
                 owner,
@@ -1390,14 +1448,10 @@ impl FactoryEdit<'_> {
         if self.registry.factories.contains_key(&destination) {
             return false;
         }
-        let Some(factory) = self
-            .registry
-            .factories
-            .remove(&FactoryHolder::Building(from))
-        else {
+        let Some(factory) = self.registry.remove(FactoryHolder::Building(from)) else {
             return false;
         };
-        self.registry.factories.insert(destination, factory);
+        self.registry.insert(destination, factory);
         true
     }
 
@@ -1406,9 +1460,7 @@ impl FactoryEdit<'_> {
     /// and the placed object's release (`FactoryClass::CompletedProduction
     /// @ 0x004CA1A0` lets the object go before the delete at `0x004501C6`).
     pub(super) fn remove_building_factory(&mut self, building: u64) -> Option<Factory> {
-        self.registry
-            .factories
-            .remove(&FactoryHolder::Building(building))
+        self.registry.remove(FactoryHolder::Building(building))
     }
 
     pub(super) fn reset_for_abandon(&mut self, holder: FactoryHolder, frame: u32) {
@@ -1430,7 +1482,7 @@ impl FactoryEdit<'_> {
     /// in-game AbandonProduction (`0x004C9A8A`) finds no object here: every
     /// caller has already abandoned or released the held product.
     pub(super) fn remove_factory(&mut self, holder: FactoryHolder) {
-        self.registry.factories.remove(&holder);
+        self.registry.remove(holder);
     }
 
     /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` holds
@@ -1606,16 +1658,11 @@ impl FactoryEdit<'_> {
     /// reached House power-assessment receivers, after this global sweep.
     pub(super) fn step_all(&mut self, houses: &mut crate::sim::houses::Houses, frame: u32) {
         // Sweep order = construction order (a strictly monotonic enqueue stamp at each
-        // creation -> no ties -> total order -> deterministic).
-        let order: Vec<FactoryHolder> = self
-            .registry
-            .holders_insertion_ordered()
-            .into_iter()
-            .map(|(holder, _)| holder)
-            .collect();
-
-        for holder in order {
-            let Some(f) = self.registry.factories.get_mut(&holder) else {
+        // creation -> no ties -> total order -> deterministic). The sweep
+        // creates and removes no factory, so it walks the stored order.
+        let registry = &mut *self.registry;
+        for (_, holder) in &registry.construction_order {
+            let Some(f) = registry.factories.get_mut(holder) else {
                 continue;
             };
             let owner = f.owner;
@@ -1668,14 +1715,9 @@ impl FactoryEdit<'_> {
         frame: u32,
         owner: InternedId,
     ) {
-        let order: Vec<_> = self
-            .registry
-            .holders_insertion_ordered()
-            .into_iter()
-            .map(|(holder, _)| holder)
-            .collect();
-        for holder in order {
-            let Some(factory) = self.registry.factories.get_mut(&holder) else {
+        let registry = &mut *self.registry;
+        for (_, holder) in &registry.construction_order {
+            let Some(factory) = registry.factories.get_mut(holder) else {
                 continue;
             };
             if factory.owner != owner || factory.object.is_none() || factory.suspended {
@@ -2042,11 +2084,11 @@ mod tests {
             insertion_seq: 0,
             ..Factory::default()
         };
-        reg.factories.insert(
+        reg.insert(
             FactoryHolder::House(owner, ProductionCategory::Building),
             fa,
         );
-        reg.factories.insert(
+        reg.insert(
             FactoryHolder::House(owner, ProductionCategory::Infantry),
             fb,
         );
@@ -2059,6 +2101,39 @@ mod tests {
             ordered,
             vec![0, 1],
             "iteration is insertion_seq order, not map key order"
+        );
+    }
+
+    #[test]
+    fn construction_order_survives_a_lent_factory_a_removal_and_a_load() {
+        let owner = InternedId::default();
+        let ty = InternedId::default();
+        let mut reg = FactoryRegistry::default();
+        reg.create_building_factory(30, owner, ProductionCategory::Vehicle, ty, 2, 100);
+        reg.create_building_factory(10, owner, ProductionCategory::Infantry, ty, 5, 100);
+        reg.create_building_factory(20, owner, ProductionCategory::Aircraft, ty, 9, 100);
+        // ExitObject lends building 30's factory to building 5, whose holder
+        // sorts first, and building 20's factory is deleted.
+        assert!(reg.edit().transfer_building_factory_attachment(30, 5));
+        reg.edit().remove_factory(FactoryHolder::Building(20));
+        let walk = |reg: &FactoryRegistry| -> Vec<(u64, FactoryHolder)> {
+            reg.holders_insertion_ordered()
+                .map(|(holder, factory)| (factory.insertion_seq, holder))
+                .collect()
+        };
+        let expected = vec![
+            (2, FactoryHolder::Building(5)),
+            (5, FactoryHolder::Building(10)),
+        ];
+        assert_eq!(walk(&reg), expected);
+        let bytes = crate::util::save_codec::serialize(&reg).unwrap();
+        let loaded: FactoryRegistry = crate::util::save_codec::deserialize(&bytes).unwrap();
+        assert_eq!(walk(&loaded), expected);
+        assert_eq!(loaded, reg);
+        assert_eq!(
+            bytes,
+            crate::util::save_codec::serialize(&reg.factories).unwrap(),
+            "a save holds the factories alone"
         );
     }
 
@@ -2233,7 +2308,7 @@ mod tests {
                         ));
                     id
                 });
-                registry.factories.insert(
+                registry.insert(
                     FactoryHolder::Building(100 + index as u64),
                     Factory {
                         owner: head_owner,
@@ -2606,7 +2681,7 @@ mod tests {
     /// `factories` map is private but in-module).
     fn reg_with(owner: InternedId, category: ProductionCategory, f: Factory) -> FactoryRegistry {
         let mut reg = FactoryRegistry::default();
-        reg.factories.insert(
+        reg.insert(
             FactoryHolder::House(owner, category),
             Factory {
                 owner,

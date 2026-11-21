@@ -23,6 +23,17 @@ pub(crate) fn version() -> String {
 }
 
 pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
+    if state.match_state.session.campaign_room().is_some() {
+        state.process_assets.use_personal_rules(Default::default());
+        let rules_digest = state
+            .process_assets
+            .multiplayer_rules_digest("")
+            .map_err(anyhow::Error::msg)?;
+        return Ok(MultiplayerAgreement {
+            version: version(),
+            rules_digest,
+        });
+    }
     let setup = state
         .match_state
         .session
@@ -89,6 +100,27 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
     })
 }
 
+/// VERA: log the match's rules in parts (`app::rules_parts`), so a refused
+/// start can be read against another player's log.
+pub(crate) fn log_rules_parts(state: &AppState) {
+    let Some(mode) = state
+        .match_state
+        .session
+        .network_setup()
+        .map(|setup| setup.mode.override_file.as_str())
+    else {
+        return;
+    };
+    match state.process_assets.multiplayer_rules_parts(&[mode]) {
+        Ok(parts) => {
+            for parts in parts {
+                log::info!("Rules parts: {}", parts.json());
+            }
+        }
+        Err(error) => log::warn!("No rules parts: {error}"),
+    }
+}
+
 /// `{files}` in a box naming the changed game files: the body is a few
 /// lines, so it names the first three files and counts the rest, which the
 /// startup log lists, as `(+2)`, which needs no translation.
@@ -151,6 +183,66 @@ pub(crate) fn original_game_changes<'a>(
     .collect()
 }
 
+/// `changes` as the `Vera-Changes` sign-in header names them, so that a room
+/// whose rules differ hears which of them only one game has
+/// (docs/lobby-protocol.md "Sign-in headers"): percent-encoded JSON with
+/// `mod`, `ini_roots: true`, `ares: "on"|"off"` and `files` with `count`, each
+/// left out when unchanged, `{}` for the original game. Texts keep to the
+/// lobby's 64 bytes of whole characters without control characters, and the
+/// files to the lobby's first 32 names.
+pub(crate) fn changes_header(changes: &[OriginalGameChange]) -> String {
+    use crate::util::ares_launch::AresSetting;
+    use serde_json::{Map, Value};
+    const FILES: usize = 32;
+    let text = |text: &str| {
+        let mut kept = String::new();
+        for c in text.chars().filter(|c| !c.is_control()) {
+            if kept.len() + c.len_utf8() > 64 {
+                break;
+            }
+            kept.push(c);
+        }
+        kept
+    };
+    let mut header = Map::new();
+    for change in changes {
+        match *change {
+            OriginalGameChange::Mod(name) => {
+                header.insert("mod".into(), text(name).into());
+            }
+            OriginalGameChange::IniRoots => {
+                header.insert("ini_roots".into(), true.into());
+            }
+            OriginalGameChange::Ares(AresSetting::On) => {
+                header.insert("ares".into(), "on".into());
+            }
+            OriginalGameChange::Ares(AresSetting::Off) => {
+                header.insert("ares".into(), "off".into());
+            }
+            OriginalGameChange::Ares(AresSetting::Auto) => {}
+            OriginalGameChange::ChangedFiles(files) => {
+                let named: Vec<Value> = files
+                    .iter()
+                    .take(FILES)
+                    .map(|file| text(file).into())
+                    .collect();
+                header.insert("files".into(), named.into());
+                header.insert("count".into(), files.len().min(65535).into());
+            }
+        }
+    }
+    Value::Object(header)
+        .to_string()
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(byte).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
 /// The text naming each of this game's [`original_game_changes`]; `None`
 /// when it plays the original.
 pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
@@ -173,4 +265,61 @@ pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
             .collect();
     (!named.is_empty())
         .then(|| tr_fill("VERA:RulesDifferChanges", &[("changes", &named.join(", "))]))
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+    use crate::util::ares_launch::AresSetting;
+    use serde_json::{Value, json};
+
+    /// The `Vera-Changes` header names each change in the JSON and bounds the
+    /// lobby takes: Auto is no change, texts keep to 64 bytes of whole
+    /// characters without control characters, and the files to the first 32
+    /// of their count, all in the characters a header may carry.
+    #[test]
+    fn the_changes_header_names_what_the_lobby_compares() {
+        let decoded = |header: String| -> Value {
+            assert!(
+                header
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"%-_.~".contains(&byte)),
+                "{header}"
+            );
+            let mut bytes = Vec::new();
+            let mut rest = header.as_str();
+            while let Some((before, after)) = rest.split_once('%') {
+                bytes.extend_from_slice(before.as_bytes());
+                bytes.push(u8::from_str_radix(&after[..2], 16).unwrap());
+                rest = &after[2..];
+            }
+            bytes.extend_from_slice(rest.as_bytes());
+            serde_json::from_slice(&bytes).unwrap()
+        };
+        assert_eq!(decoded(changes_header(&[])), json!({}));
+        assert_eq!(
+            decoded(changes_header(&[OriginalGameChange::Ares(
+                AresSetting::Auto
+            )])),
+            json!({})
+        );
+        let title = format!("Mental\u{7}Omega {}", "é".repeat(40));
+        let files: Vec<String> = (0..40).map(|n| format!("expandmd{n:02}.mix")).collect();
+        let header = changes_header(&[
+            OriginalGameChange::Mod(&title),
+            OriginalGameChange::IniRoots,
+            OriginalGameChange::Ares(AresSetting::Off),
+            OriginalGameChange::ChangedFiles(&files),
+        ]);
+        assert_eq!(
+            decoded(header),
+            json!({
+                "mod": format!("MentalOmega {}", "é".repeat(26)),
+                "ini_roots": true,
+                "ares": "off",
+                "files": files[..32],
+                "count": 40,
+            })
+        );
+    }
 }

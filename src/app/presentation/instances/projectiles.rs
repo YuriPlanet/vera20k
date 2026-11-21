@@ -5,7 +5,7 @@
 use super::helpers::{TacticalAdmission, projection_admitted};
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::render::batch::{DepthAxis, SpriteInstance};
@@ -68,7 +68,7 @@ fn geometry(
 pub(crate) fn projectile_visitor<'a>(
     state: &'a AppState,
     order: &'a NativeDisplayOrder,
-) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
+) -> Option<impl FnMut(&mut PlannedObjects, u64) + 'a> {
     let rt = state.match_state.sim_runtime.presentation()?;
     let frame = state.match_state.sim_runtime.frame()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
@@ -104,7 +104,7 @@ pub(crate) fn projectile_visitor<'a>(
         crate::sim::intern::InternedId,
         crate::rules::house_colors::HouseColorIndex,
     > = Default::default();
-    Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
+    Some(move |objects: &mut PlannedObjects, id: u64| {
         let Some(projectile) = sim.projectiles().get(id) else {
             return;
         };
@@ -146,7 +146,7 @@ pub(crate) fn projectile_visitor<'a>(
         {
             return;
         }
-        if let Some(object) = projectile_draw_instance_for_frame(
+        projectile_draw_instance_for_frame(
             projectile,
             sim.session().binary_frame(),
             ares,
@@ -159,6 +159,7 @@ pub(crate) fn projectile_visitor<'a>(
             admission,
             axis,
             order,
+            objects,
             // Bullet46B0C0 draws uncached in the style 0xB43180 holds.
             |image, matrix| {
                 let mut images = state
@@ -185,9 +186,7 @@ pub(crate) fn projectile_visitor<'a>(
                 }
                 render(true, Some(images.depth_map()))
             },
-        ) {
-            objects.push(object);
-        }
+        );
     })
 }
 
@@ -207,7 +206,8 @@ pub(crate) fn projectile_draw_instance(
     axis: DepthAxis,
     order: &NativeDisplayOrder,
     render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
-) -> Option<PlannedObjectInstance> {
+) -> Option<crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject> {
+    let mut objects = PlannedObjects::default();
     projectile_draw_instance_for_frame(
         projectile,
         0,
@@ -225,8 +225,10 @@ pub(crate) fn projectile_draw_instance(
         },
         axis,
         order,
+        &mut objects,
         render_voxel,
-    )
+    )?;
+    objects.into_owned().pop()
 }
 
 /// Whether `projectile`'s point passes the padded projection admission that
@@ -237,6 +239,7 @@ fn projectile_in_view(projectile: &Projectile, admission: TacticalAdmission) -> 
     projection_admitted([x, y], admission)
 }
 
+/// Plans `projectile`'s draw into `objects`; `None` when it draws nothing.
 /// `ares`: the Rules were read the Ares way (`RuleSet::ares_form`), which
 /// picks Ares' SHP frame getter.
 pub(crate) fn projectile_draw_instance_for_frame(
@@ -252,8 +255,9 @@ pub(crate) fn projectile_draw_instance_for_frame(
     admission: TacticalAdmission,
     axis: DepthAxis,
     order: &NativeDisplayOrder,
+    objects: &mut PlannedObjects,
     render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
-) -> Option<PlannedObjectInstance> {
+) -> Option<()> {
     let encoding = if kind.voxel {
         SpriteEncoding::Voxel
     } else {
@@ -329,7 +333,8 @@ pub(crate) fn projectile_draw_instance_for_frame(
                 ..Default::default()
             },
         };
-        return Some(PlannedObjectInstance::object(parent, vec![piece]));
+        objects.object(parent, [piece]);
+        return Some(());
     }
     let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame, ares);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
@@ -341,14 +346,12 @@ pub(crate) fn projectile_draw_instance_for_frame(
         projectile.on_bridge(),
         kind.shadow,
     );
-    let mut pieces = Vec::with_capacity(2);
-    for (piece, geometry) in geometry
+    let pieces = geometry
         .shadow
         .map(|shadow| (TerrainPiece::Shadow, shadow))
         .into_iter()
         .chain(std::iter::once((TerrainPiece::Body, geometry.body)))
-    {
-        pieces.push(ObjectPieceInstance {
+        .map(|(piece, geometry)| ObjectPieceInstance {
             target: ObjectTexture::SpriteAtlasEdit(entry.page as usize, piece),
             render_z: RenderZPolicy::ReadOnly,
             instance: SpriteInstance {
@@ -374,8 +377,8 @@ pub(crate) fn projectile_draw_instance_for_frame(
                 ..Default::default()
             },
         });
-    }
-    Some(PlannedObjectInstance::object(parent, pieces))
+    objects.object(parent, pieces);
+    Some(())
 }
 
 /// Bullet468090's SHP body Convert at intensity 1000

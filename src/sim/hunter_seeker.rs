@@ -21,7 +21,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         use crate::map::entities::EntityCategory;
         use crate::rules::locomotor_type::LocomotorKind;
@@ -212,7 +212,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         if !self.is_hunter_seeker(id, rules) {
             return false;
@@ -444,7 +444,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some((damage, warhead)) = self.hunter_seeker_weapon(id, rules) else {
             return;
@@ -505,7 +505,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         if !self.is_hunter_seeker(id, rules) {
             return;
@@ -534,7 +534,6 @@ impl crate::sim::world::Simulation {
     }
 
     /// `ReceiveDamage(&damage, 0, warhead, attacker, true, true, NULL)`.
-    #[allow(clippy::too_many_arguments)]
     fn hunter_seeker_strike(
         &mut self,
         victim: u64,
@@ -543,7 +542,7 @@ impl crate::sim::world::Simulation {
         warhead: InternedId,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         self.commit_direct_damage_receiver(
             rules,

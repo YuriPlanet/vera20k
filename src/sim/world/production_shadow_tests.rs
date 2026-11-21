@@ -197,7 +197,7 @@ fn factory_flip_determinism_over_scripted_commands() {
                             naval: false,
                         },
                         false,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 sim.advance_tick(&[], Some(&rules), None, None, 67);

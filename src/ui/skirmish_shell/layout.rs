@@ -279,6 +279,10 @@ pub struct SkirmishShellLayout {
     pub trackbars: SkirmishTrackbarRects,
     pub trackbar_labels: SkirmishTrackbarLabelRects,
     pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
+    /// VERA's Quick Team Setup and Bulk Seat Actions lists under the
+    /// options ([`menu_rects`]).
+    pub team_menu: RectPx,
+    pub seat_menu: RectPx,
     pub status_help: RectPx,
 }
 
@@ -678,8 +682,34 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     for rect in &mut layout.checkboxes {
         *rect = translate_checkbox(*rect, dx, dy);
     }
+    layout.team_menu = layout.team_menu.translate(dx, dy);
+    layout.seat_menu = layout.seat_menu.translate(dx, dy);
     layout.status_help = layout.status_help.translate(dx, dy);
     layout
+}
+
+/// VERA's two lists under the options: their top, in DLU, the options'
+/// next line past Build Off Ally (227 DLU), and each one's width in pixels,
+/// one the shell has face art for (`combo_face_207`).
+const MENU_TOP_DLU: i32 = 242;
+const MENU_W: i32 = 207;
+
+/// Quick Team Setup and Bulk Seat Actions on the options' next line, one
+/// under each of their columns: Quick Team Setup under Short Game's, Bulk
+/// Seat Actions under Build Off Ally's. gamemd's `0x102` has neither.
+fn menu_rects(checkboxes: &[SkirmishCheckboxRect]) -> (RectPx, RectPx) {
+    let top = dlu_rect(0, MENU_TOP_DLU, 0, 0).y;
+    let under = |id| {
+        let x = checkboxes
+            .iter()
+            .find(|checkbox| checkbox.id == id)
+            .map_or(0, |checkbox| checkbox.rect.x);
+        RectPx::new(x, top, MENU_W, COMBO_FACE_H)
+    };
+    (
+        under(SkirmishCheckboxId::ShortGame0x54e),
+        under(SkirmishCheckboxId::BuildOffAlly0x69d),
+    )
 }
 
 pub fn compute_fixed_800_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
@@ -882,6 +912,29 @@ pub fn compute_layout_for_rows(
         team_combos: row_column(0, 364, 25, 73),
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
+    let checkboxes = [
+        SkirmishCheckboxRect {
+            id: SkirmishCheckboxId::ShortGame0x54e,
+            rect: offset_rect_x(checkbox_dlu_rect(48, 176, 100, 10), -1),
+        },
+        SkirmishCheckboxRect {
+            id: SkirmishCheckboxId::McvRepacks0x693,
+            rect: offset_rect_x(checkbox_dlu_rect(48, 193, 100, 10), -1),
+        },
+        SkirmishCheckboxRect {
+            id: SkirmishCheckboxId::CratesAppear0x696,
+            rect: offset_rect_x(checkbox_dlu_rect(48, 210, 100, 10), -1),
+        },
+        SkirmishCheckboxRect {
+            id: SkirmishCheckboxId::SuperWeapons0x69a,
+            rect: offset_rect_x(checkbox_dlu_rect(48, 228, 103, 10), -1),
+        },
+        SkirmishCheckboxRect {
+            id: SkirmishCheckboxId::BuildOffAlly0x69d,
+            rect: checkbox_dlu_rect(201, 227, 166, 11),
+        },
+    ];
+    let (team_menu, seat_menu) = menu_rects(&checkboxes);
     let back_button = back_rect(screen_w, panel);
     // Not retail. VERA's Game Options takes gamemd's Choose Map tile, under
     // Start Game, Choose Map moves one tile down and VERA's Setups takes the
@@ -932,28 +985,9 @@ pub fn compute_layout_for_rows(
             credits: RectPx::new(302, 314, 90, 16),
             unit_count: RectPx::new(302, 341, 90, 16),
         },
-        checkboxes: [
-            SkirmishCheckboxRect {
-                id: SkirmishCheckboxId::ShortGame0x54e,
-                rect: offset_rect_x(checkbox_dlu_rect(48, 176, 100, 10), -1),
-            },
-            SkirmishCheckboxRect {
-                id: SkirmishCheckboxId::McvRepacks0x693,
-                rect: offset_rect_x(checkbox_dlu_rect(48, 193, 100, 10), -1),
-            },
-            SkirmishCheckboxRect {
-                id: SkirmishCheckboxId::CratesAppear0x696,
-                rect: offset_rect_x(checkbox_dlu_rect(48, 210, 100, 10), -1),
-            },
-            SkirmishCheckboxRect {
-                id: SkirmishCheckboxId::SuperWeapons0x69a,
-                rect: offset_rect_x(checkbox_dlu_rect(48, 228, 103, 10), -1),
-            },
-            SkirmishCheckboxRect {
-                id: SkirmishCheckboxId::BuildOffAlly0x69d,
-                rect: checkbox_dlu_rect(201, 227, 166, 11),
-            },
-        ],
+        checkboxes,
+        team_menu,
+        seat_menu,
         status_help: status_help_rect(screen_w, screen_h),
     }
     .with_rows(player_rows)
@@ -980,6 +1014,8 @@ impl SkirmishShellLayout {
             &mut self.trackbar_labels.game_speed,
             &mut self.trackbar_labels.credits,
             &mut self.trackbar_labels.unit_count,
+            &mut self.team_menu,
+            &mut self.seat_menu,
         ] {
             *rect = rect.translate(0, dy);
         }
@@ -1623,6 +1659,8 @@ impl ScaledRects for SkirmishShellLayout {
             trackbars: self.trackbars.scaled_rects(scale),
             trackbar_labels: self.trackbar_labels.scaled_rects(scale),
             checkboxes: self.checkboxes.scaled_rects(scale),
+            team_menu: self.team_menu.scaled_rects(scale),
+            seat_menu: self.seat_menu.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
         }
     }

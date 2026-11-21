@@ -132,7 +132,7 @@ fn state(sim: &Simulation, id: u64) -> Value {
         "position": [position.x, position.y, position.z],
         "mission": entity.mission.current().raw(),
         "queued": entity.mission.queued().raw(),
-        "mega_mission": if entity.mega_mission.is_attack_move() { 29 } else { -1 },
+        "mega_mission": if entity.seldom.mega_mission.is_attack_move() { 29 } else { -1 },
         "transporter": entity.passenger_role().transporter().is_some(),
         "nav_cell": nav,
         "drive_destination": destination,
@@ -182,7 +182,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 0,
                 128,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -206,12 +206,12 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                     0,
                     0,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             assert_eq!(
-                entity.mega_mission,
+                entity.seldom.mega_mission,
                 crate::sim::mission::mega_mission::MegaMission::default(),
                 "{name}: Rust Foot constructor has no saved mission or payload"
             );
@@ -271,7 +271,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 ignore_defenses: false,
                 selected_by_player: false,
             },
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(
             sim.substrate

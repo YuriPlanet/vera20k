@@ -86,7 +86,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
     if input["mind_controlled"] == true {
         // Prepared native +2C0 pointer control. This does not execute capture.
-        actor.mind_control = MindControlLink::controlled_by_for_test(ACTOR + 1);
+        actor.seldom.mind_control = MindControlLink::controlled_by_for_test(ACTOR + 1);
     }
     sim.substrate.entities.insert(actor);
     (sim, rules)
@@ -196,6 +196,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
                     .entities
                     .get_mut(ACTOR)
                     .unwrap()
+                    .seldom
                     .mission_only
                     .mark();
             }
@@ -212,6 +213,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
                     .entities
                     .get(ACTOR)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             );

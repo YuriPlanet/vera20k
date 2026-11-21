@@ -27,7 +27,7 @@ fn categories() -> [(ObjectCategory, &'static str); 4] {
 
 fn supply_rng(sim: &mut Simulation, states: &Value) {
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
@@ -193,7 +193,9 @@ fn build_type_event_latches_before_elapsed_time_as_in_native_register_history() 
     let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
     let typ = sim.trigger_runtime.trigger(live).unwrap().type_index;
     assert_eq!(
-        sim.trigger_runtime.definitions.trigger_types[typ].events[0].kind,
+        sim.trigger_runtime.definitions.trigger_types[typ].events[0]
+            .condition
+            .kind,
         19
     );
     sim.trigger_runtime.definitions.trigger_types[typ].events[0].retained_house = Some(houses[0]);
@@ -393,7 +395,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     let tag = sim.shared_trigger_tag(tag_type);
     let previous = sim.houses[&house].last_built_type_index(ObjectCategory::Building);
     assert_ne!(previous, expected_index);
-    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
     let product = sim.interner.get("GAWEAP").unwrap();
     production::complete_held_building_for_test(&mut sim, &rules, house, product);
     assert_eq!(
@@ -410,7 +412,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
             cell: (18, 18)
         },
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(
         sim.houses[&house].last_built_type_index(ObjectCategory::Building),
@@ -426,7 +428,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
             cell: (23, 19)
         },
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(
         sim.houses[&house].last_built_type_index(ObjectCategory::Building),
@@ -434,7 +436,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     );
     for (frame, heard) in [(8, false), (149, false), (152, true), (160, true)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+        sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
         sim.flush_pending_delete();
         assert_eq!(
             sim.sound_events

@@ -439,7 +439,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
             PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         assert_eq!(mission.current().known(), Some(MissionType::Unload));
@@ -964,7 +964,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.set_is_voxel_for_test(false);
                         victim.set_sub_cell(Some(0));
                         victim.position = position;
-                        victim.crushable_facts.set_crushable_for_test(true);
+                        victim.seldom.crushable_facts.set_crushable_for_test(true);
                         victim.lifecycle.set_object_alive_for_test(true);
                         victim.lifecycle.set_in_limbo_for_test(false);
                         victim.lifecycle.set_cell_marked_for_test(true);

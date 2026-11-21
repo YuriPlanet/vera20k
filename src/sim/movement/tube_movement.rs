@@ -201,7 +201,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -246,7 +246,7 @@ impl Simulation {
         tube_id: TubeId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let terrain = self
             .resolved_terrain
@@ -319,7 +319,7 @@ impl Simulation {
         family: TrackFamily,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -526,7 +526,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
@@ -581,7 +581,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let occupants = self
             .substrate
@@ -637,7 +637,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -682,7 +682,7 @@ impl Simulation {
             )?;
         }
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.runtime_bridge_transition.latch();
+            actor.seldom.runtime_bridge_transition.latch();
         }
         let bridge_state_changed = self
             .per_cell_process(id, PerCellReason::Arrival, rules, registry, effects)
@@ -739,7 +739,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -798,12 +798,15 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             // VERA's spot and level caches follow the Location: the spot is
             // the one the raw receiver reads from it.
-            actor.sub_cell.hold(cell_kernel::infantry_preferred_spot(
-                cell_kernel::CellQueryPoint {
-                    x: exit.x,
-                    y: exit.y,
-                },
-            ));
+            actor
+                .seldom
+                .sub_cell
+                .hold(cell_kernel::infantry_preferred_spot(
+                    cell_kernel::CellQueryPoint {
+                        x: exit.x,
+                        y: exit.y,
+                    },
+                ));
             let on_bridge = actor.on_bridge();
             actor.position.store_cell_level(level, on_bridge);
         }
@@ -848,7 +851,7 @@ impl Simulation {
         }
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.low_bridge_tube_state = None;
-            actor.runtime_bridge_transition.latch();
+            actor.seldom.runtime_bridge_transition.latch();
         }
         bridge_state_changed |= self
             .per_cell_process(id, PerCellReason::Arrival, rules, registry, effects)
@@ -1112,7 +1115,7 @@ mod tests {
             .unwrap()
             .slope_type = 1;
         let turn = sim
-            .tube_object_turn(1, &rules, None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         assert_eq!(turn.movement.movers_total, 1);
@@ -1141,7 +1144,7 @@ mod tests {
             1 << 3
         );
         assert_eq!(owner.foot_speed.applied_fraction(), SIM_ONE);
-        assert!(owner.runtime_bridge_transition.pending_mismatch());
+        assert!(owner.seldom.runtime_bridge_transition.pending_mismatch());
         assert!(owner.in_playfield());
     }
 
@@ -1246,7 +1249,7 @@ mod tests {
             .low_bridge_tube_state
             .is_some()
         {
-            sim.tube_object_turn(1, &rules, None, FrameEffects::default())
+            sim.tube_object_turn(1, &rules, None, &mut FrameEffects::default())
                 .expect("tube turn");
             turns += 1;
             assert!(turns < 1000, "the tube's two steps end");
@@ -1374,7 +1377,13 @@ mod tests {
                 z: 0,
             });
         assert_eq!(
-            sim.track_tube_head(1, TrackFamily::Drive, &rules, None, FrameEffects::default()),
+            sim.track_tube_head(
+                1,
+                TrackFamily::Drive,
+                &rules,
+                None,
+                &mut FrameEffects::default()
+            ),
             Ok(true)
         );
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1449,7 +1458,7 @@ mod tests {
             .unwrap()
             .set_in_playfield(false);
         let turn = sim
-            .tube_object_turn(1, &rules, None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1461,7 +1470,7 @@ mod tests {
         assert!(vehicle.lifecycle.cell_marked());
         assert!(sim.substrate.occupancy.contains_entity(2, 0, 1));
         assert_ne!(vehicle_bits(&sim, 2), 0);
-        assert!(vehicle.runtime_bridge_transition.pending_mismatch());
+        assert!(vehicle.seldom.runtime_bridge_transition.pending_mismatch());
         assert!(vehicle.in_playfield());
         assert_eq!(vehicle.foot_speed.applied_fraction(), SIM_ONE);
         assert_eq!(
@@ -1488,9 +1497,9 @@ mod tests {
                 cursor: 0,
                 target: DriveCoord::cell(2, 0, 0),
             });
-            assert!(!rider.discovery.discovered_by_current_house());
+            assert!(!rider.seldom.discovery.discovered_by_current_house());
             let turn = sim
-                .tube_object_turn(1, &rules, None, FrameEffects::default())
+                .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
                 .unwrap();
             assert!(
                 !turn.per_cell_ran,
@@ -1499,8 +1508,8 @@ mod tests {
             let rider = sim.substrate.entities.get(1).unwrap();
             assert!(rider.low_bridge_tube_state.is_some());
             assert!(!rider.lifecycle.cell_marked());
-            assert!(rider.discovery.discovered_by_current_house());
-            assert!(!rider.discovery.discovered_by_other_house());
+            assert!(rider.seldom.discovery.discovered_by_current_house());
+            assert!(!rider.seldom.discovery.discovered_by_other_house());
         }
     }
 }

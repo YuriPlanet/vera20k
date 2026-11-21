@@ -209,7 +209,7 @@ impl Simulation {
                 rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                 registry,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 None,
             )
             .expect("headless House wait completes immediately");
@@ -224,7 +224,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<crate::sim::command::CommandEnvelope> {
         let mut generated = Vec::new();
         // House4F927C/4F92ED clears1FC before either pass; a status
@@ -275,7 +275,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         defeat_pass: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         cursor: Option<HouseOutcomeCursor>,
     ) -> Result<Vec<crate::sim::command::CommandEnvelope>, HouseOutcomeCursor> {
         let (mut index, mut generated, mut resumed_kind) = match cursor {
@@ -550,7 +550,7 @@ impl Simulation {
     fn mplayer_defeated(
         &mut self,
         owner: InternedId,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> Option<crate::sim::command::CommandEnvelope> {
         if let Some(house) = self.houses.get_mut(&owner) {
             house.mark_defeated();
@@ -582,10 +582,9 @@ impl Simulation {
             // Earlier death cues precede EndPlanningModeSound; the reached
             // Radar setter then delivers it before RadarOn and the local EVA.
             // Executable controls: spatial_oracle/planning_local_defeat.
-            context.effects().flush_sound(self, context.rules());
-            let commit = context
-                .effects()
-                .leave_local_planning(self, context.rules());
+            let rules = context.rules();
+            context.effects().flush_sound(self, rules);
+            let commit = context.effects().leave_local_planning(self, rules);
             commit
         } else {
             None
@@ -603,7 +602,7 @@ impl Simulation {
             self.session.current_house() == Some(owner)
         };
         if represented_view {
-            self.reveal_entire_map(Some(owner), context);
+            self.reveal_entire_map(Some(owner), context.reborrow());
             self.power_states
                 .house_mut(owner)
                 .set_tactical_map_available();
@@ -632,7 +631,11 @@ impl Simulation {
     /// continues watching while hostile survivors and a human remain. Only
     /// this process's PlayerPtr receives native's final Win/Lose flags.
     /// VERA network worlds retain the same per-human result on every client.
-    fn complete_multiplayer_after_defeat(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn complete_multiplayer_after_defeat(
+        &mut self,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         let Some(decision) = self.multiplayer_decision() else {
             return;
         };
@@ -687,8 +690,20 @@ impl Simulation {
                     .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
             })
             .collect();
-        let living_humans = alive
+        // 0x004FC62C's final human scan checks only Defeated (+0x1F5) before
+        // IsHumanPlayer (+0x1EC) or PlayerControl (+0x1ED), so a living passive
+        // human House counts: VERA's observer keeps a match going while the
+        // person behind it watches. Counted from `alive`, which drops passive
+        // Houses, a watched match ended at the first defeated computer.
+        let living_humans = self
+            .houses
+            .order()
             .iter()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated())
+            })
             .filter(|owner| self.houses[owner].is_controlled_by_human(self.session.rule_policy()))
             .count();
         let all_allied = alive.iter().all(|left| {
@@ -765,7 +780,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         skip_timer: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
@@ -790,7 +805,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         skip_timer: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
@@ -817,7 +832,7 @@ impl Simulation {
         owner: InternedId,
         kind: crate::sim::house_state::HouseOutcomeKind,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let follow_player_control = self.outcomes_follow_player_control();
         let announce = if follow_player_control {
@@ -839,8 +854,11 @@ impl Simulation {
                 },
             ]);
         }
-        if kind == crate::sim::house_state::HouseOutcomeKind::Defeat
-            && self.session.is_observer_house(owner)
+        // VERA watching: on the observer's sidebar a watcher takes no side,
+        // so the House it stands in has no verdict to say to it.
+        if (kind == crate::sim::house_state::HouseOutcomeKind::Defeat
+            && self.session.is_observer_house(owner))
+            || self.session.watcher_observes()
         {
             return;
         }
@@ -860,7 +878,7 @@ impl Simulation {
         &mut self,
         request: PlayerOutcomeRequest,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut handled = false;
         for owner in self.outcome_viewpoints() {
@@ -927,7 +945,7 @@ impl Simulation {
                 skip_timer: true,
             },
             rules,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         )
     }
 
@@ -957,7 +975,7 @@ impl Simulation {
         subset: HouseBlowupSubset,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
         //All four bodies re-read the current slot/count after ReceiveDamage.
@@ -1033,7 +1051,7 @@ impl Simulation {
         house: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.session.rule_policy().uses_elimination_results() {
             return false;
@@ -1125,7 +1143,7 @@ impl Simulation {
             };
         }
         let owner = entity.owner();
-        let Some(controller) = entity.mind_control.controller() else {
+        let Some(controller) = entity.seldom.mind_control.controller() else {
             //4FC715 jumps to4FC727 when +2C0 is null. Trigger House control
             //uses +2CC/+2E0, so the current Owner can differ from `house`.
             return true;
@@ -1144,15 +1162,15 @@ impl Simulation {
     /// clears +2E0 without clearing +2CC, so this can legitimately return None.
     pub(crate) fn techno_original_owner(&self, id: u64) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
-        if let Some(controller) = entity.mind_control.controller() {
+        if let Some(controller) = entity.seldom.mind_control.controller() {
             self.substrate
                 .entities
                 .get(controller)?
                 .capture_manager
                 .as_ref()?
                 .original_owner(id)
-        } else if entity.mind_control.house_controller().is_some() {
-            entity.mind_control.house_original_owner()
+        } else if entity.seldom.mind_control.house_controller().is_some() {
+            entity.seldom.mind_control.house_original_owner()
         } else {
             Some(entity.owner())
         }

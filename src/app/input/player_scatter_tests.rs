@@ -66,7 +66,7 @@ fn player_scatter_matches_native_selected_order_cue_and_no_voice_rng() {
                 let GameSoundEvent::UiSound { sound_id } = event else {
                     panic!("Scatter must only emit its centered command cue")
                 };
-                sound_id.as_str()
+                sound_id.name_in(&f.rules)
             })
             .collect();
         assert_eq!(

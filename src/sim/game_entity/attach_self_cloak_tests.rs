@@ -30,7 +30,7 @@ fn scene(self_effect: bool) -> (Simulation, RuleSet, u64) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, actor: u64, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.object_ai_visit_one(actor, Some(rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(actor, Some(rules), &mut ObjectAiCtx::default());
 }
 
 #[test]
@@ -42,6 +42,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .self_effect,
@@ -52,6 +53,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .self_effect,
@@ -63,9 +65,9 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         .sim;
     visit(&mut sim, &rules, actor, 102);
     let entity = sim.entities().get(actor).unwrap();
-    assert_eq!(entity.ares.attach_effects.entries[0].remaining, 3);
+    assert_eq!(entity.seldom.ares.attach_effects.entries[0].remaining, 3);
     assert_eq!(
-        entity.ares.attach_effects.self_effect,
+        entity.seldom.ares.attach_effects.self_effect,
         SelfEffectState::Applied(0)
     );
     assert!(entity.cloak_ability_active(false));
@@ -86,9 +88,9 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
     visit(&mut sim, &rules, actor, 104);
     visit(&mut sim, &rules, actor, 105);
     let entity = sim.entities().get(actor).unwrap();
-    assert!(entity.ares.attach_effects.entries.is_empty());
+    assert!(entity.seldom.ares.attach_effects.entries.is_empty());
     assert_eq!(
-        entity.ares.attach_effects.self_effect,
+        entity.seldom.ares.attach_effects.self_effect,
         SelfEffectState::Pending(1),
         "expiry consumes the first repeat-wait tick in the same head"
     );
@@ -103,6 +105,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .self_effect,
@@ -113,6 +116,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]

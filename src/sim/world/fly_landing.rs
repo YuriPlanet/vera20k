@@ -74,7 +74,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let has_target = |sim: &Self| {
@@ -124,7 +124,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if rules.ares()
             && self
@@ -195,6 +195,7 @@ impl Simulation {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(building)
             })
@@ -319,7 +320,7 @@ impl Simulation {
         let current = ground_pose::position_world_coord(&entity.position);
         let same = ((destination.x / 256) as i16, (destination.y / 256) as i16)
             == ((current.x / 256) as i16, (current.y / 256) as i16);
-        if same || self.fly_building_at(destination) == entity.radio_contacts.slot(0) {
+        if same || self.fly_building_at(destination) == entity.seldom.radio_contacts.slot(0) {
             self.substrate
                 .entities
                 .get_mut(id)
@@ -340,7 +341,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let entity = self.substrate.entities.get(id).unwrap();
         if !air_movement::fly_coordinate_admitted(entity) {
@@ -373,7 +374,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
     }
@@ -432,7 +433,7 @@ impl Simulation {
             None,
         ) {
             return other == id
-                || e.radio_contacts.slot(0) == Some(other)
+                || e.seldom.radio_contacts.slot(0) == Some(other)
                 || self
                     .interner
                     .object_type(e.type_ref(), rules)
@@ -498,7 +499,7 @@ impl Simulation {
         id: u64,
         layer: Option<DisplayLayer>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::radio::{self, RadioMessage};
         if layer == Some(DisplayLayer::GROUND) {
@@ -511,10 +512,12 @@ impl Simulation {
         } else {
             radio::broadcast(self, id, RadioMessage::Untether, rules, frame_effects);
             if self.substrate.entities.get(id).is_some_and(|e| {
-                !e.radio_contacts.is_empty()
+                !e.seldom.radio_contacts.is_empty()
                     && e.navigation.nav_com().is_some()
                     && match e.navigation.nav_com() {
-                        Some(NavTargetRef::Object { id }) => e.radio_contacts.slot(0) != Some(id),
+                        Some(NavTargetRef::Object { id }) => {
+                            e.seldom.radio_contacts.slot(0) != Some(id)
+                        }
                         Some(NavTargetRef::Cell { .. }) => true,
                         None => false,
                     }
@@ -528,7 +531,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -890,10 +893,11 @@ mod tests {
                 ),
             );
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.discovery
+            e.seldom
+                .discovery
                 .set_owned_by_current_house_for_test(input["owned"].as_bool().unwrap_or(true));
             if input["mission_only"].as_bool().unwrap_or(false) {
-                e.mission_only.mark();
+                e.seldom.mission_only.mark();
             }
             let owner = e.owner();
             let visibility = serde_json::to_value(OwnerVisibility::new(128, 128)).unwrap();
@@ -1038,6 +1042,7 @@ mod tests {
                     .entities
                     .get_mut(1)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .insert(2);
             }
@@ -1121,9 +1126,9 @@ mod tests {
                 .clone()
         };
         let (mut sim, rules) = fixture(row);
-        sim.apply_fly_landing_callback(1, &hunter, crate::sim::world::FrameEffects::default());
+        sim.apply_fly_landing_callback(1, &hunter, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
-        sim.apply_fly_landing_callback(1, &rules, crate::sim::world::FrameEffects::default());
+        sim.apply_fly_landing_callback(1, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).target_speed_is_zero());
     }
 
@@ -1137,7 +1142,12 @@ mod tests {
         for row in rows {
             let (mut sim, rules) = fixture(&row);
             let rng = sim.scenario_rng.logical_state();
-            sim.complete_fly_phase(1, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.complete_fly_phase(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             let e = sim.substrate.entities.get(1).unwrap();
             let l = e.locomotor.as_ref().unwrap();
             let f = l.fly_runtime().unwrap();
@@ -1252,7 +1262,7 @@ mod tests {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let e = sim.substrate.entities.get(1).unwrap();
@@ -1281,7 +1291,7 @@ mod tests {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             }

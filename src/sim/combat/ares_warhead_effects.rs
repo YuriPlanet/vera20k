@@ -46,7 +46,6 @@ impl Simulation {
     /// and its timer restarts at the result, undoing the type modifier the
     /// Techno curtain applied again. On a curtain, a positive result
     /// restarts the timer and IronTintStage 4; anything else stops it.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn apply_ares_iron_curtain_detonation(
         &mut self,
         run: &mut ReceiverRun<'_>,
@@ -129,8 +128,18 @@ impl Simulation {
                         arg6: false,
                     },
                 );
-                let (death, mut pings) =
-                    commit_entities(self, run, &[event], None, rules, overlay_registry);
+                // The pings follow the receiver's effects in `effects`, so
+                // they gather apart first.
+                let mut pings = Vec::new();
+                let death = commit_entities(
+                    self,
+                    run,
+                    &[event],
+                    None,
+                    rules,
+                    overlay_registry,
+                    &mut pings,
+                );
                 effects.append(death);
                 effects.under_attack_events.append(&mut pings);
             }
@@ -170,7 +179,7 @@ impl Simulation {
         warhead: &WarheadType,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !warhead
             .ares_combat()

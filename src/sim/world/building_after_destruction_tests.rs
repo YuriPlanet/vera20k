@@ -177,7 +177,7 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
         sim.object_ai_visit_one(
             id,
             Some(&rules),
-            super::techno_ai::ObjectAiCtx {
+            &mut super::techno_ai::ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..Default::default()
             },
@@ -231,7 +231,7 @@ fn zero_health_map_building_retires_without_a_loss() {
     sim.object_ai_visit_one(
         id,
         Some(&rules),
-        super::techno_ai::ObjectAiCtx {
+        &mut super::techno_ai::ObjectAiCtx {
             overlay_registry: Some(&registry),
             ..Default::default()
         },

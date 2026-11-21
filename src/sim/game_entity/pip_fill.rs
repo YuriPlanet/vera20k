@@ -35,7 +35,7 @@ impl GameEntity {
     pub fn storage_bales(&self) -> &[crate::sim::miner::CargoBale] {
         self.miner
             .as_ref()
-            .map_or_else(|| self.slave.cargo(), |miner| miner.cargo())
+            .map_or_else(|| self.seldom.slave.cargo(), |miner| miner.cargo())
     }
 
     /// StorageClass::AddAmount (`0x006C9690`) on the Storage that
@@ -44,7 +44,7 @@ impl GameEntity {
     pub(crate) fn add_storage_bales(&mut self, bale: crate::sim::miner::CargoBale, amount: u16) {
         match self.miner.as_mut() {
             Some(miner) => miner.add_bales(bale, amount),
-            None => self.slave.add_bales(bale, amount),
+            None => self.seldom.slave.add_bales(bale, amount),
         }
     }
 

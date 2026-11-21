@@ -85,7 +85,7 @@ impl Simulation {
         malicious: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<UnderAttackEvent> {
         // No source (`0x00442942`) or a result of 0 (`0x0044294A`).
         let source = source.filter(|&source| self.substrate.entities.contains(source))?;
@@ -158,7 +158,7 @@ impl Simulation {
                 id,
                 Some(TargetKind::Entity(source)),
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         ping

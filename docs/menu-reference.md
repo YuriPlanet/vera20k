@@ -37,6 +37,8 @@ Launch
     │   │   ├─ Sliders: Game Speed (incl. 90 ticks/s and Unlimited), Credits (5000–10000, plus 30000 and 100000), Unit Count
     │   │   ├─ Checkboxes: Short Game, MCV Repacks, Crates Appear, Super Weapons, Build Off Ally
     │   │   │     【all of the above in [Skirmish]; the rows in SkirmishSetups.ini】
+    │   │   ├─ Quick Team Setup list: Team Starts, Team Colors, Balance teams, Players vs AI, AIs in 2/3/4 teams, Free-for-all;
+    │   │   │     Bulk Seat Actions list: Fill with AI (Easy/Normal/Hard/random), Open closed seats, Remove all AI (VERA)
     │   │   ├─ Map preview (click enlarges)
     │   │   ├─ Start Game / Back
     │   │   ├─ Game Options box: Superweapon Limit (Off, 2–20)【[VERA] SuperweaponLimit】, Terrain Deformation【[VERA] TerrainDeformation】, OK
@@ -76,7 +78,8 @@ Launch
     │   Game room (shared by LAN and online)
     │   ├─ Right-hand buttons: Start Game (host), Game Options, Choose Map (host), Lobby (online only), Back
     │   ├─ Each roster row: Player (Open/Closed/AI/Kick/Give Seat/Move to Spectators), Side, Color, Start, Team; host can drag rows between teams; Previous/Next page
-    │   ├─ Team bar (host): Teams, Room size, Team Starts, Team Colors, Balance (online only);
+    │   ├─ Team bar (host): Teams, Room size, Quick Team Setup list (Team Starts, Team Colors, Balance teams online,
+    │   │     the quick teams), Bulk Seat Actions list (Fill with AI, Close all, Open closed seats, Remove all AI);
     │   │     each group has a Join/Watch/Join Queue button, and the host also gets Add AI
     │   ├─ Co-op difficulty, chat; with a missing map: Download / Leave
     │   └─ Room Game Options popup: speed, credits, unit count, Superweapon Limit, the five retail checkboxes,
@@ -109,6 +112,8 @@ Launch
 | **Audio Options** | Music Volume【[Audio] ScoreVolume】, Sound Volume【[Audio] SoundVolume】, Voice Volume【[Audio] VoiceVolume】 |
 | **Controls** | Scroll Rate【[Options] ScrollRate】, Right-Click Orders【[VERA] RightClickOrders】, Minimap Beacons【[VERA] MinimapBeacons】, Mouse Wheel Zoom【[VERA] MouseWheelZoom】, Lock Cursor to Window【[VERA] LockCursor】 |
 | **General** | Language【[VERA] Language】, Original YR Style【[VERA] YROriginalStyle】, Smooth Online Menus【[VERA] SmoothOnlineMenus】, HD Map Previews【[VERA] HdMapPreviews】*(not in the web build)*, VERA Icon【[VERA] VeraIcon】, Skip Intro【[VERA] SkipIntro】*(next launch)*, Show String Keys【[VERA] ShowStringKeys】; button: Check for Updates *(locked in a match, not in the web build)* |
+
+In `VERA.INI`, set `GraphicsAPI=opengl` under `[VERA]` to start in OpenGL compatibility mode on Windows. You can also select `vulkan` or `dx12`. If the API you name cannot start, the game says so in a box and starts on another, skipping one that failed at an earlier start. The default, `auto`, lets the game choose. If a Vulkan or DirectX 12 startup hangs or loses the graphics device, the next automatic start tries the other API and records the failure in `GraphicsLostAtStart.txt` beside `VERA.INI`. If neither API finds a hardware GPU, the game tries OpenGL. The `WGPU_BACKEND` environment variable takes precedence. The Language list above writes `[VERA] Language=`, which you can also edit by hand.
 
 ## 2. In a match
 

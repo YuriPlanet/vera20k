@@ -2,19 +2,18 @@
 //! Native House4FC1EE calls the planner before the outcome sound boundary;
 //! both use the same queue, and no client borrow survives advance_frame.
 
-use std::cell::{Cell, RefCell};
-
 use super::sound_dispatch::dispatch_sim_sound_events;
 use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
+use crate::app::sidebar_projection::SidebarProjectionState;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::selection::SelectionState;
 use crate::sim::world::{
-    LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, OutcomeWaitBoundary,
-    SimSoundEvent, Simulation, SoundBoundary, TacticalRadarBoundary,
+    FrameClient, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    OutcomeWaitBoundary, SimSoundEvent, Simulation, SoundBoundary, TacticalRadarBoundary,
 };
 
 #[cfg(all(test, tests_app_match))]
@@ -37,30 +36,46 @@ type RadarAdmission<'a> =
 /// the rules in, the cue to play out.
 type TacticalRadarSetter<'a> =
     dyn FnMut(bool, Option<&mut SfxPlayer>, &RuleSet) -> Option<GameSoundEvent> + 'a;
+/// MainTick55DBCD's campaign save, given the strip and the elapsed clock this
+/// boundary also lends to Strip6A8F42's request clear and to scenario pauses.
+type CampaignSave<'a> = dyn FnMut(&Simulation, &mut SidebarProjectionState, &mut super::frame_pacer::ScenarioElapsedClock)
+    + 'a;
 
 struct ScenarioPauseOwners<'a> {
     clock: &'a mut super::scenario_pause::ScenarioPauseClock,
-    elapsed: &'a RefCell<&'a mut super::frame_pacer::ScenarioElapsedClock>,
+    elapsed: &'a mut super::frame_pacer::ScenarioElapsedClock,
     mode: super::session::SessionMode,
     other_local_pause: bool,
 }
 
+/// One frame's lent client owners. The simulation reaches every role through
+/// `&mut` ([`FrameClient`]), so each method borrows these owners only for its
+/// own call, and a role that asks another (radar availability flushing the
+/// sound prefix) does so through `self`.
 pub(crate) struct FrameClientBoundary<'a> {
-    delivered: Cell<usize>,
-    playback: RefCell<Option<(&'a mut SfxPlayer, SoundPlaybackInputs<'a>)>>,
+    delivered: usize,
+    playback: Option<(&'a mut SfxPlayer, SoundPlaybackInputs<'a>)>,
     local_owner: Option<&'a str>,
-    output: RefCell<&'a mut SoundEventQueue>,
-    admit_radar: RefCell<&'a mut RadarAdmission<'a>>,
-    tactical_radar: Option<RefCell<&'a mut TacticalRadarSetter<'a>>>,
-    planning: Option<RefCell<(&'a mut PlanningInputState, &'a mut SelectionState)>>,
+    output: &'a mut SoundEventQueue,
+    admit_radar: &'a mut RadarAdmission<'a>,
+    tactical_radar: Option<&'a mut TacticalRadarSetter<'a>>,
+    planning: Option<(&'a mut PlanningInputState, &'a mut SelectionState)>,
     /// [`super::session::MatchSession::latency_fudge`] as the frame began;
     /// only the frame's lifecycle outputs change it, after the frame.
     latency_fudge: i32,
     /// The host's process-lifetime checksum history (`SimHost::tick_parts`).
-    frame_checksums: Option<RefCell<&'a mut crate::sim::command_queue::FrameChecksumState>>,
-    live_network: Option<RefCell<&'a mut crate::net::live_commands::LiveCommandSession>>,
-    outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
-    scenario_pause: Option<RefCell<ScenarioPauseOwners<'a>>>,
+    frame_checksums: Option<&'a mut crate::sim::command_queue::FrameChecksumState>,
+    live_network: Option<&'a mut crate::net::live_commands::LiveCommandSession>,
+    outcome_wait: Option<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>,
+    /// Whether the simulation sees [`OutcomeWaitBoundary`] at all. Replay
+    /// playback's recorded completion owns outcome timing, so a local audio
+    /// wait cannot add a frame or change its hash.
+    lends_outcome_wait: bool,
+    scenario_pause: Option<ScenarioPauseOwners<'a>>,
+    /// The local production strip, for Strip6A8F42's synchronous request
+    /// clear and the campaign save's sidebar order.
+    sidebar: Option<&'a mut SidebarProjectionState>,
+    campaign_save: Option<&'a mut CampaignSave<'a>>,
     /// Whether the result's own EVA line is withheld for a commander clip
     /// (`Custom End Game Movie`,
     /// [`crate::app::commander_feedback::withholds_verdict_line`]).
@@ -75,10 +90,10 @@ pub(crate) struct FrameClientBoundary<'a> {
     /// prefix. Audio takes only the suffix, but HUD consumers inspect the
     /// complete facts, so this sink is filled in the same pass that plays the
     /// prefix and drained by the frame tail alongside the suffix rows.
-    eva_text: Option<&'a RefCell<Vec<HudMessage>>>,
+    eva_text: Option<&'a mut Vec<HudMessage>>,
     /// Sounds of the player's own automatic orders this game skips
     /// ([`crate::app::match_audio::QuietSounds`]).
-    quiet: Option<RefCell<&'a mut crate::app::match_audio::QuietSounds>>,
+    quiet: Option<&'a mut crate::app::match_audio::QuietSounds>,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -89,18 +104,21 @@ impl<'a> FrameClientBoundary<'a> {
         admit_radar: &'a mut RadarAdmission<'a>,
     ) -> Self {
         Self {
-            delivered: Cell::new(0),
-            playback: RefCell::new(playback),
+            delivered: 0,
+            playback,
             local_owner,
-            output: RefCell::new(output),
-            admit_radar: RefCell::new(admit_radar),
+            output,
+            admit_radar,
             tactical_radar: None,
             planning: None,
             latency_fudge: 0,
             frame_checksums: None,
             live_network: None,
             outcome_wait: None,
+            lends_outcome_wait: true,
             scenario_pause: None,
+            sidebar: None,
+            campaign_save: None,
             defer_verdict_to_clip: false,
             eva_text: None,
             quiet: None,
@@ -113,14 +131,14 @@ impl<'a> FrameClientBoundary<'a> {
         mut self,
         quiet: &'a mut crate::app::match_audio::QuietSounds,
     ) -> Self {
-        self.quiet = Some(RefCell::new(quiet));
+        self.quiet = Some(quiet);
         self
     }
 
     /// Collect the accessibility rows from the synchronously delivered sound
     /// prefix. `None` keeps the boundary's native audio-only behaviour, which
     /// is what every headless and test frame uses.
-    pub(crate) fn with_eva_text(mut self, sink: Option<&'a RefCell<Vec<HudMessage>>>) -> Self {
+    pub(crate) fn with_eva_text(mut self, sink: Option<&'a mut Vec<HudMessage>>) -> Self {
         self.eva_text = sink;
         self
     }
@@ -133,14 +151,20 @@ impl<'a> FrameClientBoundary<'a> {
     }
 
     pub(crate) fn with_tactical_radar(mut self, setter: &'a mut TacticalRadarSetter<'a>) -> Self {
-        self.tactical_radar = Some(RefCell::new(setter));
+        self.tactical_radar = Some(setter);
         self
     }
 
-    fn consume_queued_audio(&self, sim: &Simulation) {
-        let events = self.output.borrow_mut().drain();
-        if let Some((sfx, inputs)) = self.playback.borrow_mut().as_mut() {
-            inputs.consume(sfx, &events, Some(sim), self.local_owner);
+    fn consume_queued_audio(&mut self, sim: &Simulation, rules: &RuleSet) {
+        let events = self.output.drain();
+        if let Some((sfx, inputs)) = self.playback.as_mut() {
+            inputs.consume(
+                sfx,
+                &events,
+                Some(sim),
+                Some(rules.sound_names()),
+                self.local_owner,
+            );
         }
     }
 
@@ -149,7 +173,7 @@ impl<'a> FrameClientBoundary<'a> {
         planning: &'a mut PlanningInputState,
         selection: &'a mut SelectionState,
     ) -> Self {
-        self.planning = Some(RefCell::new((planning, selection)));
+        self.planning = Some((planning, selection));
         self
     }
 
@@ -162,7 +186,7 @@ impl<'a> FrameClientBoundary<'a> {
         mut self,
         checksums: &'a mut crate::sim::command_queue::FrameChecksumState,
     ) -> Self {
-        self.frame_checksums = Some(RefCell::new(checksums));
+        self.frame_checksums = Some(checksums);
         self
     }
 
@@ -170,7 +194,7 @@ impl<'a> FrameClientBoundary<'a> {
         mut self,
         live: Option<&'a mut crate::net::live_commands::LiveCommandSession>,
     ) -> Self {
-        self.live_network = live.map(RefCell::new);
+        self.live_network = live;
         self
     }
 
@@ -178,28 +202,48 @@ impl<'a> FrameClientBoundary<'a> {
         mut self,
         pending: &'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>,
     ) -> Self {
-        self.outcome_wait = Some(RefCell::new(pending));
+        self.outcome_wait = Some(pending);
+        self
+    }
+
+    /// Keep [`OutcomeWaitBoundary`] from the simulation during replay
+    /// playback. See [`FrameClientBoundary::lends_outcome_wait`].
+    pub(crate) fn with_replay_playback(mut self, replaying: bool) -> Self {
+        self.lends_outcome_wait = !replaying;
         self
     }
 
     pub(crate) fn with_scenario_pause(
         mut self,
         clock: &'a mut super::scenario_pause::ScenarioPauseClock,
-        elapsed: &'a RefCell<&'a mut super::frame_pacer::ScenarioElapsedClock>,
+        elapsed: &'a mut super::frame_pacer::ScenarioElapsedClock,
         mode: super::session::SessionMode,
         other_local_pause: bool,
     ) -> Self {
-        self.scenario_pause = Some(RefCell::new(ScenarioPauseOwners {
+        self.scenario_pause = Some(ScenarioPauseOwners {
             clock,
             elapsed,
             mode,
             other_local_pause,
-        }));
+        });
+        self
+    }
+
+    /// Lend the local production strip: Strip6A8F42 clears its requests, and
+    /// `campaign_save`, when given, runs at MainTick55DBCD with it and the
+    /// scenario pause's elapsed clock.
+    pub(crate) fn with_sidebar(
+        mut self,
+        sidebar: &'a mut SidebarProjectionState,
+        campaign_save: Option<&'a mut CampaignSave<'a>>,
+    ) -> Self {
+        self.sidebar = Some(sidebar);
+        self.campaign_save = campaign_save;
         self
     }
 
     fn apply_prefix_effect_at(
-        &self,
+        &mut self,
         effect: &crate::sim::trigger_runtime::TriggerEffect,
         wall_ms: u64,
     ) -> bool {
@@ -210,36 +254,27 @@ impl<'a> FrameClientBoundary<'a> {
         ) {
             return false;
         }
-        let Some(owners) = &self.scenario_pause else {
-            return false;
-        };
-        let mut owners = owners.borrow_mut();
-        let ScenarioPauseOwners {
+        let Some(ScenarioPauseOwners {
             clock,
             elapsed,
             mode,
             other_local_pause,
-        } = &mut *owners;
-        let mut elapsed = elapsed.borrow_mut();
-        let mut playback = self.playback.borrow_mut();
-        let sfx = playback.as_mut().map(|(sfx, _)| &mut **sfx);
+        }) = self.scenario_pause.as_mut()
+        else {
+            return false;
+        };
+        let sfx = self.playback.as_mut().map(|(sfx, _)| &mut **sfx);
         match *effect {
             TriggerEffect::ScenarioPause {
                 duration,
                 outermost,
             } => {
                 super::scenario_pause::enter_with_owners(
-                    clock,
-                    &mut elapsed,
-                    *mode,
-                    sfx,
-                    duration,
-                    outermost,
-                    wall_ms,
+                    clock, elapsed, *mode, sfx, duration, outermost, wall_ms,
                 );
             }
             TriggerEffect::ScenarioResume => super::scenario_pause::resume_with_owners(
-                &mut elapsed,
+                elapsed,
                 sfx,
                 *other_local_pause,
                 // The admitted frame completes before a relay pause takes
@@ -253,17 +288,65 @@ impl<'a> FrameClientBoundary<'a> {
     }
 }
 
+impl FrameClient for FrameClientBoundary<'_> {
+    fn sound(&mut self) -> Option<&mut dyn SoundBoundary> {
+        Some(self)
+    }
+
+    fn tactical_radar(&mut self) -> Option<&mut dyn TacticalRadarBoundary> {
+        Some(self)
+    }
+
+    fn outcome_wait(&mut self) -> Option<&mut dyn OutcomeWaitBoundary> {
+        if self.lends_outcome_wait {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    fn local_planning(&mut self) -> Option<&mut dyn LocalPlanningBoundary> {
+        Some(self)
+    }
+
+    fn network_commands(&mut self) -> Option<&mut dyn NetworkCommandBoundary> {
+        Some(self)
+    }
+
+    fn before_logic(&mut self, sim: &Simulation) {
+        // The save reads the scenario pause's elapsed clock, so a boundary
+        // lent a save without the pause would skip it without a sign.
+        debug_assert!(
+            self.campaign_save.is_none() || self.scenario_pause.is_some(),
+            "a campaign save is lent together with the scenario pause"
+        );
+        if let (Some(save), Some(sidebar), Some(pause)) = (
+            self.campaign_save.as_deref_mut(),
+            self.sidebar.as_deref_mut(),
+            self.scenario_pause.as_mut(),
+        ) {
+            save(sim, sidebar, pause.elapsed);
+        }
+    }
+
+    fn production_request_cleared(&mut self, type_id: crate::sim::intern::InternedId) {
+        if let Some(sidebar) = self.sidebar.as_deref_mut() {
+            sidebar.clear_production_request(type_id);
+        }
+    }
+}
+
 impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
-    fn apply_prefix_effect(&self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
+    fn apply_prefix_effect(&mut self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
         self.apply_prefix_effect_at(effect, super::frame_pacer::wall_clock_ms())
     }
 
     fn wait_complete(
-        &self,
+        &mut self,
         _owner: crate::sim::intern::InternedId,
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) -> bool {
-        let Some(pending) = &self.outcome_wait else {
+        let Some(pending) = self.outcome_wait.as_deref_mut() else {
             return true;
         };
         // A line still withheld here waits for a clip that is playing, and
@@ -272,25 +355,17 @@ impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
         // only: the frame, its result and its hash are the same, as in replay
         // playback.
         if self.defer_verdict_to_clip {
-            **pending.borrow_mut() = None;
+            *pending = None;
             return true;
         }
         let wall_ms = super::frame_pacer::wall_clock_ms();
         // The outer event loop services the existing AudioServiceClock and
         // network owners between visits. This is only native7529E0's Vox poll.
-        let voices_active = self
-            .playback
-            .borrow_mut()
-            .as_mut()
-            .is_some_and(|(sfx, inputs)| {
-                sfx.pump_and_check_voices(
-                    inputs.catalog.eva(),
-                    inputs.assets,
-                    inputs.catalog.index(),
-                )
-            });
+        let voices_active = self.playback.as_mut().is_some_and(|(sfx, inputs)| {
+            sfx.pump_and_check_voices(inputs.catalog.eva(), inputs.assets, inputs.catalog.index())
+        });
         super::scenario_exit::ScenarioOutcomeVoiceWait::poll_pending(
-            &mut pending.borrow_mut(),
+            pending,
             kind,
             wall_ms,
             voices_active,
@@ -300,7 +375,7 @@ impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
 
 impl NetworkCommandBoundary for FrameClientBoundary<'_> {
     fn exchange_commands(
-        &self,
+        &mut self,
         context: crate::sim::world::NetworkQueueContext,
         queues: &mut crate::sim::world::NetworkCommandQueues<'_>,
     ) -> Result<Option<crate::sim::world::NetworkQueuePass>, NetworkCommandError> {
@@ -308,7 +383,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         use crate::net::event_packet::DecodeFailureKind;
         use crate::net::live_commands::LiveCommandError;
         use crate::sim::world::NetworkInterruption;
-        let Some(live) = &self.live_network else {
+        let Some(live) = self.live_network.as_deref_mut() else {
             return Ok(None);
         };
         let max_ahead = queues.max_ahead_frames().ok_or_else(|| {
@@ -316,7 +391,6 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         })?;
         let now_ms = super::frame_pacer::wall_clock_ms();
         let now = super::frame_pacer::frame_bucket(now_ms);
-        let mut live = live.borrow_mut();
         live.finish_processing(now_ms as u32);
         live.poll(
             queues,
@@ -348,11 +422,9 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         })
     }
 
-    fn record_frame_checksum(&self, frame: u32, checksum: u32) {
-        if let Some(checksums) = &self.frame_checksums {
-            checksums
-                .borrow_mut()
-                .record_frame_checksum(frame, checksum);
+    fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
+        if let Some(checksums) = self.frame_checksums.as_deref_mut() {
+            checksums.record_frame_checksum(frame, checksum);
         }
     }
 
@@ -361,7 +433,7 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
         record: &crate::sim::command::CommandRecord,
         current_frame: i32,
     ) -> Result<bool, NetworkCommandError> {
-        let checksums = self.frame_checksums.as_ref().ok_or_else(|| {
+        let checksums = self.frame_checksums.as_deref().ok_or_else(|| {
             NetworkCommandError::Unavailable(
                 "FRAMEINFO requires the host's checksum owner".to_owned(),
             )
@@ -372,7 +444,6 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
             )
         })?;
         checksums
-            .borrow()
             .compare_frame_info(info, current_frame)
             .map_err(NetworkCommandError::Mismatch)
     }
@@ -380,98 +451,90 @@ impl NetworkCommandBoundary for FrameClientBoundary<'_> {
 
 impl LocalPlanningBoundary for FrameClientBoundary<'_> {
     fn leave_planning(
-        &self,
+        &mut self,
         sim: &Simulation,
         rules: &RuleSet,
     ) -> Option<crate::sim::command::CommandEnvelope> {
-        let mut input = self.planning.as_ref()?.borrow_mut();
-        let (planning, selection) = &mut *input;
-        planning.set_active(
-            false,
-            Some(sim),
-            Some(rules),
-            selection,
-            &mut self.output.borrow_mut(),
-        )
+        let (planning, selection) = self.planning.as_mut()?;
+        planning.set_active(false, Some(sim), Some(rules), selection, self.output)
     }
 
     fn planning_active(&self) -> bool {
         self.planning
             .as_ref()
-            .is_some_and(|input| input.borrow().0.active())
+            .is_some_and(|(planning, _)| planning.active())
     }
 }
 
 impl SoundBoundary for FrameClientBoundary<'_> {
-    fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
-        let delivered = self.delivered.get();
+    fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+        let delivered = self.delivered;
         let pending = events
             .get(delivered..)
             .expect("frame sound prefix shrank after synchronous delivery");
         if pending.is_empty() {
             return;
         }
-        let mut output = self.output.borrow_mut();
-        let mut eva_text = self.eva_text.map(|sink| sink.borrow_mut());
-        let mut quiet = self.quiet.as_ref().map(RefCell::borrow_mut);
         let frame = sim.session().tick();
-        {
-            let mut admit_radar = self.admit_radar.borrow_mut();
-            dispatch_sim_sound_events(
-                pending.iter().cloned().filter(|event| {
-                    // The router says this line after the clip: see
-                    // [`FrameClientBoundary::defer_verdict_to_clip`].
-                    !(self.defer_verdict_to_clip
-                        && matches!(event, SimSoundEvent::MatchOutcome { .. }))
-                        && quiet.as_mut().is_none_or(|quiet| quiet.admit(event, frame))
-                }),
-                sim,
-                rules,
-                self.local_owner,
-                &mut |request| (*admit_radar)(request, sim.session().tick(), rules),
-                &mut output,
-                eva_text.as_deref_mut(),
-            );
-        }
-        drop(eva_text);
-        drop(output);
-        self.consume_queued_audio(sim);
-        self.delivered.set(delivered + pending.len());
+        let defer_verdict_to_clip = self.defer_verdict_to_clip;
+        let admit_radar = &mut *self.admit_radar;
+        let mut quiet = self.quiet.as_deref_mut();
+        dispatch_sim_sound_events(
+            pending.iter().cloned().filter(|event| {
+                // The router says this line after the clip: see
+                // [`FrameClientBoundary::defer_verdict_to_clip`].
+                !(defer_verdict_to_clip && matches!(event, SimSoundEvent::MatchOutcome { .. }))
+                    && quiet.as_mut().is_none_or(|quiet| quiet.admit(event, frame))
+            }),
+            sim,
+            rules,
+            self.local_owner,
+            &mut |request| admit_radar(request, sim.session().tick(), rules),
+            self.output,
+            self.eva_text.as_deref_mut(),
+        );
+        self.consume_queued_audio(sim, rules);
+        self.delivered = delivered + pending.len();
     }
 
     fn delivered(&self) -> usize {
-        self.delivered.get()
+        self.delivered
     }
 
     fn update_looping_sound(
-        &self,
+        &mut self,
         sim: &Simulation,
         owner: u64,
         world: crate::sim::anim_class::AnimWorldCoord,
     ) {
-        if let Some((sfx, inputs)) = self.playback.borrow_mut().as_mut() {
+        if let Some((sfx, inputs)) = self.playback.as_mut() {
             inputs.update_looping_sound(sfx, sim, self.local_owner, owner, world);
         }
     }
 }
 
 impl TacticalRadarBoundary for FrameClientBoundary<'_> {
-    fn set_available(&self, sim: &Simulation, rules: &RuleSet, available: bool) {
+    fn set_available(&mut self, sim: &Simulation, rules: &RuleSet, available: bool) {
         // House508F4F/4FC21B -> Radar656DF0 ->656BE0 is synchronous.
         // Earlier death sounds and637A10's queued EndPlanningModeSound
         // must reach the existing SFX owner before the availability cue.
         self.consume(sim, rules, sim.sound_events());
-        self.consume_queued_audio(sim);
-        let Some(setter) = &self.tactical_radar else {
+        self.consume_queued_audio(sim, rules);
+        let Some(setter) = self.tactical_radar.as_deref_mut() else {
             return;
         };
-        let mut playback = self.playback.borrow_mut();
-        let sfx = playback.as_mut().map(|(sfx, _)| &mut **sfx);
-        let Some(sound) = (*setter.borrow_mut())(available, sfx, rules) else {
+        let sfx = self.playback.as_mut().map(|(sfx, _)| &mut **sfx);
+        let Some(sound) = setter(available, sfx, rules) else {
             return;
         };
-        if let Some((sfx, inputs)) = playback.as_mut() {
-            inputs.consume(sfx, &[sound], Some(sim), self.local_owner);
+        if let Some((sfx, inputs)) = self.playback.as_mut() {
+            inputs.consume(
+                sfx,
+                &[sound],
+                Some(sim),
+                Some(rules.sound_names()),
+                self.local_owner,
+            );
         }
     }
 }
@@ -480,6 +543,7 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
 mod tactical_radar_tests {
     use super::*;
     use crate::sim::world::FrameEffects;
+    use std::cell::RefCell;
 
     #[test]
     fn tactical_radar_delivers_sound_prefix_and_queued_planning_exit() {
@@ -503,7 +567,7 @@ mod tactical_radar_tests {
         sim.install_waypoints(&map.waypoints);
         sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
         sim.classify_map_triggers(&rules);
-        sim.advance_triggers(&rules, None, FrameEffects::empty());
+        sim.advance_triggers(&rules, None, &mut FrameEffects::empty());
         assert!(matches!(
             sim.sound_events(),
             [SimSoundEvent::RadarEvent { .. }]
@@ -522,7 +586,7 @@ mod tactical_radar_tests {
         let mut sounds = SoundEventQueue::new();
         planning.set_active(true, Some(&sim), Some(&rules), &mut selection, &mut sounds);
         let _ = sounds.drain();
-        let boundary = FrameClientBoundary::new(None, None, &mut sounds, &mut admit)
+        let mut boundary = FrameClientBoundary::new(None, None, &mut sounds, &mut admit)
             .with_tactical_radar(&mut setter)
             .with_planning(&mut planning, &mut selection);
         boundary.set_available(&sim, &rules, false);
@@ -534,11 +598,11 @@ mod tactical_radar_tests {
         boundary.leave_planning(&sim, &rules);
         let expected = rules.general.end_planning_mode_sound.as_ref().unwrap();
         assert!(matches!(
-            boundary.output.borrow().iter().collect::<Vec<_>>().as_slice(),
-            [crate::audio::events::GameSoundEvent::UiSound { sound_id }] if sound_id == expected
+            boundary.output.iter().collect::<Vec<_>>().as_slice(),
+            [crate::audio::events::GameSoundEvent::UiSound { sound_id }] if sound_id.name_in(&rules) == expected
         ));
         boundary.set_available(&sim, &rules, true);
-        assert!(boundary.output.borrow().is_empty());
+        assert!(boundary.output.is_empty());
         assert_eq!(boundary.delivered(), 1);
         assert_eq!(*observed.borrow(), ["prefix", "setter", "setter"]);
         // Real dispatch/queue consumption, without SFX/device playback.
@@ -572,7 +636,7 @@ mod radar_persistence_tests {
                     &rules.radar_event_config,
                 )
             };
-            let boundary = FrameClientBoundary::new(None, None, &mut sounds, &mut admit);
+            let mut boundary = FrameClientBoundary::new(None, None, &mut sounds, &mut admit);
             // Action55 flushes this boundary before complete_tick increments
             // the simulation frame, which may already have been presented.
             boundary.consume(
@@ -622,7 +686,7 @@ pub(super) mod network_command_tests {
     #[test]
     fn production_boundary_publishes_current_checksum_before_comparison_and_resumes_once() {
         let control = frame_256_runtime()
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let expected = control
             .multiplayer_checksum
@@ -647,14 +711,15 @@ pub(super) mod network_command_tests {
         let mut sounds = SoundEventQueue::new();
         let mut radar = |_, _, _: &RuleSet| false;
         let prefix = {
-            let boundary = FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
-                .with_frame_checksums(&mut checksums);
+            let mut boundary =
+                FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
+                    .with_frame_checksums(&mut checksums);
             runtime
                 .advance_frame(
                     &[],
                     33,
                     TickLane::Ordinary,
-                    FrameEffects::for_sound(&boundary).with_network_commands(&boundary),
+                    &mut FrameEffects::for_client(&mut boundary),
                 )
                 .unwrap()
         };
@@ -667,7 +732,7 @@ pub(super) mod network_command_tests {
         assert_eq!(runtime.simulation.session().binary_frame(), 256);
         assert!(!prefix.tick.frame_committed);
         let suffix = runtime
-            .resume_after_network_failure(FrameEffects::empty())
+            .resume_after_network_failure(&mut FrameEffects::empty())
             .unwrap();
         assert!(suffix.tick.frame_committed);
         assert_eq!(runtime.simulation.session().binary_frame(), 257);
@@ -679,7 +744,7 @@ pub(super) mod network_command_tests {
         );
         assert!(
             runtime
-                .resume_after_network_failure(FrameEffects::empty())
+                .resume_after_network_failure(&mut FrameEffects::empty())
                 .is_err()
         );
     }

@@ -65,8 +65,8 @@ pub(crate) fn render_restate_shell(
         layout.title,
         ShellAlign::PANEL_TITLE,
     );
-    let briefing = state.match_state.match_presentation.restate_text.clone();
-    text(&mut texts, &briefing, layout.content, ShellAlign::NONE);
+    let briefing = &state.match_state.match_presentation.restate_text;
+    text(&mut texts, briefing, layout.content, ShellAlign::NONE);
     if let Some(key) = interaction.hovered.and_then(|control| control.help_key()) {
         text(
             &mut texts,

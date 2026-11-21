@@ -68,7 +68,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 每个 WS 连接独占一个 connected UDP socket，存活期间源端口稳定，不同玩家和通道不共用端口。只有路径中的 relay 在管理员配置的 `VERA_RELAYS` 列表（大厅下发的全部 relay）中时，网关才把该连接转发过去，其他路径一律拒绝；浏览器不能指定任意转发目标。部署方法和限制见 [网关说明](../tools/wasm/gateway/README.zh-CN.md)。
 
-`/v1/*` 代理保持现有方法、路径、Authorization、游戏登录时发送的请求头（`Vera-Version`、`Vera-Build`、`Vera-Quick-Match`、`Vera-Host-Handover`、`Vera-Watch-AI` 和 `Vera-Language`；见[大厅协议](lobby-protocol.md#sign-in-headers)）、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含票据与 packet key 的响应，属于大厅凭据的信任边界；它转发的游戏数据报按每一跳认证，但不加密；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
+`/v1/*` 代理保持现有方法、路径、Authorization、游戏登录时发送的请求头（`Vera-Version`、`Vera-Build`、`Vera-Quick-Match`、`Vera-Host-Handover`、`Vera-Watch-AI`、`Vera-Language` 和 `Vera-Changes`；见[大厅协议](lobby-protocol.md#sign-in-headers)）、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含票据与 packet key 的响应，属于大厅凭据的信任边界；它转发的游戏数据报按每一跳认证，但不加密；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
 
 ## 客户端边界
 

@@ -191,6 +191,29 @@ fn only_a_changed_view_moves_the_view_revision() {
     assert_ne!(projection.view_revision(), second);
 }
 
+/// A render notes the revision of the view it drew and reads that view
+/// back from the projection: found while it stands, gone once replaced.
+#[test]
+fn a_noted_view_revision_finds_its_view_until_it_changes() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini("[Countries]\n0=Americans\n"),
+        &crate::rules::ini_parser::IniFile::empty(),
+    )
+    .unwrap();
+    let (sim, owner) = world(&rules, &[]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &[], 4, false);
+    let mut drawn = view(&sim, &options, &projection, SidebarTab::Building, 600.0);
+    projection.replace_view(Some(drawn.clone()));
+    let noted = projection.view_revision();
+    assert_eq!(projection.view_at(noted), Some(&drawn));
+    drawn.credits += 25;
+    projection.replace_view(Some(drawn));
+    assert_eq!(projection.view_at(noted), None);
+    assert!(projection.view_at(projection.view_revision()).is_some());
+}
+
 /// The per-pass gadget refresh keeps a view built from the same inputs,
 /// strips and Factory links; a change to any of them builds it again.
 #[test]
@@ -311,7 +334,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
                 rules,
                 "Americans",
                 kind,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 false
             ));
         }
@@ -404,7 +427,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
                     naval: false
                 },
                 false,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_eq!(
                 projection.ready_building_tabs(
@@ -541,7 +564,11 @@ fn trigger_duplicate_type_keeps_selected_cameo_kind_through_sidebar_projection()
     sim.session_mut_for_test().set_binary_frame_for_test(123);
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
     sim.classify_map_triggers(&rules);
-    let effects = sim.advance_triggers(&rules, None, crate::sim::world::FrameEffects::default());
+    let effects = sim.advance_triggers(
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let [
         TriggerEffect::FlashSidebarCameo {
             category,
@@ -1023,6 +1050,7 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         // not run the map's Cell PUT/discovery transaction.
         sim.entity_mut_for_test(factory)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
         sim.entity_mut_for_test(factory)
@@ -1207,7 +1235,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             &rules,
             "Americans",
             "GAPOWR",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         for output in sim.take_lifecycle_outputs_for_test() {
@@ -1273,7 +1301,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             &rules,
             "Americans",
             "GAPOWR",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         for _ in 0..4096 {
@@ -1283,7 +1311,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                     &rules,
                     67,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             for output in &frame.lifecycle_outputs {
@@ -1326,7 +1354,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                 naval: false
             },
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         for output in sim.take_lifecycle_outputs_for_test() {
             projection.apply_lifecycle_output(&output, Some(owner), ares_way);
@@ -1458,7 +1486,7 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
                         &rules,
                         "Americans",
                         source,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                         false,
                     ),
                     "{control}"
@@ -1924,7 +1952,7 @@ fn the_count_badge_asks_the_primary_factory_not_the_cameo_link() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     // No lifecycle output reaches the projection: the E1 cameo has no link.

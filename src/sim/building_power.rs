@@ -93,7 +93,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -141,7 +141,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -194,7 +194,7 @@ impl Simulation {
     pub(crate) fn ares_refresh_temporal_factories(
         &mut self,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         for id in self.substrate.take_ares_temporal_factory_refresh() {
             self.ares_update_factory_queues(id, rules, effects);
@@ -212,7 +212,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -293,7 +293,7 @@ mod ares_tests {
             ));
         let off = sim.spawn_object("DRAIN", "A", 10, 10, 0, &rules).unwrap();
         let on = sim.spawn_object("DRAIN", "A", 14, 10, 0, &rules).unwrap();
-        assert!(sim.go_building_offline(off, &rules, FrameEffects::default()));
+        assert!(sim.go_building_offline(off, &rules, &mut FrameEffects::default()));
         for id in [off, on] {
             sim.substrate
                 .set_building_online_for_temporal(id, false, rules.ares_form());
@@ -303,7 +303,7 @@ mod ares_tests {
         let online = |sim: &Simulation, id| sim.entities().get(id).unwrap().building_online();
         assert!(!online(&sim, off));
         assert!(online(&sim, on));
-        assert!(sim.go_building_online(off, &rules, FrameEffects::default()));
+        assert!(sim.go_building_online(off, &rules, &mut FrameEffects::default()));
         sim.substrate
             .set_building_online_for_temporal(off, false, rules.ares_form());
         sim.substrate

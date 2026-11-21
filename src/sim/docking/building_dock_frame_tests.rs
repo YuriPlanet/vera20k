@@ -25,6 +25,7 @@ fn linked(sim: &Simulation, depot: u64, tank: u64) -> bool {
         .entities
         .get(depot)
         .unwrap()
+        .seldom
         .radio_contacts
         .contains(tank)
         && sim
@@ -32,6 +33,7 @@ fn linked(sim: &Simulation, depot: u64, tank: u64) -> bool {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(depot)
 }
@@ -92,7 +94,7 @@ fn retail_shipyard_repairs_and_releases_a_damaged_destroyer() {
                 arg6: false,
             },
         ),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let strength = rules.object("DEST").unwrap().strength;
     assert_eq!(
@@ -180,7 +182,7 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
                         arg6: false,
                     },
                 ),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.substrate.entities.get(tank).unwrap().health.current(),
@@ -202,7 +204,7 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
             }
         }
         let building = sim.substrate.entities.get(depot).unwrap();
-        assert!(building.lifecycle.cell_marked() && building.in_logic_vector.is_member());
+        assert!(building.lifecycle.cell_marked() && building.seldom.in_logic_vector.is_member());
         // Constructors register the starting tanks before the later depot.
         // The second case explicitly changes only the prepared Logic order,
         // proving that stable IDs/storage order do not decide admission.

@@ -69,11 +69,11 @@ fn custom_foundations_match_native_reader_geometry_and_retention() {
             serde_json::json!([expected["width"], expected["height"]])
         );
         assert_eq!(
-            serde_json::json!(foundation.cell_offsets()),
+            serde_json::json!(foundation.cell_offsets().collect::<Vec<_>>()),
             terminated(&expected["cells"])
         );
         assert_eq!(
-            serde_json::json!(foundation_exit_list(foundation)),
+            serde_json::json!(foundation_exit_list(foundation).collect::<Vec<_>>()),
             terminated(&expected["outline"])
         );
         let bounds = foundation.cell_bounds();
@@ -152,7 +152,10 @@ fn fixed_art_custom_geometry_affects_configuration_hash_and_rejects_unsupported_
     let processed = RulesLayerStack::new(base_ini())
         .process_with_fixed_art(&art)
         .unwrap();
-    assert!(RuleSet::from_processed_rules(&processed).is_err());
+    assert!(matches!(
+        RuleSet::from_processed_rules(&processed),
+        Err(crate::rules::error::RulesError::InvalidFoundation { type_id }) if type_id == "CUSTOM_TEST"
+    ));
     assert_eq!(
         Foundation::from("Custom").dimensions(),
         (1, 1),

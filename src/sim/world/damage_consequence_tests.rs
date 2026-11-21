@@ -82,7 +82,7 @@ fn delivered_ids(sim: &Simulation) -> Vec<u64> {
 
 /// Techno ReceiveDamage7021FB submits DieSound before debris and the later
 /// Unit death animation constructors. Each AnimClass owns its Report request.
-fn delivery_sounds(sim: &Simulation) -> Vec<String> {
+fn delivery_sounds(rules: &RuleSet, sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
@@ -92,7 +92,9 @@ fn delivery_sounds(sim: &Simulation) -> Vec<String> {
                 die_sound_id: sound_id,
                 ..
             }
-            | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
+            | SimSoundEvent::AnimationStarted { sound_id, .. } => {
+                Some(sound_id.name_in(rules).to_string())
+            }
             _ => None,
         })
         .collect()
@@ -143,7 +145,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         [vec![attacker, spark], ids[..3].to_vec()].concat()
     );
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
@@ -174,7 +176,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
     assert_eq!(delivered_ids(&sim), ids[..3]);
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     // No second spark system. This world has no terrain, so the first one's
@@ -220,7 +222,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
         vec![passenger + 3, passenger + 4, passenger + 5]
     );
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
 }
@@ -243,7 +245,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
         .get_mut(projectile)
         .unwrap()
         .set_position_for_test(impact);
-    assert!(sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile, Some(&rules), &mut ObjectAiCtx::default()));
     let ids = delivered_ids(&sim);
     assert_eq!(ids, vec![projectile + 1, projectile + 2, projectile + 3]);
     assert_eq!(
@@ -263,7 +265,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
             .object_alive()
     );
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.particle_systems().is_empty());
@@ -272,9 +274,9 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     assert_eq!(sim.main_rng.state(), 6706932826526710953);
     // Retired objects remain physically resolvable until the shared drain.
     // Visiting again must not deliver another death transaction.
-    let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());
+    let _ = sim.object_ai_visit_one(projectile, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert_eq!(delivered_ids(&sim), ids);

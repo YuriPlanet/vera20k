@@ -53,7 +53,25 @@
 //! - A header on the merge arm's unterminated last line leaves its base set
 //!   for the next load's first header (`0x00525D4D` ends the load before
 //!   `0x00525C28` copies); VERA drops it.
+//! - Ares copies a base for every header that names it, with no limit, so a
+//!   few kilobytes of `[Cn]:[Big]` headers can ask for gigabytes. VERA charges
+//!   each copy's key and value bytes against [`CopyBudget`], the policy
+//!   `$Inherits` uses, and skips a copy past it with a warning. Trigger: copies
+//!   adding more than 64 times the text loaded into the INI (at least 1 MiB,
+//!   at most 32 MiB); effect: the later children lack the base's keys;
+//!   frequency: hostile or generated files only.
 //! None of these draws RNG, writes a timer or detaches an object.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -229,8 +247,34 @@ fn pre_process(index: &mut LiveSectionIndex, tail: &str) -> Option<usize> {
     base
 }
 
+/// VERA's budget on the text `[Child]:[Base]` copies add to one INI, across
+/// its fresh load and every file merged into it: the share of the loaded text
+/// that `$Inherits` allows (`directives::copied_text_budget`). Ares has none.
+#[derive(Debug, Clone, Default)]
+pub(super) struct CopyBudget {
+    loaded: usize,
+    copied: usize,
+}
+
+impl CopyBudget {
+    fn load(&mut self, bytes: usize) {
+        self.loaded = self.loaded.saturating_add(bytes);
+    }
+
+    /// Whether a copy of `bytes` fits, charging it if so.
+    fn charge(&mut self, bytes: usize) -> bool {
+        let copied = self.copied.saturating_add(bytes);
+        if copied > super::directives::copied_text_budget(self.loaded) {
+            return false;
+        }
+        self.copied = copied;
+        true
+    }
+}
+
 /// `IniSectionIncludes::CopySection` (Ares.dll `10065380`): PutString each
-/// entry of `base`, in list order, under `name`.
+/// entry of `base`, in list order, under `name`, once [`CopyBudget`] admits
+/// the copy.
 fn copy_section(
     ini: &mut IniFile,
     index: &mut LiveSectionIndex,
@@ -238,6 +282,21 @@ fn copy_section(
     base: usize,
     name: &str,
 ) {
+    let bytes = ini.sections[base]
+        .physical_entries()
+        .map(|(key, value)| key.len() + value.len())
+        .sum();
+    if !ini.ares_copies.charge(bytes) {
+        // Log only: every INI the game reads comes through this parser,
+        // which cannot fail and has no channel to the player. Telling the
+        // player takes a notice carried from the rules load to the loading
+        // screen, which is the rules stack's to add (`retail_sources`).
+        log::warn!(
+            "Section '{name}' does not inherit from '{}': the INI's inherited sections exceed VERA's copy limit.",
+            ini.sections[base].name
+        );
+        return;
+    }
     let entries: Vec<(String, String)> = ini.sections[base]
         .physical_entries()
         .map(|(key, value)| (key.to_owned(), value.to_owned()))
@@ -261,6 +320,7 @@ fn iterator_key<'a>(key: &'a str, counter: &mut i32) -> Cow<'a, str> {
 /// `LoadFromStraw`'s fresh arm with Ares's hooks.
 pub(super) fn load_fresh(text: &str) -> IniFile {
     let mut ini = IniFile::empty();
+    ini.ares_copies.load(text.len());
     let mut index = LiveSectionIndex::new();
     let mut written = WrittenSections::default();
     // The section being read, linked only once it ends.
@@ -324,6 +384,7 @@ pub(super) fn load_into(ini: &mut IniFile, data: &[u8], list: &str) -> IniSectio
         .rposition(|byte| *byte == b'\n')
         .map_or(0, |end| end + 1);
     let lines = [&data[..complete], &data[complete..]];
+    ini.ares_copies.load(data.len());
     let mut index = LiveSectionIndex::resume(ini);
     let mut written = WrittenSections::default();
     // The lines before the first header are skipped, and that header is read

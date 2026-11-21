@@ -163,22 +163,24 @@ impl GattlingState {
     ///
     /// `report_count(i)` is `GetWeapon(i)->WeaponType->Report.Count`, `None`
     /// when slot `i` names no WeaponType. `next_random` is `g_MainRng.Next()`,
-    /// called at most once.
+    /// called at most once. `stop` and `next_random` both get `caller`, so a
+    /// Stop that delivers sound and the Main draw after it can each borrow
+    /// the one simulation in turn.
     ///
     /// RESIDUAL: native faults at `0x0070DF8A` when the latch is clear and
     /// `GetWeapon(2 * stage)` names no WeaponType (a stage past the authored
     /// weapons); VERA plays nothing and leaves the latch clear. Unreachable
     /// with retail data.
-    #[allow(clippy::too_many_arguments)]
-    pub fn increase(
+    pub fn increase<C>(
         &mut self,
         table: &GattlingStages,
         elite: bool,
         ticks: i32,
         ares_cycle: Option<bool>,
         report_count: impl Fn(i32) -> Option<i32>,
-        mut stop: impl FnMut(),
-        next_random: impl FnOnce() -> u32,
+        caller: &mut C,
+        mut stop: impl FnMut(&mut C),
+        next_random: impl FnOnce(&mut C) -> u32,
     ) -> Increase {
         let stages = table.weapon_stages();
         // The cap is tested before the add (`JGE`), against the value as
@@ -194,7 +196,7 @@ impl GattlingState {
                 if !below_cap && cyclic {
                     self.value = 0;
                     self.stage = 0;
-                    stop(); // AudioController::DTOR_1 on +0x4A4.
+                    stop(caller); // AudioController::DTOR_1 on +0x4A4.
                     self.report_latch = false;
                 }
                 self.value
@@ -210,16 +212,16 @@ impl GattlingState {
             self.stage = stage;
             self.report_latch = false;
             effects.stage_up = true;
-            stop(); // 70DF74: stage-change Stop405D40.
+            stop(caller); // 70DF74: stage-change Stop405D40.
         }
         if !self.report_latch {
             let weapon_index = stage.wrapping_mul(2);
             // `JLE` at `0x0070DF92`: an empty or negative count skips the
             // draw and leaves the latch clear.
             if let Some(count) = report_count(weapon_index).filter(|&count| count > 0) {
-                stop(); // 70DF9C: report-entry Stop405D40, before Main.
+                stop(caller); // 70DF9C: report-entry Stop405D40, before Main.
                 // `DIV`: unsigned.
-                let item = next_random() % count as u32;
+                let item = next_random(caller) % count as u32;
                 self.report_latch = true;
                 effects.report = Some(Report { weapon_index, item });
             }
@@ -384,7 +386,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         outcome: UnitFireOutcome,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some((is_gattling, slot0)) = self.substrate.entities.get(id).and_then(|entity| {
             let obj = self.object_type(entity.type_ref(), rules)?;
@@ -427,7 +429,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         ticks: i32,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -445,9 +447,6 @@ impl crate::sim::world::Simulation {
                 .map(|weapon_id| rules.weapon(weapon_id))
         };
         let owner = gattling_sound_owner(id);
-        // Share the process owner's draw capability without retaining its
-        // mutex across Stop. The retained source locks output gate -> Main.
-        let main_draws = self.main_rng.draws();
         let ares_cycle = rules.ares().then(|| obj.techno_combat().gattling_cyclic());
         let effects = state.increase(
             &obj.gattling_stages,
@@ -455,15 +454,16 @@ impl crate::sim::world::Simulation {
             ticks,
             ares_cycle,
             |index| weapon(index).map(|weapon| weapon.map_or(0, |weapon| weapon.report_count())),
-            || {
+            self,
+            |sim| {
                 // Native70DF74 and70DF9C finish Stop405D40, including the
                 // driver endpoint and handle clear, before Report's65C780.
                 // Source: tools/input_oracle/gattling_loop.json.
-                self.sound_events
+                sim.sound_events
                     .emit(crate::sim::world::SimSoundEvent::GattlingLoopStop { owner });
-                frame_effects.flush_sound(self, rules);
+                frame_effects.flush_sound(sim, rules);
             },
-            || main_draws.next_u32(),
+            |sim| sim.main_rng.next_u32(),
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;
@@ -476,7 +476,7 @@ impl crate::sim::world::Simulation {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::GattlingLoop {
                     owner,
-                    sound_id: sound.to_owned(),
+                    sound_id: rules.sound_name(sound),
                     world,
                 });
             frame_effects.flush_sound(self, rules);
@@ -489,7 +489,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         ticks: i32,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -518,7 +518,7 @@ impl crate::sim::world::Simulation {
     pub(crate) fn gattling_limbo(
         &mut self,
         id: u64,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -531,7 +531,8 @@ impl crate::sim::world::Simulation {
                 .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
                     owner: gattling_sound_owner(id),
                 });
-            context.effects().flush_sound(self, context.rules());
+            let rules = context.rules();
+            context.effects().flush_sound(self, rules);
         });
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;

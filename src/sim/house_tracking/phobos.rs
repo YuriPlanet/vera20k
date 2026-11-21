@@ -91,14 +91,14 @@ impl Simulation {
     pub(crate) fn phobos_tracking_before_unlimbo(&mut self, id: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if self.substrate.phobos_limbo_control.enabled
-                && entity.phobos_placement.has_been_placed
+                && entity.seldom.phobos_placement.has_been_placed
                 && let Some(house) = self.houses.get_mut(&entity.owner())
             {
                 house
                     .tracking_mut(WRITE)
                     .change_phobos_limbo_count(entity, -1);
             }
-            entity.phobos_placement.has_been_placed = true;
+            entity.seldom.phobos_placement.has_been_placed = true;
         }
     }
 

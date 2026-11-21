@@ -64,7 +64,7 @@ fn send(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) {
         id,
         Some(NavTargetRef::cell(cell.0, cell.1)),
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("takes the destination");
 }
@@ -213,7 +213,7 @@ fn a_batched_answer_is_the_serial_search() {
                 .expect("a request");
                 assert_eq!(request.urgency, urgency);
                 let found = sim
-                    .foot_find_path(&request, &rules, None, FrameEffects::default())
+                    .foot_find_path(&request, &rules, None, &mut FrameEffects::default())
                     .expect("Find_Path runs");
                 if batched {
                     let batch = sim.path_batch.as_ref().unwrap();
@@ -268,7 +268,7 @@ fn an_answer_for_another_request_is_not_used() {
         "an answered Foot no longer waits"
     );
     let request = sim.code2_ladder_request(tank, 2).unwrap();
-    sim.foot_find_path(&request, &rules, None, FrameEffects::default())
+    sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default())
         .expect("Find_Path runs");
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.used, [0, 0]);
@@ -509,7 +509,7 @@ fn a_redirected_request_is_left_to_find_path() {
     sim.answer_batched_path_searches(&rules);
     assert_eq!(sim.path_batch.as_ref().unwrap().ready[&tank].answer, None);
     let request = sim.code2_ladder_request(tank, 1).unwrap();
-    sim.foot_find_path(&request, &rules, None, FrameEffects::default())
+    sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default())
         .expect("Find_Path runs");
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [0, 0]);
 }
@@ -547,7 +547,7 @@ fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
         request.destination,
         7,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let moving_to = sim
         .substrate
@@ -559,7 +559,7 @@ fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
         .and_then(|loco| loco.selected_drive_runtime())
         .and_then(|runtime| runtime.retained())
         .and_then(|drive| drive.destination());
-    let found = sim.foot_find_path(&request, &rules, None, FrameEffects::default());
+    let found = sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default());
     let (_, unused) = fresh_oracle_seam::finish();
     assert_eq!(goal.map(cell), Ok((0, 0)));
     assert_eq!(
@@ -939,7 +939,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
             .mission_leaf
             .set_infantry_doing_verified(3)
             .unwrap();
-        sim.run_foot_path_request(request, &rules, None, FrameEffects::default())
+        sim.run_foot_path_request(request, &rules, None, &mut FrameEffects::default())
             .expect("the request runs");
         let entity = sim.substrate.entities.get(infantry).unwrap();
         entity.mission_leaf.as_infantry().unwrap().doing()
@@ -1112,7 +1112,7 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
             TrackFamily::Drive,
             args,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("Process_Movement runs");
     };
@@ -1163,7 +1163,7 @@ fn a_drive_retry_recursion_answer_resumes_with_the_retry_spent() {
             TrackFamily::Drive,
             args,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("Process_Movement runs");
     };
@@ -1216,7 +1216,7 @@ fn a_drive_reentry_answer_runs_the_new_route_straight() {
             TrackFamily::Drive,
             ProcessMovementArgs::OUTER,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("Process_Movement runs");
     };
@@ -1628,7 +1628,7 @@ fn repaths_asked_every_pass_take_the_budget_in_turn() {
 /// the search keeps the entry facts it reads.
 fn own_route(sim: &mut Simulation, rules: &RuleSet, tank: u64) -> Vec<u8> {
     let request = sim.code2_ladder_request(tank, 2).unwrap();
-    sim.foot_find_path(&request, rules, None, FrameEffects::default())
+    sim.foot_find_path(&request, rules, None, &mut FrameEffects::default())
         .expect("Find_Path runs");
     if let Some(facts) = sim.entry_facts() {
         assert!(!facts.is_empty(), "the search kept the facts it read");
@@ -1926,6 +1926,7 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
         .entities
         .get_mut(tank)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     // The plain A* does not read the zones, and this ridge is only theirs.

@@ -289,9 +289,9 @@ pub(crate) enum ShellExitThen {
     ChooseMapUse(crate::ui::skirmish_shell::ChooseMapSelection),
     /// Choose Map Cancel: `0x6B` slides out and `0x102` shows again.
     ChooseMapCancel,
-    /// Choose Map Create Random Map: `0x6B` slides out and hides
-    /// (`0x005E6A03..0x005E6A0B`) before the random-map dialog runs.
-    ChooseMapRandomMap,
+    /// Open the generator after Choose Map slides out. Use Map from the
+    /// Random Maps folder loads and accepts the selected seed.
+    ChooseMapRandomMap(Option<crate::map::rmg::saved_seeds::SavedSeedFile>),
     /// Random map Use Map: `0x105` slides out (`0x00595C42` ->
     /// `0x00622720`), then the chooser selects the map and runs its Use Map
     /// (`0x005E6A16..0x005E6B2F`) while it stays hidden.
@@ -382,7 +382,7 @@ impl ShellExitThen {
             | Self::NetworkSetupChooseMap(dialog)
             | Self::NetworkStart { dialog, .. } => ShellSlideKind::NetworkSetup(*dialog),
             Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
-            Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
+            Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap(_) => {
                 ShellSlideKind::ChooseMap
             }
             Self::RandomMapUse | Self::RandomMapCancel => ShellSlideKind::RandomMap,
@@ -1605,7 +1605,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (4, true, false)
+            (5, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

@@ -74,7 +74,7 @@ fn frame(runtime: &mut SimRuntime, owner: InternedId) {
             &[],
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .expect("ordinary bound-resource production frame");
 }
@@ -166,7 +166,7 @@ fn begin_refinery(runtime: &mut SimRuntime, owner: InternedId) -> u64 {
         &runtime.resources.rules,
         OWNER,
         "GAREFN",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     runtime
@@ -278,7 +278,7 @@ fn finish_history(start_before_plants: bool) {
             cell: (12, 13)
         },
         Some(runtime.resources.rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for _ in 0..600 {
         if runtime

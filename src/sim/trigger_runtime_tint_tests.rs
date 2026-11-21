@@ -31,7 +31,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction) -> bool {
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -135,7 +135,13 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
     ));
     sim.session.lighting_mut().set_target_ambient_for_test(80);
     let frame = sim
-        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert!(frame.tick.frame_committed);
     let palette: Vec<_> = frame

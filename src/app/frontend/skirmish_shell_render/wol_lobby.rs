@@ -145,7 +145,10 @@ pub(crate) fn paint_wol_lobby_children(
             RectPx::new(row.x + x, row.y, w, row.h)
         })
     };
-    for (key, rect) in layout.labels {
+    // The online page's view hides the other view's children: they have no
+    // window ([`crate::ui::wol_lobby::LobbyView`]).
+    let shown = |rect: RectPx| rect.w > 0;
+    for (key, rect) in layout.labels.into_iter().filter(|(_, rect)| shown(*rect)) {
         paint.texts.push(text(
             &label(state, key),
             rect,
@@ -168,6 +171,7 @@ pub(crate) fn paint_wol_lobby_children(
         .iter()
         .copied()
         .chain([(REFRESH, layout.refresh), (EMOTE, layout.emote)])
+        .filter(|(_, rect)| shown(*rect))
     {
         let pressed = ui.buttons.is_pressed(id);
         match IMAGE_BUTTONS.iter().find(|(known, ..)| *known == id) {
@@ -208,15 +212,17 @@ pub(crate) fn paint_wol_lobby_children(
         }
     }
 
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.observer_toggle,
-            checked: ui.observer,
-        },
-        scale,
-    );
+    if shown(layout.observer_toggle) {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect: layout.observer_toggle,
+                checked: ui.observer,
+            },
+            scale,
+        );
+    }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
@@ -226,22 +232,24 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_CONTROL_DEPTH,
         );
     }
-    push_new_edit(
-        &mut paint.controls,
-        &mut paint.texts,
-        atlas,
-        font,
-        &ui.chat.edit,
-        state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
-        layout.chat,
-        ui.popup.is_none() && ui.caret_visible(now),
-        SHELL_LABEL_TEXT_RGB,
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale,
-    );
+    if shown(layout.chat) {
+        push_new_edit(
+            &mut paint.controls,
+            &mut paint.texts,
+            atlas,
+            font,
+            &ui.chat.edit,
+            state
+                .platform
+                .ime
+                .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
+            layout.chat,
+            ui.popup.is_none() && ui.caret_visible(now),
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale,
+        );
+    }
 
     let lobbies = ui
         .lobby_list
@@ -256,7 +264,7 @@ pub(crate) fn paint_wol_lobby_children(
         .chat
         .list
         .geometry(layout.chat_log, ui.chat.lines.len(), scale);
-    if !modern {
+    if shown(layout.lobbies) {
         list_controls(
             &mut paint.controls,
             atlas,
@@ -266,30 +274,36 @@ pub(crate) fn paint_wol_lobby_children(
             scale,
         );
     }
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        games,
-        &ui.game_list,
-        true,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        players,
-        &ui.player_list,
-        false,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        chat,
-        &ui.chat.list,
-        false,
-        scale,
-    );
+    if shown(layout.games) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            games,
+            &ui.game_list,
+            true,
+            scale,
+        );
+    }
+    if shown(layout.players) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            players,
+            &ui.player_list,
+            false,
+            scale,
+        );
+    }
+    if shown(layout.chat_log) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            chat,
+            &ui.chat.list,
+            false,
+            scale,
+        );
+    }
     // LBS_MULTIPLESEL: every selected user row is filled.
     for row in &ui.selected_players {
         if let Some(visible) = row.checked_sub(ui.player_list.top_index)
@@ -337,12 +351,28 @@ pub(crate) fn paint_wol_lobby_children(
         // the first icon column; that row's name starts at the next one. A
         // tag ends the name cell against the Ping column, and the name stops
         // a gap before it.
+        let ping = if row.ping == -1 {
+            "???".to_owned()
+        } else {
+            row.ping.to_string()
+        };
         let name_x = if row.keyed {
             GAME_PASSWORD_X
         } else {
             GAME_TYPE_X
         };
-        let name_end = GAME_PING_X - 2;
+        // Watch rows can use the entire list. Other modern rooms stop a
+        // gap before the ping centred under its column heading.
+        let row_base = scale.base_rect(rect);
+        let name_end = if row.watch {
+            row_base.w - 2
+        } else if let Some(header) = ping_header.filter(|_| modern) {
+            let header = scale.base_rect(header);
+            let ping_width = font.text_width(&ping) as i32;
+            (header.x + (header.w - ping_width) / 2 - row_base.x - GAME_TAG_GAP).min(row_base.w - 2)
+        } else {
+            GAME_PING_X - 2
+        };
         let tag = row.tag.as_deref().filter(|_| modern);
         let tag_w = tag.map_or(0, |tag| {
             (font.text_width(tag) as i32).min(name_end - name_x)
@@ -351,8 +381,22 @@ pub(crate) fn paint_wol_lobby_children(
             Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
             None => name_end - name_x,
         };
+        // A header that still exceeds one row at the tightest font fit
+        // ends in an ellipsis.
+        let mut caption = std::borrow::Cow::Borrowed(row.text.as_str());
+        if modern {
+            let width = name_w.max(1) as u32;
+            caption = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
+                if font.text_width(&row.text) <= width {
+                    return std::borrow::Cow::Borrowed(row.text.as_str());
+                }
+                let end =
+                    font.truncate_to_width(&row.text, width.saturating_sub(font.text_width("…")));
+                std::borrow::Cow::Owned(format!("{end}…"))
+            });
+        }
         paint.texts.push(text(
-            &row.text,
+            &caption,
             if modern {
                 cell(rect, name_x, name_w.max(1))
             } else {
@@ -373,11 +417,6 @@ pub(crate) fn paint_wol_lobby_children(
         // modern list centres it under its Ping header instead of starting
         // it at the retail column, left of the header's caption. A match to
         // watch has no ping.
-        let ping = if row.ping == -1 {
-            "???".to_owned()
-        } else {
-            row.ping.to_string()
-        };
         let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
             Some(header) => (
                 RectPx::new(header.x, rect.y, header.w, rect.h),
@@ -533,7 +572,6 @@ pub(super) fn paint_room_players(
 /// status line text. The `modern` lobby draws them on Red Alert 2's box art,
 /// as VERA's updater boxes do; the native lobby keeps gamemd's mode-2 art.
 /// `scale` is the lobby page's, so the box grows with the page.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_wol_lobby_popup(
     state: &AppState,
     popup: &WolLobbyPopup,

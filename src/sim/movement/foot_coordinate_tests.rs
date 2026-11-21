@@ -281,7 +281,7 @@ fn production_drive_reaim_reads_retained_target_head() {
             1,
             crate::sim::movement::track_process::TrackFamily::Drive,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -348,7 +348,7 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let e = sim.substrate.entities.get(1).unwrap();

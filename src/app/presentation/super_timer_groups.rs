@@ -127,10 +127,6 @@ pub(crate) fn grouped_super_rows(
         .into_iter()
         .map(|(root, key, representative)| (root, (key, representative)))
         .collect();
-    let representative_of: HashMap<TeamKey, InternedId> = teams
-        .values()
-        .map(|&(key, representative)| (key, representative))
-        .collect();
 
     // The local house's Supers are counted into its own named team (the
     // player reads them on the sidebar too, but they belong to that team's
@@ -143,8 +139,11 @@ pub(crate) fn grouped_super_rows(
         .map(|index| find(&mut parent, index))
         .and_then(|root| teams.get(&root).map(|&(team, _)| team));
 
-    // (ready, total, nearest_seconds), with i32::MAX as "no pending holder".
-    let mut rows: BTreeMap<RowKey, (usize, usize, i32)> = BTreeMap::new();
+    // (ready, total, nearest_seconds, representative), with i32::MAX as "no
+    // pending holder". Every one-house team shares the "-" key, so a row's
+    // representative is that of its first counted holder in house order, never
+    // one picked from a map whose order changes from call to call.
+    let mut rows: BTreeMap<RowKey, (usize, usize, i32, (usize, InternedId))> = BTreeMap::new();
     for view in views {
         let owner = view.owner();
         // Hide own Supers only when local has no named team to count them in.
@@ -154,7 +153,7 @@ pub(crate) fn grouped_super_rows(
         let Some(&index) = index_of.get(&owner) else {
             continue;
         };
-        let Some(&(team, _)) = teams.get(&find(&mut parent, index)) else {
+        let Some(&(team, representative)) = teams.get(&find(&mut parent, index)) else {
             continue;
         };
         let entry = rows
@@ -162,7 +161,8 @@ pub(crate) fn grouped_super_rows(
                 team,
                 sw_type: view.sw_type(),
             })
-            .or_insert((0, 0, i32::MAX));
+            .or_insert((0, 0, i32::MAX, (index, representative)));
+        entry.3 = entry.3.min((index, representative));
         entry.1 += 1;
         if view.is_ready() {
             entry.0 += 1;
@@ -173,14 +173,16 @@ pub(crate) fn grouped_super_rows(
     }
 
     rows.into_iter()
-        .map(|(key, (ready, total, nearest))| TeamSuperRow {
-            team: key.team,
-            representative: representative_of[&key.team],
-            sw_type: key.sw_type,
-            ready,
-            total,
-            nearest_seconds: if nearest == i32::MAX { 0 } else { nearest },
-        })
+        .map(
+            |(key, (ready, total, nearest, (_, representative)))| TeamSuperRow {
+                team: key.team,
+                representative,
+                sw_type: key.sw_type,
+                ready,
+                total,
+                nearest_seconds: if nearest == i32::MAX { 0 } else { nearest },
+            },
+        )
         .collect()
 }
 

@@ -22,7 +22,8 @@ fn gsi_04_11_refinery_survivor_cells_follow_native_sentinel_offsets() {
         panic!("the destruction-center mark");
     };
     assert_eq!((foundation_w, foundation_h), (3, 3));
-    let survivor_cells = crate::sim::crew_survival::foundation_cells(10, 20, &"3x3Refinery".into());
+    let survivor_cells: Vec<_> =
+        crate::sim::crew_survival::foundation_cells(10, 20, &"3x3Refinery".into()).collect();
     assert_eq!(
         survivor_cells,
         vec![
@@ -78,6 +79,9 @@ fn debris_pieces_construct_between_picks_as_the_original() {
         object_type.max_debris = pieces + 1;
         object_type.min_debris = pieces;
         object_type.debris_types.clear();
+        // The copy keeps MTNK's resolved list; an unresolved one reads the
+        // cleared names.
+        object_type.project_resolved_debris(Default::default());
         object_type.debris_anims.clear();
         let coord = input["coord"].as_array().unwrap();
         let at = |i: usize| coord[i].as_i64().unwrap() as i32;

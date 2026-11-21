@@ -38,8 +38,14 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
         .unwrap()
         .set_state_for_test(0);
     for _ in 0..32 {
-        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-            .unwrap();
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
         if cloak(&sim, id).state() == 1 && cloak(&sim, id).depth() == 2 {
             break;
         }
@@ -109,7 +115,13 @@ fn player_load_finishes_mid_uncloak_on_first_update() {
     assert_eq!(cloak(&restored, id).step_delta(), 1);
     let first_frame = restored.session().binary_frame();
     restored
-        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     // Native6FB9AC..6FBA07 finishes progress0 and starts the shared rule delay.
     let finished = cloak(&restored, id);

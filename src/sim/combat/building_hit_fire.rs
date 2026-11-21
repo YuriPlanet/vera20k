@@ -8,7 +8,7 @@ use crate::sim::movement::ground_pose;
 
 pub(super) fn spawn(
     world: &mut Simulation,
-    run: &ReceiverRun<'_>,
+    run: &mut ReceiverRun<'_>,
     rules: &RuleSet,
     building: u64,
     warhead: InternedId,

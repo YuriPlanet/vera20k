@@ -213,6 +213,7 @@ fn prepare(row: &Value) -> Scene {
         .navigation
         .set_nav_com_aux_for_test(native_nav(row, &native["aux"]));
     entity
+        .seldom
         .setter_force_reassign
         .set_for_test(byte(&native["force_reassign"]) != 0);
     entity
@@ -309,7 +310,7 @@ fn assert_boundary(scene: &Scene, row: &Value, expected: &Value, context: &str) 
         "{context}: path latch"
     );
     assert_eq!(
-        entity.setter_force_reassign.is_raised(),
+        entity.seldom.setter_force_reassign.is_raised(),
         byte(&foot["force_reassign"]) != 0,
         "{context}: force"
     );
@@ -475,7 +476,7 @@ fn replay(row: &Value) {
                     target,
                     &scene.rules,
                     call["args"][1].as_u64().unwrap() != 0,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             "original_stop" => {

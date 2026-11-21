@@ -79,8 +79,6 @@ const CARVED_WATER_MAP_TYPES: [i32; 2] = [3, 4];
 
 /// The sea-shaping seeder, `RandomMapGenerator::SeedWaterStandard @ 0x0059A6C0`.
 pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
-    let coords: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
-
     // Establish the background every map type starts from: the clear tile.
     //
     // In the original this is not part of the water seeder at all — the map is
@@ -92,8 +90,8 @@ pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     // the unassigned sentinel, so carving behaves the same either way — but the
     // emitter projects the sentinel as "no tile", which would ship a map with
     // most of its cells unpainted. The original leaves them as the clear tile.
-    for &(x, y) in &coords {
-        ctx.grid.get_mut(x, y).expect("native cell").tile = ctx.ids.clear;
+    for (_, cell) in ctx.grid.cells_in_native_order_mut() {
+        cell.tile = ctx.ids.clear;
     }
 
     // Inland and mountainous begin on the background the map init leaves behind
@@ -131,8 +129,8 @@ pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     }
 
     // Phase 1: every cell becomes water.
-    for &(x, y) in &coords {
-        ctx.grid.get_mut(x, y).expect("native cell").tile = ctx.ids.water_base;
+    for (_, cell) in ctx.grid.cells_in_native_order_mut() {
+        cell.tile = ctx.ids.water_base;
     }
 
     // Phase 2: shape dispatch.
@@ -143,8 +141,8 @@ pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     }
 
     // Phase 3: isolated water cells with four clear cardinals become land.
-    for &(x, y) in &coords {
-        if ctx.grid.get(x, y).expect("native cell").tile != ctx.ids.water_base {
+    for (x, y) in ctx.grid.native_cells() {
+        if ctx.grid.cell_native(x, y).tile != ctx.ids.water_base {
             continue;
         }
         let mut all_clear = true;
@@ -156,7 +154,7 @@ pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
             }
         }
         if all_clear {
-            ctx.grid.get_mut(x, y).expect("native cell").tile = 0;
+            ctx.grid.cell_native_mut(x, y).tile = 0;
         }
     }
 
@@ -175,11 +173,8 @@ pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     ctx.scratch.reset_region_ids();
 
     // Phase 5: shore pieces grass their clear cardinal neighbors.
-    for &(x, y) in &coords {
-        if !ctx
-            .ids
-            .is_shore_piece(ctx.grid.get(x, y).expect("native cell").tile)
-        {
+    for (x, y) in ctx.grid.native_cells() {
+        if !ctx.ids.is_shore_piece(ctx.grid.cell_native(x, y).tile) {
             continue;
         }
         for dir in [0usize, 2, 4, 6] {

@@ -95,7 +95,7 @@ fn script60_uses_only_own_grinders_and_releases_members_only_on_success() {
     spawn(&mut sim, &rules, "GRINDER", "Americans", 14, 10);
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
     let team = team(&mut sim, vec![civ]);
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.members().collect::<Vec<_>>(), [civ]);
     assert!(state.advance_pending());
@@ -103,7 +103,7 @@ fn script60_uses_only_own_grinders_and_releases_members_only_on_success() {
     let grinder = spawn(&mut sim, &rules, "GRINDER", "Russians", 18, 10);
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 12);
     let team = self::team(&mut sim, vec![civ]);
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
     assert_eq!(sim.team_script_vm.team(team).unwrap().member_count(), 0);
     assert_eq!(sim.team_script_vm.team_for_member(civ), None);
     let foot = sim.substrate.entities.get(civ).unwrap();
@@ -112,7 +112,7 @@ fn script60_uses_only_own_grinders_and_releases_members_only_on_success() {
         Some(NavTargetRef::object(grinder))
     );
     assert_eq!(foot.mission.queued().known(), Some(MissionType::Eaten));
-    assert!(!foot.building_entry.seeking());
+    assert!(!foot.seldom.building_entry.seeking());
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn grinder_seek_keeps_the_last_registered_building_on_distance_ties() {
     let first = spawn(&mut sim, &rules, "GRINDER", "Russians", 10, 10);
     let last = spawn(&mut sim, &rules, "GRINDER", "Russians", 20, 10);
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 15, 10);
-    assert!(sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(civ, &rules, &mut FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -132,7 +132,7 @@ fn grinder_seek_keeps_the_last_registered_building_on_distance_ties() {
         Some(NavTargetRef::object(last))
     );
     sim.uninit_with_context(last, crate::sim::world::UninitContext::new(&rules));
-    assert!(sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(civ, &rules, &mut FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -151,7 +151,7 @@ fn vehicle_eaten_walk_reaches_the_grinder_and_refunds_once() {
     let grinder = spawn(&mut sim, &rules, "GRINDER", "Russians", 18, 10);
     let tank = spawn(&mut sim, &rules, "TANK", "Russians", 10, 10);
     let credits = sim.houses[&owner].economy().credits();
-    assert!(sim.foot_enter_grinder(tank, &rules, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(tank, &rules, &mut FrameEffects::default()));
     for _ in 0..500 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
         if sim.entities().get(tank).is_none() {
@@ -184,9 +184,9 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     let outer = spawn(&mut sim, &rules, "TANK", "Russians", 11, 10);
     let nested = spawn(&mut sim, &rules, "CIV", "Russians", 12, 10);
     let sibling = spawn(&mut sim, &rules, "CIV", "Russians", 13, 10);
-    let context = crate::sim::world::UninitContext::new(&rules);
-    assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1.0)], context));
-    assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1.0)], context));
+    let mut context = crate::sim::world::UninitContext::new(&rules);
+    assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1.0)], context.reborrow()));
+    assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1.0)], context.reborrow()));
     assert!(sim.add_cargo_passenger_chain(tank, &[(outer, 1.0)], context));
     sim.substrate.occupancy.add(
         10,
@@ -210,7 +210,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     // Unit73A0A5 first refunds itself, then nested75 + outer300 + sibling75.
@@ -276,7 +276,7 @@ fn eaten_arrival_uses_effective_mission_and_attack_or_navigation_identity() {
         let owner = sim.interner.get("Americans").unwrap();
         let before = sim.houses[&owner].economy().credits();
         assert_eq!(
-            sim.foot_per_cell_eaten(civ, &rules, None, FrameEffects::default()),
+            sim.foot_per_cell_eaten(civ, &rules, None, &mut FrameEffects::default()),
             consumed
         );
         assert_eq!(
@@ -313,7 +313,7 @@ fn script60_walks_to_the_grinder_refunds_once_and_resumes_after_save() {
     let owner = sim.interner.get("Russians").unwrap();
     let credits = sim.houses[&owner].economy().credits();
     team(&mut sim, vec![civ]);
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
     for _ in 0..12 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
     }
@@ -509,7 +509,7 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
                 &rules,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         };
@@ -649,7 +649,7 @@ fn infantry_arrival_switches_active_to_special_without_a_foot_tail() {
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let slots = sim
@@ -670,7 +670,7 @@ fn infantry_arrival_switches_active_to_special_without_a_foot_tail() {
             .object_alive()
     );
     assert_eq!(sim.sound_events.iter().filter(|event| matches!(event,
-        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "GrinderGrinding"
+        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "GrinderGrinding"
     )).count(), 1);
 }
 
@@ -679,7 +679,7 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
     let (mut sim, rules) = fixture();
     let grinder = spawn(&mut sim, &rules, "GRINDER", "Russians", 18, 10);
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
-    assert!(sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(civ, &rules, &mut FrameEffects::default()));
     mission(&mut sim, civ, MissionType::Eaten, MissionId::NONE);
     sim.uninit_with_context(grinder, crate::sim::world::UninitContext::new(&rules));
     assert_eq!(
@@ -695,7 +695,7 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
         &mut sim,
         civ,
         &rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     )
     .unwrap();
     assert_eq!(
@@ -721,7 +721,7 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
 }
 
 #[test]
-fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
+fn arrival_callbacks_precede_refund_and_each_flush_precedes_the_next_list_draw() {
     use crate::map::map_file::MapFile;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::world::{SimSoundEvent, SoundBoundary};
@@ -733,13 +733,13 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
         before_play: [crate::sim::rng::SimRngLogicalState; 3],
     }
     impl SoundBoundary for Playback {
-        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             let owner = sim.interner.get("Americans").unwrap();
             for event in &events[self.delivered.get()..] {
                 let SimSoundEvent::VocAt { sound_id, .. } = event else {
                     continue;
                 };
-                let grinder = sound_id == "GrinderGrinding";
+                let grinder = sound_id.name_in(rules) == "GrinderGrinding";
                 assert_eq!(
                     sim.main_rng.logical_state(),
                     self.before_play[self.sounds.borrow().len()],
@@ -754,9 +754,10 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
                     grinder,
                     "victim Tag48 follows refund and precedes EnterGrinderSound"
                 );
-                self.sounds.borrow_mut().push(sound_id.clone());
-                // A reached audio consumer shares Main with list selection.
-                sim.main_rng.next_u32();
+                // Playback draws the app's own Main cell, never this one.
+                self.sounds
+                    .borrow_mut()
+                    .push(sound_id.name_in(rules).to_string());
             }
             self.delivered.set(events.len());
         }
@@ -808,22 +809,24 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     sim.attach_object_trigger_tag(civ, Some("DONE_TAG"));
     sim.clear_tag_dispatch_trace_for_test();
     sim.sound_events.clear_for_test();
-    sim.main_rng = crate::sim::rng::MainRng::new(60);
+    sim.main_rng = crate::sim::rng::SimRng::new(60);
     let mut expected = crate::sim::rng::SimRng::new(60);
     let voice = ["VoiceA", "VoiceB"][(expected.next_u32() % 2) as usize];
     let voice_state = expected.logical_state();
-    expected.next_u32();
     let die = ["DieA", "DieB"][(expected.next_u32() % 2) as usize];
     let die_state = expected.logical_state();
-    expected.next_u32();
-    let grinder_state = expected.logical_state();
-    expected.next_u32();
-    let playback = Playback {
+    // A flush after the next list's draw would show that draw's state here.
+    let mut playback = Playback {
         delivered: Cell::new(0),
         sounds: RefCell::new(Vec::new()),
-        before_play: [voice_state, die_state, grinder_state],
+        before_play: [voice_state, die_state.clone(), die_state],
     };
-    assert!(sim.foot_per_cell_eaten(civ, &rules, None, FrameEffects::for_sound(&playback)));
+    assert!(sim.foot_per_cell_eaten(
+        civ,
+        &rules,
+        None,
+        &mut FrameEffects::for_sound(&mut playback)
+    ));
     assert_eq!(*playback.sounds.borrow(), [voice, die, "GrinderGrinding"]);
     assert_eq!(sim.main_rng.logical_state(), expected.logical_state());
     let owner = sim.interner.get("Americans").unwrap();

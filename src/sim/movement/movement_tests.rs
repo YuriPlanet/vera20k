@@ -254,7 +254,7 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         NavTargetRef::cell(4, 0),
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let exit_frame = sim.session.binary_frame();
     let arrived = (exit_frame + 1..exit_frame + 300).any(|frame| {
@@ -436,7 +436,7 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
@@ -617,7 +617,7 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
         DriveCoord { x: 0, y: 256, z: 0 },
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -797,7 +797,7 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
             NavTargetRef::cell(4, 1),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Ok(true)
     );
@@ -1009,7 +1009,7 @@ fn forced_track_object_turn_relinks_each_committed_cell() {
         head,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(entity.foot_speed.applied_fraction(), SimFixed::lit("0.25"));
@@ -1125,7 +1125,7 @@ fn drive_first_process_route(start: (u16, u16), goal: (u16, u16)) -> RouteAndGoa
         NavTargetRef::cell(goal.0, goal.1),
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let accepted = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -1273,7 +1273,7 @@ fn walk_move(
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 

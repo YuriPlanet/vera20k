@@ -18,6 +18,18 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 use crate::assets::error::AssetError;
 use crate::assets::vxl_decode;
 use crate::util::read_helpers::{read_f32_le, read_u32_le};
@@ -337,6 +349,13 @@ fn parse_limb(
 
 /// A minimal valid VXL for tests, client tests included: one limb named
 /// `body`, a 2×2×2 grid, a few voxels.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::indexing_slicing,
+        reason = "a test fixture writing into the buffer it just built"
+    )
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn minimal_test_vxl() -> Vec<u8> {
     let mut data: Vec<u8> = Vec::new();

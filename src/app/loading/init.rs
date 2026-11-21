@@ -156,7 +156,7 @@ mod map_wall_owner_candidate_tests {
             EntityCategory::Structure,
         );
         entity
-            .type_facts
+            .seldom.type_facts
             .set_foundation_for_test(foundation.to_string().into());
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(true);
@@ -301,7 +301,7 @@ mod map_wall_owner_candidate_tests {
             assert!(entity.lifecycle.cell_marked());
             assert!(!entity.lifecycle.in_limbo());
             if entity.category() == EntityCategory::Structure {
-                for (dx, dy) in entity.type_facts.foundation().cell_offsets() {
+                for (dx, dy) in entity.seldom.type_facts.foundation().cell_offsets() {
                     let cell = terrain
                         .cell((origin.0 as i16 + dx) as u16, (origin.1 as i16 + dy) as u16)
                         .unwrap();
@@ -359,7 +359,7 @@ mod map_wall_owner_candidate_tests {
                     &[],
                     crate::app::types::SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             if let Some(id) = crate::sim::production::ready_building_entity_for_owner(
@@ -399,7 +399,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -434,7 +434,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(
@@ -951,7 +951,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 16,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(matches!(frame.lighting_events.as_slice(),
@@ -979,7 +979,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 16,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(
@@ -1952,11 +1952,13 @@ pub(super) fn install_startup_session_mode(
     simulation: &mut crate::sim::world::Simulation,
     startup: &LoadingStartup,
 ) {
-    simulation.install_session_admission(
-        startup.session_mode(),
-        startup.launch_session().map(|launch| launch.mode.class),
-        startup.match_spec().rules(),
-    );
+    if startup.authored_campaign().is_none() {
+        simulation.install_session_admission(
+            startup.session_mode(),
+            startup.launch_session().map(|launch| launch.mode.class),
+            startup.match_spec().rules(),
+        );
+    }
     if let LoadingStartup::Network(accepted) = startup {
         simulation.install_network_timing(accepted.max_ahead_frames());
         let wol = accepted.wol_start();
@@ -2682,8 +2684,13 @@ pub(crate) fn load_map_initial_with_assets(
         // real TMP data — the shore tiler and zone classifier read these.
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-                asset_manager.get(name)
+                asset_manager.get_ref(name)
             });
+        if let Some(missing) =
+            blocks.missing_cliff_tile(&theater.lookup, resolved.ids.cliffs.cliff_set)
+        {
+            return Err(anyhow::anyhow!("random map: {missing}"));
+        }
 
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
         // runs for every map type except 0, so an empty list here would both
@@ -3085,6 +3092,13 @@ fn load_map_first_step(
                     Some(startup),
                 )
             }
+            FreshScenarioParts::AuthoredCampaign { match_seed } => (
+                FreshMapMaterialization::Authored,
+                match_seed,
+                None,
+                None,
+                None,
+            ),
         };
     validate_fresh_transport_before_effects(
         materialization,
@@ -3093,7 +3107,7 @@ fn load_map_first_step(
     )?;
     // Fresh construction follows the admitted scenario family. A replay's
     // recorded session mode is installed later for the simulation.
-    let construction_profile = if campaign.is_some() {
+    let construction_profile = if campaign.is_some() || startup.authored_campaign().is_some() {
         BootstrapRuleProfile::Campaign
     } else {
         BootstrapRuleProfile::Multiplayer
@@ -3288,9 +3302,15 @@ fn load_map_first_step(
                             {
                                 bootstrap_rng.install_process_mapgen_continuation(continuation);
                             }
-                            let campaign_game_options = campaign
-                                .as_ref()
-                                .and_then(|campaign| campaign.game_options());
+                            let authored_campaign = startup.authored_campaign();
+                            let campaign_game_options = if let Some(game_speed) = startup.authored_campaign_speed() {
+                                Some(crate::sim::game_options::GameOptions {
+                                    game_speed,
+                                    ..Default::default()
+                                })
+                            } else {
+                                campaign.as_ref().and_then(|campaign| campaign.game_options())
+                            };
                             let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
                                 FreshScenarioPrefix::StockOffline(
                                     plan.bind_native_rules_receipt(
@@ -3301,6 +3321,19 @@ fn load_map_first_step(
                                         &rules,
                                     )?,
                                 )
+                            } else if let Some(network) = authored_campaign {
+                                FreshScenarioPrefix::Campaign {
+                                    difficulty: network.start.difficulty(),
+                                    mission_counter: network.start.mission_counter(),
+                                    network: Some(network),
+                                    native_rules_receipt,
+                                    rules: &rules,
+                                    map_data: &map_data,
+                                    house_roster: &house_roster,
+                                    game_options: campaign_game_options.as_ref(),
+                                    campaign_index: 0,
+                                    restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                                }
                             } else {
                                 let campaign = campaign
                                     .as_ref()
@@ -3322,8 +3355,9 @@ fn load_map_first_step(
                             };
                             let scenario_descriptor = crate::sim::scenario_session::ScenarioDescriptor {
                         seed: match_seed,
-                        map_name: skirmish_launch_session
-                            .and_then(|launch| launch.selected_map_file.clone())
+                        map_name: authored_campaign.map(|_| startup.selected_map_file().to_owned())
+                            .or_else(|| skirmish_launch_session
+                            .and_then(|launch| launch.selected_map_file.clone()))
                             .or_else(|| {
                                 campaign
                                     .as_ref()
@@ -3927,7 +3961,7 @@ fn load_map_first_step(
                                                                 prepared_manifest.finish(
                                                                     services.gpu,
                                                                     services.batch,
-                                                                ),
+                                                                )?,
                                                                 None,
                                                             )
                                                         } else {
@@ -3988,8 +4022,14 @@ fn load_map_first_step(
             &house_roster,
             rule_policy,
             match_launch_descriptor.as_ref(),
-            None,
+            startup.authored_campaign().map(|campaign| campaign.start.carry_over()),
         )?;
+                                                                            if let LoadingStartup::AuthoredCampaignReplay { native_id_prefix, .. } = &startup {
+            anyhow::ensure!(
+                sim.native_identity_prefix_checkpoint() == Some(*native_id_prefix),
+                "replay campaign native-ID prefix differs from the reconstructed House roster"
+            );
+        }
                                                                             if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");
         }

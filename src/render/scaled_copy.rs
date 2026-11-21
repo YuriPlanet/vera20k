@@ -455,10 +455,16 @@ fn create_pipeline(
     target_depth: Option<wgpu::TextureFormat>,
     fragment: &str,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(label),
-        source: wgpu::ShaderSource::Wgsl(shader_source(super::gpu::webgl_fallback(device)).into()),
-    });
+    // Its box filter covers at most the frame pixels one window pixel spans.
+    let shader = super::gpu::bounded_loop_module(
+        device,
+        wgpu::ShaderModuleDescriptor {
+            label: Some(label),
+            source: wgpu::ShaderSource::Wgsl(
+                shader_source(super::gpu::webgl_fallback(device)).into(),
+            ),
+        },
+    );
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(label),
         bind_group_layouts: &[Some(bgl)],

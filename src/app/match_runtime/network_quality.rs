@@ -167,7 +167,10 @@ pub(crate) struct OutcomeReport {
 
 /// Live values for the telemetry dashboard.
 #[derive(Debug, Clone, Copy, Default)]
-#[cfg_attr(not(feature = "telemetry-dashboard"), allow(dead_code))]
+#[cfg_attr(
+    not(feature = "telemetry-dashboard"),
+    expect(dead_code, reason = "only the telemetry dashboard reads it")
+)]
 pub(crate) struct NetworkQualityLive {
     pub(crate) backlog_frames: u32,
     pub(crate) catching_up: bool,

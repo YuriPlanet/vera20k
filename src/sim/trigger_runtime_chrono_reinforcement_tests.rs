@@ -222,7 +222,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                 0,
                 4,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -239,7 +239,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                     crate::sim::world::PlacementEvidence::FootEntryAdmitted,
                     &rules,
                     Some(&overlays),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
             })
             .is_some()
@@ -254,7 +254,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             .unwrap()
     };
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(first_stream("scenario"));
-    sim.main_rng = SimRng::from_native_state_hex_for_test(first_stream("main")).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(first_stream("main"));
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(first_stream("mapgen"));
     for input in &definitions {
         sim.trigger_runtime
@@ -352,7 +352,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             &mut effects,
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(returned, number(&row["returned"]) != 0, "{}", input["name"]);
         let expected_ids: Vec<_> = row["created_ids"]
@@ -422,7 +422,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                 ids[0],
                 Some(crate::sim::combat::TargetKind::Entity(target)),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         }
@@ -442,7 +442,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             sim.process_chrono_warp(
                 id,
                 &rules,
-                ObjectAiCtx {
+                &mut ObjectAiCtx {
                     overlay_registry: Some(&overlays),
                     ..ObjectAiCtx::default()
                 },

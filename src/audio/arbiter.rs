@@ -517,6 +517,25 @@ impl EventRec {
     fn is_dead(&self) -> bool {
         self.flags & event_flags::DEAD != 0
     }
+
+    /// `SoundEvent::Suspend4053E0`.
+    fn suspend(&mut self, now_ms: u64) {
+        if self.suspend_depth == 0 && self.state == EventState::PreDelay {
+            self.predelay_remaining_ms = self.predelay_deadline_ms.saturating_sub(now_ms);
+        }
+        self.suspend_depth = self.suspend_depth.wrapping_add(1);
+    }
+
+    /// `SoundEvent::Resume405430`.
+    fn resume(&mut self, now_ms: u64) {
+        if self.suspend_depth == 0 {
+            return;
+        }
+        self.suspend_depth = self.suspend_depth.wrapping_sub(1).max(0);
+        if self.suspend_depth == 0 && self.state == EventState::PreDelay {
+            self.predelay_deadline_ms = now_ms.saturating_add(self.predelay_remaining_ms);
+        }
+    }
 }
 
 /// The native sound system's decision half.
@@ -525,6 +544,9 @@ pub struct SoundArbiter {
     /// Insertion order of the global `SoundEvent` list (`g_SoundEventList @
     /// 0x0087E180`). Every pass walks it in this order.
     order: Vec<EventId>,
+    /// The copy of `order` a pass walks while its body may reap from the
+    /// list ([`Self::take_walk`]), kept between passes for its allocation.
+    walk: Vec<EventId>,
     channels: [ChannelRec; MAX_CHANNELS],
     entries: Vec<EntryRuntime>,
     keys: BTreeMap<String, u32>,
@@ -546,11 +568,27 @@ pub struct SoundArbiter {
     handles: BTreeMap<HandleOwner, VocHandle>,
 }
 
+/// [`SoundArbiter::validate_loop_handle`]'s body over the arbiter's event
+/// records, so a walk of the handles can validate each in place.
+fn validate_or_clear(events: &[Option<EventRec>], handle: &mut VocHandle) -> Option<EventId> {
+    let id = handle.event?;
+    let ok = events
+        .get(id.0 as usize)
+        .and_then(Option::as_ref)
+        .is_some_and(|event| event.entry == handle.entry && event.serial == handle.serial);
+    if ok {
+        return Some(id);
+    }
+    handle.event = None;
+    None
+}
+
 impl SoundArbiter {
     pub fn new(now_ms: u64) -> Self {
         Self {
             events: Vec::new(),
             order: Vec::new(),
+            walk: Vec::new(),
             channels: [ChannelRec::default(); MAX_CHANNELS],
             entries: Vec::new(),
             keys: BTreeMap::new(),
@@ -590,6 +628,16 @@ impl SoundArbiter {
         self.names.get(handle.entry as usize).map(String::as_str)
     }
 
+    /// `order` as it stands, for a pass whose body may reap from it. Hand the
+    /// buffer back to `walk` after the pass; a pass nested in another walks
+    /// a buffer of its own.
+    fn take_walk(&mut self) -> Vec<EventId> {
+        let mut walk = std::mem::take(&mut self.walk);
+        walk.clear();
+        walk.extend_from_slice(&self.order);
+        walk
+    }
+
     fn event(&self, id: EventId) -> Option<&EventRec> {
         self.events.get(id.0 as usize)?.as_ref()
     }
@@ -616,11 +664,13 @@ impl SoundArbiter {
         // shared by750920/7509E0. Finished state4 remains occupied until
         // its ordinary Sound service actually stops it.
         if self.events.len() == MAX_SOUND_EVENTS && self.events.iter().all(Option::is_some) {
-            for id in self.order.clone() {
+            let walk = self.take_walk();
+            for &id in &walk {
                 if self.event(id).is_some_and(EventRec::is_dead) {
                     self.reap(id);
                 }
             }
+            self.walk = walk;
         }
 
         let slot = match self.events.iter().position(Option::is_none) {
@@ -669,18 +719,7 @@ impl SoundArbiter {
     /// handle whose event has been recycled (different entry) or invalidated
     /// (serial mismatch) is cleared and reported as empty.
     pub fn validate_loop_handle(&mut self, owner: HandleOwner) -> Option<EventId> {
-        let handle = *self.handles.get(&owner)?;
-        let id = handle.event?;
-        let ok = self
-            .event(id)
-            .is_some_and(|event| event.entry == handle.entry && event.serial == handle.serial);
-        if ok {
-            return Some(id);
-        }
-        if let Some(stored) = self.handles.get_mut(&owner) {
-            stored.event = None;
-        }
-        None
+        validate_or_clear(&self.events, self.handles.get_mut(&owner)?)
     }
 
     /// `SoundEvent::SetLoopHandle @ 0x004060F0`: bind an owner's handle to an
@@ -762,23 +801,18 @@ impl SoundArbiter {
     /// Any other handle whose event is gone is dropped, the bookkeeping half
     /// of `VocHandle::ValidateOrClear`.
     pub fn loop_handle_owners(&mut self) -> Vec<u64> {
-        let owners: Vec<HandleOwner> = self.handles.keys().copied().collect();
         let mut live = Vec::new();
-        for owner in owners {
+        let events = &self.events;
+        self.handles.retain(|&owner, handle| {
             let HandleOwner::Positional(object) = owner else {
-                continue;
+                return true;
             };
-            if self.validate_loop_handle(owner).is_some()
-                || self
-                    .handles
-                    .get(&owner)
-                    .is_some_and(|handle| handle.loopable)
-            {
+            let keep = validate_or_clear(events, handle).is_some() || handle.loopable;
+            if keep {
                 live.push(object);
-            } else {
-                self.handles.remove(&owner);
             }
-        }
+            keep
+        });
         live
     }
 
@@ -1015,41 +1049,36 @@ impl SoundArbiter {
     /// Bookkeeping — reaping, ranking, `Limit=` — keeps running while paused;
     /// only starting and the pre-delay clock stop.
     pub fn suspend_all(&mut self, now_ms: u64) {
-        for id in self.order.clone() {
-            self.suspend_event(id, now_ms);
+        let Self { order, events, .. } = self;
+        for id in order.iter() {
+            if let Some(event) = events.get_mut(id.0 as usize).and_then(Option::as_mut) {
+                event.suspend(now_ms);
+            }
         }
     }
 
     /// `SoundEvent::Suspend4053E0`, shared by404FD0 and coordinate751040.
     pub(crate) fn suspend_event(&mut self, id: EventId, now_ms: u64) {
-        let Some(event) = self.event_mut(id) else {
-            return;
-        };
-        if event.suspend_depth == 0 && event.state == EventState::PreDelay {
-            event.predelay_remaining_ms = event.predelay_deadline_ms.saturating_sub(now_ms);
+        if let Some(event) = self.event_mut(id) {
+            event.suspend(now_ms);
         }
-        event.suspend_depth = event.suspend_depth.wrapping_add(1);
     }
 
     /// `SoundSystem::ResumeAll @ 0x00405040` (`GamePause::Exit @ 0x00406F40`):
     /// decrement, clamped at zero, and re-absolutise the pre-delay.
     pub fn resume_all(&mut self, now_ms: u64) {
-        for id in self.order.clone() {
-            self.resume_event(id, now_ms);
+        let Self { order, events, .. } = self;
+        for id in order.iter() {
+            if let Some(event) = events.get_mut(id.0 as usize).and_then(Option::as_mut) {
+                event.resume(now_ms);
+            }
         }
     }
 
     /// `SoundEvent::Resume405430`, shared by751080 and405040.
     pub(crate) fn resume_event(&mut self, id: EventId, now_ms: u64) {
-        let Some(event) = self.event_mut(id) else {
-            return;
-        };
-        if event.suspend_depth == 0 {
-            return;
-        }
-        event.suspend_depth = event.suspend_depth.wrapping_sub(1).max(0);
-        if event.suspend_depth == 0 && event.state == EventState::PreDelay {
-            event.predelay_deadline_ms = now_ms.saturating_add(event.predelay_remaining_ms);
+        if let Some(event) = self.event_mut(id) {
+            event.resume(now_ms);
         }
     }
 
@@ -1312,7 +1341,8 @@ impl SoundArbiter {
         playback: &mut impl PlaybackService,
         actions: &mut Vec<ArbiterAction>,
     ) {
-        for id in self.order.clone() {
+        let walk = self.take_walk();
+        for &id in &walk {
             let Some(event) = self.event(id) else {
                 continue;
             };
@@ -1381,6 +1411,7 @@ impl SoundArbiter {
                 self.entries[entry_index].count -= 1;
             }
         }
+        self.walk = walk;
     }
 
     /// Pass 2: `SoundEvent::UpdateState @ 0x004055C0` on every event.
@@ -1390,9 +1421,11 @@ impl SoundArbiter {
         playback: &mut impl PlaybackService,
         actions: &mut Vec<ArbiterAction>,
     ) {
-        for id in self.order.clone() {
+        let walk = self.take_walk();
+        for &id in &walk {
             self.update_state(id, now_ms, playback, actions);
         }
+        self.walk = walk;
     }
 
     fn update_state(
@@ -1558,7 +1591,8 @@ impl SoundArbiter {
         self.rank_epoch = self.rank_epoch.wrapping_add(1);
 
         let mut volume_sum: i32 = 0;
-        for id in self.order.clone() {
+        let walk = self.take_walk();
+        for &id in &walk {
             let Some(event) = self.event(id) else {
                 continue;
             };
@@ -1633,6 +1667,7 @@ impl SoundArbiter {
             self.buckets[slot].push(entry_index as u32);
             self.entries[entry_index].bucket_slot = Some(slot);
         }
+        self.walk = walk;
 
         let target = if volume_sum > MANY_SOUNDS_THRESHOLD {
             MANY_SOUNDS_NUMERATOR / volume_sum
@@ -1661,7 +1696,8 @@ impl SoundArbiter {
         let Some(victim_entry) = self.find_lowest_priority(priority) else {
             return stopped;
         };
-        for other in self.order.clone() {
+        let walk = self.take_walk();
+        for &other in &walk {
             if self
                 .event(other)
                 .is_some_and(|event| event.entry == victim_entry)
@@ -1672,6 +1708,7 @@ impl SoundArbiter {
                 stopped.push(other);
             }
         }
+        self.walk = walk;
         stopped
     }
 
@@ -1687,7 +1724,8 @@ impl SoundArbiter {
         playback: &mut impl PlaybackService,
         actions: &mut Vec<ArbiterAction>,
     ) {
-        for id in self.order.clone() {
+        let walk = self.take_walk();
+        for &id in &walk {
             let Some(event) = self.event(id) else {
                 continue;
             };
@@ -1770,13 +1808,14 @@ impl SoundArbiter {
                 pan,
             });
         }
+        self.walk = walk;
     }
 
     /// Every playing event reports its glided gain so the device layer can
     /// track the `VolumeInterp` ramp. Native does this implicitly: the
     /// channel reads `ch+0x90` (the event group) every mix.
-    fn emit_live_gains(&mut self, actions: &mut Vec<ArbiterAction>) {
-        for id in self.order.clone() {
+    fn emit_live_gains(&self, actions: &mut Vec<ArbiterAction>) {
+        for &id in &self.order {
             let Some(event) = self.event(id) else {
                 continue;
             };

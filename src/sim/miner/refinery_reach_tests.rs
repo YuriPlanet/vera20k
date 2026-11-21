@@ -31,7 +31,7 @@ fn pick(water: impl IntoIterator<Item = (u16, u16)>) -> Option<(Option<u64>, u64
         &rules.object("HARV").unwrap().dock,
         false,
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     Some((found, near, far))
 }

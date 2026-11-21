@@ -15,6 +15,17 @@
 //! a datagram must carry, the replay window, rate limits and the per-kind
 //! payloads (§6.1 table) belong to `ClientSession` and `RelayServer`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use hmac::Mac;
 
 use crate::{RelayError, SecretKey};
@@ -160,8 +171,8 @@ pub fn peek(direction: Direction, bytes: &[u8]) -> Result<Header, RelayError> {
     }
     Ok(Header {
         kind,
-        session: u32::from_le_bytes(bytes[1..5].try_into().expect("checked length")),
-        sequence: u32::from_le_bytes(bytes[5..9].try_into().expect("checked length")),
+        session: crate::link::read_u32(bytes, 1)?,
+        sequence: crate::link::read_u32(bytes, 5)?,
     })
 }
 

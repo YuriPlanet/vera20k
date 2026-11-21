@@ -1,6 +1,17 @@
 //! The ordering owner's full-match archive. Sequence offsets stay on
 //! disk; the in-memory deque is only a bounded cache of this same stream.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use super::sequenced::{DEPARTURE_EVENT, FRAME_END_EVENT};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
@@ -486,11 +497,10 @@ impl Journal {
         let mut offsets = vec![0; (count + usize::from(bounded)) * 8];
         self.index.seek(SeekFrom::Start((sequence - 1) * 8))?;
         self.index.read_exact(&mut offsets)?;
-        let offset =
-            |index: usize| u64::from_le_bytes(offsets[index * 8..][..8].try_into().unwrap());
-        let start = offset(0);
+        let (offsets, _) = offsets.as_chunks::<8>();
+        let start = u64::from_le_bytes(offsets[0]);
         let end = if bounded {
-            offset(count)
+            u64::from_le_bytes(offsets[count])
         } else {
             self.data.seek(SeekFrom::End(0))?
         };
@@ -510,7 +520,7 @@ impl Journal {
                 return Err(invalid());
             }
             let (bytes, tail) = tail.split_at(length);
-            if u64::from_le_bytes(bytes[1..9].try_into().unwrap()) != sequence + index as u64 {
+            if crate::link::read_u64(bytes, 1).map_err(|_| invalid())? != sequence + index as u64 {
                 return Err(invalid());
             }
             output.push(bytes.to_vec());

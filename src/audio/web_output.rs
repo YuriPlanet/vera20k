@@ -34,6 +34,9 @@ const BUFFER_RING: usize = BLOCKS_AHEAD + 2;
 const RESTART_MARGIN_SECS: f64 = 0.01;
 const CHANNELS: usize = 2;
 
+// A thread-local because the output is Web Audio nodes, `!Send` JS handles
+// that live on the browser's main thread, and the page keeps it across
+// launches (see [`pause`]) while each launch's audio owner comes and goes.
 thread_local! {
     static OUTPUT: RefCell<Option<WebOutput>> = const { RefCell::new(None) };
 }

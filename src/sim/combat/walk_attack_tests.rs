@@ -94,7 +94,7 @@ fn walk_command(sim: &mut Simulation, rules: &RuleSet, command: crate::sim::comm
         &command,
         rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 }
 
@@ -148,7 +148,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
         },
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     sim.path_grid = Some(open_grid.clone());
     let e = sim.substrate.entities.get(actor).unwrap();
@@ -540,7 +540,7 @@ fn owner_change_finishes_the_paid_walk_head() {
         new_owner,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let e = sim.substrate.entities.get(actor).unwrap();
     assert_eq!(e.locomotor.as_ref().unwrap().walk_destination(), None);
@@ -650,7 +650,7 @@ fn walk_null_setter_matches_original_caller_rows() {
                 .push_nav_queue_for_test(NavTargetRef::Object { id: victim });
         }
         if input["contact"] == true {
-            e.radio_contacts.insert(victim);
+            e.seldom.radio_contacts.insert(victim);
         }
         e.navigation.path_runtime_mut().start_movement(0, 5);
         e.navigation.path_runtime_mut().start_blocked(0, 6);
@@ -681,7 +681,7 @@ fn walk_null_setter_matches_original_caller_rows() {
             actor,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let e = sim.substrate.entities.get(actor).unwrap();
         let loco = e.locomotor.as_ref().unwrap();

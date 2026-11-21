@@ -104,7 +104,7 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, owner: &str, cell: (u16, u16)) {
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -131,14 +131,14 @@ fn unit_delivery_vehicle_appears_at_deferment_not_one_frame_before() {
     assert_eq!(sim.unit_deliveries.pending.len(), 1);
     for frame in 1..20 {
         sim.session.set_binary_frame_for_test(frame);
-        tick(&mut sim, &rules, None, FrameEffects::default());
+        tick(&mut sim, &rules, None, &mut FrameEffects::default());
         assert!(payloads(&sim, "MTNK").is_empty());
     }
     sim.session.set_binary_frame_for_test(20);
-    tick(&mut sim, &rules, None, FrameEffects::default());
+    tick(&mut sim, &rules, None, &mut FrameEffects::default());
     assert_eq!(payloads(&sim, "MTNK").len(), 1);
     assert!(sim.unit_deliveries.pending.is_empty());
-    tick(&mut sim, &rules, None, FrameEffects::default());
+    tick(&mut sim, &rules, None, &mut FrameEffects::default());
     assert_eq!(payloads(&sim, "MTNK").len(), 1, "apply once");
 }
 
@@ -217,7 +217,7 @@ fn unit_delivery_missing_payload_or_invalid_target_preserves_command_state() {
             sw,
             cell,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             false
         ));
         assert_eq!(sim.state_hash(), before);
@@ -342,7 +342,7 @@ fn unit_delivery_pending_save_restores_deadline_payload_and_one_shot_completion(
     for frame in [19, 20, 21] {
         for sim in [&mut original, &mut restored] {
             sim.session.set_binary_frame_for_test(frame);
-            tick(sim, &rules, None, FrameEffects::default());
+            tick(sim, &rules, None, &mut FrameEffects::default());
             assert_eq!(payloads(sim, "MTNK").len(), if frame < 20 { 0 } else { 2 });
         }
     }
@@ -362,7 +362,7 @@ fn unit_delivery_pending_save_restores_deadline_payload_and_one_shot_completion(
             .collect::<Vec<_>>()
     };
     assert_eq!(records(&restored), records(&original));
-    assert_eq!(restored.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).count(), 1);
+    assert_eq!(restored.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "DeliveryCue")).count(), 1);
 }
 
 #[test]
@@ -405,7 +405,7 @@ fn unit_delivery_base_override_survives_save_and_capture_without_affecting_ordin
             .unit_delivery_provides_base_space()
     );
     let other = restored.interner.get("Russians").unwrap();
-    restored.change_owner_with_rules(id, other, &rules, None, FrameEffects::default());
+    restored.change_owner_with_rules(id, other, &rules, None, &mut FrameEffects::default());
     assert!(!crate::sim::production::is_within_build_area(
         &restored,
         &rules,
@@ -520,7 +520,7 @@ fn unit_delivery_frame_wrap_and_snapshot_owner_validation() {
     fire(&mut sim, &rules, "Americans", (12, 10));
     for frame in [u32::MAX - 1, u32::MAX, 0] {
         sim.session.set_binary_frame_for_test(frame);
-        tick(&mut sim, &rules, None, FrameEffects::default());
+        tick(&mut sim, &rules, None, &mut FrameEffects::default());
         assert!(payloads(&sim, "MTNK").is_empty());
     }
     let ghost = sim.interner.intern("MissingHouse");
@@ -531,7 +531,7 @@ fn unit_delivery_frame_wrap_and_snapshot_owner_validation() {
     bad.pending[0].due_frame = bad.pending[0].issued_frame.wrapping_sub(1);
     assert!(bad.validate(&sim).is_err());
     sim.session.set_binary_frame_for_test(1);
-    tick(&mut sim, &rules, None, FrameEffects::default());
+    tick(&mut sim, &rules, None, &mut FrameEffects::default());
     assert_eq!(payloads(&sim, "MTNK").len(), 1);
 }
 
@@ -548,7 +548,7 @@ fn unit_delivery_bad_ai_configuration_is_rejected_before_target_search() {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         crate::sim::superweapon::ai_fire::AI_FIRE_LOG
@@ -604,10 +604,10 @@ fn unit_delivery_waits_the_common_ares_deferment_read() {
         fire(&mut sim, &rules, "Americans", (12, 10));
         assert!(payloads(&sim, "MTNK").is_empty(), "{value}");
         sim.session.set_binary_frame_for_test(frames - 1);
-        tick(&mut sim, &rules, None, FrameEffects::default());
+        tick(&mut sim, &rules, None, &mut FrameEffects::default());
         assert!(payloads(&sim, "MTNK").is_empty(), "{value}");
         sim.session.set_binary_frame_for_test(frames);
-        tick(&mut sim, &rules, None, FrameEffects::default());
+        tick(&mut sim, &rules, None, &mut FrameEffects::default());
         assert_eq!(payloads(&sim, "MTNK").len(), 1, "{value}");
         assert!(sim.unit_deliveries.pending.is_empty(), "{value}");
     }
@@ -704,7 +704,7 @@ fn unit_delivery_building_builds_up() {
         .set_current_house_for_test(sim.interner.get("Americans"));
     fire(&mut sim, &rules, "Americans", (12, 10));
     assert!(sim.sound_events.iter().any(
-        |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")
+        |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "DeliveryCue")
     ));
     let ids = payloads(&sim, "GAPOWR");
     assert_eq!(ids.len(), 1);
@@ -792,7 +792,7 @@ fn unit_delivery_ai_ground_rally_arm_completes_a_delivery() {
         .get_mut(&owner)
         .unwrap()
         .set_preferred_super_weapon_target((12, 10));
-    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     let ids = payloads(&sim, "MTNK");
     assert_eq!(ids.len(), 1);
     let unit = sim.substrate.entities.get(ids[0]).unwrap();
@@ -811,7 +811,7 @@ fn unit_delivery_same_due_requests_complete_newest_first_and_only_once() {
     fire(&mut sim, &rules, "Russians", (20, 20));
     assert_eq!(sim.unit_deliveries.pending.len(), 2);
     sim.session.set_binary_frame_for_test(2);
-    tick(&mut sim, &rules, None, FrameEffects::default());
+    tick(&mut sim, &rules, None, &mut FrameEffects::default());
     let mut ids = payloads(&sim, "MTNK");
     ids.sort_unstable();
     assert_eq!(ids.len(), 2);
@@ -824,9 +824,9 @@ fn unit_delivery_same_due_requests_complete_newest_first_and_only_once() {
         .collect();
     assert_eq!(owners, ["Russians", "Americans"]);
     assert!(sim.unit_deliveries.pending.is_empty());
-    tick(&mut sim, &rules, None, FrameEffects::default());
+    tick(&mut sim, &rules, None, &mut FrameEffects::default());
     assert_eq!(payloads(&sim, "MTNK").len(), 2);
-    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).count(), 2);
+    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "DeliveryCue")).count(), 2);
 }
 
 #[test]
@@ -850,7 +850,7 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
                 sw,
                 (12, 10),
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
                 false
             ));
             assert_eq!(sim.state_hash(), before);
@@ -863,7 +863,7 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
             sw,
             (12, 10),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             false
         ));
         let settled = 2000 + amount;
@@ -875,7 +875,7 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
             sw,
             (12, 10),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             false
         ));
         assert_eq!(sim.houses[&owner].economy().credits(), settled);
@@ -896,10 +896,10 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
         for state in [&mut sim, &mut restored] {
             assert_eq!(state.houses[&owner].economy().credits(), settled - 1);
             state.session.set_binary_frame_for_test(2);
-            tick(state, &rules, None, FrameEffects::default());
+            tick(state, &rules, None, &mut FrameEffects::default());
             assert_eq!(payloads(state, "MTNK").len(), 1);
             assert!(state.unit_deliveries.pending.is_empty());
-            tick(state, &rules, None, FrameEffects::default());
+            tick(state, &rules, None, &mut FrameEffects::default());
             assert_eq!(payloads(state, "MTNK").len(), 1);
             assert_eq!(state.houses[&owner].economy().credits(), settled - 1);
         }

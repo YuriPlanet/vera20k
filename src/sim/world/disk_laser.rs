@@ -211,7 +211,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut cursor = None;
         let mut bridge_changed = false;
@@ -264,7 +264,7 @@ impl Simulation {
                 && let Some(building) = self.substrate.entities.get(target_id)
                 && building.category() == EntityCategory::Structure
             {
-                let (width, height) = building.type_facts.foundation().dimensions();
+                let (width, height) = building.seldom.type_facts.foundation().dimensions();
                 distance = distance
                     .wrapping_sub((i32::from(width) + i32::from(height)) * 64)
                     .max(0);
@@ -284,7 +284,7 @@ impl Simulation {
                 &FireSource::of_entity(source),
                 obj,
                 0,
-                (source.weapon_burst.index() & 1) as u8,
+                (source.seldom.weapon_burst.index() & 1) as u8,
                 Default::default(),
             )
             .coord;
@@ -343,7 +343,7 @@ impl Simulation {
                     )
                 {
                     self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        report.to_owned(),
+                        rules.sound_name(report),
                         AnimWorldCoord {
                             x: first.x,
                             y: first.y,
@@ -405,7 +405,7 @@ impl Simulation {
                     && let Some(sound) = rules.general.disk_laser_charge_up()
                 {
                     self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound.to_owned(),
+                        rules.sound_name(sound),
                         AnimWorldCoord {
                             x: first.x,
                             y: first.y,

@@ -57,8 +57,13 @@ fn a_landed_rocketeer_holding_a_target_re_anchors_on_guard_and_attack() {
             .expect("an open arena has a nearby cell");
         for id in [rocketeer, rifleman] {
             guard_with_target(&mut sim, id, enemy, mission);
-            crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
-                .unwrap();
+            crate::sim::world::dispatch_foot_mission(
+                &mut sim,
+                id,
+                &rules,
+                &mut ObjectAiCtx::default(),
+            )
+            .unwrap();
         }
         let nav_com = |id| sim.substrate.entities.get(id).unwrap().navigation.nav_com();
         assert_eq!(
@@ -85,7 +90,7 @@ fn a_landed_rocketeer_holding_a_target_re_anchors_on_guard_and_attack() {
         0
     );
     guard_with_target(&mut sim, aloft, enemy, MissionType::Guard);
-    crate::sim::world::dispatch_foot_mission(&mut sim, aloft, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, aloft, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     assert_eq!(
         sim.substrate
@@ -196,7 +201,7 @@ fn failed_hover_attack_reanchor_keeps_the_original_jumpjet_handoff() {
             let rng = sim.scenario_rng.native_state_hex();
             // Compare exactly the native prefix's setter-return boundary,
             // before either mission performs later targeting/cadence work.
-            super::hover_attack_reanchor(&mut sim, &rules, actor, ObjectAiCtx::default());
+            super::hover_attack_reanchor(&mut sim, &rules, actor, &mut ObjectAiCtx::default());
             let entity = sim.substrate.entities.get(actor).unwrap();
             let runtime = entity
                 .locomotor
@@ -247,7 +252,7 @@ fn failed_reanchor_on_guard_lifts_the_stock_unit_and_survives_save() {
         .unwrap()
         .attack_target
         .set_for_test(Some(TargetKind::Cell(50, 50)));
-    crate::sim::world::dispatch_foot_mission(&mut sim, actor, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, actor, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     assert_eq!(
         sim.substrate

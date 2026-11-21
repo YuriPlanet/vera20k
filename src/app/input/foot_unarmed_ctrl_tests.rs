@@ -33,10 +33,12 @@ fn scene(rules: &RuleSet, selected_target: bool) -> (Simulation, u64, u64) {
         .unwrap();
     sim.entity_mut_for_test(miner)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(selected_target);
     (sim, miner, enemy)
@@ -109,6 +111,7 @@ fn retail_unarmed_ctrl_click_matches_original_selection_and_navigation() {
             modifier,
             false,
             false,
+            &mut Default::default(),
         );
         let expected_cursor = match row["cursor"]["output"]["cursor_row"].as_u64().unwrap() {
             17 => CursorId::Select,

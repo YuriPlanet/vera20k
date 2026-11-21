@@ -423,7 +423,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
         object.set_owner_for_test(sim.interner.intern("Americans"));
         // This test isolates constructor/deferred-drain effects, including
         // the retained Dummy. Supply no unrelated native sight walk.
-        object.sight.set_vision_range_for_test(0);
+        object.seldom.sight.set_vision_range_for_test(0);
         sim.substrate.entities.insert(object);
         sim.reveal(id);
         if index == 0 {

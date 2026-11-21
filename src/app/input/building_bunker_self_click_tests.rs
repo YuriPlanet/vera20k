@@ -36,7 +36,7 @@ fn frame(scene: &mut HeadlessScenario) -> SimFrameOutput {
             &commands,
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary bound-resource frame");
     assert!(output.tick.frame_committed && !output.network_waiting && !output.outcome_waiting);
@@ -437,7 +437,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
             serde_json::to_value(b.building.bunker_runtime).unwrap()["state"],
             "Occupied"
         );
-        assert!(!t.in_limbo() && t.in_playfield() && !t.selection.is_selected());
+        assert!(!t.in_limbo() && t.in_playfield() && !t.seldom.selection.is_selected());
     }
     let hover = point_select(&mut scene, bunker, &local);
     let before = query_snapshot(&scene, bunker, tank);
@@ -455,6 +455,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             building_selection_click(
                 sim,
@@ -533,7 +534,8 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 Some(scene.runtime.resources.rules.overlay_registry()),
                 OrderModifier::Normal,
                 false,
-                false
+                false,
+                &mut Default::default()
             ),
             CursorFeedbackKind::Deploy
         );

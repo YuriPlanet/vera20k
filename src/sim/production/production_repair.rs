@@ -219,7 +219,7 @@ pub fn toggle_repair(
     let type_id = entity.type_ref();
     let position = entity.position;
     let sound = if entity.building.repairing.on && entity.health.current() == strength {
-        rules.general.scold_sound.clone()
+        rules.general.scold_sound.as_deref()
     } else {
         if entity.building.repairing.on {
             // ToggleRepair447082..447091: House50B6F0 admits Building
@@ -233,11 +233,11 @@ pub fn toggle_repair(
             sim.sound_events
                 .emit(SimSoundEvent::Repairing { owner, type_id });
         }
-        rules.general.generic_click_sound.clone()
+        rules.general.generic_click_sound.as_deref()
     };
     if let Some(sound) = sound {
         sim.sound_events.emit(SimSoundEvent::voc_at_for(
-            sound,
+            rules.sound_name(sound),
             Some([owner, owner]),
             &position,
         ));
@@ -274,7 +274,7 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
     }
     toggle_repair(sim, rules, id, RepairControl::Stop);
     sim.refresh_building_damage_state(id, rules);
-    if let Some(sound) = rules.general.building_repaired_sound.clone()
+    if let Some(sound) = rules.general.building_repaired_sound.as_deref()
         && let Some(entity) = sim.substrate.entities.get(id)
     {
         let coord = crate::sim::movement::ground_pose::object_get_coords(
@@ -285,7 +285,7 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
         position.put_world_xy([coord.x, coord.y]);
         position.put_z(coord.z);
         sim.sound_events
-            .emit(SimSoundEvent::voc_at(sound, &position));
+            .emit(SimSoundEvent::voc_at(rules.sound_name(sound), &position));
     }
     true
 }
@@ -431,7 +431,7 @@ pub(crate) fn update_repair_and_power(
     rules: &RuleSet,
     id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -469,7 +469,7 @@ fn low_credit_sale(
     rules: &RuleSet,
     id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -477,8 +477,9 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.rule_policy().uses_ai_economy() || entity.ai_sell_repair.ai_sellable())
-        && entity.ai_sell_repair.was_attacked_by_enemy()
+    if !((sim.session.rule_policy().uses_ai_economy()
+        || entity.seldom.ai_sell_repair.ai_sellable())
+        && entity.seldom.ai_sell_repair.was_attacked_by_enemy()
         && house.authored_iq() as u32 >= rules.general.iq_sell_back as u32)
     {
         return;
@@ -526,7 +527,7 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     }
     let controlled = house.is_controlled_by_human(sim.session.rule_policy());
     if !(entity.building.has_been_captured.is_set()
-        || entity.ai_sell_repair.ai_repairable()
+        || entity.seldom.ai_sell_repair.ai_repairable()
         || controlled)
     {
         return;

@@ -3,6 +3,17 @@
 //! Source: Ares3.0 LoadAdditionalCSF100609A0 / sort10060330 and gamemd CRT
 //! bsearch7C8E25, reached by both the override hook and LoadString734E93.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 type Label = (String, Option<super::CsfText>);
 
 /// CRT bsearch7C8E25 chooses the lower middle for even lengths. Rust's

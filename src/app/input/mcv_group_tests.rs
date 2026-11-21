@@ -116,7 +116,12 @@ fn frame(runtime: &mut SimRuntime, input: &mut MatchInputState, payloads: Vec<Co
         CommandEnvelope::new(owner, runtime.simulation.session().tick() + 1, payload)
     }));
     let output = runtime
-        .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(
+            &commands,
+            33,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert!(output.tick.frame_committed);
     for fact in &output.lifecycle_outputs {

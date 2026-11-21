@@ -75,7 +75,6 @@ impl PlacementPreviewArt {
 
     /// Build the one preview instance for this frame, loading and retaining
     /// the resolved SHP on first use.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_instance(
         &mut self,
         device: &wgpu::Device,
@@ -130,7 +129,6 @@ impl PlacementPreviewArt {
         Some(instance)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn load_preview(
         &mut self,
         device: &wgpu::Device,
@@ -268,7 +266,7 @@ fn with_extension(name: &str, extension: &str) -> String {
 }
 
 fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
-    Palette::from_bytes(&assets.get(name)?).ok()
+    Palette::from_bytes(assets.get_ref(name)?).ok()
 }
 
 fn load_strip(
@@ -280,10 +278,10 @@ fn load_strip(
     palette: &Palette,
 ) -> Option<CenteredShapeStrip> {
     for name in candidates {
-        let Some(bytes) = assets.get(name) else {
+        let Some(bytes) = assets.get_ref(name) else {
             continue;
         };
-        let Ok(shp) = ShpFile::from_bytes(&bytes) else {
+        let Ok(shp) = ShpFile::from_bytes(bytes) else {
             continue;
         };
         if let Some(strip) =

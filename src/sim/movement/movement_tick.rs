@@ -43,7 +43,7 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 /// inner movement loop. This avoids repeated `entities.get()` calls and keeps
 /// the data available across the mutable/immutable borrow boundary.
 ///
-/// VERA-only: a per-visit copy of the mover's class, locomotor, SpeedType,
+/// VERA-only: a per-visit copy of the mover's class, locomotor kind, SpeedType,
 /// MovementZone, crusher flags and playfield facts. Nothing writes
 /// it back; the entity's records stay the source of truth.
 pub(super) fn snapshot_mover(
@@ -62,7 +62,7 @@ pub(super) fn snapshot_mover(
             .unwrap_or(MovementZone::Normal),
         omni_crusher: e.mover_facts.omni_crusher(),
         regular_crusher: e.mover_facts.regular_crusher(),
-        locomotor: e.locomotor.clone(),
+        locomotor_kind: e.locomotor.as_ref().map(|l| l.active_kind()),
         allow_zone_hierarchy: playfield_bounds.is_none() || e.in_playfield(),
     })
 }
@@ -334,7 +334,7 @@ enum VisitEntry {
     /// no active-track dispatch and no new mover visit.
     AfterTrackEnd,
     /// Below the no-queue request, after Find_Path resumed head selection.
-    FootPathResume(Box<OrdinaryMoverVisit>),
+    FootPathResume(OrdinaryMoverVisit),
 }
 
 /// Run one ordinary mover visit. An early return ends this visit, including
@@ -397,7 +397,7 @@ fn advance_ordinary_mover(
     let resumed_path_request = matches!(entry, VisitEntry::FootPathResume(_));
     let counts_visit = matches!(entry, VisitEntry::Process);
     let visit = if let VisitEntry::FootPathResume(visit) = entry {
-        *visit
+        visit
     } else {
         if counts_visit {
             stats.movers_total = stats.movers_total.saturating_add(1);
@@ -425,11 +425,9 @@ fn advance_ordinary_mover(
         };
         // Walk tests CanEnter at 0x75B690 before its paid SetCoords calls
         // (0x75BDC0/0x75C12E). A refused prospective step keeps exact XY.
-        let walk_position_before_step = snap
-            .locomotor
-            .as_ref()
-            .filter(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk)
-            .and_then(|_| entities.get(entity_id).map(|entity| entity.position));
+        let walk_position_before_step = (snap.locomotor_kind == Some(LocomotorKind::Walk))
+            .then(|| entities.get(entity_id).map(|entity| entity.position))
+            .flatten();
         // The prone arm of `InfantryClass::GetMovementSpeed @ 0x00521D80`
         // reads the type's `Crawls=` and, under Phobos, its `ProneSpeed`.
         let prone_type = entities
@@ -878,7 +876,7 @@ pub(crate) struct PendingMovementPass {
 pub(crate) enum MoverReentry {
     /// Find_Path resumed head selection (Walk after 0x75AFC5, Drive 0x4B32A1,
     /// Ship 0x6A28F1).
-    FootPath(Box<FootPathRequest>),
+    FootPath(FootPathRequest),
     /// Process_Movement after Process_Track(0) ended the track in the same
     /// Process (Drive 0x4B0647 / Ship 0x69FCEE).
     AfterTrackEnd(u64),
@@ -927,10 +925,9 @@ impl PendingMovementPass {
             playfield_bounds: sim.playfield_bounds(),
         };
         let (entity_id, entry) = match reentry {
-            MoverReentry::FootPath(request) => (
-                request.entity_id,
-                VisitEntry::FootPathResume(Box::new(request.visit)),
-            ),
+            MoverReentry::FootPath(request) => {
+                (request.entity_id, VisitEntry::FootPathResume(request.visit))
+            }
             MoverReentry::AfterTrackEnd(entity_id) => (entity_id, VisitEntry::AfterTrackEnd),
         };
         advance_ordinary_mover(

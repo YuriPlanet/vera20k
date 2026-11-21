@@ -83,7 +83,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         },
     );
     assert_eq!(rules.warhead("SA").unwrap().inf_death, 1);
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let corpse = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(corpse.health.current(), 0);
     assert!(corpse.lifecycle.object_alive());
@@ -94,7 +94,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         corpse.mission.effective(),
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard)
     );
-    assert!(corpse.base_defense_response.recruitable_a());
+    assert!(corpse.seldom.base_defense_response.recruitable_a());
     assert!(sim.team_script_vm.team_for_member(victim).is_none());
     crate::sim::ai_base_building::update_production_choices(&mut sim, &rules, owner, None);
     assert_eq!(

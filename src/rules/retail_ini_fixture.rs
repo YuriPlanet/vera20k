@@ -288,7 +288,9 @@ pub fn retail_audio_index() -> Option<&'static crate::assets::asset_manager::Loa
 }
 
 /// [`AudioDefinitions::select`] over [`retail_assets`], selected once per
-/// test process. `None` when the install skips.
+/// test process for each Rules-reading mode: on a thread that reads the
+/// Ares way the install stands for a game that ships `ares.mix`. `None` when
+/// the install skips.
 ///
 /// [`AudioDefinitions::select`]: crate::rules::audio_sources::AudioDefinitions::select
 pub fn retail_audio_definitions() -> Option<&'static crate::rules::audio_sources::AudioDefinitions>
@@ -297,12 +299,17 @@ pub fn retail_audio_definitions() -> Option<&'static crate::rules::audio_sources
     static DEFINITIONS: [std::sync::OnceLock<
         Option<crate::rules::audio_sources::AudioDefinitions>,
     >; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
-    DEFINITIONS[usize::from(crate::rules::ares_switch::ares_way())]
+    let ares_way = crate::rules::ares_switch::ares_way();
+    DEFINITIONS[usize::from(ares_way)]
         .get_or_init(|| {
             let (_, assets) = retail_assets()?;
-            Some(crate::rules::audio_sources::AudioDefinitions::select(
-                &assets,
-            ))
+            Some(
+                crate::rules::audio_sources::AudioDefinitions::select_for_game(
+                    &assets,
+                    None,
+                    assets.ships_ares() || ares_way,
+                ),
+            )
         })
         .as_ref()
 }
@@ -398,8 +405,14 @@ pub fn retail_rules_owner(
     })
     .collect();
     let (sources, sounds, eva) = once_per_process(entries, || {
-        let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
-        let sources = RetailRulesSources::select(assets).expect("select active-YR startup sources");
+        // The fixture game ships `ares.mix` when its thread reads the Ares
+        // way; the retail archives do not.
+        let ships_ares = assets.ships_ares() || crate::rules::ares_switch::ares_way();
+        let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select_for_game(
+            assets, None, ships_ares,
+        );
+        let sources = RetailRulesSources::select_for_game(assets, ships_ares)
+            .expect("select active-YR startup sources");
         for (name, selected) in [
             (
                 "langrule.ini",
@@ -428,9 +441,8 @@ pub fn retail_rules_owner(
     })
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
-    // derives. The fixture game ships `ares.mix` when its thread reads the
-    // Ares way (`ares_switch::game_ships_ares`); a test of the retail install
-    // itself says `with_ares_mix(false)`.
+    // derives. A test of the retail install itself says
+    // `with_ares_mix(false)`.
     sources.into_owner(sounds, eva).expect("cold startup")
 }
 

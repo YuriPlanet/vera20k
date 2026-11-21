@@ -16,7 +16,17 @@ pub const MAX_SPAWN_COUNT: u16 = 1_000;
 pub enum SkirmishCheat {
     Money(i32),
     SpySat,
-    Spawn { type_id: String, count: u16 },
+    /// Saved before cursor placement. This form always uses the original base position.
+    Spawn {
+        type_id: String,
+        count: u16,
+    },
+    /// Store the selected map cell so playback is independent of the camera and pointer.
+    SpawnAt {
+        type_id: String,
+        count: u16,
+        cell: (u16, u16),
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +38,24 @@ pub enum CheatEffect {
         requested: u16,
         type_id: String,
     },
+}
+
+/// Chat validates the order before choosing a location. Placement and replay
+/// resolve it against the same match rules when executing it.
+pub fn skirmish_spawn_type<'a>(
+    rules: &'a RuleSet,
+    type_id: &str,
+    count: u16,
+) -> Result<&'a crate::rules::object_type::ObjectType, &'static str> {
+    if !(1..=MAX_SPAWN_COUNT).contains(&count) {
+        return Err("VERA:CheatUsage");
+    }
+    // A vehicle keeps its ID even if a mod also registers infantry under
+    // that name. Existing commands and replays resolved vehicles first.
+    rules
+        .object_in_category(ObjectCategory::Vehicle, type_id)
+        .or_else(|| rules.task_force_member_object(type_id))
+        .ok_or("VERA:CheatUnit")
 }
 
 impl Simulation {
@@ -83,8 +111,13 @@ impl Simulation {
                 Ok(CheatEffect::SpySat)
             }
             SkirmishCheat::Spawn { type_id, count } => {
-                self.spawn_skirmish_units(owner, type_id, *count, rules)
+                self.spawn_skirmish_units(owner, type_id, *count, None, rules)
             }
+            SkirmishCheat::SpawnAt {
+                type_id,
+                count,
+                cell,
+            } => self.spawn_skirmish_units(owner, type_id, *count, Some(*cell), rules),
         }
     }
 
@@ -93,31 +126,47 @@ impl Simulation {
         owner: InternedId,
         type_id: &str,
         count: u16,
+        at: Option<(u16, u16)>,
         rules: &RuleSet,
     ) -> Result<CheatEffect, &'static str> {
-        if !(1..=MAX_SPAWN_COUNT).contains(&count) {
-            return Err("VERA:CheatUsage");
-        }
-        // A vehicle keeps its ID even if a mod also registers infantry under
-        // that name. Existing commands and replays resolved vehicles first.
-        let object = rules
-            .object_in_category(ObjectCategory::Vehicle, type_id)
-            .or_else(|| rules.task_force_member_object(type_id))
-            .ok_or("VERA:CheatUnit")?;
-        let (cx, cy) = self
-            .houses
-            .get(&owner)
-            .and_then(|house| house.base_center())
-            .or_else(|| {
-                self.entities()
-                    .values()
-                    .find(|e| e.owner() == owner && e.is_live_on_map())
-                    .map(|e| (e.position.rx(), e.position.ry()))
-            })
-            .ok_or("VERA:CheatNoBase")?;
-        let bounds = self.playfield_bounds().ok_or("VERA:CheatNoBase")?;
+        let object = skirmish_spawn_type(rules, type_id, count)?;
+        let bounds = self.playfield_bounds().ok_or(if at.is_some() {
+            "VERA:CheatPointAtMap"
+        } else {
+            "VERA:CheatNoBase"
+        })?;
+        let in_playfield = |cell: &crate::map::resolved_terrain::ResolvedTerrainCell| {
+            bounds.contains_height_aware_packed(
+                i32::from(cell.rx),
+                i32::from(cell.ry),
+                cell.level as i8,
+                cell.slope_type,
+            )
+        };
+        let (cx, cy) = match at {
+            Some((x, y)) => {
+                if !self
+                    .resolved_terrain()
+                    .and_then(|grid| grid.cell(x, y))
+                    .is_some_and(in_playfield)
+                {
+                    return Err("VERA:CheatPointAtMap");
+                }
+                (x, y)
+            }
+            None => self
+                .houses
+                .get(&owner)
+                .and_then(|house| house.base_center())
+                .or_else(|| {
+                    self.entities()
+                        .values()
+                        .find(|e| e.owner() == owner && e.is_live_on_map())
+                        .map(|e| (e.position.rx(), e.position.ry()))
+                })
+                .ok_or("VERA:CheatNoBase")?,
+        };
         let center = (i32::from(cx), i32::from(cy));
-        let owner_name = self.interner.resolve(owner).to_owned();
         let passability = CellPassabilityArgs {
             speed_type: object.speed_type,
             ignore_infantry: false,
@@ -137,7 +186,7 @@ impl Simulation {
             let Some(cell) = self.resolved_terrain.as_ref().and_then(|t| t.cell(rx, ry)) else {
                 continue;
             };
-            if !bounds.contains_height_aware_packed(x, y, cell.level as i8, cell.slope_type)
+            if !in_playfield(cell)
                 || cell.bridge_facts.has_structural_bridge()
                 || !self
                     .occupancy()
@@ -162,11 +211,12 @@ impl Simulation {
             {
                 continue;
             }
+            let type_id = self.interner.intern(&object.id);
             if self
                 .spawn_resolved_object_at_height(
                     object,
-                    &object.id,
-                    &owner_name,
+                    type_id,
+                    owner,
                     rx,
                     ry,
                     0,
@@ -302,7 +352,7 @@ mod tests {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty(),
+                &mut crate::sim::world::FrameEffects::empty(),
             )
             .unwrap();
         let sim = &scene.runtime.simulation;
@@ -364,7 +414,7 @@ mod tests {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty(),
+                &mut crate::sim::world::FrameEffects::empty(),
             )
             .unwrap();
         let admitted = frame.take_admitted_commands();
@@ -409,6 +459,38 @@ mod tests {
             .map(|e| (e.position.rx(), e.position.ry()))
             .collect();
         assert_eq!(cells.len(), 200);
+        // The recorded legacy spawn above still starts at the base. Aim across
+        // Hills at another player's unused starting cell and replay both orders.
+        let base = sim.houses[&owner].base_center().unwrap();
+        let target = *sim
+            .session
+            .mp_start_waypoints()
+            .values()
+            .find(|&&(x, y)| x.abs_diff(base.0).max(y.abs_diff(base.1)) > RADIUS_HARD_CAP)
+            .unwrap();
+        let spawn_at = |cell| SkirmishCheat::SpawnAt {
+            type_id: "HTNK".into(),
+            count: 1,
+            cell,
+        };
+        let unchanged = sim.state_hash();
+        assert_eq!(
+            log.apply_skirmish_cheat(sim, rules, spawn_at((u16::MAX, u16::MAX))),
+            Err("VERA:CheatPointAtMap")
+        );
+        assert_eq!(sim.state_hash(), unchanged);
+        assert_eq!(
+            log.apply_skirmish_cheat(sim, rules, spawn_at(target)),
+            Ok(CheatEffect::Spawned {
+                placed: 1,
+                requested: 1,
+                type_id: "HTNK".into()
+            })
+        );
+        assert!(sim.entities().values().any(|e| e.owner() == owner
+            && e.is_live_on_map()
+            && sim.resolve(e.type_ref()) == "HTNK"
+            && (e.position.rx(), e.position.ry()) == target));
         let saved = serde_json::from_slice(&serde_json::to_vec(&log).unwrap()).unwrap();
         ReplayRunner::run_runtime(&mut playback, &saved, 67).unwrap();
         assert_eq!(playback.simulation.state_hash(), sim.state_hash());

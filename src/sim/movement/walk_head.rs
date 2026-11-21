@@ -151,7 +151,7 @@ impl crate::sim::world::Simulation {
         request: Option<DriveCoord>,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<bool, String> {
         let grid = self.path_grid_snapshot();
         let selection = select_step_head_at(
@@ -219,7 +219,7 @@ impl crate::sim::world::Simulation {
         coord: Option<DriveCoord>,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(was_moving) = self
             .substrate
@@ -352,7 +352,7 @@ mod tests {
                 0,
                 Some((3, 4)),
             ));
-        slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
+        slave.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
         let current = super::super::ground_pose::position_world_coord(&slave.position);
         entities.insert(slave);
         let terrain = ResolvedTerrainGrid::from_cells(
@@ -844,7 +844,7 @@ mod tests {
             Some(DriveCoord::cell(7, 5, 0)),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();

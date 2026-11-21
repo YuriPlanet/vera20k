@@ -70,7 +70,7 @@ pub(crate) fn receive_radio(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(category) = sim.substrate.entities.get(target_sid).map(|t| t.category()) else {
         return RadioResponse::None;
@@ -99,7 +99,7 @@ fn building_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         // Original43CD01: Begin_Mode(IDLE) precedes the common teardown.
@@ -276,7 +276,7 @@ pub(crate) fn can_load(
         || (!payload.ignore_dock_capacity
             && !absorbs
             && tunnel.is_none()
-            && !building.radio_contacts.has_free_or(from))
+            && !building.seldom.radio_contacts.has_free_or(from))
         || (unit_type.movement_zone != crate::rules::locomotor_type::MovementZone::Amphibious
             && building_type.naval != unit_type.naval)
         || unit_type.balloon_hover
@@ -311,7 +311,7 @@ pub(crate) fn can_load(
     // arms decide (`0x0043C4F8`). `tunnel` is `None` without Ares.
     if let Some(tunnel) = tunnel {
         if let Some(manager) = unit.capture_manager.as_ref()
-            && (manager.has_any() || unit.mind_control.is_mind_controlled())
+            && (manager.has_any() || unit.seldom.mind_control.is_mind_controlled())
         {
             return CanLoad::Answer(RadioResponse::Negatory);
         }
@@ -382,7 +382,7 @@ pub(crate) fn can_load(
             .capture_manager
             .as_ref()
             .is_some_and(|manager| manager.has_any())
-            || unit.mind_control.is_mind_controlled()
+            || unit.seldom.mind_control.is_mind_controlled()
             || building.ammo().map_or(0, |ammo| ammo.current()) == 0;
         return CanLoad::Answer(if refused {
             RadioResponse::Negatory
@@ -414,7 +414,7 @@ fn building_can_load(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -513,7 +513,7 @@ fn building_docking(
     building_id: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -535,7 +535,7 @@ fn building_docking(
     let unit_repair = object.unit_repair;
     let bunker = object.bunker;
     if unit_repair
-        && building.radio_contacts.contains(from)
+        && building.seldom.radio_contacts.contains(from)
         && transmit(
             sim,
             building_id,
@@ -555,7 +555,7 @@ fn building_docking(
             .substrate
             .entities
             .get(building_id)
-            .is_some_and(|building| building.radio_contacts.contains(from))
+            .is_some_and(|building| building.seldom.radio_contacts.contains(from))
         && !crate::sim::docking::bunker_link::can_auto_deploy_here(sim, from, rules)
     {
         return RadioResponse::Negatory;
@@ -581,14 +581,14 @@ fn building_docking(
     // Building43C882/43CB0C..CBC0: Hospital bypasses the general dock's
     // HELLO/NeedToMove arm. Full contacts may release a finished patient.
     if object.hospital {
-        if !building.radio_contacts.has_free_or(from) {
-            let capacity = building.radio_contacts.capacity();
+        if !building.seldom.radio_contacts.has_free_or(from) {
+            let capacity = building.seldom.radio_contacts.capacity();
             for slot in 0..capacity {
                 let contact = sim
                     .substrate
                     .entities
                     .get(building_id)
-                    .and_then(|building| building.radio_contacts.slot(slot));
+                    .and_then(|building| building.seldom.radio_contacts.slot(slot));
                 if let Some(contact) = contact
                     && transmit(
                         sim,
@@ -615,7 +615,7 @@ fn building_docking(
                 .substrate
                 .entities
                 .get(building_id)
-                .is_some_and(|building| building.radio_contacts.has_free_or(from))
+                .is_some_and(|building| building.seldom.radio_contacts.has_free_or(from))
             {
                 RadioResponse::Roger
             } else {
@@ -638,7 +638,9 @@ fn building_docking(
     }
     // 0x0043C8A4..0x0043C8CC: a sender that is not a contact is HELLOed back
     // when a slot is free or already its own.
-    if !building.radio_contacts.contains(from) && building.radio_contacts.has_free_or(from) {
+    if !building.seldom.radio_contacts.contains(from)
+        && building.seldom.radio_contacts.has_free_or(from)
+    {
         transmit(
             sim,
             building_id,
@@ -655,7 +657,7 @@ fn building_docking(
         .substrate
         .entities
         .get(building_id)
-        .is_some_and(|building| building.radio_contacts.contains(from));
+        .is_some_and(|building| building.seldom.radio_contacts.contains(from));
     let pad_force = contacted
         && pad_dock
         && sim.substrate.entities.get(from).is_some_and(|foot| {
@@ -680,7 +682,13 @@ fn building_docking(
             .substrate
             .entities
             .get(building_id)
-            .and_then(|building| building.radio_contacts.slot(0).map(|id| (building, id)))
+            .and_then(|building| {
+                building
+                    .seldom
+                    .radio_contacts
+                    .slot(0)
+                    .map(|id| (building, id))
+            })
             .and_then(|(building, id)| sim.substrate.entities.get(id).map(|unit| (building, unit)))
             .is_some_and(|(building, unit)| {
                 let a = crate::sim::movement::ground_pose::object_get_coords(
@@ -785,7 +793,7 @@ fn building_dock_now(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -878,7 +886,7 @@ fn unit_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         // 0x00737B14: a unit on Return queues Guard, then the Foot receiver;
@@ -931,7 +939,7 @@ fn unit_hold_still(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let _ = foot_receive(
         sim,
@@ -955,7 +963,7 @@ fn unit_hold_still(
         return RadioResponse::Roger;
     };
     entity.navigation.clear_nav_list();
-    if entity.tether.partner().is_none() || entity.radio_contacts.slot(0).is_none() {
+    if entity.seldom.tether.partner().is_none() || entity.seldom.radio_contacts.slot(0).is_none() {
         if let Some(from) = sender {
             transmit(
                 sim,
@@ -1004,7 +1012,7 @@ fn unit_want_ride(sim: &Simulation, unit: u64, rules: &RuleSet) -> RadioResponse
         }
     }
     if entity.mission.effective() == MissionId::from_known(MissionType::Unload)
-        || entity.tether.partner().is_some()
+        || entity.seldom.tether.partner().is_some()
         || in_tube
     {
         return RadioResponse::Negatory;
@@ -1037,7 +1045,7 @@ fn unit_docking(
     from: u64,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some((transport, sender)) = sim
         .substrate
@@ -1061,11 +1069,11 @@ fn unit_docking(
     }
     let movement_zone = sender_type.movement_zone;
     let ares = rules.ares_form();
-    if transport.radio_contacts.slot(0) != Some(from) {
+    if transport.seldom.radio_contacts.slot(0) != Some(from) {
         if !transport_has_room(transport, transport_type, sender_type, ares) {
             return RadioResponse::Negatory;
         }
-        if transport.radio_contacts.is_empty() {
+        if transport.seldom.radio_contacts.is_empty() {
             transmit(
                 sim,
                 unit,
@@ -1154,7 +1162,7 @@ fn unit_docking(
     };
     if crate::sim::movement::motion_query::is_moving(transport) == Some(true)
         || transport.turret_rotation_latch.is_set()
-        || transport.tether.partner().is_some()
+        || transport.seldom.tether.partner().is_some()
     {
         return RadioResponse::Roger;
     }
@@ -1249,7 +1257,7 @@ pub(crate) fn unit_can_enter_radio(
             )
         })
         .is_some()
-        || passenger.mind_control.is_mind_controlled()
+        || passenger.seldom.mind_control.is_mind_controlled()
         || passenger.parasite.eater().is_some()
         || passenger
             .capture_manager
@@ -1325,7 +1333,7 @@ pub(crate) fn dock_unload_facing(sim: &Simulation, unit: u64, rules: &RuleSet) -
             .substrate
             .entities
             .get(unit)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
             .and_then(|dock| sim.substrate.entities.get(dock))
             .filter(|dock| dock.category() == EntityCategory::Structure)
         && let Some(object) = sim.object_type(dock.type_ref(), rules)
@@ -1345,7 +1353,7 @@ fn unit_prepare_to_dock(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     // 0x007376BA: the Foot receiver first (Techno sends TETHER back).
     let _ = foot_receive(
@@ -1372,9 +1380,10 @@ fn unit_prepare_to_dock(
         return RadioResponse::Roger;
     }
     let dock = entity
+        .seldom
         .radio_contacts
         .slot(0)
-        .filter(|_| entity.tether.partner().is_some())
+        .filter(|_| entity.seldom.tether.partner().is_some())
         .filter(|_| entity.mission.effective() == MissionId::from_known(MissionType::Enter));
     let dock = dock.filter(|&dock| {
         sim.substrate
@@ -1400,7 +1409,7 @@ fn unit_prepare_to_dock(
 /// a `Harvester=`/`Weeder=` unit with its unload latch up drops it, scatters
 /// (forced, not no-kidding — the Unit Scatter refuses while Unload is still
 /// current), queues Harvest and commences it when ready.
-fn unit_run_away(sim: &mut Simulation, unit: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+fn unit_run_away(sim: &mut Simulation, unit: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
     let latched_harvester = sim.substrate.entities.get(unit).is_some_and(|entity| {
         entity
             .miner
@@ -1465,7 +1474,7 @@ fn aircraft_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get(aircraft) else {
         return RadioResponse::None;
@@ -1486,7 +1495,7 @@ fn aircraft_receive(
     };
     let holds_release = transport.carryall
         && entity.mission.effective() == MissionId::from_known(MissionType::Move)
-        && entity.tether.partner().is_some()
+        && entity.seldom.tether.partner().is_some()
         && sender.is_some_and(|sender| {
             entity
                 .passenger_role()
@@ -1636,7 +1645,7 @@ fn aircraft_dock_now(
     aircraft: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(entity) = sim.substrate.entities.get(aircraft)
         && let Some(object) = sim.entity_object_type(entity, rules)
@@ -1679,7 +1688,7 @@ fn aircraft_docking(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let _ = foot_receive(
         sim,
@@ -1746,7 +1755,7 @@ fn aircraft_docking(
         .substrate
         .entities
         .get(aircraft)
-        .and_then(|entity| entity.radio_contacts.slot(0))
+        .and_then(|entity| entity.seldom.radio_contacts.slot(0))
     {
         sim.object_deselect(contact);
     }
@@ -1764,7 +1773,7 @@ fn aircraft_move_here(
     sender: Option<u64>,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let _ = foot_receive(
         sim,
@@ -1852,7 +1861,7 @@ fn foot_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         RadioMessage::MoveToCell => foot_move_here(sim, foot, payload, rules, effects),
@@ -1892,7 +1901,7 @@ fn foot_move_here(
     foot: u64,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get(foot) else {
         return RadioResponse::None;
@@ -1952,16 +1961,16 @@ fn foot_move_here(
 /// the first contact is dropped; a unit asleep queues Guard and commences it
 /// when ready, one on Enter queues Guard; one with no NavCom and no turret
 /// swing (`+0x6AF`) scatters (forced, no-kidding). The Techno receiver follows.
-fn foot_run_away(sim: &mut Simulation, foot: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+fn foot_run_away(sim: &mut Simulation, foot: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(foot) else {
         return;
     };
     // 0x004D902D..0x004D904F: In_Radio_Contact and NavCom == Contact(0).
-    let aimed_at_contact = entity
-        .radio_contacts
-        .slot(0)
-        .is_some_and(|contact| entity.navigation.nav_com() == Some(NavTargetRef::object(contact)));
+    let aimed_at_contact =
+        entity.seldom.radio_contacts.slot(0).is_some_and(|contact| {
+            entity.navigation.nav_com() == Some(NavTargetRef::object(contact))
+        });
     if aimed_at_contact {
         sim.assign_null_destination(foot, rules, Some(rules.overlay_registry()), effects);
     }
@@ -2031,7 +2040,7 @@ fn techno_receive(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     match msg {
         RadioMessage::Break => techno_over_out(sim, techno, sender, payload, rules, effects),
@@ -2162,7 +2171,7 @@ fn techno_repair_tick(
     sim: &mut Simulation,
     techno: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
@@ -2236,7 +2245,7 @@ fn techno_over_out(
     sender: Option<u64>,
     _payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(from) = sender {
         #[cfg(any(test, feature = "test-support"))]
@@ -2252,7 +2261,7 @@ fn techno_over_out(
             sim.substrate
                 .entities
                 .get(id)
-                .is_some_and(|e| e.tether.partner().is_some())
+                .is_some_and(|e| e.seldom.tether.partner().is_some())
         };
         if tethered(techno) && tethered(from) {
             transmit(
@@ -2278,7 +2287,7 @@ fn techno_tether(
     techno: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
@@ -2290,11 +2299,11 @@ fn techno_tether(
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.airport_bound);
-    if airport_bound || entity.tether.partner().is_some() {
+    if airport_bound || entity.seldom.tether.partner().is_some() {
         return radio_receive(sim, techno, sender, RadioMessage::Tether);
     }
     if let Some(entity) = sim.substrate.entities.get_mut(techno) {
-        entity.tether.attach(from);
+        entity.seldom.tether.attach(from);
     }
     transmit(
         sim,
@@ -2314,15 +2323,15 @@ fn techno_untether(
     techno: u64,
     sender: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(entity) = sim.substrate.entities.get_mut(techno) else {
         return RadioResponse::None;
     };
-    if entity.tether.partner().is_none() {
+    if entity.seldom.tether.partner().is_none() {
         return radio_receive(sim, techno, sender, RadioMessage::Untether);
     }
-    entity.tether.release();
+    entity.seldom.tether.release();
     if let Some(from) = sender {
         transmit(
             sim,
@@ -2389,7 +2398,7 @@ fn radio_receive(
                 .substrate
                 .entities
                 .get_mut(receiver)
-                .and_then(|entity| entity.radio_contacts.remove(from))
+                .and_then(|entity| entity.seldom.radio_contacts.remove(from))
                 .is_some();
             #[cfg(any(test, feature = "test-support"))]
             super::record_test_event(super::RadioTestEvent::ReceiverCommonCleared {
@@ -2448,7 +2457,7 @@ fn radio_hello(
     let Some(this) = substrate.entities.get_mut(receiver) else {
         return RadioResponse::None;
     };
-    match this.radio_contacts.insert(from) {
+    match this.seldom.radio_contacts.insert(from) {
         Some(_) => RadioResponse::Roger,
         None => RadioResponse::Negatory,
     }
@@ -2482,7 +2491,7 @@ mod tests {
             5,
             false,
         );
-        ge.radio_contacts.set_capacity(capacity);
+        ge.seldom.radio_contacts.set_capacity(capacity);
         sim.substrate.entities.insert(ge);
     }
 
@@ -2578,7 +2587,7 @@ mod tests {
             RadioMessage::Hello,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -2595,7 +2604,7 @@ mod tests {
             RadioMessage::CanEnter,
             RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -2654,7 +2663,7 @@ mod tests {
         );
         infantry.lifecycle.set_in_limbo_for_test(false);
         infantry.lifecycle.set_cell_marked_for_test(true);
-        infantry.radio_contacts.set_capacity(3);
+        infantry.seldom.radio_contacts.set_capacity(3);
         sim.substrate.entities.insert(infantry);
         assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
         assert_eq!(
@@ -2665,7 +2674,7 @@ mod tests {
                 RadioMessage::Tether,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2694,14 +2703,14 @@ mod tests {
                 RadioMessage::Break,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
         for id in [1, 2] {
             let entity = sim.substrate.entities.get(id).unwrap();
-            assert!(entity.radio_contacts.is_empty());
-            assert_eq!(entity.tether.partner(), None);
+            assert!(entity.seldom.radio_contacts.is_empty());
+            assert_eq!(entity.seldom.tether.partner(), None);
         }
         crate::sim::radio::take_transmit_log();
         clear_test_trace();
@@ -2714,7 +2723,7 @@ mod tests {
                 RadioMessage::Hello,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -2726,7 +2735,7 @@ mod tests {
                 RadioMessage::TetherBack,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -2746,9 +2755,9 @@ mod tests {
         );
         for (id, peer) in [(1, 2), (2, 1)] {
             let entity = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(entity.radio_contacts.len(), 1);
+            assert_eq!(entity.seldom.radio_contacts.len(), 1);
             assert!(entity.has_live_contact_with(peer));
-            assert_eq!(entity.tether.partner(), Some(peer));
+            assert_eq!(entity.seldom.tether.partner(), Some(peer));
         }
         assert_eq!(sim.rng_state(), rng);
     }
@@ -2767,6 +2776,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(2, 99);
         }
@@ -2780,7 +2790,7 @@ mod tests {
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2802,10 +2812,10 @@ mod tests {
         );
         for id in [1, 2] {
             let entity = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(entity.tether.partner(), None);
-            assert_eq!(entity.radio_contacts.slot(0), None);
-            assert_eq!(entity.radio_contacts.slot(1), None);
-            assert_eq!(entity.radio_contacts.slot(2), Some(99));
+            assert_eq!(entity.seldom.tether.partner(), None);
+            assert_eq!(entity.seldom.radio_contacts.slot(0), None);
+            assert_eq!(entity.seldom.radio_contacts.slot(1), None);
+            assert_eq!(entity.seldom.radio_contacts.slot(2), Some(99));
         }
         assert_eq!(sim.rng_state(), rng_before);
     }
@@ -2823,7 +2833,7 @@ mod tests {
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Queued
         );
@@ -2832,8 +2842,8 @@ mod tests {
         assert_eq!(log.len(), 5);
         for id in [1, 2] {
             let entity = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(entity.tether.partner(), None);
-            assert!(entity.radio_contacts.is_empty());
+            assert_eq!(entity.seldom.tether.partner(), None);
+            assert!(entity.seldom.radio_contacts.is_empty());
         }
     }
 
@@ -2855,7 +2865,7 @@ mod tests {
                 RadioMessage::AnimStop,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2892,7 +2902,7 @@ mod tests {
                 RadioMessage::AnimStop,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -2952,7 +2962,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Roger);
     }
@@ -2974,7 +2984,7 @@ mod tests {
                 RadioMessage::CanDock,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         assert_eq!(docking(&mut sim), RadioResponse::Roger);
@@ -2983,6 +2993,7 @@ mod tests {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             Some(2)
@@ -2992,6 +3003,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             Some(1)
@@ -3015,7 +3027,7 @@ mod tests {
                 RadioMessage::DockNow,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         let runtime = |sim: &Simulation| {
@@ -3058,7 +3070,7 @@ mod tests {
         );
         assert_eq!(bunker.building_ready_latch(), 1);
         assert_eq!(runtime(&sim).state(), BunkerState::Idle);
-        assert!(bunker.radio_contacts.is_empty());
+        assert!(bunker.seldom.radio_contacts.is_empty());
     }
 
     #[test]
@@ -3073,8 +3085,8 @@ mod tests {
         assert_eq!(hello(&mut sim, 3, 2), RadioResponse::Negatory);
 
         let refinery = sim.substrate.entities.get(2).expect("refinery");
-        assert!(refinery.radio_contacts.contains(1));
-        assert!(!refinery.radio_contacts.contains(3));
+        assert!(refinery.seldom.radio_contacts.contains(1));
+        assert!(!refinery.seldom.radio_contacts.contains(3));
     }
 
     /// Ares 3.0 `TechnoExt::GetDockUnloadFacing @ 10044C00`: a unit linked
@@ -3098,6 +3110,7 @@ mod tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(2);
         assert_eq!(super::dock_unload_facing(&sim, 1, &rules), 0x8000);
@@ -3116,6 +3129,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(1)
         );
@@ -3151,6 +3165,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(0, partner);
         }
@@ -3160,15 +3175,27 @@ mod tests {
             1,
             RadioMessage::Tether,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
-            sim.substrate.entities.get(1).unwrap().tether.partner(),
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .seldom
+                .tether
+                .partner(),
             None
         );
         assert_eq!(
-            sim.substrate.entities.get(2).unwrap().tether.partner(),
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .seldom
+                .tether
+                .partner(),
             Some(1)
         );
     }
@@ -3182,21 +3209,23 @@ mod tests {
         spawn_refinery(&mut sim, 4, "Americans", 1);
 
         let sender = sim.substrate.entities.get_mut(1).unwrap();
-        sender.radio_contacts.set_capacity(4);
-        assert_eq!(sender.radio_contacts.insert(2), Some(0));
-        assert_eq!(sender.radio_contacts.insert(3), Some(1));
-        assert_eq!(sender.radio_contacts.insert(4), Some(2));
-        assert_eq!(sender.radio_contacts.remove(3), Some(1));
+        sender.seldom.radio_contacts.set_capacity(4);
+        assert_eq!(sender.seldom.radio_contacts.insert(2), Some(0));
+        assert_eq!(sender.seldom.radio_contacts.insert(3), Some(1));
+        assert_eq!(sender.seldom.radio_contacts.insert(4), Some(2));
+        assert_eq!(sender.seldom.radio_contacts.remove(3), Some(1));
         sim.substrate
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(1);
         sim.substrate
             .entities
             .get_mut(4)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(1);
 
@@ -3205,7 +3234,7 @@ mod tests {
             &mut sim,
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let trace = take_test_trace();
 
@@ -3236,6 +3265,7 @@ mod tests {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -3254,7 +3284,7 @@ mod tests {
             RadioMessage::Tether,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         clear_test_trace();
@@ -3265,7 +3295,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
@@ -3286,7 +3316,13 @@ mod tests {
             ]
         );
         assert_eq!(
-            sim.substrate.entities.get(1).unwrap().tether.partner(),
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .seldom
+                .tether
+                .partner(),
             None
         );
         assert!(
@@ -3294,6 +3330,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(1)
         );
@@ -3318,12 +3355,14 @@ mod tests {
                 .entities
                 .get_mut(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(2);
             sim.substrate
                 .entities
                 .get_mut(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(1);
 
@@ -3334,7 +3373,7 @@ mod tests {
                 RadioMessage::Break,
                 RadioPayload::default(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
 
             assert!(
@@ -3342,6 +3381,7 @@ mod tests {
                     .entities
                     .get(1)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(2)
             );
@@ -3350,6 +3390,7 @@ mod tests {
                     .entities
                     .get(2)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(1)
             );
@@ -3365,6 +3406,7 @@ mod tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(2);
 
@@ -3375,7 +3417,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         transmit(
             &mut sim,
@@ -3384,7 +3426,7 @@ mod tests {
             RadioMessage::Break,
             RadioPayload::default(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert!(
@@ -3392,6 +3434,7 @@ mod tests {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -3400,6 +3443,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -3483,7 +3527,7 @@ mod tests {
                 false,
             );
             if input["controlled"].as_bool().unwrap_or(false) {
-                passenger.mind_control = MindControlLink::controlled_by_for_test(99);
+                passenger.seldom.mind_control = MindControlLink::controlled_by_for_test(99);
             }
             if input["parasite"].as_bool().unwrap_or(false) {
                 passenger.parasite.set_eater_for_test(Some(99));
@@ -3522,7 +3566,7 @@ mod tests {
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 u64::from(response.code()),
@@ -3598,7 +3642,7 @@ mod tests {
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::None
         );

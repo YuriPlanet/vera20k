@@ -166,7 +166,9 @@ impl ResolvedTerrainGrid {
     /// attributes from the stamped tile. Returns every cell whose tile or
     /// Level changed, the stamped cells first.
     pub(crate) fn stamp_deformation(&mut self, finals: &[FinalCell]) -> Vec<(u16, u16)> {
-        let Some(catalog) = self.deformation_catalog.clone() else {
+        // Held out of the grid while the stamps write it, and put back at
+        // the end; nothing the stamps call reads it.
+        let Some(catalog) = self.deformation_catalog.take() else {
             return Vec::new();
         };
         let mut stamped = Vec::new();
@@ -208,6 +210,7 @@ impl ResolvedTerrainGrid {
             self.radar_color_valid[index] = true;
             self.damaged_radar_metadata[index] = None;
         }
+        self.deformation_catalog = Some(catalog);
         changed
     }
 

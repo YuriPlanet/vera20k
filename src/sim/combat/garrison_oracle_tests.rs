@@ -119,7 +119,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
                 17,
                 &mut emitted,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );
@@ -137,9 +137,9 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             )
             .is_none()
         );
-        assert_eq!(building.rearm_timer.start_frame(), 17);
+        assert_eq!(building.seldom.rearm_timer.start_frame(), 17);
         assert_eq!(
-            i64::from(building.rearm_timer.duration()),
+            i64::from(building.seldom.rearm_timer.duration()),
             golden["output"].as_i64().unwrap(),
             "missing weapon at occupant rank {rank}"
         );
@@ -221,6 +221,7 @@ pub(super) fn for_each_native_case(
             EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test(object.foundation.clone().into());
         building

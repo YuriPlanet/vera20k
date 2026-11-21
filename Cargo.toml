@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -269,6 +269,18 @@ arboard = { version = "3.7", default-features = false }
 [target.'cfg(windows)'.dependencies]
 mimalloc = { version = "0.1.52", default-features = false }
 
+# Use wgpu-hal's Windows bindings for the device removal reason and the
+# Shell COM file chooser.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_System_Com",
+    "Win32_UI_Shell_Common",
+]
+
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
 # compiler. A target table for build dependencies matches the host, so other
@@ -307,6 +319,22 @@ debug_assert_with_mut_call = "deny"
 # Native ports keep gamemd's inputs explicit (the object, its rules and the
 # world state the body reads) instead of bundling them into one-use structs.
 too_many_arguments = "allow"
+# Every `unsafe` block and `unsafe impl` says in a `// SAFETY:` comment why
+# its contract holds, and every public `unsafe fn` documents it in `# Safety`.
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+# A lint silenced with `#[allow]` says why; one that always fires there takes
+# `#[expect(lint, reason = ..)]`, which warns once the lint stops firing.
+allow_attributes_without_reason = "deny"
+
+[workspace.lints.rust]
+# A dropped `Result` or `#[must_use]` value hides a failure or a lost value.
+unused_must_use = "deny"
+# Each unsafe operation inside an `unsafe fn` sits in its own `unsafe` block
+# with its own SAFETY comment, rather than the whole body being unsafe.
+unsafe_op_in_unsafe_fn = "deny"
+# A lifetime parameter equal to another (or to `'static`) is noise to read.
+redundant_lifetimes = "deny"
 
 # --- Build speed ---
 # Optimize all code at opt-level 1 in dev builds. The game rebuilds sprite

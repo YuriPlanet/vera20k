@@ -617,7 +617,7 @@ pub(crate) fn building_dock_coordinate(
         super::ground_pose::object_location(building, terrain),
         super::ground_pose::object_get_coords(building, terrain),
         object,
-        &building.radio_contacts,
+        &building.seldom.radio_contacts,
         requester,
         || {
             let id = requester.ok_or("Bunker dock coordinate needs a requester")?;
@@ -700,7 +700,7 @@ pub(crate) fn object_navigation_coordinate(
             super::ground_pose::object_location(entity, terrain),
             super::ground_pose::object_get_coords(entity, terrain),
             object,
-            &entity.radio_contacts,
+            &entity.seldom.radio_contacts,
             requester,
             requester_coordinate,
         );
@@ -942,7 +942,7 @@ impl crate::sim::world::Simulation {
         nonnull: bool,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -987,7 +987,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -1041,7 +1041,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return Ok(());

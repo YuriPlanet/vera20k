@@ -211,7 +211,7 @@ impl Simulation {
         request: &FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -235,7 +235,7 @@ impl Simulation {
         found: super::foot_path::FindPathResult,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         use super::foot_path::FindPathResult;
         //4B28B3..4B28C7 / 6A1F03..6A1F17: a vanished Foot sets the out byte.
@@ -258,7 +258,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         let actor = self
             .substrate
@@ -302,7 +302,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         let destination = self.substrate.entities.get(id).and_then(track_destination);
         //4B28CD / 6A1F1D: the zone precheck on the LIVE destination, which the
@@ -408,13 +408,16 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self.foot_can_fire_at_target(id, rules, registry) != Some(false) {
             return;
         }
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.foot_retarget_after_stop.mark_stopped_cannot_fire();
+            actor
+                .seldom
+                .foot_retarget_after_stop
+                .mark_stopped_cannot_fire();
         }
         if let Some((team_id, _)) = self.team_script_vm.team_for_member(id) {
             self.team_scan_limit(team_id, rules, frame_effects);
@@ -429,7 +432,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         let actor = self
             .substrate
@@ -468,7 +471,7 @@ impl Simulation {
         direction: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             cell,
@@ -527,7 +530,7 @@ impl Simulation {
         cell: (i32, i32),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -578,7 +581,10 @@ impl Simulation {
             [location.x, location.y, location.z],
             [destination.x, destination.y, destination.z],
         ) < rules.general.close_enough;
-        if close && actor.radio_contacts.is_empty() && self.track_stop_band(location, destination) {
+        if close
+            && actor.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(location, destination)
+        {
             //4B2CDD..4B2D65: clear the head, then stop or take the waypoint.
             self.stop_or_take_next_waypoint(id, rules, frame_effects);
             return Ok(true);
@@ -602,7 +608,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -629,7 +635,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
@@ -653,7 +659,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.stop_or_take_next_waypoint(id, rules, frame_effects);
     }
@@ -689,7 +695,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // A quiet unit is owed no setter (`world::quiet_units`).
         if self.quiet(id) {
@@ -743,7 +749,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(category) = self
             .substrate
@@ -830,7 +836,7 @@ impl Simulation {
         requested: NavTargetRef,
         rules: &RuleSet,
         clear_queue: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -853,7 +859,7 @@ impl Simulation {
             .navigation
             .nav_com()
             .is_some_and(|held| held.same_pointer(requested, self.resolved_terrain.as_ref()))
-            && !actor.setter_force_reassign.raised
+            && !actor.seldom.setter_force_reassign.raised
         {
             return true;
         }
@@ -862,7 +868,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same Unit setter");
-        actor.setter_force_reassign.raised = false;
+        actor.seldom.setter_force_reassign.raised = false;
         //741A96..741ACD, after the same-NavCom guard: deployment refuses
         // through Foot4DF0D0, which clears NavCom, not locomotor movement.
         if deployment_refuses_destination(actor) {
@@ -884,8 +890,8 @@ impl Simulation {
         // when sent to another Techno it holds no contact with.
         if let Some(target) = requested_techno
             && let Some(unit) = self.substrate.entities.get(id)
-            && let Some(contact) = unit.radio_contacts.slot(0)
-            && !unit.radio_contacts.contains(target)
+            && let Some(contact) = unit.seldom.radio_contacts.slot(0)
+            && !unit.seldom.radio_contacts.contains(target)
             && self
                 .entity_object_type(unit, rules)
                 .is_some_and(|object| object.passengers > 0)
@@ -907,10 +913,10 @@ impl Simulation {
         // Carryall coming to lift it (`aircraft::carryall`) calls the
         // Carryall off: its destination is dropped, then UNTETHER and BREAK.
         if let Some(unit) = self.substrate.entities.get(id)
-            && unit.tether.partner().is_some()
+            && unit.seldom.tether.partner().is_some()
             && unit.mission.effective()
                 == crate::sim::mission::MissionId::from_known(MissionType::Sleep)
-            && let Some(carryall) = unit.radio_contacts.slot(0)
+            && let Some(carryall) = unit.seldom.radio_contacts.slot(0)
             && self.is_carryall(carryall, rules)
         {
             self.assign_aircraft_destination(carryall, None, rules, frame_effects);
@@ -1011,7 +1017,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(building)
-                    .is_some_and(|building| !building.radio_contacts.is_empty());
+                    .is_some_and(|building| !building.seldom.radio_contacts.is_empty());
                 if busy {
                     // `0x00741D41..0x00741D44`: a busy building that is not a
                     // Bunker= becomes the ArchiveTarget.
@@ -1147,7 +1153,8 @@ impl Simulation {
         // the NULL this tail may leave, is not one.
         if let Some((depot, true, _, _)) = enter_building {
             let held_by_other = self.substrate.entities.get(depot).is_some_and(|building| {
-                !building.radio_contacts.is_empty() && building.radio_contacts.slot(0) != Some(id)
+                !building.seldom.radio_contacts.is_empty()
+                    && building.seldom.radio_contacts.slot(0) != Some(id)
             });
             if held_by_other {
                 if let Some(unit) = self.substrate.entities.get_mut(id) {
@@ -1191,7 +1198,8 @@ impl Simulation {
         // alone here; unlike the depot arm, it does not archive the request.
         if !dock_fast_return && let Some((bunker, _, _, true)) = enter_building {
             let held_by_other = self.substrate.entities.get(bunker).is_some_and(|building| {
-                !building.radio_contacts.is_empty() && building.radio_contacts.slot(0) != Some(id)
+                !building.seldom.radio_contacts.is_empty()
+                    && building.seldom.radio_contacts.slot(0) != Some(id)
             });
             if !held_by_other
                 && crate::sim::radio::transmit(
@@ -1426,7 +1434,7 @@ impl Simulation {
         dock: u64,
         current: NavTargetRef,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> UnitDockArm {
         let Some(actor) = self.substrate.entities.get(id) else {
             return UnitDockArm::Keep;
@@ -1457,8 +1465,8 @@ impl Simulation {
                 )
             })
         };
-        let contact = actor.radio_contacts.slot(0) == Some(dock);
-        let busy = !building.radio_contacts.is_empty();
+        let contact = actor.seldom.radio_contacts.slot(0) == Some(dock);
+        let busy = !building.seldom.radio_contacts.is_empty();
         let queue_near = contact
             || busy
             || crate::sim::radio::transmit(
@@ -1498,7 +1506,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|actor| actor.radio_contacts.slot(0))
+            .and_then(|actor| actor.seldom.radio_contacts.slot(0))
             == Some(current_building)
         {
             return UnitDockArm::Keep;
@@ -1634,6 +1642,7 @@ impl Simulation {
             return false;
         };
         let dock_contact = actor
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|contact| self.substrate.entities.get(contact))
@@ -1665,7 +1674,7 @@ impl Simulation {
             }
             let actor = self.substrate.entities.get_mut(id).expect("same arm actor");
             super::navcom::track_stop_moving(actor);
-            actor.setter_force_reassign.raised = true;
+            actor.seldom.setter_force_reassign.raised = true;
             let _ = self.substrate.mission_assign_exact(
                 id,
                 crate::sim::mission::MissionId::NONE,
@@ -1717,7 +1726,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if self.balloon_hover_keeps_nav_com(id, rules) {
             return false;
@@ -1725,12 +1734,12 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if actor.navigation.nav_com().is_none() && !actor.setter_force_reassign.raised {
+        if actor.navigation.nav_com().is_none() && !actor.seldom.setter_force_reassign.raised {
             return false;
         }
         let teleporter = teleporter_unit(self, actor, rules);
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.setter_force_reassign.raised = false;
+            actor.seldom.setter_force_reassign.raised = false;
             //741A96..741ACD; same native owner as the non-null setter.
             if deployment_refuses_destination(actor) {
                 actor.navigation.stop_moving();
@@ -1788,12 +1797,13 @@ impl Simulation {
         destination: Option<NavTargetRef>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         let Some(factory) = actor
+            .seldom
             .radio_contacts
             .slot(0)
             .filter(|&contact| self.is_weapons_factory(contact, rules))

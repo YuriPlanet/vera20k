@@ -20,7 +20,7 @@ pub(super) fn launch(
     sw_type: InternedId,
     sw: &SuperWeaponType,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(settings) = sw.hunter_seeker.as_ref() else {
         return false;
@@ -43,8 +43,10 @@ pub(super) fn launch(
     };
     // Native house Building vector order, not an entity/category scan. Failed
     // placement does not spend MaxCount: only the callback's successes count.
+    // A copy, as the launch began: each hunter's constructor, Unlimbo and
+    // target acquisition run through the whole simulation, whose callbacks
+    // can change the House's Building vector while it is walked.
     let buildings = house.base_projection().buildings().to_vec();
-    let owner_name = sim.interner.resolve(owner).to_owned();
     let mut successes = 0_i32;
     for building in buildings {
         if settings.max_count >= 0 && successes >= settings.max_count {
@@ -80,16 +82,9 @@ pub(super) fn launch(
         if (x, y) == (0, 0) || !super::targeting::on_map(sim, (x, y)) {
             continue;
         }
-        let Some(id) = sim.construct_resolved_object_limbo_at_height(
-            unit,
-            &owner_name,
-            x,
-            y,
-            64,
-            0,
-            rules,
-            effects,
-        ) else {
+        let Some(id) =
+            sim.construct_resolved_object_limbo_at_height(unit, owner, x, y, 64, 0, rules, effects)
+        else {
             continue;
         };
         sim.substrate

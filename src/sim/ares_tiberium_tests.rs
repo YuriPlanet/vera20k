@@ -87,7 +87,7 @@ fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
             PerCellReason::Arrival,
             &rules,
             Some(rules.overlay_registry()),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     }
@@ -160,7 +160,7 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         rules,
         Some(rules.overlay_registry()),
         event,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -318,7 +318,7 @@ fn tiberium_death_spawns_a_neutral_small_visceroid() {
         id,
         &rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(killed);
     assert_eq!(visceroids(&sim), [("Neutral".to_owned(), 5, 5)]);
@@ -348,7 +348,7 @@ fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
         false,
         &rules,
         registry,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(sim.rng_state(), before, "no draw without the map flag");
 
@@ -365,7 +365,7 @@ fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
         false,
         &rules,
         registry,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_ne!(sim.rng_state(), before, "RandomRanged(0, 99)");
     assert!(visceroids(&sim).is_empty());
@@ -416,7 +416,7 @@ fn chain_reacting_ore_halves_and_blasts_power_times_the_loss() {
                 warhead,
                 true,
                 (RAD_NO_ATTACKER, None, warhead_ref),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         let density = sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_data;

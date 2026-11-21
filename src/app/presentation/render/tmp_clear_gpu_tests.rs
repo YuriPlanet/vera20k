@@ -521,7 +521,12 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                 let commands = if frame == 0 { command.as_slice() } else { &[] };
                 scene
                     .runtime
-                    .advance_frame(commands, 22, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(
+                        commands,
+                        22,
+                        TickLane::Ordinary,
+                        &mut FrameEffects::default(),
+                    )
                     .expect("ordinary Move/Stop frame");
                 let entity = scene.sim().entities().get(source_id).unwrap();
                 let loco = entity.locomotor.as_ref().unwrap();

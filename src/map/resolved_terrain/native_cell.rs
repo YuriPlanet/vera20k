@@ -36,6 +36,34 @@ pub(crate) struct CellClassProjectionView {
 /// own authority. Their shared allocation keeps one live identity safe to carry
 /// through app loading workers without copying native's global mutable object
 /// architecture.
+///
+/// The Dummy is saved simulation state ([`SavedSharedCellDummy`]) written
+/// through `&self`, because a miss stamp is part of the lookup itself: every
+/// `Get_CellClass` port ([`NativeCellQuery::lookup`],
+/// [`ResolvedTerrainGrid::native_cell_identity`] and their callers) is a
+/// query, reached through `&ResolvedTerrainGrid` or `&Simulation` from the
+/// simulation, the path and target batches on the worker pool, and the
+/// presentation and input. A retained `NativeCellIdentity::Dummy` reads the
+/// latest stamp, as native's aliased object does, so the code that reads a
+/// Dummy and the code that stamps it must reach the same object; owning it
+/// by `&mut` would make every map read exclusive.
+///
+/// The rules:
+/// - Only the simulation thread stamps or writes the canonical Dummy.
+/// - A pooled task, and a presentation or input read of the live simulation,
+///   that can miss runs inside [`Self::detached`] (or
+///   [`Self::detached_stamps`]), which keeps its stamps on its own thread, or
+///   queries through [`NativeCellQuery::isolated`], which stamps a fork.
+/// - Only stamps are private to a detached run. Every other word (flags,
+///   anchor, overlay, smudge, tube, neighbour count, level) is written by
+///   code that holds `&mut` of the grid, an overlay, smudge or occupation
+///   owner or the Simulation, or by map load on a Dummy no task holds.
+///
+/// A task that broke them would race on saved state, and peers would
+/// desync. The client crate's `architecture_guards::shared_state::
+/// pool_entries_say_how_their_tasks_treat_the_cell_dummy` pins every engine
+/// file that enters the worker pool, each with what its tasks do about the
+/// Dummy, so a new parallel caller has to say which rule it follows.
 #[derive(Debug, Clone)]
 pub struct SharedCellDummy {
     state: Arc<SharedCellDummyState>,
@@ -596,6 +624,12 @@ impl SharedCellDummy {
     /// thread: a worker waiting on nested parallel work can run another
     /// task there, so starting from the enclosing copy would make a run's
     /// start depend on where it landed. The enclosing copy resumes after.
+    ///
+    /// Only the coordinate/level/slope word is private to the run: work
+    /// inside it may read the other words but must not write them (see the
+    /// type's rules). The run finds its copy by this Dummy's address, so a
+    /// query that stamps a fork ([`NativeCellQuery::isolated`]) is not
+    /// redirected.
     pub fn detached<R>(&self, work: impl FnOnce() -> R) -> R {
         self.detached_stamps(work).0
     }

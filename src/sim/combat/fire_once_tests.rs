@@ -123,6 +123,7 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
                 integer(&before["dispatch_timer"][2]),
             );
             actor
+                .seldom
                 .rearm_timer
                 .set_for_test(timer(&before["rearm_timer"]));
             actor
@@ -258,12 +259,12 @@ fn assert_boundary(
             "{name}: status"
         );
         assert_eq!(
-            actor.weapon_burst.index(),
+            actor.seldom.weapon_burst.index(),
             integer(&after["burst"]),
             "{name}: burst"
         );
         assert_eq!(
-            actor.rearm_timer.timer(),
+            actor.seldom.rearm_timer.timer(),
             timer(&after["rearm_timer"]),
             "{name}: rearm"
         );
@@ -397,7 +398,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
                 &snap,
                 &weapon,
                 bullet,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
         assert!(draws.is_empty());
@@ -413,7 +414,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
             restored.run_team_ai_pass(
                 &retail.rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let state = restored.team_script_vm.team(team.unwrap()).unwrap();
             assert_eq!(state.cursor(), 1);

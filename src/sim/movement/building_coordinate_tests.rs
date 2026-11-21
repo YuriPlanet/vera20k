@@ -157,9 +157,10 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
         EntityCategory::Structure,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone().into());
-    building.radio_contacts = contacts(input);
+    building.seldom.radio_contacts = contacts(input);
     building.lifecycle.set_in_limbo_for_test(false);
     position(&mut building, coord(&input["current"]));
     let mut engineer = GameEntity::new_at_frame_zero_for_test(
@@ -232,9 +233,10 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone().into());
-        building.radio_contacts = contacts(input);
+        building.seldom.radio_contacts = contacts(input);
         position(&mut building, current);
         sim.substrate.entities.insert(building);
         if let Some(c) = requester {
@@ -249,6 +251,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .iter_live()
             .collect();

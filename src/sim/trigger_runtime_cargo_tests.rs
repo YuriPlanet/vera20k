@@ -60,7 +60,7 @@ fn action(sim: &mut Simulation, kind: i32, value: i32) {
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
 }
 
@@ -90,7 +90,7 @@ fn kill(
                 arg6: true,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     previous_rng
 }
@@ -218,7 +218,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_binary_frame_for_test(16);
     let previous_rng = rng(&sim);
-    sim.raise_house_tags(owner, &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(owner, &rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.session.train_crate());
     assert!(sim.trigger_runtime.locals_set.contains(&9));
     assert_eq!(rng(&sim), previous_rng);
@@ -258,7 +258,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
         (slot.cell_x, slot.cell_y),
         &rules,
         Some(&registry),
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     // Native56C020's solo arm removes the overlay without clearing slots;
     // retain the already-established crate owner and its timer semantics.

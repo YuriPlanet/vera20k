@@ -1123,7 +1123,7 @@ impl Simulation {
             speed_type: snap.speed_type,
             movement_zone: snap.movement_zone,
             crushers: (snap.regular_crusher, snap.omni_crusher),
-            locomotor: snap.locomotor.as_ref().map(|loco| loco.active_kind()),
+            locomotor: snap.locomotor_kind,
             allow_zone_hierarchy: self.foot_search_allows_hierarchy(request),
             threat_coefficient: self.foot_path_threat_coefficient(request.entity_id).bits(),
             owner: actor.owner(),
@@ -1132,7 +1132,7 @@ impl Simulation {
             mission: actor.mission.current(),
             nav_com: actor.navigation.nav_com(),
             attack_target: actor.attack_target.target(),
-            radio_contacts: actor.radio_contacts.clone(),
+            radio_contacts: actor.seldom.radio_contacts.clone(),
         })
     }
 }

@@ -349,7 +349,7 @@ impl Simulation {
             substrate
                 .entities
                 .values()
-                .filter(|e| e.selection.is_selected())
+                .filter(|e| e.seldom.selection.is_selected())
                 .take(crate::sim::debug_event_log::DEBUG_EVENT_ENTITY_LIMIT)
                 .map(|e| e.stable_id())
                 .collect()
@@ -521,7 +521,7 @@ mod tests {
             1,
             false,
         );
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         sim.substrate.entities.insert(entity);
         let hash = sim.state_hash();
         let before = crate::util::save_codec::serialize(&sim).unwrap();
@@ -557,7 +557,7 @@ mod tests {
                 1,
                 false,
             );
-            entity.selection.set_selected_for_test(true);
+            entity.seldom.selection.set_selected_for_test(true);
             sim.substrate.entities.insert(entity);
         }
         sim.set_debug_event_logging(true);
@@ -572,6 +572,7 @@ mod tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(false);
         sim.set_debug_event_logging(true);
@@ -649,7 +650,7 @@ mod tests {
             &rules,
             None,
             hit(1, 2, other, 10),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(1).unwrap().health.current(), 100);
         assert!(sim.entities().get(1).unwrap().invulnerability.is_none());
@@ -657,7 +658,7 @@ mod tests {
             &rules,
             None,
             hit(2, 1, owner, 10),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(2).unwrap().health.current(), 70);
         let entity = sim.substrate.entities.get_mut(1).unwrap();

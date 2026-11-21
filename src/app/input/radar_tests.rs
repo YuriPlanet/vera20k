@@ -111,7 +111,7 @@ fn the_radar_asks_can_enter_cell() {
         ..query(&sim, &rules, &selected)
     };
     assert_eq!(
-        tactical.selection_action(RIVER, None),
+        tactical.selection_action(RIVER, None).0,
         Some(CursorFeedbackKind::Move)
     );
 }
@@ -210,7 +210,7 @@ fn a_forced_ivan_over_a_bombed_dot_has_no_radar_action() {
     };
     let (cell, object) = dot(&sim, tank);
     assert_eq!(
-        forced.selection_action(cell, object),
+        forced.selection_action(cell, object).0,
         Some(CursorFeedbackKind::NoIvanBomb)
     );
     assert_eq!(action(&forced, None, cell, object), None);
@@ -259,7 +259,7 @@ fn ctrl_over_shroud_keeps_a_buildings_attack() {
         mouse_over: true,
         ..ctrl(&sim, &rules, &pillboxes)
     };
-    let kind = tactical.selection_action(GROUND, None).unwrap();
+    let kind = tactical.selection_action(GROUND, None).0.unwrap();
     assert_eq!(
         crate::app::input::cursor::shrouded_cell_feedback(kind, tactical.lead_moves_to_shroud()),
         CursorFeedbackKind::Move

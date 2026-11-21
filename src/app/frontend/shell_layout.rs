@@ -88,7 +88,18 @@ pub(crate) fn shell_message_box_layout(
             shell_scale_for_screen(size),
         );
     }
-    message_box_layout_for_screen(kind, size)
+    let layout = message_box_layout_for_screen(kind, size);
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    if state
+        .frontend
+        .shell_message_box
+        .as_ref()
+        .is_some_and(|message| message.is_mod_import())
+    {
+        use crate::app::shell_mod_import;
+        return shell_mod_import::layout(layout, shell_mod_import::visible_parts(state).is_some());
+    }
+    layout
 }
 
 fn message_box_layout_for_screen(

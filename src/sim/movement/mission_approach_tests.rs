@@ -427,7 +427,7 @@ fn an_area_guarding_chrono_legionnaire_approaches_through_the_foot_body() {
         legionnaire,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let nav_com = sim
         .substrate
@@ -546,7 +546,7 @@ fn a_night_hawks_approach_picks_a_cell_in_range() {
         hawk,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let nav_com = sim
         .substrate
@@ -710,7 +710,12 @@ fn a_gi_passes_over_a_taken_approach_cell_without_trying_its_neighbours() {
         }
         target(&mut sim, gi, tank);
         start_mission(&mut sim, gi, MissionType::Attack);
-        sim.approach_target(gi, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.approach_target(
+            gi,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         match sim.substrate.entities.get(gi).unwrap().navigation.nav_com() {
             Some(NavTargetRef::Cell { rx, ry }) => (rx, ry),
             other => panic!("Approach sets a cell: {other:?}"),
@@ -791,7 +796,12 @@ fn a_computers_deployed_gi_undeploys_to_approach_a_target_out_of_reach() {
     };
 
     let (mut sim, gi) = deployed_gi("Americans", "Russians", (24, 10));
-    sim.approach_target(gi, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.approach_target(
+        gi,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert!(deployed(&sim, gi), "a human's man stood up");
 
     for (tank_cell, approaches) in [((24, 10), true), ((13, 10), false)] {
@@ -830,7 +840,7 @@ fn a_computers_gi_auto_deploys_with_a_target_in_reach() {
         let tank = spawn(&mut sim, &rules, "MTNK", "Americans", (13, 10));
         target(&mut sim, gi, tank);
         start_mission(&mut sim, gi, MissionType::Attack);
-        sim.approach_target(gi, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.approach_target(gi, &rules, None, &mut crate::sim::world::FrameEffects::default());
         let entity = sim.substrate.entities.get(gi).unwrap();
         let doing = entity.mission_leaf.as_infantry().unwrap().doing();
         assert_eq!(
@@ -885,7 +895,7 @@ fn a_brute_beside_a_tank_takes_the_spot_in_his_cell_nearer_it() {
         brute,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.scenario_rng.logical_state(), one_draw.logical_state());
     let entity = sim.substrate.entities.get(brute).unwrap();
@@ -940,7 +950,7 @@ fn a_brutes_search_draws_once_for_each_candidate() {
         brute,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let nav_com = sim
         .substrate
@@ -982,7 +992,7 @@ fn a_brute_takes_a_spot_beyond_his_reach_under_307_leptons_from_the_tank() {
         brute,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.scenario_rng.logical_state(), before);
     assert_eq!(
@@ -1029,7 +1039,7 @@ fn a_brutes_approach_picks_a_cell_beside_the_tank() {
         brute,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(first(&sim), Some(brute));
     let nav_com = sim
@@ -1118,7 +1128,7 @@ fn a_hunting_kirov_closes_on_a_building_and_drops_bombs() {
         let distance =
             crate::util::native_x87::distance_3d_leptons([at.x, at.y, 0], [goal.x, goal.y, 0]);
         closest = closest.min(distance);
-        fired |= actor.rearm_timer.duration() > 0;
+        fired |= actor.seldom.rearm_timer.duration() > 0;
         let state = (actor.attack_target.target(), actor.navigation.nav_com());
         if Some(state) != last {
             seen.push((visit, state, distance, at));

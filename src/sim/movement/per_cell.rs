@@ -85,7 +85,7 @@ impl Simulation {
         reason: PerCellReason,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         match self
             .substrate
@@ -116,7 +116,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // 73A31F..A547: an Enter7/Patrol25 object destination at its
         // GetDockCoord cell runs Foot's tail once, sends DOCK_NOW, powers
@@ -125,7 +125,7 @@ impl Simulation {
             if !matches!(unit.mission.effective().known(), Some(MissionType::Enter | MissionType::Patrol)) {
                 return None;
             }
-            let contact = unit.radio_contacts.slot(0)?;
+            let contact = unit.seldom.radio_contacts.slot(0)?;
             let building = self.substrate.entities.get(contact)?;
             if building.category() != EntityCategory::Structure { return None; }
             let at = super::ground_pose::object_get_coords(unit, self.resolved_terrain.as_ref());
@@ -168,13 +168,13 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.tether.partner().is_none()
+        if entity.seldom.tether.partner().is_none()
             || entity.mission.effective()
                 != crate::sim::mission::MissionId::from_known(MissionType::Enter)
         {
             return false;
         }
-        let Some(contact) = entity.radio_contacts.slot(0) else {
+        let Some(contact) = entity.seldom.radio_contacts.slot(0) else {
             return false;
         };
         let (x, y) = (entity.position.rx(), entity.position.ry());
@@ -249,7 +249,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
@@ -344,7 +344,7 @@ impl Simulation {
         reason: PerCellReason,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // 739ED3..739EE2: +1B8 (41BEA0) samples physical packed XY once,
         // before MCV/arrival callbacks. This is not the navigation/head cell.
@@ -483,8 +483,8 @@ impl Simulation {
                 crusher.mover_facts.regular_crusher(),
                 crusher.mover_facts.omni_crusher(),
             );
-            let kills = super::bump_crush::select_crush_victims(
-                &[victim],
+            if !super::bump_crush::crushes(
+                victim,
                 &self.substrate.entities,
                 id,
                 &self.house_alliances,
@@ -492,8 +492,7 @@ impl Simulation {
                 (coord.x, coord.y),
                 capability,
                 self.session.binary_frame(),
-            );
-            if !kills.contains(&victim) {
+            ) {
                 continue;
             }
             if ares {
@@ -566,7 +565,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::combat::veterancy::VeterancyRank;
         let Some(entity) = self.substrate.entities.get(victim) else {
@@ -610,7 +609,7 @@ impl Simulation {
         entry_cell: (i16, i16),
         rules: &RuleSet,
         registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::map::cell_index::NativeCellIdentity;
         use crate::rules::locomotor_type::MovementZone;
@@ -649,7 +648,7 @@ impl Simulation {
         if let Some(sound) = flags.crush_sound.as_ref() {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::wall_crushed(
-                    sound.clone(),
+                    rules.sound_name(sound),
                     &actor.position,
                 ));
             //7509E0 completes before480CB0. The existing process owner may
@@ -679,12 +678,12 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        if unit.tether.partner().is_none() {
+        if unit.seldom.tether.partner().is_none() {
             return;
         }
         let nav_com = unit.navigation.nav_com();
@@ -694,7 +693,7 @@ impl Simulation {
         };
         let mission = unit.mission.effective().known();
         if mission == Some(MissionType::Enter)
-            && (nav_techno.is_none() || nav_techno == unit.radio_contacts.slot(0))
+            && (nav_techno.is_none() || nav_techno == unit.seldom.radio_contacts.slot(0))
         {
             return;
         }
@@ -723,7 +722,7 @@ impl Simulation {
         }
         //73A8CF saves Contact0 before the synchronous transmit73A93D. The
         // radio8 owner can clear the live slot and both tether bytes inside it.
-        let contact = unit.radio_contacts.slot(0);
+        let contact = unit.seldom.radio_contacts.slot(0);
         if !at_destination
             && contact.is_some_and(|contact| self.is_weapons_factory(contact, rules))
             && self.substrate.occupancy.first_building_on_layer(
@@ -890,7 +889,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
@@ -946,7 +945,7 @@ impl Simulation {
         id: u64,
         owner: crate::sim::intern::InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(post) = self.house_return_cell(owner, id) else {
             if let Some(unit) = self.substrate.entities.get_mut(id) {
@@ -1014,7 +1013,7 @@ impl Simulation {
         reason: PerCellReason,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         // 0x0051965F: the cell of Location at entry, which the full-cell
         // scatter below reads after every earlier arm.
@@ -1065,8 +1064,8 @@ impl Simulation {
                 if outcome.consumed {
                     //True joins ORIGINAL51A010: the actor's own event48 then
                     //UnInit. The separate AI hook raises no actor event48.
-                    let context = UninitContext::new(rules).with_effects(effects);
-                    self.dispatch_object_tag_event(id, 48, Some(id), None, context);
+                    let mut context = UninitContext::new(rules).with_effects(effects);
+                    self.dispatch_object_tag_event(id, 48, Some(id), None, context.reborrow());
                     self.uninit_with_context(id, context);
                 }
                 return Ok(outcome.bridge_state_changed);
@@ -1115,7 +1114,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|entity| entity.tether.partner().is_some())
+                    .is_some_and(|entity| entity.seldom.tether.partner().is_some())
             {
                 radio::transmit_to_contact(
                     self,
@@ -1130,7 +1129,7 @@ impl Simulation {
                 if let Some(event) = self.substrate.entities.get(id).and_then(|actor| {
                     let object = self.object_type(actor.type_ref(), rules)?;
                     Some(SimSoundEvent::voc_at_location(
-                        object.voice_comment.get(1)?.clone(),
+                        rules.sound_name(object.voice_comment.get(1)?),
                         actor,
                         self.resolved_terrain.as_ref(),
                     ))
@@ -1184,7 +1183,7 @@ impl Simulation {
         cell: (u16, u16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -1236,7 +1235,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1244,7 +1243,7 @@ impl Simulation {
         let idle = entity.mission.queued() == MissionId::NONE
             && entity.navigation.nav_com().is_none()
             && entity.attack_target.target().is_none()
-            && entity.radio_contacts.is_empty();
+            && entity.seldom.radio_contacts.is_empty();
         if idle {
             self.infantry_enter_idle_mode(id, rules, registry, effects);
         }
@@ -1301,7 +1300,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<Option<bool>, FrameAdvanceError> {
         use crate::sim::passenger::{BoardingArm, board_passenger};
         use crate::sim::radio::RadioResponse;
@@ -1427,7 +1426,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<Option<bool>, FrameAdvanceError> {
         self.assign_null_destination(id, rules, registry, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1464,7 +1463,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(unit) = self.substrate.entities.get(id) else {
             return false;
@@ -1526,7 +1525,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(unit) = self.substrate.entities.get(id) else {
             return false;
@@ -1556,7 +1555,7 @@ impl Simulation {
             return false;
         };
         if (transport.position.rx(), transport.position.ry()) != cell
-            || !unit.radio_contacts.contains(transport.stable_id())
+            || !unit.seldom.radio_contacts.contains(transport.stable_id())
             || self
                 .object_type(transport.type_ref(), rules)
                 .is_none_or(|object| object.passengers <= 0)
@@ -1585,7 +1584,7 @@ impl Simulation {
         arm: crate::sim::passenger::BoardingArm,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if radio::transmit(
             self,
@@ -1613,7 +1612,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.assign_null_destination(id, rules, registry, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1648,7 +1647,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -1707,7 +1706,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::map::resolved_terrain::NativeCellQuery;
         use crate::rules::terrain_rules::LandType;
@@ -1801,7 +1800,7 @@ impl Simulation {
         reason: PerCellReason,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if reason != PerCellReason::Arrival {
             return;
@@ -1937,17 +1936,25 @@ impl Simulation {
         &mut self,
         id: u64,
         (rx, ry): (u16, u16),
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         //6F5140..6F516C runs for PlayerPtr on every native client. Use
         //each represented human's retained admission and own ground plane.
+        let due = |sim: &Self, viewer| {
+            !sim.techno_discovered_by_viewer(id, viewer) && sim.fog.is_ground_open(viewer, rx, ry)
+        };
+        // Usually no map is due; only a discovery can change the answer for
+        // a later map, so the lists the loop needs are taken only then.
+        if !self
+            .each_represented_player_map()
+            .any(|viewer| due(self, viewer))
+        {
+            return;
+        }
         for viewer in self.represented_player_maps() {
-            if self.techno_discovered_by_viewer(id, viewer)
-                || !self.fog.is_ground_open(viewer, rx, ry)
-            {
-                continue;
+            if due(self, viewer) {
+                self.discover_techno(id, viewer, context.reborrow());
             }
-            self.discover_techno(id, viewer, context);
         }
     }
 
@@ -1964,7 +1971,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(category) = self
             .substrate
@@ -2051,12 +2058,13 @@ mod discovery_tests {
                 PerCellReason::Arrival,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             sim.substrate
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         };

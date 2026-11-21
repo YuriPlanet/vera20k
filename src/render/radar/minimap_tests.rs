@@ -988,7 +988,7 @@ fn radar_tracker_color_uses_active_disguise_house_without_changing_priority_owne
     let soviet = test_intern("Soviet");
     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::default();
     disguise.acquire(0, None, Some(soviet));
-    entity.disguise = Some(disguise);
+    entity.seldom.disguise = Some(disguise);
     let interner = crate::sim::intern::test_interner();
     let mut colors = HouseColorMap::new();
     colors.insert("Americans".to_string(), HouseColorIndex(1));
@@ -1019,7 +1019,12 @@ fn radar_disguise_house_preserves_owner_alliance_and_spy_null_fallback() {
         ("Soviet".to_owned(), HouseColorIndex(2)),
     ]);
     let ramps = test_ramps();
-    entity.disguise.as_mut().unwrap().acquire(0, None, None);
+    entity
+        .seldom
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, None, None);
     assert_eq!(
         radar_entity_owner_color(
             &radar_record(&entity, &interner, Some(observer), 0),
@@ -1072,7 +1077,7 @@ fn mirage_radar_house_and_null_pixel_match_original_executable() {
     for row in corpus["observer"].as_array().unwrap() {
         let input = &row["input"];
         let disguised = input["raw_disguised"].as_bool().unwrap();
-        let disguise = entity.disguise.as_mut().unwrap();
+        let disguise = entity.seldom.disguise.as_mut().unwrap();
         if disguised {
             disguise.acquire(0, None, None);
         } else {
@@ -1139,7 +1144,7 @@ fn the_radar_combat_flash_inverts_on_odd_periods_for_the_current_player() {
         &crate::rules::ini_parser::IniFile::from_str("[General]\nFlashFrameTime=7\n"),
     )
     .unwrap();
-    entity.radar_combat_flash = crate::sim::timer::CdTimer::started(100, 49);
+    entity.seldom.radar_combat_flash = crate::sim::timer::CdTimer::started(100, 49);
     let inverted = |entity: &crate::sim::game_entity::GameEntity, frame: u32, viewer| {
         crate::render::radar::tracker::radar_combat_flash_inverts(
             &radar_record(entity, &interner, Some(viewer), frame),

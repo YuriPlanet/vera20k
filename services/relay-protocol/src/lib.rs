@@ -134,14 +134,12 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         let ticket = Self {
-            room: bytes[1..17].try_into().expect("checked ticket length"),
+            room: link::field(bytes, 1)?,
             source: bytes[17],
-            expires: u64::from_le_bytes(bytes[18..26].try_into().expect("checked ticket length")),
-            nonce: bytes[26..42].try_into().expect("checked ticket length"),
-            player: bytes[42..58].try_into().expect("checked ticket length"),
-            generation: u64::from_le_bytes(
-                bytes[58..66].try_into().expect("checked ticket length"),
-            ),
+            expires: link::read_u64(bytes, 18)?,
+            nonce: link::field(bytes, 26)?,
+            player: link::field(bytes, 42)?,
+            generation: link::read_u64(bytes, 58)?,
         };
         if ticket.generation == 0 || ticket.player == [0; 16] {
             return Err(RelayError::Malformed);
@@ -575,11 +573,12 @@ fn handshake_incoming<'a>(
     now: u64,
 ) -> Result<Incoming<'a>, RelayError> {
     let body = &bytes[HEADER_LEN..bytes.len() - HOP_TAG_LEN];
-    if header.session != 0 || body.len() < TICKET_LEN {
+    let Some((ticket_bytes, payload)) = body
+        .split_first_chunk::<TICKET_LEN>()
+        .filter(|_| header.session == 0)
+    else {
         return Err(RelayError::Malformed);
-    }
-    let ticket_bytes: &[u8; TICKET_LEN] = body[..TICKET_LEN].try_into().expect("checked length");
-    let payload = &body[TICKET_LEN..];
+    };
     if (header.kind == HELLO && !payload.is_empty())
         || (header.kind == CONFIRM
             && payload.len() != COOKIE_LEN
@@ -1558,11 +1557,7 @@ impl RelayServer {
         message: &Incoming<'_>,
         now: u64,
     ) -> Result<(), RelayError> {
-        let expires = u64::from_le_bytes(
-            message.payload[..8]
-                .try_into()
-                .expect("checked confirm payload"),
-        );
+        let expires = link::read_u64(message.payload, 0)?;
         if expires < now || expires > now.saturating_add(10) {
             return Err(RelayError::Expired);
         }

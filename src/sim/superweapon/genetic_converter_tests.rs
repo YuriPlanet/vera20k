@@ -208,7 +208,7 @@ fn the_launch_matches_native() {
             cell.1,
             sw_type,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let observed = OBSERVED.take().unwrap();
         assert_eq!(launched, charged, "{row}");
@@ -356,7 +356,7 @@ fn a_walk_damages_only_the_infantry_of_the_block() {
         40,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let observed = OBSERVED.take().unwrap();
     let damaged: Vec<u64> = observed
@@ -421,7 +421,7 @@ fn the_mutation_arm_matches_native() {
                 0,
                 level,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         {
@@ -492,7 +492,7 @@ fn the_mutation_arm_matches_native() {
             &rules,
             None,
             event,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let mutants = anims_of(&sim, "GENDEATH");
@@ -661,7 +661,7 @@ fn the_make_infantry_end_matches_native() {
             make_infantry,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(ends, row["end"] == "uninit", "{row}");
@@ -734,7 +734,7 @@ fn a_dog_dies_with_die1_instead_of_mutating() {
         40,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let dog = sim.substrate.entities.get(dog).unwrap();
     assert!(!dog.death.is_dying() && dog.lifecycle.object_alive());
@@ -885,7 +885,7 @@ fn retail_computer_mutator_leaves_hunting_brutes() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(!sim.super_weapons[&russians][&sw_type].is_ready);
@@ -929,7 +929,7 @@ fn an_infantryman_above_the_ground_is_not_mutated() {
         40,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let entity = sim.substrate.entities.get(raised).unwrap();
@@ -1043,7 +1043,7 @@ fn a_fourth_infantryman_at_a_full_cells_centre_mutates() {
         40,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let doing = sim

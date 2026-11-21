@@ -52,13 +52,13 @@ impl Simulation {
         weapon: &WeaponType,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let settings = &weapon.ares_abductor;
         if !settings.abductor || !self.ares_abduction_admits(owner, target, weapon, rules) {
             return false;
         }
-        let context = UninitContext::new(rules).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         let now = self.session.binary_frame();
         // "The target forgets what it was doing": Stop_Moving (vt+0x500,
         // 0x004DF0D0), the null destination (vt+0x480) and target (vt+0x3C8),
@@ -67,8 +67,8 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(target) {
             entity.navigation.stop_moving();
         }
-        self.assign_null_destination(target, rules, registry, effects);
-        let _ = self.assign_target_represented(target, None, rules, effects);
+        self.assign_null_destination(target, rules, registry, context.effects());
+        let _ = self.assign_target_represented(target, None, rules, context.effects());
         if let Some(entity) = self.substrate.entities.get_mut(target) {
             entity.set_archive_target(None);
         }
@@ -85,17 +85,17 @@ impl Simulation {
         }
         // TeamClass::LiberateMember (0x006EA870).
         if let Some((team, _)) = self.team_script_vm.team_for_member(target) {
-            self.team_remove_member(team, target, false, rules, effects);
+            self.team_remove_member(team, target, false, rules, context.effects());
         }
         if let Some(controller) = self
             .substrate
             .entities
             .get(target)
-            .and_then(|entity| entity.mind_control.controller())
+            .and_then(|entity| entity.seldom.mind_control.controller())
         {
-            self.free_unit(controller, target, rules, registry, effects);
+            self.free_unit(controller, target, rules, registry, context.effects());
         }
-        self.free_all_captures(target, rules, registry, effects);
+        self.free_all_captures(target, rules, registry, context.effects());
         // TemporalClass::Detach (ClearLinkedList 0x0071ADE0) of the chain
         // warping it.
         if let Some(head) = self
@@ -104,12 +104,19 @@ impl Simulation {
             .get(target)
             .and_then(|entity| entity.temporal.chain_head())
         {
-            self.temporal_clear_linked_list(head, rules, effects);
+            self.temporal_clear_linked_list(head, rules, context.effects());
         }
         // SpawnManagerClass::KillNodes, then SlaveManagerClass::Killed with
         // the abductor as the killer.
-        crate::sim::spawn_manager::kill_all_spawns_with_context(self, target, context);
-        self.free_slaves(target, Some(owner), None, rules, registry, effects);
+        crate::sim::spawn_manager::kill_all_spawns_with_context(self, target, context.reborrow());
+        self.free_slaves(
+            target,
+            Some(owner),
+            None,
+            rules,
+            registry,
+            context.effects(),
+        );
         if let Some(anim) = settings.anim.as_deref()
             && let Some(entity) = self.substrate.entities.get(target)
         {
@@ -156,9 +163,9 @@ impl Simulation {
             && let Some(owner_house) = owner_house
             && !self.ares_psionics_immune(target, rules)
         {
-            self.change_owner_with_rules(target, owner_house, rules, registry, effects);
+            self.change_owner_with_rules(target, owner_house, rules, registry, context.effects());
         }
-        if self.techno_limbo_with_context(target, context)
+        if self.techno_limbo_with_context(target, context.reborrow())
             != crate::sim::world::ConcealOutcome::Concealed
         {
             log::warn!("Abduction: Target unit {target} could not be removed.");
@@ -186,13 +193,14 @@ impl Simulation {
             .get(target)
             .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
             .map_or(1.0, |object| object.size);
-        let boarded = self.ares_abduct_into_hold(target, owner, size, rider, true, context);
+        let boarded =
+            self.ares_abduct_into_hold(target, owner, size, rider, true, context.reborrow());
         log::info!("ABDUCT {target} into {owner}: {boarded}");
         // The trigger events after AddPassenger and Undiscover: 72 (abducted
         // by House, source the abductor) and 71 on the abductee, then 74
         // (abducts something of House, source its previous owner House) and
         // 73 on the abductor; 71 and 73 only while their object is alive.
-        self.dispatch_object_tag_event(target, 72, Some(target), Some(owner), context);
+        self.dispatch_object_tag_event(target, 72, Some(target), Some(owner), context.reborrow());
         let alive = |sim: &Self, id| {
             sim.substrate
                 .entities
@@ -200,13 +208,13 @@ impl Simulation {
                 .is_some_and(|entity| entity.lifecycle.object_alive())
         };
         if alive(self, target) {
-            self.dispatch_object_tag_event(target, 71, Some(target), None, context);
+            self.dispatch_object_tag_event(target, 71, Some(target), None, context.reborrow());
         }
         self.dispatch_object_ares_event(
             owner,
             74,
             previous_owner.map(crate::sim::trigger_runtime::AresEventSource::House),
-            context,
+            context.reborrow(),
         );
         if alive(self, owner) {
             self.dispatch_object_tag_event(owner, 73, Some(owner), None, context);
