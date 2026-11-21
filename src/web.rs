@@ -571,6 +571,15 @@ fn read_spawn(
         .map_err(|error| JsValue::from_str(&format!("{error:#}")))
 }
 
+/// docs/spawn.md "Version": the same JSON line as desktop `vera20k --version`
+/// (the build's `version` and `build_identity`). It needs no retail files and
+/// no running engine.
+#[wasm_bindgen]
+pub fn version() -> String {
+    serde_json::to_string(&crate::app::spawn_probe::version_report())
+        .expect("a version report serializes")
+}
+
 /// docs/spawn.md "Probe": the same report as desktop `vera20k --probe`, as a
 /// JSON string, from the retail files imported with `import_file` and, when
 /// `map_name` is given, the launch file imported with `import_spawn_file`.

@@ -110,6 +110,25 @@ pub(crate) struct BuildIdentity {
     pub verax: bool,
     /// Informational: the build's platform.
     pub target: &'static str,
+    /// Informational: the commit this build was made from, as its builder
+    /// named it (`VERA20K_COMMIT`); null when none was named.
+    pub commit: Option<String>,
+}
+
+/// `vera20k --version` and the browser's `version()` (docs/spawn.md,
+/// "Version"): the probe's `version` and `build_identity`, which need no game
+/// folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct VersionReport {
+    pub version: String,
+    pub build_identity: BuildIdentity,
+}
+
+pub(crate) fn version_report() -> VersionReport {
+    VersionReport {
+        version: agreement::version(),
+        build_identity: build_identity(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -197,6 +216,9 @@ pub(crate) fn build_identity() -> BuildIdentity {
         } else {
             std::env::consts::OS
         },
+        commit: Some(env!("VERA20K_BUILD_COMMIT"))
+            .filter(|commit| !commit.is_empty())
+            .map(str::to_owned),
     }
 }
 
@@ -855,6 +877,38 @@ mod tests {
     }
 
     /// `version` is `build_identity`'s package version and network build alone.
+    #[test]
+    fn version_report_is_the_probe_version_and_build_identity() {
+        let value = serde_json::to_value(version_report()).unwrap();
+        let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["build_identity", "version"]);
+        assert_eq!(value["version"], agreement::version());
+        assert_eq!(
+            value["build_identity"],
+            serde_json::to_value(build_identity()).unwrap()
+        );
+        let mut identity: Vec<_> = value["build_identity"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        identity.sort();
+        assert_eq!(
+            identity,
+            [
+                "commit",
+                "network_build",
+                "npatch",
+                "package_version",
+                "phobos",
+                "target",
+                "verax"
+            ]
+        );
+    }
+
     #[test]
     fn version_is_the_package_version_and_network_build() {
         let identity = build_identity();

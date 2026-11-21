@@ -1,11 +1,37 @@
 # External launches
 
-A launcher outside the game starts a match with `-SPAWN` and a `spawn.ini`. Before it does, two
-headless commands answer what that launch needs: the probe says what a launch on this
-installation is checked against, and the random-map command makes the file of a random-map
-room. Each runs in a folder whose `config.toml` names the game folder, opens no window, prints one
+A launcher outside the game starts a match with `-SPAWN` and a `spawn.ini`. Before it does,
+headless commands answer what that launch needs: the version says which build this is, the probe
+says what a launch on this installation is checked against, and the random-map command makes the
+file of a random-map room. The probe and the random-map command run in a folder whose
+`config.toml` names the game folder; the version needs none. Each opens no window, prints one
 JSON line on stdout and exits 0; on failure it exits non-zero with the reason on stderr. The
-browser package exports both as functions ([Wasm guide](wasm.md)).
+browser package exports them as functions ([Wasm guide](wasm.md)).
+
+## Version
+
+```sh
+vera20k --version
+vera20k --probe --version
+```
+
+Both print the probe's `version` and `build_identity` (below) and nothing else, without a game
+folder, retail files or rules:
+
+```json
+{"version":"0.3.9:<network build>","build_identity":{"package_version":"0.3.9","network_build":"<sha-256>","phobos":true,"npatch":true,"verax":true,"target":"macos","commit":"00f524cc8…"}}
+```
+
+`package_version` is `Cargo.toml`'s, which a release raises right after it is made, so a
+development build names the release it leads to. `commit` is the commit the builder named in
+`VERA20K_COMMIT` when building (the Release workflow does), or `null`. Neither `commit` nor
+`target` decides who plays together; `version` does.
+
+A build from before this command treats `--version` as an unknown launch argument and starts the
+game, while it refuses `--probe --version` with a usage error. A launcher that may meet such a
+build asks with `--probe --version` and treats a failure as "this build cannot say". In the
+browser, `version()` returns the same JSON text; it needs no imported files, and a package without
+it lacks the export.
 
 ## Probe
 
@@ -14,7 +40,7 @@ vera20k --probe [--ra2-dir <dir>] [--map <map-file>] [--mod <folder> | --no-mod]
 ```
 
 It reports the multiplayer `version` (`[Settings] ExpectedVersion`) and its parts
-(`build_identity`), the default mode's `rules_digest` (`ExpectedRulesDigest`) and every loaded
+(`build_identity`, as [Version](#version) prints it), the default mode's `rules_digest` (`ExpectedRulesDigest`) and every loaded
 mode's digest in `game_modes`, the `map` given (`file`, `byte_length`, `source_sha256` for
 `ExpectedMapDigest`, `effective_digest`) and its `max_start_waypoints`, the `Side=` values
 (`countries`), the `Color=` values (`colors`), the `campaigns` a single-player launch may start,
