@@ -855,10 +855,9 @@ pub(super) fn track_move_to(
     }
 }
 
-/// ILocomotion +0x48 Stop_Moving of the active Drive, Ship or Hover
-/// instance, as FootStopDriver4D55C0/Unit+500 dispatches from FindPath,
-/// FireAt and first-Limbo. It clears the locomotor destination; NavCom and the committed
-/// head are untouched.
+/// The class-local writes of ILocomotion +0x48 Stop_Moving for Drive, Ship
+/// and Hover. The simulation dispatcher stops linked cars before this point.
+/// NavCom and the committed head are untouched.
 pub(crate) fn track_stop_moving(entity: &mut GameEntity) -> bool {
     if is_drive_locomotor(entity) {
         drive_stop_moving(entity);
@@ -870,14 +869,50 @@ pub(crate) fn track_stop_moving(entity: &mut GameEntity) -> bool {
     true
 }
 
+/// Process_Drive_Track and Stop_Moving (Drive 4B1228/4AFE4D, Ship
+/// 6A08F0/69F55D) walk Unit+6C8 anew after each callback. Both skip a
+/// self-linked successor. Break longer cycles from malformed map/save data.
+pub(super) struct TrackFollowers {
+    first: Option<u64>,
+    current: u64,
+    seen: std::collections::BTreeSet<u64>,
+}
+
+impl TrackFollowers {
+    pub(super) fn new(head: u64, first: u64) -> Self {
+        Self {
+            first: Some(first),
+            current: head,
+            seen: std::collections::BTreeSet::from([head]),
+        }
+    }
+
+    pub(super) fn next(&mut self, entities: &EntityStore) -> Option<u64> {
+        let id = if let Some(first) = self.first.take() {
+            first
+        } else {
+            let next = entities.get(self.current)?.unit_follower()?;
+            if entities.get(next)?.unit_follower() == Some(next) {
+                return None;
+            }
+            next
+        };
+        if !self.seen.insert(id) {
+            return None;
+        }
+        self.current = id;
+        Some(id)
+    }
+}
+
 fn drive_stop_moving(entity: &mut GameEntity) {
     let Some(loco) = entity.locomotor.as_mut() else {
         return;
     };
     loco.ensure_installed_track_state();
     // 0x4AFE00 clamps the class target fraction (+0x50), then clears only
-    // the destination; the head (+0x40) may continue to its endpoint. The
-    // IsTrain follower cascade has no stock type (no retail IsTrain=yes).
+    // the destination; the head (+0x40) may continue to its endpoint.
+    // The locomotor host has already stopped linked cars.
     if let Some(target) = loco.track_target_fraction_native(TrackFamily::Drive) {
         loco.store_track_target_fraction_native(
             TrackFamily::Drive,
@@ -1037,6 +1072,58 @@ impl crate::sim::world::Simulation {
     /// Fly's needs the rules. A world without them leaves the owner as it
     /// was.
     pub(crate) fn locomotor_stop_moving(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), String> {
+        if let Some(cars) = self.train_cars_to_stop(id, rules) {
+            // A car normally has its follower byte set. A change of owner can
+            // clear it; that car then stops its own followers before itself.
+            // Use explicit frames so a long chain never consumes the call stack.
+            let mut pending = vec![(id, cars)];
+            let mut expanded = std::collections::BTreeSet::from([id]);
+            while let Some((engine, cars)) = pending.last_mut() {
+                if let Some(car) = cars.next(&self.substrate.entities) {
+                    if let Some(followers) = self.train_cars_to_stop(car, rules)
+                        && expanded.insert(car)
+                    {
+                        pending.push((car, followers));
+                    } else {
+                        self.stop_active_locomotor(car, rules, registry, frame_effects)?;
+                    }
+                } else {
+                    self.stop_active_locomotor(*engine, rules, registry, frame_effects)?;
+                    pending.pop();
+                }
+            }
+            Ok(())
+        } else {
+            self.stop_active_locomotor(id, rules, registry, frame_effects)
+        }
+    }
+
+    /// Drive 4AFE0C..4AFE57 / Ship 69F51C..69F567: a nonzero committed
+    /// HeadToCoord, IsTrain and a clear Unit follower byte dispatch a Stop
+    /// through every linked car's currently installed locomotor.
+    fn train_cars_to_stop(
+        &self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<TrackFollowers> {
+        let unit = self.substrate.entities.get(id)?;
+        let first = unit.unit_follower()?;
+        if unit.is_unit_follower() || !self.object_type(unit.type_ref(), rules)?.is_train {
+            return None;
+        }
+        let locomotor = unit.locomotor.as_ref()?;
+        let family = TrackFamily::from_kind(locomotor.active_kind())?;
+        let head = locomotor.track_head(family)?;
+        (head.x != 0 || head.y != 0 || head.z != 0).then(|| TrackFollowers::new(id, first))
+    }
+
+    fn stop_active_locomotor(
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,

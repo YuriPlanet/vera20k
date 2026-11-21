@@ -570,8 +570,14 @@ impl Simulation {
                 b.owner(),
             )
         });
-        //4B2BF1..4B2C04: IsTrain (Type+C94) is set by no retail TechnoType.
-        if !allied {
+        // Drive 4B2C04/4B30E9 and Ship 6A2254/6A2739 skip the ally
+        // stop/scatter for a train in both no-queue responses.
+        if !allied
+            || self
+                .interner
+                .object_type(actor.type_ref(), rules)
+                .is_some_and(|object| object.is_train)
+        {
             return Ok(false);
         }
         let destination = track_destination_or_null(actor);
@@ -1235,7 +1241,13 @@ impl Simulation {
         }
         let Some(requested) = destination else {
             if teleporter {
-                let _ = self.unit_teleporter_arm(id, None, rules);
+                let _ = self.unit_teleporter_arm(
+                    id,
+                    None,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                );
             }
             if !dock_fast_return
                 && self.unit_factory_exit_arm(
@@ -1258,7 +1270,14 @@ impl Simulation {
             NavTargetRef::Cell { rx, ry } => Some((rx, ry)),
             _ => None,
         };
-        let skip_move_to = teleporter && self.unit_teleporter_arm(id, requested_cell, rules);
+        let skip_move_to = teleporter
+            && self.unit_teleporter_arm(
+                id,
+                requested_cell,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
         self.unit_tunnel_arm(id, requested, rules);
         // UnitClass::Set_Destination 0x00741970: successful UnitRepair/Bunker
         // docking jumps from 0x00742C8E/0x00742D08 to Foot's setter at
@@ -1627,6 +1646,8 @@ impl Simulation {
         id: u64,
         cell: Option<(u16, u16)>,
         rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -1672,8 +1693,12 @@ impl Simulation {
             if self.try_end_piggyback(id, rules) {
                 return false;
             }
-            let actor = self.substrate.entities.get_mut(id).expect("same arm actor");
-            super::navcom::track_stop_moving(actor);
+            if let Err(cause) = self.locomotor_stop_moving(id, rules, registry, frame_effects) {
+                log::warn!("Teleporter {id} could not stop: {cause}");
+            }
+            let Some(actor) = self.substrate.entities.get_mut(id) else {
+                return false;
+            };
             actor.seldom.setter_force_reassign.raised = true;
             let _ = self.substrate.mission_assign_exact(
                 id,
@@ -1747,7 +1772,7 @@ impl Simulation {
             }
         }
         if teleporter {
-            let _ = self.unit_teleporter_arm(id, None, rules);
+            let _ = self.unit_teleporter_arm(id, None, rules, registry, frame_effects);
         }
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return false;

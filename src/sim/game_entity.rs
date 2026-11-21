@@ -690,9 +690,8 @@ pub struct Seldom {
     barrel_elevation: crate::sim::movement::FacingClass,
     /// UnitClass+6C8. The constructor clears this next-Unit reference at
     /// 7353EC; the map reader74368C, ChangeOwner7463A0 and Find_Path4D3920
-    /// share it (original gamemd.exe instructions). Not yet ported: the
-    /// Accelerates speed hand-off in Process_Drive_Track 4B1218 / Ship 6A08F0
-    /// and the IsTrain-gated Stop_Moving/track consumers (no retail IsTrain).
+    /// share it with the accelerating Drive/Ship speed hand-off (4B1218 /
+    /// 6A08E0) and IsTrain Stop_Moving (4AFE4D / 69F55D).
     unit_follower: Option<u64>,
     /// UnitClass+6D0, constructed false at7353F8. This retained byte is
     /// independent of incoming links: PointerExpired7446E0 clears only the

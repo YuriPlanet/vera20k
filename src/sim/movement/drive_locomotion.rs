@@ -711,6 +711,12 @@ pub(super) struct TrackSpeedPrefix {
     pub crush_slowdown: bool,
 }
 
+impl TrackSpeedPrefix {
+    pub(super) fn applies_acceleration(&self) -> bool {
+        self.accelerates && self.selector < 64 && !self.unit_passive
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct TrackSpeedStep {
     /// Class+50: unchanged bit-for-bit except the crush arm's FLD/FSTP.
@@ -729,10 +735,8 @@ fn track_c0_set(order: MaskedX87Ordering) -> bool {
 
 /// Process_Drive_Track speed prefix: Drive4B0F74..4B1218 / Ship6A0644..6A08E0.
 /// Exact PC53/chop arithmetic feeds the same frame's movement budget.
-/// RESIDUAL: authored FOLLOWS chains (UnitReadINI 0x743270) now link Units,
-/// but an Accelerates head does not yet force its followers' speed fraction
-/// (Drive 0x4B1218..0x4B125D, Ship 0x6A08F0..0x6A091F), so a linked convoy
-/// can spread out; only FOLLOWS maps with an Accelerates head reach it.
+/// The track host hands the resulting applied fraction to linked Units on
+/// the accelerating path (Drive 0x4B1218, Ship 0x6A08E0).
 ///
 /// `distance` is called exactly once only after Accelerates/selector/Passive
 /// gates. The native distance owner is a pure ground/Cell query. Live mutable
@@ -756,7 +760,7 @@ pub(super) fn track_speed_prefix(
         return unchanged_target(Some(target));
     }
     // Signed selector comparison; negative values are not rejected here.
-    if input.selector >= 64 || input.unit_passive {
+    if !input.applies_acceleration() {
         return unchanged_target(None);
     }
 

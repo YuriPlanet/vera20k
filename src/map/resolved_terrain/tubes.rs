@@ -11,7 +11,64 @@ pub enum NativeTubeRegistryBindError {
     RegistryCapacity { entries: usize },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PathWalkError {
+    DirectionData { raw_token: i32, native_address: u32 },
+    TubeIndex(i16),
+}
+
 impl ResolvedTerrainGrid {
+    /// Path walk at 0x00429780: used by both Run_AStar (0x004CBC0C) and
+    /// the tube hierarchy (0x00582D70). Direction 8 follows the tube exit.
+    pub(crate) fn walk_native_path(
+        &self,
+        mut coord: (u16, u16),
+        steps: &[i32],
+    ) -> Result<(u16, u16), PathWalkError> {
+        for &step in steps {
+            if step == 8 {
+                let index = self.raw_tube_index_at_native_coord(coord);
+                coord = if index == -1 {
+                    (0, 0)
+                } else {
+                    self.tube(crate::map::tube_facts::TubeId(index as u16))
+                        .filter(|_| index >= 0)
+                        .ok_or(PathWalkError::TubeIndex(index))?
+                        .exit
+                };
+            } else {
+                // x86 effective address89F688 + step*4 wraps in32 bits. Exact8
+                // above is special; address aliases of slot8 are ordinary reads.
+                let slot = step as u32 & 0x3fff_ffff;
+                let (dx, dy) = match slot {
+                    0..=7 => crate::util::direction::DIRECTION_DELTAS[slot as usize],
+                    // Original49F2D0/49F280 initialize slots8..12 to0; slot13
+                    // is zero BSS with no direct xrefs in the examined image.
+                    8..=13 => (0, 0),
+                    // Original startup49F0E0/49F190 at captured FPCW0xE7F.
+                    // Their initialized bytes match the unpatched process capture
+                    // (tube_startup_capture.json); arbitrary neighboring data stays open.
+                    14 => (0, 0x6000),
+                    15 => (-24418, 16502),
+                    0x3fff_fffe => (11544, 21572),
+                    0x3fff_ffff => (8699, 16377),
+                    _ => {
+                        return Err(PathWalkError::DirectionData {
+                            raw_token: step,
+                            native_address: 0x0089_f688u32
+                                .wrapping_add((step as u32).wrapping_mul(4)),
+                        });
+                    }
+                };
+                coord = (
+                    coord.0.wrapping_add(dx as u16),
+                    coord.1.wrapping_add(dy as u16),
+                );
+            }
+        }
+        Ok(coord)
+    }
+
     pub fn tube_facts(&self) -> &[TubeFact] {
         &self.tube_facts
     }

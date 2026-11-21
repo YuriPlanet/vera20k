@@ -3693,3 +3693,86 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
     assert_eq!(run(false, Some(entered)), (entered, false, true, 20));
     assert_eq!(run(true, Some(entered)), (entered, true, true, 0));
 }
+
+/// A Drive calls SetSpeedFraction on linked Units even when its accelerating
+/// prefix kept the same applied value (4B11DF -> 4B1218). There is no IsTrain
+/// gate on this speed hand-off. The equal non-accelerating arm skips it.
+#[test]
+fn accelerating_drive_hands_its_applied_speed_to_linked_units() {
+    let rules = RuleSet::empty_for_test();
+    for accelerates in [false, true] {
+        let (mut sim, invocation, _) = fixture(TrackFamily::Drive, 0);
+        let head = sim.substrate.entities.get_mut(1).unwrap();
+        head.set_unit_follower(Some(2));
+        head.mover_facts.set_drive_accelerates_for_test(accelerates);
+        let fraction = SimFixed::lit("0.375");
+        head.foot_speed.set_speed_fraction(fraction);
+        head.locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_target_fraction(TrackFamily::Drive, fraction);
+        let mut car = GameEntity::test_default(2, "MTNK", "Americans", 10, 11);
+        car.set_is_unit_follower(true);
+        sim.substrate.entities.insert(car);
+        sim.run_track_process(invocation, rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let car = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(
+            car.foot_speed.applied_fraction(),
+            if accelerates {
+                fraction
+            } else {
+                SimFixed::ZERO
+            }
+        );
+    }
+}
+
+/// Stop_Moving 4AFE0C..4AFE89 checks the engine's committed head before it
+/// dispatches the car's active locomotor Stop. The car keeps its own head.
+#[test]
+fn train_stop_reaches_the_linked_car_only_with_a_committed_head() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str("[MTNK]\nIsTrain=yes\n"),
+    ) else {
+        return;
+    };
+    let dest = DriveCoord::cell(10, 7, 0);
+    let car_head = DriveCoord::cell(10, 10, 0);
+    for committed in [false, true] {
+        let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+        sim.interner.bind_types(&retail.rules);
+        let head = sim.substrate.entities.get_mut(1).unwrap();
+        head.set_unit_follower(Some(2));
+        head.locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_head(TrackFamily::Drive, committed.then_some(dest));
+        let mut car = GameEntity::test_default(2, "MTNK", "Americans", 10, 11);
+        car.set_is_unit_follower(true);
+        let loco = super::super::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Drive,
+        );
+        let loco = car.locomotor.insert(loco);
+        loco.ensure_installed_track_state();
+        loco.store_track_head(TrackFamily::Drive, Some(car_head));
+        loco.store_track_destination(TrackFamily::Drive, Some(dest));
+        sim.substrate.entities.insert(car);
+        sim.locomotor_stop_moving(1, &retail.rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let loco = sim
+            .substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            loco.track_destination(TrackFamily::Drive),
+            (!committed).then_some(dest)
+        );
+        assert_eq!(loco.track_head(TrackFamily::Drive), Some(car_head));
+    }
+}

@@ -544,7 +544,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                 native_speed,
                 "{step}"
             );
-            let speed = super::super::track_speed::advance(
+            let (speed, _) = super::super::track_speed::advance(
                 sim.substrate.entities.get_mut(1).unwrap(),
                 rules.object("MOVER"),
                 &rules,

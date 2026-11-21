@@ -706,16 +706,6 @@ fn expansion_neighbours(
 
 /// Configuration for the unified A* search.
 pub struct AStarOptions<'a> {
-    /// The mover type's `IsTrain=` flag (`TechnoTypeClass+0xC94`):
-    /// `AStar_main_loop` sets its gate byte at `0x00429C79` and then zeroes
-    /// every passable `+0x1AC` class (`0x00429F5C..0x00429F69`). Residual: no
-    /// mover supplies it (always false), and the search's other train arms
-    /// are unported: the start height at `0x00429B64..0x00429BB0`, the start
-    /// neighbours closed against the train's facing at
-    /// `0x00429C87..0x00429D25`, the hierarchy bypass at `0x0042CACC` and
-    /// Find_Path's code-6 destination skip at `0x004D3A66`/`0x004D3AA5`. No
-    /// retail type sets `IsTrain=`, so all are dormant.
-    pub mover_is_train: bool,
     /// The Foot's `+0x1AC` (`0x00429F54`): the only terrain and object
     /// admission verdict, and the edge's cost class.
     pub foot_entry: &'a dyn SearchFootEntry,
@@ -739,10 +729,9 @@ pub struct AStarOptions<'a> {
 
 impl<'a> AStarOptions<'a> {
     /// A search asking `foot_entry`, with no hierarchy gate, markers,
-    /// urgency, train flag or map cells.
+    /// urgency or map cells.
     pub fn new(foot_entry: &'a dyn SearchFootEntry) -> Self {
         Self {
-            mover_is_train: false,
             foot_entry,
             marker_overlay: None,
             urgency: 0,
@@ -772,7 +761,19 @@ pub struct SearchEntryQuery {
     pub path_height: i32,
 }
 
+/// Inputs of AStar_main_loop's train arms, sampled from the searching Foot.
+#[derive(Clone, Copy)]
+pub struct TrainSearchPose {
+    pub facing_octant: u8,
+    pub level: i32,
+}
+
 pub trait SearchFootEntry {
+    /// A train's body facing and its signed Location.Z in height levels.
+    fn train_pose(&self) -> Option<TrainSearchPose> {
+        None
+    }
+
     fn classify(&self, query: SearchEntryQuery) -> Result<u8, String>;
 
     /// Successful-search finishing reads Foot4DC760 and House threat state.
@@ -961,7 +962,17 @@ fn astar_search_along_route(
     // Residual: the Aircraft (WhatAmI 2) arms at 0x00429AF9/0x00429B2A, which
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
-    let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
+    let (mut start_height, goal_height) =
+        initial_search_heights(start_cell, start_layer, goal_cell);
+    // AStar_main_loop 0x00429B64..0x00429BB0: Location.Z / LevelHeight is
+    // compared with the OnBridge-adjusted start; a structural rail may add
+    // four more levels even when the Foot's OnBridge byte was clear.
+    let train = options.foot_entry.train_pose();
+    if start_cell.has_structural_bridge()
+        && train.is_some_and(|pose| pose.level.abs_diff(i32::from(start_height)) > 2)
+    {
+        start_height += 4;
+    }
     if options.hierarchy_gate.is_some()
         && let Some(progress) = progress.as_deref_mut()
     {
@@ -1003,7 +1014,8 @@ fn astar_search_along_route(
         } = *ws;
 
         let start_idx = start.1 as usize * w + start.0 as usize;
-        let start_on_bridge = is_at_bridge_level(start_height, start_cell);
+        // The start stamp compares just the two levels (0x00429C3B).
+        let start_on_bridge = start_height > start_cell.signed_level();
         // Close-on-generation: gamemd stamps a (cell, layer) closed at the
         // moment a node is created for it and freezes its g there. The start
         // node is created before the loop, so it is stamped here, with g 0.
@@ -1016,6 +1028,33 @@ fn astar_search_along_route(
             bridge.set(start_idx, start_descriptor);
         } else {
             ground.set(start_idx, start_descriptor);
+        }
+
+        // AStar_main_loop 0x00429C87..0x00429D25 stamps the rear three
+        // neighbours closed at g=0 for the whole search, even if a later
+        // approach would reach one from a different direction. Here the
+        // selected list depends on height alone, including on an unflagged cell.
+        if let Some(train) = train {
+            for (direction, (dx, dy)) in DIRECTION_DELTAS.iter().enumerate() {
+                if !(3..=5).contains(&train.facing_octant.abs_diff(direction as u8)) {
+                    continue;
+                }
+                let neighbour = (
+                    start.0.wrapping_add_signed(*dx as i16),
+                    start.1.wrapping_add_signed(*dy as i16),
+                );
+                if let Some(((x, y), cell)) = resolve_endpoint(neighbour) {
+                    let layer = if start_height > cell.signed_level() + 1 {
+                        &mut *bridge
+                    } else {
+                        &mut *ground
+                    };
+                    layer.set(
+                        usize::from(y) * w + usize::from(x),
+                        PathDescriptor::UNVISITED,
+                    );
+                }
+            }
         }
 
         // The start node is expanded first and never enters the open list
@@ -1204,11 +1243,7 @@ fn astar_search_along_route(
 
                 // A train (`IsTrain=`, gate byte set at `0x00429C79`) takes
                 // class 0 for every admitted class (`0x00429F5C..0x00429F69`).
-                let cost_class = if options.mover_is_train {
-                    0
-                } else {
-                    cost_class
-                };
+                let cost_class = if train.is_some() { 0 } else { cost_class };
 
                 // The edge cost (`AStar_compute_edge_cost @ 0x00429830`) is
                 // built from this class (base table `0x0081870C`), the code-2
