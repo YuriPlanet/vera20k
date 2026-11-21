@@ -44,10 +44,19 @@ use super::AssistBrain;
 use super::census::Census;
 use super::plan::{self, Budget, Item};
 
-/// How many harvesters one refinery keeps busy. Two, not the rules'
-/// `HarvestersPerRefinery=`: the trip out and back is most of a harvester's
-/// life, and a third one mostly queues at the bay.
-pub(super) const HARVESTERS_PER_REFINERY: usize = 2;
+/// How many harvesters one refinery keeps busy.
+///
+/// The rules' own `HarvestersPerRefinery=` is not the answer: the trip out and
+/// back is most of a harvester's life, and a bay unloads one at a time, so a
+/// fourth one queues. Two was measured against three on Death.mmx over three
+/// seeds (tools.autoplay_check, 36000 ticks): three does not change the winner
+/// (won at 35276 instead of 32491, own 158 against 144) and it transforms the
+/// seed that used to end 106 to 52 -- own 147, enemy 10, army 82 against 55.
+/// What it costs is the third seed, 128/61 to 126/70. Two harvesters a bay is
+/// the floor the field feeds; three is what the bays in the ground under them
+/// can actually take, and the house that runs nine harvesters on three bays is
+/// the one that stops being starved.
+pub(super) const HARVESTERS_PER_REFINERY: usize = 3;
 
 /// The free wallet the tech stage needs before it answers: the price of the
 /// cheapest thing it buys.
