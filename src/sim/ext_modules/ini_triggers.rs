@@ -39,10 +39,22 @@
 //! `name(target,params...)`: an `ActionTarget` name (empty for `Subject`),
 //! then the parameters of the appendix 5.2/5.3 row in table order, empty
 //! ones 0. With target `Cell`, a waypoint number comes first. An `id`
-//! parameter takes a name of its kind or a number, `house` a country name,
-//! `cell` a waypoint number; `other` comes from the event and is not
-//! written. Section, key and name mistakes refuse the match start with a
-//! message naming the section and key.
+//! parameter takes a name of its kind (TechnoType, weapon, warhead,
+//! superweapon, TeamType, variable, property, animation, voxel animation,
+//! particle system) or a number, an enum parameter (`Mission`, `Outcome`,
+//! `Blocked`, `ModifierOp`) a member name or its number, `house` a country
+//! name, `cell` a waypoint number; `other` comes from the event and is not
+//! written. An event's `id` takes a number, or for `PropertyPoll` a
+//! property name and for `VariablePoll` a variable name. Section, key and
+//! name mistakes refuse the match start with a message naming the section
+//! and key.
+//!
+//! **Bound sections.** `Wasm.Tags` on a TechnoType binds by type; on a
+//! weapon or warhead section (a weapon or warhead named in the rules) it
+//! binds the weapon or warhead, which needs every event of the trigger to
+//! carry one (`Fire`, `Killed`); on a projectile section it binds the
+//! projectile type where this build can (else the start is refused, naming
+//! the section).
 //!
 //! **Saves.** The triggers live in the module trigger registry, which the
 //! trigger runtime saves with their bindings and per-object state; a loaded
@@ -53,27 +65,30 @@
 //! (`ModuleTriggers::remove_source`). A `Wasm:` action naming a module the
 //! scenario lacks refuses the start.
 //!
+//! **Maps.** A map's own `Wasm.Tags` is never read (RFC section 2); the
+//! match tells the players so when a map carries one
+//! (`PreparedExtModules::load`).
+//!
 //! Residuals:
-//! - `Wasm.Tags` on Weapon, Warhead and Projectile sections refuses the start:
-//!   `trigger_bind` has no weapon, warhead or projectile bindings yet.
-//! - `Decide=Wasm:name` sets the trigger's decision handler (RFC 6f).
-//! - Text parameters (`Log`, stock text actions) refuse the start: a trigger
-//!   keeps no action text.
-//! - Name kinds without a lookup (sounds, animations, particle systems) and
-//!   enum parameters (`Mission`, `Outcome`, ...) take numbers only; an
-//!   event's `id` takes a number.
+//! - Sound parameters take numbers only: the simulation keeps no sound list
+//!   (soundmd.ini belongs to the client), and no sound action runs from a
+//!   module trigger yet.
+//! - A section named both as a TechnoType and as a weapon, warhead or
+//!   projectile binds as the TechnoType.
 //! - A `House=` or `house` parameter naming a country without a house in this
 //!   scenario leaves that trigger out (logged).
 //! - All of one trigger's `Wasm:` actions must address one module.
-//! - Maps' `Wasm.Tags` is ignored without the lobby warning RFC section 2 asks.
+//! - The map warning is a match notice, not a lobby one: the lobby does not
+//!   read map rules.
 
 use vera20k_wasm_ext::triggers::{
-    ACTION_MODULE, ActionDef, ActionTarget, EventDef, FilterClause, FilterSubject, MAX_ACTIONS,
-    MAX_CLAUSES, MAX_EVENTS, Repeat, VarTarget,
+    ACTION_MODULE, ActionDef, ActionTarget, EVENT_PROPERTY_POLL, EVENT_VARIABLE_POLL, EventDef,
+    FilterClause, FilterSubject, MAX_ACTIONS, MAX_CLAUSES, MAX_EVENTS, Repeat, VarTarget,
 };
 use vera20k_wasm_ext::{
-    ActionParams, NAME_SUPER_WEAPON, NAME_TECHNO_TYPE, NAME_WARHEAD, NAME_WEAPON, Status,
-    TABLE_PROPERTY, TriggerDef,
+    ActionParams, NAME_ANIM, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE, NAME_SUPER_WEAPON,
+    NAME_TECHNO_TYPE, NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Status, TABLE_PROPERTY,
+    TriggerDef,
 };
 
 use super::{
@@ -116,7 +131,8 @@ struct EventSpec {
     name: String,
     op: u8,
     interval: i32,
-    id: i32,
+    /// A number or a name, resolved by event kind at install; `None` is −1.
+    id: Option<String>,
     value: i64,
     clauses: Vec<(String, ClauseSpec)>,
 }
@@ -157,7 +173,8 @@ enum ActionSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Param {
     Id(IdKind),
-    Arg,
+    /// `arg` holding a member of an appendix 8.3 enum.
+    Enum(EnumKind),
     Arg2,
     Value,
     Value2,
@@ -169,8 +186,8 @@ enum Param {
 /// What an `id` parameter names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IdKind {
-    /// A number only (sounds, animations, particle systems).
-    Number,
+    /// A number only: a sound's `[SoundList]` index (module residuals).
+    Sound,
     TechnoType,
     Weapon,
     Warhead,
@@ -178,6 +195,79 @@ enum IdKind {
     TeamType,
     Variable,
     Property,
+    /// The AnimType array position.
+    Anim,
+    VoxelAnim,
+    ParticleSystem,
+}
+
+/// The appendix 8.3 enum an `arg` parameter holds; it takes a member name
+/// (ASCII case-insensitive) or a number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnumKind {
+    Mission,
+    Outcome,
+    Blocked,
+    ModifierOp,
+}
+
+impl EnumKind {
+    /// Members by number (appendix 8.3); `Mission` adds `None` = 255 and the
+    /// INI spelling `Wait` of `Deliberate`.
+    fn value(self, name: &str) -> Option<i32> {
+        const MISSIONS: [&str; 32] = [
+            "Sleep",
+            "Attack",
+            "Move",
+            "QMove",
+            "Retreat",
+            "Guard",
+            "Sticky",
+            "Enter",
+            "Capture",
+            "Eaten",
+            "Harvest",
+            "AreaGuard",
+            "Return",
+            "Stop",
+            "Ambush",
+            "Hunt",
+            "Unload",
+            "Sabotage",
+            "Construction",
+            "Selling",
+            "Repair",
+            "Rescue",
+            "Missile",
+            "Harmless",
+            "Open",
+            "Patrol",
+            "ParadropApproach",
+            "ParadropOverfly",
+            "Deliberate",
+            "AttackMove",
+            "SpyplaneApproach",
+            "SpyplaneOverfly",
+        ];
+        let members: &[&str] = match self {
+            Self::Mission => {
+                if name.eq_ignore_ascii_case("None") {
+                    return Some(255);
+                }
+                if name.eq_ignore_ascii_case("Wait") {
+                    return Some(28);
+                }
+                &MISSIONS
+            }
+            Self::Outcome => &["Win", "Lose"],
+            Self::Blocked => &["Nearby", "Fail"],
+            Self::ModifierOp => &["Add", "Multiply", "Override"],
+        };
+        members
+            .iter()
+            .position(|member| member.eq_ignore_ascii_case(name))
+            .and_then(|value| i32::try_from(value).ok())
+    }
 }
 
 /// A key's place in its trigger section.
@@ -489,7 +579,11 @@ fn parse_event(text: &str) -> Result<EventSpec, String> {
         name: name.to_owned(),
         op,
         interval: number_or(args.get(1), 0)?,
-        id: number_or(args.get(2), -1)?,
+        id: args
+            .get(2)
+            .map(|id| id.trim())
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned),
         value: i64::from(number_or(args.get(3), 0)?),
         clauses: Vec::new(),
     })
@@ -593,21 +687,27 @@ fn action_params(kind: i32) -> Option<&'static [Param]> {
         return Some(match name {
             "FireWeapon" => &[Id(Weapon), Value, Cell],
             "LaunchSuperWeapon" => &[Id(SuperWeapon), Cell],
-            "SpawnAnim" => &[Id(Number)],
-            "AttachAnim" => &[Id(Number), Value2],
+            "SpawnAnim" => &[Id(Anim)],
+            "AttachAnim" => &[Id(Anim), Value2],
             "Damage" | "DetonateWarhead" => &[Id(Warhead), Value],
             "Heal" | "AddExperience" | "AddMoney" | "AddAmmo" | "SetScore" | "AddScore" => &[Value],
-            "CreateObject" => &[Id(TechnoType), House, Arg],
-            "SetMission" => &[Arg, Cell],
-            "Teleport" => &[Cell, Arg],
+            "CreateObject" => &[Id(TechnoType), House, Enum(EnumKind::Mission)],
+            "SetMission" => &[Enum(EnumKind::Mission), Cell],
+            "Teleport" => &[Cell, Enum(EnumKind::Blocked)],
             "AllowType" => &[Id(TechnoType), Value],
             "SetOwner" => &[House],
             "SetProperty" => &[Id(Property), Value],
-            "Modify" => &[Id(Property), Arg, Arg2, Value, Value2],
+            "Modify" => &[
+                Id(Property),
+                Enum(EnumKind::ModifierOp),
+                Arg2,
+                Value,
+                Value2,
+            ],
             "RemoveModifiers" => &[Arg2, Id(Property)],
             "SetVar" => &[Id(Variable), Value],
             "DetonateWeapon" => &[Id(Weapon)],
-            "EndFor" => &[Arg],
+            "EndFor" => &[Enum(EnumKind::Outcome)],
             "Log" => &[Text],
             "Convert" => &[Id(TechnoType), Value2],
             "Push" => &[Cell, Value],
@@ -642,7 +742,10 @@ fn action_params(kind: i32) -> Option<&'static [Param]> {
         | 148
         | 149 => &[Value],
         14 | 36..=38 | 123 | 124 => &[House],
-        19 | 41 | 43 | 88 | 98 | 99 => &[Id(Number)],
+        19 | 98 | 99 => &[Id(Sound)],
+        41 => &[Id(Anim)],
+        43 => &[Id(VoxelAnim)],
+        88 => &[Id(ParticleSystem)],
         42 => &[Id(Weapon)],
         33 | 34 | 133 | 134 => &[Id(SuperWeapon)],
         40 => &[Value, Value2],
@@ -677,13 +780,12 @@ impl Simulation {
     ) -> Result<(), String> {
         let mut types = Vec::with_capacity(ini.bindings.len());
         for (section, _) in &ini.bindings {
-            let id = rules.type_handle(section).map(|h| h.0).ok_or_else(|| {
+            types.push(bound_type(rules, section).ok_or_else(|| {
                 format!(
-                    "[{section}] Wasm.Tags: [{section}] is not a TechnoType; weapon, warhead \
-                     and projectile bindings are not supported yet"
+                    "[{section}] Wasm.Tags: [{section}] is not a TechnoType, weapon, warhead \
+                     or projectile"
                 )
-            })?;
-            types.push(id);
+            })?);
         }
         for (index, spec) in ini.triggers.iter().enumerate() {
             let Some((source, def)) = self.resolve_ini_trigger(rules, spec)? else {
@@ -706,12 +808,18 @@ impl Simulation {
                 .iter()
                 .zip(&types)
                 .filter(|((_, reached), _)| reached.contains(&index));
-            for ((type_section, _), &id) in bound {
-                let reference = type_ref(NAME_TECHNO_TYPE, id);
+            for ((type_section, _), &reference) in bound {
                 match self.with_module_host(rules, source, |host| {
                     host.bind_trigger(handle, reference, true)
                 }) {
                     Ok(Status::Ok) => {}
+                    Ok(Status::Unsupported) if reference != bound_techno(rules, type_section) => {
+                        return Err(format!(
+                            "[{type_section}] Wasm.Tags: this game cannot bind a trigger to \
+                             this kind of section yet; bind [{section}] to TechnoTypes, weapons \
+                             or warheads"
+                        ));
+                    }
                     Ok(status) => {
                         return Err(format!(
                             "[{type_section}] Wasm.Tags: binding [{section}] answers {status:?}"
@@ -777,6 +885,10 @@ impl Simulation {
             {
                 return Err(fail(format!("this game does not raise {} yet", event.name)));
             }
+            let id = match event.id.as_deref() {
+                None => -1,
+                Some(text) => self.ini_event_id(kind, text).map_err(fail)?,
+            };
             let mut clauses = Vec::with_capacity(event.clauses.len());
             for (key, clause) in &event.clauses {
                 clauses.push(
@@ -788,7 +900,7 @@ impl Simulation {
                 kind,
                 op: event.op,
                 interval: event.interval,
-                id: event.id,
+                id,
                 value: event.value,
                 clauses,
             });
@@ -837,6 +949,21 @@ impl Simulation {
             .house_by_country_index(index, rules)
             .and_then(|house| self.houses.index_of(house))
             .map(house_ref))
+    }
+
+    /// An event's `id`: a number, or by event kind a property name
+    /// (`PropertyPoll`) or a variable name (`VariablePoll`).
+    fn ini_event_id(&self, kind: i32, text: &str) -> Result<i32, String> {
+        match kind {
+            EVENT_VARIABLE_POLL => self.ini_variable(text),
+            _ => match number(text) {
+                Ok(number) => Ok(number),
+                Err(why) if kind != EVENT_PROPERTY_POLL => Err(why),
+                Err(_) => {
+                    vera20k_wasm_ext::property_id(text).ok_or_else(|| format!("no property {text}"))
+                }
+            },
+        }
     }
 
     /// A variable name (the mod's `vera.vars`, `map.` for the map's) or a
@@ -945,7 +1072,14 @@ impl Simulation {
             }
             match param {
                 Param::Id(kind) => params.id = self.ini_id(rules, *kind, arg)?,
-                Param::Arg => params.arg = number(arg)?,
+                Param::Enum(kind) => {
+                    params.arg = match number(arg) {
+                        Ok(number) => number,
+                        Err(_) => kind
+                            .value(arg)
+                            .ok_or_else(|| format!("{arg:?} is not a {kind:?}"))?,
+                    };
+                }
                 Param::Arg2 => params.arg2 = number(arg)?,
                 Param::Value => params.value = i64::from(number(arg)?),
                 Param::Value2 => params.value2 = i64::from(number(arg)?),
@@ -973,20 +1107,48 @@ impl Simulation {
         if let Ok(number) = number(text) {
             return Ok(number);
         }
+        let rules_name = |kind| super::rules_name_id(rules, kind, text).flatten();
         let found = match kind {
-            IdKind::Number | IdKind::Variable => None,
-            IdKind::TechnoType => super::rules_name_id(rules, NAME_TECHNO_TYPE, text).flatten(),
-            IdKind::Weapon => super::rules_name_id(rules, NAME_WEAPON, text).flatten(),
-            IdKind::Warhead => super::rules_name_id(rules, NAME_WARHEAD, text).flatten(),
-            IdKind::SuperWeapon => super::rules_name_id(rules, NAME_SUPER_WEAPON, text).flatten(),
+            IdKind::Sound | IdKind::Variable => None,
+            IdKind::TechnoType => rules_name(NAME_TECHNO_TYPE),
+            IdKind::Weapon => rules_name(NAME_WEAPON),
+            IdKind::Warhead => rules_name(NAME_WARHEAD),
+            IdKind::SuperWeapon => rules_name(NAME_SUPER_WEAPON),
+            IdKind::Anim => rules_name(NAME_ANIM),
+            IdKind::VoxelAnim => rules_name(NAME_VOXEL_ANIM),
+            IdKind::ParticleSystem => rules_name(NAME_PARTICLE_SYSTEM),
             IdKind::TeamType => self
                 .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, text)
                 .and_then(|index| i32::try_from(index).ok()),
             IdKind::Property => vera20k_wasm_ext::property_id(text),
         };
         found.ok_or_else(|| match kind {
-            IdKind::Number => format!("{text:?} is not a number"),
+            IdKind::Sound => format!(
+                "{text:?} is not a number; give a sound as its soundmd.ini [SoundList] index"
+            ),
             _ => format!("no {kind:?} {text}"),
         })
     }
+}
+
+/// What `Wasm.Tags` on `section` binds: the TechnoType of that name, else
+/// the weapon, warhead or projectile (module docs); `None` for none of them.
+fn bound_type(rules: &RuleSet, section: &str) -> Option<i64> {
+    if let Some(handle) = rules.type_handle(section) {
+        return Some(type_ref(NAME_TECHNO_TYPE, handle.0));
+    }
+    [
+        (NAME_WEAPON, rules.weapon_index(section)),
+        (NAME_WARHEAD, rules.warhead_index(section)),
+        (NAME_PROJECTILE, rules.projectile_index(section)),
+    ]
+    .into_iter()
+    .find_map(|(kind, id)| Some(type_ref(kind, id?)))
+}
+
+/// `section`'s TechnoType reference, or 0.
+fn bound_techno(rules: &RuleSet, section: &str) -> i64 {
+    rules
+        .type_handle(section)
+        .map_or(0, |handle| type_ref(NAME_TECHNO_TYPE, handle.0))
 }

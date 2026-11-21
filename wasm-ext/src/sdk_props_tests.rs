@@ -1,7 +1,9 @@
 //! The Rust SDK's property constants match [`crate::PROPERTIES`].
 
 /// `sdk/rust/vera20k-sdk/src/props.rs` holds one `pub const Name: Prop =
-/// Prop(id);` per property; any other drift from the engine's table fails.
+/// Prop(id);` per property, a `.` in the name written `_`
+/// (`Passable.Foot` is `Passable_Foot`); any other drift from the engine's
+/// table fails.
 #[test]
 fn the_sdk_numbers_every_property_as_the_engine_does() {
     let source = include_str!("../../sdk/rust/vera20k-sdk/src/props.rs");
@@ -17,7 +19,7 @@ fn the_sdk_numbers_every_property_as_the_engine_does() {
     let expected: Vec<(String, usize)> = crate::PROPERTIES
         .iter()
         .enumerate()
-        .map(|(id, name)| ((*name).to_owned(), id))
+        .map(|(id, name)| (name.replace('.', "_"), id))
         .collect();
     assert_eq!(constants, expected);
 }

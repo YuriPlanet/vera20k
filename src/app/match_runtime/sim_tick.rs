@@ -3274,6 +3274,9 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 let text = format!("{reason}. The match continues without it.");
                 crate::app::input::messages::post_chat_line(state, "Module", &text, [1.0, 0.4, 0.4]);
             }
+            TriggerEffect::ExtModuleNotice { text } => {
+                crate::app::input::messages::post_chat_line(state, "Module", text, [1.0, 0.8, 0.4]);
+            }
             TriggerEffect::SelectSidebarTab { index } => {
                 refresh_sidebar = true;
                 let presentation = &mut state.match_state.match_presentation;

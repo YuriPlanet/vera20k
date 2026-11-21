@@ -550,6 +550,18 @@ impl RuleSet {
         self.warhead_types.get(index as usize)
     }
 
+    /// Projectile `id`'s position in this set's projectiles (their handle
+    /// order, which follows the weapons that name them): the Projectile ID
+    /// Wasm extension modules see (RFC 0001 appendix 8.1; provisional).
+    pub fn projectile_index(&self, id: &str) -> Option<u32> {
+        self.projectile_handle(id).map(|handle| handle.0)
+    }
+
+    /// The projectile at [`Self::projectile_index`] `index`.
+    pub fn projectile_at(&self, index: u32) -> Option<&ProjectileType> {
+        self.projectile_types.get(index as usize)
+    }
+
     /// The weapon `handle` names in this set, which made it.
     #[inline]
     pub(crate) fn weapon_by_handle(&self, handle: WeaponHandle) -> &WeaponType {

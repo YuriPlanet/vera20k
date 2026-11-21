@@ -598,7 +598,8 @@ impl Simulation {
     }
 
     /// Whether every clause holds, each read as the trigger's module would
-    /// read it with `get` or `var_get`. A reading that is not `Ok` fails.
+    /// read it with `get` or `var_get`, viewpoint properties for the trigger
+    /// house. A reading that is not `Ok` fails.
     pub(super) fn module_clauses_hold(
         &mut self,
         rules: &RuleSet,
@@ -610,13 +611,15 @@ impl Simulation {
         if clauses.is_empty() {
             return true;
         }
+        // Viewpoint properties read for the trigger house (appendix 7).
+        let view = super::View::of_trigger_house(house);
         let house = house.map_or(0, |index| house_ref(index as usize));
         self.with_module_host(rules, source, |host| {
             clauses.iter().all(|clause| {
                 let reading = match clause.subject {
-                    FilterSubject::Subject(prop) => host.read(event.subject as i64, prop),
-                    FilterSubject::Other(prop) => host.read(event.other as i64, prop),
-                    FilterSubject::House(prop) => host.read(house, prop),
+                    FilterSubject::Subject(prop) => host.read_in(event.subject as i64, prop, view),
+                    FilterSubject::Other(prop) => host.read_in(event.other as i64, prop, view),
+                    FilterSubject::House(prop) => host.read_in(house, prop, view),
                     FilterSubject::Var { var, target } => {
                         let scope = match target {
                             VarTarget::Global => 0,

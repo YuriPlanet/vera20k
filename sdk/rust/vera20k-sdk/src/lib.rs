@@ -31,10 +31,11 @@ pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
         Action, ActionDef, Blocked, Category, Cell, Command, DecideRecord, DefeatDecision, Event,
-        EventRecord, FIXED_ONE, Find, FireEvent, Global, House, KilledEvent, Mission, Modifier,
-        ModifierOp, NameKind, Op, Order, Outcome, ProductionQueuedDecision, Prop, Ref, Rules,
-        Status, TakeDamageDecision, TakeDamageEvent, Target, Techno, TimerEvent, Trigger,
-        TriggerRef, TypeRef, Var, Waypoint, fixed, frame, log, lookup, random,
+        EventRecord, FIXED_ONE, Find, FireEvent, Global, House, KilledEvent, Layer, Mission,
+        Modifier, ModifierOp, NameKind, Op, Order, Outcome, ProductionQueuedDecision, Prop, Ref,
+        Relation, Rules, SpeedType, Status, TakeDamageDecision, TakeDamageEvent, Target, Techno,
+        TimerEvent, Trigger, TriggerRef, TypeRef, Var, Waypoint, anim_id, fixed, frame, log,
+        lookup, random,
     };
 }
 
@@ -144,6 +145,17 @@ impl TypeRef {
     pub fn super_weapon(name: &str) -> Result<Self> {
         lookup(NameKind::SuperWeapon, name).map(|id| Self::new(NameKind::SuperWeapon, id))
     }
+
+    /// Projectile (BulletType) `name`'s type reference.
+    pub fn projectile(name: &str) -> Result<Self> {
+        lookup(NameKind::Projectile, name).map(|id| Self::new(NameKind::Projectile, id))
+    }
+}
+
+/// The ID of animation `name`: the AnimType array position
+/// [`Action::spawn_anim`] takes.
+pub fn anim_id(name: &str) -> Result<i32> {
+    lookup(NameKind::Anim, name)
 }
 
 impl House {
@@ -1329,6 +1341,177 @@ impl Find {
     /// [`Find::within`].
     pub fn cells() -> Self {
         Self::scope(2)
+    }
+}
+
+// ------------------------------------------------------------- Properties
+
+/// `Layer` values (appendix 8.3, enum 11).
+#[repr(i64)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Layer {
+    Underground = 0,
+    Surface = 1,
+    Ground = 2,
+    Air = 3,
+    Top = 4,
+}
+
+/// `Relation` values (appendix 8.3, enum 9): how the viewpoint house sees
+/// an object's owner or a house.
+#[repr(i64)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Relation {
+    /// The house itself (appendix `Self`).
+    SameHouse = 0,
+    Ally = 1,
+    Enemy = 2,
+    /// A civilian or other passive house.
+    Neutral = 3,
+}
+
+/// `SpeedType` values (appendix 8.3, enum 13), each with its
+/// `Passable.<SpeedType>` cell property.
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpeedType {
+    Foot = 0,
+    Track = 1,
+    Wheel = 2,
+    Hover = 3,
+    Winged = 4,
+    Float = 5,
+    Amphibious = 6,
+    FloatBeach = 7,
+}
+
+impl SpeedType {
+    /// Its `Passable.<SpeedType>` cell property.
+    pub const fn passable(self) -> Prop {
+        Prop(Prop::Passable_Foot.0 + self as i32)
+    }
+}
+
+/// Getters of a unit or building's appendix 7.1 properties: one `get` each.
+/// `Relation` is a viewpoint property: read it in a filter clause or a
+/// [`Find::seen_by`] query, not here.
+impl Techno {
+    /// The object's type.
+    pub fn type_ref(self) -> Result<TypeRef> {
+        get(self, Prop::Type).map(TypeRef)
+    }
+
+    pub fn owner(self) -> Result<House> {
+        get(self, Prop::Owner).map(House)
+    }
+
+    /// The display layer ([`Layer`] numbers).
+    pub fn layer(self) -> Result<i64> {
+        get(self, Prop::Layer)
+    }
+
+    /// The current target: an object or a cell reference, `NO_HANDLE`
+    /// without one.
+    pub fn target(self) -> Result<i64> {
+        get(self, Prop::Target)
+    }
+
+    /// Veterancy in percent: 100 is veteran, 200 elite.
+    pub fn experience(self) -> Result<i64> {
+        get(self, Prop::Experience)
+    }
+
+    /// Ore carried, in bales.
+    pub fn storage(self) -> Result<i64> {
+        get(self, Prop::Storage)
+    }
+
+    /// The transport or building this object is in, `NO_HANDLE` outside.
+    pub fn transport(self) -> Result<Techno> {
+        get(self, Prop::Transport).map(Techno)
+    }
+
+    pub fn passenger_count(self) -> Result<i64> {
+        get(self, Prop::PassengerCount)
+    }
+
+    pub fn transport_space_left(self) -> Result<i64> {
+        get(self, Prop::TransportSpaceLeft)
+    }
+
+    /// The type a spy or Mirage shows, `NO_HANDLE` when undisguised.
+    pub fn disguise_type(self) -> Result<TypeRef> {
+        get(self, Prop::DisguiseType).map(TypeRef)
+    }
+
+    /// The house a spy shows, `NO_HANDLE` when undisguised.
+    pub fn disguise_owner(self) -> Result<House> {
+        get(self, Prop::DisguiseOwner).map(House)
+    }
+
+    pub fn moving(self) -> Result<bool> {
+        get(self, Prop::Moving).map(|v| v != 0)
+    }
+
+    /// Body facing 0..255, as map unit facings count.
+    pub fn facing(self) -> Result<i64> {
+        get(self, Prop::Facing)
+    }
+
+    /// Turret facing 0..255; `Err(Unsupported)` without a turret.
+    pub fn turret_facing(self) -> Result<i64> {
+        get(self, Prop::TurretFacing)
+    }
+
+    /// The armor's ID.
+    pub fn armor(self) -> Result<i64> {
+        get(self, Prop::Armor)
+    }
+}
+
+impl Cell {
+    /// Whether the terrain lets `speed` through (`Passable.<SpeedType>`).
+    pub fn passable(self, speed: SpeedType) -> Result<bool> {
+        get(self, speed.passable()).map(|v| v != 0)
+    }
+}
+
+impl Find {
+    /// Reads viewpoint properties (`Relation`, `Revealed`, `Placeable`) for
+    /// `house`.
+    pub fn seen_by(mut self, house: House) -> Self {
+        self.0.query.viewpoint = house.0;
+        self
+    }
+}
+
+/// Global properties (appendix 7.8): one `get` each.
+impl Global {
+    pub fn frame() -> Result<i64> {
+        get(Global, Prop::Frame)
+    }
+
+    /// The trigger difficulty: 0 easy, 1 normal, 2 hard.
+    pub fn difficulty() -> Result<i64> {
+        get(Global, Prop::Difficulty)
+    }
+
+    /// Frames left on the mission timer, also while it is stopped.
+    pub fn mission_timer() -> Result<i64> {
+        get(Global, Prop::MissionTimer)
+    }
+
+    pub fn mission_timer_running() -> Result<bool> {
+        get(Global, Prop::MissionTimerRunning).map(|v| v != 0)
+    }
+
+    pub fn ambient_light() -> Result<i64> {
+        get(Global, Prop::AmbientLight)
+    }
+
+    /// Whether a lightning storm rages.
+    pub fn ion_storm_active() -> Result<bool> {
+        get(Global, Prop::IonStormActive).map(|v| v != 0)
     }
 }
 
