@@ -99,7 +99,10 @@ pub(super) fn fetched(place: usize) -> Option<Blob<u8>> {
 /// browser package, or elsewhere from `folder`.
 #[cfg_attr(
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
-    expect(unused_variables, reason = "the browser build fetches from its package")
+    expect(
+        unused_variables,
+        reason = "the browser build fetches from its package"
+    )
 )]
 pub(super) fn fetch(place: usize, folder: Option<&Path>) {
     {

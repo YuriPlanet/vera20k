@@ -15,9 +15,9 @@
 //!   `LogicClass::AI @ 0x0055AFB0`): every 90th frame each InfantryClass row
 //!   ([`Simulation::ares_make_stuff_up_logic`]).
 //!
-//! RESIDUAL: the readers of the written Rules values. The accessors below
-//! answer each value, but no Rust port of their gamemd readers asks them
-//! yet (VeteranRatio,
+//! RESIDUAL: the readers of the written Rules values. The values are saved
+//! and hashed, but no Rust port of their gamemd readers asks for them yet,
+//! and no accessor exists for them (VeteranRatio,
 //! BuildSpeed, BuildupTime, RefundPercent, GrowthRate, Stray, FlightLevel,
 //! the two fall rates, the three crews, HoverHeight, WindDirection,
 //! MaximumQueuedObjects, MaxWaypointPathLength, CruiseHeight, the four

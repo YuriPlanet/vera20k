@@ -4,9 +4,8 @@
     clippy::expect_used,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
-
 // Ported from FFmpeg's libavformat/bink.c.
 // Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
 // Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)

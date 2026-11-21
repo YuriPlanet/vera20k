@@ -3,7 +3,12 @@
 //! compaction (its §7.1-§7.3, §8). Fixed-width integers are little-endian.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable
+)]
 
 use super::{HopFeedback, RecvWindow};
 use crate::{ORDERING_BATCH_CAPACITY, OrderPace, RelayError, varint};

@@ -1543,7 +1543,10 @@ impl UnitModel {
 
     /// What a posed draw rasterizes, its parameters and its native draw
     /// bounds: a ground part alone, or the body with its gun parts.
-    #[expect(clippy::type_complexity, reason = "one private draw tuple, named by its doc")]
+    #[expect(
+        clippy::type_complexity,
+        reason = "one private draw tuple, named by its doc"
+    )]
     fn pose_draw(
         &self,
         key: &UnitSpriteKey,

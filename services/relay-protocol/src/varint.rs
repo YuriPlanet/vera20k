@@ -13,7 +13,7 @@
     clippy::expect_used,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 
 use crate::RelayError;

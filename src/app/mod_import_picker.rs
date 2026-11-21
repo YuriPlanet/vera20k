@@ -37,7 +37,10 @@ pub(super) fn pick(_window: &Window, title: &str) -> io::Result<Vec<PathBuf>> {
     ]);
     // AppKit accepts filename extensions and UTIs here with the existing
     // Foundation bindings. Keep ordinary folders available alongside ZIPs.
-    #[expect(deprecated, reason = "takes extensions; its UTType replacement is not bound here")]
+    #[expect(
+        deprecated,
+        reason = "takes extensions; its UTType replacement is not bound here"
+    )]
     panel.setAllowedFileTypes(Some(&types));
     if panel.runModal() != NSModalResponseOK {
         return Ok(Vec::new());

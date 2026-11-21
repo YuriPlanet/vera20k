@@ -16,7 +16,7 @@
     clippy::expect_used,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 
 #[cfg(any(test, feature = "test-support"))]

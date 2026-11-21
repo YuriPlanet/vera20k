@@ -4,7 +4,12 @@
 //! bsearch7C8E25, reached by both the override hook and LoadString734E93.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable
+)]
 
 type Label = (String, Option<super::CsfText>);
 

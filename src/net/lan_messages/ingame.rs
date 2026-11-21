@@ -11,7 +11,12 @@
 //! and reads the fields.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable
+)]
 
 use super::{
     LAN_MESSAGE_LEN, LanMessage, LanMessageError, LanMessageKind, SessionScope, game_name_hash,

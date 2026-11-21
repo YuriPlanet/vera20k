@@ -8,7 +8,12 @@
 //! stores or interprets simulation commands.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable
+)]
 
 use std::collections::VecDeque;
 use std::net::SocketAddrV4;
