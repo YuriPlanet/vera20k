@@ -26,6 +26,10 @@ impl SimModule {
         &[]
     }
 
+    pub fn action_key(&self, _name: &str) -> Option<i32> {
+        None
+    }
+
     pub fn globals(&self) -> &[u64] {
         &[]
     }

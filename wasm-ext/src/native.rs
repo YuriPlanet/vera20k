@@ -243,6 +243,12 @@ impl SimModule {
         &self.store.data().sections.vars
     }
 
+    /// The dispatch key the module's `vera.actions` gives `name` (INI
+    /// `Wasm:name` actions).
+    pub fn action_key(&self, name: &str) -> Option<i32> {
+        self.store.data().sections.action_key(name)
+    }
+
     /// The raw bits of every mutable global after the latest call.
     pub fn globals(&self) -> &[u64] {
         &self.global_bits

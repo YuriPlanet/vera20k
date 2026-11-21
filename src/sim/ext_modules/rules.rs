@@ -122,6 +122,8 @@ pub struct PreparedExtModules {
     pub(super) modules: Vec<PreparedModule>,
     /// Lines the modules logged before the match.
     pub(super) log: Vec<String>,
+    /// The mod's INI triggers (`Wasm.Tags`), built at install.
+    pub(super) ini_triggers: super::ini_triggers::IniTriggers,
 }
 
 impl PreparedExtModules {
@@ -146,6 +148,8 @@ impl PreparedExtModules {
             ));
         }
         let policy = WasmPolicy::read(mod_rules);
+        let ini_triggers = super::ini_triggers::IniTriggers::read(mod_rules)
+            .map_err(|e| format!("the mod's rulesmd.ini: {e}"))?;
         let mut modules = Vec::new();
         if let Some(bytes) = mod_module {
             modules.push(PreparedModule {
@@ -174,6 +178,7 @@ impl PreparedExtModules {
             policy,
             modules,
             log: Vec::new(),
+            ini_triggers,
         })
     }
 

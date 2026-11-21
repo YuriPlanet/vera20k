@@ -194,6 +194,7 @@ impl Host<'_, '_> {
             created: self.sim.session.binary_frame(),
             events: def.events.clone(),
             actions: def.actions.clone(),
+            ini: false,
         };
         self.sim
             .trigger_runtime
@@ -361,7 +362,7 @@ impl Simulation {
     /// [`Simulation::with_ext_module`] on its slot. Inside a module call the
     /// slots are set aside, and a placeholder stream serves: reads draw
     /// nothing. Reads reach no lent owner, so no frame effects are lent.
-    fn with_module_host<R>(
+    pub(super) fn with_module_host<R>(
         &mut self,
         rules: &RuleSet,
         source: ModuleSource,

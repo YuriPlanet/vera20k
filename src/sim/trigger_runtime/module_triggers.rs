@@ -17,7 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use vera20k_wasm_ext::EventRecord;
-use vera20k_wasm_ext::triggers::{ActionDef, EVENT_TIMER, EventDef, Repeat};
+use vera20k_wasm_ext::triggers::{ACTION_MODULE, ActionDef, EVENT_TIMER, EventDef, Repeat};
 
 use crate::sim::ext_modules::ModuleSource;
 
@@ -40,6 +40,11 @@ pub(crate) struct ModuleTrigger {
     pub(crate) created: u32,
     pub(crate) events: Vec<EventDef>,
     pub(crate) actions: Vec<ActionDef>,
+    /// Built from the mod's INI trigger sections
+    /// (`sim::ext_modules::ini_triggers`), not by a module: it outlives a
+    /// stopped module, which takes only its module actions along.
+    #[serde(default)]
+    pub(crate) ini: bool,
 }
 
 impl ModuleTrigger {
@@ -137,18 +142,31 @@ impl ModuleTriggers {
     }
 
     /// Removes every trigger `source` made and its queue: a disabled module
-    /// keeps no triggers.
+    /// keeps no triggers. An INI trigger addressing it loses only its module
+    /// actions, and goes when no action is left.
     pub(crate) fn remove_source(&mut self, source: ModuleSource) {
-        let handles: Vec<u64> = self
-            .triggers
-            .iter()
-            .filter(|(_, t)| t.source == source)
-            .map(|(&handle, _)| handle)
-            .collect();
+        let mut handles = Vec::new();
+        for (&handle, trigger) in self.triggers.iter_mut().filter(|(_, t)| t.source == source) {
+            if trigger.ini {
+                trigger
+                    .actions
+                    .retain(|action| action.kind != ACTION_MODULE);
+            }
+            if !trigger.ini || trigger.actions.is_empty() {
+                handles.push(handle);
+            }
+        }
         for handle in handles {
             self.remove(handle);
         }
         self.queues.remove(&source);
+    }
+
+    /// Marks `handle` as built from INI trigger sections.
+    pub(crate) fn mark_ini(&mut self, handle: u64) {
+        if let Some(trigger) = self.triggers.get_mut(&handle) {
+            trigger.ini = true;
+        }
     }
 
     pub(crate) fn set_enabled(&mut self, handle: u64, enabled: bool) -> bool {
