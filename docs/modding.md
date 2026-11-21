@@ -425,6 +425,9 @@ game to find it in Skirmish. Skirmish also finds loose multiplayer `.mpr` and
 map that needs a particular mod in that mod's folder. As in the original, a
 map can change any rule for that match.
 
+New map exports and downloads use `.map`. If you already have an identical
+copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
+
 VERA20k adds two things. Open the map in a text editor to set them:
 
 - **Bigger maps:** under `[Map]`, the width and height in `Size=` can add up to 1024.

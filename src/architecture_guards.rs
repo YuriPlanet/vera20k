@@ -216,7 +216,7 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
-                // A random map's `.yrm` export copies its sections as stored.
+                // A random map export copies its sections as stored.
                 ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
                 ("rules/native_processing/pass_processor.rs", 1),
