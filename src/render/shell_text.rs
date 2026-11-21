@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn a_button_caption_too_long_for_the_face_is_squeezed_onto_it() {
         let font = crate::render::bit_font::tests::make_vector_test_font();
-        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~~~]";
+        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~]";
         let natural = font.text_width(text);
         assert!(natural > RIGHT_PANEL_FACE_W && natural < 154, "{natural}");
         let rect = TextRect {

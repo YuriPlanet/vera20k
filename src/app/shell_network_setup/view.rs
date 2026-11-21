@@ -71,8 +71,8 @@ enum Listed {
 /// or AI coming in fills one instead of moving the boxes under it.
 const TEAM_BOX_ROWS: usize = 5;
 
-/// VERA's online room: the help under the pointer on the name of a player
-/// with a badge, as the lobby's player list gives it
+/// VERA's online room: the help under the pointer on the name or badge of
+/// a player with a badge, as the lobby's player list gives it
 /// ([`crate::app::shell_wol::lobby::badge_help`]).
 pub(crate) fn player_help(state: &AppState, view: &SetupView, control: u16) -> Option<String> {
     let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
@@ -889,6 +889,19 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             enabled: host,
             visible: dialog.modern && !campaign,
         },
+        // VERA's Game Options also shows the room's Tech Level.
+        SetupTrackbar {
+            id: TECH_LEVEL,
+            // The host's value, which may come from other rules or another
+            // game, sits within the slider.
+            value: options.tech_level.clamp(
+                crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE.min,
+                crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE.max,
+            ),
+            range: crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE,
+            enabled: host,
+            visible: dialog.modern && !campaign,
+        },
     ];
     // The host drags people, itself too, and AI between the boxes of a room
     // with teams; only people go to watch.
@@ -943,7 +956,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
-        // checked and disabled in a tournament or clan room.
+        // and Bases checked and disabled in a tournament or clan room.
         short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
         team_header: !no_team_lists,
         accept_enabled: accept_enabled(state),
@@ -957,6 +970,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.crates,
             options.super_weapons,
             options.build_off_ally,
+        ],
+        session_checks: [
+            options.bases,
+            options.fog_of_war,
+            options.multi_engineer,
+            options.harvester_truce,
         ],
         room_checks: [
             options.bridges_destroyable,

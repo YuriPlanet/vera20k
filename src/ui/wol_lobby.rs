@@ -26,6 +26,7 @@ use crate::ui::shell::descriptor::{AnchorRule, DialogId};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 use crate::ui::shell::layout::{anchor_rect, status_line_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0113);
 
@@ -45,6 +46,13 @@ pub(crate) const BACK_TO_ROOM: u16 = 0x7E30;
 /// VERA: the online page's button between its games and its chat with the
 /// player list ([`LobbyView`]).
 pub(crate) const VIEW: u16 = 0x7E3A;
+/// VERA: the online page's Join Any Game ([`WolLobbyAction::JoinAny`]).
+pub(crate) const JOIN_ANY: u16 = 0x7E3B;
+/// VERA: the games view's filter row under the list: the room search and
+/// the Hide Full and Hide Locked checkboxes ([`RoomFilter`]).
+pub(crate) const SEARCH: u16 = 0x7E3C;
+pub(crate) const HIDE_FULL: u16 = 0x7E3D;
+pub(crate) const HIDE_LOCKED: u16 = 0x7E3E;
 pub(crate) const REFRESH: u16 = 0x55D;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const LOBBIES: u16 = 0x53D;
@@ -108,24 +116,25 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     back: button(BACK, 332, "GUI:Back", "STT:WOLLobbyBack"),
 };
 
-/// The normal VERA lobby keeps core play and Options. It has no welcome
-/// `0x10E`, so its third row is that page's Quick Match (`0x6E0`, its caption
-/// and tooltip) and Options moves to the fourth. The fifth swaps the games
-/// for the chat and the player list; its caption and help are the view's
-/// ([`WolLobbyState::view_caption`]). The retail page above remains the
-/// owner for legacy service diagnostics.
+/// The normal VERA lobby keeps core play and Options. Its third row is
+/// VERA's Join Any Game. It has no welcome `0x10E`, so its fourth row is that
+/// page's Quick Match (`0x6E0`, its caption and tooltip) and Options moves to
+/// the fifth. The sixth swaps the games for the chat and the player list; its
+/// caption and help are the view's ([`WolLobbyState::view_caption`]). The
+/// retail page above remains the owner for legacy service diagnostics.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(CREATE, 111, "GUI:CreateGame", "STT:LobbyButtonNew"),
         button(JOIN, 138, "GUI:JoinGame", "STT:LobbyButtonJoin"),
+        button(JOIN_ANY, 166, "VERA:JoinAnyGame", "VERA:JoinAnyGameHelp"),
         button(
             QUICK_MATCH,
-            166,
+            193,
             "GUI:QuickMatch",
             "STT:WOLWelcomeQuickMatch",
         ),
-        button(OPTIONS, 193, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
-        button(VIEW, 222, "VERA:LobbyChat", "VERA:LobbyChatHelp"),
+        button(OPTIONS, 222, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(VIEW, 250, "VERA:LobbyChat", "VERA:LobbyChatHelp"),
     ],
     ..PAGE
 };
@@ -260,6 +269,9 @@ pub(crate) fn tooltip_key(control: u16, page: &MenuPageSpec) -> Option<&'static 
         PLAYER_SORT_ALPHA => "STT:WOLPlayersortAlpha",
         PLAYER_SORT_RANK => "STT:WOLPlayersortRank",
         PLAYER_SORT_CLAN => "STT:WOLPlayersortClan",
+        SEARCH => "VERA:LobbySearchHelp",
+        HIDE_FULL => "VERA:HideFullHelp",
+        HIDE_LOCKED => "VERA:HideLockedHelp",
         _ => return None,
     })
 }
@@ -294,6 +306,12 @@ pub(crate) struct WolLobbyLayout {
     /// the retail dialog has no caption there.
     pub(crate) observer_caption: Option<RectPx>,
     pub(crate) labels: [(&'static str, RectPx); 2],
+    /// VERA's filter row: the search NewEdit and the two checkboxes' windows,
+    /// the plate at their left and the caption after it. Only the online
+    /// page's games view has them.
+    pub(crate) search: RectPx,
+    pub(crate) hide_full: RectPx,
+    pub(crate) hide_locked: RectPx,
 }
 
 impl WolLobbyLayout {
@@ -361,6 +379,9 @@ impl WolLobbyLayout {
                 ("GUI:OpenGames", px(50, 10, 201, 17)),
                 ("GUI:Players", px(324, 10, 157, 17)),
             ],
+            search: RectPx::new(0, 0, 0, 0),
+            hide_full: RectPx::new(0, 0, 0, 0),
+            hide_locked: RectPx::new(0, 0, 0, 0),
         }
     }
 
@@ -382,6 +403,9 @@ impl WolLobbyLayout {
             (PLAYERS, self.players),
             (CHAT_LOG, self.chat_log),
             (CHAT, self.chat),
+            (SEARCH, self.search),
+            (HIDE_FULL, self.hide_full),
+            (HIDE_LOCKED, self.hide_locked),
         ]
         .into_iter()
         .find(|(_, rect)| rect.contains(x, y))
@@ -406,6 +430,9 @@ impl WolLobbyLayout {
             PLAYERS => self.players,
             CHAT_LOG => self.chat_log,
             CHAT => self.chat,
+            SEARCH => self.search,
+            HIDE_FULL => self.hide_full,
+            HIDE_LOCKED => self.hide_locked,
             _ => return None,
         })
         .filter(|rect| rect.w > 0)
@@ -413,10 +440,10 @@ impl WolLobbyLayout {
 }
 
 /// VERA: the online page's body in `view`. The games fill it down to the
-/// chat edit's foot; or the chat takes its left and the player list its
-/// right, both from under their headings to above the chat edit. The lists
-/// hold whole rows, so the pointer never meets a row that is not drawn.
-/// What the other view shows has no window.
+/// filter row on the chat edit's line; or the chat takes its left and the
+/// player list its right, both from under their headings to above the chat
+/// edit. The lists hold whole rows, so the pointer never meets a row that is
+/// not drawn. What the other view shows has no window.
 fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
     let scale = layout.page.scale;
     let px = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
@@ -428,7 +455,12 @@ fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
     let hidden = RectPx::new(0, 0, 0, 0);
     match view {
         LobbyView::Games => {
-            layout.games = whole_rows(px(11, 57, 611, 0), layout.chat.y + layout.chat.h);
+            // The list ends where the chat log does; the room search takes
+            // the chat edit's place, and the checkboxes centre on it.
+            layout.games = whole_rows(px(11, 57, 611, 0), layout.chat_log.y + layout.chat_log.h);
+            layout.search = px(12, 534, 250, 22);
+            layout.hide_full = px(276, 536, 166, 18);
+            layout.hide_locked = px(452, 536, 170, 18);
             layout
                 .sort_buttons
                 .retain(|(id, _)| *id != PLAYER_SORT_ALPHA);
@@ -629,6 +661,14 @@ pub(crate) enum WolLobbyAction {
     BackToRoom,
     /// VERA: the view button swapped the online page's view.
     View,
+    /// VERA: Join Any Game, for the lobby owner to join the first room the
+    /// list shows that admits this player.
+    JoinAny,
+    /// VERA: Hide Full or Hide Locked was clicked; the lobby owner keeps the
+    /// choice ([`RoomFilter::toggle`]) and refills the games.
+    FilterToggled(u16),
+    /// VERA: the room search changed; the games are refilled.
+    SearchChanged,
     /// Buddy List, Clan, Tournament and News run dialogs or web pages that
     /// are later chains.
     Unported(u16),
@@ -645,6 +685,46 @@ pub(crate) enum LobbyView {
     Chat,
 }
 
+/// VERA: the rooms the online page's game list hides, as the player ticked
+/// them. The app's lobby owner keeps them for the run; the search is the
+/// page's own edit ([`WolLobbyState::search_text`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RoomFilter {
+    pub(crate) hide_full: bool,
+    pub(crate) hide_locked: bool,
+}
+
+impl RoomFilter {
+    pub(crate) fn checked(&self, control: u16) -> bool {
+        match control {
+            HIDE_FULL => self.hide_full,
+            HIDE_LOCKED => self.hide_locked,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn toggle(&mut self, control: u16) {
+        match control {
+            HIDE_FULL => self.hide_full = !self.hide_full,
+            HIDE_LOCKED => self.hide_locked = !self.hide_locked,
+            _ => {}
+        }
+    }
+
+    /// Whether the list shows `row`. A full room or match is the greyed row,
+    /// a room with a password the keyed one. `search`, already lowercase, is
+    /// part of the row's heading or tag.
+    pub(crate) fn shows(&self, row: &WolGameRow, search: &str) -> bool {
+        let found = |text: &str| text.to_lowercase().contains(search);
+        !(self.hide_full && row.greyed)
+            && !(self.hide_locked && row.keyed)
+            && (search.is_empty() || found(&row.text) || row.tag.as_deref().is_some_and(found))
+    }
+}
+
+/// VERA: the room search's length limit, in UTF-16 units.
+const SEARCH_LIMIT: usize = 32;
+
 /// The dialog's children: list contents, selection, enable state, chat.
 #[derive(Debug, Clone)]
 pub(crate) struct WolLobbyState {
@@ -658,6 +738,9 @@ pub(crate) struct WolLobbyState {
     /// button counts them until the chat shows.
     unread: u32,
     pub(crate) chat: LanChatState,
+    /// VERA: the games view's room search; it takes the keys while the games
+    /// show, as the chat edit does while the chat shows.
+    pub(crate) search: SavedSeedDescriptionEdit,
     pub(crate) lobby_rows: Vec<WolLobbyRow>,
     pub(crate) game_rows: Vec<WolGameRow>,
     pub(crate) player_rows: Vec<WolPlayerRow>,
@@ -692,6 +775,10 @@ impl WolLobbyState {
                 let mut chat = LanChatState::default();
                 chat.edit.focused = true;
                 chat
+            },
+            search: SavedSeedDescriptionEdit {
+                focused: true,
+                ..Default::default()
             },
             lobby_rows: Vec::new(),
             game_rows: Vec::new(),
@@ -739,6 +826,11 @@ impl WolLobbyState {
     /// online page in its chat view.
     pub(crate) fn shows_chat(&self) -> bool {
         !self.modern || self.view == LobbyView::Chat
+    }
+
+    /// VERA: the room search in lowercase, for [`RoomFilter::shows`].
+    pub(crate) fn search_text(&self) -> String {
+        String::from_utf16_lossy(&self.search.units).to_lowercase()
     }
 
     /// VERA: a chat message arrived; the view button counts it while the
@@ -1082,31 +1174,51 @@ impl WolLobbyState {
                 self.toggle_view();
                 WolLobbyAction::View
             }
+            JOIN_ANY if self.page_spec().button(JOIN_ANY).is_some() => WolLobbyAction::JoinAny,
+            HIDE_FULL | HIDE_LOCKED if self.modern => WolLobbyAction::FilterToggled(control),
             BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
             _ => return None,
         })
     }
 
     /// Keys reach the popup's edit, else the chat NewEdit (always focused
-    /// while it shows).
+    /// while it shows), else VERA's room search.
     pub(crate) fn edit_key(&mut self, key: LanEditKey) -> Option<WolLobbyAction> {
         if let Some(popup) = self.popup.as_mut() {
             return popup.edit_key(key).map(WolLobbyAction::Popup);
         }
-        if key == LanEditKey::Tab || !self.shows_chat() {
+        if key == LanEditKey::Tab {
             return None;
+        }
+        if !self.shows_chat() {
+            let before = self.search.units.len();
+            match key {
+                LanEditKey::Backspace => self.search.backspace(),
+                LanEditKey::Delete => self.search.delete(),
+                LanEditKey::Left => self.search.left(),
+                LanEditKey::Right => self.search.right(),
+                LanEditKey::Home => self.search.home(),
+                LanEditKey::End => self.search.end(),
+                LanEditKey::Tab | LanEditKey::Enter => {}
+            }
+            return (self.search.units.len() != before).then_some(WolLobbyAction::SearchChanged);
         }
         let sent = self.chat.key(key)?;
         let text = crate::ui::wol_chat::trim_line_end(&sent).to_vec();
         (!text.is_empty()).then_some(WolLobbyAction::Chat(text))
     }
 
-    pub(crate) fn insert_text(&mut self, text: &str) {
+    pub(crate) fn insert_text(&mut self, text: &str) -> Option<WolLobbyAction> {
         if let Some(popup) = self.popup.as_mut() {
             popup.insert_text(text);
         } else if self.shows_chat() {
             self.chat.insert_text(text);
+        } else {
+            let before = self.search.units.len();
+            self.search.insert_text_limited(text, SEARCH_LIMIT);
+            return (self.search.units.len() != before).then_some(WolLobbyAction::SearchChanged);
         }
+        None
     }
 }
 
@@ -1183,17 +1295,28 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = WolLobbyLayout::new(800, 600, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
-        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, VIEW, BACK]);
+        assert_eq!(
+            controls,
+            [CREATE, JOIN, JOIN_ANY, QUICK_MATCH, OPTIONS, VIEW, BACK]
+        );
         let retail = WolLobbyLayout::new(800, 600, &PAGE);
-        assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
-        assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
-        assert_eq!(layout.control_rect(VIEW), retail.control_rect(TOURNAMENT));
+        assert_eq!(layout.control_rect(JOIN_ANY), retail.control_rect(BUDDY));
+        assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(CLAN));
+        assert_eq!(
+            layout.control_rect(OPTIONS),
+            retail.control_rect(TOURNAMENT)
+        );
+        assert_eq!(layout.control_rect(VIEW), retail.control_rect(NEWS));
         assert_eq!(
             tooltip_key(QUICK_MATCH, lobby.page_spec()),
             Some("STT:WOLWelcomeQuickMatch")
         );
-        // Only the online page offers it; the retail page has its welcome.
+        // Only the online page offers them; the retail page has its welcome.
         assert_eq!(WolLobbyState::new(false, false).activate(QUICK_MATCH), None);
+        assert_eq!(WolLobbyState::new(false, false).activate(JOIN_ANY), None);
+        let mut visitor = WolLobbyState::new(false, true);
+        visitor.set_visiting(true);
+        assert_eq!(visitor.activate(JOIN_ANY), None);
         assert_eq!(retail.control_rect(QUICK_MATCH), None);
         lobby.disable_commands();
         lobby.enable_commands(true);
@@ -1302,6 +1425,61 @@ mod tests {
         }
         assert_eq!(ui.activate(VIEW), Some(WolLobbyAction::View));
         assert_eq!(ui.layout(800, 600, false).control_at(x, y), Some(GAMES));
+    }
+
+    /// VERA's filter row: the games end above it, and while they show its
+    /// search takes the keys. Hide Full and Hide Locked hide the greyed and
+    /// the keyed rows; the search keeps the rows whose heading or tag has it.
+    #[test]
+    fn the_filter_row_hides_full_locked_and_unmatched_rooms() {
+        let mut ui = WolLobbyState::new(false, true);
+        let games = ui.layout(800, 600, false);
+        let search = games.control_rect(SEARCH).expect("search");
+        assert!(games.games.y + games.games.h <= search.y);
+        for id in [SEARCH, HIDE_FULL, HIDE_LOCKED] {
+            let rect = games.control_rect(id).expect("filter control");
+            assert_eq!(games.control_at(rect.x + 4, rect.y + rect.h / 2), Some(id));
+        }
+        assert_eq!(ui.insert_text("2V2"), Some(WolLobbyAction::SearchChanged));
+        assert_eq!(ui.search_text(), "2v2");
+        assert!(ui.chat.edit.units.is_empty());
+        assert_eq!(
+            ui.activate(HIDE_FULL),
+            Some(WolLobbyAction::FilterToggled(HIDE_FULL))
+        );
+
+        let row = |text: &str, greyed, keyed, tag: Option<&str>| WolGameRow {
+            record: 0,
+            name: text.to_owned(),
+            text: text.to_owned(),
+            greyed,
+            kind: GameTypeIcon::Plain,
+            keyed,
+            limit_icon: None,
+            ping: 0,
+            tag: tag.map(str::to_owned),
+            watch: false,
+        };
+        let full = row("Full - 2v2", true, false, None);
+        let locked = row("Keyed - 2v2", false, true, None);
+        let open = row("Open - FFA", false, false, Some("Co-op"));
+        let mut filter = RoomFilter::default();
+        assert!(
+            [&full, &locked, &open]
+                .iter()
+                .all(|row| filter.shows(row, ""))
+        );
+        filter.toggle(HIDE_FULL);
+        filter.toggle(HIDE_LOCKED);
+        assert!(!filter.shows(&full, "") && !filter.shows(&locked, ""));
+        assert!(filter.shows(&open, "co-op") && filter.shows(&open, "ffa"));
+        assert!(!filter.shows(&open, "2v2"));
+
+        // The chat view has no filter row, and its edit takes the keys.
+        ui.activate(VIEW);
+        assert_eq!(ui.layout(800, 600, false).control_rect(SEARCH), None);
+        assert_eq!(ui.insert_text("hi"), None);
+        assert_eq!(ui.search_text(), "2v2");
     }
 
     /// The online page's chat takes keys only while it shows, and the view

@@ -92,6 +92,10 @@ colours spread across its range. While every team fits in its range of the origi
 eight, only the eight are used. Every player still gets a different colour while the
 list has enough, and anyone can change theirs afterwards.
 
+A game room writes each team's name in its players' colour: the colour family most of
+them share or, when none has a majority (as after Team Colors), the mix of all their
+colours. A team with no chosen colour keeps the plain text colour.
+
 ## Older versions and online play
 
 - Nothing new is sent: a room already carries each colour as a number from 0 to 255,
@@ -111,7 +115,8 @@ list has enough, and anyone can change theirs afterwards.
 - `skirmish_launch.rs`: the Random colour draw (`draw_collision_free_color`).
 - `ui/skirmish_shell/state/combos.rs`: the list every colour box shows
   (`available_color_choices`).
-- `app/frontend/skirmish_shell_render/controls.rs`: the swatches (`house_color_tint`).
+- `app/frontend/skirmish_shell_render/controls.rs`: the swatches (`house_color_tint`)
+  and a team name's colour (`team_caption_tint`).
 - `ui/team_tools.rs`: Team Colors' ranges (`colors_by_team`), which Skirmish and game rooms use.
 - `app/frontend/cncnet_spawn.rs`: the colours a `spawn.ini` may name (`color`), and
   `app/spawn_probe.rs` the list `--probe` reports (`color_names`).

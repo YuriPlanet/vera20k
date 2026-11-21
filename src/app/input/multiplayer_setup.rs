@@ -296,9 +296,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         && layout.map_preview.contains(x, y)
         && preview_box_shows(state, &view, &layout);
     // VERA's online room names the badge, rank and OS of the player whose
-    // name is under the pointer.
-    let player =
-        over.and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
+    // name or badge is under the pointer.
+    let player = layout
+        .badge_at(&view, x, y)
+        .or(over)
+        .and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
     let help = player
         .or_else(|| {
             over.or(over_preview.then_some(MAP_PREVIEW))
@@ -464,7 +466,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     ))
                 };
                 cue = press.and_then(ComboPress::cue).map(LauncherCue::from);
-            } else if CHECKBOXES.contains(&control) || ROOM_CHECKBOXES.contains(&control) {
+            } else if CHECKBOXES.contains(&control)
+                || SESSION_CHECKBOXES.contains(&control)
+                || ROOM_CHECKBOXES.contains(&control)
+            {
                 if crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.control_rect(control).expect("checkbox rect"),
                     layout.page.scale,
@@ -524,6 +529,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
+                GAME_OPTIONS_PAGE => {
+                    Some(SetupAction::OpenBox(view.open_box.map(RoomBox::other_page)))
+                }
                 LOBBY => Some(SetupAction::Lobby),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),

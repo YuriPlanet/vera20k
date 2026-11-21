@@ -366,6 +366,11 @@ pub struct SkirmishShellState {
     pub build_off_ally: bool,
     pub crates: bool,
     pub mcv_redeploy: bool,
+    /// The session options VERA's Game Options box shows, which override
+    /// [`Self::launch_options_base`]'s at Start: the rules' Tech Level and
+    /// Bases, and Fog of War, Multi-Engineer and Harvester Truce off, as
+    /// SkirmishDialog's Start forces them ([`skirmish_session_options`]).
+    pub session: crate::skirmish_launch::SessionOptions,
     /// Player rows 1.. : the retail seven, then VERA's rows up to thirty
     /// players for maps with more starts.
     pub opponents: Vec<SkirmishShellOpponent>,
@@ -470,6 +475,22 @@ impl SkirmishShellState {
     }
 }
 
+/// The session options a Skirmish game gets with nothing turned on: the
+/// rules' Tech Level and Bases, and the three SkirmishDialog's Start/Back
+/// packing (`0x006AD88F..0x006AD8A4`) forces off whatever the rules default:
+/// Fog of War (`0x00A8B31F`), Harvester Truce (`0x00A8B31D`) and
+/// MultiEngineer (`0x00A8B26C`).
+pub fn skirmish_session_options(
+    base: &SkirmishLaunchOptions,
+) -> crate::skirmish_launch::SessionOptions {
+    crate::skirmish_launch::SessionOptions {
+        fog_of_war: false,
+        multi_engineer: false,
+        harvester_truce: false,
+        ..base.session_options()
+    }
+}
+
 impl Default for SkirmishShellState {
     fn default() -> Self {
         let options = SkirmishLaunchOptions::default();
@@ -497,6 +518,7 @@ impl Default for SkirmishShellState {
             build_off_ally: options.build_off_ally,
             crates: options.crates,
             mcv_redeploy: options.mcv_redeploy,
+            session: skirmish_session_options(&options),
             opponents: default_opponents(LaunchCountry::Russia),
             first_opponent: 0,
             opponent_scroll: ListScrollInteraction::default(),
@@ -537,6 +559,7 @@ impl SkirmishShellState {
         self.crates = options.crates;
         self.mcv_redeploy = options.mcv_redeploy;
         self.launch_options_base = SkirmishLaunchOptions::from_game_options(options);
+        self.session = skirmish_session_options(&self.launch_options_base);
     }
 
     pub(super) fn push_ui_sound(&mut self, sound: SkirmishShellUiSound) {
