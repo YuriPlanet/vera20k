@@ -698,7 +698,16 @@ impl Brain for AssistBrain {
                     .units
                     .iter()
                     .filter(|unit| unit.traits.combat && unit.orderable)
-                    .filter(|unit| self.tracked.is_claimed(obs.tick(), unit.entity_id))
+                    // A live intent is the whole subject: a unit held but with no
+                    // intent is one a routine parked on its post, which is where it
+                    // belongs. Logging those buried the real cases — measured on
+                    // Death.mmx seed 24301, 85 lines of which 76 were parked
+                    // retreats reporting `intent=None`.
+                    .filter(|unit| {
+                        self.tracked
+                            .live_intent(obs.tick(), unit.entity_id)
+                            .is_some()
+                    })
                     .filter(|unit| {
                         obs.destination(unit.entity_id).is_none()
                             && obs.attack_target(unit.entity_id).is_none()
