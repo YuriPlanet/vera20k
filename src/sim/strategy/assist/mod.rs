@@ -336,6 +336,12 @@ pub struct AssistBrain {
     /// "why is the army standing in its yard" is otherwise unanswerable from a
     /// log that only counts what the house has.
     pub(super) push_gate: &'static str,
+    /// The frame the army last came home, and why: `(frame, gate)`. Read by the
+    /// commit window in [`advance`], so a gate that flips for one frame does not
+    /// re-task the whole army. Measured on Death.mmx seed 24301: `push` for ten
+    /// samples, then `outgunned` for eight, then `push`, then `outgunned` — the
+    /// army walked out and back twice without either being a decision.
+    pub(super) push_rest: (u64, &'static str),
     /// The frame the next sale may be made on.
     ///
     /// A building that cannot be held is sold once and is then gone, so the
@@ -458,6 +464,7 @@ impl AssistBrain {
             engineers: composition::EngineerLedger::default(),
             capturable_last: BTreeSet::new(),
             push_gate: "none",
+            push_rest: (0, "none"),
             sale_at: 0,
             sale_attempts: std::collections::BTreeMap::new(),
             retrieve_makers: std::collections::BTreeSet::new(),

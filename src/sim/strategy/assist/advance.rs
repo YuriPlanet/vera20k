@@ -69,6 +69,23 @@ pub(super) const THREAT_RADIUS: i32 = 18;
 /// stops waiting for a favourable comparison, in frames: one minute.
 const PUSH_STALL_FRAMES: u64 = 900;
 
+/// How long the army stays home after a gate turned it back, in frames: fifty
+/// seconds.
+///
+/// The gates below are read fresh every frame, and one of them — `outgunned` —
+/// compares the army against whatever stands around the frame's target, which
+/// moves as the army moves. Measured on Death.mmx seed 24301, the consequence
+/// was a gate that flipped four times in ten thousand frames: `push` for ten
+/// samples, `outgunned` for eight, `push` again, `outgunned` again. Every flip
+/// re-tasks the whole fist, which from the player's side is an army walking out
+/// and back rather than fighting.
+///
+/// The window is asymmetric on purpose. Turning back is a verdict about this
+/// second and takes effect at once; coming out again waits. Fifty seconds is
+/// long enough for a wave of attackers to cross the ground the re-task would
+/// have spent, and short enough that an army that outgrew the gate is not held
+/// at home for a minute of the match.
+
 /// Whether the push has stalled: the enemy has not lost an object since
 /// `progress` was stamped, and a minute has passed since then.
 ///
@@ -124,6 +141,8 @@ fn crate_on_the_way(
 /// Long enough to walk there and take it apart, short enough that a target the
 /// army cannot reach stops holding it.
 const PUSH_LOCK_FRAMES: u64 = 1_800;
+
+const PUSH_REST_FRAMES: u64 = 750;
 
 /// How few enemy objects are left before the strength gate stops asking. Below
 /// this the enemy is a clean-up job, not a fight: the army goes in and finishes
@@ -218,6 +237,16 @@ fn the_clean_up_bypass_reads_the_base_ring_not_the_whole_map() {
 
 /// Send the army at the enemy's base when it is large enough. `false` when
 /// the house is not pushing this frame, so the caller keeps its own posture.
+/// Whether the army is still inside a commit window a gate opened.
+///
+/// Turning back is a verdict about this second and takes effect at once; coming
+/// out again waits [`PUSH_REST_FRAMES`]. The asymmetry is the whole point — an
+/// army that leaves the frame a comparison improves walks out and back, which is
+/// what the measured gate flapping looked like.
+fn resting(brain: &AssistBrain, tick: u64) -> bool {
+    brain.push_rest.0 != 0 && tick.saturating_sub(brain.push_rest.0) < PUSH_REST_FRAMES
+}
+
 pub(super) fn advance(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -313,6 +342,19 @@ pub(super) fn advance(
         // "an enemy inside the ring" is true for most of the match, and an army
         // that reads it as "never leave" guards its yard for forty minutes.
         "threat"
+    } else {
+        "push"
+    };
+    // The commit window: a gate that flipped away runs for its term whatever the
+    // next frame's numbers say. Read before the gate is published so the census
+    // line still reports the fresh answer.
+    let tick = obs.tick();
+    let resting = resting(brain, tick);
+    let gate = if gate != "push" {
+        brain.push_rest = (tick, gate);
+        gate
+    } else if resting {
+        brain.push_rest.1
     } else {
         "push"
     };
@@ -474,7 +516,11 @@ pub(super) fn advance(
     let searching = target.entity_id == 0;
     if !mopping_up && !searching && !super::squads::outguns(&brain.census, rules, obs, target.cell)
     {
+        // The same commit window as the gates above: `outguns` weighs the army
+        // against whatever stands around this frame's target, so a target the
+        // army is walking past can turn the answer for a second and back.
         brain.push_gate = "outgunned";
+        brain.push_rest = (obs.tick(), "outgunned");
         return false;
     }
 
@@ -887,6 +933,32 @@ mod tests {
     /// A retail arena: two houses on 32x32 ground, needed to spawn real object
     /// types. The rules come from the repository's own `ini/` snapshot, so
     /// these run without a retail install.
+    /// A gate that turned the army back holds for its window, so one frame of
+    /// bad arithmetic does not re-task the whole army.
+    ///
+    /// Measured on Death.mmx seed 24301 before the window: `push` for ten
+    /// samples, `outgunned` for eight, `push` again, `outgunned` again. Every
+    /// flip re-tasks the fist, which from the player's side is an army walking
+    /// out and back rather than fighting.
+    #[test]
+    fn a_gate_that_turned_the_army_back_holds_for_its_window() {
+        let mut brain = AssistBrain::new(0xA17);
+        brain.push_rest = (100, "outgunned");
+        assert!(resting(&brain, 101), "a gate one frame old still holds");
+        assert!(
+            resting(&brain, 100 + PUSH_REST_FRAMES - 1),
+            "and holds to the last frame of its window"
+        );
+        assert!(
+            !resting(&brain, 100 + PUSH_REST_FRAMES),
+            "and is done at the window's edge"
+        );
+        // A house that never rested pushes: the opening is not held back by a
+        // window that was never opened.
+        let fresh = AssistBrain::new(0xA17);
+        assert!(!resting(&fresh, 0), "a house that never rested pushes");
+    }
+
     fn arena(seed: u64) -> Option<(Simulation, RuleSet)> {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
