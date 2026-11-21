@@ -282,6 +282,9 @@ pub(crate) struct FrontendState {
     pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The language files the String Keys reload last saw
+    /// (`App::poll_language_files`).
+    pub(crate) language_files: crate::i18n::LanguageFileWatch,
     /// The mod this run reads on top of the game folder (`app::mods`).
     pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).

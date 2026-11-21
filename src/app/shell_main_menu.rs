@@ -1303,7 +1303,7 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.settings_dir().to_path_buf());
-        if crate::i18n::poll_language_files(settings_dir.as_deref()) {
+        if state.frontend.language_files.poll(settings_dir.as_deref()) {
             state.refresh_string_key_labels();
             state.platform.window.request_redraw();
         }

@@ -1294,6 +1294,7 @@ impl App {
                 map_library: Default::default(),
                 login_info: Default::default(),
                 map_pictures: Default::default(),
+                language_files: Default::default(),
                 mods,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),

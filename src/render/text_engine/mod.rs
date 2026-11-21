@@ -1148,7 +1148,7 @@ mod tests {
         let mut reads_from_the_right = || engine.shape("Tanya انضم", 0, Fit::NONE).lines[0].rtl;
         assert!(!reads_from_the_right());
         std::fs::write(&file, "[Strings]\nVERA:Unlimited=غير محدود\n").unwrap();
-        assert!(crate::i18n::poll_language_files(Some(&dir)));
+        assert!(crate::i18n::LanguageFileWatch::default().poll(Some(&dir)));
         let turned = reads_from_the_right();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(turned, "the rewritten file reads right to left");
