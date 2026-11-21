@@ -22,8 +22,34 @@ pub fn set(requested: bool) {
 }
 
 /// Whether this process launched with `-ra2`.
+///
+/// Under `cfg(test)`, a thread-local override takes precedence when set. This
+/// lets a unit test exercise the RA2 branch without flipping the process-wide
+/// flag (which races with unrelated tests running in parallel on other
+/// threads). Production code never sets the override.
 pub fn enabled() -> bool {
+    #[cfg(test)]
+    if let Some(value) = TEST_RA2_OVERRIDE.with(std::cell::Cell::get) {
+        return value;
+    }
     RA2_REQUESTED.load(Ordering::Relaxed)
+}
+
+/// Test-only: make [`enabled`] report `value` on the current thread until
+/// [`clear_override`]. Restores nothing on drop — callers clear explicitly.
+#[cfg(test)]
+pub(crate) fn set_override(value: bool) {
+    TEST_RA2_OVERRIDE.set(Some(value));
+}
+
+#[cfg(test)]
+pub(crate) fn clear_override() {
+    TEST_RA2_OVERRIDE.set(None);
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_RA2_OVERRIDE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
 /// Parse the process arguments for `-ra2` and record the choice. Called once,

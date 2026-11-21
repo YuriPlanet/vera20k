@@ -166,8 +166,21 @@ impl RulesPassProcessor {
             ("VehicleParachute", RulesTypeFamily::Animation, false),
         ];
 
-        let Some(section) = pass.section("General") else {
-            return;
+        // Original RA2 keeps 36 moved references in [AudioVisual], and a
+        // layered pass may carry only that section with no [General]. In that
+        // case continue with an empty General view so the AV keys still read;
+        // all General reads return their retained defaults. YR and ordinary
+        // RA2 data (which have a General section) take the unchanged path.
+        let section = if crate::util::ra2_launch::enabled()
+            && pass.section("General").is_none()
+            && pass.section("AudioVisual").is_some()
+        {
+            crate::rules::ini_parser::IniSection::empty()
+        } else {
+            let Some(section) = pass.section("General") else {
+                return;
+            };
+            section
         };
         let ares_way = crate::rules::ares_switch::ares_way();
         // RulesClass::ReadGeneral66D530, original66EB03..66EB1C:
@@ -278,7 +291,35 @@ impl RulesPassProcessor {
             }
         }
 
+        // Original RA2 stores these 36 type references under [AudioVisual];
+        // YR moved the same keys into [General]. Values are identical, only
+        // the section differs. Select the section per key so RA2 reads them,
+        // while every other key and the whole YR path stay on [General].
+        // (Derived from rules.ini [AudioVisual] vs rulesmd.ini [General].)
+        const RA2_AUDIOVISUAL_MOVED_KEYS: &[&str] = &[
+            "BarrelDebris", "BarrelExplode", "BarrelParticle", "Behind",
+            "BombParachute", "BridgeExplosions", "ChronoBeam", "ChronoBlast",
+            "ChronoBlastDest", "ChronoPlacement", "ChronoSparkle1",
+            "DamageFireTypes", "DeadBodies", "DropPod", "DropZoneAnim",
+            "EMPulseSparkles", "FlamingInfantry", "InfantryExplode",
+            "InfantryHeadPop", "InfantryNuked", "IonBeam", "IonBlast",
+            "IronCurtainInvokeAnim", "MetallicDebris", "MoveFlash",
+            "NukeTakeOff", "OreTwinkle", "Parachute", "Wake", "WarpAway",
+            "WarpIn", "WarpOut", "WeaponNullifyAnim", "WeatherConBoltExplosion",
+            "WeatherConBolts", "WeatherConClouds",
+        ];
+        let ra2_av = crate::util::ra2_launch::enabled()
+            .then(|| pass.section("AudioVisual"))
+            .flatten();
         for &(key, family, is_list) in SITES {
+            // RA2 reads the moved keys from [AudioVisual]; absent there, fall
+            // back to [General] so a later pass / map override still works and
+            // YR (no AV section read) is byte-for-byte unchanged.
+            let src = if ra2_av.is_some() && RA2_AUDIOVISUAL_MOVED_KEYS.contains(&key) {
+                ra2_av.unwrap_or(section)
+            } else {
+                section
+            };
             // An ordinary build never reads the NPSE extension, so it neither
             // allocates the canopy's AnimType nor keeps the pointer.
             if key == "VehicleParachute" && !crate::rules::NPATCH_ENABLED {
@@ -294,7 +335,7 @@ impl RulesPassProcessor {
                 // Keep actual FindOrAllocate identities, duplicate slots and
                 // empty/missing-layer retention. Null factory tokens are
                 // excluded by this shared native list reader.
-                let resolved = self.resolve_list_from(section, key, family, 0x80);
+                let resolved = self.resolve_list_from(src, key, family, 0x80);
                 self.store_general_list(key, resolved);
             } else if let Some(side) = ["AlliedDisguise", "SovietDisguise", "ThirdDisguise"]
                 .iter()
@@ -302,7 +343,7 @@ impl RulesPassProcessor {
             {
                 // Absent/empty retains the prior pointer; a factory none
                 // token clears it. Reuse the existing allocating scalar reader.
-                if let Some(resolved) = self.resolve_scalar_from(section, key, family, 0x80) {
+                if let Some(resolved) = self.resolve_scalar_from(src, key, family, 0x80) {
                     self.general_type_lists.infantry_disguises[side] = resolved;
                 }
             } else if matches!(
@@ -334,7 +375,7 @@ impl RulesPassProcessor {
                 // through BuildingType's FindOrAllocate (`0x004653C0`), and
                 // PrerequisiteProcAlternate (`0x0066F787..0x0066F7C9`) through
                 // UnitType's (`0x007480D0`).
-                if let Some(resolved) = self.resolve_scalar_from(section, key, family, 0x80) {
+                if let Some(resolved) = self.resolve_scalar_from(src, key, family, 0x80) {
                     let resolved = resolved.unwrap_or_default();
                     match key {
                         "LightningWarhead" => self.select_anim.lightning_warhead = resolved,
@@ -388,11 +429,11 @@ impl RulesPassProcessor {
                 // `0x0067BD30` (`0x006713B0`, `0x0067156A`, `0x00671723`):
                 // ReadString128, AircraftType's factory, default the current
                 // pointer.
-                if let Some(resolved) = self.resolve_scalar_from(section, key, family, 0x80) {
+                if let Some(resolved) = self.resolve_scalar_from(src, key, family, 0x80) {
                     self.missile_spawn.set_type(missile, resolved);
                 }
             } else {
-                let resolved = self.resolve_scalar_from(section, key, family, 0x80);
+                let resolved = self.resolve_scalar_from(src, key, family, 0x80);
                 // ReadGeneral's DropPodWeapon (Rules+0x5A4), for the Ares
                 // DropPod locomotor (`DropPodLocomotorRules`).
                 if ares_way && key == "DropPodWeapon" {
