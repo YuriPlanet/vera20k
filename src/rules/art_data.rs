@@ -991,7 +991,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         }),
         bouncer: section.read_bool("Bouncer", false),
         spawns: None,
-        spawn_count: section.read_int("SpawnCount", 0),
+        spawn_count: section.read_int("SpawnCount", 0).min(SPAWN_COUNT_LIMIT),
         running_frames: section.read_int("RunningFrames", 0),
         // gamemd-derived: `AnimTypeClass::ReadINI @ 0x00427D00` reads these
         // through `CCINIClass::ReadDouble` and each defaults to the value the
@@ -1013,7 +1013,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         double_thick: section.read_bool("DoubleThick", false),
         flamer: section.read_bool("Flamer", false),
         spawns_particle: None,
-        num_particles: section.read_int("NumParticles", 0),
+        num_particles: section.read_int("NumParticles", 0).min(NUM_PARTICLES_LIMIT),
         // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
         // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
         ares_spawns_particle_range: if ares_way {
@@ -1084,6 +1084,18 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
 /// authored path — `CCINIClass::ReadDouble` also parses `%f` and widens — so a
 /// port that writes `0.8_f64` here starts every unauthored bouncer from a
 /// different bit pattern than gamemd.
+/// VERA's bound on an AnimType's or VoxelAnimType's `SpawnCount=`. Each
+/// bounce or expiry draws twice in `0..=SpawnCount` and spawns their sum of
+/// child anims one at a time, so a value near `i32::MAX` freezes the match the
+/// first time it fires; retail spawns at most 7 (`METSMALL`).
+pub(crate) const SPAWN_COUNT_LIMIT: i32 = 256;
+
+/// VERA's bound on `NumParticles=`: an anim with `SpawnsParticle=` births
+/// that many particles at once, so a value near `i32::MAX` freezes the match
+/// or exhausts memory the first time it plays; retail births at most 3
+/// (`VIRUSD`).
+pub(crate) const NUM_PARTICLES_LIMIT: i32 = 256;
+
 const ANIM_DAMAGE_DEFAULT: NativeF64Bits = NativeF64Bits::POSITIVE_ZERO;
 const ANIM_ELASTICITY_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_9999_a000_0000);
 const ANIM_MIN_Z_VEL_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x400c_0000_0000_0000);
@@ -3492,6 +3504,15 @@ mod anim_runtime_metadata_tests {
     /// Three of them are NOT the zero/false a naive port would pick:
     /// `Elasticity` 0.8, `MinZVel` 3.5, `MaxXYVel` 15.0, and both
     /// `ShouldUseCellDrawer` and `ShouldFogRemove` start true.
+    #[test]
+    fn huge_anim_spawn_and_particle_counts_stop_at_their_bounds() {
+        let ini = IniFile::from_str("[HUGE]\nSpawnCount=2147483647\nNumParticles=2147483647\n");
+        let registry = ArtRegistry::from_ini(&ini);
+        let huge = registry.anim_runtime_config("HUGE").unwrap();
+        assert_eq!(huge.spawn_count, SPAWN_COUNT_LIMIT);
+        assert_eq!(huge.num_particles, NUM_PARTICLES_LIMIT);
+    }
+
     #[test]
     fn anim_constructor_defaults_are_not_all_zero() {
         let ini = IniFile::from_str("[BARE]\nFixtureOnly=1\n");
