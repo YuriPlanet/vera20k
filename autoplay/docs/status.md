@@ -57,6 +57,13 @@
   全部 timeout，连原本 32491 胜的那局也丢了。原因不是门槛本身——`army at first
   push` 三局都还是 10，说明门不是它在把；抬它把 `fist_needs` 一起抬到 20，
   支队被饿死，袭扰线没了。
+- **把 fist 的门单独抬到 20**（新增 `PUSH_ARMY`，`mop_up` 不再能把它降回 10）：
+  机制确实生效了——`army at first push` 从三局都停在 10 抬到 31 / 39 / 35，
+  但三局全部 timeout：seed 24301 从 `won at tick 32491` 掉到 own=134 enemy=34
+  army=71 income=6956（基线 own=144 enemy=1 army=84 income=8613），seed 19
+  own=127 enemy=59，seed 10 own=78 enemy=41。也就是说早出门的那十个兵不是
+  「散着送」，而是维持压力和 income 的一部分：等凑够 20 个再走，攒兵的速度
+  反而跟不上消耗，peak army 从 84 掉到 71。
 - **推进目标的三种改法**（按角色权重分配目标 / 从军队中心瞄准拳头 / 一个目标
   打到最后）都输掉原本 tick 25636 赢的那局，见 `src/sim/strategy/assist/mod.rs`
   的模块头注。
