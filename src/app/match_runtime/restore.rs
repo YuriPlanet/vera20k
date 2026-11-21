@@ -79,6 +79,10 @@ pub(crate) fn commit_prepared_load(
     });
     state.match_state.startup.acknowledge_saved_load(campaign);
     if from_menu {
+        // Main_Game sets State_Machine's admission latch at 0x0048CE7E
+        // after shell admission, including a successful Load Saved Game.
+        // The previous match's Abort may have cleared it at 0x0048CAA1.
+        state.match_state.match_presentation.modal_latch = true;
         crate::app::loading::pump::present_game_mode_blank(state);
     }
 
