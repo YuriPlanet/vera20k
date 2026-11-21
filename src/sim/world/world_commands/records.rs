@@ -593,9 +593,11 @@ impl Simulation {
                 target_ry,
             } => (
                 entity_id,
+                // The cell words go bit for bit, like the Cell tokens above:
+                // the decoder reads them back as the same unsigned cell.
                 MegaMissionOrder::Move {
-                    target_x: i16::try_from(target_rx).ok()?,
-                    target_y: i16::try_from(target_ry).ok()?,
+                    target_x: target_rx as i16,
+                    target_y: target_ry as i16,
                 },
             ),
             Command::MoveToObject {
