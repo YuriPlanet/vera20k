@@ -353,6 +353,9 @@ pub(super) struct LiveService {
     /// The started match this player is in, until its `finish` is
     /// acknowledged or the session ends; only [`Self::hold_match`] writes it.
     match_id: Option<String>,
+    // A visitor's join. The server validates the destination before leaving
+    // the original room. Resend the same ID when the outcome is uncertain.
+    switching_room: Option<RetryingCommand>,
     finishing: Option<RetryingCommand>,
     leaving: Option<RetryingCommand>,
     logging_out: Option<RetryingCommand>,
@@ -874,6 +877,19 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             }
         }
         service.poll_cleanup(Instant::now());
+        if let Some(switch) = &mut service.switching_room {
+            if super::lobby::online_request_pending(state, switch.request_id) {
+                if let Some((id, operation, payload)) = switch.take_due(Instant::now()) {
+                    service.send_command(id, operation, payload);
+                }
+                // Keep A's queued setup and map traffic in its owner until
+                // we know which room owns the session. On refusal it resumes;
+                // on admission the old setup is discarded with channel_left.
+                put_service(state, service);
+                return Some(Instant::now() + POLL_INTERVAL);
+            }
+            service.switching_room = None;
+        }
         if service.watching.is_some() || service.spawned_watch.is_some() {
             // A watcher's setup is no room's: it tells the lobby nothing.
             if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {

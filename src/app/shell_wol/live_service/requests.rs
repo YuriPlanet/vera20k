@@ -66,7 +66,13 @@ pub(super) fn request_service(
         }
         WolServiceRequest::JoinChannel { channel, key } => {
             if super::lobby::bind_online_request(state, service.next_request) {
-                service.command("join", json!({"channel":channel.name,"key":key}));
+                let payload = json!({"channel":channel.name,"key":key});
+                if super::lobby::switching_room(state) {
+                    service.switching_room =
+                        Some(service.retrying_command("join", payload, Instant::now()));
+                } else {
+                    service.command("join", payload);
+                }
             }
         }
         WolServiceRequest::VisitLobby => {

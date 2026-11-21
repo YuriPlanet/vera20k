@@ -197,6 +197,10 @@ enum Step {
     JoiningGame {
         request: Option<OnlineRequest>,
     },
+    /// The visitor keeps their seat until the online lobby commits the join.
+    SwitchingRoom {
+        request: Option<OnlineRequest>,
+    },
     /// The Buddy List runner's second game-list request for Join.
     FindingGame {
         name: String,
@@ -230,6 +234,7 @@ impl Step {
         match self {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
+            | Self::SwitchingRoom { request }
             | Self::Creating { request, .. }
             | Self::Watching { request, .. }
             | Self::Visiting { request } => *request,
@@ -241,6 +246,7 @@ impl Step {
         match self {
             Self::JoiningLobby { request, .. }
             | Self::JoiningGame { request }
+            | Self::SwitchingRoom { request }
             | Self::Creating { request, .. }
             | Self::Watching { request, .. }
             | Self::Visiting { request } => Some(request),
@@ -264,6 +270,16 @@ impl Step {
             .is_some_and(|request| request.id == id)
     }
 
+    // A switch is retried under its original request ID. A timed leave
+    // would evict the player from their original room on a lost reply.
+    fn timed_request(&self) -> Option<OnlineRequest> {
+        if matches!(self, Self::SwitchingRoom { .. }) {
+            None
+        } else {
+            self.online_request()
+        }
+    }
+
     fn take_leave_continuation(&mut self) -> Option<AfterLeave> {
         if !matches!(self, Self::Leaving { .. }) {
             return None;
@@ -283,6 +299,10 @@ pub(super) fn bind_online_request(state: &mut AppState, id: u64) -> bool {
 /// Whether a response still belongs to the current lobby admission.
 pub(super) fn online_request_pending(state: &AppState, id: u64) -> bool {
     lobby(state).is_some_and(|lobby| lobby.step.accepts_online_result(id))
+}
+
+pub(super) fn switching_room(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::SwitchingRoom { .. }))
 }
 
 /// A rejected online command enters the same reducer as a service callback.
@@ -1684,8 +1704,8 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
     let Some(row) = lobby.ui.game_rows.get(row) else {
         return false;
     };
-    // VERA: a visitor watches or joins nothing from their own room; another
-    // game they join leaves it first.
+    // A visitor cannot watch or rejoin their own room. Another room's
+    // admission is responsible for switching their membership.
     if row.watch {
         return lobby.visit.is_none();
     }
@@ -1761,7 +1781,8 @@ fn join_picked_lobby(state: &mut AppState, skip_full: bool, entry: bool) -> bool
 /// through `0x00792BE0(1)`, up to 150 x 100 ms), then copy the key
 /// (`+0xD7`), remember the pending channel `[0xB73BE8]` and request the join
 /// behind the box retexted `TXT_JOINLOB`. A channel already joined or
-/// pending is not joined again (it returns 0 without a request).
+/// pending is not joined again (it returns 0 without a request). When visiting
+/// from a VERA room, send the join directly so refusal preserves that room.
 fn join_channel(state: &mut AppState, channel: WolChannel, key: &str, game: bool, entry: bool) {
     let Some(lobby) = lobby_mut(state) else {
         return;
@@ -1783,7 +1804,7 @@ fn join_channel(state: &mut AppState, channel: WolChannel, key: &str, game: bool
         }
         return;
     }
-    if lobby.current.is_some() {
+    if lobby.current.is_some() && !(game && lobby.visit.is_some()) {
         lobby.step = Step::Leaving {
             deadline: Instant::now() + LEAVE_WAIT,
             then: AfterLeave::Join {
@@ -1805,7 +1826,10 @@ fn send_join(state: &mut AppState, channel: WolChannel, key: String, game: bool,
         return;
     };
     lobby.pending = Some(channel.clone());
-    lobby.step = if game {
+    let switching = game && lobby.visit.is_some();
+    lobby.step = if switching {
+        Step::SwitchingRoom { request: None }
+    } else if game {
         Step::JoiningGame { request: None }
     } else {
         Step::JoiningLobby {
@@ -1815,7 +1839,7 @@ fn send_join(state: &mut AppState, channel: WolChannel, key: String, game: bool,
     };
     show_wait(state, "TXT_JOINLOB");
     request(state, WolServiceRequest::JoinChannel { channel, key });
-    if game && lobby_dialog(state).is_some() {
+    if game && !switching && lobby_dialog(state).is_some() {
         // 0x00789960 returned true: 0x0078C281 slides the dialog out
         // (0x006071E0), draws the empty backdrop and hides it; C9 comes from
         // the join sink afterwards.
@@ -2674,7 +2698,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     redraw |= lobby.wait.as_mut().is_some_and(|wait| wait.poll(now));
     if let Some(request_id) = lobby
         .step
-        .online_request()
+        .timed_request()
         .filter(|request| now >= request.deadline && lobby.deferred.is_none())
         .map(|request| request.id)
     {
@@ -2721,7 +2745,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         _ => {}
     }
     let mut deadlines: Vec<Instant> = Vec::new();
-    deadlines.extend(lobby.step.online_request().map(|request| request.deadline));
+    deadlines.extend(lobby.step.timed_request().map(|request| request.deadline));
     deadlines.extend(
         lobby
             .wait

@@ -107,6 +107,7 @@ impl LiveService {
             member_ids: BTreeMap::new(),
             pending: None,
             match_id: None,
+            switching_room: None,
             finishing: None,
             leaving: None,
             logging_out: None,

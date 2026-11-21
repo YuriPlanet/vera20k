@@ -222,6 +222,13 @@ pub(super) fn apply_response(
         } => match operation {
             "join" | "create" => {
                 if super::lobby::online_request_pending(state, id) {
+                    if let Some(switch) = service.switching_room.as_mut()
+                        && switch.request_id == id
+                        && failure == http::CommandFailure::Retryable
+                    {
+                        switch.failed(Instant::now());
+                        return;
+                    }
                     if failure == http::CommandFailure::Retryable {
                         // Both responses can be lost after a server-side commit.
                         // Acknowledge cleanup before binding another attempt.
