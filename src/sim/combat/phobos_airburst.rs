@@ -1057,7 +1057,7 @@ fn admit_firing_effects(
             velocity,
             context.owner_house,
         );
-        firing_report(world, context.weapon, context.source_id, origin);
+        firing_report(world, rules, context.weapon, context.source_id, origin);
     }
     // `BulletExt::GetTargetCoordsForFiring`: an Inviso + FlakScatter child
     // reports its own (scattered) unlimbo location rather than the target's,
@@ -1173,6 +1173,7 @@ fn firing_anim(
 /// % Count]` at the child's coordinate.
 fn firing_report(
     world: &mut Simulation,
+    rules: &RuleSet,
     weapon: &WeaponType,
     source_id: u64,
     origin: ProjectileCoord,
@@ -1194,7 +1195,7 @@ fn firing_report(
     world
         .sound_events
         .emit(crate::sim::world::SimSoundEvent::voc_at_world_coord(
-            report.to_owned(),
+            rules.sound_name(report),
             crate::sim::anim_class::AnimWorldCoord {
                 x: origin.x,
                 y: origin.y,
