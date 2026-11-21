@@ -127,7 +127,7 @@ pub struct TeamTypeDefinition {
 
 /// The TeamType's other INI fields, beside the definition, and where it was
 /// defined.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamTypeIniMetadata {
     /// ReadHouseType475540 called by6F1090; GetHouse6F2070 resolves it.
     #[serde(default)]
@@ -1086,6 +1086,23 @@ impl TeamScriptVm {
             }
         }
         needed
+    }
+
+    /// TaskForce `id`'s entries; none for a TaskForce that did not resolve.
+    pub(crate) fn task_force_entries_of(&self, id: InternedId) -> &[TeamTaskForceEntry] {
+        self.task_forces
+            .get(&id)
+            .map_or(&[], |task_force| &task_force.entries)
+    }
+
+    /// Entry `index` of TaskForce `id`, for a walk whose body takes the
+    /// simulation.
+    pub(crate) fn task_force_entry(
+        &self,
+        id: InternedId,
+        index: usize,
+    ) -> Option<TeamTaskForceEntry> {
+        self.task_force_entries_of(id).get(index).copied()
     }
 
     /// The TaskForce of TeamType `team_type_id`, if it resolved.

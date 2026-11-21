@@ -87,6 +87,8 @@ impl Simulation {
                 rules.general.condition_yellow.to_bits(),
             ));
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
+        // A copy: the degrade damage can destroy a listed building, which
+        // leaves the House's Building vector while it is walked.
         let buildings = house.base_projection().buildings().to_vec();
         for id in buildings {
             let Some(building) = self.substrate.entities.get(id) else {

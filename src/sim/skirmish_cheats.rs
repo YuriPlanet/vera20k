@@ -167,7 +167,6 @@ impl Simulation {
                 .ok_or("VERA:CheatNoBase")?,
         };
         let center = (i32::from(cx), i32::from(cy));
-        let owner_name = self.interner.resolve(owner).to_owned();
         let passability = CellPassabilityArgs {
             speed_type: object.speed_type,
             ignore_infantry: false,
@@ -212,11 +211,12 @@ impl Simulation {
             {
                 continue;
             }
+            let type_id = self.interner.intern(&object.id);
             if self
                 .spawn_resolved_object_at_height(
                     object,
-                    &object.id,
-                    &owner_name,
+                    type_id,
+                    owner,
                     rx,
                     ry,
                     0,

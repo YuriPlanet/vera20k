@@ -55,6 +55,28 @@ impl fmt::Display for InternedId {
     }
 }
 
+/// A name a constructor is given: an id the simulation already holds, or
+/// text from outside it (a map row, a tool, a test). The constructor interns
+/// text only where it always did, after its type lookup succeeds, so an id
+/// caller builds no `String` and a text caller adds ids in the same order.
+#[derive(Clone, Copy, Debug)]
+pub enum InternKey<'a> {
+    Id(InternedId),
+    Name(&'a str),
+}
+
+impl From<InternedId> for InternKey<'_> {
+    fn from(id: InternedId) -> Self {
+        Self::Id(id)
+    }
+}
+
+impl<'a, T: AsRef<str> + ?Sized> From<&'a T> for InternKey<'a> {
+    fn from(name: &'a T) -> Self {
+        Self::Name(name.as_ref())
+    }
+}
+
 /// Bidirectional string interner with uppercase-normalized lookup.
 ///
 /// `intern("Americans")` and `intern("americans")` return the same ID, so two
@@ -274,6 +296,27 @@ impl StringInterner {
             return id;
         }
         self.push(s.to_string())
+    }
+
+    /// `key`'s id: an id as it is, a name as [`Self::intern`] gives it.
+    pub fn intern_key(&mut self, key: InternKey<'_>) -> InternedId {
+        match key {
+            InternKey::Id(id) => id,
+            InternKey::Name(name) => self.intern(name),
+        }
+    }
+
+    /// The object type `key` names in `rules`: [`Self::object_type`] for an
+    /// id, `rules.object(name)` for a name, which adds no id.
+    pub fn key_object_type<'r>(
+        &self,
+        key: InternKey<'_>,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ObjectType> {
+        match key {
+            InternKey::Id(id) => self.object_type(id, rules),
+            InternKey::Name(name) => rules.object(name),
+        }
     }
 
     /// Give `s` the next id. A name equal under ASCII case folding to one

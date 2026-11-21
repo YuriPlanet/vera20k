@@ -733,11 +733,9 @@ pub fn sell_stage_zero(
             // Safe residual: keep the stack and sale stage without a refund.
             return;
         };
-        let type_name = sim.interner.resolve(upgrade_type).to_owned();
-        let owner_name = sim.interner.resolve(owner).to_owned();
         let Some(temporary) = sim.construct_object_limbo_at_height(
-            &type_name,
-            &owner_name,
+            upgrade_type,
+            owner,
             0,
             0,
             0,

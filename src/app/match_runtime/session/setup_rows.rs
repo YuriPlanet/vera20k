@@ -380,6 +380,8 @@ impl MatchSession {
             anyhow::bail!("network setup is not editable");
         };
         anyhow::ensure!(N <= NETWORK_PLAYER_SLOT_COUNT, "too many roster rows");
+        // Validated on a copy, committed on success: a refused change leaves the
+        // session as it was.
         let mut candidate = launch.clone();
         for human in &mut candidate.humans {
             human.raw_slot_index = None;

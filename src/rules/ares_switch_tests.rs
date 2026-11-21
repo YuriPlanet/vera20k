@@ -320,3 +320,18 @@ fn rules_code_reads_on_the_thread_that_opened_its_scope() {
         .collect();
     assert_eq!(threaded, ["retail_ini_fixture.rs"]);
 }
+
+/// A SuperWeaponType's `Type=` is one of Ares' reads of the ordered pass, so
+/// a Rules process read the Ares way keeps the key among the Ares inputs it
+/// saves with the rules.
+#[test]
+fn a_super_weapons_type_key_stays_an_ares_input() {
+    use crate::rules::native_processing::RulesLayerStack;
+    let _way = crate::rules::ares_switch::read_ares_way(true);
+    let rules = IniFile::from_str("[SuperWeaponTypes]\n0=TESTSW\n[TESTSW]\nType=MultiMissile\n");
+    let processed = RulesLayerStack::new(rules)
+        .process_with_fixed_art(&IniFile::from_str(""))
+        .unwrap();
+    let inputs = format!("{:?}", processed.ares_inputs());
+    assert!(inputs.contains(r#"("TESTSW", "Type")"#), "{inputs}");
+}

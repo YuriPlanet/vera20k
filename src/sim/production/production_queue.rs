@@ -840,7 +840,6 @@ fn kick_out_ares_clones(
                 })
         })
         .collect();
-    let owner_name = sim.interner.resolve(owner).to_owned();
     for source in sources {
         let admitted = sim.substrate.entities.get(source).is_some_and(|building| {
             !building.lifecycle.in_limbo()
@@ -851,14 +850,7 @@ fn kick_out_ares_clones(
             continue;
         }
         let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
-            clone_type,
-            &owner_name,
-            0,
-            0,
-            0,
-            0,
-            rules,
-            effects,
+            clone_type, owner, 0, 0, 0, 0, rules, effects,
         ) else {
             continue;
         };
@@ -912,6 +904,9 @@ fn exit_cloning_vat_copies(
     if !clones {
         return;
     }
+    // A copy of the House's Building vector: each clone's constructor and
+    // exit run through the whole simulation, whose callbacks (a Unlimbo's
+    // triggers among them) can add or remove buildings while it is walked.
     let vat_ids = sim
         .houses
         .get(&owner)
@@ -929,12 +924,11 @@ fn exit_cloning_vat_copies(
         if !is_cloning_vat {
             continue;
         }
-        let vat_owner_name = sim.interner.resolve(vat_owner).to_owned();
         // Create_Object takes only the vat's House (`0x00444A24..0x00444A2B`);
         // the new object waits in limbo for the vat's exit to place it.
         let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
             product_type,
-            &vat_owner_name,
+            vat_owner,
             0,
             0,
             0,

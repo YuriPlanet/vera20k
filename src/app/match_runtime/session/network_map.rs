@@ -269,6 +269,8 @@ impl MatchSession {
             !file.is_empty() && capacity > 0,
             "map requires a valid participant capacity"
         );
+        // Validated on a copy, committed on success: a refused change leaves the
+        // session as it was.
         let mut candidate = self.clone();
         let several = self.network_several_observers();
         let (old_capacity, observer_row, host_extra, new_capacity) = {
@@ -515,6 +517,8 @@ impl MatchSession {
             launch.ai_player_count = count;
         }
         if let Some(opponents) = opponents {
+            // Validated on a copy, committed on success: a refused change leaves the
+            // session as it was.
             let mut candidate = launch.clone();
             candidate.opponents = opponents;
             validate_network_rows(&candidate)?;

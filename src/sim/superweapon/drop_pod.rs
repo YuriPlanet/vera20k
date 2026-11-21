@@ -135,7 +135,6 @@ pub(super) fn launch(
         );
         return false;
     }
-    let owner_name = sim.interner.resolve(owner).to_owned();
     let last = i32::try_from(types.len()).map_or(i32::MAX, |count| count - 1);
     let mut target = (cell.0 as i16, cell.1 as i16);
     let mut count = sim.scenario_rng.next_range_i32_inclusive(minimum, maximum);
@@ -159,16 +158,9 @@ pub(super) fn launch(
         let Some(object) = rules.object_in_category(ty.category, &ty.id) else {
             continue;
         };
-        let Some(id) = sim.construct_resolved_object_limbo_at_height(
-            object,
-            &owner_name,
-            0,
-            0,
-            0,
-            0,
-            rules,
-            effects,
-        ) else {
+        let Some(id) = sim
+            .construct_resolved_object_limbo_at_height(object, owner, 0, 0, 0, 0, rules, effects)
+        else {
             continue;
         };
         // 10070F1C..10070F2E: a float compare and store.

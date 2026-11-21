@@ -1575,8 +1575,10 @@ impl Simulation {
     /// occurrences backwards. Both predicate and removal use the FIRST
     /// matching actor member, even when a path repeats the shared node.
     pub(super) fn prune_invalid_planning_nodes(&mut self) {
-        let actors = self.planning.token_order.clone();
-        for actor in actors {
+        // Walked by index: the prune changes paths and node members, never
+        // the token order.
+        for slot in 0..self.planning.token_order.len() {
+            let actor = self.planning.token_order[slot];
             let Some(path) = self.planning.paths.get(&actor) else {
                 continue;
             };

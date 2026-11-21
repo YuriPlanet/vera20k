@@ -138,9 +138,7 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Weapon) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Weapon, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Weapon, index, pass) {
                 // 7722D4..772350: these scalar reads precede the later
                 // constructor-capable animation and type-reference reads.
                 let state = &mut self.family_mut(RulesTypeFamily::Weapon)[index].weapon;
@@ -309,7 +307,7 @@ impl RulesPassProcessor {
         let color_names: Vec<_> = self.colors.iter().map(|(name, _)| name.clone()).collect();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Projectile) {
-            if let Some((_id, raw, _effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::Projectile, index, pass)
             {
                 // Full native body46BEE0: base Object ART reads precede the
@@ -355,9 +353,7 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Warhead) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Warhead, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Warhead, index, pass) {
                 let particle = self.resolve_scalar_from(
                     &raw,
                     "Particle",
@@ -579,8 +575,7 @@ impl RulesPassProcessor {
     ) {
         let mut index = 0;
         while index < self.family_len(family) {
-            if let Some((_id, raw, _effective)) = self.begin_rules_member_read(family, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(family, index, pass) {
                 self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 let theater = self.image_theater;
                 let tree_strength = self.rules_tree_strength;
@@ -683,8 +678,7 @@ impl RulesPassProcessor {
     pub(super) fn process_particle_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Particle) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
             {
                 self.family_mut(RulesTypeFamily::Particle)[index]
                     .read_object_sound(&raw, fixed_sounds);
@@ -715,7 +709,7 @@ impl RulesPassProcessor {
     ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::ParticleSystem) {
-            if let Some((_id, raw, _effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::ParticleSystem, index, pass)
             {
                 self.family_mut(RulesTypeFamily::ParticleSystem)[index]
@@ -745,7 +739,7 @@ impl RulesPassProcessor {
     ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::VoxelAnimation) {
-            if let Some((_id, raw, _effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::VoxelAnimation, index, pass)
             {
                 self.family_mut(RulesTypeFamily::VoxelAnimation)[index]

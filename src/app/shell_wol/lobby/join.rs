@@ -340,14 +340,13 @@ pub(super) fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>)
         return;
     };
     let Step::Creating {
-        observe,
-        channel,
-        request,
-    } = lobby.step.clone()
+        observe, request, ..
+    } = &lobby.step
     else {
         log::debug!("stale WOL create result");
         return;
     };
+    let observe = *observe;
     if online && request.is_none() {
         return;
     }
@@ -395,9 +394,13 @@ pub(super) fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>)
             // 0x7A57C7..0x7A57EB: the created channel is the current one
             // ([0xB76B10]) and this user its host ([0xB77E4C]).
             let listed = members.clone();
+            // The create's step ends here and hands over its channel.
+            let Step::Creating { channel, .. } = std::mem::replace(&mut lobby.step, Step::Ready)
+            else {
+                unreachable!("closing the wait box and reading the nickname keep the create step")
+            };
             lobby.current = Some(channel);
             lobby.members = members;
-            lobby.step = Step::Ready;
             let buddy = lobby.runner == Runner::Buddy;
             request_listed(state, &listed);
             if quick_match {

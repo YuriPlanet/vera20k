@@ -669,7 +669,10 @@ impl Simulation {
             // 0x004F9C7F..0x004F9D48: in Logic order, each of the house's
             // Technos (As_Techno 0x0040DD70) out of limbo (+0x81) whose
             // target is a Techno of a house it now counts as friendly takes
-            // Assign_Target(NULL) (vt+0x3C8).
+            // Assign_Target(NULL) (vt+0x3C8). Walked over a copy: the setter
+            // runs through the whole simulation, and its callbacks may change
+            // Logic, so the walk keeps the order the alliance change saw. It
+            // runs only per alliance change.
             for id in self.logic_order().to_vec() {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     continue;

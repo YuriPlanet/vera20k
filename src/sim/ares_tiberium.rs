@@ -265,11 +265,10 @@ impl Simulation {
         else {
             return false;
         };
-        let owner = self.interner.resolve(owner).to_owned();
         let level =
             u8::try_from(coord.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
         let Some(created) = self
-            .construct_object_limbo_at_height(visceroid, &owner, rx, ry, 0, level, rules, effects)
+            .construct_object_limbo_at_height(visceroid, owner, rx, ry, 0, level, rules, effects)
         else {
             return false;
         };

@@ -92,16 +92,8 @@ impl Simulation {
                 .as_deref()
                 .and_then(|name| rules.object_in_category(ObjectCategory::Building, name));
             if let (Some(house), Some(object)) = (house, object) {
-                let house_name = self.interner.resolve(house).to_owned();
                 new = self.construct_resolved_object_limbo_at_height(
-                    object,
-                    &house_name,
-                    rx,
-                    ry,
-                    facing,
-                    z,
-                    rules,
-                    effects,
+                    object, house, rx, ry, facing, z, rules, effects,
                 );
             }
             if let (Some(new_id), Some(object)) = (new, object) {

@@ -209,14 +209,14 @@ pub(super) fn ares_place_starting_construction_yard(
 ) -> Option<bool> {
     let owner_id = sim.interner.get(owner)?;
     let house = sim.houses.get(&owner_id)?;
-    let country_name = sim.interner.resolve(house.country()?).to_owned();
-    if !rules.country_start_in_multiplayer_with_const(&country_name) {
+    let country_name = sim.interner.resolve(house.country()?);
+    if !rules.country_start_in_multiplayer_with_const(country_name) {
         return None;
     }
     let Some(yard) = crate::sim::ai_buildable::first_buildable_from_array(
         rules,
         rules.build_const_types(),
-        &country_name,
+        country_name,
         house.side_index(),
         sim.session.game_options().super_weapons,
     ) else {

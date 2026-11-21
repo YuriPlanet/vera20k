@@ -850,12 +850,11 @@ pub(super) fn place_unit_crate(
     let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
         return UnitCrateOutcome::NoObject;
     };
-    let owner_name = sim.interner.resolve(owner).to_owned();
     let level =
         u8::try_from(center.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
     let Some(id) = sim.construct_object_limbo_at_height(
         type_id,
-        &owner_name,
+        owner,
         rx,
         ry,
         0,

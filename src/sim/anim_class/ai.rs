@@ -685,7 +685,6 @@ impl Simulation {
         let Some(owner) = owner else {
             return true;
         };
-        let owner_name = self.interner.resolve(owner).to_string();
         let (rx, ry, _, _, _) = location.to_cell_sub_z();
         // Rules6707DC/67BB10 retains an InfantryType pointer; AnimAI4249F9
         // calls that type's creator, independent of other name registries.
@@ -696,7 +695,7 @@ impl Simulation {
         };
         let Some(infantry) = self.construct_resolved_object_limbo_at_height(
             object,
-            &owner_name,
+            owner,
             rx,
             ry,
             0,

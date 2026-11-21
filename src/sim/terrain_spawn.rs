@@ -561,14 +561,14 @@ pub fn seed_terrain_spawner_animation(
 
     let mut seeded = 0usize;
     for (stable_id, type_ref) in candidates {
-        let name = interner.resolve(type_ref).to_string();
-        let Some(t) = rules.terrain_object_type_case_insensitive(&name) else {
+        let name = interner.resolve(type_ref);
+        let Some(t) = rules.terrain_object_type_case_insensitive(name) else {
             continue;
         };
         if !t.is_animated {
             continue;
         }
-        let frame_count = rules.terrain_spawner_frame_count(&name).unwrap_or(0);
+        let frame_count = rules.terrain_spawner_frame_count(name).unwrap_or(0);
         terrain_objects.seed_animation(
             stable_id,
             TerrainAnimationState::new(
