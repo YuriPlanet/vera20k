@@ -608,16 +608,19 @@ impl EventPacketCodec {
                     );
                     actors
                 };
-                if count > 1 {
-                    self.receive.entry(source_house).or_default()[usize::from(slot)] =
-                        vec![actors[0]];
-                }
+                let mut cache = (count > 1).then(|| {
+                    let cache =
+                        &mut self.receive.entry(source_house).or_default()[usize::from(slot)];
+                    *cache = vec![actors[0]];
+                    cache
+                });
                 for (index, actor) in actors.iter().enumerate() {
-                    if count > 1 && index > 0 {
+                    if index > 0
+                        && let Some(cache) = cache.as_mut()
+                    {
                         //64C057..64C091 updates the next cached actor after
                         //the preceding admission, before attempting this one.
-                        self.receive.get_mut(&source_house).unwrap()[usize::from(slot)]
-                            .push(*actor);
+                        cache.push(*actor);
                     }
                     record.payload_mut()[..ACTOR_TOKEN_LEN].copy_from_slice(actor);
                     if !admit(record.clone()) {

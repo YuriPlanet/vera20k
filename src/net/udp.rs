@@ -2101,12 +2101,14 @@ fn drain_socket(
                 (datagram, source, None)
             }
         };
-        if datagram.len() < CHECKSUM_LEN || datagram.len() > UDP_DATAGRAM_CAPACITY {
+        let Some((checksum, frame)) = datagram
+            .split_first_chunk::<CHECKSUM_LEN>()
+            .filter(|_| datagram.len() <= UDP_DATAGRAM_CAPACITY)
+        else {
             report.malformed_datagrams += 1;
             continue;
-        }
-        let checksum = u32::from_le_bytes(datagram[..CHECKSUM_LEN].try_into().unwrap());
-        let frame = &datagram[CHECKSUM_LEN..];
+        };
+        let checksum = u32::from_le_bytes(*checksum);
         //7B3F82..7B3FB9 validates this before publishing to the manager.
         if checksum != udp_checksum(frame) {
             report.malformed_datagrams += 1;
