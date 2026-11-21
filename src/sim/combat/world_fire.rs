@@ -2482,41 +2482,64 @@ pub(super) fn emit_admitted_fire(
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
     }
-    // Wasm module `Fire` (RFC 0001 appendix 4.3): after the shot completes,
-    // for a FireAt that launched its bullet.
-    if world
+    // Wasm module `Fire` on the shooter and `AttackedBy` on the target
+    // object (RFC 0001 appendix 4.3): after the shot completes, for a FireAt
+    // that launched its bullet.
+    let fire = world
         .trigger_runtime
-        .module_listens(vera20k_wasm_ext::triggers::EVENT_FIRE)
-    {
+        .module_listens(vera20k_wasm_ext::triggers::EVENT_FIRE);
+    let attacked = world
+        .trigger_runtime
+        .module_listens(vera20k_wasm_ext::triggers::EVENT_ATTACKED_BY);
+    if fire || attacked {
+        use crate::sim::ext_modules::ModuleEvent;
         let target = match snap.target {
             TargetKind::Entity(id) => id,
             _ => 0,
         };
-        let weapon = rules
-            .weapon_index(selected.weapon_id)
-            .map_or(-1, |index| index as i32);
-        // A weapon or warhead binding reaches every shooter using it.
-        let warhead = rules
-            .weapon(selected.weapon_id)
-            .and_then(|weapon| weapon.warhead.as_deref())
-            .and_then(|warhead| rules.warhead_index(warhead))
-            .map_or(-1, |index| index as i32);
-        world.raise_module_event(
-            rules,
-            crate::sim::ext_modules::ModuleEvent {
-                other: target,
-                projectile: bullet_id,
-                cell: Some((target_rx, target_ry)),
-                value: i64::from(selected.index),
-                id: weapon,
-                weapon,
-                warhead,
-                ..crate::sim::ext_modules::ModuleEvent::new(
-                    vera20k_wasm_ext::triggers::EVENT_FIRE,
-                    snap.stable_id,
-                )
-            },
-        );
+        if fire {
+            let weapon_type = rules.weapon(selected.weapon_id);
+            let weapon = rules
+                .weapon_index(selected.weapon_id)
+                .map_or(-1, |index| index as i32);
+            // A weapon, warhead or projectile binding reaches every shooter
+            // using it.
+            let warhead = weapon_type
+                .and_then(|weapon| weapon.warhead.as_deref())
+                .and_then(|warhead| rules.warhead_index(warhead))
+                .map_or(-1, |index| index as i32);
+            let projectile_type = weapon_type
+                .and_then(|weapon| weapon.projectile.as_deref())
+                .and_then(|projectile| rules.projectile_index(projectile))
+                .map_or(-1, |index| index as i32);
+            world.raise_module_event(
+                rules,
+                effects,
+                ModuleEvent {
+                    other: target,
+                    projectile: bullet_id,
+                    cell: Some((target_rx, target_ry)),
+                    value: i64::from(selected.index),
+                    id: weapon,
+                    weapon,
+                    warhead,
+                    projectile_type,
+                    ..ModuleEvent::new(vera20k_wasm_ext::triggers::EVENT_FIRE, snap.stable_id)
+                },
+            );
+        }
+        if attacked && target != 0 {
+            world.raise_module_event(
+                rules,
+                effects,
+                ModuleEvent {
+                    other: snap.stable_id,
+                    projectile: bullet_id,
+                    value: i64::from(selected.index),
+                    ..ModuleEvent::new(vera20k_wasm_ext::triggers::EVENT_ATTACKED_BY, target)
+                },
+            );
+        }
     }
     Some(bullet_id)
 }

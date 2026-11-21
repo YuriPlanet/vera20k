@@ -110,6 +110,7 @@ pub const SCAN_COST: u64 = 2;
 pub const NAME_TECHNO_TYPE: i32 = 0;
 pub const NAME_WEAPON: i32 = 1;
 pub const NAME_WARHEAD: i32 = 2;
+pub const NAME_PROJECTILE: i32 = 3;
 pub const NAME_SUPER_WEAPON: i32 = 7;
 pub const NAME_OVERLAY: i32 = 9;
 pub const NAME_COUNTRY: i32 = 11;

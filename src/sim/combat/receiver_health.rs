@@ -151,17 +151,37 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     }
 
     /// Wasm module `TakeDamage` (RFC 0001 appendix 4.3): after the Strength
-    /// write, with the source, the warhead and the damage written.
+    /// write, with the source, the warhead and the damage written; then
+    /// `FatalDamage` when the write left 0, before Kill and Destroy (which
+    /// read the live Strength again, 5F5752..579A).
     fn committed(&mut self, damage: i32) {
-        use vera20k_wasm_ext::triggers::EVENT_TAKE_DAMAGE;
-        if !self.execute_world_callbacks
-            || !self.world.trigger_runtime.module_listens(EVENT_TAKE_DAMAGE)
-        {
+        use vera20k_wasm_ext::triggers::{EVENT_FATAL_DAMAGE, EVENT_TAKE_DAMAGE};
+        if !self.execute_world_callbacks {
             return;
         }
-        let event = self.take_damage_event(damage);
-        self.world
-            .raise_module_event(self.rules, &mut self.effects, event);
+        if self.world.trigger_runtime.module_listens(EVENT_TAKE_DAMAGE) {
+            let event = self.take_damage_event(damage);
+            self.world
+                .raise_module_event(self.rules, &mut self.effects, event);
+        }
+        if self
+            .world
+            .trigger_runtime
+            .module_listens(EVENT_FATAL_DAMAGE)
+            && self
+                .world
+                .substrate
+                .entities
+                .get(self.event.target_id)
+                .is_some_and(|target| target.health.current() == 0)
+        {
+            let event = crate::sim::ext_modules::ModuleEvent {
+                kind: EVENT_FATAL_DAMAGE,
+                ..self.take_damage_event(damage)
+            };
+            self.world
+                .raise_module_event(self.rules, &mut self.effects, event);
+        }
     }
 
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
