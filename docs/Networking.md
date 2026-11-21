@@ -35,6 +35,14 @@ support the username form. [Account protocol](lobby-protocol.md#accounts)
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
+A slow map upload or download can stay in flight while a host changes settings
+and guests receive room events. Changing the selected map discards its queued
+work. Desktop games use a separate thread to verify upload bytes, read the map
+cache and install downloaded files. Browser games can poll the room during a map
+fetch. Local file processing shares the browser thread. Both apply upload
+acknowledgments against the current event cursor.
+The map and lobby messages are unchanged. Older clients in a compatible room, or
+a client rollback, keep their previous scheduling and can pause on a slow chunk.
 A room's map name is a logical name (`map::source::is_logical_name`): a game refuses one
 with a drive, a root, a `.` or `..` part, or a part Windows reads as a device, such as
 `CON` or `COM1`. Refusing the device part changes no packets: an older build still admits

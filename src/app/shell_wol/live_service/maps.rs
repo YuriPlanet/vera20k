@@ -8,6 +8,7 @@ use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
+use std::sync::Arc;
 /// The lobby's map transfer chunk (docs/lobby-protocol.md, `map_upload`):
 /// each chunk but a transfer's last holds exactly this many bytes, which
 /// [`Transfer::append_chunk`] alone checks.
@@ -38,6 +39,8 @@ enum Direction {
     Download,
 }
 struct Transfer {
+    /// Dropping the selection cancels map work still waiting for its turn.
+    active: Arc<()>,
     resource: TransferResource,
     direction: Direction,
     bytes: Vec<u8>,
@@ -47,6 +50,17 @@ struct Transfer {
     deadline: Instant,
     retries: u8,
     directory: PathBuf,
+}
+impl LiveService {
+    fn request_map(&self, transfer: u64, active: &Arc<()>, io: http::MapIo) -> Result<()> {
+        self.requests.send(http::Request::Map {
+            transfer,
+            active: Arc::downgrade(active),
+            io,
+            completed: self.requests.clone(),
+        })?;
+        Ok(())
+    }
 }
 impl Transfer {
     fn append_chunk(
@@ -293,8 +307,7 @@ impl Transfers {
                 let end = (transfer.offset + MAP_CHUNK_BYTES).min(total);
                 let id = service.next_request;
                 service.next_request = service.next_request.wrapping_add(1);
-                http::Request::UploadMapChunk {
-                    transfer: self.generation,
+                http::MapIo::UploadMapChunk {
                     resource: transfer.resource,
                     id,
                     digest: digest.to_owned(),
@@ -303,8 +316,7 @@ impl Transfers {
                     bytes: transfer.bytes[transfer.offset..end].to_vec(),
                 }
             }
-            Direction::Download => http::Request::MapChunk {
-                transfer: self.generation,
+            Direction::Download => http::MapIo::MapChunk {
                 resource: transfer.resource,
                 seed_digest: key.digest.clone(),
                 digest: digest.to_owned(),
@@ -312,7 +324,7 @@ impl Transfers {
                 match_id: self.watching.clone(),
             },
         };
-        service.requests.send(request)?;
+        service.request_map(self.generation, &transfer.active, request)?;
         transfer.in_flight = true;
         Ok(())
     }
@@ -389,7 +401,9 @@ impl Transfers {
             }
         }
         let now = Instant::now();
+        let active = Arc::new(());
         self.transfer = Some(Transfer {
+            active: Arc::clone(&active),
             resource,
             direction: if host {
                 Direction::Upload
@@ -405,22 +419,21 @@ impl Transfers {
             directory: directory.clone(),
         });
         set_network_map_progress(state, Some((0, total as u32)));
-        if let Some(source) = upload {
-            service.requests.send(http::Request::ReadMapUpload {
-                transfer: self.generation,
+        let io = if let Some(source) = upload {
+            http::MapIo::ReadMapUpload {
                 source,
                 digest: digest.to_owned(),
                 total,
-            })?;
+            }
         } else {
-            service.requests.send(http::Request::CachedMap {
-                transfer: self.generation,
+            http::MapIo::CachedMap {
                 resource,
                 directory,
                 digest: digest.to_owned(),
                 total,
-            })?;
-        }
+            }
+        };
+        service.request_map(self.generation, &active, io)?;
         Ok(())
     }
     /// A finished transfer stands only while the session holds the map it
@@ -657,14 +670,17 @@ impl Transfers {
                 transfer.append_chunk(key, &received, received_total, offset, &bytes, complete)?;
                 set_network_map_progress(state, Some((transfer.offset as u32, total as u32)));
                 if complete {
-                    service.requests.send(http::Request::InstallMap {
-                        transfer: self.generation,
-                        resource,
-                        directory: transfer.directory.clone(),
-                        digest: digest.to_owned(),
-                        total,
-                        bytes: std::mem::take(&mut transfer.bytes),
-                    })?;
+                    service.request_map(
+                        self.generation,
+                        &transfer.active,
+                        http::MapIo::InstallMap {
+                            resource,
+                            directory: transfer.directory.clone(),
+                            digest: digest.to_owned(),
+                            total,
+                            bytes: std::mem::take(&mut transfer.bytes),
+                        },
+                    )?;
                     transfer.in_flight = true;
                 }
             }
@@ -886,6 +902,7 @@ mod tests {
             retry_at: now,
             deadline: now,
             retries: 0,
+            active: Arc::new(()),
             directory: PathBuf::new(),
         }
     }
@@ -955,6 +972,7 @@ mod tests {
     fn a_dropped_connection_keeps_a_map_transfer_retrying() {
         let now = Instant::now();
         let mut transfer = Transfer {
+            active: Arc::new(()),
             resource: TransferResource::Map,
             direction: Direction::Download,
             bytes: Vec::new(),
@@ -983,6 +1001,7 @@ mod tests {
         };
         let now = Instant::now();
         let mut transfer = Transfer {
+            active: Arc::new(()),
             resource: TransferResource::Map,
             direction: Direction::Download,
             bytes: Vec::new(),

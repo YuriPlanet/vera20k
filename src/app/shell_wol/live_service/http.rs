@@ -21,15 +21,13 @@ use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use serde_json::Value;
 use serde_json::json;
 
-pub(super) enum Request {
+pub(super) enum MapIo {
     ReadMapUpload {
-        transfer: u64,
         source: crate::map::source::TransferMapSource,
         digest: String,
         total: usize,
     },
     MapChunk {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         seed_digest: String,
         digest: String,
@@ -39,7 +37,6 @@ pub(super) enum Request {
         match_id: Option<String>,
     },
     UploadMapChunk {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         id: u64,
         digest: String,
@@ -48,20 +45,28 @@ pub(super) enum Request {
         bytes: Vec<u8>,
     },
     CachedMap {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         directory: PathBuf,
         digest: String,
         total: usize,
     },
     InstallMap {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         directory: PathBuf,
         digest: String,
         total: usize,
         bytes: Vec<u8>,
     },
+}
+
+pub(super) enum Request {
+    Map {
+        transfer: u64,
+        active: std::sync::Weak<()>,
+        io: MapIo,
+        completed: Sender<Request>,
+    },
+    MapFinished(map_io::Finished),
     OpenSession {
         attempt: u64,
         nickname: String,
@@ -860,6 +865,22 @@ impl Client {
         Ok(())
     }
 
+    /// A stream frame or map upload reply can arrive after a newer batch.
+    /// Discard an overtaken cursor and deliver overlapping events once.
+    fn overlapping_batch(
+        &mut self,
+        frame: Value,
+        output: &Sender<Response>,
+    ) -> Result<(), RequestFailure> {
+        if frame["cursor"]
+            .as_u64()
+            .is_some_and(|cursor| cursor < self.cursor)
+        {
+            return Ok(());
+        }
+        self.batch(frame, output)
+    }
+
     fn batch(&mut self, value: Value, output: &Sender<Response>) -> Result<(), RequestFailure> {
         let mut batch: EventBatch =
             serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))?;
@@ -893,19 +914,6 @@ impl Client {
         self.token
             .as_deref()
             .filter(|_| !self.spawned && !self.abandoned)
-    }
-
-    /// A stream frame starts at the stream's own cursor, which command
-    /// replies and polls may have passed: a stale frame is dropped, and
-    /// `batch` drops the events this worker already delivered.
-    fn streamed(&mut self, frame: Value, output: &Sender<Response>) -> Result<(), RequestFailure> {
-        if frame["cursor"]
-            .as_u64()
-            .is_some_and(|cursor| cursor < self.cursor)
-        {
-            return Ok(());
-        }
-        self.batch(frame, output)
     }
 
     fn request(&self, path: &str, body: Option<&Value>) -> Result<Value, RequestFailure> {
@@ -1023,6 +1031,8 @@ macro_rules! platform_await {
         $operation.await
     };
 }
+
+mod map_io;
 
 macro_rules! serial_driver {
     ($($asynchronous:tt)?) => {
@@ -1195,6 +1205,7 @@ macro_rules! serial_driver {
     let mut streams = stream::Streams::new(&client.base);
     let mut failed_polls = 0_u8;
     let mut refresh_failed = false;
+    let mut maps: Option<map_io::Worker> = None;
     let mut next_poll = Instant::now();
     let mut queued = VecDeque::new();
     loop {
@@ -1212,153 +1223,28 @@ macro_rules! serial_driver {
         if stopping.load(Ordering::Acquire) {
             break;
         }
+        if maps.as_ref().is_some_and(|worker| !worker.belongs_to(&client)) {
+            maps = None;
+        }
+        if matches!(&request, Some(Request::Abandon | Request::OpenSession { .. } | Request::Command { operation: "logout", .. })) {
+            maps = None;
+        }
         match request {
-            Some(Request::ReadMapUpload {
-                transfer,
-                source,
-                digest,
-                total,
-            }) => {
-                let response = match source.read(&digest, total) {
-                    Ok(bytes) => Response::MapUploadPrepared { transfer, bytes },
-                    Err(_) => Response::MapFailure {
-                        transfer,
-                        retryable: false,
-                    },
-                };
-                let _ = output.send(response);
-            }
-            Some(Request::CachedMap {
-                transfer,
-                resource,
-                directory,
-                digest,
-                total,
-            }) => {
-                let loaded =
-                    crate::map::source::load_received_asset(&directory, &digest, total, resource)
-                        .ok();
-                let _ = output.send(Response::CachedMap { transfer, loaded });
-            }
-            Some(Request::InstallMap {
-                transfer,
-                resource,
-                directory,
-                digest,
-                total,
-                bytes,
-            }) => {
-                let result = crate::map::source::install_received_asset(
-                    &directory, bytes, &digest, total, resource,
-                );
-                let response = match result {
-                    Ok(loaded) => Response::MapInstalled { transfer, loaded },
-                    Err(_) => Response::MapFailure {
-                        transfer,
-                        retryable: false,
-                    },
-                };
-                let _ = output.send(response);
-            }
-            Some(Request::MapChunk {
-                transfer,
-                resource,
-                seed_digest,
-                digest,
-                offset,
-                match_id,
-            }) => {
-                let result = if crate::map::source::valid_source_sha256(&digest) {
-                    let watched = match_id.map_or_else(String::new, |id| format!("&match_id={id}"));
-                    platform_await!(client.request(
-                        &format!(
-                            "/v1/maps/{seed_digest}?offset={offset}&resource={}{watched}",
-                            if resource == crate::map::source::TransferResource::Preview {
-                                "preview"
-                            } else {
-                                "map"
-                            }
-                        ),
-                        None,
-                    ))
-                } else {
-                    Err(RequestFailure::Status(400))
-                };
-                if let Err(error) = result.as_ref() {
-                    platform_await!(client.session_failed(error.clone(), &output));
-                }
-                let response = match result {
-                    Ok(value) => {
-                        #[derive(serde::Deserialize)]
-                        struct Chunk {
-                            digest: String,
-                            byte_length: usize,
-                            offset: usize,
-                            data: String,
-                            complete: bool,
-                        }
-                        // maps.rs's transfer checks the chunk's size and place.
-                        serde_json::from_value::<Chunk>(value)
-                            .ok()
-                            .and_then(|chunk| {
-                                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                                    .decode(&chunk.data)
-                                    .ok()?;
-                                Some(Response::MapChunk {
-                                    transfer,
-                                    digest: chunk.digest,
-                                    total: chunk.byte_length,
-                                    offset: chunk.offset,
-                                    bytes,
-                                    complete: chunk.complete,
-                                })
-                            })
-                            .unwrap_or(Response::MapFailure {
-                                transfer,
-                                retryable: false,
-                            })
+            Some(Request::Map { transfer, active, io, completed }) => {
+                if active.strong_count() != 0 {
+                    if maps.is_none() && client.token.is_some() && !client.abandoned {
+                        maps = map_io::Worker::start(&client);
                     }
-                    Err(RequestFailure::Status(409 | 429)) => Response::MapPending { transfer },
-                    Err(error) => Response::MapFailure {
-                        transfer,
-                        retryable: matches!(error.status(), 0 | 500..=599),
-                    },
-                };
-                let _ = output.send(response);
-            }
-            Some(Request::UploadMapChunk {
-                transfer,
-                resource,
-                id,
-                digest,
-                total,
-                offset,
-                bytes,
-            }) => {
-                let completed = offset + bytes.len();
-                let body = json!({"request_id":id.to_string(),"after":client.cursor,"operation":"map_upload",
-                    "payload":{"digest":digest,"byte_length":total,"offset":offset,"resource":if resource == crate::map::source::TransferResource::Preview { "preview" } else { "map" },
-                    "data":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)}});
-                let result = platform_await!(client
-                    .request("/v1/commands", Some(&body)))
-                    .and_then(|value| client.batch(value, &output));
-                if let Err(error) = result.as_ref() {
-                    platform_await!(client.session_failed(error.clone(), &output));
+                    let job = map_io::Job { transfer, active, after: client.cursor, io, completed };
+                    if !maps.as_ref().is_some_and(|worker| worker.send(job)) {
+                        let _ = output.send(Response::MapFailure { transfer, retryable: false });
+                    }
                 }
-                let response = match result {
-                    Ok(()) => Response::MapUploaded {
-                        transfer,
-                        completed,
-                    },
-                    Err(error) => Response::MapFailure {
-                        transfer,
-                        retryable: matches!(
-                            error,
-                            RequestFailure::Status(0 | 409 | 429 | 500..=599)
-                        ),
-                    },
-                };
-                let _ = output.send(response);
+            }
+            Some(Request::MapFinished(reply)) => {
+                if maps.as_ref().is_some_and(|worker| worker.owns(&reply)) {
+                    platform_await!(client.finish_map(reply, &output));
+                }
             }
             Some(Request::OpenSession {
                 attempt,
@@ -1566,7 +1452,7 @@ macro_rules! serial_driver {
         let streaming = {
             while let Some(frame) = streams.next(client.stream_bearer()) {
                 // A bad frame ends the stream; the next poll asks again.
-                if client.streamed(frame, &output).is_err() {
+                if client.overlapping_batch(frame, &output).is_err() {
                     streams.close();
                 }
             }
@@ -1818,6 +1704,152 @@ mod tests {
         assert_eq!(
             stale.command_failure("map_status"),
             CommandFailure::StaleRevision
+        );
+    }
+
+    /// A server holds the map response open and sends a real WebSocket room
+    /// event. Delivery must not depend on the map server answering first.
+    #[test]
+    fn a_room_event_reaches_the_game_while_its_map_request_is_stalled() {
+        for upload in [false, true] {
+            room_event_during_map_chunk(upload);
+        }
+    }
+
+    fn room_event_during_map_chunk(upload: bool) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::sync::mpsc::channel;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (accepted, sockets) = channel();
+        let acceptor = std::thread::spawn(move || {
+            for socket in listener.incoming() {
+                if accepted.send(socket.unwrap()).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut client = signed_in_client(0);
+        client.base = format!("http://{address}");
+        let (requests, input) = channel();
+        let (output, events) = channel();
+        let stop = Arc::clone(&client.stopping);
+        let worker = std::thread::spawn(move || run_loop(client, input, output, None));
+        let timeout = Duration::from_secs(3);
+        let active = Arc::new(());
+        let mut stream = None;
+        let digest = "ab".repeat(32);
+        let mut held = loop {
+            let mut socket = sockets.recv_timeout(timeout).unwrap();
+            socket.set_read_timeout(Some(timeout)).unwrap();
+            let mut header = [0; 128];
+            let read = socket.peek(&mut header).unwrap();
+            if header[..read].starts_with(b"GET /v1/events/stream?") {
+                stream = Some(tungstenite::accept(socket).unwrap());
+                let resource = crate::map::source::TransferResource::Map;
+                let io = if upload {
+                    MapIo::UploadMapChunk {
+                        resource,
+                        id: 9,
+                        digest: digest.clone(),
+                        total: 1,
+                        offset: 0,
+                        bytes: vec![1],
+                    }
+                } else {
+                    MapIo::MapChunk {
+                        resource,
+                        seed_digest: digest.clone(),
+                        digest: digest.clone(),
+                        offset: 0,
+                        match_id: None,
+                    }
+                };
+                requests
+                    .send(Request::Map {
+                        transfer: 3,
+                        active: Arc::downgrade(&active),
+                        completed: requests.clone(),
+                        io,
+                    })
+                    .unwrap();
+            } else {
+                let mut request = BufReader::new(&socket);
+                let mut content_length = 0;
+                for header in (&mut request).lines() {
+                    let header = header.unwrap();
+                    if header.is_empty() {
+                        break;
+                    }
+                    if let Some((name, value)) = header.split_once(':')
+                        && name.eq_ignore_ascii_case("content-length")
+                    {
+                        content_length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; content_length];
+                request.read_exact(&mut body).unwrap();
+                if header[..read].starts_with(b"POST /v1/commands") {
+                    assert_eq!(
+                        serde_json::from_slice::<Value>(&body).unwrap()["operation"],
+                        "map_upload"
+                    );
+                    break socket;
+                }
+                if header[..read].starts_with(b"GET /v1/maps/") {
+                    break socket;
+                }
+                assert!(header[..read].starts_with(b"GET /v1/events?"));
+                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 24\r\nConnection: close\r\n\r\n{\"cursor\":0,\"events\":[]}").unwrap();
+            }
+        };
+        let mut stream = stream.unwrap();
+        let event =
+            json!({"cursor":1,"events":[{"sequence":1,"kind":"channel_left","payload":{}}]});
+        stream
+            .send(tungstenite::Message::text(event.to_string()))
+            .unwrap();
+        let before_map_reply = matches!(events.recv_timeout(timeout), Ok(Response::Event(envelope)) if envelope.kind == "channel_left");
+        // The host's HTTP reply started at cursor zero; the room event above
+        // has already advanced the session to one. Its upload still completed.
+        let reply = if upload {
+            json!({"cursor":0,"events":[]})
+        } else {
+            json!({"digest":digest,"byte_length":1,"offset":0,"data":"AQ","complete":true})
+        }
+        .to_string();
+        write!(
+            held,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+            reply.len()
+        )
+        .unwrap();
+        drop(held);
+        let completed = match events.recv_timeout(timeout) {
+            Ok(Response::MapUploaded {
+                transfer: 3,
+                completed: 1,
+            }) => upload,
+            Ok(Response::MapChunk {
+                transfer: 3, bytes, ..
+            }) => !upload && bytes == [1],
+            _ => false,
+        };
+        stop.store(true, Ordering::Release);
+        drop(stream);
+        drop(requests);
+        worker.join().unwrap();
+        drop(sockets);
+        let _ = TcpStream::connect(address);
+        acceptor.join().unwrap();
+        assert!(
+            before_map_reply,
+            "the stalled map request held the room event (upload={upload})"
+        );
+        assert!(
+            completed,
+            "the transfer failed after the room advanced (upload={upload})"
         );
     }
 
@@ -2612,11 +2644,11 @@ mod tests {
         client.cursor = 5;
         let event = |sequence| json!({"sequence":sequence,"kind":"chat","payload":{}});
         client
-            .streamed(json!({"cursor":4,"events":[event(4)]}), &output)
+            .overlapping_batch(json!({"cursor":4,"events":[event(4)]}), &output)
             .unwrap();
         assert_eq!(client.cursor, 5);
         client
-            .streamed(
+            .overlapping_batch(
                 json!({"cursor":6,"events":[event(4), event(5), event(6)]}),
                 &output,
             )
