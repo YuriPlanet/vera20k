@@ -284,6 +284,12 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
          `src/rules`",
     ),
     (
+        "rules/art_data.rs",
+        2,
+        "a process-unique serial per AnimType config layout, never hashed or saved, so a \
+         handle is never read against another layout",
+    ),
+    (
         "rules/ruleset.rs",
         2,
         "a process-unique serial per RuleSet, never hashed or saved",

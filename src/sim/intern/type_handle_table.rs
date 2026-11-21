@@ -21,7 +21,12 @@
 //! `StringInterner::warhead_type` and `StringInterner::weapon_type` read it. It answers exactly as the name
 //! path does: a `RuleSet`'s name indexes never change after it is built, and
 //! an id interned after the last build or cover, or a `RuleSet` other than
-//! the one it was built from, takes the name path. Debug builds compare every
+//! the one it was built from, takes the name path. Its AnimType column
+//! follows the bound set's ART registry the same way, by that registry's
+//! [`ArtRegistry::anim_configs_serial`](crate::rules::art_data::ArtRegistry::anim_configs_serial):
+//! an AnimType that gains a config after a build (a map's root bound at
+//! load) takes the name path until the next cover rebuilds the column.
+//! Debug builds compare every
 //! table answer with the name path
 //! ([`live_read_check_enabled`](crate::sim::touch_log::live_read_check_enabled)).
 //! A derived cache: never serialized or hashed; a load rebuilds it.
@@ -30,6 +35,7 @@
 //! - Part of sim/; depends on rules/ (one-way) and `sim::intern`. NEVER on
 //!   render/ui/audio/net.
 
+use crate::rules::art_data::AnimConfigHandle;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::{ProjectileHandle, RuleSet, TypeHandle, WarheadHandle, WeaponHandle};
@@ -92,6 +98,30 @@ pub(super) struct TypeHandleTable {
     /// [`RuleSet::serial`] of the set the handles came from; 0 while unbuilt,
     /// which no set has.
     rules_serial: u64,
+    /// The AnimType columns, kept apart: ART can gain configs after a build.
+    anims: AnimColumns,
+}
+
+/// Each id's AnimType runtime config in a set's ART registry, and that set's
+/// `[General] DropZoneAnim=` config. gamemd's anim holds its AnimTypeClass
+/// pointer; an anim here holds its type's name id, so these stand in for it.
+#[derive(Debug, Clone, Default)]
+struct AnimColumns {
+    /// Each id's config, as `rules.art().anim_config_handle(name)` answers.
+    /// Dense by `InternedId` index.
+    configs: Vec<Option<AnimConfigHandle>>,
+    /// `DropZoneAnim=`'s config, as `rules.art().anim_config_handle` answers
+    /// for the name; `None` for an unset key or a name with no config.
+    drop_zone: Option<AnimConfigHandle>,
+    /// [`anim_stamp`] of the set the handles came from; `(0, 0)` while
+    /// unbuilt, which no set has.
+    stamp: (u64, u64),
+}
+
+/// What the AnimType columns depend on: the set (for `DropZoneAnim=`) and its
+/// ART registry's handle layout.
+fn anim_stamp(rules: &RuleSet) -> (u64, u64) {
+    (rules.serial(), rules.art().anim_configs_serial())
 }
 
 impl TypeHandleTable {
@@ -109,12 +139,16 @@ impl TypeHandleTable {
     /// Whether `interner` holds ids this table could add from `rules`
     /// ([`Self::cover`]).
     pub(super) fn lags(&self, interner: &StringInterner, rules: &RuleSet) -> bool {
-        self.by_interned.len() < interner.len() && self.rules_serial == rules.serial()
+        (self.by_interned.len() < interner.len() && self.rules_serial == rules.serial())
+            || self.anims.lags(interner, rules)
     }
 
     /// Add the ids `interner` made since this table was built or last
-    /// covered, when `rules` is the set it was built from; else nothing.
+    /// covered. The object columns follow only the set they were built from;
+    /// the AnimType columns restart for whatever set and ART layout they are
+    /// covered for.
     pub(super) fn cover(&mut self, rules: &RuleSet, interner: &StringInterner) {
+        self.anims.cover(rules, interner);
         if self.rules_serial != rules.serial() {
             return;
         }
@@ -301,6 +335,53 @@ impl TypeHandleTable {
         }
     }
 
+    /// The AnimType config `id` names in `rules.art()`, as
+    /// `rules.art().anim_config_handle(interner.resolve(id))` answers: from
+    /// the table when its AnimType columns came from `rules` as it is now and
+    /// cover `id`, else by name.
+    #[inline]
+    pub(super) fn anim_config(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        rules: &RuleSet,
+    ) -> Option<AnimConfigHandle> {
+        match self.anims.configs.get(id.index() as usize) {
+            Some(&handle) if self.anims.stamp == anim_stamp(rules) => {
+                debug_assert!(
+                    !live_read_check_enabled()
+                        || handle == rules.art().anim_config_handle(interner.resolve(id)),
+                    "type table answers anim config {handle:?} for {id:?}, unlike its name"
+                );
+                handle
+            }
+            _ => rules.art().anim_config_handle(interner.resolve(id)),
+        }
+    }
+
+    /// `rules.general.drop_zone_anim`'s config, as
+    /// `rules.art().anim_config_handle` answers for the name, the same way.
+    #[inline]
+    pub(super) fn drop_zone_anim(&self, rules: &RuleSet) -> Option<AnimConfigHandle> {
+        let by_name = || {
+            rules
+                .general
+                .drop_zone_anim
+                .as_deref()
+                .and_then(|name| rules.art().anim_config_handle(name))
+        };
+        if self.anims.stamp == anim_stamp(rules) {
+            debug_assert!(
+                !live_read_check_enabled() || self.anims.drop_zone == by_name(),
+                "type table answers DropZoneAnim {:?}, unlike its name",
+                self.anims.drop_zone
+            );
+            self.anims.drop_zone
+        } else {
+            by_name()
+        }
+    }
+
     /// The handle the table holds for `id`, if it covers it.
     #[cfg(test)]
     fn handle_for(&self, id: InternedId) -> Option<TypeHandle> {
@@ -311,6 +392,35 @@ impl TypeHandleTable {
     #[cfg(test)]
     fn orphan_count(&self) -> usize {
         self.by_interned.iter().filter(|h| h.is_none()).count()
+    }
+}
+
+impl AnimColumns {
+    /// Whether [`Self::cover`] would change the columns for `rules`: they
+    /// came from another set or ART layout, or `interner` holds ids since.
+    fn lags(&self, interner: &StringInterner, rules: &RuleSet) -> bool {
+        self.stamp != anim_stamp(rules) || self.configs.len() < interner.len()
+    }
+
+    /// Answer for `rules` as it is now: start again when the columns came
+    /// from another set or ART layout, then add the ids `interner` made
+    /// since.
+    fn cover(&mut self, rules: &RuleSet, interner: &StringInterner) {
+        let art = rules.art();
+        let stamp = anim_stamp(rules);
+        if self.stamp != stamp {
+            self.configs.clear();
+            self.drop_zone = rules
+                .general
+                .drop_zone_anim
+                .as_deref()
+                .and_then(|name| art.anim_config_handle(name));
+            self.stamp = stamp;
+        }
+        for idx in self.configs.len() as u32..interner.len() as u32 {
+            let name = interner.resolve(InternedId::from_index(idx));
+            self.configs.push(art.anim_config_handle(name));
+        }
     }
 }
 

@@ -3384,3 +3384,75 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
         assert_eq!(sim.rng_state(), rng);
     }
 }
+
+/// An anim's type finds its ART config through the interner's handles as it
+/// does by name, in another case, and still finds one the map's
+/// `bind_scheduler_anim_assets` adds after the handles were resolved, which
+/// is also the `DropZoneAnim=` the name compare matches.
+#[test]
+fn anim_config_handles_follow_a_config_bound_after_the_resolve() {
+    let mut rules =
+        RuleSet::from_ini(&IniFile::from_str("[General]\nDropZoneAnim=late\n")).unwrap();
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n",
+    )));
+    let mut sim = crate::sim::world::Simulation::new();
+    let boom = sim.interner.intern("Boom");
+    let late = sim.interner.intern("Late");
+    sim.resolve_type_handles(&rules);
+    let by_name = |rules: &RuleSet, name| {
+        rules
+            .art()
+            .anim_runtime_config(name)
+            .map(std::ptr::from_ref)
+    };
+    let by_id = |sim: &crate::sim::world::Simulation, rules: &RuleSet, id| {
+        sim.interner
+            .anim_type_config(id, rules)
+            .map(std::ptr::from_ref)
+    };
+    assert_eq!(by_id(&sim, &rules, boom), by_name(&rules, "BOOM"));
+    assert!(by_id(&sim, &rules, boom).is_some());
+    assert_eq!(by_id(&sim, &rules, late), None);
+
+    // A theater root no AnimType holds gains an unread config at map load.
+    let root = crate::map::source::test_support::TestDirectory::new("late-anim-handle");
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_scheduler_anim_assets(&["LATE".into()], &assets, "TEM", "TEMPERATE");
+    for covered in [false, true] {
+        if covered {
+            sim.interner.cover_types(&rules);
+        }
+        assert!(by_id(&sim, &rules, late).is_some(), "covered: {covered}");
+        assert_eq!(by_id(&sim, &rules, late), by_name(&rules, "LATE"));
+        assert_eq!(by_id(&sim, &rules, boom), by_name(&rules, "BOOM"));
+        let handle = sim.interner.anim_type_config_handle(late, &rules).unwrap();
+        assert!(sim.interner.is_drop_zone_anim(handle, &rules));
+        let boom_handle = sim.interner.anim_type_config_handle(boom, &rules).unwrap();
+        assert!(!sim.interner.is_drop_zone_anim(boom_handle, &rules));
+    }
+}
+
+/// A new ART registry gives a name another slot; the handles resolved from
+/// the old one are not read against it.
+#[test]
+fn anim_config_handles_do_not_outlive_a_replaced_art_registry() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str("[General]\n")).unwrap();
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n",
+    )));
+    let mut sim = crate::sim::world::Simulation::new();
+    let boom = sim.interner.intern("BOOM");
+    sim.resolve_type_handles(&rules);
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[OTHER]\nRate=1\n[BOOM]\nRate=200\n",
+    )));
+    let config = sim
+        .interner
+        .anim_type_config(boom, &rules)
+        .expect("BOOM keeps a config");
+    assert!(std::ptr::eq(
+        config,
+        rules.art().anim_runtime_config("BOOM").unwrap()
+    ));
+}

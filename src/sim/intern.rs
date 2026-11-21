@@ -15,6 +15,7 @@ mod type_handle_table;
 use std::fmt;
 
 use self::type_handle_table::TypeHandleTable;
+use crate::rules::art_data::{AnimConfigHandle, AnimTypeRuntimeConfig};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::util::lookup_hash::LookupMap;
@@ -70,8 +71,8 @@ pub struct StringInterner {
     to_id: Synced<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
     to_str: Synced<Vec<String>>,
-    /// Derived: each id's object, projectile, warhead and weapon handles in the
-    /// bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
+    /// Derived: each id's object, projectile, warhead, weapon and AnimType
+    /// config handles in the bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
     /// serialized; a load binds again.
     types: Synced<TypeHandleTable>,
     /// [`Self::serial`]; never serialized.
@@ -108,8 +109,10 @@ impl StringInterner {
         self.types = TypeHandleTable::build(rules, self).into();
     }
 
-    /// Bind the strings interned since [`Self::bind_types`] as well, when
-    /// `rules` is the set it bound; nothing when none are new.
+    /// Bind the strings interned since [`Self::bind_types`] as well: the
+    /// object columns when `rules` is the set it bound, the AnimType columns
+    /// for whatever set and ART layout `rules` holds. Nothing when none are
+    /// new and the AnimType columns are current.
     pub fn cover_types(&mut self, rules: &RuleSet) {
         if !self.types.lags(self, rules) {
             return;
@@ -153,6 +156,39 @@ impl StringInterner {
         rules: &'r RuleSet,
     ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
         self.types.weapon(self, id, rules)
+    }
+
+    /// The handle of the AnimType runtime config `id` names in
+    /// `rules.art()`, as `rules.art().anim_config_handle(self.resolve(id))`
+    /// answers, through the bound handles where they apply.
+    #[inline]
+    pub fn anim_type_config_handle(
+        &self,
+        id: InternedId,
+        rules: &RuleSet,
+    ) -> Option<AnimConfigHandle> {
+        self.types.anim_config(self, id, rules)
+    }
+
+    /// The AnimType runtime config `id` names, as
+    /// `rules.art().anim_runtime_config(self.resolve(id))` answers, the same
+    /// way.
+    #[inline]
+    pub fn anim_type_config<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r AnimTypeRuntimeConfig> {
+        self.anim_type_config_handle(id, rules)
+            .map(|handle| rules.art().anim_config(handle))
+    }
+
+    /// Whether the AnimType config `handle` is `[General] DropZoneAnim=`'s:
+    /// as an ASCII case-insensitive compare of the two names answers for a
+    /// type that has a config, the same way.
+    #[inline]
+    pub fn is_drop_zone_anim(&self, handle: AnimConfigHandle, rules: &RuleSet) -> bool {
+        self.types.drop_zone_anim(rules) == Some(handle)
     }
 
     /// The object type `id` names in `rules`, as `rules.object(name)`
