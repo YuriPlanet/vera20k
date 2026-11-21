@@ -5,7 +5,8 @@
 //! covers `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
 //! `get_many`, `set`, `modify`, `unmodify`, `var_get`, `var_set`, `find`,
 //! `action`, the four `trigger_*` imports, `rules_get`, `rules_set` and
-//! `order`, calls `on_rules`, delivers `on_events` batches ([`triggers`]) and
+//! `order`, calls `on_rules`, delivers `on_events` batches ([`triggers`]),
+//! asks `on_decide` for decisions ([`decide`]) and
 //! reads the `vera.vars`, `vera.actions` and `vera.delivery` sections
 //! ([`sections`]); the other `vera:sim` imports, the client world and the
 //! browser runtime come later.
@@ -40,6 +41,10 @@ pub use browser::SimModule;
 pub mod triggers;
 
 pub use triggers::{EventRecord, TriggerDef};
+
+pub mod decide;
+
+pub use decide::DecideRecord;
 
 /// The import module name for API 1.0 (`vera:sim@<major>.<minor>`).
 pub const SIM_IMPORT_MODULE: &str = "vera:sim@1.0";
@@ -658,6 +663,10 @@ pub enum Export {
     Rules,
     /// `on_events(ptr, count)`, called through `SimModule::deliver`.
     Events,
+    /// `on_decide(ptr, count)`, called through `SimModule::decide`. Only the
+    /// imports appendix 1.1 marks `decide` are available; a write stops
+    /// the module.
+    Decide,
 }
 
 impl Export {
@@ -671,6 +680,7 @@ impl Export {
             Self::Frame => "on_frame",
             Self::Rules => "on_rules",
             Self::Events => "on_events",
+            Self::Decide => "on_decide",
         }
     }
 }
@@ -713,3 +723,6 @@ mod sdk_props_tests;
 
 #[cfg(test)]
 mod trigger_tests;
+
+#[cfg(test)]
+mod decide_tests;

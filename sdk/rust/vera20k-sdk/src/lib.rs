@@ -15,11 +15,13 @@
 //! ```
 #![no_std]
 
+pub mod decide;
 mod props;
 pub mod sys;
 pub mod triggers;
 pub mod vars;
 
+pub use decide::{DecideRecord, DefeatDecision, ProductionQueuedDecision, TakeDamageDecision};
 pub use triggers::{
     ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
     Target, TimerEvent, Trigger, TriggerRef, actions_section, actions_section_len,
@@ -28,10 +30,11 @@ pub use triggers::{
 pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, ActionDef, Category, Cell, Command, Event, EventRecord, FIXED_ONE, Find, FireEvent,
-        Global, House, KilledEvent, Modifier, ModifierOp, NameKind, Op, Order, Outcome, Prop, Ref,
-        Rules, Status, TakeDamageEvent, Target, Techno, TimerEvent, Trigger, TriggerRef, TypeRef,
-        Var, Waypoint, fixed, frame, log, lookup, random,
+        Action, ActionDef, Category, Cell, Command, DecideRecord, DefeatDecision, Event,
+        EventRecord, FIXED_ONE, Find, FireEvent, Global, House, KilledEvent, Modifier, ModifierOp,
+        NameKind, Op, Order, Outcome, ProductionQueuedDecision, Prop, Ref, Rules, Status,
+        TakeDamageDecision, TakeDamageEvent, Target, Techno, TimerEvent, Trigger, TriggerRef,
+        TypeRef, Var, Waypoint, fixed, frame, log, lookup, random,
     };
 }
 

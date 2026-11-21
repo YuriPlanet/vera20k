@@ -236,6 +236,12 @@ pub(crate) fn enqueue_selected<'k>(
         );
         return true;
     }
+    // VERA: a Wasm module `ProductionQueued` decision may refuse a PRODUCE
+    // before StartProduction (RFC 0001 6f, `sim::ext_modules::decide`);
+    // StartNext's reissue (`force`) is already queued.
+    if !force && !sim.module_allows_production(rules, owner_id, obj) {
+        return false;
+    }
     let holder = FactoryHolder::House(owner_id, category);
     // Phobos `FactoryClass_QueueProduction_ForceCheckBuilding 0x4C9C7B`:
     // with the queue enabled a building PRODUCE appends behind the held

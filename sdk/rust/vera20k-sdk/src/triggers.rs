@@ -35,6 +35,10 @@ impl Event {
     pub const KILLED: i32 = 1004;
     pub const FIRE: i32 = 1005;
     pub const TIMER: i32 = 1023;
+    /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`].
+    pub const PRODUCTION_QUEUED: i32 = 1032;
+    /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`].
+    pub const DEFEAT: i32 = 1033;
 }
 
 /// What a trigger action acts on (`ActionTarget`, appendix 5.1).
@@ -325,6 +329,15 @@ impl Trigger {
     /// module phase.
     pub fn enqueue(self, key: i32) -> Self {
         self.immediate(ActionDef::module(key))
+    }
+
+    /// Makes this a decision trigger (RFC 6f) whose requests reach the
+    /// [`crate::on_decide!`] handler for `key`, and finalizes it as
+    /// [`Trigger::done`] does. Its event must have a decision form; such a
+    /// trigger takes no actions.
+    pub fn decide_sync(mut self, key: i32) -> Result<TriggerRef> {
+        self.header.decide_key = key;
+        self.done()
     }
 
     /// Creates the trigger, then binds it. A builder that overflowed creates

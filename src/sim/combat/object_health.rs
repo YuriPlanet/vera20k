@@ -192,6 +192,12 @@ pub(super) trait ObjectHealthHost {
     /// stock damage events. Wasm module `TakeDamage` triggers (RFC 0001
     /// appendix 4.3) are raised here; gamemd has no such call.
     fn committed(&mut self, _damage: i32) {}
+    /// VERA: the final positive `damage` before Strength is written; a Wasm
+    /// module `TakeDamage` decision (RFC 0001 6f) may replace it. gamemd has
+    /// no such call.
+    fn decide_damage(&mut self, damage: i32) -> i32 {
+        damage
+    }
     fn invoke(&mut self, callback: HealthCallback);
 }
 
@@ -224,6 +230,15 @@ pub(super) fn commit(
     if *packet > 0 && host.culls() {
         *packet = previous;
         host.write_damage(*packet);
+    }
+    // VERA: Wasm module `TakeDamage` decision, after the cull and before
+    // the sign dispatch (5F546A); see `sim::ext_modules::decide`.
+    if *packet > 0 {
+        let decided = host.decide_damage(*packet);
+        if decided != *packet {
+            *packet = decided;
+            host.write_damage(*packet);
+        }
     }
     if *packet == 0 {
         return DamageState::Unaffected;

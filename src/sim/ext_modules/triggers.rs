@@ -22,32 +22,37 @@
 //!   `Fire` trigger binds to its shooter or the shooter's type.
 //! - `Killed` carries no lethal warhead (`id` −1): `record_the_kill` is
 //!   not told it.
-//! - Chain depth and per-frame firing caps (open question 17) are not needed
-//!   yet: no action a trigger may run here raises an event.
-//! - Immediate actions are `AddMoney` and `SetVar` on Red Alert 2 variables;
-//!   other kinds make `trigger_create` answer `Unsupported`.
+//! - No chain triggers (open question 17): while a module trigger runs its
+//!   immediate actions, the events they raise (a `Kill` raising `Killed`)
+//!   reach no module trigger.
+//! - Immediate actions are the kinds [`super::run_action`] implements, run
+//!   through it with the trigger house; other kinds make `trigger_create`
+//!   answer `Unsupported`. An action's `text` is not kept with the trigger,
+//!   so text actions (`Log`, stock text actions) get an empty string.
 //! - A trigger mixing `Timer` with object events answers `Unsupported`.
 //! - The "flag" an event site checks is a per-kind test, then a map lookup
 //!   by subject, not a side column in entity storage (RFC 15.1, item 1).
 
+use vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS;
 use vera20k_wasm_ext::triggers::{
     ACTION_MODULE, ACTION_SET_VAR, ActionDef, ActionTarget, EVENT_FIRE, EVENT_KILLED,
     EVENT_TAKE_DAMAGE, EVENT_TIMER, EventDef, FLAG_STARTS_DISABLED, FilterClause, FilterSubject,
     VarTarget,
 };
 use vera20k_wasm_ext::{
-    EventRecord, Fault, Invalid, NAME_TECHNO_TYPE, SimHost, SimModule, Status, TriggerDef,
+    EventRecord, Fault, Invalid, NAME_TECHNO_TYPE, SimModule, Status, TriggerDef, VarScope,
     property_id, property_name,
 };
 
 use super::{
-    ACTION_ADD_MONEY, FRAME_BUDGET, GLOBAL_VARS, Host, LOCAL_VARS, ModuleSource, Ref, cell_ref,
-    decode_ref, house_ref,
+    ActionContext, FRAME_BUDGET, GLOBAL_VARS, Host, LOCAL_VARS, ModuleSource, Ref, cell_ref,
+    decode_ref, house_ref, run_action, vars::VarStore,
 };
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::trigger_runtime::ModuleTrigger;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, Simulation};
 
 /// The event kinds this engine raises for module triggers.
 pub const RAISED_EVENTS: [i32; 4] = [EVENT_TAKE_DAMAGE, EVENT_KILLED, EVENT_FIRE, EVENT_TIMER];
@@ -89,19 +94,34 @@ impl ModuleEvent {
     }
 }
 
-/// A variable ID a trigger may read or write: Red Alert 2 variables have
-/// global scope only. `vera.vars` IDs (from 1000) are not kept yet.
-fn check_variable(var: i32, target: VarTarget) -> Result<Option<Status>, Invalid> {
-    let stock = LOCAL_VARS.contains(&var) || GLOBAL_VARS.contains(&var);
-    match (stock, target) {
-        (true, VarTarget::Global) => Ok(None),
-        (true, _) => Err(Invalid(format!("variable {var} has global scope"))),
-        (false, _) if var >= 1000 => Ok(Some(Status::Unsupported)),
-        (false, _) => Err(Invalid(format!("unknown variable {var}"))),
+/// A variable a trigger may read or write, with the scope its holder must
+/// have: Red Alert 2 variables are global, `vera.vars` ones (from 1000) have
+/// their declared scope.
+fn variable_scope(vars: &VarStore, var: i32) -> Result<VarScope, Invalid> {
+    if LOCAL_VARS.contains(&var) || GLOBAL_VARS.contains(&var) {
+        return Ok(VarScope::Global);
+    }
+    vars.scope(var)
+        .ok_or_else(|| Invalid(format!("unknown variable {var}")))
+}
+
+/// A clause's variable target must name a holder of the variable's scope.
+fn check_clause_variable(vars: &VarStore, var: i32, target: VarTarget) -> Result<(), Invalid> {
+    let scope = variable_scope(vars, var)?;
+    let fits = match target {
+        VarTarget::Global => scope == VarScope::Global,
+        VarTarget::Subject | VarTarget::Other => scope == VarScope::Object,
+        VarTarget::House => scope == VarScope::House,
+    };
+    match fits {
+        true => Ok(()),
+        false => Err(Invalid(format!(
+            "variable {var} has {scope:?} scope, not {target:?}"
+        ))),
     }
 }
 
-impl Host<'_> {
+impl Host<'_, '_> {
     /// A house reference's array index; `None` for one past the houses.
     fn house_index(&self, reference: i64) -> Result<Option<u32>, Invalid> {
         match decode_ref(reference)? {
@@ -140,9 +160,8 @@ impl Host<'_> {
     /// `trigger_create`: checks every event, clause and action, then adds
     /// the trigger to the trigger runtime.
     pub(super) fn create_trigger(&mut self, def: &TriggerDef) -> Result<(i64, Status), Invalid> {
-        // Decision handlers come with the decidable events (open question 10).
-        if def.decide_key != -1 {
-            return Ok((0, Status::Unsupported));
+        if let Some(status) = super::decide::check_decide_key(def)? {
+            return Ok((0, status));
         }
         let house = match def.house {
             0 => None,
@@ -152,7 +171,7 @@ impl Host<'_> {
             },
         };
         for event in &def.events {
-            if let Some(status) = check_event(event)? {
+            if let Some(status) = check_event(&self.sim.ext_modules.vars, event)? {
                 return Ok((0, status));
             }
         }
@@ -176,6 +195,7 @@ impl Host<'_> {
             created: self.sim.session.binary_frame(),
             events: def.events.clone(),
             actions: def.actions.clone(),
+            decide_key: def.decide_key,
         };
         self.sim
             .trigger_runtime
@@ -187,27 +207,26 @@ impl Host<'_> {
     /// What `trigger_create` accepts of an action (appendix 5.1, 5.3).
     fn check_action(&self, action: &ActionDef) -> Result<Option<Status>, Invalid> {
         let params = &action.params;
+        // SetVar's target must fit the variable's scope; `run_action` checks
+        // the other kinds' operands when the trigger fires.
         match action.kind {
             ACTION_MODULE => Ok(None),
-            ACTION_SET_VAR => check_variable(params.id, VarTarget::Global),
-            ACTION_ADD_MONEY => {
-                if action.target != ActionTarget::House {
-                    return Err(Invalid(format!(
-                        "AddMoney targets a house, not {:?}",
-                        action.target
-                    )));
+            // Object scope writes the target object, house scope the house
+            // target, global scope ignores the target (appendix 5.3).
+            ACTION_SET_VAR => match variable_scope(&self.sim.ext_modules.vars, params.id)? {
+                VarScope::Global => Ok(None),
+                VarScope::House if action.target == ActionTarget::House => Ok(None),
+                VarScope::Object
+                    if !matches!(action.target, ActionTarget::House | ActionTarget::Cell) =>
+                {
+                    Ok(None)
                 }
-                if i32::try_from(params.value).is_err() {
-                    return Err(Invalid(format!(
-                        "AddMoney amount {} is out of range",
-                        params.value
-                    )));
-                }
-                match params.house {
-                    0 => Ok(None),
-                    house => Ok(self.house_index(house)?.is_none().then_some(Status::Gone)),
-                }
-            }
+                scope => Err(Invalid(format!(
+                    "SetVar of {scope:?} variable {} targets {:?}",
+                    params.id, action.target
+                ))),
+            },
+            kind if super::actions::has_action(kind, self.rules) => Ok(None),
             _ => Ok(Some(Status::Unsupported)),
         }
     }
@@ -321,59 +340,74 @@ impl Host<'_> {
 }
 
 /// What `trigger_create` accepts of an event: a kind this engine raises, a
-/// positive `Timer` interval and clauses on Red Alert 2 variables.
-fn check_event(event: &EventDef) -> Result<Option<Status>, Invalid> {
-    if !RAISED_EVENTS.contains(&event.kind) {
+/// positive `Timer` interval and variable clauses whose target fits the
+/// variable's scope.
+fn check_event(vars: &VarStore, event: &EventDef) -> Result<Option<Status>, Invalid> {
+    if !RAISED_EVENTS.contains(&event.kind) && !DECISION_ONLY_EVENTS.contains(&event.kind) {
         return Ok(Some(Status::Unsupported));
     }
     if event.kind == EVENT_TIMER && event.interval < 1 {
         return Err(Invalid(format!("Timer interval {}", event.interval)));
     }
     for clause in &event.clauses {
-        if let FilterSubject::Var { var, target } = clause.subject
-            && let Some(status) = check_variable(var, target)?
-        {
-            return Ok(Some(status));
+        if let FilterSubject::Var { var, target } = clause.subject {
+            check_clause_variable(vars, var, target)?;
         }
     }
     Ok(None)
 }
 
 impl Simulation {
-    /// Runs `f` with the host module `source` sees. Inside a module call its
-    /// slot is set aside, and a placeholder stream serves: clause reads and
-    /// trigger actions draw nothing.
+    /// Runs `f` with the host module `source` sees, for the reads of an
+    /// event site (clauses, the record's position):
+    /// [`Simulation::with_ext_module`] on its slot. Inside a module call the
+    /// slots are set aside, and a placeholder stream serves: reads draw
+    /// nothing. Reads reach no lent owner, so no frame effects are lent.
     fn with_module_host<R>(
         &mut self,
         rules: &RuleSet,
         source: ModuleSource,
-        f: impl FnOnce(&mut Host<'_>) -> R,
+        f: impl FnOnce(&mut Host<'_, '_>) -> R,
     ) -> R {
-        let mut slots = std::mem::take(&mut self.ext_modules.slots);
-        let result = match slots.iter_mut().find(|slot| slot.source == source) {
-            Some(slot) => f(&mut Host {
-                sim: self,
-                rules,
-                rng: &mut slot.rng,
-                source,
-            }),
+        let overlay_registry = Some(rules.overlay_registry());
+        let mut effects = FrameEffects::empty();
+        match self
+            .ext_modules
+            .slots
+            .iter()
+            .position(|s| s.source == source)
+        {
+            Some(index) => {
+                self.with_ext_module(rules, overlay_registry, &mut effects, index, |_, host| {
+                    f(host)
+                })
+            }
             None => f(&mut Host {
                 sim: self,
                 rules,
+                overlay_registry,
+                frame_effects: &mut effects,
                 rng: &mut SimRng::new(0),
                 source,
                 orders: &mut Vec::new(),
                 rules_ini: None,
             }),
-        };
-        self.ext_modules.slots = slots;
-        result
+        }
     }
 
     /// Offers an object event to the triggers bound to its subject or the
     /// subject's TechnoType. Call it only when
     /// `trigger_runtime.module_listens(event.kind)`.
-    pub(crate) fn raise_module_event(&mut self, rules: &RuleSet, event: ModuleEvent) {
+    pub(crate) fn raise_module_event(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        event: ModuleEvent,
+    ) {
+        // No chain triggers (module residuals).
+        if self.ext_modules.firing {
+            return;
+        }
         let triggers = self.trigger_runtime.module_triggers();
         let type_id = if triggers.has_type_bindings() {
             self.entities()
@@ -389,13 +423,17 @@ impl Simulation {
                 .module_triggers()
                 .bound(event.kind, event.subject, type_id);
         for handle in handles {
-            self.offer_module_event(rules, handle, event.subject, &event);
+            self.offer_module_event(rules, frame_effects, handle, event.subject, &event);
         }
     }
 
     /// `Timer` triggers whose period ends this frame, from the start of the
     /// module phase. A period counts from the trigger's creation frame.
-    pub(super) fn raise_module_timers(&mut self, rules: &RuleSet) {
+    pub(super) fn raise_module_timers(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
         if !self.trigger_runtime.module_listens(EVENT_TIMER) {
             return;
         }
@@ -417,7 +455,7 @@ impl Simulation {
                 value: i64::from(frame) - i64::from(interval),
                 ..ModuleEvent::new(EVENT_TIMER, 0)
             };
-            self.offer_module_event(rules, handle, 0, &event);
+            self.offer_module_event(rules, frame_effects, handle, 0, &event);
         }
     }
 
@@ -427,6 +465,7 @@ impl Simulation {
     fn offer_module_event(
         &mut self,
         rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
         handle: u64,
         holder: u64,
         event: &ModuleEvent,
@@ -464,13 +503,13 @@ impl Simulation {
                 .module_triggers_mut()
                 .latch(handle, holder, seen)
         {
-            self.fire_module_trigger(rules, handle, holder, event, house);
+            self.fire_module_trigger(rules, frame_effects, handle, holder, event, house);
         }
     }
 
     /// The trigger house when the definition names none: the subject's
     /// current owner, else the Neutral house (RFC 6a).
-    fn module_trigger_house(&self, rules: &RuleSet, subject: u64) -> Option<u32> {
+    pub(super) fn module_trigger_house(&self, rules: &RuleSet, subject: u64) -> Option<u32> {
         let owner = self.entities().get(subject).map(|entity| entity.owner());
         let neutral = || {
             rules
@@ -485,7 +524,7 @@ impl Simulation {
 
     /// Whether every clause holds, each read as the trigger's module would
     /// read it with `get` or `var_get`. A reading that is not `Ok` fails.
-    fn module_clauses_hold(
+    pub(super) fn module_clauses_hold(
         &mut self,
         rules: &RuleSet,
         source: ModuleSource,
@@ -503,7 +542,15 @@ impl Simulation {
                     FilterSubject::Subject(prop) => host.read(event.subject as i64, prop),
                     FilterSubject::Other(prop) => host.read(event.other as i64, prop),
                     FilterSubject::House(prop) => host.read(house, prop),
-                    FilterSubject::Var { var, .. } => host.read_var(0, var),
+                    FilterSubject::Var { var, target } => {
+                        let scope = match target {
+                            VarTarget::Global => 0,
+                            VarTarget::Subject => event.subject as i64,
+                            VarTarget::Other => event.other as i64,
+                            VarTarget::House => house,
+                        };
+                        host.read_var(scope, var)
+                    }
                 };
                 matches!(reading, Ok((value, Status::Ok)) if clause.holds(value))
             })
@@ -511,11 +558,13 @@ impl Simulation {
     }
 
     /// Runs a firing trigger's actions in order: module actions queue a
-    /// record for the module phase, the others run now through the host's
-    /// own `var_set` and `action` (RFC section 5, "Action timing").
+    /// record for the module phase, the others run now through
+    /// [`run_action`] with the trigger house (RFC section 5, "Action
+    /// timing").
     fn fire_module_trigger(
         &mut self,
         rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
         handle: u64,
         holder: u64,
         event: &ModuleEvent,
@@ -525,38 +574,9 @@ impl Simulation {
             return;
         };
         let (source, actions) = (trigger.source, trigger.actions.clone());
-        let house = house.map_or(0, |index| house_ref(index as usize));
-        let [x, y, z] = if event.at_subject {
-            self.with_module_host(rules, source, |host| {
-                ["X", "Y", "Z"].map(|name| {
-                    match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
-                        Some(Ok((value, Status::Ok))) => i32::try_from(value).unwrap_or(-1),
-                        _ => -1,
-                    }
-                })
-            })
-        } else {
-            [-1; 3]
-        };
-        let record = EventRecord {
-            key: 0,
-            kind: event.kind,
-            trigger: handle as i64,
-            holder: holder as i64,
-            subject: event.subject as i64,
-            other: event.other as i64,
-            house,
-            projectile: event.projectile as i64,
-            modifier: 0,
-            cell: event.cell.map_or(0, |(x, y)| cell_ref(x, y)),
-            value: event.value,
-            value2: -1,
-            id: event.id,
-            frame: self.session.binary_frame() as i32,
-            x,
-            y,
-            z,
-        };
+        let trigger_house =
+            house.and_then(|index| self.houses.order().get(index as usize).copied());
+        let record = self.module_event_record(rules, source, handle, holder, event, house);
         for action in actions {
             if action.kind == ACTION_MODULE {
                 self.trigger_runtime.module_triggers_mut().enqueue(
@@ -571,9 +591,6 @@ impl Simulation {
             // In a trigger, house 0 is the trigger house and the event
             // supplies the other object (appendix 5.1).
             let mut params = action.params;
-            if params.house == 0 {
-                params.house = house;
-            }
             params.other = record.other;
             let target = match action.target {
                 ActionTarget::Subject => record.subject,
@@ -583,10 +600,16 @@ impl Simulation {
                 ActionTarget::House => params.house,
                 ActionTarget::Cell => params.cell,
             };
-            let result = self.with_module_host(rules, source, |host| match action.kind {
-                ACTION_SET_VAR => host.var_set(0, params.id, params.value).map(|s| (0, s)),
-                kind => host.action(kind, target, &params),
-            });
+            let context = ActionContext {
+                rules,
+                overlay_registry: Some(rules.overlay_registry()),
+                frame_effects: &mut *frame_effects,
+                text: "",
+                trigger_house,
+            };
+            self.ext_modules.firing = true;
+            let result = run_action(self, action.kind, target, &params, context);
+            self.ext_modules.firing = false;
             // `trigger_create` checked the action; what is left is a data
             // error at execution, logged and skipped (RFC 6b).
             match result {
@@ -605,6 +628,52 @@ impl Simulation {
         }
     }
 
+    /// The `EventRecord` of `event` for trigger `handle` on `holder`, with
+    /// key 0 and the house at array index `house` (0 for none): what a
+    /// firing queues for `on_events`, and what a decision request carries.
+    pub(super) fn module_event_record(
+        &mut self,
+        rules: &RuleSet,
+        source: ModuleSource,
+        handle: u64,
+        holder: u64,
+        event: &ModuleEvent,
+        house: Option<u32>,
+    ) -> EventRecord {
+        let house = house.map_or(0, |index| house_ref(index as usize));
+        let [x, y, z] = if event.at_subject {
+            self.with_module_host(rules, source, |host| {
+                ["X", "Y", "Z"].map(|name| {
+                    match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
+                        Some(Ok((value, Status::Ok))) => i32::try_from(value).unwrap_or(-1),
+                        _ => -1,
+                    }
+                })
+            })
+        } else {
+            [-1; 3]
+        };
+        EventRecord {
+            key: 0,
+            kind: event.kind,
+            trigger: handle as i64,
+            holder: holder as i64,
+            subject: event.subject as i64,
+            other: event.other as i64,
+            house,
+            projectile: event.projectile as i64,
+            modifier: 0,
+            cell: event.cell.map_or(0, |(x, y)| cell_ref(x, y)),
+            value: event.value,
+            value2: -1,
+            id: event.id,
+            frame: self.session.binary_frame() as i32,
+            x,
+            y,
+            z,
+        }
+    }
+
     /// The module phase's delivery for module `index`: its queued records go
     /// to `on_events` in batches the delivery area holds, while the frame
     /// budget lasts and up to [`MAX_RECORDS_PER_FRAME`]; the rest wait, in
@@ -614,6 +683,8 @@ impl Simulation {
     pub(super) fn deliver_ext_module_events(
         &mut self,
         rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
         index: usize,
     ) -> Result<(), Fault> {
         let Some(slot) = self.ext_modules.slots.get(index) else {
@@ -637,9 +708,13 @@ impl Simulation {
                 break;
             }
             delivered += batch.len();
-            used += self.with_ext_module(rules, index, |module: &mut SimModule, host| {
-                module.deliver(&batch, FRAME_BUDGET, host)
-            })?;
+            used += self.with_ext_module(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+                |module: &mut SimModule, host| module.deliver(&batch, FRAME_BUDGET, host),
+            )?;
         }
         let backlog = self.trigger_runtime.module_triggers().queued(source);
         if backlog > MAX_RECORDS_PER_FRAME * MAX_BACKLOG_FRAMES {

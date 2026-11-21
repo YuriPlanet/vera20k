@@ -186,6 +186,20 @@ pub struct EventRecord {
     pub reserved: i32,
 }
 
+/// `DecideRecord`, 152 bytes, read and written in place in `on_decide`.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct DecideRecord {
+    pub event: EventRecord,
+    pub native: i64,
+    pub previous: i64,
+    pub result: i64,
+    pub handled: i32,
+    pub area: i32,
+    pub area_cap: i32,
+    pub previous_len: i32,
+}
+
 const _: () = {
     assert!(size_of::<ActionParams>() == 72);
     assert!(size_of::<Clause>() == 16);
@@ -195,4 +209,5 @@ const _: () = {
     assert!(size_of::<EventDef>() == 32);
     assert!(size_of::<ActionDef>() == 80);
     assert!(size_of::<EventRecord>() == 112);
+    assert!(size_of::<DecideRecord>() == 152);
 };

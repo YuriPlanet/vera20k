@@ -16,6 +16,7 @@ use wasmtime::{
     StoreLimitsBuilder, Trap, TypedFunc, Val, ValType,
 };
 
+use crate::decide::DecideRecord;
 use crate::sections::{Delivery, Sections};
 use crate::triggers::{NAME_MODULE_ACTION, TriggerDef};
 use crate::{
@@ -95,6 +96,7 @@ pub struct SimModule {
     memory: Option<Memory>,
     exports: [Option<TypedFunc<(), ()>>; 4],
     on_events: Option<TypedFunc<(i32, i32), ()>>,
+    on_decide: Option<TypedFunc<(i32, i32), ()>>,
     /// `vera.delivery`, checked against memory at load.
     delivery: Option<Delivery>,
     /// Every mutable global, in global index order (exported at load time).
@@ -143,18 +145,23 @@ impl SimModule {
         for (slot, export) in exports.iter_mut().zip(Export::ALL) {
             *slot = typed_export(&instance, &mut store, export)?;
         }
-        let on_events = match instance.get_func(&mut store, Export::Events.name()) {
-            None => None,
-            Some(func) => Some(func.typed::<(i32, i32), ()>(&store).map_err(|_| {
-                LoadError::Invalid("export on_events must have signature (i32, i32) -> ()".into())
-            })?),
-        };
+        let on_events = records_export(&instance, &mut store, Export::Events)?;
+        let on_decide = records_export(&instance, &mut store, Export::Decide)?;
         check_delivery(
             delivery,
-            on_events.is_some(),
+            on_events.is_some() || on_decide.is_some(),
             memory.map_or(0, |m| m.data_size(&store)),
         )
         .map_err(LoadError::Invalid)?;
+        // `on_decide` reads one `DecideRecord` in place.
+        if on_decide.is_some()
+            && delivery.is_some_and(|area| (area.bytes as usize) < DecideRecord::SIZE)
+        {
+            return Err(LoadError::Invalid(format!(
+                "exports on_decide with a vera.delivery area smaller than one {}-byte DecideRecord",
+                DecideRecord::SIZE
+            )));
+        }
         let globals = mutable_globals
             .iter()
             .map(|index| {
@@ -169,6 +176,7 @@ impl SimModule {
             memory,
             exports,
             on_events,
+            on_decide,
             delivery,
             globals,
             global_bits: Vec::new(),
@@ -282,6 +290,7 @@ impl SimModule {
     pub fn has_export(&self, export: Export) -> bool {
         match export {
             Export::Events => self.on_events.is_some(),
+            Export::Decide => self.on_decide.is_some(),
             _ => self
                 .exports
                 .get(export as usize)
@@ -346,6 +355,39 @@ impl SimModule {
         self.run(Export::Events, budget, host, |store| {
             func.call(store, (ptr, count))
         })
+    }
+
+    /// Writes `record` into the delivery area and calls `on_decide(ptr, 1)`
+    /// with `budget` operations (RFC 6f). Returns the handler's answer
+    /// ([`DecideRecord::answer`]) and the operations used. Without the
+    /// export no call is made and the answer is `None`. During the call a
+    /// write import stops the module.
+    pub fn decide(
+        &mut self,
+        record: &DecideRecord,
+        budget: u64,
+        host: &mut dyn SimHost,
+    ) -> Result<(Option<i64>, u64), Fault> {
+        let (Some(func), Some(area), Some(memory)) =
+            (self.on_decide.clone(), self.delivery, self.memory)
+        else {
+            return Ok((None, 0));
+        };
+        let offset = area.offset as usize;
+        // Load checked the area holds a record inside memory, which never
+        // shrinks.
+        memory
+            .write(&mut self.store, offset, &record.to_bytes())
+            .map_err(|e| Fault::Trap(format!("delivery area: {e}")))?;
+        let ptr = area.offset as i32;
+        let used = self.run(Export::Decide, budget, host, |store| {
+            func.call(store, (ptr, 1))
+        })?;
+        let mut bytes = [0u8; DecideRecord::SIZE];
+        memory
+            .read(&self.store, offset, &mut bytes)
+            .map_err(|e| Fault::Trap(format!("delivery area: {e}")))?;
+        Ok((DecideRecord::answer(&bytes), used))
     }
 
     /// Runs one export call with `host` and `budget`.
@@ -479,6 +521,26 @@ fn check_delivery(
         ));
     }
     Ok(())
+}
+
+/// An `(ptr, count)` export (`on_events`, `on_decide`), if the module has
+/// it.
+fn records_export(
+    instance: &Instance,
+    store: &mut Store<Ctx>,
+    export: Export,
+) -> Result<Option<TypedFunc<(i32, i32), ()>>, LoadError> {
+    let Some(func) = instance.get_func(&mut *store, export.name()) else {
+        return Ok(None);
+    };
+    func.typed::<(i32, i32), ()>(&*store)
+        .map(Some)
+        .map_err(|_| {
+            LoadError::Invalid(format!(
+                "export {} must have signature (i32, i32) -> ()",
+                export.name()
+            ))
+        })
 }
 
 fn typed_export(
@@ -775,6 +837,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          prop: i32,
          value: i64|
          -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "set")?;
             if property_name(prop).is_none() {
                 return Err(fail(
                     &mut caller,
@@ -798,6 +861,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          group: i32,
          out: i32|
          -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "modify")?;
             if property_name(prop).is_none() || !(0..=2).contains(&op) {
                 return Err(fail(
                     &mut caller,
@@ -817,6 +881,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "unmodify",
         |mut caller: Caller<'_, Ctx>, modifier: i64| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "unmodify")?;
             let result = enter(&mut caller, 0)?.unmodify(modifier);
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
         },
@@ -847,6 +912,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "var_set",
         |mut caller: Caller<'_, Ctx>, scope: i64, var: i32, value: i64| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "var_set")?;
             let result = enter(&mut caller, 0)?.var_set(scope, var, value);
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
         },
@@ -861,6 +927,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          len: i32,
          out: i32|
          -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "action")?;
             let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
             let params = ActionParams::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
             let text = match params.text_len {
@@ -883,6 +950,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "trigger_create",
         |mut caller: Caller<'_, Ctx>, ptr: i32, len: i32, out: i32| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "trigger_create")?;
             let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
             check_buffer(&mut caller, out, 1, 8).map_err(|e| fail(&mut caller, e))?;
             let (handle, status) = if in_init(&caller) {
@@ -902,6 +970,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "trigger_remove",
         |mut caller: Caller<'_, Ctx>, trigger: i64| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "trigger_remove")?;
             if in_init(&caller) {
                 return Ok(Status::Unsupported as i32);
             }
@@ -913,6 +982,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "trigger_bind",
         |mut caller: Caller<'_, Ctx>, trigger: i64, reference: i64| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "trigger_bind")?;
             if in_init(&caller) {
                 return Ok(Status::Unsupported as i32);
             }
@@ -924,6 +994,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "trigger_unbind",
         |mut caller: Caller<'_, Ctx>, trigger: i64, reference: i64| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "trigger_unbind")?;
             if in_init(&caller) {
                 return Ok(Status::Unsupported as i32);
             }
@@ -986,6 +1057,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          val: i32,
          val_len: i32|
          -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "rules_set")?;
             let checked = (|| {
                 Ok((
                     read_str(&mut caller, sec, sec_len)?,
@@ -1003,6 +1075,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "order",
         |mut caller: Caller<'_, Ctx>, house: i64, ptr: i32, len: i32| -> wasmtime::Result<i32> {
+            deny_in_decide(&mut caller, "order")?;
             let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
             let order = Order::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
             // Charged per order and per unit entry (RFC 6g).
@@ -1019,6 +1092,18 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
 fn read_str(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> Result<String, Invalid> {
     String::from_utf8(read_bytes(caller, ptr, len)?)
         .map_err(|_| Invalid(format!("text at {ptr}+{len} is not UTF-8")))
+}
+
+/// Write imports are unavailable in `on_decide` (appendix 1.1, "decide"):
+/// calling one is an invalid call, which stops the module.
+fn deny_in_decide(caller: &mut Caller<'_, Ctx>, import: &str) -> wasmtime::Result<()> {
+    match caller.data().export {
+        Some(Export::Decide) => Err(fail(
+            caller,
+            Invalid(format!("{import} is a write, unavailable in on_decide")),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Triggers are unavailable in `vera_init` (appendix 1.1, "all").

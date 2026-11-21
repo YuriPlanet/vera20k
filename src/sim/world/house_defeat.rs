@@ -355,7 +355,12 @@ impl Simulation {
                 owner,
                 frame_effects,
             );
-            if defeat_gate && self.house_holds_nothing(owner, rules) {
+            // VERA: a Wasm module `Defeat` decision may veto this check
+            // (RFC 0001 6f, `sim::ext_modules::decide`).
+            if defeat_gate
+                && self.house_holds_nothing(owner, rules)
+                && self.module_allows_defeat(rules, owner)
+            {
                 self.house_blowup(
                     owner,
                     HouseBlowupSubset::All,

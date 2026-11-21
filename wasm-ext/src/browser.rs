@@ -60,6 +60,15 @@ impl SimModule {
         Ok(0)
     }
 
+    pub fn decide(
+        &mut self,
+        _record: &crate::DecideRecord,
+        _budget: u64,
+        _host: &mut dyn SimHost,
+    ) -> Result<(Option<i64>, u64), Fault> {
+        Ok((None, 0))
+    }
+
     pub fn memory(&self) -> &[u8] {
         &[]
     }

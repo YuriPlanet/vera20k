@@ -313,6 +313,12 @@ fn start_factory(
     if object.category == ObjectCategory::Vehicle && object.naval != factory_naval {
         return;
     }
+    // VERA: a Wasm module `ProductionQueued` decision may refuse the start
+    // before the FactoryClass constructor (RFC 0001 6f,
+    // `sim::ext_modules::decide`).
+    if !sim.module_allows_production(rules, owner, object) {
+        return;
+    }
     let type_id = sim.interner.intern(&object.id);
     let category = production_category_for_object(object);
     let cost = sim.cost_of(owner, object, rules);
