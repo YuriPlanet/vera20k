@@ -103,6 +103,10 @@ seed 19 仍是 timeout，但它的物质力量比基线强得多（own 126→158
   1200 不是随手取的数，是这三局里刚好能站住的下限。
   结论：门不是无谓的谨慎。同等兵力出门，等于用军队换一块守不住的基地——
   这正是 `squads.rs:88-101` 那段注释写的，现在有数了。1200 回退后三局逐字节复原。
+- **一帧多派几个命令**（`ADVANCE_ORDERS_PER_FRAME` 8 -> 32）：seed 24301 直接
+  `lost at tick 9931`——20 分钟不到就丢了家。seed 10 反而提前到 `won 34220`，
+  seed 19 依旧 timeout。所以 8 不是保守值，它是「军队成形」的速度：
+  一次把命令全发出去，等于让先到的兵独自冲上去送死。已回退。
 - **把「原地待命」的 Move 重新接下来**（advance.rs 的 push 循环原来对 `mission == Move`
   无条件 `continue`，改成只有 `obs.destination()` 还在时才跳过）：三局全 timeout。
   seed 24301 `won 31893` -> timeout own=136 enemy=52 army=61；
