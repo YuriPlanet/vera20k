@@ -153,6 +153,14 @@ pub(crate) struct ModuleTriggers {
     /// `kinds` leaves out: the flag decision points check.
     #[serde(default)]
     decide_kinds: Vec<i32>,
+    /// `ProductionAllowed` answers of 0, as (house array index, TechnoType
+    /// ID), from the latest once-per-frame decision step
+    /// (`sim::ext_modules::decide`); `HouseClass::CanBuild`'s port reads
+    /// them. Kept here, beside the triggers that decide them, so saves, the
+    /// state hash and the presentation copy carry them to the readers
+    /// before the next step.
+    #[serde(default)]
+    production_refusals: BTreeSet<(u32, u32)>,
 }
 
 impl ModuleTriggers {
@@ -160,6 +168,40 @@ impl ModuleTriggers {
         self.triggers.is_empty()
             && self.deferred.is_empty()
             && self.queues.values().all(|q| q.records.is_empty())
+            && self.production_refusals.is_empty()
+    }
+
+    /// Whether the latest `ProductionAllowed` step refused anything: the
+    /// buildability check asks this before looking a pair up.
+    pub(crate) fn refuses_any_production(&self) -> bool {
+        !self.production_refusals.is_empty()
+    }
+
+    /// Whether the latest `ProductionAllowed` step refused `type_id` to the
+    /// house at array index `house`.
+    pub(crate) fn refuses_production(&self, house: u32, type_id: u32) -> bool {
+        self.production_refusals.contains(&(house, type_id))
+    }
+
+    /// Replaces the `ProductionAllowed` refusals with a step's answers.
+    pub(crate) fn set_production_refusals(&mut self, refusals: BTreeSet<(u32, u32)>) {
+        self.production_refusals = refusals;
+    }
+
+    /// The TechnoType IDs bound to a trigger with a decision handler for
+    /// `kind`, ascending.
+    pub(crate) fn decided_types(&self, kind: i32) -> BTreeSet<u32> {
+        self.types
+            .iter()
+            .filter(|(_, bound)| {
+                bound.iter().any(|handle| {
+                    self.triggers.get(handle).is_some_and(|t| {
+                        t.decides() && t.events.iter().any(|event| event.kind == kind)
+                    })
+                })
+            })
+            .map(|(&id, _)| id)
+            .collect()
     }
 
     /// Whether any trigger has an event of `kind`. Event sites ask this
@@ -597,6 +639,10 @@ impl ModuleTriggers {
             checksum.fold_value(record.kind as u32);
             checksum.fold_value(record.trigger as u32);
             checksum.fold_value(record.subject as u32);
+        }
+        for &(house, type_id) in &self.production_refusals {
+            checksum.fold_value(house);
+            checksum.fold_value(type_id);
         }
     }
 

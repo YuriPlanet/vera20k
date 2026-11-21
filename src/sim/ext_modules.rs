@@ -80,6 +80,7 @@ pub(crate) mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
+pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
 pub(crate) use orders::take_due_orders;
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
@@ -482,8 +483,8 @@ const fn category_value(category: EntityCategory) -> i64 {
     }
 }
 
-/// The host a module sees during one call: the simulation, whose module
-/// slots are set aside for the call, and the calling module's own state.
+/// The host a module sees during one call: the simulation, whose slot list
+/// lacks the calling module's slot for the call, and that module's own state.
 struct Host<'a, 'f> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
@@ -1489,6 +1490,9 @@ impl Simulation {
                 .modifiers
                 .expire(&mut self.substrate.entities, frame);
         }
+        // The `ProductionAllowed` step: once per frame, before any module
+        // runs (`decide`).
+        self.decide_production_allowed(rules);
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);
@@ -1550,10 +1554,15 @@ impl Simulation {
         )
     }
 
-    /// Runs `f` on module `index` and its host. The slot list is set aside
-    /// meanwhile, so the host reaches the whole simulation; what a call
-    /// reaches that needs a module's host finds none
-    /// (`triggers::with_module_host`).
+    /// Runs `f` on module `index` and its host. The module's slot leaves the
+    /// slot list meanwhile and goes back to `index` after, so the host
+    /// reaches the whole simulation while the module is out of reach (RFC
+    /// section 5, "No reentry"): what the call reaches finds no slot for it
+    /// (its decision links are skipped, `triggers::with_module_host` serves
+    /// a placeholder), but the other module's slot stays, so a decision the
+    /// call causes still asks that module's links. Such a nested call is
+    /// read-only (`on_decide`), so it raises nothing that could call back.
+    /// The merged rules text is lent to the outermost call only.
     fn with_ext_module<R>(
         &mut self,
         rules: &RuleSet,
@@ -1562,21 +1571,24 @@ impl Simulation {
         index: usize,
         f: impl FnOnce(&mut SimModule, &mut Host<'_, '_>) -> R,
     ) -> R {
-        let mut slots = std::mem::take(&mut self.ext_modules.slots);
+        let mut slot = self.ext_modules.slots.remove(index);
         let rules_ini = self.ext_modules.rules_ini.take();
-        let slot = &mut slots[index];
+        let source = slot.source;
         let mut host = Host {
             sim: self,
             rules,
             overlay_registry,
             frame_effects,
             rng: &mut slot.rng,
-            source: slot.source,
+            source,
             orders: &mut slot.orders,
             rules_ini: rules_ini.as_ref(),
         };
         let result = f(&mut slot.module, &mut host);
-        self.ext_modules.slots = slots;
+        // Nested calls put their slots back before returning, and no call
+        // removes a slot for good, so `index` is where this one was.
+        let at = index.min(self.ext_modules.slots.len());
+        self.ext_modules.slots.insert(at, slot);
         self.ext_modules.rules_ini = rules_ini;
         result
     }

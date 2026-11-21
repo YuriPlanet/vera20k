@@ -347,6 +347,22 @@ impl Simulation {
         {
             return false;
         }
+        // VERA extension, Wasm module `CommandAllowed` (RFC 0001 appendix
+        // 4.5, `sim::ext_modules::decide`): EventClass::Execute @ 0x004C6CB0
+        // has no such check. A module may refuse the command for a bound
+        // actor here, once the house may order the actor and before
+        // planning detach and the per-type dispatch; a refusal returns as
+        // the receiver's own refusals do. Without a decider nothing is
+        // built and the command runs as stock.
+        let narrowed;
+        let cmd = match self.module_admits_command(rules, cmd) {
+            crate::sim::ext_modules::CommandAdmission::Allowed => cmd,
+            crate::sim::ext_modules::CommandAdmission::Refused => return false,
+            crate::sim::ext_modules::CommandAdmission::Narrowed(command) => {
+                narrowed = command;
+                &narrowed
+            }
+        };
         let ordinary_actor = match cmd {
             Command::Stop { entity_id }
             | Command::Scatter { entity_id }

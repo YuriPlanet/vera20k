@@ -24,7 +24,7 @@
 //! vera20k_sdk::on_decide!(HALVE => halve);
 //! ```
 
-use crate::{EventRecord, House, NameKind, Techno, TypeRef, sys};
+use crate::{Cell, EventRecord, House, NameKind, Techno, TypeRef, sys};
 
 /// One decision request (`DecideRecord`), valid during its `on_decide`
 /// call.
@@ -125,6 +125,18 @@ decision!(
 );
 
 decision!(
+    /// `ProductionAllowed` (appendix 4.5): 1 allows, 0 disallows the type
+    /// to the house until the next frame's request; the sidebar and the AI
+    /// read that answer. `native` is the engine's own answer (1 when the
+    /// house can build it now); 1 does not lift the engine's refusal.
+    ProductionAllowedDecision {
+        house: House = |r| House(r.house),
+        /// The TechnoType asked about.
+        techno_type: TypeRef = |r| TypeRef::new(NameKind::TechnoType, r.id),
+    }
+);
+
+decision!(
     /// `ProductionQueued` (appendix 4.5): 1 allows, 0 refuses the type.
     ProductionQueuedDecision {
         house: House = |r| House(r.house),
@@ -137,6 +149,22 @@ decision!(
     /// `Defeat` (appendix 4.5): 1 defeats the house, 0 vetoes this check.
     DefeatDecision {
         house: House = |r| House(r.house),
+    }
+);
+
+decision!(
+    /// `CommandAllowed` (appendix 4.5): 1 allows, 0 refuses a player
+    /// command (a module order included) for the bound unit; a refused
+    /// command does nothing for it.
+    CommandAllowedDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The command's number; compare with `Command::Move as i32` and
+        /// the other [`crate::Command`] values.
+        command: i32 = |r| r.value as i32,
+        /// The target object; `NO_HANDLE` without one.
+        target: Techno = |r| Techno(r.other),
+        /// The target cell; `Cell(NO_HANDLE)` without one.
+        target_cell: Cell = |r| Cell(r.cell),
     }
 );
 

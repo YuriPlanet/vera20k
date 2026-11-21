@@ -1,8 +1,12 @@
-//! `TakeDamage` decisions on a retail map: a handler changes the damage a
+//! Decisions on a retail map: a `TakeDamage` handler changes the damage a
 //! real hit deals, one that does not handle it or writes keeps the native
 //! damage, its `random` leaves the main stream alone, and two runs hash
-//! alike.
+//! alike; a `ProductionAllowed` refusal reaches CanBuild; a
+//! `CommandAllowed` refusal stops a command; a decision caused inside the
+//! other module's call asks this module's link.
 
+use vera20k_wasm_ext::NAME_TECHNO_TYPE;
+use vera20k_wasm_ext::decide::{EVENT_COMMAND_ALLOWED, EVENT_PRODUCTION_ALLOWED};
 use vera20k_wasm_ext::triggers::EVENT_TAKE_DAMAGE;
 
 use super::ModuleSource;
@@ -14,11 +18,15 @@ const MAP: &str = "XMP03T4.MAP";
 const SEED: u32 = 0x1269;
 
 /// Handler keys: halve `native`; leave the record alone; call `var_set`;
-/// draw `random(0, 999_999)` into memory and halve.
+/// draw `random(0, 999_999)` into memory and halve; answer 0; answer 0 to
+/// the first request whose `value` is 2 (`CommandAllowed`'s Stop) and leave
+/// the others alone, counting those requests at 696.
 const HALVE: i32 = 1;
 const IGNORE: i32 = 2;
 const WRITE: i32 = 3;
 const DRAW: i32 = 4;
+const REFUSE: i32 = 5;
+const REFUSE_FIRST_STOP: i32 = 6;
 
 fn scenario() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
@@ -26,10 +34,10 @@ fn scenario() -> Option<HeadlessScenario> {
 }
 
 /// A `TriggerDef`: house 0, repeating, every difficulty, decision handler
-/// `key`, one `TakeDamage` event, no actions.
-fn decide_def(key: i32) -> Vec<u8> {
+/// `key`, one event of `kind`, no actions.
+fn decide_def(kind: i32, key: i32) -> Vec<u8> {
     let mut out = 0i64.to_le_bytes().to_vec();
-    for value in [2, 7, 0, key, 1, 0, EVENT_TAKE_DAMAGE, 0, 0, -1] {
+    for value in [2, 7, 0, key, 1, 0, kind, 0, 0, -1] {
         out.extend(value.to_le_bytes());
     }
     out.extend(0i64.to_le_bytes());
@@ -41,8 +49,8 @@ fn decide_def(key: i32) -> Vec<u8> {
 /// (statuses at 72 and 76). `on_decide` copies its record to 512, then
 /// answers by key; `DRAW` appends each draw to 700 and counts them at 696.
 /// Its delivery area is one `DecideRecord` at 1024.
-fn module(key: i32, target: u64) -> Vec<u8> {
-    let def = decide_def(key);
+fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
+    let def = decide_def(kind, key);
     let bytes = def.iter().map(|b| format!("\\{b:02x}")).collect::<String>();
     wat::parse_str(format!(
         r#"(module
@@ -56,6 +64,9 @@ fn module(key: i32, target: u64) -> Vec<u8> {
   (func $halve (param $ptr i32)
     (i64.store offset=128 (local.get $ptr)
       (i64.div_s (i64.load offset=112 (local.get $ptr)) (i64.const 2)))
+    (i32.store offset=136 (local.get $ptr) (i32.const 1)))
+  (func $refuse (param $ptr i32)
+    (i64.store offset=128 (local.get $ptr) (i64.const 0))
     (i32.store offset=136 (local.get $ptr) (i32.const 1)))
   (func (export "on_scenario_start")
     (i32.store (i32.const 76) (call $create (i32.const 2048) (i32.const {len}) (i32.const 64)))
@@ -72,7 +83,14 @@ fn module(key: i32, target: u64) -> Vec<u8> {
         (drop (call $random (i32.const 0) (i32.const 999999)
           (i32.add (i32.const 700) (i32.shl (i32.load (i32.const 696)) (i32.const 2)))))
         (i32.store (i32.const 696) (i32.add (i32.load (i32.const 696)) (i32.const 1)))
-        (call $halve (local.get $ptr))))))"#,
+        (call $halve (local.get $ptr))))
+    (if (i32.eq (local.get $key) (i32.const {REFUSE})) (then (call $refuse (local.get $ptr))))
+    (if (i32.and
+          (i32.eq (local.get $key) (i32.const {REFUSE_FIRST_STOP}))
+          (i64.eq (i64.load offset=72 (local.get $ptr)) (i64.const 2)))
+      (then
+        (if (i32.eqz (i32.load (i32.const 696))) (then (call $refuse (local.get $ptr))))
+        (i32.store (i32.const 696) (i32.add (i32.load (i32.const 696)) (i32.const 1)))))))"#,
         len = def.len(),
     ))
     .expect("test module parses")
@@ -89,31 +107,59 @@ fn sturdy_object(scene: &HeadlessScenario) -> u64 {
         .expect("the map has a sturdy object")
 }
 
-/// A scene whose map module bound a decider with `key` to
-/// [`sturdy_object`], after the frame that ran `on_scenario_start`.
-fn decided_scene(key: i32) -> Option<(HeadlessScenario, u64)> {
-    let mut scene = scenario()?;
-    let victim = sturdy_object(&scene);
+/// The first live, placed unit or infantryman on the map, with its owner.
+fn ground_unit(scene: &HeadlessScenario) -> (u64, String) {
+    use crate::map::entities::EntityCategory;
+    let sim = scene.sim();
+    sim.entities()
+        .iter_sorted()
+        .find(|(_, e)| {
+            matches!(
+                e.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            ) && e.lifecycle.object_alive()
+                && e.lifecycle.cell_marked()
+                && !e.lifecycle.in_limbo()
+        })
+        .map(|(id, e)| (id, sim.interner.resolve(e.owner()).to_string()))
+        .expect("the map has a placed ground unit")
+}
+
+/// Installs a map module whose decider for `kind` with `key` binds to
+/// `target`, and runs the frame of its `on_scenario_start`.
+fn install_decider(scene: &mut HeadlessScenario, kind: i32, key: i32, target: i64) {
     scene
         .runtime
         .simulation
         .install_ext_module(
             &scene.runtime.resources.rules,
             ModuleSource::Map,
-            &module(key, victim),
+            &module(kind, key, target),
         )
         .expect("module installs");
     scene.tick();
-    assert_eq!(
-        &memory(&scene)[72..80],
-        &[0; 8],
-        "create and bind answer Ok"
-    );
+    assert_eq!(&memory(scene)[72..80], &[0; 8], "create and bind answer Ok");
+}
+
+/// A scene whose map module bound a `TakeDamage` decider with `key` to
+/// [`sturdy_object`], after the frame that ran `on_scenario_start`.
+fn decided_scene(key: i32) -> Option<(HeadlessScenario, u64)> {
+    let mut scene = scenario()?;
+    let victim = sturdy_object(&scene);
+    install_decider(&mut scene, EVENT_TAKE_DAMAGE, key, victim as i64);
     Some((scene, victim))
 }
 
 fn memory(scene: &HeadlessScenario) -> Vec<u8> {
-    scene.sim().ext_modules.slots[0].module.memory().to_vec()
+    memory_of(scene, 0)
+}
+
+fn memory_of(scene: &HeadlessScenario, slot: usize) -> Vec<u8> {
+    scene.sim().ext_modules.slots[slot].module.memory().to_vec()
+}
+
+fn i64_at(bytes: &[u8], at: usize) -> i64 {
+    i64::from_le_bytes(bytes[at..at + 8].try_into().expect("8 bytes"))
 }
 
 fn health(scene: &HeadlessScenario, id: u64) -> i32 {
@@ -161,13 +207,19 @@ fn a_decision_halves_the_damage_a_hit_deals() {
     assert_eq!(health(&scene, victim), before - 5);
     // The handler saw native and previous 10, with the hit as its event.
     let record = memory(&scene)[512..664].to_vec();
-    let i64_at = |at: usize| i64::from_le_bytes(record[at..at + 8].try_into().expect("8 bytes"));
     assert_eq!(
         &record[..8],
         &[HALVE.to_le_bytes(), EVENT_TAKE_DAMAGE.to_le_bytes()].concat()
     );
-    assert_eq!(i64_at(24), victim as i64, "subject");
-    assert_eq!((i64_at(72), i64_at(112), i64_at(120)), (10, 10, 10));
+    assert_eq!(i64_at(&record, 24), victim as i64, "subject");
+    assert_eq!(
+        (
+            i64_at(&record, 72),
+            i64_at(&record, 112),
+            i64_at(&record, 120)
+        ),
+        (10, 10, 10)
+    );
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
 }
 
@@ -226,6 +278,134 @@ fn decision_random_leaves_the_main_stream_and_runs_hash_alike() {
     assert_eq!(&draws[..4], &2i32.to_le_bytes());
     assert_ne!(draws[4..8], draws[8..12], "the second request continues");
     assert_eq!(run(), Some((draws, hash)));
+}
+
+/// `ProductionAllowed`: a handler answering 0 for its bound type makes
+/// CanBuild refuse the type to a house that could build it, from the
+/// frame's decision step on.
+#[test]
+fn a_production_allowed_refusal_makes_can_build_refuse_the_type() {
+    use crate::sim::production::{CanBuild, can_build};
+    let Some(mut scene) = scenario() else { return };
+    let (owner, type_id) = {
+        let (sim, rules) = (scene.sim(), &scene.runtime.resources.rules);
+        sim.houses
+            .order()
+            .iter()
+            .filter(|owner| sim.houses.get(owner).is_some_and(|h| !h.is_defeated()))
+            .find_map(|&owner| {
+                let object = rules.all_objects().find(|object| {
+                    can_build(sim, rules, owner, object, false, true) == CanBuild::Yes
+                })?;
+                Some((owner, rules.type_handle(&object.id)?.0))
+            })
+            .expect("a house can build a type")
+    };
+    let bound = super::type_ref(NAME_TECHNO_TYPE, type_id);
+    install_decider(&mut scene, EVENT_PRODUCTION_ALLOWED, REFUSE, bound);
+    scene.tick();
+    let rules = &scene.runtime.resources.rules;
+    let object = super::techno_type(rules, type_id as i32).expect("the bound type");
+    assert_eq!(
+        can_build(scene.sim(), rules, owner, object, false, true),
+        CanBuild::No
+    );
+    let record = memory(&scene)[512..664].to_vec();
+    assert_eq!(
+        &record[..8],
+        &[REFUSE.to_le_bytes(), EVENT_PRODUCTION_ALLOWED.to_le_bytes()].concat()
+    );
+    assert_eq!(&record[88..92], &(type_id as i32).to_le_bytes(), "id");
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+}
+
+/// `CommandAllowed`: the receiver refuses a Stop its bound unit's handler
+/// answers 0 for, and runs the next one the handler leaves alone.
+#[test]
+fn a_command_allowed_refusal_stops_the_command() {
+    use crate::sim::command::Command;
+    let Some(mut scene) = scenario() else { return };
+    let (unit, owner) = ground_unit(&scene);
+    install_decider(
+        &mut scene,
+        EVENT_COMMAND_ALLOWED,
+        REFUSE_FIRST_STOP,
+        unit as i64,
+    );
+    let stop = Command::Stop { entity_id: unit };
+    assert!(!scene.runtime.apply_command_for_test(&owner, &stop));
+    let record = memory(&scene)[512..664].to_vec();
+    assert_eq!(
+        &record[..8],
+        &[
+            REFUSE_FIRST_STOP.to_le_bytes(),
+            EVENT_COMMAND_ALLOWED.to_le_bytes()
+        ]
+        .concat()
+    );
+    // Subject the unit, value Stop (appendix 8.3 number 2), native 1.
+    assert_eq!(
+        (
+            i64_at(&record, 24),
+            i64_at(&record, 72),
+            i64_at(&record, 112)
+        ),
+        (unit as i64, 2, 1)
+    );
+    assert!(scene.runtime.apply_command_for_test(&owner, &stop));
+    assert_eq!(
+        &memory(&scene)[696..700],
+        &2i32.to_le_bytes(),
+        "asked twice"
+    );
+}
+
+/// RFC section 5, "No reentry": the mod module's own `Damage` action
+/// reaches the map module's `TakeDamage` decider, which halves the hit.
+#[test]
+fn a_decision_inside_the_other_modules_call_asks_its_link() {
+    let Some(mut scene) = scenario() else { return };
+    let victim = sturdy_object(&scene);
+    install_decider(&mut scene, EVENT_TAKE_DAMAGE, HALVE, victim as i64);
+    let rules = &scene.runtime.resources.rules;
+    let warhead = rules.warhead_index("SA").expect("the SA warhead");
+    // `Damage` 100 with SA on the victim, once, in the mod's `on_frame`;
+    // the status goes to 8.
+    let damager = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "action" (func $action (param i32 i64 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_frame")
+    (if (i32.eqz (i32.load (i32.const 0)))
+      (then
+        (i32.store (i32.const 0) (i32.const 1))
+        (i32.store (i32.const 128) (i32.const {warhead}))
+        (i64.store (i32.const 144) (i64.const 100))
+        (i32.store (i32.const 8)
+          (call $action (i32.const {damage}) (i64.const {victim})
+            (i32.const 128) (i32.const 72) (i32.const 256)))))))"#,
+        damage = super::actions::DAMAGE,
+    ))
+    .expect("test module parses");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(rules, ModuleSource::Mod, &damager)
+        .expect("module installs");
+    let before = health(&scene, victim);
+    scene.tick();
+    let status = scene.sim().ext_modules().status();
+    assert_eq!(
+        (status[0].1.as_deref(), status[1].1.as_deref()),
+        (None, None)
+    );
+    assert_eq!(&memory_of(&scene, 0)[8..12], &[0; 4], "Damage answers Ok");
+    // The map module (slot 1, after the mod's) decided the hit.
+    let record = memory_of(&scene, 1)[512..664].to_vec();
+    assert_eq!(i64_at(&record, 24), victim as i64, "subject");
+    let native = i64_at(&record, 112);
+    assert!(native >= 2, "the hit deals damage: {native}");
+    assert_eq!(i64::from(before - health(&scene, victim)), native / 2);
 }
 
 /// Runs the SDK's decision example when `VERA20K_TEST_DECIDE_WASM` names
