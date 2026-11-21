@@ -2504,7 +2504,10 @@ pub(crate) fn load_csf(
                 )),
             },
         )?;
-    log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
+    log::info!(
+        "Loaded CSF string table: {}; supplements={supplements:?}",
+        crate::assets::csf_file::CsfFile::active_csf_name()
+    );
     crate::i18n::apply(&mut csf);
     Ok(csf)
 }

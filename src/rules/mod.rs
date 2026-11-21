@@ -172,6 +172,10 @@ pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 /// Whether this binary includes the NPBUG bug-fix extension. INIs cannot
 /// change it; builds without the feature keep every native path.
 pub const NPBUG_ENABLED: bool = cfg!(feature = "npbug");
+/// Whether this binary accepts `-ra2` at launch and can select the original
+/// Red Alert 2 non-md INI roots. The `IniProfile::Ra2` data is always present;
+/// this gate decides whether a runtime switch may reach it.
+pub const RA2_ENABLED: bool = cfg!(feature = "ra2");
 pub mod ares_switch;
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;

@@ -79,6 +79,11 @@ phobos = ["vera20k-core/phobos"]
 npatch = ["vera20k-core/npatch"]
 # VERA20K's own first-party extension capability; VeraX-gated chains read it.
 verax = ["vera20k-core/verax"]
+# Original Red Alert 2 compatibility: builds with this feature accept `-ra2`
+# at launch and read the non-md retail INI roots (rules.ini/art.ini/ai.ini,
+# bare theater INIs). The `IniProfile::Ra2` data is always compiled; this gate
+# only decides whether the runtime switch can select it.
+ra2 = ["vera20k-core/ra2"]
 # Optional NPBUG bug-fix extension; neither default nor shipping builds enable
 # it.
 npbug = ["vera20k-core/npbug"]

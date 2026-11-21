@@ -157,7 +157,12 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
         // built) now, before another shell screen can paint.
-        self.persistence.options_profile.yr_original_style = yr_original_style;
+        //
+        // In an original-RA2 launch the YR shell art lives in md archives we
+        // do not mount, so the YR style cannot be honoured. Keep the session
+        // pinned to RA2 art regardless of the checkbox.
+        let effective = yr_original_style && !crate::util::ra2_launch::enabled();
+        self.persistence.options_profile.yr_original_style = effective;
         let _ = App::ensure_skirmish_shell_chrome(self);
     }
     fn store_skip_intro(&mut self, skip: bool) {

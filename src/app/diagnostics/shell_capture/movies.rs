@@ -942,7 +942,8 @@ impl MoviesCapture {
                     {
                         let side = match side {
                             crate::ui::campaign_shell::CampaignSide::Allied => 0,
-                            crate::ui::campaign_shell::CampaignSide::Soviet => 1,
+                            crate::ui::campaign_shell::CampaignSide::Soviet
+                            | crate::ui::campaign_shell::CampaignSide::BootCamp => 1,
                         };
                         let request = crate::app::frontend::cncnet_spawn::SpawnRequest::parse(
                             &format!(

@@ -463,6 +463,16 @@ fn finish_loading_composition(
         |csf| localize_loading_text(csf, country),
     );
     let text_rects = loading_text_rects(render_size, &session.mode, scale);
+    // Original RA2 bakes the selected country's flag into the skirmish loading
+    // background SHP itself; the engine draws no minimap in the `mmpb` region —
+    // that is a Yuri's Revenge addition. Drop the map preview and its
+    // assigned-start markers under `-ra2` so only the authored flag shows.
+    // Campaign loads use a separate presentation and never reach this path.
+    let (preview, markers) = if crate::util::ra2_launch::enabled() {
+        (None, Vec::new())
+    } else {
+        (preview, markers)
+    };
     let layers = composition_layers(preview.is_some(), !markers.is_empty(), &text);
     LoadingCompositionSnapshot {
         scale,

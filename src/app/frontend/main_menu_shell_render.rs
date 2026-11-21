@@ -1057,6 +1057,18 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         | ShellMessageBoxPurpose::ModFiles(_) => atlas.ra2_dialog_background,
         _ => None,
     }
+    .or_else(|| {
+        // Original RA2 draws every shell message box (including the
+        // "Are you sure you want to exit Red Alert 2?" confirmation) over
+        // `PUDLGBGN.SHP` tinted with `DIALOG.PAL`, both in `ra2.mix ->
+        // local.mix`. The stock slot above is gamemd's `DIALOGN.PAL` art.
+        // Prefer RA2's own dialog art so -ra2 boxes don't look like YR.
+        if crate::util::ra2_launch::enabled() {
+            atlas.ra2_dialog_background
+        } else {
+            None
+        }
+    })
     .or_else(|| atlas.mode_two_dialog_background(None));
     let layout = shell_layout::shell_message_box_layout(state, modal_state.kind());
     // The updater's offer lists what changed (`app::updater::notes`).

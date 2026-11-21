@@ -827,11 +827,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST
             }
+            Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-loading-first"
+            }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE
             }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
+            }
+            Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-first-live"
             }
             Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
             Self::CampaignExplicitFirstLive("ALL02UMD.MAP") => "campaign-all02-first-live-frame",
@@ -842,11 +848,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 "campaign-sov1-initial-save"
             }
+            Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-initial-save"
+            }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
             }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN
+            }
+            Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-abort-return"
             }
             Self::CampaignRestart(movies::RestartTarget::AbortShown) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN
