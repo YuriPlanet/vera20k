@@ -1101,7 +1101,10 @@ pub struct Simulation {
     replaying_recorded_commands: Forked<bool>,
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
     /// Remains installed while actions call other Simulation mechanisms.
-    pub(crate) trigger_runtime: Forked<TriggerRuntime>,
+    pub(crate) trigger_runtime: TriggerRuntime,
+    /// Loaded Wasm extension modules (`sim::ext_modules`), saved with their
+    /// memory and globals and instantiated again by `restore_ext_modules`.
+    pub(crate) ext_modules: crate::sim::ext_modules::ExtModules,
 }
 
 #[cfg(any(test, feature = "test-support"))]

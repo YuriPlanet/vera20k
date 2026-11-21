@@ -446,6 +446,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("a Wasm extension module in the save cannot run: {0}")]
+    ExtModule(String),
     #[error(transparent)]
     Factory(#[from] crate::sim::production::FactoryRestoreError),
     #[error(transparent)]
