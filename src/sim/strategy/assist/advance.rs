@@ -573,15 +573,30 @@ pub(super) fn advance(
             .iter()
             .filter(|squared| **squared <= 12 * 12)
             .count();
+        let cx = if fighters.is_empty() {
+            0
+        } else {
+            let sum: i64 = fighters.iter().map(|unit| i64::from(unit.cell.0)).sum();
+            (sum / i64::try_from(fighters.len()).unwrap_or(1)) as i32
+        };
+        let cy = if fighters.is_empty() {
+            0
+        } else {
+            let sum: i64 = fighters.iter().map(|unit| i64::from(unit.cell.1)).sum();
+            (sum / i64::try_from(fighters.len()).unwrap_or(1)) as i32
+        };
         log::info!(
-            "push trace: tick={} fighters={} moving={} near={} spread={} target={:?} at {:?}",
+            "push trace: tick={} fighters={} moving={} near={} spread={} fist=({},{}) target={:?} at {:?} enemies={}",
             tick,
             fighters.len(),
             moving,
             near,
             spread,
+            cx,
+            cy,
             target_id,
             target_cell,
+            brain.census.enemies.len(),
         );
     }
     // The fighter nearest the target is the tip of the fist. A unit more than
