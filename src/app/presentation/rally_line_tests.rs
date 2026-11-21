@@ -267,12 +267,14 @@ fn simulation_fixture_for_type(
     entity.set_type_ref_for_test(sim.intern(type_name));
     entity.set_owner_for_test(sim.intern(owner));
     entity
+        .seldom
         .selection
         .set_selected_for_test(input["selected"].as_bool().unwrap_or(true));
     entity
         .lifecycle
         .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(foundation.clone());
     let [tx, ty] = input.get("target_cell").map(point).unwrap_or([14, 20]);

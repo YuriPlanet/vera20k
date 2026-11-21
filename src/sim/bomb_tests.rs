@@ -962,7 +962,7 @@ fn a_bomb_outlives_its_planter_and_credits_no_one() {
     );
     let tank = entity(&sim, tank);
     assert_eq!(tank.health.current(), 0, "450 kills the 300-strength tank");
-    assert!(tank.kill_record.killer().is_none(), "no kill credit");
+    assert!(tank.seldom.kill_record.killer().is_none(), "no kill credit");
 }
 
 /// UnInit defuses silently (`0x005F65F3`); a building changing hands loses
@@ -1050,7 +1050,10 @@ fn a_dying_crazy_ivan_explodes() {
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450);
     let engineer = entity(&sim, engineer);
     assert_eq!(engineer.health.current(), 0);
-    assert_eq!(engineer.kill_record.killer(), sim.interner.get("Russians"));
+    assert_eq!(
+        engineer.seldom.kill_record.killer(),
+        sim.interner.get("Russians")
+    );
 }
 
 /// A bombed Crazy Ivan who dies blows up once: his death weapon cannot plant
@@ -1073,7 +1076,10 @@ fn a_bombed_crazy_ivan_blows_up_once() {
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450, "one blast");
     let engineer = entity(&sim, engineer);
     assert_eq!(engineer.health.current(), 0);
-    assert_eq!(engineer.kill_record.killer(), sim.interner.get("Americans"));
+    assert_eq!(
+        engineer.seldom.kill_record.killer(),
+        sim.interner.get("Americans")
+    );
 }
 
 /// A blast that kills another carrier sets that bomb off in its death

@@ -377,7 +377,7 @@ fn landing_base_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         slots.remove(id);
     }
     let entity = sim.substrate.entities.get_mut(1).unwrap();
-    entity.radio_contacts = slots;
+    entity.seldom.radio_contacts = slots;
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(input["current"].as_i64().unwrap_or(7) as i32),
         queued: MissionId::from_raw(input["queued"].as_i64().unwrap_or(-1) as i32),

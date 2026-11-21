@@ -277,6 +277,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             .entities
             .get_mut(s.miner)
             .unwrap()
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(owned);
         s.sim.fog = crate::sim::vision::FogState::new(33, 33);
@@ -629,6 +630,7 @@ fn campaign_player_scan_rejects_unexplored_ore() {
         .entities
         .get_mut(scene.miner)
         .unwrap()
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
     scene.sim.fog = crate::sim::vision::FogState::new(33, 33);

@@ -97,9 +97,10 @@ pub(super) fn center_sample(
 /// nearest `focus` by squared XY distance (`0x005F6500`, `native_coord::squared_xy_distance`; 0
 /// without a focus). A smaller distance, or any distance after a kept 0,
 /// replaces the one kept, so without a focus the last sample is closest.
-/// `None` without samples.
+/// `None` without samples. One pass in member order, so the caller hands
+/// its member walk over as it goes.
 pub(super) fn center_of(
-    samples: &[CenterSample],
+    samples: impl IntoIterator<Item = CenterSample>,
     focus: Option<[i32; 2]>,
     ares: bool,
 ) -> Option<([i32; 2], Option<u64>)> {
@@ -409,25 +410,21 @@ impl Simulation {
             .and_then(|id| vm.team_type_ini.get(&id))
             .is_some_and(|metadata| metadata.guard_slower);
         let focus = team.focus.map(|focus| self.team_target_xy(focus));
-        let samples: Vec<CenterSample> = team
-            .members
-            .iter()
-            .filter_map(|member| {
-                let entity = self.substrate.entities.get(member.id)?;
-                let naval_transport = self
-                    .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| object.passengers > 0 && object.naval);
-                center_sample(
-                    entity,
-                    member.initiated,
-                    guard_slower && self.guard_slower_weight(entity, rules),
-                    naval_transport,
-                    self.object_placement_scope_active(),
-                )
-            })
-            .collect();
+        let samples = team.members.iter().filter_map(|member| {
+            let entity = self.substrate.entities.get(member.id)?;
+            let naval_transport = self
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.passengers > 0 && object.naval);
+            center_sample(
+                entity,
+                member.initiated,
+                guard_slower && self.guard_slower_weight(entity, rules),
+                naval_transport,
+                self.object_placement_scope_active(),
+            )
+        });
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(&samples, focus, rules.ares()) {
+        let (zone, closest) = match center_of(samples, focus, rules.ares()) {
             None => (None, None),
             Some((mean, closest)) => {
                 // CalcCenter6EB331 selects Map565730's Cell before CanEnter.
@@ -508,12 +505,17 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
-        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+        let vm = &mut self.team_script_vm;
+        let Some(team) = vm.teams.get(&team_id) else {
             return true;
         };
-        let members = team.members.clone();
+        // The walk reads a copy: a member's join or move can change the list.
+        // Taken from the VM's scratch and put back, so a walk reached from
+        // inside this one finds it empty and makes its own.
+        let mut members = std::mem::take(&mut vm.regroup_members);
+        members.extend_from_slice(&team.members);
         let mut regrouped = true;
-        for member in members {
+        for &member in &members {
             let Some(zone) = self
                 .team_script_vm
                 .teams
@@ -556,6 +558,8 @@ impl Simulation {
                 self.team_member_set_destination(member.id, None, rules, frame_effects);
             }
         }
+        members.clear();
+        self.team_script_vm.regroup_members = members;
         regrouped
     }
 
@@ -956,6 +960,7 @@ mod tests {
             .entities
             .get_mut(hornet)
             .expect("aircraft")
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(true);
         sim.fog = crate::sim::vision::FogState::new(33, 33);

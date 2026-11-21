@@ -340,7 +340,7 @@ impl Simulation {
     pub(crate) fn append_live_build_const(&mut self, stable_id: u64) {
         let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
             (entity.category() == EntityCategory::Structure
-                && entity.type_facts.build_const_eligible()
+                && entity.seldom.type_facts.build_const_eligible()
                 && entity.lifecycle.object_alive()
                 && !entity.lifecycle.in_limbo()
                 && entity.lifecycle.cell_marked())
@@ -368,11 +368,12 @@ impl Simulation {
         houses: &mut Houses,
         stable_id: u64,
     ) {
-        let Some((owner, eligible)) = substrate
-            .entities
-            .get(stable_id)
-            .map(|entity| (entity.owner(), entity.type_facts.build_const_eligible()))
-        else {
+        let Some((owner, eligible)) = substrate.entities.get(stable_id).map(|entity| {
+            (
+                entity.owner(),
+                entity.seldom.type_facts.build_const_eligible(),
+            )
+        }) else {
             return;
         };
         if eligible && let Some(house) = houses.get_mut(&owner) {
@@ -533,7 +534,7 @@ impl Simulation {
                     entity.owner(),
                     entity.category(),
                     entity.spawn_manager.is_some(),
-                    entity.type_facts.build_const_eligible(),
+                    entity.seldom.type_facts.build_const_eligible(),
                 )
             })
         else {
@@ -635,7 +636,7 @@ impl Simulation {
         if rules.ares()
             && let Some(building) = self.substrate.entities.get_mut(stable_id)
         {
-            building.ares.display_production_to.remove(new_owner);
+            building.seldom.ares.display_production_to.remove(new_owner);
         }
         // Building4484AF precedes the delegated Techno owner transfer.
         self.enable_building_after_owner_change(stable_id, rules);
@@ -914,6 +915,7 @@ impl Simulation {
         // A former current-house object's +41B history survives the transfer.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity
+                .seldom
                 .discovery
                 .classify_owner(self.session.current_house() == Some(new_owner));
         }
@@ -925,6 +927,7 @@ impl Simulation {
         // House; the controlling House+2CC survives an ordinary capture.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity
+                .seldom
                 .mind_control
                 .clear_house_original_owner_on_owner_change();
         }
@@ -1057,7 +1060,7 @@ impl Simulation {
         let Some((capacity, weapons_factory)) =
             self.substrate.entities.get(building).map(|entity| {
                 (
-                    entity.radio_contacts.capacity(),
+                    entity.seldom.radio_contacts.capacity(),
                     self.object_type(entity.type_ref(), rules)
                         .is_some_and(|object| object.weapons_factory),
                 )
@@ -1070,7 +1073,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(building)
-                .and_then(|entity| entity.radio_contacts.slot(slot))
+                .and_then(|entity| entity.seldom.radio_contacts.slot(slot))
             else {
                 continue;
             };
@@ -1102,7 +1105,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(contact)
-                    .is_some_and(|entity| entity.tether.partner().is_some());
+                    .is_some_and(|entity| entity.seldom.tether.partner().is_some());
                 self.change_owner_impl(contact, new_owner, rules, registry, effects);
                 taken.push((contact, tethered));
             } else {
@@ -1169,10 +1172,10 @@ impl Simulation {
             );
             if tethered {
                 if let Some(entity) = self.substrate.entities.get_mut(building) {
-                    entity.tether.attach(contact);
+                    entity.seldom.tether.attach(contact);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(contact) {
-                    entity.tether.attach(building);
+                    entity.seldom.tether.attach(building);
                 }
             }
         }
@@ -1284,7 +1287,8 @@ impl Simulation {
             return;
         }
         let in_factory_contact = self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.radio_contacts
+            e.seldom
+                .radio_contacts
                 .iter_live()
                 .any(|other| self.is_weapons_factory(other, rules))
         });

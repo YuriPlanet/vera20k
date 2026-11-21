@@ -505,7 +505,7 @@ fn native_tiberium_cargo_identity_roundtrips_and_changes_miner_and_slave_hashes(
             value: 25,
         }];
         if slave {
-            entity.slave = crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
+            entity.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
         } else {
             let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 40);
             miner.set_cargo_for_test(cargo);
@@ -521,7 +521,7 @@ fn native_tiberium_cargo_identity_roundtrips_and_changes_miner_and_slave_hashes(
         assert_eq!(restored.state_hash(), hash);
         let entity = restored.substrate.entities.get_mut(1).unwrap();
         let mut cargo = if slave {
-            entity.slave.cargo().to_vec()
+            entity.seldom.slave.cargo().to_vec()
         } else {
             entity.miner.as_ref().unwrap().cargo().to_vec()
         };
@@ -529,7 +529,7 @@ fn native_tiberium_cargo_identity_roundtrips_and_changes_miner_and_slave_hashes(
         // Same presentation/value/amount; only the native slot differs.
         cargo[0].tiberium_type = TiberiumTypeId(0);
         if slave {
-            entity.slave = crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
+            entity.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
         } else {
             entity.miner.as_mut().unwrap().set_cargo_for_test(cargo);
         }
@@ -566,7 +566,7 @@ fn slave_manager_roundtrips_and_hashes_its_nodes_and_links() {
             })
             .into_iter()
             .collect();
-        slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), cargo);
+        slave.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), cargo);
         sim.substrate.entities.insert(slave);
     }
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
@@ -583,7 +583,7 @@ fn slave_manager_roundtrips_and_hashes_its_nodes_and_links() {
     for (stable_id, word) in [(2, 0x2222), (3, 0x3333)] {
         let slave = restored.substrate.entities.get(stable_id).unwrap();
         assert_eq!(slave.techno_ctor_random_word(), word);
-        assert_eq!(slave.slave.owner(), Some(1));
+        assert_eq!(slave.seldom.slave.owner(), Some(1));
     }
     assert_eq!(
         restored
@@ -591,6 +591,7 @@ fn slave_manager_roundtrips_and_hashes_its_nodes_and_links() {
             .entities
             .get(3)
             .unwrap()
+            .seldom
             .slave
             .cargo()
             .len(),
@@ -629,8 +630,13 @@ fn slave_manager_roundtrips_and_hashes_its_nodes_and_links() {
     assert_ne!(changed_order.state_hash(), source_hash);
 
     let mut changed_owner = restored;
-    changed_owner.substrate.entities.get_mut(2).unwrap().slave =
-        crate::sim::slave_manager::SlaveLink::for_test(Some(3), Vec::new());
+    changed_owner
+        .substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .seldom
+        .slave = crate::sim::slave_manager::SlaveLink::for_test(Some(3), Vec::new());
     assert_ne!(changed_owner.state_hash(), source_hash);
 }
 
@@ -1139,7 +1145,7 @@ fn gsi_04_15_active_tube_detachment_and_exact_z_roundtrip_hash() {
     let mut entity = GameEntity::test_default(entity_id, "MTNK", "Americans", 5, 7);
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(false);
-    entity.in_logic_vector.set_for_test(true);
+    entity.seldom.in_logic_vector.set_for_test(true);
     entity.position.set_z_for_test(3);
     entity.position.set_exact_z_leptons_for_test(Some(-37));
     entity.low_bridge_tube_state = Some(LowBridgeTubeMovementState::for_test(
@@ -1257,15 +1263,19 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
     let mut aircraft =
         crate::sim::game_entity::GameEntity::test_default(entity_id, "ORCA", "AMERICANS", 11, 7);
     aircraft = aircraft.with_air_spatial_membership_for_test(Some(143), 91);
-    aircraft.crate_multipliers.set_armor_multiplier_for_test(
-        crate::util::native_x87::NativeF64Bits::from_bits(1.5_f64.to_bits()),
-    );
+    aircraft
+        .seldom
+        .crate_multipliers
+        .set_armor_multiplier_for_test(crate::util::native_x87::NativeF64Bits::from_bits(
+            1.5_f64.to_bits(),
+        ));
     aircraft.berserk.set_active_for_test(true);
     aircraft.berserk.set_timer_for_test(-17);
     aircraft
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(true);
-    aircraft.damage_smoke_system_id.set_for_test(Some(2));
+    aircraft.seldom.damage_smoke_system_id.set_for_test(Some(2));
     aircraft.capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(3, false, &[3, 4]),
     ));
@@ -1353,6 +1363,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .crate_multipliers
         .set_armor_multiplier_for_test(crate::util::native_x87::NativeF64Bits::ONE);
     assert_ne!(sim.state_hash(), expected_hash, "instance armor is hashed");
@@ -1360,6 +1371,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .crate_multipliers
         .set_armor_multiplier_for_test(crate::util::native_x87::NativeF64Bits::from_bits(
             1.5_f64.to_bits(),
@@ -1391,6 +1403,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(false);
     assert_ne!(
@@ -1402,6 +1415,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(true);
     sim.houses
@@ -1437,6 +1451,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .damage_smoke_system_id
         .set_for_test(None);
     assert_ne!(
@@ -1448,6 +1463,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .damage_smoke_system_id
         .set_for_test(Some(2));
     sim.substrate
@@ -1483,8 +1499,8 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
     assert_eq!(entity.armor_multiplier().bits(), 1.5_f64.to_bits());
     assert!(entity.berserk.is_active());
     assert_eq!(entity.berserk.timer(), -17);
-    assert!(entity.ai_sell_repair.was_attacked_by_enemy());
-    assert_eq!(entity.damage_smoke_system_id.system(), Some(2));
+    assert!(entity.seldom.ai_sell_repair.was_attacked_by_enemy());
+    assert_eq!(entity.seldom.damage_smoke_system_id.system(), Some(2));
     assert_eq!(
         entity.building.pending_c4_detonation.pending(),
         Some(crate::sim::c4_plant::PendingC4Detonation::new(
@@ -1526,6 +1542,7 @@ fn gsi_04_05_hidden_snapshot_and_hash_preserve_counter_and_exit_profile() {
         EntityCategory::Structure,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("4x3".to_string().into());
     let mut profile = crate::rules::object_type::BuildingHiddenOccupancyProfile::default();
@@ -1533,6 +1550,7 @@ fn gsi_04_05_hidden_snapshot_and_hash_preserve_counter_and_exit_profile() {
     profile.add_occupy[1] = Some((-1, -1));
     profile.remove_occupy[0] = Some((3, 1));
     building
+        .seldom
         .type_facts
         .set_building_hidden_occupancy_for_test(Some(profile));
     sim.substrate.entities.insert(building);
@@ -1563,6 +1581,7 @@ fn gsi_04_05_hidden_snapshot_and_hash_preserve_counter_and_exit_profile() {
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .type_facts
         .set_building_hidden_occupancy_for_test(Some(stored));
     assert_ne!(sim.state_hash(), expected_hash);
@@ -1571,6 +1590,7 @@ fn gsi_04_05_hidden_snapshot_and_hash_preserve_counter_and_exit_profile() {
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .type_facts
         .set_building_hidden_occupancy_for_test(Some(stored));
     assert_eq!(sim.state_hash(), expected_hash);
@@ -1589,6 +1609,7 @@ fn gsi_04_05_hidden_snapshot_and_hash_preserve_counter_and_exit_profile() {
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .type_facts
             .building_hidden_occupancy(),
         Some(profile)
@@ -1617,6 +1638,7 @@ fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dum
     );
     building.set_owner_for_test(owner);
     building
+        .seldom
         .type_facts
         .set_base_reservation_spacing_for_test(Some(-3));
     sim.substrate.entities.insert(building);
@@ -1663,6 +1685,7 @@ fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dum
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .type_facts
         .set_base_reservation_spacing_for_test(Some(9));
     assert_ne!(
@@ -1674,6 +1697,7 @@ fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dum
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .type_facts
         .set_base_reservation_spacing_for_test(Some(-3));
     assert_eq!(sim.state_hash(), expected_hash);
@@ -1708,6 +1732,7 @@ fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dum
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .type_facts
             .base_reservation_spacing(),
         Some(-3)
@@ -1862,6 +1887,7 @@ fn exact_mission_schema_round_trips_raw_ids_leaves_archives_and_locomotors() {
         let mut entity = GameEntity::test_default(id, "MTNK", "Americans", 5, 5);
         entity.mission_leaf = leaf;
         entity
+            .seldom
             .suspended_attack_target
             .set_for_test(Some(if index & 1 == 0 {
                 TargetKind::Entity(100 + id)
@@ -1903,7 +1929,7 @@ fn exact_mission_schema_round_trips_raw_ids_leaves_archives_and_locomotors() {
         });
         assert_eq!(entity.mission_leaf, leaf);
         assert_eq!(
-            entity.suspended_attack_target.target(),
+            entity.seldom.suspended_attack_target.target(),
             expected_suspended_target,
             "suspended TargetKind variant and payload must round-trip"
         );

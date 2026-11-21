@@ -45,7 +45,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(10, 10)));
         }
         if input["suppression"] == true {
-            entity.suppress_deploy_voice.suppress();
+            entity.seldom.suppress_deploy_voice.suppress();
         }
         let archive_before = entity.archive_target();
         let mission_before = save_codec::serialize(&entity.mission).unwrap();
@@ -427,7 +427,7 @@ fn selection_after_terrain_prefix_advances_existing_main_without_changing_lockst
     );
     for expected in history["main_next_four"].as_array().unwrap() {
         assert_eq!(
-            u64::from(sim.main_rng().next_u32()),
+            u64::from(sim.main_rng_mut_for_test().next_u32()),
             expected.as_u64().unwrap()
         );
     }
@@ -489,7 +489,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     );
     for expected in history["main_next_four"].as_array().unwrap() {
         assert_eq!(
-            u64::from(sim.main_rng().next_u32()),
+            u64::from(sim.main_rng_mut_for_test().next_u32()),
             expected.as_u64().unwrap()
         );
     }

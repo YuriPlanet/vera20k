@@ -186,7 +186,7 @@ fn bunker_partner(sim: &Simulation, building_id: u64) -> Option<u64> {
     let partner = building
         .bunker
         .occupant()
-        .or(building.radio_contacts.slot(0))?;
+        .or(building.seldom.radio_contacts.slot(0))?;
     sim.substrate
         .entities
         .get(partner)
@@ -443,12 +443,14 @@ mod tests {
             .entities
             .get_mut(building)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, 1);
         substrate
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, building);
         set_state(substrate, building, state);
@@ -469,6 +471,7 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".into());
         assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
@@ -1216,6 +1219,7 @@ mod tests {
             None,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         let building = sim.substrate.entities.get(bunker).unwrap();
@@ -1307,6 +1311,7 @@ mod tests {
             spawn_tank_on(&mut sim, 1, 10, 10);
             let building = sim.substrate.entities.get_mut(2).unwrap();
             building
+                .seldom
                 .type_facts
                 .set_foundation_for_test(rules.object("NATBNK").unwrap().foundation.clone().into());
             building
@@ -1399,6 +1404,7 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(
                 retail
@@ -1618,6 +1624,7 @@ mod tests {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .in_logic_vector
                 .is_member(),
             "installed unit remains in LogicVector"
@@ -1713,6 +1720,7 @@ mod tests {
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             None
@@ -1737,6 +1745,7 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".into());
         spawn_tank_on(&mut sim, 1, 10, 10); // installer on the anchor

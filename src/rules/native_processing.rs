@@ -58,7 +58,7 @@ pub(crate) use processed_type::{
 };
 use processed_type::{
     EXPLICIT_RULE_TYPE_FAMILIES, PROJECTED_RULE_TYPE_FAMILIES, ProcessedType, RulesTypeFamily,
-    SelectAnimRulesState, find_existing_type, find_or_construct_type,
+    SelectAnimRulesState, find_existing_type, find_or_construct_type, read_member,
 };
 pub(crate) use registry_state::{
     NativeRulesRegistryState, NativeTypeConstructionEvent, NativeTypeConstructionTrace,
@@ -78,6 +78,26 @@ pub(crate) fn abstract_type_stored_id(incoming: &str) -> String {
 /// retain the first slot; pointer/index consumers keep the selected object.
 /// The NUL namespace cannot collide with a native C-string ID and is never
 /// used as a filename: the slot's ObjectImageState owns resource requests.
+///
+/// Yields one key per slot of `names`, in registry order, in one pass.
+pub(crate) fn anim_type_runtime_keys<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+) -> impl Iterator<Item = std::borrow::Cow<'a, str>> {
+    // `eq_ignore_ascii_case` holds exactly when the ASCII uppercase spellings
+    // are equal, so a set of those finds the same earlier twin.
+    let mut seen = std::collections::HashSet::new();
+    names.into_iter().enumerate().map(move |(index, name)| {
+        if seen.insert(name.to_ascii_uppercase()) {
+            std::borrow::Cow::Borrowed(name)
+        } else {
+            std::borrow::Cow::Owned(format!("\0ANIM:{index}:{name}"))
+        }
+    })
+}
+
+/// The [`anim_type_runtime_keys`] key of the one slot at `index`, found by
+/// comparing the earlier names in place, without the set; a loop over every
+/// slot takes the iterator instead.
 pub(crate) fn anim_type_runtime_key<'a>(
     names: impl Iterator<Item = &'a str> + Clone,
     index: usize,
@@ -254,7 +274,7 @@ pub struct RulesLayerStack {
     /// or the player's Ares setting is On.
     ships_ares: bool,
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
-    /// (`ares_switch::launch_keys_off`).
+    /// (`AssetManager::ares_setting`).
     ares_keys_off: bool,
 }
 
@@ -265,11 +285,12 @@ impl RulesLayerStack {
                 kind: RulesLayerKind::RulesMd,
                 ini: rulesmd,
             }],
-            // The game's owner sets this from the installed archives
-            // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
-            // stands for the game `ares_switch::game_ships_ares` says.
-            ships_ares: crate::rules::ares_switch::game_ships_ares(false),
-            ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
+            // The game's owner sets both from its asset manager
+            // (`NativeRulesProcessOwner::startup_layers`). A stack built
+            // without saying stands for the game its thread reads
+            // (`ares_switch::ares_way`), with the Ares setting Auto.
+            ships_ares: crate::rules::ares_switch::ares_way(),
+            ares_keys_off: false,
         }
     }
 
@@ -285,8 +306,8 @@ impl RulesLayerStack {
 
     /// VERA: the stack of a game whose player set Ares Off, where no Ares key
     /// turns Ares on. The game's owner sets it from the launch
-    /// (`NativeRulesProcessOwner::startup_layers`); a fixture stack reads the
-    /// launch's (`ares_switch::launch_keys_off`).
+    /// (`NativeRulesProcessOwner::startup_layers`); a stack built without
+    /// saying reads as Auto.
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
         self
@@ -761,9 +782,13 @@ pub(crate) fn read_native_multiplayer_country(
             found
         } else {
             // Unlike generic FindOrAllocate, this reader constructs none
-            // spellings too (4755A0..4755F5).
-            i32::try_from(processor.find_or_construct(RulesTypeFamily::Country, &name))
-                .expect("native Country index exceeds i32")
+            // spellings too (4755A0..4755F5). Past VERA's Country bound it
+            // constructs nothing and keeps the current index.
+            processor
+                .find_or_construct_within_bound(RulesTypeFamily::Country, &name)
+                .map_or(current, |index| {
+                    i32::try_from(index).expect("Country index is within VERA's u16 bound")
+                })
         }
     };
     (index, processor.finish().1)

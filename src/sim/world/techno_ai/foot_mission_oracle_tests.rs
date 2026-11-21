@@ -529,9 +529,7 @@ impl SuppliedFootFixture {
         // cursor, including pre-fixture Main/MapGen history; no seed fitting.
         sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
         sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
         let friendly = sim.interner.intern("SuppliedFriendlyHouse");
@@ -773,7 +771,10 @@ impl SuppliedFootFixture {
                         signed(&before["targeting_timer"][2]) as u32,
                     ));
                 if before["scan"] != 0 {
-                    entity.foot_retarget_after_stop.mark_stopped_cannot_fire();
+                    entity
+                        .seldom
+                        .foot_retarget_after_stop
+                        .mark_stopped_cannot_fire();
                 }
                 // Foot+68D is serialized for every concrete Foot class. This
                 // includes the supplied Unit raw-load control; it does not
@@ -1170,7 +1171,7 @@ fn original_literal_foot_rows_compare_mask_and_empty_result_lifecycle_only() {
             .as_u64()
             .unwrap() as u32;
         assert_eq!(
-            actor.foot_retarget_after_stop.coerce_mask(mask),
+            actor.seldom.foot_retarget_after_stop.coerce_mask(mask),
             row["greatest_threat_masks"]["greatest"][0]
                 .as_u64()
                 .unwrap() as u32,
@@ -1181,6 +1182,7 @@ fn original_literal_foot_rows_compare_mask_and_empty_result_lifecycle_only() {
         // lifecycle owner, without claiming this executes the raw scan body.
         assert_eq!(row["returned_eax"], 0);
         actor
+            .seldom
             .foot_retarget_after_stop
             .finish_scan(row["returned_eax"] != 0);
         assert_eq!(
@@ -1896,6 +1898,7 @@ fn original_full_retail_rescue_matches_native_scan_hit_and_empty_prefix() {
                 .entities
                 .get_mut(fixture.actor)
                 .unwrap()
+                .seldom
                 .foot_retarget_after_stop
                 .clear_for_rescue();
             let actual = fixture

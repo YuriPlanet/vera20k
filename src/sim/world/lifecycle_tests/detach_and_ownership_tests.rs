@@ -50,6 +50,7 @@ fn detach_sweep_restores_before_clearing_target_in_descending_id_order() {
             .attack_target
             .set_for_test(Some(TargetKind::Entity(3)));
         entity
+            .seldom
             .suspended_attack_target
             .set_for_test(Some(TargetKind::Entity(4)));
         entity.navigation.set_nav_com_for_test(None);
@@ -205,6 +206,7 @@ fn bridge_cell_success_restores_before_conditional_target_clear() {
         .attack_target
         .set_for_test(Some(TargetKind::Cell(9, 11)));
     attacker
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Entity(2)));
     attacker
@@ -250,9 +252,13 @@ fn insert_naval_build_const_fixture(
         false,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("1x1".to_string().into());
-    building.type_facts.set_build_const_eligible_for_test(true);
+    building
+        .seldom
+        .type_facts
+        .set_build_const_eligible_for_test(true);
     sim.substrate.entities.insert(building);
 }
 

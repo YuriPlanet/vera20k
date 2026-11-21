@@ -78,12 +78,23 @@ fn vxl_body_tint(
 /// preloaded `%sWO` auxiliary voxel only when that count is zero. This is a
 /// presentation-time query: live but non-docked children still select the
 /// alternate model, and no spawn-manager AI cadence participates.
-fn no_spawn_alt_type_id(
-    base_type: &str,
-    no_spawn_alt: bool,
+///
+/// The name is the drawn type's own spelling plus `WO`: the rules' name,
+/// borrowed, when that spelling is the section's; a type reached through a
+/// differently cased name keeps its spelling in a name built here.
+fn no_spawn_alt_type_id<'a>(
+    base_type: &'a str,
+    object: Option<&'a crate::rules::object_type::ObjectType>,
     docked_spawns: Option<usize>,
-) -> Option<String> {
-    (no_spawn_alt && docked_spawns == Some(0)).then(|| format!("{base_type}{NO_SPAWN_ALT_SUFFIX}"))
+) -> Option<Cow<'a, str>> {
+    let model = object?.no_spawn_alt_model()?;
+    (docked_spawns == Some(0)).then(|| {
+        if model.strip_suffix(NO_SPAWN_ALT_SUFFIX) == Some(base_type) {
+            Cow::Borrowed(model)
+        } else {
+            Cow::Owned(format!("{base_type}{NO_SPAWN_ALT_SUFFIX}"))
+        }
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +152,7 @@ impl VoxelDrawer {
 
 /// What a part draw needs to render outside the selected model's atlas style.
 pub(crate) struct DepthTestedImages<'a> {
+    /// The owner's cell (`RendererState::vxl_pose_frame_cache`).
     pub pose_cache: &'a std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     pub assets: &'a crate::assets::asset_manager::AssetManager,
     pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
@@ -1292,7 +1304,7 @@ pub(crate) fn drawn_model_id<'a>(
     {
         return Cow::Borrowed(unloading_type);
     }
-    let no_spawn_alt = object.is_some_and(|object| object.no_spawn_alt);
+    let no_spawn_alt = object.is_some_and(crate::rules::object_type::ObjectType::no_spawn_alt);
     if let Some(disguise_type) = entity
         .disguise
         .as_ref()
@@ -1302,12 +1314,12 @@ pub(crate) fn drawn_model_id<'a>(
         Cow::Borrowed(interner.resolve(disguise_type))
     } else if let Some(no_spawn_alt_type) = no_spawn_alt_type_id(
         base_type,
-        no_spawn_alt,
+        object,
         entity
             .spawn_manager
             .map(|manager| manager.count_docked_spawns()),
     ) {
-        Cow::Owned(no_spawn_alt_type)
+        no_spawn_alt_type
     } else if let Some(display_override) = (!no_spawn_alt)
         .then_some(entity.display_type_override.image())
         .flatten()
@@ -3782,6 +3794,18 @@ mod tests {
 
     #[test]
     fn gsi_13_07_no_spawn_alt_uses_zero_docked_not_zero_alive() {
+        let object = |no_spawn_alt: &str| {
+            crate::rules::object_type::ObjectType::from_ini_section(
+                "V3",
+                crate::rules::ini_parser::IniFile::from_str(&format!(
+                    "[V3]\nNoSpawnAlt={no_spawn_alt}\n"
+                ))
+                .section("V3")
+                .expect("section"),
+                crate::rules::object_type::ObjectCategory::Vehicle,
+            )
+        };
+        let v3 = object("yes");
         for (state, expects_alt) in [
             (SpawnSlotState::ReadyDocked, false),
             (SpawnSlotState::KamikazeWait, true),
@@ -3793,7 +3817,8 @@ mod tests {
         ] {
             let manager = spawn_manager(&[state]);
             assert_eq!(
-                no_spawn_alt_type_id("V3", true, Some(manager.count_docked_spawns())).as_deref(),
+                no_spawn_alt_type_id("V3", Some(&v3), Some(manager.count_docked_spawns()))
+                    .as_deref(),
                 expects_alt.then_some("V3WO"),
                 "state {state:?}"
             );
@@ -3802,14 +3827,18 @@ mod tests {
         let in_flight = spawn_manager(&[SpawnSlotState::InFlight]);
         assert_eq!(in_flight.count_alive_spawns(), 1);
         assert_eq!(
-            no_spawn_alt_type_id("V3", true, Some(in_flight.count_docked_spawns())).as_deref(),
+            no_spawn_alt_type_id("V3", Some(&v3), Some(in_flight.count_docked_spawns())).as_deref(),
             Some("V3WO"),
             "a live child away from its dock still selects the empty rack"
         );
         assert_eq!(
-            no_spawn_alt_type_id("V3", false, Some(in_flight.count_docked_spawns())),
+            no_spawn_alt_type_id(
+                "V3",
+                Some(&object("no")),
+                Some(in_flight.count_docked_spawns())
+            ),
             None
         );
-        assert_eq!(no_spawn_alt_type_id("V3", true, None), None);
+        assert_eq!(no_spawn_alt_type_id("V3", Some(&v3), None), None);
     }
 }

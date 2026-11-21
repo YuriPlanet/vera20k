@@ -43,7 +43,7 @@ fn install(sim: &mut Simulation, rules: &RuleSet, event_record: &str) -> usize {
 /// Cases about the current player's side fallback take that identity off.
 fn without_stored_disguise(sim: &mut Simulation, actor: u64) {
     let entity = sim.substrate.entities.get_mut(actor).unwrap();
-    entity.disguise.as_mut().unwrap().clear_unit();
+    entity.seldom.disguise.as_mut().unwrap().clear_unit();
 }
 
 fn rng(sim: &Simulation) -> [String; 3] {
@@ -104,6 +104,7 @@ fn spy_house_event_reads_forced_display_owner_and_first_country_house() {
             .entities
             .get_mut(actor)
             .unwrap()
+            .seldom
             .disguise
             .as_mut()
             .unwrap();
@@ -168,7 +169,12 @@ fn network_spy_house_event_has_no_current_player_fallback() {
         .unwrap();
     let live = install(&mut sim, &rules, "1,53,0,7");
     let disguise = sim.substrate.entities.get_mut(actor).unwrap();
-    disguise.disguise.as_mut().unwrap().acquire(0, None, None);
+    disguise
+        .seldom
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, None, None);
     sim.session.set_current_house_for_test(Some(houses[1]));
     let occurs = |sim: &mut Simulation| {
         let input = TagEventInput {
@@ -444,6 +450,7 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -454,6 +461,7 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         .entities
         .get(actor)
         .unwrap()
+        .seldom
         .disguise
         .as_ref()
         .unwrap();
@@ -545,7 +553,7 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
         if let Some(name) = stored {
             let typ = sim.interner.get(name).unwrap();
             let entity = sim.substrate.entities.get_mut(actor).unwrap();
-            let disguise = entity.disguise.as_mut().unwrap();
+            let disguise = entity.seldom.disguise.as_mut().unwrap();
             disguise.acquire(0, Some(typ), None);
             disguise.receive_damage_reveal(0, 1, EntityCategory::Infantry);
             assert!(!disguise.is_disguised(), "GetDisguise(1) ignores the flag");
@@ -695,18 +703,21 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         .entities
         .get_mut(air)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     sim.substrate
         .entities
         .get_mut(known)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     sim.substrate
         .entities
         .get_mut(unknown)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(false);
     for cell in [(14, 15), (23, 15), (23, 23), (8, 11)] {

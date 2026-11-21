@@ -1,11 +1,37 @@
 # External launches
 
-A launcher outside the game starts a match with `-SPAWN` and a `spawn.ini`. Before it does, two
-headless commands answer what that launch needs: the probe says what a launch on this
-installation is checked against, and the random-map command makes the file of a random-map
-room. Each runs in a folder whose `config.toml` names the game folder, opens no window, prints one
+A launcher outside the game starts a match with `-SPAWN` and a `spawn.ini`. Before it does,
+headless commands answer what that launch needs: the version says which build this is, the probe
+says what a launch on this installation is checked against, and the random-map command makes the
+file of a random-map room. The probe and the random-map command run in a folder whose
+`config.toml` names the game folder; the version needs none. Each opens no window, prints one
 JSON line on stdout and exits 0; on failure it exits non-zero with the reason on stderr. The
-browser package exports both as functions ([Wasm guide](wasm.md)).
+browser package exports them as functions ([Wasm guide](wasm.md)).
+
+## Version
+
+```sh
+vera20k --version
+vera20k --probe --version
+```
+
+Both print the probe's `version` and `build_identity` (below) and nothing else, without a game
+folder, retail files or rules:
+
+```json
+{"version":"0.3.9:<network build>","build_identity":{"package_version":"0.3.9","network_build":"<sha-256>","phobos":true,"npatch":true,"verax":true,"target":"macos","commit":"00f524cc8…"}}
+```
+
+`package_version` is `Cargo.toml`'s, which a release raises right after it is made, so a
+development build names the release it leads to. `commit` is the commit the builder named in
+`VERA20K_COMMIT` when building (the Release workflow does), or `null`. Neither `commit` nor
+`target` decides who plays together; `version` does.
+
+A build from before this command treats `--version` as an unknown launch argument and starts the
+game, while it refuses `--probe --version` with a usage error. A launcher that may meet such a
+build asks with `--probe --version` and treats a failure as "this build cannot say". In the
+browser, `version()` returns the same JSON text; it needs no imported files, and a package without
+it lacks the export.
 
 ## Probe
 
@@ -14,7 +40,7 @@ vera20k --probe [--ra2-dir <dir>] [--map <map-file>] [--mod <folder> | --no-mod]
 ```
 
 It reports the multiplayer `version` (`[Settings] ExpectedVersion`) and its parts
-(`build_identity`), the default mode's `rules_digest` (`ExpectedRulesDigest`) and every loaded
+(`build_identity`, as [Version](#version) prints it), the default mode's `rules_digest` (`ExpectedRulesDigest`) and every loaded
 mode's digest in `game_modes`, the `map` given (`file`, `byte_length`, `source_sha256` for
 `ExpectedMapDigest`, `effective_digest`) and its `max_start_waypoints`, the `Side=` values
 (`countries`), the `Color=` values (`colors`), the `campaigns` a single-player launch may start,
@@ -34,6 +60,57 @@ probe's default is loaded mode 1 when its class supports Skirmish, otherwise the
 Skirmish mode. For a launch selecting another `GameMode`, use that row's digest from
 `game_modes`. Custom ids are reported too; if the catalog has no mode 1, the launcher must name
 its chosen id explicitly in `spawn.ini`.
+
+### Rules parts
+
+`rules_parts`, beside `rules_digest` and in each `game_modes` row, is that digest in parts, so a
+launcher can say what differs when two players' digests do. A build that lacks the field reports
+only the digest. The parts never decide a match: games play together when their `rules_digest`s
+agree.
+
+```json
+{"v":1,"digest":"<16 hex>",
+ "files":[{"id":"rules","name":"rulesmd.ini","digest":"<16 hex>","source":"retail","changed":false},
+          {"id":"art","name":"artmd.ini","digest":"<16 hex>","source":"loose","changed":true,
+           "sections":["General","NUKE"],"sections_more":0}],
+ "settings":{"terrain_deformation":false,"superweapon_limit":0,"ares":"auto","ares_mix":false,
+             "ini_roots_stock":true,"mod":null},
+ "mod_check":null}
+```
+
+- `digest`: the first 16 hex digits of the SHA-256 of the object as compact JSON without `digest`,
+  keys in the order shown. The same parts give the same digest on every platform.
+- `files`: one part per component of `rules_digest`, in its order: `rules` (the Rules root
+  without the Options switches, which `settings` names), `langrule` (only when read), `art`, `ai`,
+  `mode` (the mode's INI; none for a mode without one), `theater:<ini name>` for each theater's INI,
+  `tiles` (the theater tiles the game folder changes), and with a mod `mod_files` (its folder) and
+  `map_additions` (when it has any). `name` is the file name, never a path; `digest` the first 16
+  hex digits of the part's digest, or `absent`; `source` `retail` (the original archives), `loose`
+  (a file in the game folder), `mix:<archive>` (another archive by its lowercased name, such as `expandmd99.mix`), `mod`
+  or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
+  `sections` the sections that differ from the retail copy (added, removed or changed), sorted, at
+  most 20, and counts the rest in `sections_more`.
+- `settings`: the Options switches the game plays, the Ares setting (`auto`, `on`, `off`), whether
+  `ares.mix` is mounted, whether the Rules, Art and AI roots, the theater suffix and the mode and
+  map catalogs are YR's, and the mod (`title` and `version`, from its `mod.ini`, else its folder's
+  name; `version` is empty without one). When a mod requires Ares or the game reads any INI root
+  or archive name other than YR's, `resources` names them as the digest compares them, lowercased:
+  `requires_ares`, `roots` (Rules, Art, AI, sound, EVA, theme, campaign, mission, map selection,
+  mode and map catalog) and `archives` (expansion and map prefixes, multiplayer and theme
+  archives, movie prefix); otherwise it is left out.
+- `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
+  (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null.
+
+The object is at most 8192 bytes: longer lists are cut first, then free text (file names,
+sources, the mod's title and version, the `resources` names) to 64 characters, and last the files from the end; `digest`
+is always that of the object as sent.
+
+A `-SPAWN` launch whose `ExpectedRulesDigest` differs fails as before, with the reason, and its
+`spawn_result.json` (in the browser, the `spawn:finished:` report) adds
+`"failure": "rules_mismatch"` and this game's `rules_parts` for the launched mode. A network match
+logs its `Rules parts:` when it starts. When a launcher's match is refused at the start, the
+game's box says what this game changes from the original game and that the launcher shows the
+details.
 
 ## Random maps
 

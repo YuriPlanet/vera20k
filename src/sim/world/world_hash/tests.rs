@@ -23,7 +23,7 @@ mod retained_cell_hash_tests {
         // coordinates retain the same process object; hashing may not stamp it.
         for retained_field in 0..8 {
             entity.attack_target.set_for_test(None);
-            entity.suspended_attack_target.set_for_test(None);
+            entity.seldom.suspended_attack_target.set_for_test(None);
             entity.set_archive_target(None);
             entity.navigation = Default::default();
             match retained_field {
@@ -31,6 +31,7 @@ mod retained_cell_hash_tests {
                     .attack_target
                     .set_for_test(Some(TargetKind::Cell(1, 2))),
                 1 => entity
+                    .seldom
                     .suspended_attack_target
                     .set_for_test(Some(TargetKind::Cell(3, 4))),
                 2 => entity.set_archive_target(Some(TargetKind::Cell(5, 6))),
@@ -640,7 +641,7 @@ mod lifecycle_hash_tests {
             5,
             crate::map::entities::EntityCategory::Structure,
         );
-        entity.type_facts.set_foundation_for_test(first);
+        entity.seldom.type_facts.set_foundation_for_test(first);
         let mut sim = Simulation::new();
         sim.substrate.entities.insert(entity);
         let before = sim.state_hash();
@@ -648,6 +649,7 @@ mod lifecycle_hash_tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(second);
         assert_ne!(before, sim.state_hash());
@@ -707,20 +709,22 @@ mod lifecycle_hash_tests {
                 entity.death.set_dying_for_test(!entity.death.is_dying());
             });
             assert_entity_mutation_changes_hash(|entity| {
-                let eligible = entity.removal_facts.dirty_rect_eligible();
+                let eligible = entity.seldom.removal_facts.dirty_rect_eligible();
                 entity
+                    .seldom
                     .removal_facts
                     .set_dirty_rect_eligible_for_test(!eligible);
             });
             assert_entity_mutation_changes_hash(|entity| {
-                let recorded = entity.kill_record.is_recorded();
+                let recorded = entity.seldom.kill_record.is_recorded();
                 entity
+                    .seldom
                     .kill_record
                     .set_destruction_recorded_for_test(!recorded);
             });
             assert_entity_mutation_changes_hash(|entity| {
-                let occupier = entity.removal_facts.occupier();
-                entity.removal_facts.set_occupier_for_test(!occupier);
+                let occupier = entity.seldom.removal_facts.occupier();
+                entity.seldom.removal_facts.set_occupier_for_test(!occupier);
             });
             assert_entity_mutation_changes_hash(|entity| {
                 entity.set_in_playfield(!entity.in_playfield());
@@ -776,7 +780,7 @@ mod mission_authority_hash_tests {
 
     fn hash_suspended_target(target: Option<TargetKind>) -> u64 {
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        entity.suspended_attack_target.set_for_test(target);
+        entity.seldom.suspended_attack_target.set_for_test(target);
         hash_entity(entity)
     }
 
@@ -1444,11 +1448,12 @@ mod state_hash_field_tests {
         let mut entity_b = Simulation::new();
         let mut a = GameEntity::test_default(1, "GAPOWR", "Computer1", 10, 10);
         let mut b = a.clone();
-        a.type_facts.set_base_plan_type_index_for_test(2);
-        a.type_facts.set_base_plan_is_defense_for_test(true);
-        a.type_facts
+        a.seldom.type_facts.set_base_plan_type_index_for_test(2);
+        a.seldom.type_facts.set_base_plan_is_defense_for_test(true);
+        a.seldom
+            .type_facts
             .set_base_plan_has_undeploy_target_for_test(true);
-        b.type_facts.set_base_plan_type_index_for_test(3);
+        b.seldom.type_facts.set_base_plan_type_index_for_test(3);
         entity_a.substrate.entities.insert(a);
         entity_b.substrate.entities.insert(b);
         assert_ne!(entity_a.state_hash(), entity_b.state_hash());
@@ -1509,10 +1514,12 @@ mod state_hash_field_tests {
         let mut changed = Simulation::new();
         let mut entity = entity;
         entity
+            .seldom
             .base_defense_response
             .set_recruitable_b_for_test(false);
         entity.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(7)));
         entity
+            .seldom
             .base_defense_response
             .set_cooldown_for_test(crate::sim::timer::CdTimer::started(12, 225));
         changed.substrate.entities.insert(entity);
@@ -1984,6 +1991,7 @@ mod infantry_hash_tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .foot_retarget_after_stop
             .mark_stopped_cannot_fire();
         let retained_hash = sim.state_hash();
@@ -1996,13 +2004,19 @@ mod infantry_hash_tests {
         let actor = loaded.substrate.entities.get_mut(1).unwrap();
         assert!(actor.foot_retarget_after_stop());
         assert_eq!(
-            actor.foot_retarget_after_stop.coerce_mask(input_mask),
+            actor
+                .seldom
+                .foot_retarget_after_stop
+                .coerce_mask(input_mask),
             effective_mask
         );
-        actor.foot_retarget_after_stop.finish_scan(false);
+        actor.seldom.foot_retarget_after_stop.finish_scan(false);
         assert!(!actor.foot_retarget_after_stop());
         assert_eq!(
-            actor.foot_retarget_after_stop.coerce_mask(input_mask),
+            actor
+                .seldom
+                .foot_retarget_after_stop
+                .coerce_mask(input_mask),
             input_mask
         );
         assert_eq!(loaded.state_hash(), clear_hash);

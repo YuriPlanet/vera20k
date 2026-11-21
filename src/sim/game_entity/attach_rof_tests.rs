@@ -69,12 +69,12 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
     sim.resolve_type_handles(&rules);
     sim.scenario_rng = SimRng::new(31);
     shoot(&mut sim, &rules, firer, dummy);
-    let ordinary_timer = sim.entities().get(firer).unwrap().rearm_timer;
+    let ordinary_timer = sim.entities().get(firer).unwrap().seldom.rearm_timer;
     assert!((45..=47).contains(&ordinary_timer.duration()));
     let parent = shoot(&mut sim, &rules, emitter, firer);
     sim.object_ai_visit_one(parent, Some(&rules), ObjectAiCtx::default());
     assert_eq!(
-        sim.entities().get(firer).unwrap().rearm_timer,
+        sim.entities().get(firer).unwrap().seldom.rearm_timer,
         ordinary_timer,
         "applying an effect does not restart a running reload"
     );
@@ -85,7 +85,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
     sim.session.set_binary_frame_for_test(46);
     sim.scenario_rng = SimRng::new(31);
     shoot(&mut sim, &rules, firer, dummy);
-    let affected_timer = sim.entities().get(firer).unwrap().rearm_timer;
+    let affected_timer = sim.entities().get(firer).unwrap().seldom.rearm_timer;
     assert!(
         (78..=80).contains(&affected_timer.duration()),
         "FireAt consumes the attached multiplier before its own jitter"
@@ -100,7 +100,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
         .validate_attached_stats_after_restore(&rules)
         .unwrap();
     assert_eq!(
-        loaded.entities().get(firer).unwrap().rearm_timer,
+        loaded.entities().get(firer).unwrap().seldom.rearm_timer,
         affected_timer
     );
     let hash = loaded.state_hash();
@@ -109,6 +109,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
         .entities
         .get_mut(firer)
         .unwrap()
+        .seldom
         .ares
         .attach_effects
         .rof_multiplier = NativeF64Bits::ONE;
@@ -126,16 +127,25 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
     let actor = sim.entities().get(firer).unwrap();
     assert_eq!(actor.attached_rof_multiplier(), NativeF64Bits::ONE);
     assert_eq!(
-        actor.rearm_timer, affected_timer,
+        actor.seldom.rearm_timer, affected_timer,
         "expiry leaves the previously sampled timer intact"
     );
     assert_eq!(
-        actor.rearm_timer.remaining(48),
+        actor.seldom.rearm_timer.remaining(48),
         affected_timer.duration() - 2
     );
     sim.session
         .set_binary_frame_for_test(46 + affected_timer.duration() as u32);
     sim.scenario_rng = SimRng::new(31);
     shoot(&mut sim, &rules, firer, dummy);
-    assert!((45..=47).contains(&sim.entities().get(firer).unwrap().rearm_timer.duration()));
+    assert!(
+        (45..=47).contains(
+            &sim.entities()
+                .get(firer)
+                .unwrap()
+                .seldom
+                .rearm_timer
+                .duration()
+        )
+    );
 }

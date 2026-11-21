@@ -445,6 +445,7 @@ fn gsi_04_12_common_raw_occupation_building_foundation_is_ground_only() {
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.set_on_bridge(true);
@@ -479,15 +480,18 @@ fn gsi_04_05_hidden_lifecycle_follows_base_lists_without_expanding_them() {
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         let mut profile = building
+            .seldom
             .type_facts
             .building_hidden_occupancy()
             .expect("structure constructor profile");
         profile.add_occupy[0] = Some((-1, 0));
         profile.remove_occupy[0] = Some((1, 1));
         building
+            .seldom
             .type_facts
             .set_building_hidden_occupancy_for_test(Some(profile));
     }

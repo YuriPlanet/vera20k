@@ -260,7 +260,7 @@ impl MindScene {
                 let captive = self.sim.entities().get(id).unwrap();
                 assert!(captive.lifecycle.object_alive() && captive.health.current() > 0);
                 assert_eq!(captive.owner(), owner);
-                assert_eq!(captive.mind_control.controller(), Some(self.mind));
+                assert_eq!(captive.seldom.mind_control.controller(), Some(self.mind));
                 assert!(
                     fired_at.contains(&id),
                     "real selected FireAt must precede CaptureUnit"
@@ -359,7 +359,7 @@ impl MindScene {
         let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
             .sim;
-        loaded.main_rng = self.sim.main_rng.snapshot_for_test().into();
+        loaded.main_rng = self.sim.main_rng.clone();
         loaded.scenario_rng = self.sim.scenario_rng.clone();
         loaded.mapgen_rng = self.sim.mapgen_rng.clone();
         loaded.restore_after_snapshot_load().unwrap();

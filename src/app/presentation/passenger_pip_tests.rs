@@ -303,7 +303,7 @@ fn a_slave_shows_the_load_it_carries() {
         let cargo = std::iter::repeat_n(bale(ResourceType::Ore), ore)
             .chain(std::iter::repeat_n(bale(ResourceType::Gem), gems))
             .collect();
-        sim.entity_mut_for_test(slave).unwrap().slave =
+        sim.entity_mut_for_test(slave).unwrap().seldom.slave =
             crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
         assert_eq!(
             frames(&sim, rules, slave, None),

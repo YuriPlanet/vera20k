@@ -106,7 +106,7 @@ fn timer(value: &Value) -> CdTimer {
 
 fn install_rng_boundary(sim: &mut Simulation, states: &Value) {
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
@@ -425,15 +425,23 @@ fn damage_event_predicates_match_original_discrete_controls() {
         let trigger_type = sim.trigger_runtime.trigger(live).unwrap().type_index;
         let events = &sim.trigger_runtime.definitions.trigger_types[trigger_type].events;
         assert_eq!(events.len(), 1, "{name}: counted event reader");
-        assert_eq!(events[0].kind, integer(&case["read"]["kind"]), "{name}");
-        assert_eq!(events[0].value, integer(&case["read"]["value"]), "{name}");
         assert_eq!(
-            events[0].type_name.as_deref().unwrap_or(""),
+            events[0].condition.kind,
+            integer(&case["read"]["kind"]),
+            "{name}"
+        );
+        assert_eq!(
+            events[0].condition.value,
+            integer(&case["read"]["value"]),
+            "{name}"
+        );
+        assert_eq!(
+            events[0].condition.type_name.as_deref().unwrap_or(""),
             case["read"]["name"].as_str().unwrap(),
             "{name}: counted event reader"
         );
         assert_eq!(
-            events[0].team_name.is_some(),
+            events[0].condition.team_name.is_some(),
             case["read"]["team_present"].as_bool().unwrap(),
             "{name}: counted event reader"
         );
@@ -783,7 +791,7 @@ fn retail_all05_first_damage_creates_defense_team_from_existing_units() {
         [sim.trigger_runtime.trigger(live).unwrap().type_index];
     assert_eq!(definition.id, route["trigger_id"]);
     assert_eq!(
-        definition.events[0].kind,
+        definition.events[0].condition.kind,
         integer(&route["native_event"]["conditions"][0]["kind"])
     );
     assert_eq!(

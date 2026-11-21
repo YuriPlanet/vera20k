@@ -89,11 +89,24 @@ pub(crate) fn pack_chrome_atlas(
         .iter()
         .map(|piece| (piece.width, piece.height))
         .collect();
+    // Mod art replaces every piece; a page taller than the device allows
+    // fails validation instead of drawing, and the callers already turn a
+    // missing atlas into the startup message naming the art.
+    let layout = layout(&sizes);
+    if !crate::render::gpu::texture_fits(&gpu.device, [layout.width, layout.height]) {
+        log::error!(
+            "{atlas_name} atlas: {}x{} px does not fit this GPU's {} px textures",
+            layout.width,
+            layout.height,
+            gpu.device.limits().max_texture_dimension_2d
+        );
+        return None;
+    }
     let ChromeAtlasLayout {
         width,
         height,
         origins,
-    } = layout(&sizes);
+    } = layout;
 
     let mut rgba = vec![0u8; (width * height * 4) as usize];
     for (piece, &[px, py]) in pieces.iter().zip(&origins) {

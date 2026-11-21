@@ -4,7 +4,7 @@
 use super::{
     AresGlobalControls, CountryVeterancyState, NativeRulesRegistryState,
     NativeTypeConstructionEvent, ProcessedRulesLayers, ProcessedType, RulesTypeFamily,
-    anim_type_runtime_key, find_or_construct_type,
+    anim_type_runtime_keys, find_or_construct_type,
 };
 use crate::rules::aircraft_trailer::AircraftTrailer;
 use crate::rules::ares_armor::ArmorCatalog;
@@ -388,16 +388,6 @@ impl ProcessedRulesLayers {
                 "saved Rules require a different compiled extension capability",
             ));
         }
-        // A launch reads one way, by whether its game ships `ares.mix`
-        // (`ares_switch::launch_reads`): Rules read the other way are another
-        // game's.
-        if !crate::rules::ares_switch::launch_reads(registry.reads_ares_way) {
-            return Err(RulesError::InvalidSavedState(if registry.reads_ares_way {
-                "saved Rules are from a game with Ares (ares.mix), which the game now open is not"
-            } else {
-                "saved Rules are from a game without Ares, and the game now open ships ares.mix"
-            }));
-        }
         // Only a read the Ares way fills these SuperWeaponType fields.
         if !registry.reads_ares_way
             && registry.families.values().flatten().any(|member| {
@@ -462,18 +452,13 @@ impl ProcessedRulesLayers {
         let animations = families
             .get(&RulesTypeFamily::Animation)
             .map_or(&[][..], Vec::as_slice);
-        let animation_keys: HashSet<_> = (0..animations.len())
-            .map(|index| {
-                anim_type_runtime_key(
-                    animations
-                        .iter()
-                        .map(|member| member.native_stored_id.as_str()),
-                    index,
-                )
-                .expect("existing AnimType slot")
-                .to_ascii_uppercase()
-            })
-            .collect();
+        let animation_keys: HashSet<_> = anim_type_runtime_keys(
+            animations
+                .iter()
+                .map(|member| member.native_stored_id.as_str()),
+        )
+        .map(|key| key.to_ascii_uppercase())
+        .collect();
         for (&family, members) in &registry.families {
             for member in members {
                 if (family != RulesTypeFamily::Aircraft

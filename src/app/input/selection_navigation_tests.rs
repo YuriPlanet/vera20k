@@ -269,6 +269,7 @@ fn veterancy_navigation_keeps_shared_snapshot_without_pointer_expiry() {
         .set_object_alive_for_test(false);
     sim.entity_mut_for_test(40)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(false);
 
@@ -365,7 +366,7 @@ fn assert_navigation_boundary(
             continue;
         };
         assert_eq!(
-            entity.selection.is_selected(),
+            entity.seldom.selection.is_selected(),
             actor["selected"].as_bool().unwrap(),
             "{label}: committed bit{id}"
         );
@@ -386,7 +387,7 @@ fn assert_navigation_boundary(
         );
         if let Some(present) = actor["slave_owner_present"].as_bool() {
             assert_eq!(
-                entity.slave.owner().is_some(),
+                entity.seldom.slave.owner().is_some(),
                 present,
                 "{label}: existing SlaveOwner{id}"
             );
@@ -816,6 +817,7 @@ fn replay_category_history(
                             .lifecycle
                             .set_in_limbo_for_test(value.as_bool().unwrap()),
                         "selected" => entity
+                            .seldom
                             .selection
                             .set_selected_for_test(value.as_bool().unwrap()),
                         "health" => entity.health.set_for_test(value.as_i64().unwrap() as i32),
@@ -840,9 +842,9 @@ fn replay_category_history(
                 let entity = sim
                     .entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap();
-                entity.slave = crate::sim::slave_manager::SlaveLink::for_test(
+                entity.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(
                     None,
-                    entity.slave.cargo().to_vec(),
+                    entity.seldom.slave.cargo().to_vec(),
                 );
             }
             "reset_selection_mode" => input.type_select.note_successful_selection_mutation(false),
@@ -894,6 +896,7 @@ fn replay_category_history(
                 for actor in &history.inputs.actors {
                     sim.entity_mut_for_test(actor.id)
                         .unwrap()
+                        .seldom
                         .selection
                         .set_selected_for_test(
                             step["selected_flags"][actor.id.to_string()]
@@ -903,7 +906,7 @@ fn replay_category_history(
                 }
                 for draw in step["main_draws"].as_array().unwrap() {
                     assert_eq!(
-                        u64::from(sim.main_rng().next_u32()),
+                        u64::from(sim.main_rng_mut_for_test().next_u32()),
                         draw.as_u64().unwrap(),
                         "{label}: supplied TypeSelect continuation"
                     );
@@ -928,7 +931,7 @@ fn replay_category_history(
         }
         assert_navigation_boundary(&input, &sim, step, &label);
         assert_navigation_rng(&sim, &step["rng_after_hex"], &label);
-        let mut continuation = sim.main_rng().snapshot_for_test();
+        let mut continuation = sim.main_rng().clone();
         for draw in step["main_next_four"].as_array().unwrap() {
             assert_eq!(
                 u64::from(continuation.next_u32()),
@@ -965,7 +968,7 @@ fn replay_category_history(
     );
     for &draw in &history.main_next_four {
         assert_eq!(
-            sim.main_rng().next_u32(),
+            sim.main_rng_mut_for_test().next_u32(),
             draw,
             "{}: final Main continuation",
             history.id
@@ -1137,6 +1140,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
                     .lifecycle
                     .set_in_limbo_for_test(boundary["limbo"].as_bool().unwrap());
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(boundary["selected"].as_bool().unwrap());
             }
@@ -1211,7 +1215,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
             );
             for native_draw in &history.main_next_four {
                 assert_eq!(
-                    sim.main_rng().next_u32(),
+                    sim.main_rng_mut_for_test().next_u32(),
                     *native_draw,
                     "{label}: next raw Main"
                 );
@@ -1370,7 +1374,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
                 input = boundary_mode(step);
                 for draw in step["main_draws"].as_array().unwrap() {
                     assert_eq!(
-                        u64::from(sim.main_rng().next_u32()),
+                        u64::from(sim.main_rng_mut_for_test().next_u32()),
                         draw.as_u64().unwrap(),
                         "{label} step {index}"
                     );
@@ -1541,6 +1545,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
                     sim.entities()
                         .get(actor.id)
                         .unwrap()
+                        .seldom
                         .selection
                         .is_selected(),
                     step["selected_flags"][actor.id.to_string()]
@@ -1569,7 +1574,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
         );
         for &expected in &history.main_next_four {
             assert_eq!(
-                sim.main_rng().next_u32(),
+                sim.main_rng_mut_for_test().next_u32(),
                 expected,
                 "{label}: following raw draw"
             );
@@ -1837,9 +1842,11 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
         entity.lifecycle.set_in_limbo_for_test(actor.limbo);
         entity.set_in_playfield(actor.in_playfield);
         entity
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(actor.discovered);
         entity
+            .seldom
             .selection
             .set_selected_for_test(selected.contains(&actor.id));
         if let Some(bits) = actor.veterancy_raw_bits {
@@ -1849,7 +1856,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
         }
         entity.lift.set_swap_active_for_test(actor.locomotor_swap);
         if actor.mission_only {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         if actor.virtual_1d4 {
             entity.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
@@ -1857,7 +1864,8 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
             ));
         }
         if actor.slave {
-            entity.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(999), Vec::new());
+            entity.seldom.slave =
+                crate::sim::slave_manager::SlaveLink::for_test(Some(999), Vec::new());
         }
         if actor.bunker {
             entity
@@ -1865,7 +1873,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
                 .set_bunker_link_for_test(BunkerLink::Installed(999));
         }
         if actor.docked {
-            entity.tether.set_for_test(Some(999));
+            entity.seldom.tether.set_for_test(Some(999));
         }
         let [x, y, z] = actor.coord;
         entity.position.put_location(DriveCoord { x, y, z });
@@ -2143,6 +2151,7 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                     sim.entities()
                         .get(actor.id)
                         .unwrap()
+                        .seldom
                         .selection
                         .is_selected(),
                     row.selected.contains(&actor.id),
@@ -2168,6 +2177,7 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                 sim.entities()
                     .get(actor.id)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected(),
                 expected.selected_flags[&actor.id.to_string()],
@@ -2276,6 +2286,7 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
                 .entities()
                 .get(actor.id)
                 .unwrap()
+                .seldom
                 .selection
                 .is_selected(),
             row.steps[0].selected_flags[&actor.id.to_string()]

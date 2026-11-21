@@ -646,7 +646,14 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
         enemy.position.set_ry_for_test(52);
     }
     sim.add_entity_occupancy(shooter);
-    let rearm = sim.substrate.entities.get(1).unwrap().rearm_timer.timer();
+    let rearm = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .seldom
+        .rearm_timer
+        .timer();
     let mut acquired = false;
     let mut fired = false;
     for _ in 0..120 {
@@ -657,7 +664,7 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
         assert_eq!(entity.mission.current().known(), Some(MissionType::Move));
         acquired |=
             entity.attack_target.target() == Some(crate::sim::combat::TargetKind::Entity(shooter));
-        fired |= entity.rearm_timer.timer() != rearm;
+        fired |= entity.seldom.rearm_timer.timer() != rearm;
         if fired {
             break;
         }
@@ -827,7 +834,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             pose: entity.map(|_| pose(sim, rocketeer)),
             health: entity.map_or(0, |entity| entity.health.current()),
             crashing: entity.is_some_and(|entity| entity.crash.is_crashing()),
-            rearm: entity.map(|entity| entity.rearm_timer.timer()),
+            rearm: entity.map(|entity| entity.seldom.rearm_timer.timer()),
             anims,
             crash_sounds,
         });

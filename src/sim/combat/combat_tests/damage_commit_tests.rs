@@ -70,14 +70,14 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
     let mut store = EntityStore::new();
 
     let mut dead = make_entity(1, "MTNK", 5, 5, 0);
-    dead.selection.set_selected_for_test(true);
+    dead.seldom.selection.set_selected_for_test(true);
     dead.attack_target.set_for_test(Some(TargetKind::Entity(2)));
     dead.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(9, 9)));
-    dead.in_logic_vector.set_for_test(true);
+    dead.seldom.in_logic_vector.set_for_test(true);
     dead.lifecycle.set_in_limbo_for_test(false);
     dead.lifecycle.set_cell_marked_for_test(true);
-    dead.radio_contacts.insert(2);
+    dead.seldom.radio_contacts.insert(2);
     store.insert(dead);
 
     let mut observer = make_entity(2, "MTNK", 6, 5, 300);
@@ -99,7 +99,10 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
         !dead.death.is_dying(),
         "immediate UnInit, not combat, owns the death gate"
     );
-    assert!(dead.selection.is_selected(), "UnInit owns deselection");
+    assert!(
+        dead.seldom.selection.is_selected(),
+        "UnInit owns deselection"
+    );
     assert!(
         dead.attack_target.target().is_some(),
         "UnInit owns attack cleanup"
@@ -109,15 +112,18 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
         "UnInit owns movement cleanup"
     );
     assert!(
-        dead.in_logic_vector.is_member(),
+        dead.seldom.in_logic_vector.is_member(),
         "UnInit owns LogicVector removal"
     );
     assert!(dead.lifecycle.object_alive());
     assert!(!dead.lifecycle.in_limbo());
     assert!(dead.lifecycle.cell_marked());
-    assert!(dead.radio_contacts.contains(2), "Techno Limbo owns BREAK");
     assert!(
-        !dead.kill_record.is_recorded(),
+        dead.seldom.radio_contacts.contains(2),
+        "Techno Limbo owns BREAK"
+    );
+    assert!(
+        !dead.seldom.kill_record.is_recorded(),
         "world lifecycle owns count release"
     );
     assert!(
@@ -141,7 +147,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     passenger.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
         1, false,
     ));
-    passenger.selection.set_selected_for_test(true);
+    passenger.seldom.selection.set_selected_for_test(true);
     passenger
         .attack_target
         .set_for_test(Some(TargetKind::Entity(3)));
@@ -164,7 +170,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     assert_eq!(passenger.health.current(), 125);
     assert!(!passenger.death.is_dying());
     assert_eq!(passenger.passenger_role().inside_transport_id(), Some(1));
-    assert!(passenger.selection.is_selected());
+    assert!(passenger.seldom.selection.is_selected());
     assert!(passenger.attack_target.target().is_some());
     assert!(passenger.navigation.nav_com().is_some());
 }
@@ -175,14 +181,14 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_health_and_sequence(
     let mut store = EntityStore::new();
 
     let mut dead = make_infantry_entity(1, "E1", 5, 5, 0);
-    dead.selection.set_selected_for_test(true);
+    dead.seldom.selection.set_selected_for_test(true);
     dead.attack_target.set_for_test(Some(TargetKind::Entity(2)));
     dead.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(9, 9)));
-    dead.in_logic_vector.set_for_test(true);
+    dead.seldom.in_logic_vector.set_for_test(true);
     dead.lifecycle.set_in_limbo_for_test(false);
     dead.lifecycle.set_cell_marked_for_test(true);
-    dead.radio_contacts.insert(2);
+    dead.seldom.radio_contacts.insert(2);
     store.insert(dead);
 
     let mut observer = make_entity(2, "MTNK", 6, 5, 300);
@@ -205,15 +211,15 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_health_and_sequence(
     assert_eq!(dead.mission_leaf.as_infantry().unwrap().doing(), 11);
     assert_eq!(dead.native_stage().value(), 0);
     assert_eq!(dead.infantry_sprite_pose(), Some((11, 0)));
-    assert!(dead.selection.is_selected());
+    assert!(dead.seldom.selection.is_selected());
     assert!(dead.attack_target.target().is_some());
     assert!(dead.navigation.nav_com().is_some());
-    assert!(dead.in_logic_vector.is_member());
+    assert!(dead.seldom.in_logic_vector.is_member());
     assert!(dead.lifecycle.object_alive());
     assert!(!dead.lifecycle.in_limbo());
     assert!(dead.lifecycle.cell_marked());
-    assert!(dead.radio_contacts.contains(2));
-    assert!(!dead.kill_record.is_recorded());
+    assert!(dead.seldom.radio_contacts.contains(2));
+    assert!(!dead.seldom.kill_record.is_recorded());
     assert!(
         store.get(2).unwrap().attack_target.target().is_some(),
         "selective removal listeners, not combat, own target invalidation"
@@ -503,6 +509,7 @@ fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
         MissionId::from_known(MissionType::Guard),
     );
     second
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Entity(10)));
     entities.insert(second);

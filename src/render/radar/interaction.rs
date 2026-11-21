@@ -974,6 +974,7 @@ mod tests {
             crate::map::entities::EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("4x3".to_string().into());
         building

@@ -79,8 +79,13 @@ impl ObjectType {
     /// negative-turn arm's sign-before-store result.
     pub fn fly_roll_angle_f32(&self) -> f32 {
         use crate::util::native_x87::X87Chop53 as X;
-        let angle = X::load_f64(self.roll_angle).expect("finite Fly RollAngle");
-        f32::from_bits(X::store_f32(angle).expect("finite Fly angle store").bits())
+        // `RollAngle=1e999` reads as infinity and `1e41` overflows the
+        // binary32 store; native FSTP stores an indefinite value there. A
+        // rules file is outside data: the angle is zero instead of a panic.
+        X::load_f64(self.roll_angle)
+            .ok()
+            .and_then(|angle| X::store_f32(angle).ok())
+            .map_or(0.0, |stored| f32::from_bits(stored.bits()))
     }
 
     /// Existing typed PitchAngle value shared with Fly approach and normal
@@ -372,6 +377,17 @@ impl ObjectType {
     ) {
         self.convert_water = water.cloned();
         self.convert_land = land.cloned();
+    }
+
+    /// `NoSpawnAlt=yes`.
+    pub fn no_spawn_alt(&self) -> bool {
+        self.no_spawn_alt_model.is_some()
+    }
+
+    /// The `<TYPE>WO` art a `NoSpawnAlt=yes` type draws while no spawn is
+    /// docked, named after the section.
+    pub fn no_spawn_alt_model(&self) -> Option<&str> {
+        self.no_spawn_alt_model.as_deref()
     }
 
     /// Read-only projection of the retained WaterImage pointer.
@@ -1467,6 +1483,20 @@ impl ObjectType {
     /// Store the weapon records resolved against the current weapons.
     pub(crate) fn project_resolved_weapons(&mut self, weapons: crate::rules::ruleset::TypeWeapons) {
         self.resolved_weapons = weapons;
+    }
+
+    /// `debris_types` as its RuleSet resolved it; reads go through
+    /// `RuleSet::object_debris_types`, which checks the resolving set.
+    pub(crate) fn resolved_debris(&self) -> &crate::rules::ruleset::ResolvedDebris {
+        &self.resolved_debris
+    }
+
+    /// Store `debris_types` resolved against the current `[VoxelAnims]`.
+    pub(crate) fn project_resolved_debris(
+        &mut self,
+        debris: crate::rules::ruleset::ResolvedDebris,
+    ) {
+        self.resolved_debris = debris;
     }
 
     /// The ART `SiloDamage=` [`crate::rules::ruleset::RuleSet`] projected;

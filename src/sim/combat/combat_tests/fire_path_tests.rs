@@ -28,7 +28,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     );
     let mut rng = SimRng::new(0x50_4e_49_43);
     let rng_before = rng.logical_state();
-    let rearm_before = entities.get(1).unwrap().rearm_timer.timer();
+    let rearm_before = entities.get(1).unwrap().seldom.rearm_timer.timer();
     let mut hooks: Option<&mut FixtureTrace> = None;
     let mut emit = CombatEmit::default();
 
@@ -57,7 +57,10 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
 
     assert!(emit.fire_events.is_empty());
     assert!(emit.damage_events.is_empty());
-    assert_eq!(entities.get(1).unwrap().rearm_timer.timer(), rearm_before);
+    assert_eq!(
+        entities.get(1).unwrap().seldom.rearm_timer.timer(),
+        rearm_before
+    );
     assert!(emit.remove_attack.is_empty());
     assert_eq!(rng.logical_state(), rng_before);
     assert_eq!(entities.get(1).unwrap().current_weapon_number(), 1);
@@ -128,7 +131,7 @@ fn gsi_08_05_tick_combat_respects_the_jittered_cooldown() {
     // so a `ROF=50` weapon reloads in 50, 51 or 52 frames — the exact value is
     // drawn, which is why this test reads the armed countdown instead of
     // hardcoding a frame number.
-    let cooldown = store.get(1).unwrap().rearm_timer.duration() as u32;
+    let cooldown = store.get(1).unwrap().seldom.rearm_timer.duration() as u32;
     assert!(
         (50..=52).contains(&cooldown),
         "ROF=50 must reload in 50..=52 frames, got {cooldown}"
@@ -147,6 +150,7 @@ fn gsi_08_05_tick_combat_respects_the_jittered_cooldown() {
         store
             .get(1)
             .unwrap()
+            .seldom
             .rearm_timer
             .remaining(cooldown as i32 - 1),
         1
@@ -389,11 +393,18 @@ fn a_slow_infantry_shot_scatters_its_targets_cell_away_from_the_shooter() {
         let rearm = crate::sim::timer::CdTimer::started(0, 40);
         let shooter = sim.substrate.entities.get_mut(gi).unwrap();
         if refused {
-            shooter.rearm_timer.set_for_test(rearm);
+            shooter.seldom.rearm_timer.set_for_test(rearm);
         }
         shooter.set_native_stage_value(2);
         fire(&mut sim);
-        let rearm_after = sim.substrate.entities.get(gi).unwrap().rearm_timer.timer();
+        let rearm_after = sim
+            .substrate
+            .entities
+            .get(gi)
+            .unwrap()
+            .seldom
+            .rearm_timer
+            .timer();
         if refused {
             assert_eq!(rearm_after, rearm, "Speed={speed}: the shot is refused");
         } else {

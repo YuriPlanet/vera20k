@@ -78,7 +78,7 @@ fn deploy_voice_suppression_roundtrips_independently_of_the_audio_latch() {
     let native = crate::rules::deploy_voice_tests::native();
     let mut entity = GameEntity::test_default(1, "YAREFN", "YuriCountry", 6, 7);
     assert!(!entity.deploy_voice_suppressed());
-    entity.suppress_deploy_voice.suppress();
+    entity.seldom.suppress_deploy_voice.suppress();
     let bytes = save_codec::serialize(&entity).unwrap();
     let mut loaded: GameEntity = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(
@@ -87,7 +87,7 @@ fn deploy_voice_suppression_roundtrips_independently_of_the_audio_latch() {
             .as_bool()
             .unwrap()
     );
-    loaded.suppress_deploy_voice.clear();
+    loaded.seldom.suppress_deploy_voice.clear();
     assert!(!loaded.deploy_voice_suppressed());
     assert!(
         entity.deploy_voice_suppressed(),
@@ -110,7 +110,7 @@ fn a_clients_own_deploy_click_does_not_reach_the_state_hash() {
             .spawn_object("SMIN", "Americans", 10, 10, 0, &rules)
             .expect("SMIN spawns");
         let entity = sim.substrate.entities.get_mut(miner).unwrap();
-        entity.suppress_deploy_voice.suppress();
+        entity.seldom.suppress_deploy_voice.suppress();
         if clicked {
             let _ = sim.deploy_voice_request(&rules, miner, true);
             assert!(!sim.entities().get(miner).unwrap().deploy_voice_suppressed());

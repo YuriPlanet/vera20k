@@ -171,10 +171,12 @@ impl RenderPhases {
 
 /// Output retained from one production game render.
 ///
-/// `sidebar_view` is the existing UI handoff. The counts are observation-only
-/// evidence derived from the same vectors uploaded and dispatched this frame.
+/// The counts are observation-only evidence derived from the same vectors
+/// uploaded and dispatched this frame.
 pub(crate) struct GameRenderOutput {
-    pub sidebar_view: Option<SidebarView>,
+    /// The revision of the sidebar view this render drew, `None` when it drew
+    /// none. The view stays with its owner ([`Self::drawn_sidebar_view`]).
+    sidebar_view_revision: Option<u64>,
     pub rendered_verdict: Option<crate::sim::house_state::HouseOutcomeKind>,
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
@@ -184,6 +186,16 @@ pub(crate) struct GameRenderOutput {
     /// The frame of this render's software cursor sprite, for a zoomed
     /// match's window pass (`window_ui::draw_battlefield`).
     pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
+}
+
+impl GameRenderOutput {
+    /// The sidebar view this render drew, read from the retained projection:
+    /// `None` when the render drew no sidebar, or when the projection's view
+    /// has changed since and the drawn one is gone.
+    pub(crate) fn drawn_sidebar_view<'s>(&self, state: &'s AppState) -> Option<&'s SidebarView> {
+        let projection = &state.match_state.match_presentation.sidebar_projection;
+        projection.view_at(self.sidebar_view_revision?)
+    }
 }
 
 /// Actual HUD update inputs observed by the frame owner, and the radar draw
@@ -315,6 +327,9 @@ pub(crate) fn render_game(
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
+    // The sidebar chrome of the side the local player draws, built on the
+    // frame that first needs it (`SidebarChromeSet::ensure_side`).
+    crate::app::presentation::sidebar_render::ensure_current_sidebar_chrome(state);
     let after_snapshot = render_started.map(|_| Instant::now());
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
@@ -976,7 +991,7 @@ pub(crate) fn render_game(
         .cached_terrain_instances = std::mem::take(&mut world.terrain.normal);
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
-        sidebar_view: sidebar.view,
+        sidebar_view_revision: sidebar.view_revision,
         rendered_verdict,
         times,
         particle_draws: world.particle_draws,

@@ -5,7 +5,6 @@
 use crate::app::AppState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
-    software_cursor_frame_index,
 };
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
@@ -70,10 +69,10 @@ struct HudMore {
     /// with the frame so the label never reads the live simulation while a
     /// frame is being drawn; empty for anything but such a Structure.
     super_charges: Vec<crate::sim::superweapon::SuperChargeLine>,
-    /// VERA's convenience status lines ([VERA] ConvenienceHelp): reload,
-    /// building repair, unit repair. Each string is formatted at capture time
-    /// from frozen sim facts, so the draw pass reads no live simulation.
-    info_lines: Vec<String>,
+    /// VERA's convenience status facts ([VERA] ConvenienceHelp): reload and
+    /// building repair, captured from frozen sim facts so the draw pass
+    /// reads no live simulation, and formatted when drawn.
+    info: StatusInfo,
 }
 
 impl HudMore {
@@ -84,7 +83,7 @@ impl HudMore {
             && self.bomb.is_none()
             && self.digital_values.is_empty()
             && self.super_charges.is_empty()
-            && self.info_lines.is_empty()
+            && self.info.is_empty()
     }
 }
 
@@ -143,7 +142,7 @@ impl HudFacts {
                     rules.ares(),
                 )
             }),
-            foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
+            foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
             toggled_off: entity.ares_toggled_off(),
             shows_production_to_observer: at
                 .observer_id
@@ -151,7 +150,7 @@ impl HudFacts {
         });
         let more = HudMore {
             scale_pips: scale_pip_rows(sim, entity, rules),
-            controller: entity.mind_control.controller(),
+            controller: entity.seldom.mind_control.controller(),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
             } else {
@@ -197,7 +196,7 @@ impl HudFacts {
             },
             // Convenience Help's rows: captured only while it is on, and only
             // for the observer's and its allies' objects, which alone draw them.
-            info_lines: if at.status_rows
+            info: if at.status_rows
                 && at.observer.is_some_and(|viewer| {
                     crate::map::houses::is_allied_with(
                         sim.house_alliances().as_map(),
@@ -205,9 +204,9 @@ impl HudFacts {
                         sim.interner().resolve(entity.owner()),
                     )
                 }) {
-                status_info_lines(entity, object, rules, at.binary_frame)
+                StatusInfo::capture(entity, object, rules, at.binary_frame)
             } else {
-                Vec::new()
+                StatusInfo::default()
             },
         };
         Self {
@@ -263,9 +262,11 @@ impl HudFacts {
         self.more().map_or(&[], |more| &more.super_charges)
     }
 
-    /// VERA's detailed status lines, already formatted at capture time.
-    pub(crate) fn info_lines(&self) -> &[String] {
-        self.more().map_or(&[], |more| &more.info_lines)
+    /// VERA's detailed status lines, formatted from the captured facts.
+    pub(crate) fn info_lines(&self) -> impl Iterator<Item = String> {
+        self.more()
+            .map_or_else(StatusInfo::default, |more| more.info)
+            .lines()
     }
 
     fn toggled_off(&self) -> bool {
@@ -279,10 +280,10 @@ impl HudFacts {
     }
 }
 
-/// VERA's convenience help status lines, resolved from frozen sim facts at
-/// capture time (`HudFacts::capture`) so the draw pass never reads live state.
-/// Every number comes from the object's own sim fields plus Rules; nothing
-/// writes back. The strings are complete and localized.
+/// VERA's convenience help status facts of an object, captured from
+/// frozen sim facts (`HudFacts::capture`) so the draw pass never reads live
+/// state; the draw formats them ([`Self::lines`]). Every number comes from
+/// the object's own sim fields plus Rules; nothing writes back.
 ///
 /// Two kinds are enabled here, both single-entity facts:
 /// - ammo reload: the Techno's reload clock while a magazine is incomplete;
@@ -291,51 +292,66 @@ impl HudFacts {
 /// Unit repair is depot-side (its progress lives on the servicing Building,
 /// keyed by radio contact) and is intentionally not shown here: the unit has
 /// no reliable single owning repair clock to report.
-fn status_info_lines(
-    entity: &crate::sim::game_entity::GameEntity,
-    object: Option<&crate::rules::object_type::ObjectType>,
-    rules: &RuleSet,
-    frame: u32,
-) -> Vec<String> {
-    let frame = frame as i32;
-    let mut lines = Vec::new();
+#[derive(Clone, Copy, Debug, Default)]
+struct StatusInfo {
+    /// Whole seconds left on the reload clock of a magazine that is not full.
+    reload_seconds: Option<i32>,
+    /// Whole seconds and credits the running repair still needs.
+    repair: Option<(i32, i32)>,
+}
 
-    // Ammo reload: only a Techno with a limited magazine that is not full and
-    // whose reload clock is actually running. Mirrors DigitalInfoType::Reload.
-    if let Some(object) = object {
-        if object.ammo > 0 {
-            let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
-            if ammo < object.ammo {
-                let timer = entity.ammo_reload_timer();
-                let remaining = timer.remaining(frame);
-                if remaining > 0 {
-                    let seconds =
-                        remaining / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
-                    if let Some(template) = crate::i18n::find("VERA:InfoReload") {
-                        let time = crate::app::presentation::super_timers::time_text(seconds);
-                        lines.push(crate::i18n::fill(&template, &[("time", &time)]));
-                    }
-                }
-            }
+impl StatusInfo {
+    fn capture(
+        entity: &crate::sim::game_entity::GameEntity,
+        object: Option<&crate::rules::object_type::ObjectType>,
+        rules: &RuleSet,
+        frame: u32,
+    ) -> Self {
+        use crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+        let Some(object) = object else {
+            return Self::default();
+        };
+        // Ammo reload: only a Techno with a limited magazine that is not full
+        // and whose reload clock is actually running. Mirrors
+        // DigitalInfoType::Reload.
+        let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+        let reload_seconds = (object.ammo > 0 && ammo < object.ammo)
+            .then(|| entity.ammo_reload_timer().remaining(frame as i32))
+            .filter(|&remaining| remaining > 0)
+            .map(|remaining| remaining / FRAMES_PER_SECOND);
+        // Building repair: the repair's own owner answers what is left.
+        let repair = (entity.category() == EntityCategory::Structure)
+            .then(|| crate::sim::production::repair_remaining(entity, object, rules, frame))
+            .flatten()
+            .map(|(frames, cost)| (frames / FRAMES_PER_SECOND, cost));
+        Self {
+            reload_seconds,
+            repair,
         }
     }
 
-    // Building repair: the repair's own owner answers what is left.
-    if entity.category() == EntityCategory::Structure
-        && let Some(object) = object
-        && let Some((frames, cost)) =
-            crate::sim::production::repair_remaining(entity, object, rules, frame as u32)
-        && let Some(template) = crate::i18n::find("VERA:InfoBuildingRepair")
-    {
-        let seconds = frames / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
-        let time = crate::app::presentation::super_timers::time_text(seconds);
-        lines.push(crate::i18n::fill(
-            &template,
-            &[("time", &time), ("cost", &cost)],
-        ));
+    fn is_empty(&self) -> bool {
+        self.reload_seconds.is_none() && self.repair.is_none()
     }
 
-    lines
+    /// The localized rows: the reload's, then the repair's.
+    fn lines(self) -> impl Iterator<Item = String> {
+        use crate::app::presentation::super_timers::time_text;
+        let reload = self.reload_seconds.and_then(|seconds| {
+            let template = crate::i18n::find("VERA:InfoReload")?;
+            let time = time_text(seconds);
+            Some(crate::i18n::fill(&template, &[("time", &time)]))
+        });
+        let repair = self.repair.and_then(|(seconds, cost)| {
+            let template = crate::i18n::find("VERA:InfoBuildingRepair")?;
+            let time = time_text(seconds);
+            Some(crate::i18n::fill(
+                &template,
+                &[("time", &time), ("cost", &cost)],
+            ))
+        });
+        reload.into_iter().chain(repair)
+    }
 }
 
 /// Authentic pip counts for unit health bars.
@@ -1058,15 +1074,15 @@ pub(crate) fn build_building_status_render_instances(
             } else {
                 &[]
             };
-        // VERA's convenience status rows (building repair): the same frozen
-        // capture, gated by ConvenienceHelp, drawn for every visible friendly
+        // VERA's convenience status rows (reload, building repair): the same
+        // frozen capture, gated by ConvenienceHelp, drawn for every visible friendly
         // building like the Super lines. `allied` is true for the local house
         // as well as allies, so an enemy's row is never shown. Not restricted
         // to the selected building.
-        let info_lines: &[String] = if convenience_help && allied && visible {
-            entity.hud.info_lines()
+        let info_lines: Vec<String> = if convenience_help && allied && visible {
+            entity.hud.info_lines().collect()
         } else {
-            &[]
+            Vec::new()
         };
         // DrawExtraInfo needs the building selected, including when it is
         // also hovered.
@@ -1133,7 +1149,7 @@ pub(crate) fn build_building_status_render_instances(
             ));
         }
         // VERA info rows stack below the Super rows (super first, then info),
-        // each a complete already-localized string from the frozen capture.
+        // each localized here from the frozen capture's facts.
         for (row, text) in info_lines.iter().enumerate() {
             let anchor = [
                 anchor[0],
@@ -2908,7 +2924,11 @@ pub(crate) fn build_software_cursor_instances(
     };
     // Row 0 is still the shape shown over a node, so its phase steps:
     // leaving the node restarts the next cursor's animation.
-    let Some(animated) = software_cursor_frame_index(id, sequence) else {
+    let Some(animated) = state
+        .match_state
+        .input
+        .software_cursor_frame_index(id, sequence)
+    else {
         return (Vec::new(), None);
     };
     let (id, sequence, index) = if id == CursorId::Default
@@ -2998,6 +3018,54 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    /// Convenience Help's reload row, formatted when drawn from the facts
+    /// the frame captured: an allied unit and an allied building that are
+    /// reloading their magazines each draw the filled VERA:InfoReload row.
+    #[test]
+    fn convenience_reload_rows_reach_allied_units_and_buildings() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=AMMO\n[AMMO]\nStrength=100\nAmmo=2\nReload=150\n\
+             [BuildingTypes]\n0=AMMOBLDG\n[AMMOBLDG]\nStrength=100\nAmmo=2\nReload=150\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let mut spend_one = |name: &str, cell: u16| {
+            let id = sim
+                .spawn_object(name, "Americans", cell, cell, 0, &rules)
+                .unwrap();
+            crate::sim::arena_fixture::install_status_ammo_state(
+                sim.entities_mut_for_test().get_mut_for_test(id).unwrap(),
+                rules.object(name).unwrap(),
+                "reloading",
+                Some(1),
+            );
+            id
+        };
+        let unit = spend_one("AMMO", 8);
+        let building = spend_one("AMMOBLDG", 14);
+        let player = sim.interner().get("Americans");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(player);
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test_with_status_rows(
+            &sim, &rules, true,
+        );
+        let rows = |id| {
+            frame
+                .object(id)
+                .unwrap()
+                .hud
+                .info_lines()
+                .collect::<Vec<_>>()
+        };
+        let reload = crate::i18n::fill(
+            &crate::i18n::find("VERA:InfoReload").unwrap(),
+            &[("time", &super::super::super_timers::time_text(150 / 15))],
+        );
+        assert_eq!(rows(unit), [reload]);
+        assert_eq!(rows(building), rows(unit));
+    }
+
     #[cfg(not(feature = "phobos"))]
     #[test]
     fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {
@@ -3240,7 +3308,7 @@ mod tests {
             false,
         );
         actor.lifecycle.set_in_limbo_for_test(false);
-        actor.selection.set_selected_for_test(true);
+        actor.seldom.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(actor);
         sim.resubmit_entity_display_for_test(1);
         sim.session_mut_for_test()
@@ -3284,6 +3352,7 @@ mod tests {
         );
         sim.entity_mut_for_test(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(false);
         assert!(!admitted(&sim, None));
@@ -3356,14 +3425,18 @@ mod tests {
                 if disguised {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                     disguise.acquire(0, None, None);
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(input["selected"].as_bool().unwrap());
-                entity.discovery.set_discovered_by_current_house_for_test(
-                    input["discovered"].as_bool().unwrap(),
-                );
+                entity
+                    .seldom
+                    .discovery
+                    .set_discovered_by_current_house_for_test(
+                        input["discovered"].as_bool().unwrap(),
+                    );
                 sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(1);
                 sim.session_mut_for_test()
@@ -3444,10 +3517,10 @@ mod tests {
                 false,
             );
             entity.lifecycle.set_in_limbo_for_test(false);
-            entity.selection.set_selected_for_test(selected);
+            entity.seldom.selection.set_selected_for_test(selected);
             let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
             disguise.acquire(0, None, None);
-            entity.disguise = Some(disguise);
+            entity.seldom.disguise = Some(disguise);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             health_bar_drawable(
@@ -3607,7 +3680,7 @@ mod tests {
             if disguised {
                 let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                 disguise.acquire(0, None, None);
-                entity.disguise = Some(disguise);
+                entity.seldom.disguise = Some(disguise);
             }
             sim.entities_mut_for_test().insert(entity);
             sim.session_mut_for_test()
@@ -3678,7 +3751,7 @@ mod tests {
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);
-        assert!(!target.selection.is_selected());
+        assert!(!target.seldom.selection.is_selected());
         println!(
             "CATIME01 raw_anchor_mapped={} hover={hover:?}",
             sim.fog()

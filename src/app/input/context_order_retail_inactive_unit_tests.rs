@@ -110,6 +110,7 @@ fn hover_cursor(
             modifier,
             false,
             false,
+            &mut Default::default(),
         ),
     )
 }
@@ -381,6 +382,7 @@ fn retail_tank_being_warped_out_neither_attacks_nor_fires() {
     // is.
     sim.entity_mut_for_test(tank)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     let own_cursor = |sim: &Simulation, target, modifier| {
@@ -426,6 +428,7 @@ fn retail_mcv_being_warped_out_does_not_deploy() {
         .expect("mcv");
     sim.entity_mut_for_test(mcv)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     let owner = sim.entities().get(mcv).unwrap().owner();

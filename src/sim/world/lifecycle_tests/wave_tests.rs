@@ -661,6 +661,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
         let factory = sim.substrate.entities.get_mut(factory_id).unwrap();
         factory.set_type_ref_for_test(sim.interner.intern("WEAP"));
         factory
+            .seldom
             .type_facts
             .set_foundation_for_test("1x1".to_string().into());
     }
@@ -672,6 +673,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
         .entities
         .get_mut(first_id)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(factory_id)
         .unwrap();
@@ -747,6 +749,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             let building = sim.substrate.entities.get_mut(building_id).unwrap();
             building.set_type_ref_for_test(sim.interner.intern("BLDG"));
             building
+                .seldom
                 .type_facts
                 .set_foundation_for_test("1x1".to_string().into());
         }
@@ -1429,6 +1432,7 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x1".to_string().into());
         building.health.set_for_test(10);

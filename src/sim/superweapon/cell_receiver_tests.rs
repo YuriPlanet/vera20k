@@ -214,7 +214,7 @@ fn held_infantry_survives_launch(name: &str) {
         assert!(
             object.lifecycle.in_limbo()
                 && !object.lifecycle.cell_marked()
-                && !object.in_logic_vector.is_member()
+                && !object.seldom.in_logic_vector.is_member()
         );
     }
     assert!(
@@ -264,7 +264,7 @@ fn animated_mutation_victim_retires(explosion: bool) {
     let object = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(object.infantry_sprite_pose(), Some((-1, 0)));
     assert!(object.animation.is_none(), "Doing owns the Infantry pose");
-    assert!(object.lifecycle.cell_marked() && object.in_logic_vector.is_member());
+    assert!(object.lifecycle.cell_marked() && object.seldom.in_logic_vector.is_member());
     launch_command(&mut sim, &rules, "GM", 5, 5);
     // InfDeath 9's admitted arm UnInits the victim inside its receiver
     // (`0x005185F1`); no death sequence keeps a corpse.
@@ -311,7 +311,7 @@ fn infantry_effect_only_cleanup_follows_recursive_deaths() {
     assert_eq!(uninit_order, [child, parent]);
     for id in [parent, child] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+        assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
     }
     sim.advance_tick(&[], Some(&rules), None, None, 100);
     assert!(!sim.substrate.entities.contains(parent));
@@ -467,7 +467,9 @@ fn infantry_receiver_sequences_finish_through_production_frames() {
             if frame < 3 {
                 let object = sim.substrate.entities.get(victim).unwrap();
                 assert_eq!(object.infantry_sprite_pose(), Some((doing, frame)));
-                assert!(object.lifecycle.cell_marked() && object.in_logic_vector.is_member());
+                assert!(
+                    object.lifecycle.cell_marked() && object.seldom.in_logic_vector.is_member()
+                );
             }
         }
         assert!(!sim.substrate.occupancy.contains_entity(5, 5, victim));
@@ -508,7 +510,7 @@ fn zero_count_death_request_leaves_an_infantryman_the_health_reset_revives() {
         !object.death.is_dying()
             && object.lifecycle.object_alive()
             && object.lifecycle.cell_marked()
-            && object.in_logic_vector.is_member()
+            && object.seldom.in_logic_vector.is_member()
     );
     sim.advance_tick(&[], Some(&rules), None, None, 100);
     let object = sim
@@ -715,10 +717,10 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
         !dead.death.is_dying()
             && dead.lifecycle.object_alive()
             && dead.lifecycle.cell_marked()
-            && dead.in_logic_vector.is_member()
+            && dead.seldom.in_logic_vector.is_member()
     );
     assert_eq!(dead.infantry_sprite_pose(), Some((12, 0)));
-    assert_eq!(dead.kill_record.killer(), Some(owner));
+    assert_eq!(dead.seldom.kill_record.killer(), Some(owner));
     // The ordinary sequence still owns the object; the existing shared UnInit
     // terminal owns score publication. Verify the attributed receipt survives it.
     sim.uninit_with_rules(wounded, &rules);

@@ -604,9 +604,9 @@ fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
         // Move_To before any frame-final projection rebuild; its Process
         // searches the live grid.
         let unit = sim.substrate.entities.get_mut(2).unwrap();
-        unit.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
-            crate::sim::combat::TargetKind::Cell(6, 3),
-        ));
+        unit.seldom.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(
+            Some(crate::sim::combat::TargetKind::Cell(6, 3)),
+        );
         assert!(sim.foot_continue_mega_mission(
             2,
             &rules,

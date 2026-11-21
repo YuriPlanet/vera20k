@@ -44,6 +44,7 @@ fn structural_fallout_retires_effect_only_ground_victim() {
         .entities
         .get_mut(victim)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     // Supplied structural47DD70 callback. Concrete ground overlays205..232
@@ -58,7 +59,7 @@ fn structural_fallout_retires_effect_only_ground_victim() {
     );
     let object = sim.substrate.entities.get(victim).unwrap();
     assert!(!object.lifecycle.object_alive());
-    assert!(object.death.is_dying() && !object.selection.is_selected());
+    assert!(object.death.is_dying() && !object.seldom.selection.is_selected());
     assert!(!sim.substrate.occupancy.contains_entity(4, 4, victim));
     assert!(!sim.live_object_order_snapshot().contains(&victim));
     assert_eq!(

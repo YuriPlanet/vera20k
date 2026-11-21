@@ -1201,7 +1201,7 @@ mod receiver {
                     EmpDelivery::Applied,
                 );
                 let victim = sim.entities().get(target).unwrap();
-                assert!(victim.deactivated.is_offline() && victim.selection.is_selected());
+                assert!(victim.deactivated.is_offline() && victim.seldom.selection.is_selected());
                 assert_eq!(emp_event_kinds(&sim), expected);
             }
         }
@@ -2539,6 +2539,7 @@ mod receiver {
                 .entities
                 .get_mut(target)
                 .unwrap()
+                .seldom
                 .selection
                 .select();
             assert_eq!(
@@ -2560,7 +2561,7 @@ mod receiver {
                 victim.deactivated.is_offline(),
                 "House50E010 must pass the shared EMP veto"
             );
-            assert!(victim.selection.is_selected());
+            assert!(victim.seldom.selection.is_selected());
             assert_eq!(victim.emp_remaining(), 2);
             sim.tick_ares_emp(target, &rules, FrameEffects::empty());
             assert!(
@@ -2848,7 +2849,7 @@ mod receiver {
                     victim
                         .deactivated
                         .set_for_test(f["deactivated"].as_bool().unwrap_or(false));
-                    victim.selection.select();
+                    victim.seldom.selection.select();
                     victim
                         .mission
                         .set_current_for_test(crate::sim::mission::MissionId::from_raw(5), 0);
@@ -2894,7 +2895,7 @@ mod receiver {
                         row["name"]
                     );
                     assert_eq!(
-                        actual.selection.is_selected(),
+                        actual.seldom.selection.is_selected(),
                         expected["selected"].as_bool().unwrap(),
                         "{}",
                         row["name"]
@@ -2919,7 +2920,7 @@ mod receiver {
                     victim
                         .deactivated
                         .set_for_test(row["fixture"]["deactivated"].as_bool().unwrap_or(false));
-                    victim.selection.select();
+                    victim.seldom.selection.select();
                 }
                 let rng = sim.scenario_rng.logical_state();
                 for (index, mission) in row["missions"].as_array().unwrap().iter().enumerate() {
@@ -2954,7 +2955,7 @@ mod receiver {
                         row["name"]
                     );
                     assert_eq!(
-                        actual.selection.is_selected(),
+                        actual.seldom.selection.is_selected(),
                         expected["selected"].as_bool().unwrap(),
                         "{} visit{index}",
                         row["name"]
@@ -2983,7 +2984,7 @@ mod receiver {
                 victim
                     .mission
                     .set_current_for_test(crate::sim::mission::MissionId::from_raw(5), 0);
-                victim.selection.select();
+                victim.seldom.selection.select();
             }
             let coord = crate::sim::movement::ground_pose::position_world_coord(
                 &sim.substrate.entities.get(target).unwrap().position,
@@ -3010,7 +3011,7 @@ mod receiver {
                     expected[phase]["deactivated"].as_bool().unwrap()
                 );
                 assert_eq!(
-                    victim.selection.is_selected(),
+                    victim.seldom.selection.is_selected(),
                     expected[phase]["selected"].as_bool().unwrap()
                 );
                 assert_eq!(

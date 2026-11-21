@@ -617,7 +617,7 @@ pub(crate) fn building_dock_coordinate(
         super::ground_pose::object_location(building, terrain),
         super::ground_pose::object_get_coords(building, terrain),
         object,
-        &building.radio_contacts,
+        &building.seldom.radio_contacts,
         requester,
         || {
             let id = requester.ok_or("Bunker dock coordinate needs a requester")?;
@@ -700,7 +700,7 @@ pub(crate) fn object_navigation_coordinate(
             super::ground_pose::object_location(entity, terrain),
             super::ground_pose::object_get_coords(entity, terrain),
             object,
-            &entity.radio_contacts,
+            &entity.seldom.radio_contacts,
             requester,
             requester_coordinate,
         );

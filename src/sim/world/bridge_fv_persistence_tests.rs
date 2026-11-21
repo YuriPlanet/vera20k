@@ -36,7 +36,7 @@ fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
         })
         .collect();
     json!({
-        "actor":actor,"actor_in_logic":actor.in_logic_vector.is_member(),
+        "actor":actor,"actor_in_logic":actor.seldom.in_logic_vector.is_member(),
         "bullets":bullets,
         "anims":sim.substrate.anims.iter().map(|(_, anim)|
             json!({"state":anim,"in_logic":anim.in_logic_vector(),

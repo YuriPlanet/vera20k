@@ -130,7 +130,7 @@ fn native_null_record_kill_books_each_live_callback_immediately() {
                 "{name}"
             );
             assert!(
-                !victim.kill_record.is_recorded(),
+                !victim.seldom.kill_record.is_recorded(),
                 "{name}: live capture is not death"
             );
             assert_eq!(sim.rng_state(), before_rng, "{name}");

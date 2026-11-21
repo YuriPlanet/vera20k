@@ -60,8 +60,7 @@ fn ordinary_spark() -> &'static Value {
 }
 
 fn restore_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
@@ -492,7 +491,7 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
         "fatal receiver already unmarked"
     );
     assert!(
-        !victim.in_logic_vector.is_member(),
+        !victim.seldom.in_logic_vector.is_member(),
         "fatal receiver already left Logic"
     );
     for &(x, y) in &cells {
@@ -560,7 +559,10 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             1,
             DelayedFire::Weapon(WeaponSlot::Primary),
         )));
-    entity.rearm_timer.set_for_test(CdTimer::started(100, 0));
+    entity
+        .seldom
+        .rearm_timer
+        .set_for_test(CdTimer::started(100, 0));
     entity.mission_leaf.set_building_ready_latch(1);
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -877,6 +879,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 DelayedFire::Weapon(WeaponSlot::Primary),
             )));
         entity
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(sim.session.binary_frame() as i32, 0));
         let health_before = sim.substrate.entities.get(target).unwrap().health.current();

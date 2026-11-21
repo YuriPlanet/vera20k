@@ -515,6 +515,10 @@ fn the_lobbys_other_game_lines_are_warnings() {
     assert!(line(rules).warns_of_other_game());
     let build = json!([{"key": "BuildMismatch", "values": {"name": "Boris", "version": "0.3.8"}}]);
     assert!(line(build).warns_of_other_game());
+    // The line naming what only one game has opens with its own sentence.
+    let changes = json!([{"key": "RulesDifferFromHost", "values": {"name": "Boris"}},
+        {"key": "SameRulesToStart"}]);
+    assert!(line(changes).warns_of_other_game());
     assert!(!line(json!([{"key": "OnlyPlayerOnline"}])).warns_of_other_game());
     assert!(!line(Value::Null).warns_of_other_game());
 }
@@ -1521,7 +1525,7 @@ fn the_worker_holds_the_match_through_a_leave_until_the_next_sign_in() {
     service.hold_match(Some("quick-match".into()));
     service.leave_room(Instant::now());
     service.leave_completed(5);
-    service.sign_in("Tanya".into(), http::Credential::Guest);
+    service.sign_in("Tanya".into(), http::Credential::Guest, String::new());
     let sent: Vec<_> = input
         .try_iter()
         .map(|request| match request {

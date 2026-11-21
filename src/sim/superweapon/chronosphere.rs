@@ -472,7 +472,7 @@ fn arm_chrono_warp(
     crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     // `0x006CCC67`: the Super's owner, credited if the warp sinks the object.
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.drop_credit.credit_warp(warp.owner);
+        entity.seldom.drop_credit.credit_warp(warp.owner);
     }
     if let Err(error) = sim.assign_destination_represented(
         id,
@@ -774,7 +774,7 @@ fn ares_chronoport(
         sim.substrate
             .entities
             .get(id)
-            .and_then(|unit| unit.radio_contacts.slot(0))
+            .and_then(|unit| unit.seldom.radio_contacts.slot(0))
             .and_then(|contact| sim.substrate.entities.get(contact))
             .and_then(|building| sim.object_type(building.type_ref(), rules))
             .is_some_and(|building| building.naval)
@@ -1267,7 +1267,7 @@ fn ares_arm_chrono_warp(
     ));
     crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.drop_credit.credit_warp(warp.owner);
+        entity.seldom.drop_credit.credit_warp(warp.owner);
     }
     if let Err(error) = sim.assign_destination_represented(
         id,

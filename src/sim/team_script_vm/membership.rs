@@ -169,7 +169,7 @@ impl Simulation {
         if entity.health.current() <= 0
             || !entity.lifecycle.object_alive()
             || entity.lifecycle.in_limbo()
-            || !entity.radio_contacts.is_empty()
+            || !entity.seldom.radio_contacts.is_empty()
             || entity.owner() != owner
             || !crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
         {
@@ -179,8 +179,8 @@ impl Simulation {
             .team_type_ini
             .get(&team_type_id)
             .is_some_and(|metadata| metadata.autocreate);
-        if (!entity.base_defense_response.recruitable_a() && !autocreate)
-            || (!entity.base_defense_response.recruitable_b() && autocreate)
+        if (!entity.seldom.base_defense_response.recruitable_a() && !autocreate)
+            || (!entity.seldom.base_defense_response.recruitable_b() && autocreate)
             || current_type.is_some_and(|current| current.priority >= team_type.priority)
         {
             return false;
@@ -247,7 +247,7 @@ impl Simulation {
         }
         let aircraft = entity.category() == EntityCategory::Aircraft;
         let object = self.object_type(entity.type_ref(), rules)?;
-        if !entity.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
+        if !entity.seldom.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
             return None;
         }
         let entries = vm.task_force_entries(team);
@@ -264,16 +264,19 @@ impl Simulation {
         }
         let metadata = team.team_type_id.and_then(|id| vm.team_type_ini.get(&id));
         let autocreate = metadata.is_some_and(|metadata| metadata.autocreate);
-        if !entity.base_defense_response.recruitable_a() && !autocreate {
+        if !entity.seldom.base_defense_response.recruitable_a() && !autocreate {
             return None;
         }
         let unloading = script_action_at(vm.scripts.get(&team.script_id), team.cursor)
             .is_some_and(|action| action.action_id == 8);
-        if !entity.base_defense_response.recruitable_b() && autocreate && !(unloading || aircraft) {
+        if !entity.seldom.base_defense_response.recruitable_b()
+            && autocreate
+            && !(unloading || aircraft)
+        {
             return None;
         }
         // `0x006EA79B..0x006EA7A4`: one seeking a building's entry.
-        if entity.building_entry.seeking() {
+        if entity.seldom.building_entry.seeking() {
             return None;
         }
         if entity.drain.target().is_some() || entity.bunker.link().installed_in().is_some() {
@@ -384,6 +387,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
             // `+0x422` (`0x006EA5F5`).
             entity
+                .seldom
                 .base_defense_response
                 .set_team_recruitable(recruitable);
         }
@@ -452,7 +456,7 @@ impl Simulation {
             .is_some_and(|entity| {
                 entity.mission.clear_suspended();
                 entity.navigation.clear_suspended_nav_com();
-                entity.suspended_attack_target.clear();
+                entity.seldom.suspended_attack_target.clear();
                 entity.lifecycle.object_alive()
                     && !entity.crash.is_crashing()
                     && !entity.lifecycle.in_limbo()

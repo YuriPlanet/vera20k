@@ -334,7 +334,7 @@ pub(super) fn targeting_slot(
 
 /// [`targeting_slot`] once the targeting timer has run out.
 fn targeting_slot_when_due(entity: &crate::sim::game_entity::GameEntity) -> TargetingSlot {
-    if entity.mega_mission.is_attack_move() {
+    if entity.seldom.mega_mission.is_attack_move() {
         return TargetingSlot::ArrivalHandler;
     }
     let mission = entity.passive_acquire_mission();
@@ -559,7 +559,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     if rules.ares() && entity.driver_killed() {
         return false;
     }
-    if entity.slave.owner().is_some() {
+    if entity.seldom.slave.owner().is_some() {
         return false;
     }
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
@@ -948,6 +948,7 @@ impl Simulation {
             && let Some(entity) = substrate.entities.get_mut(id)
         {
             entity
+                .seldom
                 .foot_retarget_after_stop
                 .finish_scan(result.target().is_some());
         }
@@ -1154,6 +1155,7 @@ mod tests {
                 .entities
                 .get_mut(scanner)
                 .unwrap()
+                .seldom
                 .foot_retarget_after_stop
                 .mark_stopped_cannot_fire();
             let held = scan(

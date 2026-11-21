@@ -47,7 +47,7 @@ impl Simulation {
             };
             let coarse_candidate = !entity.lifecycle.in_limbo()
                 && entity.lifecycle.cell_marked()
-                && (!require_discovery || entity.discovery.discovered_by_current_house())
+                && (!require_discovery || entity.seldom.discovery.discovered_by_current_house())
                 && entity.mission.current() != selling
                 && entity.mission.queued() != selling
                 && self
@@ -58,7 +58,9 @@ impl Simulation {
             }
             // Ares SpySat_Update_CheckEligible10024620 (hook508F91) skips a
             // jammed or EMPed uplink to the next one.
-            if rules.ares() && (entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0) {
+            if rules.ares()
+                && (entity.seldom.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0)
+            {
                 continue;
             }
             // The first coarse candidate decides the house. Warp-out is a
@@ -341,10 +343,8 @@ impl Simulation {
         let wake_positions: Vec<crate::sim::anim_class::AnimWorldCoord> = self
             .substrate
             .entities
-            .keys_sorted()
-            .iter()
-            .filter_map(|id| {
-                let entity = self.substrate.entities.get(*id)?;
+            .values()
+            .filter_map(|entity| {
                 let underwater = self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.underwater);

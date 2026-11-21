@@ -124,12 +124,14 @@ impl Scene {
                 .entities
                 .get_mut(victim)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(0, id);
             sim.substrate
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(0, victim);
             id
@@ -178,11 +180,11 @@ impl Scene {
             "nav": nav, "source": self.object_ref(plane.lift.source()),
             "target": self.object_ref(self.sim.substrate.entities.get(self.firer).unwrap().lift.target()),
             "lifted": plane.lift.swap_active(), "released": plane.lift.may_end(),
-            "crashing": plane.crash.is_crashing(), "manipulated": plane.drop_credit.being_manipulated(),
-            "credit": self.object_ref(plane.drop_credit.manipulated_by()),
+            "crashing": plane.crash.is_crashing(), "manipulated": plane.seldom.drop_credit.being_manipulated(),
+            "credit": self.object_ref(plane.seldom.drop_credit.manipulated_by()),
             "active_kind": kind_name(loco.active_kind()),
-            "contact": self.object_ref(plane.radio_contacts.slot(0)),
-            "pad_contact": self.object_ref(self.pad.and_then(|id| self.sim.substrate.entities.get(id).unwrap().radio_contacts.slot(0))),
+            "contact": self.object_ref(plane.seldom.radio_contacts.slot(0)),
+            "pad_contact": self.object_ref(self.pad.and_then(|id| self.sim.substrate.entities.get(id).unwrap().seldom.radio_contacts.slot(0))),
             "mission": plane.mission.current().raw(), "queued": plane.mission.queued().raw(),
         });
         for (key, value) in actual.as_object().unwrap() {

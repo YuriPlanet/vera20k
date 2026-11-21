@@ -132,9 +132,10 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.set_cell_marked_for_test(false);
         if category == EntityCategory::Unit {
-            entity.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(
-                Some(crate::sim::combat::TargetKind::Cell(2, 0)),
-            );
+            entity.seldom.mega_mission =
+                crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
+                    crate::sim::combat::TargetKind::Cell(2, 0),
+                ));
         } else {
             entity
                 .attack_target
@@ -162,7 +163,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                 .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
         }
         for _ in 0..41 {
-            entity.mission.increment_ai_counter();
+            entity.mission.count_ai_visit();
         }
         entity.low_bridge_tube_state = Some(LowBridgeTubeMovementState::for_test(
             TubeId(0),
@@ -238,10 +239,10 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                 assert!(!entity.passive_scan.acquired());
                 assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
                 assert_eq!(
-                    entity.mega_mission.destination(),
+                    entity.seldom.mega_mission.destination(),
                     Some(crate::sim::combat::TargetKind::Cell(2, 0))
                 );
-                assert!(entity.mega_mission.is_attack_move());
+                assert!(entity.seldom.mega_mission.is_attack_move());
             } else {
                 assert!(entity.passive_scan.acquired());
                 assert!(matches!(
@@ -371,7 +372,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
         sim.overlay_grid.as_ref(),
     );
     assert!(input_path_grid.is_walkable(0, 0));
-    sim.rebuild_zone_grid_full(&input_path_grid);
+    sim.rebuild_zone_grid_full(std::sync::Arc::new(input_path_grid.clone()));
     assert_eq!(
         sim.zone_grid
             .as_ref()

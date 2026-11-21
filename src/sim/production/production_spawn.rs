@@ -126,7 +126,7 @@ fn dock_exit_coordinate_and_facing(
         [centre(dock.0), centre(dock.1)],
     );
     let facing = crate::util::direction_tables::quantize::round_facing16_to_8(word);
-    let (width, height) = producer.type_facts.foundation().dimensions();
+    let (width, height) = producer.seldom.type_facts.foundation().dimensions();
     let inward = |cell: i16, base: i16, size: u16| {
         if i32::from(cell) >= i32::from(base) + i32::from(size) {
             cell.wrapping_sub(1)
@@ -216,7 +216,7 @@ impl Simulation {
         if unit.category() != crate::map::entities::EntityCategory::Unit {
             return None;
         }
-        unit.radio_contacts.slot(0).filter(|&contact| {
+        unit.seldom.radio_contacts.slot(0).filter(|&contact| {
             self.is_weapons_factory(contact, rules)
                 && self.substrate.occupancy.first_building_on_layer(
                     unit.position.rx(),
@@ -450,7 +450,10 @@ mod tests {
                 14,
                 crate::map::entities::EntityCategory::Structure,
             );
-            producer.type_facts.set_foundation_for_test("3x2".into());
+            producer
+                .seldom
+                .type_facts
+                .set_foundation_for_test("3x2".into());
             producer.position.put_location(location);
             let dock = (number("dock", 0) as i16, number("dock", 1) as i16);
             let producer_type = rules.object("GAPILE").unwrap();

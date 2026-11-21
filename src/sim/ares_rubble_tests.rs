@@ -63,6 +63,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64, selected: bool) 
         .entities
         .get_mut(engineer)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(selected);
     sim.substrate
@@ -174,7 +175,7 @@ fn a_selected_engineer_is_selected_again_through_select() {
 
     let entity = sim.substrate.entities.get(engineer).unwrap();
     assert!(entity.is_object_alive() && !entity.in_limbo());
-    assert!(entity.selection.is_selected());
+    assert!(entity.seldom.selection.is_selected());
     // Remove's Deselect lets the follow camera go before the Select.
     let selection: Vec<_> = sim
         .take_lifecycle_outputs_for_test()

@@ -338,7 +338,10 @@ fn bomb_and_fire_snapshots_read_retained_owners_without_advancing_state() {
     let entity = sim.entity_mut_for_test(planter).unwrap();
     entity.last_fire_frame.set_for_test(16);
     entity.body_frame_counter.set_for_test(u32::MAX);
-    entity.rearm_timer.set_for_test(CdTimer::from_raw(16, 50));
+    entity
+        .seldom
+        .rearm_timer
+        .set_for_test(CdTimer::from_raw(16, 50));
     let hash = sim.state_hash();
     let rng = sim.rng_state();
     let snapshot = sim.bomb_observation(MAX_OBSERVATION_SAMPLES + 1);
@@ -1346,6 +1349,7 @@ fn actor_retask_snapshot_preserves_tagged_suspended_references() {
     use crate::sim::{combat::TargetKind, components::NavTargetRef, game_entity::GameEntity};
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
     entity
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Cell(7, 8)));
     entity
@@ -1358,6 +1362,7 @@ fn actor_retask_snapshot_preserves_tagged_suspended_references() {
         })
     );
     entity
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Entity(43)));
     entity
@@ -1369,7 +1374,7 @@ fn actor_retask_snapshot_preserves_tagged_suspended_references() {
             "suspended_target":{"Entity":43}, "suspended_nav":{"Cell":{"rx":9,"ry":10}}
         })
     );
-    entity.suspended_attack_target.set_for_test(None);
+    entity.seldom.suspended_attack_target.set_for_test(None);
     entity.navigation.set_suspended_nav_com_for_test(None);
     assert_eq!(
         retask_observation(&entity),

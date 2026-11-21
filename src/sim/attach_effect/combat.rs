@@ -34,8 +34,6 @@ impl Simulation {
         source_house: Option<crate::sim::intern::InternedId>,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> f64 {
-        let warhead_name = warhead.map(|id| self.interner.resolve(id).to_owned());
-        let warhead_name = warhead_name.as_deref();
         let Some(target) = self.substrate.entities.get(target_id) else {
             return 1.0;
         };
@@ -110,7 +108,7 @@ impl Simulation {
             ) {
                 continue;
             }
-            if let Some(warhead) = warhead_name {
+            if let Some(warhead) = warhead.map(|id| self.interner.resolve(id)) {
                 if effect
                     .armor_multiplier_disallow_warheads
                     .iter()
@@ -150,8 +148,8 @@ impl Simulation {
                 let pick = self
                     .scenario_rng
                     .next_range_i32_inclusive(0, effect.armor_multiplier_hit_anim.len() as i32 - 1);
-                let name = effect.armor_multiplier_hit_anim[pick as usize].clone();
-                self.spawn_attach_effect_hit_anim(target_id, &name, world, target_owner, rules);
+                let name = &effect.armor_multiplier_hit_anim[pick as usize];
+                self.spawn_attach_effect_hit_anim(target_id, name, world, target_owner, rules);
             }
         }
         multiplier

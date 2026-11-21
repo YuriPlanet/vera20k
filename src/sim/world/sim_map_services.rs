@@ -513,10 +513,8 @@ impl Simulation {
         let membership_updates = self
             .substrate
             .entities
-            .keys_sorted()
-            .into_iter()
-            .filter_map(|stable_id| {
-                let entity = self.substrate.entities.get(stable_id)?;
+            .iter_sorted()
+            .map(|(stable_id, entity)| {
                 let member = crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (
                         i32::from(entity.position.rx()),
@@ -541,7 +539,7 @@ impl Simulation {
                 } else {
                     Vec::new()
                 };
-                Some((stable_id, member, clients))
+                (stable_id, member, clients)
             })
             .collect::<Vec<_>>();
         // Set_Clipped_LocalSize's exact store (`0x0056730E`).
@@ -582,7 +580,7 @@ impl Simulation {
         // native connectivity plus every retained hierarchy level without
         // discarding dynamic building blockers.
         if let Some(path_grid) = self.path_grid.clone() {
-            self.rebuild_zone_grid_full(path_grid.as_ref());
+            self.rebuild_zone_grid_full(path_grid);
         }
 
         // Native calls RefreshRadar after the cell/zone rebuild. The distinct
@@ -612,8 +610,12 @@ impl Simulation {
     }
 
     /// Commit synchronous Tag outcomes to the existing frame-output boundary.
-    /// Object callbacks and the master-frame poll share this single queue.
-    pub(crate) fn publish_trigger_effects(&mut self, effects: Vec<TriggerEffect>) {
+    /// Object callbacks and the master-frame poll share this single queue; a
+    /// single effect comes as a one-element array.
+    pub(crate) fn publish_trigger_effects(
+        &mut self,
+        effects: impl IntoIterator<Item = TriggerEffect>,
+    ) {
         self.trigger_effects.extend(effects);
     }
 

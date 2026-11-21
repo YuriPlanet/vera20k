@@ -260,6 +260,13 @@ fn history(
     launch.options.fog_of_war = false;
     let mut scene = load_session(root, name, 0x1234_5678, launch)
         .expect("physical Hills/Rules/ART/TMP and authored full-health stock actors");
+    // The app's process Main cell, which audio service draws, takes the
+    // loaded cursor as a rendered install does.
+    let process_main = crate::sim::rng::MainRng::new(0);
+    scene
+        .runtime
+        .simulation
+        .install_fresh_process_main(&process_main);
     let sim = scene.sim();
     let owner = sim.session().current_house().unwrap();
     let local = sim.resolve(owner).to_owned();
@@ -490,7 +497,7 @@ fn history(
                 false,
                 Some(assets),
                 Some(catalog),
-                &mut scene.sim().presentation_main_draws(),
+                &mut process_main.draws(),
             );
             continue;
         }
@@ -552,7 +559,7 @@ fn history(
                         false,
                         Some(assets),
                         Some(catalog),
-                        &mut scene.sim().presentation_main_draws(),
+                        &mut process_main.draws(),
                     )
                 });
                 audio_main_advances += draws.len();

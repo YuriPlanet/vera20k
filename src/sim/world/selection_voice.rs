@@ -13,9 +13,10 @@
 //! type+430, then the deactivated latch +1C8 (708EFD, `sim::powered_unit`)
 //! before type+44C, instead of the normal+414 list. All three use this one
 //! owner; a click can select an offline Robot Tank (Select5F4520 does not
-//! test +1C8), so its line is reachable. The process audio service
-//! borrows this same Main continuation through Simulation's RNG capability.
-//! These selection controls alone do not establish its device/queue behavior.
+//! test +1C8), so its line is reachable. The simulation draws its own Main
+//! generator through `&mut`; the app's audio service draws the process cell
+//! (`install_fresh_process_main`). These selection controls alone do not
+//! establish its device/queue behavior.
 
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
@@ -65,7 +66,7 @@ impl Simulation {
     /// The returned registered sound name is a presentation request; this
     /// operation changes only the existing process Main cursor.
     pub fn selection_voice_request<'a>(
-        &self,
+        &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
         voices_enabled: bool,
@@ -80,7 +81,7 @@ impl Simulation {
             return None;
         }
         let object = self.interner.object_type(entity.type_ref(), rules)?;
-        let voices = if entity.slave.owner().is_some() {
+        let voices = if entity.seldom.slave.owner().is_some() {
             &object.voice_select_enslaved
         } else if entity.deactivated.is_offline() {
             &object.voice_select_deactivated
@@ -101,7 +102,7 @@ impl Simulation {
     /// VoiceMove708FC0 consumes the full fixed-catalog list retained by the
     /// existing type-processing owner, including Enter/Capture/Harvest fallback.
     pub fn order_voice_request<'a>(
-        &self,
+        &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
         voice_field: &str,
@@ -149,7 +150,7 @@ impl Simulation {
     /// A reached list still draws before QueueVoice rejects disabled/nonhuman
     /// requests; QueueMegaMission's earlier enable gate is owned above.
     fn attack_voice_request<'a>(
-        &self,
+        &mut self,
         rules: &'a RuleSet,
         entity_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
@@ -303,6 +304,7 @@ impl Simulation {
         self.substrate
             .entities
             .get_mut(entity_id)?
+            .seldom
             .suppress_deploy_voice
             .clear();
         request
@@ -315,7 +317,7 @@ impl Simulation {
     /// Native ReadSoundList binding skips unresolved names, so its selected-ID
     /// -1 rejection is represented only by deliberately unbound test inputs.
     fn voice_request_from_list<'a>(
-        &self,
+        &mut self,
         voices: &'a [String],
         voices_enabled: bool,
         audible_owner: bool,

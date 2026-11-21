@@ -47,7 +47,7 @@ pub(super) fn disguise_inputs(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> Result<Value> {
     use crate::app::presentation::instances;
-    let Some(disguise) = entity.disguise.as_ref() else {
+    let Some(disguise) = entity.seldom.disguise.as_ref() else {
         return Ok(Value::Null);
     };
     let runtime = state
@@ -114,7 +114,7 @@ pub(super) fn disguise_inputs(
 
 pub(super) fn retask_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
     json!({
-        "suspended_target": entity.suspended_attack_target.target(),
+        "suspended_target": entity.seldom.suspended_attack_target.target(),
         "suspended_nav": entity.navigation.suspended_nav_com(),
     })
 }
@@ -135,9 +135,9 @@ pub(super) fn prism_observation(entity: &crate::sim::game_entity::GameEntity, fr
             "payload": {"to": [to.x, to.y, to.z]}, "remaining": pending.remaining_ticks()}),
         });
     json!({"support_count": entity.building.prism_support_count, "pending": pending,
-        "rearm": {"start": entity.rearm_timer.start_frame(),
-                  "duration": entity.rearm_timer.duration(),
-                  "remaining": entity.rearm_timer.remaining(frame)}})
+        "rearm": {"start": entity.seldom.rearm_timer.start_frame(),
+                  "duration": entity.seldom.rearm_timer.duration(),
+                  "remaining": entity.seldom.rearm_timer.remaining(frame)}})
 }
 
 pub(super) fn fire_observation(entity: &crate::sim::game_entity::GameEntity, frame: i32) -> Value {
@@ -146,7 +146,7 @@ pub(super) fn fire_observation(entity: &crate::sim::game_entity::GameEntity, fra
     json!({"last_fire_frame": entity.last_fire_frame.frame(),
         "body_counter": entity.body_frame_counter,
         "stage_value": entity.native_stage().value(),
-        "rearm": timer_observation(entity.rearm_timer.timer(), frame)})
+        "rearm": timer_observation(entity.seldom.rearm_timer.timer(), frame)})
 }
 
 fn timer_observation(timer: crate::sim::timer::CdTimer, frame: i32) -> Value {

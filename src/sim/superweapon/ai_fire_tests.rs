@@ -163,8 +163,7 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             )
             .unwrap();
         }
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());

@@ -111,7 +111,7 @@ pub(crate) fn create(
         &super::fire_coord::FireSource::of_entity(source),
         object,
         flh_index,
-        (source.weapon_burst.index() & 1) as u8,
+        (source.seldom.weapon_burst.index() & 1) as u8,
         Default::default(),
     )
     .coord;
@@ -269,7 +269,7 @@ pub(crate) fn erupted(
                 i32::from(y),
             )
             .get_coords();
-            let main = &world.main_rng;
+            let main = &mut world.main_rng;
             let to = ProjectileCoord::new(
                 center
                     .x

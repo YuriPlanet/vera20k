@@ -63,6 +63,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::object_location;
@@ -259,12 +260,12 @@ impl Simulation {
         mut visit: impl FnMut(&mut Self, u64),
     ) -> bool {
         let mut matched = false;
-        for id in self.substrate.entities.keys_sorted().into_iter().rev() {
+        let mut units = EntityStore::descending_ids(|category| category == EntityCategory::Unit);
+        while let Some(id) = units.next(&self.substrate.entities) {
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
             if entity.owner() != owner
-                || entity.category() != EntityCategory::Unit
                 || !self
                     .interner
                     .resolve(entity.type_ref())
@@ -308,8 +309,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.tether.partner().is_some()
-            && let Some(contact) = entity.radio_contacts.slot(0)
+        if entity.seldom.tether.partner().is_some()
+            && let Some(contact) = entity.seldom.radio_contacts.slot(0)
             && self.substrate.occupancy.first_building_on_layer(
                 entity.position.rx(),
                 entity.position.ry(),
@@ -366,7 +367,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let selected = entity.selection.is_selected();
+        let selected = entity.seldom.selection.is_selected();
         let focus =
             (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
         self.techno_deactivate(id, rules, effects);

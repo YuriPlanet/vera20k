@@ -126,7 +126,7 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
             false,
         );
         match id {
-            7 => entity.selection.set_selected_for_test(true),
+            7 => entity.seldom.selection.set_selected_for_test(true),
             12 => {
                 entity.capture_manager = Some(Box::new(CaptureManagerState::with_victims_for_test(
                     1,
@@ -134,7 +134,7 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
                     &[25],
                 )))
             }
-            25 => entity.mind_control = MindControlLink::controlled_by_for_test(12),
+            25 => entity.seldom.mind_control = MindControlLink::controlled_by_for_test(12),
             _ => {}
         }
         sim.entities_mut_for_test().insert(entity);

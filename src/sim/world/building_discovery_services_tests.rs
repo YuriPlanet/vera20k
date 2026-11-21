@@ -113,7 +113,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
         let building = sim.substrate.entities.get(id).unwrap();
         assert_eq!(building.owner(), remote);
         assert!(building.lifecycle.cell_marked() && !building.lifecycle.in_limbo());
-        assert!(!building.discovery.discovered_by_current_house());
+        assert!(!building.seldom.discovery.discovered_by_current_house());
     }
     // House508CC7,508ECD,508FAB reject +41B=false only for controlled
     // campaign Houses. Added_To_Game's immediate drain is not this scan.
@@ -134,6 +134,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -185,6 +186,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -206,6 +208,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -247,6 +250,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -254,6 +258,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(false);
         sim.attach_object_trigger_tag(id, Some("DISCOVER_TAG"));
@@ -268,6 +273,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -286,6 +292,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(false);
     }
@@ -301,6 +308,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -353,7 +361,7 @@ fn building_destroyed_by_its_unlimbo_discovery_stays_out_of_display_and_logic() 
         FrameEffects::default(),
     );
     let building = sim.entities().get(id).unwrap();
-    assert!(building.discovery.discovered_by_current_house());
+    assert!(building.seldom.discovery.discovered_by_current_house());
     assert!(!building.is_object_alive(), "event 4 destroyed it");
     assert!(!sim.live_object_order_snapshot().contains(&id));
     assert_eq!(sim.substrate.display.layer_of(id), None);

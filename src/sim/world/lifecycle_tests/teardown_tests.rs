@@ -108,8 +108,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         sim.finalize_and_remove_common(
@@ -298,6 +297,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building

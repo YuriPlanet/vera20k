@@ -1247,7 +1247,7 @@ fn reveal_on_fire(
         let owned = firer.owner() == house;
         let discovered = !uses_local_discovery
             || (world.session.current_house() == Some(house)
-                && firer.discovery.discovered_by_current_house());
+                && firer.seldom.discovery.discovered_by_current_house());
         if owned || discovered {
             if owned && firer.category() == EntityCategory::Aircraft {
                 continue;
@@ -1552,9 +1552,10 @@ pub(super) fn emit_admitted_fire(
         .entities
         .get(snap.stable_id)
         .is_some_and(|firer| {
-            (weapon.use_fire_particles && firer.fire_particle_system.system().is_some())
-                || (weapon.is_railgun && firer.railgun_particle_system.system().is_some())
-                || (weapon.use_spark_particles && firer.spark_particle_system.system().is_some())
+            (weapon.use_fire_particles && firer.seldom.fire_particle_system.system().is_some())
+                || (weapon.is_railgun && firer.seldom.railgun_particle_system.system().is_some())
+                || (weapon.use_spark_particles
+                    && firer.seldom.spark_particle_system.system().is_some())
         })
     {
         return None;
@@ -1659,7 +1660,7 @@ pub(super) fn emit_admitted_fire(
         .substrate
         .entities
         .get(snap.stable_id)
-        .map(|entity| entity.weapon_burst)
+        .map(|entity| entity.seldom.weapon_burst)
         .unwrap_or_default();
     // FLH uses only odd/even parity; retain the signed dword in its owner.
     let burst_index = (burst.index() & 1) as u8;
@@ -1724,7 +1725,10 @@ pub(super) fn emit_admitted_fire(
         );
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
             entity.rearm_after_fire(binary_frame as i32, rof);
-            entity.weapon_burst.complete_shot(weapon.burst.max(1));
+            entity
+                .seldom
+                .weapon_burst
+                .complete_shot(weapon.burst.max(1));
         }
         let weapon_id = world.interner.intern(selected.weapon_id);
         world.fire_disk_laser(
@@ -1963,6 +1967,7 @@ pub(super) fn emit_admitted_fire(
             .get_mut(snap.stable_id)
             .map_or(0, |source| {
                 source
+                    .seldom
                     .weapon_burst
                     .take_radial_index(obj.radial_fire_segments)
             });
@@ -2013,6 +2018,10 @@ pub(super) fn emit_admitted_fire(
                     .wrapping_add(world.ares_prism_shot_damage_add(snap.stable_id, rules)),
                 _ => base_damage,
             };
+            // Interned per shot on purpose: interned ids are saved and hashed
+            // and take first-use order, so the first shot of a weapon is what
+            // assigns them. A later shot's call is one hash probe and
+            // allocates nothing.
             let warhead_id = world.interner.intern(&warhead.id);
             let projectile_id = projectile_type.map(|kind| world.interner.intern(&kind.id));
             let weapon_id = world.interner.intern(selected.weapon_id);
@@ -2162,7 +2171,7 @@ pub(super) fn emit_admitted_fire(
             .substrate
             .entities
             .get(snap.stable_id)
-            .is_some_and(|firer| firer.fire_particle_system.system().is_none())
+            .is_some_and(|firer| firer.seldom.fire_particle_system.system().is_none())
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(system) = system {
@@ -2172,7 +2181,7 @@ pub(super) fn emit_admitted_fire(
                 .link_to_owner_fire_slot(system);
         }
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.fire_particle_system.bind(system);
+            firer.seldom.fire_particle_system.bind(system);
         }
     }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
@@ -2184,11 +2193,11 @@ pub(super) fn emit_admitted_fire(
             .substrate
             .entities
             .get(snap.stable_id)
-            .is_some_and(|firer| firer.spark_particle_system.system().is_none())
+            .is_some_and(|firer| firer.seldom.spark_particle_system.system().is_none())
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.spark_particle_system.bind(system);
+            firer.seldom.spark_particle_system.bind(system);
         }
     }
     // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
@@ -2204,7 +2213,7 @@ pub(super) fn emit_admitted_fire(
                 .substrate
                 .entities
                 .get(snap.stable_id)
-                .is_some_and(|firer| firer.railgun_particle_system.system().is_none())
+                .is_some_and(|firer| firer.seldom.railgun_particle_system.system().is_none())
     {
         let end = super::railgun::line_damage(
             world,
@@ -2237,7 +2246,7 @@ pub(super) fn emit_admitted_fire(
                 )
             });
         if !detached && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.railgun_particle_system.bind(system);
+            firer.seldom.railgun_particle_system.bind(system);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,
@@ -2295,7 +2304,10 @@ pub(super) fn emit_admitted_fire(
             fireat_rearm_frames(rof, entity.berserk.is_active())
         };
         entity.rearm_after_fire(binary_frame as i32, rearm);
-        entity.weapon_burst.complete_shot(weapon.burst.max(1));
+        entity
+            .seldom
+            .weapon_burst
+            .complete_shot(weapon.burst.max(1));
         entity.last_fire_frame.record(binary_frame);
     }
     // TechnoClass::FireAt6FF38F calls VocClass::PlayAt7509E0 before the
@@ -2467,7 +2479,7 @@ pub(super) fn emit_admitted_fire(
             .substrate
             .entities
             .get_mut(snap.stable_id)
-            .and_then(|entity| entity.disguise.as_mut())
+            .and_then(|entity| entity.seldom.disguise.as_mut())
     {
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
@@ -2720,12 +2732,13 @@ impl FireCommitBoundary {
         } = self;
         let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
         let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-        let (inline_death, mut pings) = commit_area(
+        let inline_death = commit_area(
             world,
             run,
             &emit.damage_events[damage_start..],
             rules,
             overlay_registry,
+            under_attack_events,
         );
         emit.effects.append(inline_death);
         emit.effects
@@ -2738,7 +2751,6 @@ impl FireCommitBoundary {
             outer_anim_requests,
             &mut emit.effects.smudge_spawn_requests,
         );
-        under_attack_events.append(&mut pings);
         commit_fire_bookkeeping(world, rules, emit, overlay_registry, run.effects());
         #[cfg(any(test, feature = "test-support"))]
         for event in &emit.fire_events[fire_event_start..] {

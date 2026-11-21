@@ -80,6 +80,7 @@ fn reached_alternate_events_match_executed_hook_controls() {
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .discovery
                     .set_discovered_by_other_house_for_test(true);
                 assert!(matches!(
@@ -156,6 +157,7 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .classify_owner(current == owner);
         assert!(sim.record_techno_discovery(id, viewer, UninitContext::new(&rules), 0));
@@ -207,7 +209,7 @@ fn alternate_membership_uses_actual_class_when_type_names_collide() {
         let mut entity = GameEntity::test_default_of_category(id, "SHARED", "H0", 0, 0, category);
         entity.set_type_ref_for_test(type_id);
         entity.set_owner_for_test(owner);
-        entity.discovery.classify_owner(false);
+        entity.seldom.discovery.classify_owner(false);
         sim.substrate.entities.insert(entity);
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
         assert!(sim.record_techno_discovery(id, viewer, UninitContext::new(&rules), 0));
@@ -253,6 +255,7 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
         .entities
         .get_mut(factory)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     let alternate = sim

@@ -88,6 +88,7 @@ fn flag_to_die_destroys_owned_objects_at_frame_zero_before_defeat_gate() {
         sim.entities()
             .get(1)
             .unwrap()
+            .seldom
             .kill_record
             .killer()
             .is_none()
@@ -130,7 +131,7 @@ fn defeated_house_is_flagged_has_lost_and_its_stragglers_die() {
             "Blowup_All killed the straggler"
         );
         assert!(
-            straggler.kill_record.killer().is_none(),
+            straggler.seldom.kill_record.killer().is_none(),
             "no house is credited"
         );
         assert_eq!(sim.houses[&survivor].stats().units_killed(), 0);
@@ -569,15 +570,15 @@ fn a_captured_war_factory_takes_its_contact_along() {
         .expect("tank");
     for (id, partner) in [(factory, tank), (tank, factory)] {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        entity.radio_contacts.insert(partner);
-        entity.tether.attach(partner);
+        entity.seldom.radio_contacts.insert(partner);
+        entity.seldom.tether.attach(partner);
     }
     let russians = sim.interner.intern("Russians");
     sim.change_owner_with_rules(factory, russians, &rules, None, FrameEffects::default());
     for (id, partner) in [(factory, tank), (tank, factory)] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.owner(), russians, "{id}");
-        assert!(entity.radio_contacts.contains(partner), "{id}");
-        assert_eq!(entity.tether.partner(), Some(partner), "{id}");
+        assert!(entity.seldom.radio_contacts.contains(partner), "{id}");
+        assert_eq!(entity.seldom.tether.partner(), Some(partner), "{id}");
     }
 }

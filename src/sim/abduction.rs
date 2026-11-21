@@ -91,7 +91,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .and_then(|entity| entity.mind_control.controller())
+            .and_then(|entity| entity.seldom.mind_control.controller())
         {
             self.free_unit(controller, target, rules, registry, effects);
         }

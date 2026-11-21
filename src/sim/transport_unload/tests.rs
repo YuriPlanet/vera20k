@@ -747,7 +747,7 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
         pax.attack_target.set_for_test(target);
         pax.passive_scan
             .set_passively_acquired_target_for_test(true);
-        pax.weapon_burst.complete_shot(3);
+        pax.seldom.weapon_burst.complete_shot(3);
         if other_house {
             fx.sim.substrate.entities.change_owner(passenger, other);
         }
@@ -769,7 +769,7 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
         if keeps {
             assert_eq!(pax.attack_target.target(), target, "{case}");
             assert!(pax.passive_scan.acquired(), "{case}");
-            assert_eq!(pax.weapon_burst.index(), 1, "{case}");
+            assert_eq!(pax.seldom.weapon_burst.index(), 1, "{case}");
         } else {
             // Through the class setter: its NULL arm resets the burst
             // (`0x006FCF5B`), which a raw store would not. Ares
@@ -777,7 +777,7 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
             assert_eq!(pax.attack_target.target(), None, "{case}");
             assert!(!pax.passive_scan.acquired(), "{case}");
             assert_eq!(
-                pax.weapon_burst.index(),
+                pax.seldom.weapon_burst.index(),
                 i32::from(fx.rules.ares_form()),
                 "{case}"
             );
@@ -1287,6 +1287,7 @@ fn nighthawk_unloads_only_when_landed() {
             .entities
             .get(shad)
             .unwrap()
+            .seldom
             .tether
             .partner()
     };
@@ -2368,7 +2369,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
             assert_eq!(pax.passenger_role().inside_transport_id(), Some(transport));
             assert!(pax.lifecycle.in_limbo());
             assert_eq!(pax.lifecycle.cell_marked(), !already_revealed);
-            assert!(!pax.in_logic_vector.is_member());
+            assert!(!pax.seldom.in_logic_vector.is_member());
             assert_eq!(
                 pax.locomotor.as_ref().unwrap().layer(),
                 MovementLayer::Ground

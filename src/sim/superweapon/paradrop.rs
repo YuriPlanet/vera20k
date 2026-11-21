@@ -457,7 +457,7 @@ pub(super) fn send_planes(
         .entities
         .get_mut(plane)
         .expect("constructed plane");
-    entity.mission_only.mark();
+    entity.seldom.mission_only.mark();
     let (authored, waypoint) = sim.houses.get(&owner).map_or((-1, 0), |house| {
         (house.authored_edge(), house.waypoint_edge())
     });

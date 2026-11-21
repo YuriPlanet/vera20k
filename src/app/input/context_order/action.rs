@@ -131,30 +131,30 @@ pub(super) fn object_attack_is_admitted(
         target.owner(),
     );
     //70025D..70030F: this is the firing blink, not the reacquisition timer.
-    let disguise_admitted = rules.general.attack_cursor_on_disguise
-        || sim
-            .interner()
-            .object_type(target.type_ref(), rules)
-            .is_some_and(|target_type| target_type.perma_disguise)
-        || target
-            .disguise
-            .as_ref()
-            .is_some_and(|disguise| disguise.blink_remaining(sim.session().binary_frame()) != 0)
-        || !target.is_disguised_to(
-            actor.owner(),
-            Some(sim.fog()),
-            Some(sim.house_alliances()),
-            sim.interner(),
-        )
-        || (target
-            .disguise_house(true, sim.session().current_house(), false)
-            .is_none()
-            && sim.fires_at_terrain(
-                actor_id,
-                &TargetKind::Entity(target_id),
-                rules,
-                Some(rules.overlay_registry()),
-            ));
+    let disguise_admitted =
+        rules.general.attack_cursor_on_disguise
+            || sim
+                .interner()
+                .object_type(target.type_ref(), rules)
+                .is_some_and(|target_type| target_type.perma_disguise)
+            || target.seldom.disguise.as_ref().is_some_and(|disguise| {
+                disguise.blink_remaining(sim.session().binary_frame()) != 0
+            })
+            || !target.is_disguised_to(
+                actor.owner(),
+                Some(sim.fog()),
+                Some(sim.house_alliances()),
+                sim.interner(),
+            )
+            || (target
+                .disguise_house(true, sim.session().current_house(), false)
+                .is_none()
+                && sim.fires_at_terrain(
+                    actor_id,
+                    &TargetKind::Entity(target_id),
+                    rules,
+                    Some(rules.overlay_registry()),
+                ));
     if !allied && disguise_admitted {
         return true;
     }
@@ -589,9 +589,9 @@ fn base_action(
     let selects = |target_id: u64, warp_test: bool| {
         sim.entities().get(target_id).is_some_and(|object| {
             !(armed && human && object.owner() != actor.owner())
-                && !(actor.is_mission_only() && actor.discovery.owned_by_current_house())
+                && !(actor.is_mission_only() && actor.seldom.discovery.owned_by_current_house())
                 && sim.object_is_selectable(target_id, rules)
-                && !object.selection.is_selected()
+                && !object.seldom.selection.is_selected()
                 && !(warp_test && object.is_warped_out())
         })
     };

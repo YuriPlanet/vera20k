@@ -379,7 +379,7 @@ fn apply_one(
     }) {
         return false;
     }
-    if target.shield.as_ref().is_some_and(|state| {
+    if target.seldom.shield.as_ref().is_some_and(|state| {
         state.is_active()
             && rules
                 .shield_type(state.type_name())
@@ -540,19 +540,22 @@ fn crit_effects(
             // `DamageAreaTarget` when the crit warhead does not spread.
             let crit_ref = world.interner.intern(name);
             let impact = ProjectileCoord::new(coord.x, coord.y, coord.z);
-            let (nested, mut pings, _crit_active, _area_result) =
-                apply_area_damage_in_run_with_target(
-                    world,
-                    run,
-                    rules,
-                    overlay_registry,
-                    impact,
-                    damage,
-                    crit_warhead,
-                    true,
-                    (source_id, source_house, crit_ref),
-                    Some(target_id),
-                );
+            // The pings follow the area's effects in `effects`, so they
+            // gather apart first.
+            let mut pings = Vec::new();
+            let (nested, _crit_active, _area_result) = apply_area_damage_in_run_with_target(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                impact,
+                damage,
+                crit_warhead,
+                true,
+                (source_id, source_house, crit_ref),
+                Some(target_id),
+                &mut pings,
+            );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }
@@ -561,8 +564,16 @@ fn crit_effects(
             // false, house)` with the ORIGINAL warhead's id.
             let event =
                 EntityDamageEvent::area(target_id, damage, 0, source_id, source_house, warhead_ref);
-            let (nested, mut pings) =
-                commit_entities(world, run, &[event], None, rules, overlay_registry);
+            let mut pings = Vec::new();
+            let nested = commit_entities(
+                world,
+                run,
+                &[event],
+                None,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }

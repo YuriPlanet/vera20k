@@ -241,6 +241,7 @@ mod tests {
                 .entities
                 .get(gi)
                 .unwrap()
+                .seldom
                 .kill_record
                 .is_recorded()
         );
@@ -248,7 +249,7 @@ mod tests {
         let head = sim.substrate.entities.get(terror).unwrap();
         assert!(!head.death.is_dying() && head.lifecycle.object_alive());
         assert_eq!(head.health.current(), 0);
-        assert!(head.kill_record.is_recorded());
+        assert!(head.seldom.kill_record.is_recorded());
         assert!(sim.live_object_order_snapshot().contains(&terror));
         // Drive its actual Die2 clock through its ordinary turns and confirm
         // UnInit does not count either fatal callback again. This test does
@@ -270,7 +271,7 @@ mod tests {
         }
         let head = sim.substrate.entities.get(terror).unwrap();
         assert!(!head.lifecycle.object_alive());
-        assert!(head.kill_record.is_recorded());
+        assert!(head.seldom.kill_record.is_recorded());
         assert!(!sim.live_object_order_snapshot().contains(&terror));
         assert_eq!(sim.houses[&owner].stats().units_lost(), 2);
         assert_eq!(sim.houses[&owner].stats().units_killed(), 1);

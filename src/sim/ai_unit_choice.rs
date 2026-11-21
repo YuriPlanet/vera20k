@@ -481,7 +481,7 @@ fn is_recruitable(
             .team_for_member(entity.stable_id())
             .is_none()
         && crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
-        && entity.base_defense_response.recruitable_a()
+        && entity.seldom.base_defense_response.recruitable_a()
 }
 
 /// The choice among `candidates` (`0x004FED6E..0x004FEECB`), with `draw` as

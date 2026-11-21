@@ -1012,6 +1012,24 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 // Chrome / theme helpers
 // ---------------------------------------------------------------------------
 
+/// Build the sidebar chrome of the side the local player draws this frame
+/// when the set lacks it (`SidebarChromeSet::ensure_side`): a stock match
+/// builds the local side's at load, and a change of local house asks here.
+pub(crate) fn ensure_current_sidebar_chrome(state: &mut AppState) {
+    let side = current_sidebar_side(state);
+    let Some(assets) = state.process_assets.manager() else {
+        return;
+    };
+    if let Some(set) = state.match_state.match_presentation.sidebar_chrome.as_mut() {
+        set.ensure_side(
+            side,
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            assets,
+        );
+    }
+}
+
 /// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
 /// draw scale, or drop its copies when the option is off, the sidebar draws
 /// at its own pixels, or the scale is not a whole one (xBR has no 1.5x).

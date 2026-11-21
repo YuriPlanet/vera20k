@@ -844,7 +844,7 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
             sim.fog.increment_sensor_at(owner, 16, 15);
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.removal_facts.set_occupier_for_test(exception == 1);
+        e.seldom.removal_facts.set_occupier_for_test(exception == 1);
         if exception == 2 {
             e.navigation
                 .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 16, ry: 15 }));

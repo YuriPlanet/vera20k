@@ -2,7 +2,7 @@
 //! plain (Terrain/Overlay/Smudge), Particle, ParticleSystem, VoxelAnim, Tiberium.
 
 use super::RulesPassProcessor;
-use super::{ProcessedType, RulesTypeFamily, read_ares_type_ref};
+use super::{ProcessedType, RulesTypeFamily, read_ares_type_ref, read_member};
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::is_native_none_type_name;
@@ -258,7 +258,7 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::Weapon)[index]
                         .weapon
                         .ares_abductor_anim = anim;
-                    self.families.get_mut(&RulesTypeFamily::Weapon).unwrap()[index]
+                    read_member(&mut self.families, RulesTypeFamily::Weapon, index)
                         .weapon
                         .ares_cursors
                         .read_pass(&raw, &self.ares_mouse_cursors);
@@ -751,9 +751,7 @@ impl RulesPassProcessor {
                 self.family_mut(RulesTypeFamily::VoxelAnimation)[index]
                     .read_object_sound(&raw, fixed_sounds);
                 // ObjectRead5F92D0 runs before the subtype's model selection.
-                self.families
-                    .get_mut(&RulesTypeFamily::VoxelAnimation)
-                    .unwrap()[index]
+                read_member(&mut self.families, RulesTypeFamily::VoxelAnimation, index)
                     .object_image
                     .read_ini(
                         &raw,
@@ -850,10 +848,8 @@ impl RulesPassProcessor {
                             })
                     })
                 });
-                let member = &mut self
-                    .families
-                    .get_mut(&RulesTypeFamily::VoxelAnimation)
-                    .unwrap()[index];
+                let member =
+                    read_member(&mut self.families, RulesTypeFamily::VoxelAnimation, index);
                 member.voxel_anim_read = true;
                 member.voxel_anim_share_flags = flags;
                 if flags.iter().any(|flag| *flag) {

@@ -1012,7 +1012,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 "estimated_health": entity.estimated_health.get(),
                 "sampled_power_health": entity.building_power_health_sample(),
                 "damaged_mode": entity.building_art.damage_state_active(),
-                "damage_smoke_system": entity.damage_smoke_system_id,
+                "damage_smoke_system": entity.seldom.damage_smoke_system_id,
                 "anim_slots": entity.building_art.anim_slots().iter().enumerate()
                     .filter_map(|(slot, id)| {
                         let id = (*id)?;

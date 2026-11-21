@@ -94,6 +94,7 @@ fn building_aim_directions_match_the_original() {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(input["foundation"].as_str().unwrap().to_string().into());
         let target = &input["target"];
@@ -108,6 +109,7 @@ fn building_aim_directions_match_the_original() {
                     .entities
                     .get_mut(2)
                     .unwrap()
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(target["foundation"].as_str().unwrap_or("1x1").into());
             }
@@ -499,7 +501,7 @@ fn building_voxel_barrel_shot_origin_matches_the_original_flh() {
         building.body_facing = FacingClass::new(heading, 0);
         building.set_barrel_elevation_for_test(FacingClass::new(elevation, 0));
         for _ in 0..input["burst"].as_u64().unwrap() {
-            building.weapon_burst.advance();
+            building.seldom.weapon_burst.advance();
         }
         let building = sim.substrate.entities.get(1).unwrap();
         let obj = sim.object_type(building.type_ref(), &rules).unwrap();
@@ -595,6 +597,7 @@ fn a_voxel_turrets_laser_birth_uses_the_original_get_flh_coordinate() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("1x1".to_string().into());
         let heading = input["heading"].as_u64().unwrap() as u16;

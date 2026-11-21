@@ -697,7 +697,7 @@ fn base_plan_recalc_deploy_generates_and_anchors_nonhuman_conyard() {
     assert_eq!((yard.position.rx(), yard.position.ry()), (19, 21));
     assert!(yard.building_up());
     assert!(
-        yard.ai_sell_repair.ai_repairable(),
+        yard.seldom.ai_sell_repair.ai_repairable(),
         "a computer's yard is AI-repairable"
     );
     let owner = sim.interner.get("Americans").unwrap();
@@ -833,7 +833,10 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
         // UnitClass::Deploy marks a computer's building AI-repairable in a
         // campaign too (`0x007397E4..0x007397F4`); Unlimbo does not there.
         assert_eq!(
-            deployed_type(&sim, "GACNST").ai_sell_repair.ai_repairable(),
+            deployed_type(&sim, "GACNST")
+                .seldom
+                .ai_sell_repair
+                .ai_repairable(),
             !is_human
         );
         let house = &sim.houses[&owner];
@@ -871,7 +874,12 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
         crate::sim::world::FrameEffects::default()
     ));
     assert!(deployed_type(&sim, "YAREFN").building_up());
-    assert!(deployed_type(&sim, "YAREFN").ai_sell_repair.ai_repairable());
+    assert!(
+        deployed_type(&sim, "YAREFN")
+            .seldom
+            .ai_sell_repair
+            .ai_repairable()
+    );
     assert_eq!(sim.houses[&owner].base_center(), None);
     assert_eq!(sim.houses[&owner].base_plan_center(), (0, 0));
     assert!(sim.houses[&owner].base_plan().nodes().is_empty());
@@ -1876,11 +1884,11 @@ fn can_deploy_slash_unload_follows_each_class_arm() {
         .set_eater_for_test(Some(tank));
     assert!(!can(&sim, mcv));
     entity(&mut sim, mcv).parasite.set_eater_for_test(None);
-    entity(&mut sim, mcv).mind_control =
+    entity(&mut sim, mcv).seldom.mind_control =
         crate::sim::capture_manager::MindControlLink::controlled_by_for_test(tank);
     assert!(!can(&sim, mcv));
     // A mind-controlled unit deploying into anything else may.
-    entity(&mut sim, refiner).mind_control =
+    entity(&mut sim, refiner).seldom.mind_control =
         crate::sim::capture_manager::MindControlLink::controlled_by_for_test(tank);
     assert!(can(&sim, refiner));
 
@@ -1899,6 +1907,7 @@ fn can_deploy_slash_unload_follows_each_class_arm() {
         let soldier = entity(&mut sim, id);
         soldier.mission_leaf.set_infantry_doing_verified(0).unwrap();
         soldier
+            .seldom
             .rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(frame, 40));
     }
@@ -1932,7 +1941,7 @@ fn a_chaos_drone_deploy_fires_its_weapon_at_its_own_cell() {
         entity.mission.queued().known(),
         Some(crate::sim::mission::MissionType::Unload)
     );
-    assert_eq!(entity.rearm_timer.duration(), 0);
+    assert_eq!(entity.seldom.rearm_timer.duration(), 0);
     assert_eq!(entity.attack_target.target(), None);
 
     let (delay, _) = sim.unit_deploy_fire_unload(
@@ -1943,7 +1952,7 @@ fn a_chaos_drone_deploy_fires_its_weapon_at_its_own_cell() {
     );
     let entity = sim.substrate.entities.get(drone).unwrap();
     assert!((14..=16).contains(&delay), "{delay}");
-    assert!(entity.rearm_timer.duration() > 0, "the arm fired");
+    assert!(entity.seldom.rearm_timer.duration() > 0, "the arm fired");
     assert_eq!(
         entity.attack_target.target(),
         Some(TargetKind::Cell(10, 10))

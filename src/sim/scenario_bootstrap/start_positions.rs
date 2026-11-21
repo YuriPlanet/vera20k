@@ -2,6 +2,7 @@
 //! the Gather_Start_Positions vector (with its deficient-start search), and
 //! the Battle, Cooperative and quick-coop callbacks that assign houses to it.
 
+use super::PreFillScenarioPrefixPlanError;
 use super::normalized_launch_slots;
 use crate::map::map_file::{MapFile, MapHeader};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -105,7 +106,8 @@ impl NativeStartBounds {
 /// Only waypoint indices below the computed target count are examined. When
 /// authored starts are deficient, each retry consumes the two asymmetric
 /// ranged draws and runs the 8x8 nearby-passable search; invalid searches do
-/// not advance the vector and have no artificial retry cap.
+/// not advance the vector. Test fixtures supply maps with room for every
+/// start, so the retry cap `MAX_FAILED_START_SEARCHES` is never reached.
 #[cfg(any(test, feature = "test-support"))]
 pub fn native_gather_start_positions(
     waypoints: &HashMap<u32, Waypoint>,
@@ -136,6 +138,7 @@ pub fn native_gather_start_positions(
             )
         },
     )
+    .expect("test fixtures leave room for every gathered start")
 }
 
 /// Run Gather in the exact pre-Fill cell lifetime: MapClass has resized and
@@ -146,23 +149,39 @@ pub(crate) fn native_gather_pre_fill_start_positions(
     required_start_count: usize,
     map: &MapFile,
     rng: &mut SimRng,
-) -> Option<Vec<Waypoint>> {
-    let bounds = NativeStartBounds::from_map_header(&map.header)?;
+) -> Result<Vec<Waypoint>, PreFillScenarioPrefixPlanError> {
+    let bounds = NativeStartBounds::from_map_header(&map.header)
+        .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
     // VERA's explicitly declared 9–30-start maps use the same map-capacity
     // reader as setup and retained loading metadata. Participant count alone
     // must not discard a high authored start chosen by a small roster.
     let authored_slot_limit = crate::map::waypoints::multiplayer_start_slot_limit(
         crate::map::waypoints::skirmish_player_capacity(&map.ini),
     );
-    Some(gather_start_positions_with_search(
+    gather_start_positions_with_search(
         waypoints,
         required_start_count,
         authored_slot_limit,
         bounds,
         rng,
         |seed_rx, seed_ry| find_nearby_pre_fill_start_rect(&map.header, seed_rx, seed_ry),
-    ))
+    )
 }
+
+/// VERA's own bound, not gamemd's: consecutive failed deficient-start
+/// searches before Gather gives up on the missing start.
+///
+/// `ScenarioClass__Gather_Start_Positions @ 0x00688380` retries its
+/// `0x00688528..0x006885B5` draw-and-search block until the vector is full,
+/// so a map whose playable area has no free 8x8 rect hangs gamemd's load.
+/// VERA refuses the launch instead (`NoRoomForStarts`). Pre-Fill cells are
+/// all alike, so a seed finds a rect whenever one lies within the search
+/// radius (`RADIUS_HARD_CAP`, 32 cells). Even a lone free rect at the edge
+/// of the largest cell array is reached from more than one seed in a
+/// thousand, so 8192 straight misses happen well below once in ten thousand
+/// launches of such a map; a map that finished Gather before finishes it
+/// with the same draws.
+const MAX_FAILED_START_SEARCHES: u32 = 8192;
 
 fn gather_start_positions_with_search(
     waypoints: &HashMap<u32, Waypoint>,
@@ -171,7 +190,7 @@ fn gather_start_positions_with_search(
     bounds: NativeStartBounds,
     rng: &mut SimRng,
     mut find_nearby: impl FnMut(u16, u16) -> Option<(u16, u16)>,
-) -> Vec<Waypoint> {
+) -> Result<Vec<Waypoint>, PreFillScenarioPrefixPlanError> {
     let authored_prefix = (0..authored_slot_limit)
         .take_while(|index| waypoints.contains_key(index))
         .count();
@@ -184,7 +203,14 @@ fn gather_start_positions_with_search(
         }
     }
 
+    let mut failed_searches = 0;
     while starts.len() < target_count {
+        if failed_searches == MAX_FAILED_START_SEARCHES {
+            return Err(PreFillScenarioPrefixPlanError::NoRoomForStarts {
+                found: starts.len(),
+                required: target_count,
+            });
+        }
         // gamemd-derived: active YR `ScenarioClass__Gather_Start_Positions
         // @ 0x00688380`, seed block `0x00688528..0x0068857C`: the first draw
         // `RandomRanged(0, rect.h - 10)` lands on the Y axis
@@ -204,8 +230,10 @@ fn gather_start_positions_with_search(
             .wrapping_add(u32::from(bounds.min_rx)) as u16;
 
         let Some((rx, ry)) = find_nearby(seed_rx, seed_ry) else {
+            failed_searches += 1;
             continue;
         };
+        failed_searches = 0;
         starts.push(Waypoint {
             index: starts.len() as u32,
             rx,
@@ -213,7 +241,7 @@ fn gather_start_positions_with_search(
         });
     }
 
-    starts
+    Ok(starts)
 }
 
 fn find_nearby_pre_fill_start_rect(
@@ -454,7 +482,8 @@ pub(super) fn native_assign_launch_starts_from_preassignment(
 /// human prefix and an AI suffix. The explicit Scenario start table reserves
 /// all of its entries before HouseClass iteration; automatic human placement
 /// draws within the prefix and probes forward, while the remaining houses
-/// take the first free suffix entry without a draw.
+/// take the first free suffix entry without a draw. Test fixtures give the
+/// map enough human start spots.
 #[cfg(any(test, feature = "test-support"))]
 pub fn native_assign_cooperative_launch_starts(
     session: &SkirmishLaunchSession,
@@ -475,6 +504,7 @@ pub fn native_assign_cooperative_launch_starts(
             .count(),
         rng,
     )
+    .expect("test fixtures seat every human in the map's human start spots")
 }
 
 pub(super) fn native_assign_cooperative_starts_from_preassignment(
@@ -484,12 +514,12 @@ pub(super) fn native_assign_cooperative_starts_from_preassignment(
     human_start_spots: usize,
     human_house_count: usize,
     rng: &mut SimRng,
-) -> NativeStartAssignment {
+) -> Result<NativeStartAssignment, PreFillScenarioPrefixPlanError> {
     if starts.is_empty() {
-        return NativeStartAssignment {
+        return Ok(NativeStartAssignment {
             placements: Vec::new(),
             start_table: Vec::new(),
-        };
+        });
     }
 
     assert_eq!(starts.len(), preassignment.len());
@@ -497,6 +527,7 @@ pub(super) fn native_assign_cooperative_starts_from_preassignment(
     let mut explicit_owner = preassignment.to_vec();
 
     let mut occupied: Vec<bool> = explicit_owner.iter().map(Option::is_some).collect();
+    let map_human_start_spots = human_start_spots;
     let human_start_spots = human_start_spots.min(starts.len());
     let mut assigned = vec![None; requested.len()];
 
@@ -507,12 +538,21 @@ pub(super) fn native_assign_cooperative_starts_from_preassignment(
         } else {
             let occupied_count = occupied.iter().filter(|used| **used).count();
             if occupied_count < human_house_count && human_start_spots != 0 {
-                let mut candidate =
-                    rng.next_range_u32_inclusive(0, human_start_spots as u32 - 1) as usize;
-                while occupied[candidate] {
-                    candidate = (candidate + 1) % human_start_spots;
-                }
-                candidate
+                // MPCooperative +0x84 `0x005C2EF0` -> `FUN_005C2D00`: draw
+                // `RandomRanged(0, NumCoopHumanStartSpots - 1)`, then step
+                // forward modulo the spot count until a free spot. gamemd
+                // never stops stepping when every spot is taken (a map whose
+                // NumCoopHumanStartSpots is below its human count, or whose
+                // spots preset starts fill), so its load hangs; VERA probes
+                // each spot once and refuses the launch.
+                let draw = rng.next_range_u32_inclusive(0, human_start_spots as u32 - 1) as usize;
+                (0..human_start_spots)
+                    .map(|step| (draw + step) % human_start_spots)
+                    .find(|candidate| !occupied[*candidate])
+                    .ok_or(PreFillScenarioPrefixPlanError::CoopHumanStartSpotsFull {
+                        human_start_spots: map_human_start_spots,
+                        human_count: human_house_count,
+                    })?
             } else {
                 (human_start_spots..starts.len())
                     .find(|candidate| !occupied[*candidate])
@@ -525,14 +565,14 @@ pub(super) fn native_assign_cooperative_starts_from_preassignment(
         *assigned_start = Some(starts[start_index]);
     }
 
-    NativeStartAssignment {
+    Ok(NativeStartAssignment {
         placements: assigned
             .into_iter()
             .enumerate()
             .filter_map(|(slot, start)| start.map(|start| (slot, start)))
             .collect(),
         start_table: explicit_owner,
-    }
+    })
 }
 
 /// WOL Quick Co-op's start callback, `ScenarioClass__AssignStartingPoints`
@@ -542,17 +582,22 @@ pub(super) fn native_assign_cooperative_starts_from_preassignment(
 /// flag; then every AI picks with no table check, so a preset AI start stays
 /// reserved but unused. The `[Basic] Official` argument only reaches Gather,
 /// which never reads it. It writes no node or AI-slot start back.
+///
+/// Gather sizes the starts to the participant count, but a preset AI start
+/// is reserved without being used, so the last houses can find no free
+/// start. gamemd's picker then writes `used[-1]` and reads start `-1`;
+/// VERA refuses the launch (`QuickCoopStartsExhausted`).
 pub(super) fn native_assign_quick_coop_starts_from_preassignment(
     session: &SkirmishLaunchSession,
     starts: &[Waypoint],
     preassignment: &[Option<usize>],
     rng: &mut SimRng,
-) -> NativeStartAssignment {
+) -> Result<NativeStartAssignment, PreFillScenarioPrefixPlanError> {
     if starts.is_empty() {
-        return NativeStartAssignment {
+        return Ok(NativeStartAssignment {
             placements: Vec::new(),
             start_table: Vec::new(),
-        };
+        });
     }
 
     assert_eq!(starts.len(), preassignment.len());
@@ -571,24 +616,31 @@ pub(super) fn native_assign_quick_coop_starts_from_preassignment(
             } else {
                 None
             };
-            let start_index = preset.unwrap_or_else(|| {
-                let picked = choose_quick_coop_start(starts, &used, human, rng);
-                used[picked] = true;
-                start_table[picked] = Some(slot);
-                picked
-            });
+            let start_index = match preset {
+                Some(preset) => preset,
+                None => {
+                    let picked = choose_quick_coop_start(starts, &used, human, rng).ok_or(
+                        PreFillScenarioPrefixPlanError::QuickCoopStartsExhausted {
+                            start_count: starts.len(),
+                        },
+                    )?;
+                    used[picked] = true;
+                    start_table[picked] = Some(slot);
+                    picked
+                }
+            };
             assigned[slot] = Some(starts[start_index]);
         }
     }
 
-    NativeStartAssignment {
+    Ok(NativeStartAssignment {
         placements: assigned
             .into_iter()
             .enumerate()
             .filter_map(|(slot, start)| start.map(|start| (slot, start)))
             .collect(),
         start_table,
-    }
+    })
 }
 
 /// AssignStartingPoints' picker `0x005EE6F0`, with `k` the used starts. No
@@ -597,20 +649,24 @@ pub(super) fn native_assign_quick_coop_starts_from_preassignment(
 /// draw `r = RandomRanged(0, N-3)` and take the `(r+1)`-th free start in
 /// index order. One used: the free start nearest the used one. Otherwise the
 /// free start farthest from the used ones; ties keep the lowest index.
+/// `None` when every start is used.
 pub(super) fn choose_quick_coop_start(
     starts: &[Waypoint],
     used: &[bool],
     human: bool,
     rng: &mut SimRng,
-) -> usize {
+) -> Option<usize> {
     let used_count = used.iter().filter(|used| **used).count();
     if used_count == 0 && human {
-        return rng.next_range_u32_inclusive(0, starts.len() as u32 - 1) as usize;
+        return Some(rng.next_range_u32_inclusive(0, starts.len() as u32 - 1) as usize);
     }
-    if used_count == 2 && !human {
-        let r = rng.next_range_u32_inclusive(0, starts.len() as u32 - 3) as usize;
+    // With two used and N < 3 no start is free; gamemd still draws
+    // `RandomRanged(0, N-3)` and finds nothing, but VERA refuses that launch,
+    // so the draw is skipped. Every N >= 3 draws as gamemd does.
+    if let (2, false, Some(high)) = (used_count, human, starts.len().checked_sub(3)) {
+        let r = rng.next_range_u32_inclusive(0, high as u32) as usize;
         if let Some(free) = (0..starts.len()).filter(|index| !used[*index]).nth(r) {
-            return free;
+            return Some(free);
         }
     }
     // Each distance is truncated to 16 bits before the 32-bit sum.
@@ -640,9 +696,7 @@ pub(super) fn choose_quick_coop_start(
             }
         })
     };
-    picked
-        .expect("participant count cannot exceed gathered starts")
-        .0
+    picked.map(|(index, _)| index)
 }
 
 pub fn choose_battle_automatic_start(

@@ -461,8 +461,8 @@ fn eject_head_passenger(
 
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
                 match sub_cell {
-                    Some(spot) => passenger.sub_cell.hold(spot),
-                    None => passenger.sub_cell.release(),
+                    Some(spot) => passenger.seldom.sub_cell.hold(spot),
+                    None => passenger.seldom.sub_cell.release(),
                 }
                 if let Some(loco) = passenger.locomotor.as_mut() {
                     loco.store_ground_layer(false);
@@ -721,7 +721,7 @@ pub(crate) fn building_mission_unload_absorber(
             };
             let destination = strict_beyond.unwrap_or(adjacent);
             if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-                passenger.sub_cell.hold(sub_cell);
+                passenger.seldom.sub_cell.hold(sub_cell);
                 if let Some(locomotor) = passenger.locomotor.as_mut() {
                     locomotor.store_ground_layer(false);
                 }
@@ -914,7 +914,7 @@ fn ares_tunnel_unload_one(
                     return false;
                 };
                 if let Some(foot) = sim.substrate.entities.get_mut(member) {
-                    foot.sub_cell.hold(sub_cell);
+                    foot.seldom.sub_cell.hold(sub_cell);
                     if let Some(locomotor) = foot.locomotor.as_mut() {
                         locomotor.store_ground_layer(false);
                     }
@@ -1076,7 +1076,8 @@ pub(crate) fn unit_mission_unload(
                     });
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     if turreted {
-                        entity.transport_unload_keep_count.count = if cargo == 1 { 0 } else { 1 };
+                        entity.seldom.transport_unload_keep_count.count =
+                            if cargo == 1 { 0 } else { 1 };
                     }
                     //73D86C dispatches the active ILocomotion+4C owner.
                     // Jumpjet's (`0x0054B6E0`) snaps the body. VERA
@@ -1113,7 +1114,7 @@ pub(crate) fn unit_mission_unload(
         }
         STATE_EJECT => {
             if entity.passenger_role().passenger_count()
-                > entity.transport_unload_keep_count.count()
+                > entity.seldom.transport_unload_keep_count.count()
             {
                 let _ = eject_head_passenger(sim, rules, id, effects);
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -1254,7 +1255,7 @@ pub(crate) fn mission_unload(
         }
         // `0x004154BB..0x004154C3`: tethered to the last passenger out, it
         // waits for that passenger's first cell step (radio 8) to release it.
-        AIR_STATE_EJECT if entity.tether.partner().is_some() => {
+        AIR_STATE_EJECT if entity.seldom.tether.partner().is_some() => {
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         AIR_STATE_EJECT => {
@@ -1271,7 +1272,7 @@ pub(crate) fn mission_unload(
                 // `0x00415544..0x00415548`: one that left is no Carryall's
                 // cargo (IsOnCarryall `+0x424`).
                 if let Some(pax) = ejected.and_then(|pax| sim.substrate.entities.get_mut(pax)) {
-                    pax.on_carryall.set(false);
+                    pax.seldom.on_carryall.set(false);
                     // Ares 3.0 AircraftClass_Mi_Unload_Blocked (10048B30,
                     // hook 0x415544) clears Transporter (`+0x11C`) too. Its
                     // refusal arm re-adds the passenger and enters idle mode,

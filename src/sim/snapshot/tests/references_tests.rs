@@ -42,6 +42,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(particle_id));
     sim.set_logic_order_for_test(vec![particle_id, entity_id]);
@@ -72,6 +73,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
             .entities
             .get(entity_id)
             .expect("entity")
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -110,6 +112,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(particle_id)
@@ -558,7 +561,10 @@ fn gsi_17_03_reference_fixture() -> (Simulation, Gsi1703Ids) {
     sim.substrate.entities.insert(parent_entity);
 
     let mut child_entity = GameEntity::test_default(child, "HORNET", "AMERICANS", 2, 1);
-    child_entity.spawn_owner_id.set_for_test(Some(parent));
+    child_entity
+        .seldom
+        .spawn_owner_id
+        .set_for_test(Some(parent));
     sim.substrate.entities.insert(child_entity);
     sim.substrate
         .entities
@@ -650,6 +656,7 @@ fn gsi_17_03_each_spawn_and_projectile_pointer_role_must_resolve_atomically() {
                     .entities
                     .get_mut(ids.child)
                     .unwrap()
+                    .seldom
                     .spawn_owner_id
                     .set_for_test(Some(9_999));
                 ("EntityStore", ids.child, "spawn_owner_id")
@@ -726,6 +733,7 @@ fn gsi_17_03_null_and_cell_reference_forms_need_no_object_identity() {
         .entities
         .get_mut(ids.child)
         .unwrap()
+        .seldom
         .spawn_owner_id
         .set_for_test(None);
     let projectile = sim.projectiles.get_mut(ids.projectile).unwrap();
@@ -1117,6 +1125,7 @@ fn gsi_17_03_repeated_aliases_do_not_imply_reciprocal_spawn_ownership() {
         .entities
         .get_mut(ids.child)
         .unwrap()
+        .seldom
         .spawn_owner_id
         .set_for_test(Some(ids.target));
 
@@ -1140,6 +1149,7 @@ fn gsi_17_03_repeated_aliases_do_not_imply_reciprocal_spawn_ownership() {
             .entities
             .get(ids.child)
             .unwrap()
+            .seldom
             .spawn_owner_id
             .owner(),
         Some(ids.target)
@@ -1218,4 +1228,69 @@ fn cell_attack_target_round_trips_through_snapshot() {
         .target()
         .expect("attack_target should be restored");
     assert!(matches!(restored, TargetKind::Cell(50, 50)));
+}
+
+/// An object's saved type and owner ids and the interner that names them all
+/// come from the file. An id past that interner refuses the player load
+/// before any restore step resolves it and panics.
+#[test]
+fn object_type_id_past_the_saved_interner_refuses_the_load() {
+    let mut sim = Simulation::new();
+    let entity = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "AMERICANS", 5, 6);
+    let type_id = entity.type_ref().index();
+    sim.substrate.entities.insert(entity);
+    sim.interner = crate::sim::intern::StringInterner::new();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-type", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a type id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownInternedId {
+            registry: "object",
+            object_id: 1,
+            field: "type",
+            id: type_id,
+        },
+    );
+}
+
+/// A bullet's saved warhead id is resolved when it detonates, so one past the
+/// saved interner refuses the load too.
+#[test]
+fn bullet_warhead_id_past_the_saved_interner_refuses_the_load() {
+    use crate::sim::combat::RAD_NO_ATTACKER;
+    use crate::sim::projectile::{ProjectilePayload, ProjectileTarget};
+
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(9_999);
+    let mut spawn = gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::None);
+    spawn.payload = ProjectilePayload::new(1, unknown, None, false);
+    let bullet = sim.substrate.allocate_stable_id();
+    sim.admit_projectile(bullet, spawn);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-warhead", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a warhead id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownInternedId {
+            registry: "bullet",
+            object_id: bullet,
+            field: "warhead",
+            id: unknown.index(),
+        },
+    );
 }

@@ -1189,6 +1189,7 @@ fn entity_pairs<'a>(
             // no real infantryman supplies that type/colour to the atlas.
             let disguise = if entity.category() == EntityCategory::Infantry {
                 entity
+                    .seldom
                     .disguise
                     .as_ref()
                     .filter(|disguise| disguise.is_disguised())

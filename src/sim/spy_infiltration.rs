@@ -439,7 +439,7 @@ impl Simulation {
         if (spy.reveal_production || spy.reveal_radar)
             && let Some(building) = self.substrate.entities.get_mut(building_id)
         {
-            building.ares.display_production_to.add(infiltrator);
+            building.seldom.ares.display_production_to.add(infiltrator);
         }
         arms
     }

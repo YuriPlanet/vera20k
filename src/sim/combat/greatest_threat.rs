@@ -1817,7 +1817,7 @@ fn scanner_mask<'r>(
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     );
     let mask = if foot_wrapper_entered {
-        scanner.foot_retarget_after_stop.coerce_mask(mask)
+        scanner.seldom.foot_retarget_after_stop.coerce_mask(mask)
     } else {
         mask
     };
@@ -2728,8 +2728,8 @@ fn evaluate_candidate(
     // in ground the player has not explored.
     if ctx.standing.human
         && ctx.standing.requires_player_discovery
-        && !candidate.discovery.owned_by_current_house()
-        && !candidate.discovery.discovered_by_current_house()
+        && !candidate.seldom.discovery.owned_by_current_house()
+        && !candidate.seldom.discovery.discovered_by_current_house()
         && candidate.category() != EntityCategory::Aircraft
     {
         return None;
@@ -2794,7 +2794,7 @@ fn evaluate_candidate(
     // (civilians, the cow) and every wall.
     if !considered_enemy
         && candidate_obj.insignificant
-        && !candidate.mind_control.is_mind_controlled()
+        && !candidate.seldom.mind_control.is_mind_controlled()
         && (!building || ctx.owner_is_passive(candidate))
         && !ctx.passive_building_exception(candidate, candidate_obj)
     {
@@ -2824,6 +2824,7 @@ fn evaluate_candidate(
         .fire_world
         .map_or(0, |world| world.session.binary_frame());
     let blink = candidate
+        .seldom
         .disguise
         .as_ref()
         .map_or(0, |disguise| disguise.blink_remaining(frame));

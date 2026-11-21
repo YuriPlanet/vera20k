@@ -4,7 +4,7 @@
 use super::RulesPassProcessor;
 use super::{
     RulesTypeFamily, SideRegisteredTypes, ares_country_index_of_name, house_type_mask_from_indices,
-    read_nullable_type_vector, read_valueable_int_vector, read_valueable_type,
+    read_member, read_nullable_type_vector, read_valueable_int_vector, read_valueable_type,
     read_valueable_type_vector,
 };
 use crate::rules::ini_parser::IniFile;
@@ -409,11 +409,9 @@ impl RulesPassProcessor {
                     presentation.eva.read_pass(&raw, _fixed_eva);
                     // The handler's Initialize names its cursor; 10033370
                     // reads Cursor/NoCursor after SW.ChargeToDrainRatio.
-                    let cursors = &mut self
-                        .families
-                        .get_mut(&RulesTypeFamily::SuperWeapon)
-                        .unwrap()[index]
-                        .ares_super_weapon_cursors;
+                    let cursors =
+                        &mut read_member(&mut self.families, RulesTypeFamily::SuperWeapon, index)
+                            .ares_super_weapon_cursors;
                     if initialized {
                         cursors.initialize_for_kind(kind);
                     }

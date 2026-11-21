@@ -42,12 +42,18 @@ impl LanMessage {
         Ok(message)
     }
 
-    pub fn options_fields(&self) -> Option<LanOptionsFields<'_>> {
-        (self.kind() == LanMessageKind::Options).then(|| LanOptionsFields {
-            text: c_string(&self.bytes[BODY_OFFSET..BODY_OFFSET + OPTIONS_CAPACITY]),
+    /// An Options message's fields, read by [`LanMessage::payload`].
+    pub(super) fn setup_options_fields(&self) -> LanOptionsFields<'_> {
+        LanOptionsFields {
+            text: self.setup_body_text(),
             color: self.u32(0x1bf),
             game_name_hash: self.u32(0x1c3),
-        })
+        }
+    }
+
+    /// The narrow body text Options and PlayerChoices carry, up to its NUL.
+    pub(super) fn setup_body_text(&self) -> &[u8] {
+        c_string(&self.bytes[BODY_OFFSET..BODY_OFFSET + OPTIONS_CAPACITY])
     }
 
     /// BD5E21C5..21ED formats Rcountry,color,start,team and calls5E3850.
@@ -64,11 +70,6 @@ impl LanMessage {
         Ok(message)
     }
 
-    pub fn player_choices_text(&self) -> Option<&[u8]> {
-        (self.kind() == LanMessageKind::PlayerChoices)
-            .then(|| c_string(&self.bytes[BODY_OFFSET..BODY_OFFSET + OPTIONS_CAPACITY]))
-    }
-
     /// 5DD57B..5DD5D6. The previously-published options own the seed.
     pub fn go(max_ahead: i32) -> Self {
         let mut message = Self::zeroed(LanMessageKind::Go);
@@ -76,8 +77,9 @@ impl LanMessage {
         message
     }
 
-    pub fn go_max_ahead(&self) -> Option<i32> {
-        (self.kind() == LanMessageKind::Go).then(|| self.u32(BODY_OFFSET) as i32)
+    /// A GO message's MaxAhead, read by [`LanMessage::payload`].
+    pub(super) fn setup_go_max_ahead(&self) -> i32 {
+        self.u32(BODY_OFFSET) as i32
     }
 
     /// 5DD916..5DD94B: scenario verification succeeded and the guest can start.

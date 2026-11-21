@@ -274,7 +274,9 @@ impl Simulation {
             .as_ref()
             .unwrap()
             .type_index;
-        let kind = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal].kind;
+        let kind = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal]
+            .condition
+            .kind;
         if REPLAYED_EVENT_KINDS.contains(&kind)
             || trace
                 .predicates

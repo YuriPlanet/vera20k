@@ -159,7 +159,7 @@ impl Simulation {
                 &fire_coord::FireSource::from(&snap),
                 object,
                 0,
-                entity.weapon_burst.index() as u8,
+                entity.seldom.weapon_burst.index() as u8,
                 crate::rules::flh::Flh::default(),
             )
             .coord;

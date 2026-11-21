@@ -279,9 +279,9 @@ fn caller_count_bridge_detour(
         Some((
             HierarchyGate {
                 level0_zones: level0,
-                marked_level0: &precheck.marked[0],
+                marked_level0: precheck.marked(0),
                 blocker_neighbor_counts: &zero_counts,
-                level0_route: &precheck.paths[0],
+                level0_route: precheck.route(0),
             },
             &mut RouteProgress {
                 index: 0,

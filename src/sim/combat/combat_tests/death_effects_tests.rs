@@ -51,6 +51,7 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
             MissionId::from_known(MissionType::Guard),
         );
         later_attacker
+            .seldom
             .suspended_attack_target
             .set_for_test(Some(TargetKind::Entity(30)));
         entities.insert(later_attacker);
@@ -368,7 +369,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         .get(center)
         .expect("UnInit keeps physical storage until the pending-delete drain");
     assert!(retired.death.is_dying() && !retired.lifecycle.object_alive());
-    assert!(!retired.in_logic_vector.is_member());
+    assert!(!retired.seldom.in_logic_vector.is_member());
     assert!(!sim.substrate.occupancy.contains_entity(8, 5, center));
     assert!(sim.substrate.pending_delete.contains_object(&center));
     sim.flush_pending_delete();
@@ -419,6 +420,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .entities
         .get_mut(target_id)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     let delay_wh = sim.interner.intern("DelayWH");
@@ -455,15 +457,15 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
     let target = sim.substrate.entities.get(target_id).unwrap();
     assert_eq!(target.health.current(), 1);
     assert!(target.lifecycle.object_alive() && !target.lifecycle.in_limbo());
-    assert!(target.in_logic_vector.is_member() && target.lifecycle.cell_marked());
+    assert!(target.seldom.in_logic_vector.is_member() && target.lifecycle.cell_marked());
     assert!(
-        !target.selection.is_selected(),
+        !target.seldom.selection.is_selected(),
         "ObjectClass::Detach_All(1) deselects before detach"
     );
     assert!(sim.substrate.occupancy.contains_entity(8, 5, target_id));
     assert!(!sim.substrate.pending_delete.contains_object(&target_id));
     assert_eq!(
-        target.kill_record.killer(),
+        target.seldom.kill_record.killer(),
         None,
         "the synchronous callback consumes attribution before HP1 restore"
     );
@@ -554,7 +556,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         target.building.pending_c4_detonation.pending(),
         Some(original_pending)
     );
-    assert!(target.lifecycle.object_alive() && target.in_logic_vector.is_member());
+    assert!(target.lifecycle.object_alive() && target.seldom.in_logic_vector.is_member());
     assert!(sim.substrate.occupancy.contains_entity(8, 5, target_id));
     assert!(!sim.substrate.pending_delete.contains_object(&target_id));
     assert_eq!(sim.houses[&victim_owner].stats().buildings_lost(), 2);
@@ -635,7 +637,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
     for target_id in [expiry_target, later_target] {
         let target = sim.substrate.entities.get(target_id).unwrap();
         assert_eq!(target.health.current(), 1);
-        assert_eq!(target.kill_record.killer(), None);
+        assert_eq!(target.seldom.kill_record.killer(), None);
     }
 
     // A different ordinary fatal transaction after restoration must not be
@@ -656,7 +658,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
     );
     let later = sim.substrate.entities.get(later_target).unwrap();
     assert_eq!(later.health.current(), 0);
-    assert_eq!(later.kill_record.killer(), Some(owner_b));
+    assert_eq!(later.seldom.kill_record.killer(), Some(owner_b));
     assert_eq!(sim.houses[&owner_b].stats().buildings_killed(), 1);
     assert_eq!(sim.houses[&owner_b].economy().score(), 700);
 
@@ -673,7 +675,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
     );
     let expired = sim.substrate.entities.get(expiry_target).unwrap();
     assert_eq!(expired.health.current(), 0);
-    assert_eq!(expired.kill_record.killer(), None);
+    assert_eq!(expired.seldom.kill_record.killer(), None);
     assert!(sim.substrate.pending_delete.contains_object(&expiry_target));
     assert_eq!(
         (
@@ -702,6 +704,7 @@ fn death_arm_payload(
     super::death_arm_explodes(obj, veterancy, numbered_weapon)
         .then(|| super::fire_death_weapon_payload(rules, obj, current_weapon, interner))
         .flatten()
+        .map(|payload| (payload.damage, payload.warhead, payload.weapon_ref))
 }
 
 #[test]
@@ -1091,6 +1094,7 @@ fn a_buildings_death_weapon_detonates_at_its_foundation_centre() {
     derrick.set_owner_for_test(owner);
     derrick.set_type_ref_for_test(sim.interner.intern("DERRICK"));
     derrick
+        .seldom
         .type_facts
         .set_foundation_for_test("3x3".to_string().into());
     derrick.set_is_voxel_for_test(false);
@@ -1268,6 +1272,7 @@ fn a_dying_buildings_debris_leaves_from_its_centre() {
     let mut building = make_structure_entity(2, "BIG", 8, 5, 0, 1);
     // Construction stamps the type's `Foundation=3x3`.
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("3x3".to_string().into());
     let location = (

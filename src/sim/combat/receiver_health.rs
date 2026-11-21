@@ -415,6 +415,7 @@ pub(super) fn commit_receiver_health(
             )
         {
             target
+                .seldom
                 .radar_combat_flash
                 .start(binary_frame as i32, rules.general.radar_combat_flash_time);
         }

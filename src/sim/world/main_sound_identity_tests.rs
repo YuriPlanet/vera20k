@@ -119,7 +119,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         Simulation::tick_move_sound_after_process(
             &quiet.interner,
             &quiet.session,
-            &quiet.main_rng,
+            &mut quiet.main_rng,
             &mut quiet.substrate,
             &mut quiet.sound_events,
             &quiet.houses,
@@ -130,7 +130,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         Simulation::tick_move_sound_after_process(
             &quiet.interner,
             &quiet.session,
-            &quiet.main_rng,
+            &mut quiet.main_rng,
             &mut quiet.substrate,
             &mut quiet.sound_events,
             &quiet.houses,
@@ -143,7 +143,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         Simulation::tick_move_sound_after_process(
             &serviced.interner,
             &serviced.session,
-            &serviced.main_rng,
+            &mut serviced.main_rng,
             &mut serviced.substrate,
             &mut serviced.sound_events,
             &serviced.houses,
@@ -151,13 +151,13 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             0,
             &rules,
         );
-        // One ordinary inclusive presentation draw between otherwise identical
-        // paid Foot visits. No Scenario or MapGen capability is lent.
-        let _ = serviced.presentation_main_draws().ranged(0, 1);
+        // One ordinary inclusive draw on the same Main between otherwise
+        // identical paid Foot visits. No Scenario or MapGen is drawn.
+        let _ = serviced.main_rng.next_range_i32_inclusive(0, 1);
         Simulation::tick_move_sound_after_process(
             &serviced.interner,
             &serviced.session,
-            &serviced.main_rng,
+            &mut serviced.main_rng,
             &mut serviced.substrate,
             &mut serviced.sound_events,
             &serviced.houses,

@@ -267,7 +267,7 @@ pub fn foot_can_be_sold(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     ) {
         return false;
     }
-    let Some(depot_id) = entity.radio_contacts.slot(0) else {
+    let Some(depot_id) = entity.seldom.radio_contacts.slot(0) else {
         return false;
     };
     let Some(depot) = sim
@@ -561,7 +561,7 @@ pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         );
     let ares = rules.ares_form();
     // Ares 3.0 10017200 (hook 0x4494D2): a raided building cannot be sold.
-    if ares && entity.ares.ares_raid.raided() {
+    if ares && entity.seldom.ares.ares_raid.raided() {
         return false;
     }
     // Ares 3.0 BuildingClass_IsSellable_FirestormWall (10014A20, hook
@@ -804,7 +804,7 @@ pub(crate) fn sell_stage_one(
         .substrate
         .entities
         .get(id)
-        .is_none_or(|building| building.tether.partner().is_some())
+        .is_none_or(|building| building.seldom.tether.partner().is_some())
     {
         return false;
     }

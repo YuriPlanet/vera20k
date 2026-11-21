@@ -127,7 +127,7 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
         .entities
         .get_mut(id)
         .unwrap()
-        .radio_contacts
+        .seldom.radio_contacts
         .insert(yard);
     tick_stock_cloak_producer(
         &mut sim,
@@ -152,7 +152,7 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
         .entities
         .get_mut(id)
         .unwrap()
-        .radio_contacts
+        .seldom.radio_contacts
         .remove(yard);
     tick_stock_cloak_producer(
         &mut sim,
@@ -437,9 +437,9 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
         let entity = sim.substrate.entities.get_mut(targeter).unwrap();
         let attack = TargetKind::Entity(cloaker);
         entity
-            .rearm_timer
+            .seldom.rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
-        entity.weapon_burst.complete_shot(4);
+        entity.seldom.weapon_burst.complete_shot(4);
         entity
             .building
             .pending_building_fire
@@ -482,10 +482,10 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     let attack = entity.attack_target.target().unwrap();
     assert_eq!(attack, TargetKind::Entity(cloaker));
     assert_eq!(
-        entity.rearm_timer.timer(),
+        entity.seldom.rearm_timer.timer(),
         crate::sim::timer::CdTimer::started(0, 17)
     );
-    assert_eq!(entity.weapon_burst.index(), 1);
+    assert_eq!(entity.seldom.weapon_burst.index(), 1);
     assert_eq!(
         entity.building.pending_building_fire.pending(),
         Some(PendingBuildingFire::new(
@@ -527,7 +527,7 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
         .entities
         .get_mut(id)
         .unwrap()
-        .rearm_timer
+        .seldom.rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(0, 20));
 
     for frame in 0..20 {
@@ -1063,7 +1063,7 @@ fn a_non_player_object_leaves_the_selection_as_it_cloaks_and_while_unsensed() {
             .entities
             .get(id)
             .unwrap()
-            .selection
+            .seldom.selection
             .is_selected()
     };
     let select = |sim: &mut Simulation, id| {
@@ -1071,7 +1071,7 @@ fn a_non_player_object_leaves_the_selection_as_it_cloaks_and_while_unsensed() {
             .entities
             .get_mut(id)
             .unwrap()
-            .selection
+            .seldom.selection
             .set_selected_for_test(true);
     };
     select(&mut sim, own);

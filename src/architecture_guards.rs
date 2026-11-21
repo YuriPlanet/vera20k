@@ -1640,6 +1640,13 @@ fn composition_root_slots_are_owner_types() {
         ),
         (
             "GameEntity",
+            "seldom",
+            "the object record's seldom part is the same record stored apart \
+             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
+             so the slot opens nothing that was closed",
+        ),
+        (
+            "GameEntity",
             "damage_fires",
             "DamageFires' fields are private to the `sim::anim_class` module, whose parts are \
              separate files: `pub(super)` reaches only that module",
@@ -2039,6 +2046,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              `pub(super)` reaches only that module, whose passes fill each family",
         ),
         (
+            "rules/native_processing/processed_type.rs",
+            "read_member",
+            "private to the `rules::native_processing` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose passes fill each family",
+        ),
+        (
             "rules/ruleset/lookup.rs",
             "warhead_mut",
             "private to the `rules::ruleset` module, whose parts are separate files: \
@@ -2059,13 +2072,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("sim/anim_class/store.rs", "get_mut", ANIM_OBJECT),
         ("sim/anim_class/store.rs", "values_mut", ANIM_OBJECT),
         ("sim/command.rs", "payload_mut", PAYLOAD),
-        (
-            "sim/game_entity.rs",
-            "deref_mut",
-            "the object record's seldom part is the same record stored apart \
-             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
-             so the deref opens nothing that was closed",
-        ),
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),
@@ -2926,3 +2932,6 @@ fn test_gated_files(files: &[SourceFile]) -> BTreeSet<String> {
     }
     gated
 }
+
+// Shared-state, worker-pool and Deref guards.
+mod shared_state;

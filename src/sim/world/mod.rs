@@ -581,8 +581,8 @@ pub struct SimulationRngState {
     pub mapgen: SimRngLogicalState,
 }
 
-fn deserialized_main_rng_placeholder() -> MainRng {
-    MainRng::new(0)
+fn deserialized_main_rng_placeholder() -> SimRng {
+    SimRng::new(0)
 }
 
 fn every_frame() -> Option<std::num::NonZeroU64> {
@@ -669,8 +669,10 @@ pub struct Simulation {
     /// Main/global RNG — gamemd `g_MainRng` (0x00886B88). This is a
     /// process-global cursor: it is neither part of ScenarioClass saves nor
     /// multiplayer checksums, and the live cursor continues across a load.
+    /// The simulation owns this copy alone and draws it through `&mut`; the
+    /// app keeps the process cell ([`MainRng`], `install_fresh_process_main`).
     #[serde(skip, default = "deserialized_main_rng_placeholder")]
-    pub(crate) main_rng: MainRng,
+    pub(crate) main_rng: SimRng,
     /// Map-generator RNG — gamemd `g_MapGenRng` (0x00ABE890). VERA's fresh
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact

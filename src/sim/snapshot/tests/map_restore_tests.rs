@@ -323,23 +323,22 @@ fn terrain_asset_restore_fixture() -> (
 fn snapshot_restore_prepares_live_terrain_assets_before_map_publication() {
     let (mut sim, rules, registry) = terrain_asset_restore_fixture();
     let rng_before = sim.rng_state();
-    let mut expected_main = sim.main_rng.snapshot_for_test();
+    let mut expected_main = sim.main_rng.clone();
     let expected_word = expected_main.next_u32();
     let mut calls = 0;
-    let mut prepare = |terrain: &mut ResolvedTerrainGrid,
-                       main: crate::sim::rng::MainRngDraws,
-                       size_width: i32| {
-        calls += 1;
-        assert_eq!(
-            size_width, 2,
-            "the native iterator uses Size, not grid width"
-        );
-        assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
-        assert_eq!(terrain.cell(1, 2).unwrap().bridge_facts.raw_flags, 0);
-        assert!(!terrain.cell(2, 2).unwrap().overlay_blocks);
-        assert_eq!(main.next_u32(), expected_word);
-        Ok(())
-    };
+    let mut prepare =
+        |terrain: &mut ResolvedTerrainGrid, main: &mut crate::sim::rng::SimRng, size_width: i32| {
+            calls += 1;
+            assert_eq!(
+                size_width, 2,
+                "the native iterator uses Size, not grid width"
+            );
+            assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
+            assert_eq!(terrain.cell(1, 2).unwrap().bridge_facts.raw_flags, 0);
+            assert!(!terrain.cell(2, 2).unwrap().overlay_blocks);
+            assert_eq!(main.next_u32(), expected_word);
+            Ok(())
+        };
 
     sim.restore_map_authority_after_snapshot_load(&rules, &registry, Some(&mut prepare))
         .expect("prepare assets from dynamic cells before final map publication");
@@ -360,10 +359,10 @@ fn snapshot_restore_prepares_live_terrain_assets_before_map_publication() {
 #[test]
 fn snapshot_restore_terrain_asset_error_stops_map_publication() {
     let (mut sim, rules, registry) = terrain_asset_restore_fixture();
-    let mut expected_main = sim.main_rng.snapshot_for_test();
+    let mut expected_main = sim.main_rng.clone();
     let expected_word = expected_main.next_u32();
     let mut prepare =
-        |terrain: &mut ResolvedTerrainGrid, main: crate::sim::rng::MainRngDraws, _: i32| {
+        |terrain: &mut ResolvedTerrainGrid, main: &mut crate::sim::rng::SimRng, _: i32| {
             assert_eq!(terrain.cell(1, 2).unwrap().final_tile_index, 71);
             assert_eq!(main.next_u32(), expected_word);
             Err("missing selected TMP".to_string())
@@ -779,4 +778,26 @@ fn saveload_rebuild_is_deterministic() {
         b.zone_grid.as_ref().expect("zone grid rebuilt"),
     );
     assert_eq!(a.state_hash(), b.state_hash());
+}
+
+/// A saved Terrain's type id and the interner that names it both come from the
+/// file. An id past the interner is refused as a missing type, like an unknown
+/// name, instead of panicking in the name lookup.
+#[test]
+fn terrain_type_id_past_the_saved_interner_is_a_missing_type() {
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(sim.interner.len() as u32);
+    sim.terrain_objects.insert_constructed(
+        crate::sim::terrain_object::TerrainObjectState::for_test(1, unknown, 0, 0),
+        false,
+    );
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    assert_eq!(
+        sim.restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
+            .unwrap_err(),
+        SnapshotRestoreError::MissingTerrainType {
+            object_id: 1,
+            type_name: format!("#{}", unknown.index()),
+        },
+    );
 }

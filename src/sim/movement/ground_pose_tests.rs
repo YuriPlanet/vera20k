@@ -521,7 +521,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
             .expect("moving ramp snapshot")
             .sim;
         // The original and restored controls run as independent test processes.
-        restored.main_rng = sim.main_rng.snapshot_for_test().into();
+        restored.main_rng = sim.main_rng.clone();
         restored.mapgen_rng = sim.mapgen_rng.clone();
         restored
             .restore_after_snapshot_load()
@@ -1255,6 +1255,7 @@ fn getcoords_xy_is_the_location_or_a_buildings_foundation_centre() {
         ("not-a-native-foundation", raw),
     ] {
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test(foundation.to_string().into());
         assert_eq!(

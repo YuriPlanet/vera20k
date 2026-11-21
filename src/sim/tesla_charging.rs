@@ -251,6 +251,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .tesla_charger
                 .active = true;
             let _ = self.mission_queue_exact(

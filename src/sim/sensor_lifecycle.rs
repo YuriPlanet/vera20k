@@ -396,7 +396,7 @@ impl Simulation {
         if entity.deactivated.is_offline() {
             return;
         }
-        if !entity.ares.sensor_array_counter.activate() {
+        if !entity.seldom.ares.sensor_array_counter.activate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -427,7 +427,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
-        if !entity.ares.sensor_array_counter.deactivate() {
+        if !entity.seldom.ares.sensor_array_counter.deactivate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -468,7 +468,7 @@ impl Simulation {
         {
             return;
         }
-        let was_active = entity.ares.sensor_array_counter.is_active();
+        let was_active = entity.seldom.ares.sensor_array_counter.is_active();
         let active = !entity.deactivated.is_offline()
             && self.building_operational_state(stable_id, rules) == Some(true);
         if active == was_active {
@@ -789,6 +789,7 @@ mod tests {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .ares
                 .sensor_array_counter
                 .count()

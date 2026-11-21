@@ -56,7 +56,7 @@ fn mission_only_aircraft_reveal_matches_original_flag_histories() {
             .veterancy
             .set_rank_for_test(input["veterancy"].as_u64().unwrap() as u16 * 100);
         if flag("previous") {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         let placement = if flag("success") {
             PlacementEvidence::MarkSucceeded
@@ -147,6 +147,7 @@ fn mission_only_has_its_own_hash_fold() {
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     assert_ne!(sim.state_hash(), before);
@@ -228,7 +229,7 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
             .unwrap();
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         if flag("mission_only") {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         entity
             .position

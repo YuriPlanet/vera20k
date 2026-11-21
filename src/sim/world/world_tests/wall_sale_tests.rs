@@ -61,6 +61,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .weapon_burst
             .complete_shot(2);
     }
@@ -85,7 +86,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
         );
         assert_eq!(actor.mission.suspended(), MissionId::NONE);
         assert_eq!(
-            actor.weapon_burst.index(),
+            actor.seldom.weapon_burst.index(),
             1,
             "4FD018 calls70D4A0: Restore replaces the wall target before the conditional NULL setter"
         );
@@ -163,7 +164,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(!path.is_walkable(4, 4));
     assert!(!path.is_walkable(4, 3));
     assert!(!path.is_walkable(5, 4));
-    sim.rebuild_zone_grid_full(&path);
+    sim.rebuild_zone_grid_full(std::sync::Arc::new(path.clone()));
     let ground_zone_before = sim
         .zone_grid
         .as_ref()

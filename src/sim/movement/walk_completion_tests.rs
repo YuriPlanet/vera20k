@@ -264,7 +264,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         });
         actor.mission_leaf = MissionLeafState::infantry_raw_for_test(0, i32_value(&input["doing"]));
         if input["contact"] == 1 {
-            actor.radio_contacts.insert(2);
+            actor.seldom.radio_contacts.insert(2);
         }
         let loco = actor.locomotor.as_mut().unwrap();
         loco.set_walk_destination(Some(coord(&input["destination"])));

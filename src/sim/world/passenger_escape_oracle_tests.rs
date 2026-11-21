@@ -473,7 +473,13 @@ fn compare(row: &Value) {
             let record = of("record_kill").expect("a killed passenger records its kill");
             let credited = (record[2] == "attacker").then(|| sim.interner.intern("Foreign"));
             assert_eq!(
-                sim.substrate.entities.get(id).unwrap().kill_record.killer(),
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .kill_record
+                    .killer(),
                 credited,
                 "{context}: kill credit"
             );
@@ -549,7 +555,7 @@ fn compare(row: &Value) {
         };
         assert_eq!(nav, expected["nav"], "{context}: NavCom");
         assert_eq!(
-            entity.selection.is_selected(),
+            entity.seldom.selection.is_selected(),
             of("select").is_some(),
             "{context}: selected"
         );

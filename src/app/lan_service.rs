@@ -13,7 +13,8 @@ use super::AppState;
 use super::match_runtime::session::SessionMode;
 use crate::net::global::{GlobalDestination, GlobalMessage};
 use crate::net::lan_messages::{
-    LanCompatibility, LanMessage, LanMessageKind, LanNamedMessage, LanSessionProof, SessionScope,
+    LanCompatibility, LanJoinRequest, LanMessage, LanMessageKind, LanNamedMessage, LanPayload,
+    LanSessionProof, SessionScope,
 };
 use crate::net::reliable::{
     Delivery, LAN_PRODUCT_ID, LanConnectionConfig, LanConnections, RetryTiming,
@@ -96,6 +97,8 @@ impl PeerAdmissionRecord {
 struct PendingAdmission {
     endpoint: SocketAddrV4,
     request: LanMessage,
+    /// `request`'s join fields, read when it arrived.
+    fields: LanJoinRequest,
     identity: PeerAdmission,
     deadline: super::match_runtime::session::WallBucketTimer,
 }
@@ -700,6 +703,9 @@ impl LanService {
         request: &LanMessage,
         now: u32,
     ) -> anyhow::Result<PeerAdmission> {
+        let LanPayload::JoinRequest(fields) = request.payload() else {
+            anyhow::bail!("not a join request");
+        };
         let proof = request
             .session_proof()?
             .ok_or_else(|| anyhow::anyhow!("join proof missing"))?;
@@ -725,20 +731,22 @@ impl LanService {
         self.pending_admissions.push(PendingAdmission {
             endpoint,
             request: request.clone(),
+            fields,
             identity,
             deadline: super::match_runtime::session::WallBucketTimer::start(now, 600),
         });
         Ok(identity)
     }
 
-    /// The offer this Confirm answers. Its caller, `confirm_join`, has already
-    /// checked the proof is [`Self::in_room`].
+    /// The offer this Confirm answers: its sender's name and join fields. Its
+    /// caller, `confirm_join`, has already checked the proof is
+    /// [`Self::in_room`].
     fn confirmed_request(
         &mut self,
         endpoint: SocketAddrV4,
         proof: &LanSessionProof,
         now: u32,
-    ) -> Option<LanMessage> {
+    ) -> Option<(String, LanJoinRequest)> {
         self.pending_admissions
             .retain(|entry| entry.deadline.remaining(now) != 0);
         self.pending_admissions
@@ -748,7 +756,7 @@ impl LanService {
                     && entry.identity.join_nonce == proof.join_nonce
                     && entry.identity.admission_nonce == proof.admission_nonce
             })
-            .map(|entry| entry.request.clone())
+            .map(|entry| (entry.request.name(), entry.fields))
     }
 
     fn peer_admission_matches(&self, endpoint: SocketAddrV4, proof: &LanSessionProof) -> bool {
@@ -1797,8 +1805,8 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         }
         return Ok(());
     }
-    match message.kind() {
-        LanMessageKind::Keepalive => {
+    match message.payload() {
+        LanPayload::Keepalive => {
             if setup_liveness_active(state) {
                 let keepalive = state
                     .match_state
@@ -1828,9 +1836,9 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 }
             }
         }
-        LanMessageKind::Options => {
+        LanPayload::Options(options) => {
             if state.frontend.network_setup_protocol.is_some() {
-                let text = message.options_fields().expect("options").text;
+                let text = options.text;
                 if matches!(text.first(), Some(b'A' | b'K')) {
                     let source = state
                         .match_state
@@ -1901,7 +1909,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 }
             }
         }
-        LanMessageKind::PlayerChoices => {
+        LanPayload::PlayerChoices { text } => {
             if state.frontend.network_setup_protocol.is_some() {
                 let proof = message
                     .session_proof()?
@@ -1914,7 +1922,6 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 {
                     return Ok(());
                 }
-                let text = message.player_choices_text().expect("player choices");
                 anyhow::ensure!(text.first() == Some(&b'R'), "unknown player choices text");
                 let text = crate::util::native_string::widen_bytes(&text[1..]);
                 let values: Vec<_> = crate::rules::ini_value::strtok(&text, &[','])
@@ -1973,7 +1980,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .extend(deferred);
             }
         }
-        LanMessageKind::ReadyToGo => {
+        LanPayload::ReadyToGo => {
             let proof = message
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("GO reply has no LAN scope"))?;
@@ -2005,7 +2012,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 )?;
             }
         }
-        LanMessageKind::StartPrompt => {
+        LanPayload::StartPrompt => {
             if state.frontend.network_setup_protocol.is_some() {
                 ensure_host_source(state, incoming.source)?;
                 let proof = message
@@ -2025,7 +2032,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 )?;
             }
         }
-        LanMessageKind::Go => {
+        LanPayload::Go { max_ahead } => {
             if state.frontend.network_setup_protocol.is_some() {
                 ensure_host_source(state, incoming.source)?;
                 let proof = message
@@ -2057,12 +2064,12 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     state,
                     super::shell_network_setup::NetworkSetupEvent::HostGo {
                         agreed_seed: seed,
-                        max_ahead_frames: message.go_max_ahead().expect("GO"),
+                        max_ahead_frames: max_ahead,
                     },
                 )?;
             }
         }
-        LanMessageKind::Advertisement => {
+        LanPayload::Advertisement { flags } => {
             let local = local_name(state);
             let name = message.name();
             if name.eq_ignore_ascii_case(&local) {
@@ -2073,11 +2080,11 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 .lan_service
                 .as_mut()
                 .expect("live LAN visit");
-            let open = message.advertisement_flags().expect("advertisement") & 1 != 0;
+            let open = flags & 1 != 0;
             service.record_advertised_game(incoming.source, name, open, now);
             project_games(state);
         }
-        LanMessageKind::Discovery => {
+        LanPayload::Discovery => {
             if state.match_state.session.host()
                 && let Some(launch) = state.match_state.session.network_setup()
             {
@@ -2090,17 +2097,19 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 send(state, &advertisement, direct(incoming.source), true);
             }
         }
-        LanMessageKind::JoinRequest => offer_join(state, incoming.source, &message, now)?,
-        LanMessageKind::JoinConfirm => confirm_join(state, incoming.source, &message, now)?,
-        LanMessageKind::CancelJoin => cancel_join(state, incoming.source, &message)?,
-        LanMessageKind::JoinCanceled => {
+        LanPayload::JoinRequest(request) => {
+            offer_join(state, incoming.source, &message, request, now)?
+        }
+        LanPayload::JoinConfirm => confirm_join(state, incoming.source, &message, now)?,
+        LanPayload::CancelJoin => cancel_join(state, incoming.source, &message)?,
+        LanPayload::JoinCanceled => {
             let proof = message
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("cancel receipt has no proof"))?;
             let service = state.match_state.lan_service.as_mut().expect("visit");
             service.accept_cancel_receipt(incoming.source, &proof);
         }
-        LanMessageKind::JoinAccepted => {
+        LanPayload::JoinAccepted(_) => {
             let proof = message
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("challenge has no proof"))?;
@@ -2126,7 +2135,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             service.setup_scope = Some(proof.scope);
             service.admission_nonce = Some(proof.admission_nonce);
         }
-        LanMessageKind::JoinConfirmed => {
+        LanPayload::JoinConfirmed(fields) => {
             // A VERA room's observer may sit on any row.
             let several_observers = super::shell_network_setup::setup_dialog(
                 state,
@@ -2159,7 +2168,6 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 },
             );
             service.peer_admissions.insert(incoming.source, record);
-            let fields = message.acceptance_fields().expect("acceptance");
             let mut local = state.frontend.multiplayer_shell_runtime.local_participant();
             local.raw_slot_index = Some(u8::try_from(fields.assigned_row)?);
             local.slot = received_choices(fields.country, fields.color, &local.slot)?;
@@ -2189,15 +2197,15 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 ),
             );
         }
-        LanMessageKind::ParticipantDetails => {
+        LanPayload::ParticipantDetails(fields) => {
             if state.frontend.network_setup_protocol.is_some() {
-                accept_participant(state, incoming.source, &message)?;
+                accept_participant(state, incoming.source, &message, fields)?;
             } else {
                 observe_participant(state, incoming.source, message, now);
             }
         }
-        LanMessageKind::Presence => observe_participant(state, incoming.source, message, now),
-        LanMessageKind::GameQuery => {
+        LanPayload::Presence { .. } => observe_participant(state, incoming.source, message, now),
+        LanPayload::GameQuery => {
             if state.match_state.session.network_setup().is_some() {
                 let game_name = active_game_name(state);
                 if game_name.as_deref() == Some(message.name().as_str()) {
@@ -2230,7 +2238,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 }
             }
         }
-        LanMessageKind::Departure => {
+        LanPayload::Departure => {
             let proof = message
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("departure has no LAN scope"))?;
@@ -2281,7 +2289,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 }
             }
         }
-        LanMessageKind::JoinDenied => {
+        LanPayload::JoinDenied { reason } => {
             if let Some(service) = state.match_state.lan_service.as_ref()
                 && service.pending_host == Some(incoming.source)
             {
@@ -2294,10 +2302,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 let game_id = endpoint_id(incoming.source);
                 super::shell_lan::service_event(
                     state,
-                    super::shell_lan::LanServiceEvent::JoinDenied {
-                        game_id,
-                        reason: message.denial_reason().expect("denial"),
-                    },
+                    super::shell_lan::LanServiceEvent::JoinDenied { game_id, reason },
                 );
                 state
                     .match_state

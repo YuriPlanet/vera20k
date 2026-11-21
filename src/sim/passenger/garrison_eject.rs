@@ -218,7 +218,7 @@ fn place_garrison_passenger_at_cell(
             .get(&pax.owner())
             .is_some_and(|house| house.is_human())
     {
-        pax.building_entry.clear_occupy_seeks();
+        pax.seldom.building_entry.clear_occupy_seeks();
     }
     // 4580EF is Infantry51B1F0(NULL), not a carrier-pointer clear.
     // Use its existing target/path owner. Native51B25D..51B26D also clears a
@@ -570,6 +570,7 @@ pub(crate) mod tests {
             EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.set_type_ref_for_test(sim.interner.intern("CAGAS01"));
@@ -687,6 +688,7 @@ pub(crate) mod tests {
             EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.set_owner_for_test(americans);
@@ -792,8 +794,7 @@ pub(crate) mod tests {
         let before = &row["rng_full_before"];
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
@@ -971,8 +972,11 @@ pub(crate) mod tests {
                         .remaining_directions()
                         .is_empty()
                 );
-                assert_eq!(pax.building_entry.should_enter_occupiable(), !human);
-                assert_eq!(pax.building_entry.should_enter_nearest_occupiable(), !human);
+                assert_eq!(pax.seldom.building_entry.should_enter_occupiable(), !human);
+                assert_eq!(
+                    pax.seldom.building_entry.should_enter_nearest_occupiable(),
+                    !human
+                );
                 assert_eq!(
                     pax.mission.queued().known() == Some(MissionType::Hunt),
                     mode == GarrisonEjectMode::Hunt
@@ -1187,7 +1191,7 @@ pub(crate) mod tests {
             assert!(!pax.death.is_dying());
             assert!(!pax.lifecycle.in_limbo());
             assert!(pax.lifecycle.cell_marked());
-            assert!(pax.in_logic_vector.is_member());
+            assert!(pax.seldom.in_logic_vector.is_member());
         }
 
         let occupancy_ids: Vec<u64> = sim
@@ -1320,7 +1324,7 @@ pub(crate) mod tests {
                 occupants.push(id);
             }
             sim.scenario_rng = SimRng::new(seed);
-            sim.main_rng = SimRng::new(seed).into();
+            sim.main_rng = SimRng::new(seed);
             sim.mapgen_rng = SimRng::new(seed);
             let warhead = sim.interner.intern(&rules.bridge_warheads.c4_name);
             // Building Update440345's lethal C4 receiver bypasses the health

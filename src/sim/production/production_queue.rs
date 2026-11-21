@@ -285,7 +285,7 @@ pub(in crate::sim) fn exit_produced_object(
             .substrate
             .entities
             .get(producer_id)
-            .is_some_and(|producer| producer.radio_contacts.first_free().is_none())
+            .is_some_and(|producer| producer.seldom.radio_contacts.first_free().is_none())
     {
         return BuildingExit::TryLater;
     }
@@ -416,7 +416,7 @@ fn exit_naval(
         .substrate
         .entities
         .get(producer_id)
-        .is_some_and(|producer| producer.radio_contacts.is_empty())
+        .is_some_and(|producer| producer.seldom.radio_contacts.is_empty())
     {
         let _ = sim.mission_queue_exact(
             producer_id,
@@ -1197,7 +1197,7 @@ fn exit_aircraft(
         .substrate
         .entities
         .get(producer_id)
-        .is_some_and(|producer| producer.radio_contacts.has_free_or(stable_id));
+        .is_some_and(|producer| producer.seldom.radio_contacts.has_free_or(stable_id));
     if !linkable {
         return BuildingExit::Failed;
     }
@@ -1280,7 +1280,7 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
     // (category, stamp, type_id, state, progress); progress feeds only the
     // test-support view field.
     let mut items: Vec<(ProductionCategory, u64, InternedId, BuildQueueState, u16)> = Vec::new();
-    for f in sim.production.factories().iter_insertion_ordered() {
+    for (_, f) in sim.production.factories().holders_insertion_ordered() {
         if f.owner() != owner_id {
             continue;
         }

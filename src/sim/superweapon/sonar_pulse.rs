@@ -64,8 +64,9 @@ pub(super) fn launch(
             object.cloaking_stages(rules.general.cloaking_stages)
         });
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        let left = entity.ares.sonar_timer.remaining(frame);
+        let left = entity.seldom.ares.sonar_timer.remaining(frame);
         entity
+            .seldom
             .ares
             .sonar_timer
             .start(frame, left.max(launch.sonar_delay()));

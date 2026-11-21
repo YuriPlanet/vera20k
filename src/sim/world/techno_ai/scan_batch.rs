@@ -191,7 +191,7 @@ impl ScannerKey {
             body_facing: entity.body_facing,
             barrel_facing: entity.barrel_facing,
             mission: entity.mission.current(),
-            retarget_after_stop: entity.foot_retarget_after_stop,
+            retarget_after_stop: entity.seldom.foot_retarget_after_stop,
             berserk: entity.berserk.is_active(),
             facts: attacker_facts(entity, obj),
             ranges: [0, 1].map(|index| {

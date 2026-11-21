@@ -146,8 +146,8 @@ fn compare_native_phase(scene: &TerrorScene, phase: &serde_json::Value) {
         "doing": source.mission_leaf.as_infantry().unwrap().doing(),
         "stage": stage.value(),
         "sequence": {"start":stage.timer().start_frame(), "duration":stage.timer().duration(), "rate":stage.rate()},
-        "rearm": {"start":source.rearm_timer.start_frame(), "duration":source.rearm_timer.duration()},
-        "burst": source.weapon_burst.index(),
+        "rearm": {"start":source.seldom.rearm_timer.start_frame(), "duration":source.seldom.rearm_timer.duration()},
+        "burst": source.seldom.weapon_burst.index(),
         "last_fire": source.last_fire_frame.frame(),
         "target_health": target.health.current(),
         "target_alive": u8::from(target.lifecycle.object_alive()),
@@ -201,7 +201,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
         // Original constructor/Unlimbo owns placement. Only the three measured
         // stream priors are imported; the real Rust RNG produces every word.
         scene.sim.main_rng =
-            SimRng::from_native_state_hex_for_test(initial["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(initial["rng"]["main"].as_str().unwrap());
         scene.sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(initial["rng"]["scenario"].as_str().unwrap());
         scene.sim.mapgen_rng =
@@ -392,7 +392,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
     }
     let source = scene.sim.substrate.entities.get(scene.source).unwrap();
     let owner = source.owner();
-    let rearm = source.rearm_timer;
+    let rearm = source.seldom.rearm_timer;
     let last_fire = source.last_fire_frame;
     scene.sim.queue_command(CommandEnvelope::new(
         owner,
@@ -433,7 +433,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
                 saw_die2 = true;
                 assert!(!source.death.is_dying() && source.lifecycle.object_alive());
                 assert_eq!(source.mission_leaf.as_infantry().unwrap().doing(), 12);
-                assert_eq!(source.rearm_timer, rearm);
+                assert_eq!(source.seldom.rearm_timer, rearm);
                 assert_eq!(source.last_fire_frame.frame(), last_fire.frame());
                 assert!(source.attack_target.target().is_none());
             }

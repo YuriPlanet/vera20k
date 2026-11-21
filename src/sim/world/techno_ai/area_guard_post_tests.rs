@@ -277,7 +277,7 @@ fn an_empty_harrier_given_move_then_guard_uses_enter_cadence_after_idle() {
     let entity = sim.substrate.entities.get(aircraft).unwrap();
     assert_eq!(entity.mission.current().known(), Some(MissionType::Sleep));
     assert_eq!(entity.ammo().unwrap().current(), 0);
-    assert_eq!(entity.radio_contacts.slot(0), Some(dock));
+    assert_eq!(entity.seldom.radio_contacts.slot(0), Some(dock));
     assert!(sim.mission_ready_to_commence(aircraft, &rules));
     assert!(sim.apply_command(
         "Americans",
@@ -293,6 +293,7 @@ fn an_empty_harrier_given_move_then_guard_uses_enter_cadence_after_idle() {
             .entities
             .get(aircraft)
             .unwrap()
+            .seldom
             .radio_contacts
             .is_empty()
     );
@@ -301,6 +302,7 @@ fn an_empty_harrier_given_move_then_guard_uses_enter_cadence_after_idle() {
             .entities
             .get(dock)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(aircraft)
     );

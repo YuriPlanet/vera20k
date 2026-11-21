@@ -188,6 +188,23 @@ impl AttachEffectInstance {
     }
 }
 
+/// One attach-effect instance's reads for this frame's update, kept at the
+/// instance's own index.
+#[cfg(feature = "phobos")]
+#[derive(Clone, Copy, Default)]
+struct InstanceFrame {
+    /// Initialized before this frame's `AI()` tick.
+    initialized_before: bool,
+    /// `IsActiveIgnorePowered()` after the tick.
+    active: bool,
+    /// `IsActiveIgnorePowered() && ShouldBeDiscardedNow()` after the tick.
+    discarded: bool,
+    anim_state: AttachAnimState,
+    can_show: bool,
+    /// The one instance of a cumulative type that shows its animation.
+    designated: bool,
+}
+
 /// Where an effect's animation lives: attached to `owner` at its world point,
 /// drawn under `house`, and paused or running with the effect's state.
 #[cfg(feature = "phobos")]
@@ -725,10 +742,15 @@ impl Simulation {
                 instance.should_be_discarded = true;
             }
         }
-        let initialized_before: Vec<bool> = list
+        // One record per instance, at the instance's index; the removal below
+        // drops both together so they stay aligned.
+        let mut records: Vec<InstanceFrame> = list
             .instances
             .iter()
-            .map(|instance| instance.has_initialized())
+            .map(|instance| InstanceFrame {
+                initialized_before: instance.has_initialized(),
+                ..InstanceFrame::default()
+            })
             .collect();
         // `AI()` reads `ShouldBeDiscardedNow()` at its delay and expiry
         // branches after initialization, so the tick evaluates it lazily
@@ -739,28 +761,17 @@ impl Simulation {
         // `IsActiveIgnorePowered() && ShouldBeDiscardedNow()`
         // (`Body.Update.cpp:940`) runs after `AI()`; the per-frame native
         // LastDiscardCheckFrame cache makes this value equal to the tick's.
-        let active: Vec<bool> = list
-            .instances
-            .iter()
-            .map(|instance| instance.is_active_ignoring_power(instance.is_self_owned()))
-            .collect();
-        let discarded: Vec<bool> = list
-            .instances
-            .iter()
-            .zip(&active)
-            .map(|(instance, &active)| {
-                active
-                    && effects.get(instance.type_index).is_some_and(|effect| {
-                        instance.should_be_discarded_now(effect, &facts, &globals)
-                    })
-            })
-            .collect();
+        for (record, instance) in records.iter_mut().zip(&list.instances) {
+            record.active = instance.is_active_ignoring_power(instance.is_self_owned());
+            record.discarded = record.active
+                && effects.get(instance.type_index).is_some_and(|effect| {
+                    instance.should_be_discarded_now(effect, &facts, &globals)
+                });
+        }
         // `LastSequenceCheck` advances only when the frame reached the
         // sequence block: an earlier condition returned first.
-        for (index, instance) in list.instances.iter_mut().enumerate() {
-            if !active.get(index).copied().unwrap_or(false)
-                || discarded.get(index).copied().unwrap_or(false)
-            {
+        for (record, instance) in records.iter().zip(list.instances.iter_mut()) {
+            if !record.active || record.discarded {
                 continue;
             }
             let Some(effect) = effects.get(instance.type_index) else {
@@ -785,9 +796,8 @@ impl Simulation {
         // `AI()`'s initialization block: `ROFMultiplier.ApplyOnCurrentTimer`
         // scales the timer already running when the effect first activates.
         let frame = self.session.binary_frame() as i32;
-        for (index, instance) in list.instances.iter().enumerate() {
-            if initialized_before.get(index).copied().unwrap_or(true) || !instance.has_initialized()
-            {
+        for (record, instance) in records.iter().zip(&list.instances) {
+            if record.initialized_before || !instance.has_initialized() {
                 continue;
             }
             let Some(effect) = effects.get(instance.type_index) else {
@@ -799,9 +809,10 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 continue;
             };
-            let remaining = entity.rearm_timer.remaining(frame);
+            let remaining = entity.seldom.rearm_timer.remaining(frame);
             if remaining > 0 {
                 entity
+                    .seldom
                     .rearm_timer
                     .start(frame, scale_i32(remaining, effect.rof_multiplier));
             }
@@ -809,11 +820,11 @@ impl Simulation {
         // `HasExpired || (IsActiveIgnorePowered && ShouldBeDiscardedNow)`:
         // a discardable effect behind a recreation delay is reset instead of
         // erased; the destructor unlinks the animation either way.
-        // Reverse order keeps the flag vector aligned with the shifting list.
+        // Reverse order keeps the records aligned with the shifting list.
         let mut expire_shots: Vec<AttachEffectWeaponShot> = Vec::new();
         for index in (0..list.instances.len()).rev() {
             let expired = list.instances[index].has_expired();
-            let discard = discarded.get(index).copied().unwrap_or(false);
+            let discard = records[index].discarded;
             if !(expired || discard) {
                 continue;
             }
@@ -851,54 +862,55 @@ impl Simulation {
                 self.destroy_anim_with_context(anim, rules);
             }
             list.instances.remove(index);
+            records.remove(index);
         }
         // The removal walks backwards; the shots keep native's attach order.
         expire_shots.reverse();
         // `UpdateConditionalAnimDrawingLogic` reacts to other effects on the
         // same object, so every effect re-evaluates it each frame.
-        let mut state = Vec::with_capacity(list.instances.len());
-        let mut can_show = Vec::with_capacity(list.instances.len());
-        for instance in &list.instances {
+        for (record, instance) in records.iter_mut().zip(&list.instances) {
             let Some(effect) = effects.get(instance.type_index) else {
-                state.push(AttachAnimState::default());
-                can_show.push(false);
                 continue;
             };
             // Temporal state is not tracked yet, so only the power gate applies.
-            let anim_state = instance.animation_state(effect, false);
+            record.anim_state = instance.animation_state(effect, false);
             let hidden =
                 list.has_active_type(&effect.animation_hide_if_attached_with, effects, false);
-            can_show.push(instance.animation_phase() && anim_state.show && !hidden);
-            state.push(anim_state);
+            record.can_show = instance.animation_phase() && record.anim_state.show && !hidden;
         }
         // One cumulative type shows one animation no matter how many layers it
         // has: `UpdateCumulativeAttachEffects` keeps the instance with the
         // longest remaining duration (any negative duration wins, last seen).
-        let mut designated = vec![None; effects.len()];
-        for (type_index, effect) in effects.iter().enumerate() {
-            if !(effect.cumulative && !effect.cumulative_animations.is_empty()) {
+        for index in 0..records.len() {
+            let type_index = list.instances[index].type_index;
+            if !records[index].can_show
+                || !effects.get(type_index).is_some_and(|effect| {
+                    effect.cumulative && !effect.cumulative_animations.is_empty()
+                })
+            {
                 continue;
             }
             let mut best = None;
             let mut duration = 0;
-            for (instance_index, instance) in list.instances.iter().enumerate() {
-                if instance.type_index != type_index || !can_show[instance_index] {
+            for (other_index, other) in list.instances.iter().enumerate() {
+                if other.type_index != type_index || !records[other_index].can_show {
                     continue;
                 }
-                let current = instance.remaining();
+                let current = other.remaining();
                 if current < 0 || current > duration {
-                    best = Some(instance_index);
+                    best = Some(other_index);
                     duration = current;
                 }
             }
-            designated[type_index] = best;
+            records[index].designated = best == Some(index);
         }
         for instance_index in 0..list.instances.len() {
             let type_index = list.instances[instance_index].type_index;
             let Some(effect) = effects.get(type_index) else {
                 continue;
             };
-            let desired = if can_show[instance_index] {
+            let record = records[instance_index];
+            let desired = if record.can_show {
                 if effect.cumulative && !effect.cumulative_animations.is_empty() {
                     let count = list
                         .instances
@@ -906,7 +918,7 @@ impl Simulation {
                         .filter(|other| other.type_index == type_index)
                         .filter(|other| other.is_active(other.is_self_owned()))
                         .count() as i32;
-                    if designated[type_index] == Some(instance_index) {
+                    if record.designated {
                         effect.cumulative_animation(count)
                     } else {
                         None
@@ -933,7 +945,7 @@ impl Simulation {
                     owner: id,
                     house,
                     world,
-                    paused: state[instance_index].paused,
+                    paused: record.anim_state.paused,
                 },
                 rules,
             );

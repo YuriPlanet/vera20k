@@ -47,7 +47,8 @@ pub(crate) struct PlanningInputState {
     right_hover: Option<Option<u64>>,
     /// The hover node last found with the world home, which a draw beside
     /// a lent tick reads (docs/sim-thread.md): the hover asks the selection,
-    /// which reads the live objects.
+    /// which reads the live objects. A `RefCell`: the draw asks through
+    /// `&AppState`.
     hover_seen: std::cell::RefCell<Option<u64>>,
 }
 

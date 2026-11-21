@@ -308,7 +308,7 @@ pub(crate) fn should_retaliate(
         return false;
     }
     if !victim_type.can_retaliate
-        || victim.slave.owner().is_some()
+        || victim.seldom.slave.owner().is_some()
         || victim.slave_manager.is_some()
     {
         return false;

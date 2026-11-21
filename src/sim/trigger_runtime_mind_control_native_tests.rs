@@ -223,6 +223,7 @@ fn mind_control_tag_ingress_matches_original_callbacks_and_live_trigger_state() 
                     .entities
                     .get(victim)
                     .unwrap()
+                    .seldom
                     .mind_control
                     .controller(),
                 None,

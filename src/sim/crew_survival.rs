@@ -689,8 +689,8 @@ impl Simulation {
                 entity.passenger_role_mut().clear_carrier_relation();
                 entity.on_bridge.store(on_bridge);
                 match spot_offset {
-                    Some((sub_x, sub_y)) => entity.sub_cell.hold_offset(sub_x, sub_y),
-                    None => entity.sub_cell.release(),
+                    Some((sub_x, sub_y)) => entity.seldom.sub_cell.hold_offset(sub_x, sub_y),
+                    None => entity.seldom.sub_cell.release(),
                 }
             }
             let revealed = !no_survivor
@@ -763,7 +763,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let captor_type = entity.capture_infantry_type_index.get();
+        let captor_type = entity.seldom.capture_infantry_type_index.get();
         if captor_type == -1 && (prevent_escape || !object.crewed || object.passengers != 0) {
             return;
         }
@@ -1215,9 +1215,9 @@ impl Simulation {
         };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if holds_spot {
-                entity.sub_cell.hold_offset(sub_x, sub_y);
+                entity.seldom.sub_cell.hold_offset(sub_x, sub_y);
             } else {
-                entity.sub_cell.release();
+                entity.seldom.sub_cell.release();
             }
             // The OnBridge the native caller copies from the object being left
             // before this Unlimbo: `BuildingClass::SpawnSurvivors`

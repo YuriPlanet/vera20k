@@ -1057,7 +1057,7 @@ impl Simulation {
                     owner,
                     bright: false,
                 });
-            let (has_mega_target, mega_target) = entity.mega_mission.planning_draw_target();
+            let (has_mega_target, mega_target) = entity.seldom.mega_mission.planning_draw_target();
             let in_limbo = entity.lifecycle.in_limbo();
             let marker_only = if in_limbo {
                 current_leg.as_ref().map(|leg| leg.target)
@@ -1074,7 +1074,7 @@ impl Simulation {
                     bright: false,
                 });
             let planned_source = current_leg.as_ref().map_or(actor_coord, |leg| leg.target);
-            let current_badge = if entity.mega_mission.is_attack_move() && !has_mega_target {
+            let current_badge = if entity.seldom.mega_mission.is_attack_move() && !has_mega_target {
                 Some(PlanningBadgeKind::AttackMove)
             } else if mission == Some(MissionType::AreaGuard) {
                 Some(PlanningBadgeKind::AreaGuard)
@@ -1361,7 +1361,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(member)
-                .is_some_and(|entity| entity.selection.is_selected());
+                .is_some_and(|entity| entity.seldom.selection.is_selected());
             if !selected {
                 self.techno_select(member, context);
             }

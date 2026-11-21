@@ -169,7 +169,7 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
     entity.position.set_rx_for_test(9);
     entity.position.set_ry_for_test(10);
     entity.body_facing = crate::sim::movement::FacingClass::new(0x4000, 5);
-    entity.radio_contacts.set_slot(0, refinery);
+    entity.seldom.radio_contacts.set_slot(0, refinery);
     entity.mission.set_handler_state(3);
     entity
         .miner
@@ -180,6 +180,7 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
         .entities
         .get_mut(refinery)
         .unwrap()
+        .seldom
         .radio_contacts
         .set_slot(0, miner);
     for (credits, remaining, score) in [(125, 5, 25), (250, 0, 50)] {

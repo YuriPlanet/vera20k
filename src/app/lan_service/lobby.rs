@@ -2,8 +2,10 @@
 //! requests, and the host/guest join offer, confirm, denial and cancel exchange.
 
 use crate::net::global::GlobalDestination;
+use crate::net::lan_messages::LanJoinRequest;
 use crate::net::lan_messages::LanMessage;
 use crate::net::lan_messages::LanNamedMessage;
+use crate::net::lan_messages::LanParticipantDetails;
 use crate::net::lan_messages::LanSessionProof;
 use crate::net::lan_messages::SessionScope;
 use std::net::SocketAddrV4;
@@ -248,8 +250,8 @@ pub(super) fn accept_participant(
     state: &mut AppState,
     endpoint: SocketAddrV4,
     message: &LanMessage,
+    fields: LanParticipantDetails,
 ) -> anyhow::Result<()> {
-    let fields = message.participant_fields().expect("participant details");
     let proof = message
         .session_proof()?
         .ok_or_else(|| anyhow::anyhow!("participant has no VERA admission"))?;
@@ -327,11 +329,11 @@ pub(super) fn accept_participant(
 fn join_denial(
     state: &AppState,
     endpoint: SocketAddrV4,
-    message: &LanMessage,
+    name: &str,
+    request: &LanJoinRequest,
     proof: &LanSessionProof,
     now: u32,
 ) -> Option<u32> {
-    let request = message.join_fields().expect("join request");
     let same_peer = state
         .match_state
         .session
@@ -339,7 +341,7 @@ fn join_denial(
         .is_some_and(|launch| {
             launch.humans.iter().enumerate().any(|(index, human)| {
                 index != launch.local_player_index
-                    && human.name.eq_ignore_ascii_case(&message.name())
+                    && human.name.eq_ignore_ascii_case(name)
                     && state.match_state.session.network_endpoint(index) == Some(endpoint)
             })
         });
@@ -370,7 +372,7 @@ fn join_denial(
                 launch
                     .humans
                     .iter()
-                    .any(|human| human.name.eq_ignore_ascii_case(&message.name()))
+                    .any(|human| human.name.eq_ignore_ascii_case(name))
             })
     {
         Some(0)
@@ -379,7 +381,7 @@ fn join_denial(
             .match_state
             .lan_service
             .as_ref()
-            .is_some_and(|service| service.keeps_out(endpoint, &message.name(), now))
+            .is_some_and(|service| service.keeps_out(endpoint, name, now))
     {
         // VERA-only: the host kicked this player within five minutes.
         Some(9)
@@ -442,13 +444,14 @@ pub(super) fn offer_join(
     state: &mut AppState,
     endpoint: SocketAddrV4,
     message: &LanMessage,
+    request: LanJoinRequest,
     now: u32,
 ) -> anyhow::Result<()> {
     let proof = message
         .session_proof()?
         .ok_or_else(|| anyhow::anyhow!("LAN join has no VERA build identity"))?;
     anyhow::ensure!(proof.join_nonce != [0; 16], "LAN join has no request nonce");
-    if let Some(reason) = join_denial(state, endpoint, message, &proof, now) {
+    if let Some(reason) = join_denial(state, endpoint, &message.name(), &request, &proof, now) {
         return send_join_denial(state, endpoint, reason, &proof);
     }
     let current = state
@@ -484,7 +487,6 @@ pub(super) fn offer_join(
             Err(_) => return send_join_denial(state, endpoint, 5, &proof),
         }
     };
-    let request = message.join_fields().expect("join request");
     let host_name = local_name(state);
     let acceptance = crate::net::lan_messages::LanAcceptance {
         country: request.country,
@@ -590,8 +592,8 @@ pub(super) fn confirm_join(
         .as_mut()
         .expect("visit")
         .confirmed_request(endpoint, &proof, now);
-    if let Some(request) = request {
-        if let Some(reason) = join_denial(state, endpoint, &request, &proof, now) {
+    if let Some((name, request)) = request {
+        if let Some(reason) = join_denial(state, endpoint, &name, &request, &proof, now) {
             return send_join_denial(state, endpoint, reason, &proof);
         }
         // Reserve the final reply before changing Session membership. UI-side
@@ -607,14 +609,12 @@ pub(super) fn confirm_join(
                 < 4096,
             "LAN final admission is backpressured"
         );
-        let name = request.name();
         let same_peer = state
             .match_state
             .session
             .network_endpoint_source(endpoint)
             .is_some();
         if !same_peer {
-            let request = request.join_fields().expect("confirmed request");
             let initial = state
                 .frontend
                 .multiplayer_shell_runtime

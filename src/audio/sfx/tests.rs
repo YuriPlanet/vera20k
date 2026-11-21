@@ -354,8 +354,13 @@ fn pan_channel_gains_attenuate_the_far_side_through_the_table() {
     let (left, right) = pan_channel_gains(4096);
     assert_eq!(left, 1.0);
     assert!((right - 10f32.powf(-0.5)).abs() < 1e-6);
-    let mut samples = vec![1.0, 1.0, 0.5, 0.5];
-    apply_pan(&mut samples, 12288);
+    let samples: Vec<f32> = playback::ClipSource::new(
+        vec![1.0, 1.0, 0.5, 0.5].into(),
+        NonZero::new(2).unwrap(),
+        NonZero::new(22050).unwrap(),
+    )
+    .panned(12288)
+    .collect();
     assert!((samples[0] - 10f32.powf(-0.5)).abs() < 1e-6);
     assert_eq!(samples[1], 1.0);
     assert_eq!(samples[3], 0.5);

@@ -236,7 +236,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         cloak["depth"] = input["progress"].clone();
         cloak["recloak_delay"] = json!({"start_frame": signed(&input["recloak"][0]), "duration": signed(&input["recloak"][1])});
         actor.cloak = Some(Box::new(serde_json::from_value(cloak).unwrap()));
-        actor.rearm_timer.set_for_test(CdTimer::from_raw(
+        actor.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
             signed(&input["rearm"][0]),
             signed(&input["rearm"][1]),
         ));
@@ -250,8 +250,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let rng = sim.rng_state();

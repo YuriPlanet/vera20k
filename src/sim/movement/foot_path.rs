@@ -1504,7 +1504,7 @@ impl Simulation {
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
         let signed = |cell: (u16, u16)| (cell.0 as i16, cell.1 as i16);
         let direct = chebyshev(start.coord(&cells), goal.coord(&cells));
-        let fine_path = &path.paths[0];
+        let fine_path = path.route(0);
         let count = fine_path.len();
         let mut cost = 2 * (count as i32 - 1);
 

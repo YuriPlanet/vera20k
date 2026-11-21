@@ -415,7 +415,7 @@ impl Simulation {
         let _ = self.techno_limbo_with_context(unit, context);
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
             cargo.on_bridge.store(false);
-            cargo.on_carryall.set(true);
+            cargo.seldom.on_carryall.set(true);
             cargo.type_ref()
         }) else {
             return;
@@ -605,7 +605,7 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-            entity.on_carryall.set(false);
+            entity.seldom.on_carryall.set(false);
         }
         self.refresh_object_sight(cargo, rules, 0, effects);
         // Ares 3.0 AircraftClass_Carryall_Unload_UpdateCargo (10048A10, hook
@@ -635,7 +635,7 @@ impl Simulation {
             .substrate
             .entities
             .get(aircraft)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
             == Some(cargo)
         {
             crate::sim::radio::transmit_to_contact(

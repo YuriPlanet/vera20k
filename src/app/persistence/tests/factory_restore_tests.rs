@@ -430,7 +430,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     entity.lifecycle,
                     entity.in_playfield(),
                     entity.techno_ctor_random_word(),
-                    entity.spawn_owner_id,
+                    entity.seldom.spawn_owner_id,
                     entity.spawn_manager.as_ref().map(|manager| {
                         manager
                             .slots()
@@ -438,7 +438,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                             .map(|slot| slot.spawn())
                             .collect::<Vec<_>>()
                     }),
-                    entity.slave.owner(),
+                    entity.seldom.slave.owner(),
                     entity.slave_manager.clone(),
                 )
             })
@@ -479,13 +479,13 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     entity.lifecycle,
                     entity.in_playfield(),
                     entity.techno_ctor_random_word(),
-                    entity.spawn_owner_id,
+                    entity.seldom.spawn_owner_id,
                     entity.spawn_manager.as_ref().map(|manager| manager
                         .slots()
                         .iter()
                         .map(|slot| slot.spawn())
                         .collect::<Vec<_>>()),
-                    entity.slave.owner(),
+                    entity.seldom.slave.owner(),
                     entity.slave_manager.clone(),
                 ))
                 .collect::<Vec<_>>(),
@@ -650,6 +650,7 @@ fn factory_restore_rejects_inconsistent_roots() {
             "manager-owned-root" => saved
                 .entity_mut_for_test(parent)
                 .unwrap()
+                .seldom
                 .spawn_owner_id
                 .set_for_test(Some(parent)),
             "child-root-alias" => {

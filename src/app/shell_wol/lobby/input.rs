@@ -257,8 +257,8 @@ pub(in crate::app::shell_wol) fn mouse(state: &mut AppState, pressed: bool) {
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let scale = layout.page.scale;
-    if let Some(popup) = lobby(state).and_then(|lobby| lobby.ui.popup.clone()) {
-        let over = popup_control(state, &popup);
+    if let Some(popup) = lobby(state).and_then(|lobby| lobby.ui.popup.as_ref()) {
+        let over = popup_control(state, popup);
         let rects = create_layout(state);
         let lobby = lobby_mut(state).expect("checked");
         let popup = lobby.ui.popup.as_mut().expect("checked");

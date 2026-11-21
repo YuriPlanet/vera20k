@@ -309,7 +309,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .filter(|entity| entity.selection.is_selected())
+            .filter(|entity| entity.seldom.selection.is_selected())
         else {
             return;
         };
@@ -1501,7 +1501,7 @@ impl Simulation {
                     // admits a human object by its discovered byte (Techno+0x41B); outside
                     // network games the fog regrowth pass asks whether its sight is latched.
                     let discovered = only_viewer.map_or_else(
-                        || entity.discovery.discovered_by_current_house(),
+                        || entity.seldom.discovery.discovered_by_current_house(),
                         |viewer| {
                             if self.session.execution_topology().is_lockstep() {
                                 self.techno_discovered_by_viewer(id, viewer)
@@ -2035,7 +2035,7 @@ impl Simulation {
         }
         //70AF87 tests exact raw Type+5E8 zero before the latch. Effective
         //radius zero from a nonzero raw Sight is admitted and retains250.
-        if entity.sight.is_zero() && radius == 0 {
+        if entity.seldom.sight.is_zero() && radius == 0 {
             return;
         }
         let override_radius = (radius != 0).then_some(radius);
@@ -2416,7 +2416,7 @@ impl Simulation {
             //41AE00 reads raw Type Sight before GetHeight;41AE10 forces1
             //on the ground. Aircraft See has no Techno playfield/passive,
             //elevation or veterancy gate, and no567DA0 border.
-            let mut radius = entity.sight.range();
+            let mut radius = entity.seldom.sight.range();
             if crate::sim::movement::air_movement::current_fly_height(
                 entity,
                 context.terrain().or(self.resolved_terrain.as_ref()),
@@ -3403,6 +3403,7 @@ impl Simulation {
             .copied()
             .filter(|&viewer| {
                 entity
+                    .seldom
                     .sight_refresh_timers
                     .timer(viewer)
                     .expired(frame as i32)
@@ -3435,7 +3436,7 @@ impl Simulation {
                 .fog
                 .source_sight(stable_id, viewer)
                 .map_or(0, |source| source.radius);
-            let inner = if height == entity.sight_refresh_timers.last_height(viewer) {
+            let inner = if height == entity.seldom.sight_refresh_timers.last_height(viewer) {
                 radius.wrapping_sub(3)
             } else {
                 0
@@ -3469,6 +3470,7 @@ impl Simulation {
                 .entities
                 .get_mut(stable_id)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers;
             clocks.set_last_height(viewer, height);
             clocks.reload(viewer, now);

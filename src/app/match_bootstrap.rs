@@ -1682,7 +1682,7 @@ mod tests {
         let startup = prepared(7);
         let mut simulation = Simulation::with_seed(7);
         simulation.scenario_rng_mut_for_test().next_u32();
-        simulation.main_rng().next_u32();
+        simulation.main_rng_mut_for_test().next_u32();
         simulation.mapgen_rng_mut_for_test().next_u32();
         let expected = simulation.rng_state();
         let receipt = RustL0Observation {

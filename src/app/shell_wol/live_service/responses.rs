@@ -496,6 +496,8 @@ impl Chat {
             "BuildMismatch",
             "RulesMismatch",
             "HostRulesMismatch",
+            "RulesDifferFromHost",
+            "HostRulesDifferFromOthers",
         ])
     }
 

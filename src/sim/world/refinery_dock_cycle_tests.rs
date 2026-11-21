@@ -26,8 +26,8 @@ fn sample(s: &Scene, id: u64) -> Sample {
     Sample {
         cell: (miner.position.rx(), miner.position.ry()),
         mission: miner.mission.current(),
-        contact: miner.radio_contacts.slot(0),
-        tethered: miner.tether.partner().is_some(),
+        contact: miner.seldom.radio_contacts.slot(0),
+        tethered: miner.seldom.tether.partner().is_some(),
         unloading: state.unload_active(),
         facing: miner.body_facing_current(s.sim.session.binary_frame()),
         ore: state
@@ -145,8 +145,8 @@ fn returning_scene() -> Scene {
 fn admission_owner_uses_actual_sparse_contact_slots() {
     let mut s = returning_scene();
     let refinery = s.sim.substrate.entities.get_mut(s.refinery).unwrap();
-    refinery.radio_contacts = crate::sim::radio::Contacts::with_capacity(2);
-    refinery.radio_contacts.insert(99).unwrap();
+    refinery.seldom.radio_contacts = crate::sim::radio::Contacts::with_capacity(2);
+    refinery.seldom.radio_contacts.insert(99).unwrap();
     let before_rng = s.sim.scenario_rng.logical_state();
     assert_eq!(
         crate::sim::radio::transmit(
@@ -175,8 +175,8 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
         "the narrow scan must share the same actual-slot predicate"
     );
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert_eq!(refinery.radio_contacts.slot(0), Some(99));
-    assert_eq!(refinery.radio_contacts.slot(1), None);
+    assert_eq!(refinery.seldom.radio_contacts.slot(0), Some(99));
+    assert_eq!(refinery.seldom.radio_contacts.slot(1), None);
     assert_eq!(s.sim.scenario_rng.logical_state(), before_rng);
 }
 
@@ -226,8 +226,11 @@ fn assert_whole_visit(s: &mut Scene) {
     assert_eq!(end.contact, None);
     assert_ne!(end.mission, MissionId::from_known(MissionType::Unload));
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert!(refinery.radio_contacts.is_empty(), "the slot is free again");
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(
+        refinery.seldom.radio_contacts.is_empty(),
+        "the slot is free again"
+    );
+    assert_eq!(refinery.seldom.tether.partner(), None);
 }
 
 #[test]
@@ -524,8 +527,8 @@ fn a_refinery_order_mid_unload_redocks_and_pays() {
     }
     assert_eq!(paid, 1000, "the whole load is paid after the re-dock");
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert!(refinery.radio_contacts.is_empty());
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(refinery.seldom.radio_contacts.is_empty());
+    assert_eq!(refinery.seldom.tether.partner(), None);
 }
 
 /// A refinery's single dock held by one miner refuses a second miner's
@@ -642,7 +645,7 @@ fn a_guarding_miner_sent_to_a_free_refinery_queues_enter_without_a_destination()
         crate::sim::world::FrameEffects::default(),
     );
     let miner = s.sim.substrate.entities.get(s.miner).unwrap();
-    assert_eq!(miner.radio_contacts.slot(0), Some(s.refinery));
+    assert_eq!(miner.seldom.radio_contacts.slot(0), Some(s.refinery));
     assert_eq!(miner.mission.queued().known(), Some(MissionType::Enter));
     assert_eq!(miner.navigation.nav_com(), None);
 }
@@ -703,6 +706,7 @@ fn selling_the_refinery_mid_unload_hands_the_miner_to_harvest() {
             .entities
             .get(s.miner)
             .unwrap()
+            .seldom
             .display_type_override
             .image(),
         None
@@ -739,8 +743,8 @@ fn capturing_the_refinery_mid_unload_sends_the_miner_off() {
     );
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
     assert_eq!(refinery.owner(), russians);
-    assert!(refinery.radio_contacts.is_empty());
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(refinery.seldom.radio_contacts.is_empty());
+    assert_eq!(refinery.seldom.tether.partner(), None);
     let after = sample(&s, s.miner);
     assert_eq!(
         s.sim.substrate.entities.get(s.miner).unwrap().owner(),
@@ -813,6 +817,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
         None,
         &s.rules,
         Some(crate::sim::tiberium::test_support::overlay_registry()),
+        &mut Vec::new(),
     );
     let after = sample(&s, s.miner);
     assert!(!after.unloading);

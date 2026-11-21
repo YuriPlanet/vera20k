@@ -55,12 +55,13 @@ pub(crate) struct TetherDraw {
 
 /// `entity`'s tether draws in the world of `entities`.
 pub(crate) fn tether_draw(entity: &GameEntity, entities: &EntityStore) -> TetherDraw {
-    if entity.tether.partner().is_none() {
+    if entity.seldom.tether.partner().is_none() {
         return TetherDraw::default();
     }
     match entity.category() {
         EntityCategory::Structure if gets_unload(entity) => TetherDraw {
             redraws: entity
+                .seldom
                 .radio_contacts
                 .iter_live()
                 .filter(|&contact| {
@@ -75,6 +76,7 @@ pub(crate) fn tether_draw(entity: &GameEntity, entities: &EntityStore) -> Tether
         EntityCategory::Unit => TetherDraw {
             redraws: Box::default(),
             drawn_by_tether: entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| entities.get(contact))

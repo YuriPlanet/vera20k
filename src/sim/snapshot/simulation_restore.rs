@@ -45,6 +45,46 @@ impl Simulation {
         Ok(())
     }
 
+    /// Each object's type and owner, each House's key and type and each
+    /// bullet's warhead, BulletType and Weapon must name an entry of the saved
+    /// interner: both come from the file, and `StringInterner::resolve`
+    /// panics on an id it never produced. A save that fails this is refused
+    /// before any restore step reads one. Team, script and trigger ids are
+    /// not covered here.
+    pub(super) fn validate_saved_interned_ids(&self) -> Result<(), SnapshotRestoreError> {
+        let check = |registry, object_id, field, id: crate::sim::intern::InternedId| {
+            self.interner
+                .try_resolve(id)
+                .map(drop)
+                .ok_or(SnapshotRestoreError::UnknownInternedId {
+                    registry,
+                    object_id,
+                    field,
+                    id: id.index(),
+                })
+        };
+        for (object_id, entity) in self.substrate.entities.iter_sorted() {
+            check("object", object_id, "type", entity.type_ref())?;
+            check("object", object_id, "owner", entity.owner())?;
+        }
+        for (&key, house) in &self.houses {
+            let object_id = u64::from(key.index());
+            check("House", object_id, "key", key)?;
+            check("House", object_id, "type", house.house_type_id())?;
+        }
+        for (&bullet_id, bullet) in self.projectiles.iter() {
+            let payload = bullet.payload();
+            check("bullet", bullet_id, "warhead", payload.warhead)?;
+            if let Some(projectile_type) = payload.projectile_type() {
+                check("bullet", bullet_id, "projectile type", projectile_type)?;
+            }
+            if let Some(weapon) = payload.installed_weapon() {
+                check("bullet", bullet_id, "weapon", weapon)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Custom sessions resume authoritative state instead of running the
     /// resets that mimic a stock player load.
     pub fn retains_snapshot_continuation(&self) -> bool {
@@ -62,7 +102,7 @@ impl Simulation {
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         let retain_continuation = self.retains_snapshot_continuation();
         for (_, entity) in self.substrate.entities.iter_sorted() {
-            if !entity.type_facts.foundation().valid() {
+            if !entity.seldom.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
                     object_id: entity.stable_id(),
                 });
@@ -315,12 +355,9 @@ impl Simulation {
         //6F43AB..6F4410. Their raw headers have no element swizzles; discard
         // them before validating strong references, retaining real TarCom.
         if !retain_continuation {
-            for id in self.substrate.entities.keys_sorted() {
-                self.substrate
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .clear_distributed_fire_after_load();
+            // Each reset writes only its own object, so visit order is free.
+            for entity in self.substrate.entities.values_mut() {
+                entity.clear_distributed_fire_after_load();
             }
         }
         restore_object_references(self, &identities)?;
@@ -436,12 +473,15 @@ impl Simulation {
             if !terrain.is_live() {
                 continue;
             }
-            let type_name = self.interner.resolve(terrain.type_ref());
-            let terrain_type = rules
-                .terrain_object_type_case_insensitive(type_name)
+            // The type id and the interner both come from the save, so an id
+            // past the interner is a missing type like an unknown name.
+            let type_name = self.interner.try_resolve(terrain.type_ref());
+            let terrain_type = type_name
+                .and_then(|name| rules.terrain_object_type_case_insensitive(name))
                 .ok_or_else(|| SnapshotRestoreError::MissingTerrainType {
                     object_id: terrain.stable_id(),
-                    type_name: type_name.to_owned(),
+                    type_name: type_name
+                        .map_or_else(|| format!("#{}", terrain.type_ref().index()), str::to_owned),
                 })?;
             // TypeLoad71E22D rebinds its retained selector, but only actual
             // live instance admission needs an executable terminated list.
@@ -572,7 +612,7 @@ impl Simulation {
                 self.resolved_terrain
                     .as_mut()
                     .expect("validated terrain cache"),
-                self.main_rng.draws(),
+                &mut self.main_rng,
                 size_width,
             )
             .map_err(|reason| SnapshotRestoreError::TerrainAssetPreparationFailed { reason })?;

@@ -210,7 +210,12 @@ fn retail_exploding_overlay_clears_only_identity_and_recurses_with_the_original_
         "the recursive C4 actually kills the ordinary receiver"
     );
     assert_eq!(
-        sim.entities().get(target).unwrap().kill_record.killer(),
+        sim.entities()
+            .get(target)
+            .unwrap()
+            .seldom
+            .kill_record
+            .killer(),
         Some(house)
     );
     assert!(

@@ -2455,7 +2455,7 @@ pub(crate) fn entity_sight_admission(
     sight_ability: bool,
     radius_override: Option<i32>,
 ) -> Option<SightAdmission> {
-    if entity.sight.is_zero() && radius_override.is_none() {
+    if entity.seldom.sight.is_zero() && radius_override.is_none() {
         return None;
     }
     let geometry = entity_sight_geometry(
@@ -2565,7 +2565,7 @@ pub(crate) fn entity_sight_geometry(
     // Elevation raises sight MULTIPLICATIVELY, off the object's world Z in
     // leptons, not additively off its terrain level:
     //   sight = trunc(Sight * (1 + 0.10 * trunc(Z_leptons / LeptonsPerSightIncrease)))
-    let base_range: i32 = entity.sight.range();
+    let base_range: i32 = entity.seldom.sight.range();
     let elev_steps: i32 = if config.leptons_per_sight_increase > 0 {
         height_leptons / config.leptons_per_sight_increase
     } else {

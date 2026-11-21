@@ -1896,7 +1896,7 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
     }
     if let Some(zoom) = state.tactical_zoom() {
         let (width, height) = zoom.frame_size();
-        if !state.platform.pointer_held.get()
+        if !state.platform.pointer_held
             && !viewport_contains((zoom.origin.0, zoom.origin.1, width, height), pointer)
         {
             return None;
@@ -2302,7 +2302,9 @@ pub(crate) fn update_follow_camera(
         .and_then(|sim| {
             sim.entities()
                 .get(id)
-                .filter(|entity| entity.lifecycle.object_alive() && entity.selection.is_selected())
+                .filter(|entity| {
+                    entity.lifecycle.object_alive() && entity.seldom.selection.is_selected()
+                })
                 .map(|entity| entity_lepton_coord(sim, entity))
         });
     let Some((x, y, z)) = coord else {

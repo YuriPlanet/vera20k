@@ -360,8 +360,9 @@ fn ordered_country_side_list_reader_matches_original_signed_and_default_controls
             .iter()
             .map(|index| index.as_i64().unwrap() as i32)
             .collect();
-        let actual =
-            processor.read_side_members(input.section_or_empty("Control"), "Members", &default);
+        let actual = processor
+            .read_side_members(input.section_or_empty("Control"), "Members", &default)
+            .unwrap();
         assert_eq!(json!(actual), row["result"], "{row}");
         assert_registry(
             &processor.families,
@@ -397,4 +398,41 @@ fn ordered_country_side_scalar_reader_matches_original_factory_controls() {
             row["name"].as_str().unwrap(),
         );
     }
+}
+
+#[test]
+fn side_lists_naming_earlier_sides_are_refused_past_vera_bound() {
+    // Each Side names the one before forty times: 1, 40, 1600, 64000, then
+    // 2560000 members, past the one-per-Country bound.
+    let chain = |prior: &str| vec![prior; 40].join(",");
+    let rules = format!(
+        "[Countries]\n0=Americans\n[Sides]\nS1=Americans\nS2={}\nS3={}\nS4={}\nS5={}\n",
+        chain("S1"),
+        chain("S2"),
+        chain("S3"),
+        chain("S4"),
+    );
+    let error = RulesLayerStack::new(IniFile::from_str(&rules))
+        .process()
+        .expect_err("S5 holds more members than VERA bounds");
+    let RulesError::InvalidValue { section, key, .. } = error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!((section.as_str(), key.as_str()), ("Sides", "S5"));
+
+    let within = "[Countries]\n0=Americans\n[Sides]\nS1=Americans\nS2=S1,S1,Americans\n";
+    let processed = RulesLayerStack::new(IniFile::from_str(within))
+        .process()
+        .unwrap();
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let s2 = state.families[&RulesTypeFamily::Side]
+        .iter()
+        .find(|side| side.native_stored_id == "S2")
+        .unwrap();
+    assert_eq!(
+        s2.side_country_members,
+        [0, 0, 0],
+        "duplicates stay, as gamemd keeps them"
+    );
 }

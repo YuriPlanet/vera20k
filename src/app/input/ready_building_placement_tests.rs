@@ -2011,6 +2011,7 @@ fn mixed_infantry_terminal_delivery_clears_old_cameo_before_same_factory_promoti
             .entities()
             .get(producer)
             .unwrap()
+            .seldom
             .radio_contacts
             .first_free()
             .is_none()

@@ -1072,8 +1072,12 @@ fn native_blowup_subsets_corpus() {
                     })
                     .collect();
                 for &(victim, _) in &nodes {
-                    sim.substrate.entities.get_mut(victim).unwrap().mind_control =
-                        MindControlLink::controlled_by_for_test(controller);
+                    sim.substrate
+                        .entities
+                        .get_mut(victim)
+                        .unwrap()
+                        .seldom
+                        .mind_control = MindControlLink::controlled_by_for_test(controller);
                 }
                 sim.substrate
                     .entities
@@ -1168,7 +1172,7 @@ fn native_blowup_all_corpus() {
                 entity.set_type_ref_for_test(sim.interner.intern("TANK"));
                 entity.set_category_for_test(EntityCategory::Unit);
                 if let Some(original) = object["trigger_owner"].as_u64() {
-                    entity.mind_control = MindControlLink::controlled_by_house_for_test(
+                    entity.seldom.mind_control = MindControlLink::controlled_by_house_for_test(
                         owner,
                         houses[original as usize],
                     );
@@ -1195,8 +1199,12 @@ fn native_blowup_all_corpus() {
                     })
                     .collect();
                 for &(victim, _) in &nodes {
-                    sim.substrate.entities.get_mut(victim).unwrap().mind_control =
-                        MindControlLink::controlled_by_for_test(controller);
+                    sim.substrate
+                        .entities
+                        .get_mut(victim)
+                        .unwrap()
+                        .seldom
+                        .mind_control = MindControlLink::controlled_by_for_test(controller);
                 }
                 sim.substrate
                     .entities
@@ -1289,7 +1297,7 @@ fn native_blowup_all_corpus() {
             );
             if hit {
                 assert!(
-                    entity.kill_record.killer().is_none(),
+                    entity.seldom.kill_record.killer().is_none(),
                     "{name}: no kill credit"
                 );
             }

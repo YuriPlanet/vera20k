@@ -182,7 +182,7 @@ fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state
         // EBolt Init's Main draw precedes the system constructor. Adopt that
         // executed boundary; this test covers the actual system/particle path.
         let rng = &case["birth"]["rng_after"];
-        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());

@@ -282,7 +282,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             .substrate
             .entities
             .get(self.id)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
     }
 
     fn transmit_to_contact(

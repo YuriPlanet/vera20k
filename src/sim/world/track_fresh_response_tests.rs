@@ -381,7 +381,9 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
         ("mission", json!(e.mission.current().raw())),
         (
             "foot_68b",
-            json!(u8::from(e.runtime_bridge_transition.pending_mismatch())),
+            json!(u8::from(
+                e.seldom.runtime_bridge_transition.pending_mismatch()
+            )),
         ),
         ("out", json!(u8::from(out))),
     ];

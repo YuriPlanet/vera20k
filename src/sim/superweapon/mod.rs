@@ -1860,8 +1860,11 @@ pub(crate) fn tick_house_superweapon_instances(
             .houses
             .get(&owner)
             .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
-    for type_id in house_super_order(sim, rules, owner) {
-        let sw = rules.super_weapon(sim.interner.resolve(type_id));
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
+        let sw = rules.super_weapon(name);
         let (fade, ready, drain_ended) = {
             let instance = sim
                 .super_weapons
@@ -2049,7 +2052,7 @@ pub(super) fn raise_ares_activation_events(
 /// `HouseClass::HouseClass` builds the House's whole Supers vector, one
 /// Super per `[SuperWeaponTypes]` entry in that order
 /// (`0x004F620E..0x004F6290`), for every House in every game mode; the grant
-/// and hold passes only walk that list ([`house_super_order`]). Only the
+/// and hold passes only walk that list ([`house_super`]). Only the
 /// admitted campaign prefix has a measured native-ID cursor, so only it binds
 /// each Super's ID (`bind_native_ids`).
 pub(crate) fn construct_house_supers(
@@ -2089,16 +2092,13 @@ pub(crate) fn shorten_ares_firestorm_drain(
     owner: InternedId,
     amount: i32,
 ) {
-    let Some(type_id) = house_super_order(sim, rules, owner)
-        .into_iter()
-        .find(|&id| {
-            rules
-                .super_weapon(sim.interner.resolve(id))
-                .is_some_and(|sw| {
-                    sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
-                })
-        })
-    else {
+    let Some(type_id) = rules.super_weapon_order.iter().find_map(|name| {
+        let id = house_super(sim, owner, name)?;
+        rules
+            .super_weapon(name)
+            .is_some_and(|sw| sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm)
+            .then_some(id)
+    }) else {
         return;
     };
     let frame = sim.session.binary_frame() as i32;
@@ -2107,18 +2107,18 @@ pub(crate) fn shorten_ares_firestorm_drain(
     }
 }
 
-fn house_super_order(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<InternedId> {
-    let Some(weapons) = sim.super_weapons.get(&owner) else {
-        return Vec::new();
-    };
-    rules
-        .super_weapon_order
-        .iter()
-        .filter_map(|name| {
-            let id = sim.interner.get(name)?;
-            weapons.contains_key(&id).then_some(id)
-        })
-        .collect()
+/// `owner`'s Super of the `[SuperWeaponTypes]` entry `name`, if it holds one.
+/// The House walks walk `rules.super_weapon_order` and ask this per entry:
+/// a House's set never changes after [`construct_house_supers`], and an
+/// interned name keeps its id, so asking as the walk goes answers as a copy
+/// of the order taken before it would, without building one per House per
+/// tick.
+fn house_super(sim: &Simulation, owner: InternedId, name: &str) -> Option<InternedId> {
+    let id = sim.interner.get(name)?;
+    sim.super_weapons
+        .get(&owner)?
+        .contains_key(&id)
+        .then_some(id)
 }
 
 /// Tick already-active global superweapon effects in their native pre-object
@@ -2709,8 +2709,11 @@ pub(crate) fn update_owned_supers(
         .get(&owner)
         .is_some_and(|state| state.low_power());
     let providers = provider_supers(sim, rules, owner);
-    for type_id in house_super_order(sim, rules, owner) {
-        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
+        let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
         let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
@@ -2894,11 +2897,14 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         .get(&owner)
         .is_some_and(|state| state.low_power());
     let providers = provider_supers(sim, rules, owner);
-    for type_id in house_super_order(sim, rules, owner) {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
         if !providers.provided.contains(&type_id) {
             continue;
         }
-        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+        let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
         if !sim.session.game_options().super_weapons && sw.disableable_from_shell {

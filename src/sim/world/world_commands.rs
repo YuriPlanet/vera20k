@@ -491,7 +491,7 @@ impl Simulation {
                         actor.category().is_foot()
                             && actor.lifecycle.object_alive()
                             && !actor.lifecycle.in_limbo()
-                            && actor.tether.partner().is_none()
+                            && actor.seldom.tether.partner().is_none()
                     });
                 if !admitted {
                     return false;
@@ -500,15 +500,26 @@ impl Simulation {
                 // CRC4DBD60 and raw native Save/Load41035E/4103CD, not active
                 // peer checksum64DAB0. No unread Rust bookkeeping shadow is
                 // retained; class CRC/raw-native-image equivalence is absent.
-                self.scatter(
+                //
+                // The record may come from another player and name any Foot,
+                // so a Scatter body error (a class state or map input VERA's
+                // receiver needs and this actor lacks) refuses the order
+                // instead of stopping the game, as the damage, idle and
+                // cell callers do. The error is a function of the shared
+                // simulation state, so every peer refuses the same record
+                // after the same effects (an RNG draw or queued Move the body
+                // made before it failed).
+                if let Err(cause) = self.scatter(
                     *entity_id,
                     None,
                     crate::sim::movement::ScatterFlags::new(true, false),
                     rules,
                     overlay_registry,
                     frame_effects,
-                )
-                .unwrap_or_else(|cause| panic!("player Scatter event: {cause}"));
+                ) {
+                    log::warn!("Scatter order for {entity_id} refused: {cause}");
+                    return false;
+                }
                 true
             }
             Command::Move {
@@ -570,7 +581,7 @@ impl Simulation {
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| {
-                        entity.tether.partner().is_some()
+                        entity.seldom.tether.partner().is_some()
                             || matches!(entity.mission.current().raw(), 0x12 | 0x13)
                     })
                 {
@@ -1774,7 +1785,7 @@ impl Simulation {
         if !destination_is_building {
             return false;
         }
-        receiver.radio_contacts.slot(0) == Some(destination_id)
+        receiver.seldom.radio_contacts.slot(0) == Some(destination_id)
     }
 
     /// TargetClass `0x006E6FF0`: the object an event token names, while it
@@ -1981,11 +1992,12 @@ impl Simulation {
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
             let archive = self.resolve_event_token(target);
-            self.substrate
-                .entities
-                .get_mut(entity_id)
-                .unwrap()
-                .set_archive_target(archive);
+            // The order's actor was admitted above; the setters do not remove
+            // it from the store, but a peer's record must not stop the game
+            // if one ever did.
+            if let Some(actor) = self.substrate.entities.get_mut(entity_id) {
+                actor.set_archive_target(archive);
+            }
             return MegaMissionExecution::Executed;
         }
         // `0x004C745B`, then the target setter.
@@ -2022,12 +2034,9 @@ impl Simulation {
                 }
             };
             let auxiliary = self.resolve_event_token(auxiliary);
-            self.substrate
-                .entities
-                .get_mut(entity_id)
-                .unwrap()
-                .navigation
-                .set_nav_com_aux(auxiliary.map(Into::into));
+            if let Some(actor) = self.substrate.entities.get_mut(entity_id) {
+                actor.navigation.set_nav_com_aux(auxiliary.map(Into::into));
+            }
         }
         MegaMissionExecution::Executed
     }

@@ -286,6 +286,7 @@ fn jumpjet_infantry_damage_scatter_takes_the_infantry_setter() {
         None,
         &rules,
         Some(&registry),
+        &mut Vec::new(),
     );
     let e = sim.substrate.entities.get(victim).unwrap();
     assert!(e.health.current() < 125);
@@ -351,6 +352,7 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
         None,
         &rules,
         Some(&registry),
+        &mut Vec::new(),
     );
     let e = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(e.health.current(), 65);

@@ -41,7 +41,7 @@ fn team_lookup_events_preserve_names_order_and_do_not_allocate() {
     let event_names: Vec<_> = definitions.trigger_types[0]
         .events
         .iter()
-        .map(|event| event.team_name.as_deref())
+        .map(|event| event.condition.team_name.as_deref())
         .collect();
     assert_eq!(
         event_names,
@@ -2282,6 +2282,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     );
     entity.set_native_unique_id_for_test(integer(&native["reactor_native_unique_id"]));
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(object.foundation.clone().into());
     entity.begin_building_body(BuildingBodyMode::Idle, 0);
@@ -2330,8 +2331,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         &native["reactor_native_unique_id"],
     ) as u32));
     let rng_before = &native["rng_state_before"];
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
@@ -2428,6 +2428,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(*id)
@@ -2576,7 +2577,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         sim.session.install_waypoints(&waypoints);
         sim.trigger_runtime.definitions = definitions;
         sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31).into();
+        sim.main_rng = SimRng::new(31);
         sim.mapgen_rng = SimRng::new(31);
         let hashes = |sim: &Simulation| {
             json!({
@@ -3287,8 +3288,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
         let rng_before = &control["member_rng_before"];
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let (added, add_draws) = crate::sim::rng::trace_draws(|| {
@@ -3623,7 +3623,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
                 json!(
                     typ.events
                         .iter()
-                        .map(|event| json!({"kind": event.kind, "value":event.value}))
+                        .map(|event| json!({"kind": event.condition.kind, "value":event.condition.value}))
                         .collect::<Vec<_>>()
                 ),
                 selected["events"]
@@ -4046,8 +4046,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
             // fixed-map Simulation's process default Seed(0).
             sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-            sim.main_rng =
-                SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+            sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
             sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
         }
@@ -4158,7 +4157,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                                     false,
                                 );
                             object.lifecycle.set_in_limbo_for_test(true);
-                            object.in_logic_vector.set_for_test(false);
+                            object.seldom.in_logic_vector.set_for_test(false);
                             sim.substrate.entities.insert(object);
                             objects.push(id);
                         } else {
@@ -4500,10 +4499,10 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         let events = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index].events;
         assert_eq!(events.len(), 1);
         assert_eq!(
-            json!(events[0].kind),
+            json!(events[0].condition.kind),
             lead["native_trigger"]["events"][0]["kind"]
         );
-        assert_eq!(events[0].kind, 48);
+        assert_eq!(events[0].condition.kind, 48);
         let before = sim.trigger_runtime.clone();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {

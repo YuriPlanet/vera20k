@@ -82,6 +82,7 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(smoke_id));
         let before_rng = sim.scenario_rng.logical_state();
@@ -104,7 +105,10 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
             row["output"]["retained_flag"] == 1,
             "{row}"
         );
-        assert_eq!(entity.damage_smoke_system_id.system(), Some(smoke_id));
+        assert_eq!(
+            entity.seldom.damage_smoke_system_id.system(),
+            Some(smoke_id)
+        );
         assert_eq!(
             sim.particle_systems()
                 .get(smoke_id)

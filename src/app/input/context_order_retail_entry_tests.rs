@@ -102,6 +102,7 @@ fn chord_cursor(
         modifier,
         force_move_key,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -238,6 +239,7 @@ fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Enter)
     );
@@ -333,6 +335,7 @@ fn allied_delegated_grinder_refuses_other_house_infantry_on_hover_and_click() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::NoEnter)
     );
@@ -737,6 +740,7 @@ fn screen_overlap_with_hovering_rocketeer_keeps_bunker_enter_action() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Enter)
     );
@@ -862,6 +866,7 @@ fn carrier_cursor(
         modifier,
         modifier == OrderModifier::ForceMove,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -1105,6 +1110,7 @@ fn a_gi_selected_with_the_ifv_boards_it_when_the_ifv_is_clicked() {
     for id in [gi, ifv] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1310,6 +1316,7 @@ fn a_carryall_over_the_players_tank_totes_it() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Tote)
     );

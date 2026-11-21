@@ -76,7 +76,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
             entity.set_on_bridge(on_bridge);
             entity.lifecycle.set_object_alive_for_test(true);
             entity.lifecycle.set_in_limbo_for_test(false);
-            assert!(!entity.discovery.discovered_by_current_house());
+            assert!(!entity.seldom.discovery.discovered_by_current_house());
             let (sx, sy) =
                 crate::render::locomotor_visual::ground_screen_position(&entity.position);
             sim.entities_mut_for_test().insert(entity);

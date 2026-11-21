@@ -98,6 +98,7 @@ fn insert(
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
     }
@@ -562,6 +563,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
                 .entities
                 .get(10)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers
                 .timer(viewer),
             crate::sim::timer::CdTimer::started(239, 15)

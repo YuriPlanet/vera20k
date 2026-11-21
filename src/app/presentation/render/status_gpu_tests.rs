@@ -66,8 +66,11 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.discovery.set_owned_by_current_house_for_test(true);
-    entity.selection.set_selected_for_test(true);
+    entity
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(entity);
     sim.resubmit_entity_display_for_test(1);
     let entity = sim.entities().get(1).unwrap();
@@ -311,8 +314,11 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
         .unwrap();
     let entity = sim.entity_mut_for_test(id).unwrap();
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.discovery.set_owned_by_current_house_for_test(true);
-    entity.selection.set_selected_for_test(true);
+    entity
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
     // The held constructor binds the shield but deliberately skips Unlimbo's
     // Display submission. Establish that drawing prior for this consumer test.
     sim.resubmit_entity_display_for_test(id);
@@ -456,8 +462,11 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
             .unwrap();
         let entity = sim.entity_mut_for_test(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.discovery.set_owned_by_current_house_for_test(true);
-        entity.selection.set_selected_for_test(true);
+        entity
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         entity.install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(3)));
         sim.resubmit_entity_display_for_test(id);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
@@ -538,10 +547,10 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(selected);
+        entity.seldom.selection.set_selected_for_test(selected);
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, None, None);
-        entity.disguise = Some(disguise);
+        entity.seldom.disguise = Some(disguise);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
         sim.fog_mut_for_test().reveal_all_for_owner(player);
         sim.entities_mut_for_test().insert(entity);
@@ -710,8 +719,11 @@ fn native_self_heal_draw_fault_order() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(true);
-        entity.discovery.set_owned_by_current_house_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
+        entity
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
         sim.fog_mut_for_test().reveal_all_for_owner(owner);
         sim.entities_mut_for_test().insert(entity);
@@ -991,6 +1003,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     false,
                 );
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(object.foundation.clone().into());
                 entity.position.put_location(DriveCoord {
@@ -1003,6 +1016,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     .lifecycle
                     .set_cell_marked_for_test(actor["marked"].as_bool().unwrap());
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
                 sim.entities_mut_for_test().insert(entity);
@@ -1426,6 +1440,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     false,
                 );
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(object.foundation.clone().into());
                 entity.position.put_location(DriveCoord {
@@ -1438,9 +1453,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     crate::sim::arena_fixture::install_status_repair(&mut entity, repairing);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
-                entity.discovery.set_owned_by_current_house_for_test(
+                entity.seldom.discovery.set_owned_by_current_house_for_test(
                     actor["owned_by_current_house"].as_bool().unwrap_or(true),
                 );
                 if let Some(state) = actor["cloak_state"].as_i64() {
@@ -1463,7 +1479,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .unwrap_or(false)
                             .then_some(owner),
                     );
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 let cell = ((xyz[0] / 256) as u16, (xyz[1] / 256) as u16);
                 if let Some(bits) = input["cell_bits"].as_u64() {

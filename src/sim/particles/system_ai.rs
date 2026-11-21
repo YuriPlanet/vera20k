@@ -523,7 +523,7 @@ mod tests {
         ));
         let target = sim.entities().get(target).unwrap();
         assert_eq!(target.health.current(), 40);
-        assert!(target.damage_smoke_system_id.system().is_some());
+        assert!(target.seldom.damage_smoke_system_id.system().is_some());
         assert_eq!(sim.particle_systems().get(host).unwrap().particles.len(), 1);
     }
 

@@ -37,6 +37,7 @@ pub(crate) fn mission_enter(
     };
     // 0x004D9294..0x004D92AC: Contacts[0], else the Techno behind ArchiveTarget.
     let target = entity
+        .seldom
         .radio_contacts
         .slot(0)
         .or(match entity.archive_target() {
@@ -85,7 +86,7 @@ pub(crate) fn mission_enter(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.tether.partner().is_some());
+                .is_some_and(|entity| entity.seldom.tether.partner().is_some());
             if reply != RadioResponse::Roger && !tethered {
                 // 0x004D92CE..0x004D92E8.
                 radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);

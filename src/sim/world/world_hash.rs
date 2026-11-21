@@ -528,12 +528,12 @@ impl Simulation {
             };
             parallel::any_index(entities.len(), |index| {
                 let entity = entities[index];
-                if entity.patrol_post.cell() == Some(NativeCellIdentity::Dummy) {
+                if entity.seldom.patrol_post.cell() == Some(NativeCellIdentity::Dummy) {
                     return true;
                 }
                 [
                     entity.attack_target.target(),
-                    entity.suspended_attack_target.target(),
+                    entity.seldom.suspended_attack_target.target(),
                     entity.archive_target(),
                 ]
                 .into_iter()
@@ -779,7 +779,7 @@ impl Simulation {
         self.substrate
             .entities
             .values()
-            .filter(|entity| entity.owner() == owner && !entity.kill_record.is_recorded())
+            .filter(|entity| entity.owner() == owner && !entity.seldom.kill_record.is_recorded())
             .fold((0, 0), |(buildings, others), entity| {
                 if entity.category() == crate::map::entities::EntityCategory::Structure {
                     (buildings + 1, others)
@@ -1246,7 +1246,7 @@ impl Simulation {
             |&(entity, owed), hasher| {
                 hash_entity_owed(entity, frame, owed, hasher);
                 if network {
-                    entity.discovery.hash_network(hasher);
+                    entity.seldom.discovery.hash_network(hasher);
                 }
             },
         )

@@ -505,13 +505,20 @@ fn snapshot_preserves_cancelled_sortie_and_rejects_unresolved_manager_references
         .entities
         .get(f.boris)
         .unwrap()
+        .seldom
         .airstrike
         .clone();
     let bytes = GameSnapshot::save(&f.sim, 0, 0, "airstrike", 0);
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
     loaded.restore_after_snapshot_load().unwrap();
     assert_eq!(
-        loaded.substrate.entities.get(f.boris).unwrap().airstrike,
+        loaded
+            .substrate
+            .entities
+            .get(f.boris)
+            .unwrap()
+            .seldom
+            .airstrike,
         before
     );
     let m = loaded.substrate.airstrike_manager(f.boris).unwrap();

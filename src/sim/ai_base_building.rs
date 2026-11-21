@@ -1360,7 +1360,7 @@ pub(crate) fn node_building(
     let building = substrate.entities.get(id)?;
     ((building.position.rx(), building.position.ry()) == (rx, ry)
         && building.owner() == owner
-        && building.type_facts.base_plan_type_index() == node.type_or_control)
+        && building.seldom.type_facts.base_plan_type_index() == node.type_or_control)
         .then_some(id)
 }
 

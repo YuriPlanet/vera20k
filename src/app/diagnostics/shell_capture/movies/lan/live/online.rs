@@ -119,7 +119,6 @@ impl LiveRoundFlow {
         }
         let host = self.online_config().host.clone();
         let present = crate::app::shell_wol::lobby::member_names(state)
-            .iter()
             .any(|name| name.eq_ignore_ascii_case(&host));
         let (since, seen, left) =
             self.quick_match_wait

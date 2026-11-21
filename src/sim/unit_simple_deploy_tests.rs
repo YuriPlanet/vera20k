@@ -355,6 +355,7 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .tether
                     .set_for_test(Some(partner));
             }

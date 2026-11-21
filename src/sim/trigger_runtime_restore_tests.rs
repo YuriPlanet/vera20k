@@ -410,6 +410,7 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
         .entities
         .get_mut(created)
         .unwrap()
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
     assert!(!sim.fog.is_cell_revealed(houses[0], 15, 15));

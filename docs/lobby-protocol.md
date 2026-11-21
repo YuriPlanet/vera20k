@@ -675,6 +675,22 @@ differ is named until the rest show that the host's rules are the odd ones. A pl
 named again only after they stopped being named (their rules matched, or the line moved
 between the host and the others) or after they left the room and joined it again, not
 when a change of settings has every game send its agreement again.
+
+Where both games named what they change from the original game at sign-in
+(`Vera-Changes`, below), the line instead says what differs. It opens with
+`LobbyRulesDifferFromHost` or `LobbyHostRulesDifferFromOthers` (only `name`), compared
+with the host or, when the host is named, with the first other player, whose rules every
+other player shares. Then `LobbyOnlyHas` (`name`, `changes`) names what only the named
+player has, and `LobbyOnlyHostHas` or `LobbyOnlyOthersHave` (`changes`) what only the
+other side has. When neither side has anything the other lacks, `LobbyBothHave` or
+`LobbyAllHave` (`name`, `changes`) names what both have in copies that differ, or
+`LobbyNoChangesNamed` says VERA names no change in either, so their installed game files
+differ. `LobbySameRulesToStart` closes the line. `changes` is an `and` list of
+`LobbyChangeMod` (`name`, the mod's title), `LobbyChangeIniRoots`, `LobbyChangeAresOn`,
+`LobbyChangeAresOff` and `LobbyChangeFiles` (`count` and `files`, a `unit` list of up to
+six file names, then `LobbyMoreFiles` with the `count` left). A mod or Ares setting
+differs when the other side has another or none; file names compare ignoring case, and
+when the other side changes no files, every file of the named side's `count` differs.
 Games without a key show its English `text`. VERA shows these lines, and the version and
 build lines above, in red, as the CnCNet client shows its modified-files warning; a game
 before it shows them as the lobby's other lines.
@@ -703,6 +719,14 @@ not know.
   maintenance message come in that language when the operator wrote it: the translation
   for that tag, else for its language alone (`zh`), else for another region of that
   language, else the operator's `text`, which a missing or malformed tag gets.
+- `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
+  which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
+  true` (config.toml names other INI files), `ares` (`on` or `off`, the player's Ares
+  setting when not Auto) and `files` with `count` (up to 32 names of the game-folder files
+  that change the rules the network compares, of `count`), each left out when unchanged:
+  `{}` for the original game. Texts are 1–64 bytes of well-formed UTF-16 without control
+  or format characters (such as bidi overrides), `count` at most 65535 and the header at
+  most 8192 characters; the lobby ignores a malformed one whole.
 - `Vera-Quick-Match: 1` ([Quick Match](#quick-match)), `Vera-Host-Handover: 1` (host
   handover), `Vera-Watch-AI: 1` ([Watching](#watching)) and `Vera-Relay-Federation: 1`
   (a RelayGrant's `federation`): what it can do. A browser game sends every header but

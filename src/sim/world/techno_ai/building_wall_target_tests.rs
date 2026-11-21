@@ -100,7 +100,7 @@ impl WallScene {
             .attack_target
             .set_for_test(Some(TargetKind::Entity(self.target)));
         for _ in 0..7 {
-            entity.weapon_burst.advance();
+            entity.seldom.weapon_burst.advance();
         }
     }
 
@@ -166,7 +166,7 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
         );
         let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
         assert_eq!(
-            entity.weapon_burst.index(),
+            entity.seldom.weapon_burst.index(),
             if blocked { cleared(&scene.rules) } else { 7 }
         );
         assert_eq!(
@@ -220,6 +220,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
             .entities
             .get(scene.building)
             .unwrap()
+            .seldom
             .weapon_burst
             .index(),
         cleared(&scene.rules)
@@ -274,7 +275,7 @@ fn generic_retaliation_archives_and_overrides_before_wall_target_admission() {
             MissionId::from_known(MissionType::Guard)
         );
         assert_eq!(
-            entity.suspended_attack_target.target(),
+            entity.seldom.suspended_attack_target.target(),
             Some(TargetKind::Entity(scene.target))
         );
         assert_eq!(
@@ -282,7 +283,7 @@ fn generic_retaliation_archives_and_overrides_before_wall_target_admission() {
             (!blocked).then_some(TargetKind::Entity(scene.target))
         );
         assert_eq!(
-            entity.weapon_burst.index(),
+            entity.seldom.weapon_burst.index(),
             if blocked { cleared(&scene.rules) } else { 7 }
         );
     }
@@ -313,7 +314,7 @@ fn canonical_restore_rechecks_a_wall_added_after_the_target_was_archived() {
     );
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
-    assert_eq!(entity.weapon_burst.index(), cleared(&scene.rules));
+    assert_eq!(entity.seldom.weapon_burst.index(), cleared(&scene.rules));
     assert_eq!(
         entity.mission.current(),
         MissionId::from_known(MissionType::Guard)
@@ -342,6 +343,7 @@ fn damage_retaliation_keeps_wall_geometry_through_the_mission_override() {
         None,
         &scene.rules,
         Some(&scene.registry),
+        &mut Vec::new(),
     );
     assert_eq!(
         scene.target(),

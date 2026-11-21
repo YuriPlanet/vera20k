@@ -197,16 +197,17 @@ impl FrameAtlas {
         let area = canvas[0] as usize * canvas[1] as usize;
         assert!(frames.iter().all(|frame| frame.len() == area));
         let limit = device.limits().max_texture_dimension_2d;
-        let per_column = (limit / canvas[1].max(1)).max(1);
-        let count = u32::try_from(frames.len()).expect("frame count");
-        let size = [
-            (count.div_ceil(per_column) * canvas[0]).max(1),
-            (count.min(per_column) * canvas[1]).max(1),
-        ];
-        assert!(
-            size[0] <= limit && size[1] <= limit,
-            "frame atlas exceeds the GPU limit"
-        );
+        let count = u32::try_from(frames.len()).unwrap_or(u32::MAX);
+        let Some((size, per_column)) = frame_atlas_size(count, canvas, limit) else {
+            // A mod's SHROUD.SHP or FOG.SHP past the device's textures: the
+            // shroud draws without its frames rather than not at all.
+            log::error!(
+                "Shroud frame atlas: {count} frames of {}x{} px do not fit this GPU's {limit} px textures; the frames are left out",
+                canvas[0],
+                canvas[1]
+            );
+            return Self::new(device, queue, Vec::new(), canvas);
+        };
         let mut texels = vec![TRANSPARENT; size[0] as usize * size[1] as usize];
         if area != 0 {
             for (index, frame) in frames.iter().enumerate() {
@@ -245,6 +246,17 @@ impl FrameAtlas {
     fn has(&self, frame: u16) -> bool {
         frame != NO_FRAME && usize::from(frame) < self.count
     }
+}
+
+/// The frame atlas for `count` frames of `canvas` px within a `limit` px
+/// texture, with its frames per column, or `None` when no column layout fits.
+fn frame_atlas_size(count: u32, canvas: [u32; 2], limit: u32) -> Option<([u32; 2], u32)> {
+    let per_column = (limit / canvas[1].max(1)).max(1);
+    let size = [
+        (count.div_ceil(per_column).saturating_mul(canvas[0])).max(1),
+        (count.min(per_column).saturating_mul(canvas[1])).max(1),
+    ];
+    (size[0] <= limit && size[1] <= limit).then_some((size, per_column))
 }
 
 fn atlas_origin(index: usize, per_column: u32, canvas: [u32; 2]) -> [u32; 2] {
@@ -885,6 +897,15 @@ impl Compositor {
             return index;
         }
         let [_, _, width, height] = image.frame_bounds().map(|v| v.max(1) as u32);
+        // A mod's AlphaImage past the device's textures: the glow draws blank
+        // (its texels are not written below) rather than failing validation.
+        let limit = device.limits().max_texture_dimension_2d;
+        if width > limit || height > limit {
+            log::warn!(
+                "Glow AlphaImage of {width}x{height} px does not fit this GPU's {limit} px textures; it draws blank"
+            );
+        }
+        let (width, height) = (width.min(limit), height.min(limit));
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Glow AlphaImage frame"),
             size: wgpu::Extent3d {
@@ -1660,6 +1681,16 @@ mod tests {
     use super::*;
     use crate::sim::intern;
     use crate::sim::vision::apply_gap_generators;
+
+    /// Frames stack in columns of as many as the limit holds; a canvas or a
+    /// column count past the limit is refused rather than asserted.
+    #[test]
+    fn a_frame_atlas_past_the_device_limit_is_refused_not_asserted() {
+        assert_eq!(frame_atlas_size(10, [64, 64], 256), Some(([192, 256], 4)));
+        assert_eq!(frame_atlas_size(0, [64, 64], 256), Some(([1, 1], 4)));
+        assert_eq!(frame_atlas_size(1, [9000, 1], 8192), None);
+        assert_eq!(frame_atlas_size(200, [64, 64], 256), None);
+    }
 
     /// A scrolled plane holds the same cells at other lattice origins, and
     /// only the cells over the compared world pixels matter.

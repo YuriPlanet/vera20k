@@ -1328,6 +1328,7 @@ mod tests {
                 if category == EntityCategory::Structure {
                     // Construction stamps the type's ART `Foundation=`.
                     entity
+                        .seldom
                         .type_facts
                         .set_foundation_for_test(dimensions.clone().into());
                 }
@@ -1542,6 +1543,7 @@ mod tests {
             for entity in sim.substrate.entities.values_mut() {
                 if entity.category() == EntityCategory::Structure {
                     entity
+                        .seldom
                         .type_facts
                         .set_foundation_for_test(foundation.clone().into());
                 }

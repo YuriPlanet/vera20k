@@ -52,14 +52,16 @@ impl Simulation {
         live_index: usize,
     ) -> bool {
         let type_index = self.trigger_runtime.trigger(live_index).unwrap().type_index;
-        let condition = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal]
-            .condition
-            .clone();
+        // The definition is read in place: every predicate below reads
+        // through `&self`, and the one write (the entered-House arm's
+        // retained Event+54) follows its last read of the condition.
+        let condition =
+            &self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal].condition;
         // Ares 3.0 TEventExt::HasOccured (1004F7A0, hook 0x71E949) answers
         // its own kinds before the stock switch.
         let ares = rules.ares_form();
         if ares
-            && let Some(occurred) = self.ares_has_occurred(&condition, input, incoming_house, rules)
+            && let Some(occurred) = self.ares_has_occurred(condition, input, incoming_house, rules)
         {
             return occurred;
         }
@@ -466,7 +468,7 @@ impl Simulation {
             //71F28B selects the generic true tail71F1B4, no persistence write.
             EVENT_ANY => true,
             _ => self.trigger_runtime.evaluate_event(
-                &condition,
+                condition,
                 self.session.binary_frame(),
                 self,
                 rules,
@@ -524,6 +526,7 @@ impl Simulation {
                     }
                     let kind = self.trigger_runtime.definitions.trigger_types[type_index].events
                         [ordinal]
+                        .condition
                         .kind;
                     //726564..726582 uses the current mutable flag, then BOTH
                     //native71F950/71F9C0 classifications. Entered/count/power

@@ -133,6 +133,7 @@ fn campaign_discovery_prelude_admits_an_enemy_once_its_ground_is_revealed() {
             .entities
             .get(enemy)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     };
@@ -161,7 +162,7 @@ fn campaign_player_scan_takes_an_undiscovered_aircraft() {
     let (mut sim, ifv, plane) = rival_pair(rules, "FV", "PDPLANE");
     let actor = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(actor.category(), EntityCategory::Aircraft);
-    assert!(!actor.discovery.discovered_by_current_house());
+    assert!(!actor.seldom.discovery.discovered_by_current_house());
     assert_eq!(guard_pick(&mut sim, rules, ifv), Some(plane));
 }
 

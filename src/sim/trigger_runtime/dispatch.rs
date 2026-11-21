@@ -680,6 +680,12 @@ impl Simulation {
             //7265E7..726602 repeats the authored Country lookup for every
             //action and preserves Spring's incoming actor and packed Cell.
             let context = self.trigger_action_context(type_index, Some(index), input, rules);
+            // An owned copy: the action runs through `&mut self`, and the
+            // Tag events it raises write the same definitions (each event's
+            // retained House, Event+54), so it cannot stay borrowed. Dropping
+            // the copy means moving `RuntimeEvent::retained_house` out of
+            // `RuntimeDefinitions`, which changes the saved snapshot layout
+            // and the order `hash_definitions` feeds the state hash.
             let action =
                 self.trigger_runtime.definitions.trigger_types[type_index].actions[ordinal].clone();
             #[cfg(any(test, feature = "dev-overlays"))]
@@ -749,7 +755,6 @@ impl Simulation {
             return false;
         }
         let repeat = self.trigger_runtime.definitions.tag_types[tag.type_index].repeat;
-        let chain = tag.triggers.clone();
         self.trigger_runtime.tags[index]
             .as_mut()
             .unwrap()
@@ -757,7 +762,18 @@ impl Simulation {
         let mut result = false;
         let mut detach_attachment = false;
         let mut detach_all = false;
-        for trigger in chain {
+        // ProcessTriggerEvent6E53A0 walks the live chain, reading each
+        // Trigger's next link (6E5484) after its Register/Spring. A live
+        // Tag's chain changes only when the Tag is built and when the
+        // pending-delete drain frees a Trigger, and no Spring reaches either,
+        // so reading the chain at each position is that walk.
+        let mut position = 0;
+        while let Some(&trigger) = self
+            .trigger_runtime
+            .tag(index)
+            .and_then(|tag| tag.triggers.get(position))
+        {
+            position += 1;
             if !self.register_live_trigger_event(trigger, input, repeat == 2, rules) {
                 continue;
             }
@@ -923,13 +939,18 @@ impl Simulation {
             let mut tag_ordinal = 0;
             while tag_ordinal < trigger_runtime.tag_order.len() {
                 let tag = trigger_runtime.tag_order[tag_ordinal];
-                let chain = trigger_runtime.tag(tag).unwrap().triggers.clone();
-                for live in chain {
+                // Timer resets change no Tag chain: walk it in place.
+                let mut position = 0;
+                while let Some(&live) = trigger_runtime
+                    .tag(tag)
+                    .and_then(|tag| tag.triggers.get(position))
+                {
+                    position += 1;
                     let typ = trigger_runtime.trigger(live).unwrap().type_index;
                     if trigger_runtime.definitions.trigger_types[typ]
                         .events
                         .iter()
-                        .any(|e| events.contains(&e.kind) && e.value == index)
+                        .any(|e| events.contains(&e.condition.kind) && e.condition.value == index)
                     {
                         Self::reset_trigger_timers(session, scenario_rng, trigger_runtime, live);
                     }

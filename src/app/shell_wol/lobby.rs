@@ -519,19 +519,18 @@ pub(crate) fn quick_match_runner(state: &AppState) -> bool {
 }
 
 /// The current channel's users `[0xB77908]`, in list order.
-pub(super) fn members(state: &AppState) -> Vec<WolMember> {
-    lobby(state).map_or_else(Vec::new, |lobby| lobby.members.clone())
+pub(super) fn members(state: &AppState) -> &[WolMember] {
+    lobby(state).map_or(&[], |lobby| &lobby.members)
 }
 
 /// The current channel's user names, in list order (`[0xB77900]` of them).
-pub(crate) fn member_names(state: &AppState) -> Vec<String> {
-    lobby(state).map_or_else(Vec::new, |lobby| {
-        lobby
-            .members
-            .iter()
-            .map(|member| member.name.clone())
-            .collect()
-    })
+pub(crate) fn member_names(state: &AppState) -> impl DoubleEndedIterator<Item = &str> {
+    members(state).iter().map(|member| member.name.as_str())
+}
+
+/// How many users the current channel has (`[0xB77900]`).
+pub(crate) fn member_count(state: &AppState) -> usize {
+    members(state).len()
 }
 
 /// The dialog a runner's closed box or wait returns the input to.

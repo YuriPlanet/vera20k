@@ -211,7 +211,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.removal_facts.dirty_rect_eligible());
+            .is_some_and(|entity| entity.seldom.removal_facts.dirty_rect_eligible());
         if dirty_rect_eligible {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DirtyTacticalRect { stable_id });
@@ -278,7 +278,7 @@ impl Simulation {
         if human == Some(false)
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
-            entity.discovery.clear_current_discovery();
+            entity.seldom.discovery.clear_current_discovery();
         }
     }
 
@@ -482,9 +482,9 @@ impl Simulation {
         if context.rules.ares() {
             self.remove_radar_jammer(stable_id);
             if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-                && entity.ares.powered_by.is_some()
+                && entity.seldom.ares.powered_by.is_some()
             {
-                entity.ares.powered_by = None;
+                entity.seldom.ares.powered_by = None;
             }
             self.limbo_ares_attach_effects(stable_id, context.rules());
         }
@@ -701,7 +701,7 @@ impl Simulation {
     /// `0x0062A260`) and a dropped Crashable unit (Notice `0x00746100`).
     pub(crate) fn close_kill_record(substrate: &mut ObjectSubstrate, stable_id: u64) {
         if let Some(entity) = substrate.entities.get_mut(stable_id) {
-            entity.kill_record.close();
+            entity.seldom.kill_record.close();
         }
     }
 }

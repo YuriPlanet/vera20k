@@ -90,14 +90,22 @@ fn multiplayer_build_identity() {
 
 /// Where the startup splash's license notice says this build's source is: the
 /// commit a release build was made from (`VERA20K_COMMIT`, which the Release
-/// workflow sets), otherwise the repository.
+/// workflow and a launcher's engine build set), otherwise the repository. The
+/// commit is also `VERA20K_BUILD_COMMIT`, which `--version` reports (empty
+/// when unset). Neither is in the network build: the sources are.
 fn source_location() {
     println!("cargo::rerun-if-env-changed=VERA20K_COMMIT");
-    let source = match std::env::var("VERA20K_COMMIT") {
-        Ok(commit) if !commit.is_empty() => format!("github.com/YuriPlanet/vera20k/tree/{commit}"),
-        _ => "github.com/YuriPlanet/vera20k".to_owned(),
+    let commit = std::env::var("VERA20K_COMMIT")
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let source = if commit.is_empty() {
+        "github.com/YuriPlanet/vera20k".to_owned()
+    } else {
+        format!("github.com/YuriPlanet/vera20k/tree/{commit}")
     };
     println!("cargo::rustc-env=VERA20K_SOURCE={source}");
+    println!("cargo::rustc-env=VERA20K_BUILD_COMMIT={commit}");
 }
 
 /// The language files VERA ships (`src/i18n/vera20k.<tag>.ini`), which
