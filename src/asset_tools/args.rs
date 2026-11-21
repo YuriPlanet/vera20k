@@ -91,6 +91,9 @@ asset — headless browser for retail RA2/YR assets. Output is JSON on stdout.
 
 USAGE
   asset <verb> [target] [options]
+  asset wasm-check <module.wasm|map>          Wasm module load checks (no retail needed)
+  asset wasm-embed <map> <rules.wasm> <out>   embed rules.wasm in a copy of the map
+  asset wasm-extract <map> <out.wasm>         write a map's embedded rules.wasm
 
 VERBS
   ini-get <SECTION> <KEY>  Inspect exact authored values and a production INI accessor.

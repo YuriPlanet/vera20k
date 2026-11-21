@@ -121,6 +121,8 @@ tests-ui = []
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
+# Wasm module load checks for `asset wasm-*` (RFC 0001).
+vera20k-wasm-ext = { path = "wasm-ext" }
 
 # Background HTTPS lobby I/O; verified TLS is independent of simulation.
 base64 = "0.22"

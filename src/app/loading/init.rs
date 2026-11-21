@@ -3429,6 +3429,23 @@ fn load_map_first_step(
                                     .map(crate::app::process_assets::ProcessAudioCatalog::sounds),
                                 services.themes,
                             );
+                            // Wasm extension modules (RFC 0001): the mod's
+                            // rules.wasm, then the map's. One that cannot
+                            // load stops the match before it starts.
+                            let mod_rules_module = services
+                                .asset_manager
+                                .mod_dir()
+                                .map(|dir| dir.join("rules.wasm"))
+                                .filter(|path| path.is_file())
+                                .map(crate::util::file_system::read)
+                                .transpose()
+                                .map_err(|e| anyhow::anyhow!("the mod's rules.wasm: {e}"))?;
+                            staged_simulation
+                                .install_scenario_ext_modules(
+                                    mod_rules_module.as_deref(),
+                                    &map_data.ini,
+                                )
+                                .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))?;
                             let (mut scenario_fill_rng, variant_main_rng) =
                                 staged_simulation.terrain_load_draws();
                             let mut scenario_fill_ranged =

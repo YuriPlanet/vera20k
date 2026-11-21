@@ -331,6 +331,27 @@ impl Simulation {
         }
     }
 
+    /// Loads a scenario's modules (RFC section 2): the selected mod's
+    /// `rules.wasm`, read by the caller, then the one the map embeds. An
+    /// error names the module; the match must not start.
+    pub fn install_scenario_ext_modules(
+        &mut self,
+        mod_module: Option<&[u8]>,
+        map: &crate::rules::ini_parser::IniFile,
+    ) -> Result<(), String> {
+        if let Some(bytes) = mod_module {
+            self.install_ext_module(ModuleSource::Mod, bytes)
+                .map_err(|e| format!("the mod's rules.wasm: {e}"))?;
+        }
+        let embedded = crate::map::ext_module_pack::rules_module(map)
+            .map_err(|e| format!("the map's rules module: {e}"))?;
+        if let Some(bytes) = embedded {
+            self.install_ext_module(ModuleSource::Map, &bytes)
+                .map_err(|e| format!("the map's rules module: {e}"))?;
+        }
+        Ok(())
+    }
+
     /// Instantiates the modules a save carried and puts back their state.
     /// An error means this game cannot continue the save.
     pub(crate) fn restore_ext_modules(&mut self) -> Result<(), String> {
