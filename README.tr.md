@@ -101,6 +101,9 @@ Kendi modunuzu yapmak için [mod yapım kılavuzuyla](docs/modding.md) başlayab
 ## Destek
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="VERA20K'yi PayPal üzerinden destekleyin" height="23"></a>
+<a href="https://wise.com/pay/me/halvorr2"><img src="https://img.shields.io/badge/Donate_via_Wise-9FE870?style=flat&amp;logo=wise&amp;logoColor=163300" alt="VERA20K'yi Wise üzerinden destekleyin" height="23"></a>
+
+Wise sayfasında alıcı olarak projenin bakımını yürüten Halvor Rusten görünür.
 
 Alınan tüm bağışlar,
 [TIBTRE katkı defterine](https://github.com/YuriPlanet/tibtre-ledger) göre katkıda
