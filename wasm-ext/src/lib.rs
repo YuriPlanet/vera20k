@@ -3,7 +3,8 @@
 //! A simulation module (`rules.wasm`) is checked, compiled and called under
 //! an operation budget, and reaches the game only through [`SimHost`]. It
 //! covers `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
-//! `get_many`, `set`, `var_get`, `var_set`, `find` and `action`; the other
+//! `get_many`, `set`, `modify`, `unmodify`, `var_get`, `var_set`, `find` and
+//! `action`, and reads the `vera.vars` declarations ([`sections`]); the other
 //! `vera:sim` imports, the client world and the browser runtime come later.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
@@ -15,6 +16,9 @@
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 mod native;
+
+pub mod sections;
+pub use sections::{VarDecl, VarScope, Visibility};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use native::SimModule;
@@ -46,6 +50,11 @@ pub const IMPORTS: &[(&str, &str)] = &[
         "(refs: ptr, n: i32, props: ptr, m: i32, out: ptr, count_out: ptr) -> status",
     ),
     ("set", "(ref: i64, prop: i32, value: i64) -> status"),
+    (
+        "modify",
+        "(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32, out: ptr) -> status",
+    ),
+    ("unmodify", "(modifier: i64) -> status"),
     ("var_get", "(scope: i64, var: i32, out: ptr) -> status"),
     ("var_set", "(scope: i64, var: i32, value: i64) -> status"),
     (
@@ -67,6 +76,7 @@ pub const SCAN_COST: u64 = 2;
 /// kinds below [`NAME_KINDS`], anything else is invalid.
 pub const NAME_TECHNO_TYPE: i32 = 0;
 pub const NAME_COUNTRY: i32 = 11;
+pub const NAME_VARIABLE: i32 = 15;
 pub const NAME_PROPERTY: i32 = 19;
 pub const NAME_KINDS: i32 = 23;
 
@@ -79,6 +89,7 @@ pub const TABLE_SCOPE: i32 = 4;
 /// Search scopes (appendix 8.2) and their count.
 pub const SCOPE_OBJECTS: i32 = 0;
 pub const SCOPE_HOUSES: i32 = 1;
+pub const SCOPE_MODIFIERS: i32 = 7;
 pub const SCOPES: i32 = 9;
 
 /// Every property name of appendix section 7, deduplicated (properties with
@@ -445,6 +456,26 @@ pub trait SimHost {
     /// Up to `cap` (at least 1) matches of `query`, from sort key
     /// `query.after` on.
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid>;
+    /// Adds a modifier (appendix 7.2, 7.3) and returns its handle; `op` is a
+    /// `ModifierOp` (0..=2), `prop` a [`PROPERTIES`] ID, both checked before
+    /// the call.
+    #[allow(clippy::too_many_arguments)]
+    fn modify(
+        &mut self,
+        _reference: i64,
+        _prop: i32,
+        _op: i32,
+        _value: i64,
+        _frames: i32,
+        _source: i64,
+        _group: i32,
+    ) -> Result<(i64, Status), Invalid> {
+        Ok((0, Status::Unsupported))
+    }
+    /// Removes a modifier early; `Gone` once it expired or was removed.
+    fn unmodify(&mut self, _modifier: i64) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
     fn var_get(&mut self, scope: i64, var: i32) -> Result<(i64, Status), Invalid>;
     fn var_set(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid>;
     /// Runs action `kind`; returns the created object or 0, and the status.
@@ -538,3 +569,6 @@ impl std::fmt::Display for Fault {
 
 #[cfg(test)]
 mod sandbox_tests;
+
+#[cfg(test)]
+mod sdk_props_tests;

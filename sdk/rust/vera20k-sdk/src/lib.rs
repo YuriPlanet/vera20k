@@ -15,12 +15,15 @@
 //! ```
 #![no_std]
 
+mod props;
 pub mod sys;
+pub mod vars;
 
 pub mod prelude {
+    pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, Category, Cell, Find, House, NameKind, Op, Prop, Ref, Status, Techno, TypeRef,
-        Var, Waypoint, frame, log, random,
+        Action, Category, Cell, FIXED_ONE, Find, House, Modifier, ModifierOp, NameKind, Op, Prop,
+        Ref, Status, Techno, TypeRef, Var, Waypoint, fixed, frame, log, random,
     };
 }
 
@@ -233,7 +236,13 @@ pub fn lookup(kind: NameKind, name: &str) -> Result<i32> {
 pub fn name_of(kind: NameKind, id: i32, buf: &mut [u8]) -> Result<&str> {
     let mut len = 0;
     check(unsafe {
-        sys::name_of(kind as i32, id, buf.as_mut_ptr(), buf.len() as i32, &mut len)
+        sys::name_of(
+            kind as i32,
+            id,
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            &mut len,
+        )
     })?;
     let bytes = buf.get(..len as usize).ok_or(Status::Refused)?;
     core::str::from_utf8(bytes).map_err(|_| Status::Unsupported)
@@ -241,7 +250,8 @@ pub fn name_of(kind: NameKind, id: i32, buf: &mut [u8]) -> Result<&str> {
 
 // -------------------------------------------------------------- Properties
 
-/// A property ID (appendix section 7).
+/// A property ID (appendix section 7). Every property is a constant, as in
+/// `Prop::FirepowerMultiplier`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Prop(pub i32);
 
@@ -287,9 +297,88 @@ pub fn get_many(refs: &[i64], props: &[i32], out: &mut [i64]) -> Result<usize> {
     check(status).map(|()| count as usize)
 }
 
+// --------------------------------------------------------------- Modifiers
+
+/// `1.0` as a `fixed` value (raw `I16F16`, appendix "Values").
+pub const FIXED_ONE: i64 = 65536;
+
+/// `value` as a `fixed` multiplier, e.g. `fixed(0.5)`.
+pub const fn fixed(value: f64) -> i64 {
+    (value * 65536.0) as i64
+}
+
+/// How a modifier changes its property (appendix 8.3 `ModifierOp`).
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ModifierOp {
+    Add = 0,
+    Multiply = 1,
+    Override = 2,
+}
+
+reference!(
+    /// A modifier (appendix 7.2, 7.3): read it with `get` and the
+    /// `Prop::Target`, `Prop::Remaining`, ... constants. It reads as gone
+    /// once it expired or was removed.
+    Modifier
+);
+
+impl Modifier {
+    /// Adds a modifier to `prop` of `target` for `frames` frames (negative:
+    /// until removed), with a source object (or 0) and an exclusion group
+    /// (0: none; another modifier of this module in the same group on the
+    /// same object is replaced). One host call.
+    pub fn new(
+        target: impl Ref,
+        prop: Prop,
+        op: ModifierOp,
+        value: i64,
+        frames: i32,
+        source: i64,
+        group: i32,
+    ) -> Result<Self> {
+        let mut out = 0;
+        check(unsafe {
+            sys::modify(
+                target.raw(),
+                prop.0,
+                op as i32,
+                value,
+                frames,
+                source,
+                group,
+                &mut out,
+            )
+        })?;
+        Ok(Self(out))
+    }
+
+    /// Adds `value` to `prop`, e.g. `WeaponRangeExtra` in leptons.
+    pub fn add(target: impl Ref, prop: Prop, value: i64, frames: i32) -> Result<Self> {
+        Self::new(target, prop, ModifierOp::Add, value, frames, 0, 0)
+    }
+
+    /// Multiplies `prop` by the `fixed` `factor`, e.g.
+    /// `Modifier::multiply(unit, Prop::SpeedMultiplier, fixed(0.5), 150)`.
+    pub fn multiply(target: impl Ref, prop: Prop, factor: i64, frames: i32) -> Result<Self> {
+        Self::new(target, prop, ModifierOp::Multiply, factor, frames, 0, 0)
+    }
+
+    /// Replaces `prop` with `value` while it lasts.
+    pub fn override_(target: impl Ref, prop: Prop, value: i64, frames: i32) -> Result<Self> {
+        Self::new(target, prop, ModifierOp::Override, value, frames, 0, 0)
+    }
+
+    /// Removes the modifier early; `Err(Gone)` once it expired.
+    pub fn remove(self) -> Result<()> {
+        check(unsafe { sys::unmodify(self.0) })
+    }
+}
+
 // --------------------------------------------------------------- Variables
 
-/// A variable (appendix "IDs"): Red Alert 2 locals 0..99, globals 100..149.
+/// A Red Alert 2 variable (appendix "IDs"): locals 0..99, globals 100..149.
+/// Variables a module declares use [`vars!`] instead.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Var(pub i32);
 
@@ -398,8 +487,8 @@ impl Find {
     /// wrote and where the next page starts (0 on the last page).
     pub fn page(&mut self, out: &mut [i64], after: i64) -> Result<(usize, i64)> {
         self.0.query.after = after;
-        let len = size_of::<sys::Query>()
-            + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        let len =
+            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
         let mut result = sys::FindResult::default();
         let status = unsafe {
             sys::find(

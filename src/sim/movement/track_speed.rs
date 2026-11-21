@@ -196,7 +196,7 @@ pub(super) fn advance(
     super::foot_speed::owner_current_speed_from_native_fraction(
         speed,
         entity.foot_speed.native_applied_fraction(),
-        entity.phobos_speed_multiplier(),
+        entity.effect_speed_multiplier(),
     )
 }
 

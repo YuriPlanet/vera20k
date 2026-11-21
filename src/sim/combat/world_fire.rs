@@ -1088,10 +1088,8 @@ fn firepower_stages(
         open_topped: firer
             .filter(|firer| firer.passenger_role().in_open_transport())
             .map(|_| f32_bits(multipliers.open_topped_damage_multiplier)),
-        #[cfg(feature = "phobos")]
-        ae_firepower: firer.map_or(1.0, |firer| firer.phobos_stat_multipliers().firepower),
-        #[cfg(not(feature = "phobos"))]
-        ae_firepower: 1.0,
+        // Phobos' AttachEffect product with the Wasm module modifiers.
+        ae_firepower: firer.map_or(1.0, |firer| firer.effect_firepower_multiplier()),
     }
 }
 
@@ -3719,10 +3717,7 @@ pub(crate) fn estimated_damage_on(
             occupied: None,
             bunkered: None,
             open_topped: None,
-            #[cfg(feature = "phobos")]
-            ae_firepower: attacker.phobos_stat_multipliers().firepower,
-            #[cfg(not(feature = "phobos"))]
-            ae_firepower: 1.0,
+            ae_firepower: attacker.effect_firepower_multiplier(),
         },
         divisors: damage::DefenceDivisors {
             house_type_armor: NativeF32Bits::from_bits(house_type_armor.to_bits()),
@@ -3736,7 +3731,10 @@ pub(crate) fn estimated_damage_on(
             // false: no timer or HitAnim). A target carrying one is estimated
             // without it, and every target-scan estimate on it skips those
             // Scenario draws, shifting the stream.
-            ae_armor: target.phobos_armor_multiplier(),
+            ae_armor: target.with_module_modifiers(
+                crate::sim::ext_modules::modifiers::Stat::Armor,
+                target.phobos_armor_multiplier(),
+            ),
             rank_armor,
         },
         warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {

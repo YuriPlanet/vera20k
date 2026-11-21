@@ -647,6 +647,11 @@ pub struct Seldom {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_stat_multipliers: crate::sim::attach_effect::PhobosStatMultipliers,
+    /// Derived from the Wasm modules' modifiers on this object, which
+    /// `sim::ext_modules::modifiers` owns and rebuilds this from; `None`
+    /// without any. Not saved or hashed.
+    #[serde(skip)]
+    pub(crate) module_modifiers: Option<Box<crate::sim::ext_modules::modifiers::ModifierTerms>>,
     /// Phobos ShieldClass state: shield points and their recovery timers.
     #[cfg(feature = "phobos")]
     #[serde(default)]
@@ -2468,6 +2473,7 @@ impl GameEntity {
                 phobos_attach_effects: Default::default(),
                 #[cfg(feature = "phobos")]
                 phobos_stat_multipliers: Default::default(),
+                module_modifiers: None,
                 techno_ctor_random_word,
                 object_group: -1,
                 local_control_group: None,

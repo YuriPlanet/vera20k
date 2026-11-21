@@ -1,6 +1,6 @@
 //! The browser build has no module runtime yet (RFC 0001 open question 1).
 
-use crate::{Export, Fault, Limits, LoadError, ModuleState, SimHost};
+use crate::{Export, Fault, Limits, LoadError, ModuleState, SimHost, VarDecl};
 
 /// Never constructed in the browser build: [`SimModule::load`] always fails.
 pub struct SimModule {
@@ -19,6 +19,10 @@ impl SimModule {
     }
 
     pub fn bytes(&self) -> &[u8] {
+        &[]
+    }
+
+    pub fn vars(&self) -> &[VarDecl] {
         &[]
     }
 

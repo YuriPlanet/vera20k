@@ -15,7 +15,10 @@
 //! - names of TechnoTypes, countries and properties (`lookup`, `name_of`);
 //! - reads of the object and house properties [`Host::get`] lists, and
 //!   `find` over objects and houses;
-//! - the atomic `AddMoney` action.
+//! - the atomic `AddMoney` action;
+//! - modifiers on objects ([`modifiers`]) and the variables modules declare
+//!   in `vera.vars` ([`vars`]);
+//! - writes of `Health`, `Owner` and `Rank` through their owners.
 //!
 //! Modules come from the selected mod's folder and the map's
 //! `[VeraWasmRulesPack]` ([`Simulation::install_scenario_ext_modules`]).
@@ -32,23 +35,35 @@
 //!   puts houses on the objects' creation counter.
 //! - TechnoType IDs are the rules' registry handles (`TypeHandle`), found by
 //!   name; a type whose ID two categories share reads as the first.
-//! - Every property is read-only for now: `set` refuses the read-only ones
-//!   and answers `Unsupported` for `Health` and `Owner`, whose writes need
-//!   an owner path without kill credit (`Health`) or the `SetOwner` action.
+//! - `set` writes `Health` (1 up to the type's Strength; a write of 0 or
+//!   less, which would kill without credit, answers `Refused`), `Owner`
+//!   (through ChangeOwner, as the stock change-house action does) and
+//!   `Rank`. `Mission` and `Ammo` writes answer `Unsupported`: neither has an
+//!   owner operation for a module yet. Other readable properties refuse.
+//! - Only `FirepowerMultiplier`, `ArmorMultiplier` and `SpeedMultiplier`
+//!   take modifiers; other modifiable properties answer `Unsupported`, and
+//!   houses take none.
 
 use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_COUNTRY, NAME_PROPERTY, NAME_TECHNO_TYPE, Query, SCOPE_HOUSES, SCOPE_OBJECTS, SimHost,
-    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_COUNTRY, NAME_PROPERTY, NAME_TECHNO_TYPE, NAME_VARIABLE, Query, SCOPE_HOUSES,
+    SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND,
+    TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
+
+pub(crate) mod modifiers;
+pub(crate) mod vars;
+
+use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
+use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::{CountryIdx, RuleSet};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::rng::SimRng;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, Simulation};
 
 /// Operations per `on_frame` call (RFC 15.2 proposes about 2 ms on the
 /// slowest platform; open question 7).
@@ -114,10 +129,13 @@ struct SavedSlot {
     last_frame_ops: u64,
 }
 
-/// The loaded simulation modules, in run order.
+/// The loaded simulation modules, in run order, and the modifiers and
+/// variables they own.
 #[derive(Default)]
 pub struct ExtModules {
     slots: Vec<Slot>,
+    modifiers: ModifierStore,
+    vars: VarStore,
     /// Modules read from a save, instantiated by
     /// [`Simulation::restore_ext_modules`]. Deserializing never compiles a
     /// module, so describing the save layout stays data-only.
@@ -126,12 +144,21 @@ pub struct ExtModules {
     log: Vec<String>,
 }
 
+/// What a save holds: the modules, the modifiers and the variable values
+/// (the declarations come back from the module bytes).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedExtModules {
+    slots: Vec<SavedSlot>,
+    modifiers: ModifierStore,
+    vars: VarValues,
+}
+
 impl serde::Serialize for ExtModules {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeSeq;
-        let mut seq = serializer.serialize_seq(Some(self.slots.len()))?;
-        for slot in &self.slots {
-            seq.serialize_element(&SavedSlot {
+        let slots = self
+            .slots
+            .iter()
+            .map(|slot| SavedSlot {
                 source: slot.source,
                 bytes: slot.module.bytes().to_vec(),
                 state: slot.module.state(),
@@ -139,18 +166,27 @@ impl serde::Serialize for ExtModules {
                 started: slot.started,
                 disabled: slot.disabled.clone(),
                 last_frame_ops: slot.last_frame_ops,
-            })?;
+            })
+            .collect();
+        SavedExtModules {
+            slots,
+            modifiers: self.modifiers.clone(),
+            vars: self.vars.values.clone(),
         }
-        seq.end()
+        .serialize(serializer)
     }
 }
 
 impl<'de> serde::Deserialize<'de> for ExtModules {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self {
-            pending: Vec::deserialize(deserializer)?,
+        let saved = SavedExtModules::deserialize(deserializer)?;
+        let mut modules = Self {
+            pending: saved.slots,
+            modifiers: saved.modifiers,
             ..Self::default()
-        })
+        };
+        modules.vars.values = saved.vars;
+        Ok(modules)
     }
 }
 
@@ -183,6 +219,36 @@ impl ExtModules {
         std::mem::take(&mut self.log)
     }
 
+    /// Takes the variable declarations from the loaded modules, in order.
+    fn declare_vars(&mut self) {
+        self.vars.declare(
+            self.slots
+                .iter()
+                .map(|slot| (slot.source, slot.module.vars())),
+        );
+    }
+
+    /// The modifiers modules hold.
+    pub fn modifiers(&self) -> &ModifierStore {
+        &self.modifiers
+    }
+
+    /// A declared variable's value for `holder` (`0` global, else a house
+    /// or object reference); `None` for an unknown variable, a wrong scope
+    /// or a gone holder.
+    pub fn declared_var(&self, sim: &Simulation, scope: i64, var: i32) -> Option<i64> {
+        let holder = self
+            .vars
+            .holder(
+                scope,
+                var,
+                |index| index < sim.houses.order().len(),
+                |id| sim.entities().get(id).is_some(),
+            )
+            .ok()??;
+        Some(self.vars.get(var, holder))
+    }
+
     /// One 32-bit FNV-1a digest per module over its memory and globals, for
     /// the multiplayer frame checksum. Byte-wise, so 32- and 64-bit
     /// platforms agree. Residual: it reads all memory each frame instead of
@@ -208,6 +274,8 @@ impl ExtModules {
             slot.module.globals().hash(hasher);
             slot.module.memory().hash(hasher);
         }
+        self.modifiers.hash(hasher);
+        self.vars.values.hash(hasher);
     }
 }
 
@@ -287,14 +355,17 @@ const fn category_value(category: EntityCategory) -> i64 {
 
 /// The host a module sees during one call: the simulation, whose module
 /// slots are set aside for the call, and the calling module's own state.
-struct Host<'a> {
+struct Host<'a, 'e> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
+    /// For the owners a write reaches (ChangeOwner).
+    registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: &'a mut FrameEffects<'e>,
     rng: &'a mut SimRng,
     source: ModuleSource,
 }
 
-impl SimHost for Host<'_> {
+impl SimHost for Host<'_, '_> {
     fn frame(&mut self) -> i32 {
         self.sim.session.binary_frame() as i32
     }
@@ -311,9 +382,14 @@ impl SimHost for Host<'_> {
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
         match table {
             TABLE_ACTION => id == ACTION_ADD_MONEY,
-            TABLE_PROPERTY => property_name(id).is_some_and(|name| READABLE.contains(&name)),
-            TABLE_NAME_KIND => matches!(id, NAME_TECHNO_TYPE | NAME_COUNTRY | NAME_PROPERTY),
-            TABLE_SCOPE => matches!(id, SCOPE_OBJECTS | SCOPE_HOUSES),
+            TABLE_PROPERTY => property_name(id).is_some_and(|name| {
+                READABLE.contains(&name) || Stat::from_property(name).is_some()
+            }),
+            TABLE_NAME_KIND => matches!(
+                id,
+                NAME_TECHNO_TYPE | NAME_COUNTRY | NAME_PROPERTY | NAME_VARIABLE
+            ),
+            TABLE_SCOPE => matches!(id, SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_MODIFIERS),
             _ => false,
         }
     }
@@ -322,6 +398,7 @@ impl SimHost for Host<'_> {
         let id = match kind {
             NAME_TECHNO_TYPE => self.rules.type_handle(name).map(|h| h.0 as i32),
             NAME_COUNTRY => self.rules.country_index(name).map(|c| i32::from(c.0)),
+            NAME_VARIABLE => self.sim.ext_modules.vars.lookup(self.source, name),
             _ => return Ok((-1, Status::Unsupported)),
         };
         Ok(id.map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
@@ -333,6 +410,11 @@ impl SimHost for Host<'_> {
             NAME_COUNTRY => u16::try_from(id)
                 .ok()
                 .and_then(|id| self.rules.country_name(CountryIdx(id))),
+            // The Red Alert 2 variables have numbers, not names.
+            NAME_VARIABLE if id < FIRST_DECLARED_VAR => {
+                return Ok((String::new(), Status::NotFound));
+            }
+            NAME_VARIABLE => self.sim.ext_modules.vars.name(id),
             _ => return Ok((String::new(), Status::Unsupported)),
         };
         name.map(|name| (name.to_owned(), Status::Ok))
@@ -343,22 +425,109 @@ impl SimHost for Host<'_> {
         self.read(reference, prop)
     }
 
-    fn set(&mut self, reference: i64, prop: i32, _value: i64) -> Result<Status, Invalid> {
+    fn set(&mut self, reference: i64, prop: i32, value: i64) -> Result<Status, Invalid> {
         let name = property_name(prop).unwrap_or_default();
+        if let Some(Ref::Object(id)) = decode_ref(reference)?
+            && self.sim.entities().get(id).is_some()
+        {
+            match name {
+                "Health" => return Ok(self.write_health(id, value)),
+                "Owner" => return self.write_owner(id, value),
+                "Rank" => return self.write_rank(id, value),
+                _ => {}
+            }
+        }
         let (_, status) = self.read(reference, prop)?;
         Ok(match status {
-            // Health and Owner are writable in the RFC; their owner paths
-            // are not wired yet (module residuals).
-            Status::Ok if matches!(name, "Health" | "Owner") => Status::Unsupported,
             Status::Ok => Status::Refused,
             other => other,
         })
+    }
+
+    fn modify(
+        &mut self,
+        reference: i64,
+        prop: i32,
+        op: i32,
+        value: i64,
+        frames: i32,
+        source: i64,
+        group: i32,
+    ) -> Result<(i64, Status), Invalid> {
+        let name = property_name(prop).unwrap_or_default();
+        if !matches!(decode_ref(source)?, None | Some(Ref::Object(_))) {
+            return Err(Invalid(format!(
+                "modifier source {source:#x} is not an object"
+            )));
+        }
+        let target = match decode_ref(reference)? {
+            None => return Ok((0, Status::Gone)),
+            Some(Ref::Object(id)) => id,
+            Some(Ref::House(_)) => return Ok((0, Status::Unsupported)),
+            Some(_) => {
+                return Err(Invalid(format!("{reference:#x} is not an object or house")));
+            }
+        };
+        if self.sim.entities().get(target).is_none() {
+            return Ok((0, Status::Gone));
+        }
+        let Some(stat) = Stat::from_property(name) else {
+            // Appendix 7.2's other properties are not wired yet; the rest
+            // are not modifiable.
+            let modifiable = property_id_range(MODIFIABLE).contains(&prop);
+            return Ok((
+                0,
+                if modifiable {
+                    Status::Unsupported
+                } else {
+                    Status::Refused
+                },
+            ));
+        };
+        let frame = self.sim.session.binary_frame();
+        let modifier = Modifier {
+            target,
+            stat,
+            op: ModifierOp::from_abi(op),
+            value,
+            expires: u32::try_from(frames)
+                .ok()
+                .map(|frames| frame.saturating_add(frames)),
+            source,
+            group,
+            origin: self.source,
+        };
+        let sim = &mut *self.sim;
+        let handle = sim.substrate.allocate_stable_id();
+        if !sim
+            .ext_modules
+            .modifiers
+            .insert(&mut sim.substrate.entities, handle, modifier)
+        {
+            return Ok((0, Status::Refused));
+        }
+        Ok((handle as i64, Status::Ok))
+    }
+
+    fn unmodify(&mut self, modifier: i64) -> Result<Status, Invalid> {
+        let handle = match decode_ref(modifier)? {
+            None => return Ok(Status::Gone),
+            Some(Ref::Object(handle)) => handle,
+            Some(_) => return Err(Invalid(format!("{modifier:#x} is not a modifier"))),
+        };
+        let sim = &mut *self.sim;
+        let removed = sim
+            .ext_modules
+            .modifiers
+            .remove(&mut sim.substrate.entities, handle);
+        Ok(if removed { Status::Ok } else { Status::Gone })
     }
 
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
         match query.scope {
             SCOPE_OBJECTS => self.find_objects(query, cap),
             SCOPE_HOUSES => self.find_houses(query, cap),
+            SCOPE_MODIFIERS => self.find_modifiers(query, cap),
             _ => Ok((FindPage::default(), Status::Unsupported)),
         }
     }
@@ -368,6 +537,13 @@ impl SimHost for Host<'_> {
     }
 
     fn var_set(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid> {
+        if var >= FIRST_DECLARED_VAR {
+            let Some(holder) = self.var_holder(scope, var)? else {
+                return Ok(Status::Gone);
+            };
+            self.sim.ext_modules.vars.set(var, holder, value);
+            return Ok(Status::Ok);
+        }
         let (global, index) = stock_variable(scope, var)?;
         // The trigger runtime's writer also resets the timers of triggers
         // waiting on the variable (events 27, 28, 36, 37), as map actions do.
@@ -424,9 +600,19 @@ const READABLE: &[&str] = &[
     "LowPower",
     "IsDefeated",
     "IsHuman",
+    "Rank",
 ];
 
-impl Host<'_> {
+/// Appendix 7.2's modifiable properties: `PROPERTIES` from the first to the
+/// last name.
+const MODIFIABLE: (&str, &str) = ("ArmorMultiplier", "PowerOutage");
+
+fn property_id_range((first, last): (&str, &str)) -> std::ops::RangeInclusive<i32> {
+    let id = |name| vera20k_wasm_ext::property_id(name).unwrap_or(-1);
+    id(first)..=id(last)
+}
+
+impl Host<'_, '_> {
     /// A house reference's house; `None` for a house that does not exist.
     fn house(&self, reference: i64) -> Result<Option<crate::sim::intern::InternedId>, Invalid> {
         if reference & HOUSE_REF_BIT == 0 || reference >> 48 != 0 {
@@ -445,7 +631,12 @@ impl Host<'_> {
         Ok(match reference {
             Ref::Object(id) => match self.sim.entities().get(id) {
                 Some(entity) => self.object_property(entity, name),
-                None => (0, Status::Gone),
+                None => match self.sim.ext_modules.modifiers.get(id) {
+                    Some(modifier) => modifier
+                        .property(name, self.sim.session.binary_frame())
+                        .map_or((0, Status::Unsupported), |value| (value, Status::Ok)),
+                    None => (0, Status::Gone),
+                },
             },
             Ref::House(index) => self.house_property(index, name),
             Ref::Type { kind, id } => self.type_property(kind, id, name)?,
@@ -453,8 +644,24 @@ impl Host<'_> {
         })
     }
 
+    /// The holder of declared variable `var` that `scope` names (`None`
+    /// when gone); a wrong scope or unknown variable is invalid.
+    fn var_holder(&self, scope: i64, var: i32) -> Result<Option<vars::Holder>, Invalid> {
+        let sim = &*self.sim;
+        sim.ext_modules.vars.holder(
+            scope,
+            var,
+            |index| index < sim.houses.order().len(),
+            |id| sim.entities().get(id).is_some(),
+        )
+    }
+
     /// A variable, as `var_get` reads it.
     fn read_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
+        if var >= FIRST_DECLARED_VAR {
+            let holder = self.var_holder(scope, var)?;
+            return Ok(self.sim.ext_modules.vars.read(var, holder));
+        }
         let (global, index) = stock_variable(scope, var)?;
         let runtime = &self.sim.trigger_runtime;
         let set = if global {
@@ -506,7 +713,15 @@ impl Host<'_> {
                 self.sim.resolved_terrain(),
             )),
             "Cell" => cell_ref(entity.position.rx(), entity.position.ry()),
-            _ => return (0, Status::Unsupported),
+            "Rank" => match entity.veterancy.rank_kind() {
+                crate::sim::combat::veterancy::VeterancyRank::Rookie => 0,
+                crate::sim::combat::veterancy::VeterancyRank::Veteran => 1,
+                crate::sim::combat::veterancy::VeterancyRank::Elite => 2,
+            },
+            _ => match Stat::from_property(name) {
+                Some(stat) => entity.effective_stat(stat),
+                None => return (0, Status::Unsupported),
+            },
         };
         (value, Status::Ok)
     }
@@ -556,12 +771,9 @@ impl Host<'_> {
         for clause in &query.clauses {
             let (reading, status) = match clause.subject {
                 ClauseSubject::Property(prop) => self.read(candidate, prop)?,
-                ClauseSubject::Var {
-                    var,
-                    subject: false,
-                } => self.read_var(0, var)?,
-                // Object variables (`vera.vars` scope 2) are not kept yet.
-                ClauseSubject::Var { subject: true, .. } => return Ok(None),
+                ClauseSubject::Var { var, subject } => {
+                    self.read_var(if subject { candidate } else { 0 }, var)?
+                }
             };
             if status != Status::Ok || !clause.op.holds(reading, clause.value) {
                 return Ok(Some(false));
@@ -625,6 +837,104 @@ impl Host<'_> {
             }
         }
         Ok((page, Status::Ok))
+    }
+
+    /// `find` over modifiers, in insertion (handle) order. Modifiers have no
+    /// place, type or owner: a query with one answers `Unsupported`. Select
+    /// an object's with a `Target = ref` clause.
+    fn find_modifiers(&self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
+        if query.area != Area::Map || query.type_ref != 0 || query.owner != 0 {
+            return Ok((FindPage::default(), Status::Unsupported));
+        }
+        let mut page = FindPage::default();
+        let after = u64::try_from(query.after).unwrap_or(0);
+        for handle in self.sim.ext_modules.modifiers.handles_from(after) {
+            if page.found.len() == cap {
+                break;
+            }
+            page.scanned += 1;
+            let reference = handle as i64;
+            match self.passes(reference, query)? {
+                Some(true) => page.found.push((reference, reference)),
+                Some(false) => {}
+                None => return Ok((FindPage::default(), Status::Unsupported)),
+            }
+        }
+        Ok((page, Status::Ok))
+    }
+
+    /// `Health`: sets health without kill credit or damage events, clamped
+    /// to the type's Strength. Writing 0 or less would kill without credit,
+    /// which needs the death owner's credit-free path: it answers `Refused`.
+    fn write_health(&mut self, id: u64, value: i64) -> Status {
+        let sim = &mut *self.sim;
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return Status::Gone;
+        };
+        let Some(strength) = sim
+            .entity_object_type(entity, self.rules)
+            .map(|o| o.strength)
+        else {
+            return Status::Refused;
+        };
+        if !entity.lifecycle.object_alive() {
+            return Status::Gone;
+        }
+        if value <= 0 || entity.death.is_dying() || entity.health.current() <= 0 {
+            return Status::Refused;
+        }
+        let health = i32::try_from(value)
+            .unwrap_or(i32::MAX)
+            .min(strength.max(1));
+        let owner = entity.owner();
+        let structure = entity.category() == EntityCategory::Structure;
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.health.set(health);
+        }
+        // As the cheat heal does: a building's power follows its health.
+        if structure {
+            Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
+        }
+        Status::Ok
+    }
+
+    /// `Owner`: ChangeOwner, as the stock change-house trigger action runs it
+    /// on a live, placed object. A gone house answers `Gone`; an object in
+    /// limbo answers `Refused`.
+    fn write_owner(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let Some(Ref::House(_)) = decode_ref(value)? else {
+            return Err(Invalid(format!("{value:#x} is not a house reference")));
+        };
+        let Some(house) = self.house(value)? else {
+            return Ok(Status::Gone);
+        };
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        if !entity.lifecycle.object_alive() {
+            return Ok(Status::Gone);
+        }
+        if !entity.lifecycle.cell_marked() || entity.lifecycle.in_limbo() {
+            return Ok(Status::Refused);
+        }
+        self.sim
+            .change_owner_with_rules(id, house, self.rules, self.registry, self.effects);
+        Ok(Status::Ok)
+    }
+
+    /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
+    /// AI_Update sample announces a promotion as for a crate.
+    fn write_rank(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let Some(entity) = self.sim.substrate.entities.get_mut(id) else {
+            return Ok(Status::Gone);
+        };
+        match value {
+            0 => entity.veterancy.set_rookie(),
+            1 => entity.veterancy.set_veteran(),
+            2 => entity.veterancy.set_elite(),
+            _ => return Err(Invalid(format!("rank {value} is not a Rank"))),
+        }
+        Ok(Status::Ok)
     }
 
     /// `find` over houses, in house array order. Houses have no place or
@@ -718,10 +1028,20 @@ impl Simulation {
                 last_frame_ops: 0,
             },
         );
-        match self.call_ext_module(rules, position, Export::Init, ONCE_BUDGET) {
+        self.ext_modules.declare_vars();
+        let result = self.call_ext_module(
+            rules,
+            Some(rules.overlay_registry()),
+            &mut FrameEffects::default(),
+            position,
+            Export::Init,
+            ONCE_BUDGET,
+        );
+        match result {
             Ok(_) => Ok(()),
             Err(fault) => {
                 self.ext_modules.slots.remove(position);
+                self.ext_modules.declare_vars();
                 Err(format!("vera_init {fault}"))
             }
         }
@@ -764,7 +1084,20 @@ impl Simulation {
                 last_frame_ops: saved.last_frame_ops,
             });
         }
+        self.ext_modules.declare_vars();
+        self.ext_modules
+            .modifiers
+            .refresh_all(&mut self.substrate.entities);
         Ok(())
+    }
+
+    /// Drops what modules hold on an object that leaves the game: its
+    /// modifiers and object-scope variables.
+    pub(crate) fn forget_ext_module_object(&mut self, stable_id: u64) {
+        if !self.ext_modules.modifiers.is_empty() {
+            self.ext_modules.modifiers.forget_object(stable_id);
+        }
+        self.ext_modules.vars.forget_object(stable_id);
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
@@ -775,23 +1108,41 @@ impl Simulation {
         &mut self.ext_modules
     }
 
-    /// The module phase: each enabled module in order gets its
-    /// `on_scenario_start` once, then `on_frame`.
-    pub(crate) fn run_ext_module_phase(&mut self, rules: &RuleSet) {
+    /// The module phase: modifiers whose time is up expire, then each
+    /// enabled module in order gets its `on_scenario_start` once, then
+    /// `on_frame`.
+    pub(crate) fn run_ext_module_phase(
+        &mut self,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        if !self.ext_modules.modifiers.is_empty() {
+            let frame = self.session.binary_frame();
+            self.ext_modules
+                .modifiers
+                .expire(&mut self.substrate.entities, frame);
+        }
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
                 continue;
             }
             if !self.ext_modules.slots[index].started {
                 self.ext_modules.slots[index].started = true;
-                if let Err(fault) =
-                    self.call_ext_module(rules, index, Export::ScenarioStart, ONCE_BUDGET)
-                {
+                if let Err(fault) = self.call_ext_module(
+                    rules,
+                    registry,
+                    effects,
+                    index,
+                    Export::ScenarioStart,
+                    ONCE_BUDGET,
+                ) {
                     self.disable_ext_module(index, Export::ScenarioStart, fault);
                     continue;
                 }
             }
-            match self.call_ext_module(rules, index, Export::Frame, FRAME_BUDGET) {
+            match self.call_ext_module(rules, registry, effects, index, Export::Frame, FRAME_BUDGET)
+            {
                 Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
             }
@@ -803,6 +1154,8 @@ impl Simulation {
     fn call_ext_module(
         &mut self,
         rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
         index: usize,
         export: Export,
         budget: u64,
@@ -812,6 +1165,8 @@ impl Simulation {
         let mut host = Host {
             sim: self,
             rules,
+            registry,
+            effects,
             rng: &mut slot.rng,
             source: slot.source,
         };

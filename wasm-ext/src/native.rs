@@ -19,7 +19,8 @@ use wasmtime::{
 use crate::{
     ActionParams, ENTRY_COST, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError,
     ModuleState, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query, SCAN_COST, SIM_IMPORT_MODULE,
-    SimHost, Status, property_id, property_name,
+    SimHost, Status, VarDecl, property_id, property_name,
+    sections::{VARS_SECTION, parse_vars},
 };
 
 /// Load-time shape limits (RFC section 3, open question 7), so compiling a
@@ -88,13 +89,15 @@ pub struct SimModule {
     /// Their raw bits after the latest call, so a save or hash reads them
     /// without a mutable store.
     global_bits: Vec<u64>,
+    /// The `vera.vars` declarations, in declaration order.
+    vars: Vec<VarDecl>,
 }
 
 impl SimModule {
     /// Checks, compiles and instantiates the module. No module code runs:
     /// modules with a `start` section are rejected.
     pub fn load(bytes: &[u8], limits: Limits) -> Result<Self, LoadError> {
-        check(bytes)?;
+        let vars = check(bytes)?;
         let (rewritten, mutable_globals) =
             export_mutable_globals(bytes).map_err(LoadError::Invalid)?;
         let engine = engine();
@@ -140,6 +143,7 @@ impl SimModule {
             exports,
             globals,
             global_bits: Vec::new(),
+            vars,
         };
         module.read_globals();
         Ok(module)
@@ -204,6 +208,11 @@ impl SimModule {
     /// The module as supplied to [`SimModule::load`].
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// The variables the module's `vera.vars` section declares.
+    pub fn vars(&self) -> &[VarDecl] {
+        &self.vars
     }
 
     /// The raw bits of every mutable global after the latest call.
@@ -293,8 +302,9 @@ impl SimModule {
 
 /// The RFC section 3 checks Wasmtime does not make itself: the feature
 /// allowlist, no `start` section, imports only from `vera:sim@1.0` with known
-/// names, and shape limits.
-fn check(bytes: &[u8]) -> Result<(), LoadError> {
+/// names, shape limits and at most one well-formed `vera.vars` section,
+/// whose declarations it returns.
+fn check(bytes: &[u8]) -> Result<Vec<VarDecl>, LoadError> {
     let invalid = |why: String| LoadError::Invalid(why);
     if bytes.len() > MAX_MODULE_BYTES {
         return Err(invalid(format!(
@@ -309,8 +319,15 @@ fn check(bytes: &[u8]) -> Result<(), LoadError> {
                 "uses a disallowed Wasm feature or is malformed: {e}"
             ))
         })?;
+    let mut vars = None;
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         match payload.map_err(|e| invalid(e.to_string()))? {
+            Payload::CustomSection(section) if section.name() == VARS_SECTION => {
+                if vars.is_some() {
+                    return Err(invalid(format!("has two {VARS_SECTION} sections")));
+                }
+                vars = Some(parse_vars(section.data()).map_err(invalid)?);
+            }
             Payload::StartSection { .. } => {
                 return Err(invalid(
                     "has a start section; export vera_init instead".into(),
@@ -348,7 +365,7 @@ fn check(bytes: &[u8]) -> Result<(), LoadError> {
             _ => {}
         }
     }
-    Ok(())
+    Ok(vars.unwrap_or_default())
 }
 
 fn typed_export(
@@ -627,6 +644,42 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                 ));
             }
             let result = enter(&mut caller, 0)?.set(reference, prop, value);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "modify",
+        |mut caller: Caller<'_, Ctx>,
+         reference: i64,
+         prop: i32,
+         op: i32,
+         value: i64,
+         frames: i32,
+         source: i64,
+         group: i32,
+         out: i32|
+         -> wasmtime::Result<i32> {
+            if property_name(prop).is_none() || !(0..=2).contains(&op) {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("modify: property {prop}, op {op}")),
+                ));
+            }
+            let result =
+                enter(&mut caller, 0)?.modify(reference, prop, op, value, frames, source, group);
+            let (handle, status) = result.map_err(|e| fail(&mut caller, e))?;
+            let handle = if status == Status::Ok { handle } else { 0 };
+            write_bytes(&mut caller, out, &handle.to_le_bytes())
+                .map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "unmodify",
+        |mut caller: Caller<'_, Ctx>, modifier: i64| -> wasmtime::Result<i32> {
+            let result = enter(&mut caller, 0)?.unmodify(modifier);
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
         },
     ));
