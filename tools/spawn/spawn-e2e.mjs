@@ -3,7 +3,7 @@
 //
 //   node tools/spawn/spawn-e2e.mjs relay  --out DIR --ra2 RETAIL [--players 2] [--port 8787]
 //                                         [--relay 127.0.0.1:5000] [--key HEX] [--cors ORIGIN]
-//                                         [--pacing on|off] (a VO2C certificate; default VO1C)
+//                                         [--pacing on|off|continuous] (a VO2C certificate; default VO1C)
 //                                         [--gateway ws://localhost:8788] (browser players)
 //                                         [--watchers N] (DIR/w0.. watch as the lowest source; docs/spawn.md "Watching")
 //                                         [--alone on] (a VO2C certificate the relay orders with one source,

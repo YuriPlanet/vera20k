@@ -329,8 +329,9 @@ source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
 first 34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
 whose every member build reads relay rate markers may instead issue a 67-byte
 `VO2C` certificate: the same fields, then a flags byte (bit 0: the host turned
-relay pacing off; bit 1: the relay orders this one-source match, below; other bits
-zero), then HMAC-SHA256 over the first 35 bytes with
+relay pacing off; bit 1: the relay orders this one-source match, below; bit 2:
+continuous pacing, never with bit 0, issued only when the relay and every admitted
+build read it; other bits zero), then HMAC-SHA256 over the first 35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
 the same version and flags; clients reject a renewal whose flags differ. The signed
 mask includes all human sources (including observers); AI has no source. FPS

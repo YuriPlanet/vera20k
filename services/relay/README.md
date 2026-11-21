@@ -277,7 +277,17 @@ at least 5 seconds apart. After 30 seconds with no fresh behind or catching-up
 report, and while every tick-cost reporter holds the next faster rate, the clock
 tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
 up to 5 minutes. Pauses displace these times like the start. Status keeps the
-certificate's rate. In a federated room the coordinator decides from every
+certificate's rate. A `VO2C` with flags bit 2 (continuous pacing) instead lets
+the clock seal at any whole rate from the certificate's down to 10: a behind
+player slows it to its holdable rate, at least one frame and at most 25%
+slower per change; a player catching up for 10 seconds straight slows it 5%
+once the last change is 10 seconds old. After a third of the raise wait it goes
+half the way to the slowest raise ceiling, at least one frame and at most a
+tenth of the rate per step. The ceiling is a reporter's tick cost and 95% of
+what it ran in a 10-second backlog or in a second sustained shortfall within
+five minutes, unless its ticks got 10% quicker since.
+Its rate markers carry any rate from 10 to 90; each game checks the rate
+against its certificate. In a federated room the coordinator decides from every
 relay's reports (see below). The relay's
 per-minute journal line counts the slowdowns as `slowdowns`, the raises as
 `raises`, and the reports of a player catching up or behind, about a second of

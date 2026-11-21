@@ -416,6 +416,26 @@ spread over several relays slows the same way; its first relay decides for all.
 Native lockstep instead slows every match to its slowest player (ProcessNetwork
 `0x00647BF4..0x00647E6D`).
 
+A lobby that turns on continuous pacing (certificate flags bit 2, below) lets the
+relay seal at any whole rate instead of Game Speed rows, as lockstep LAN play
+follows its slowest player: a slow player slows the match to its holdable rate,
+nine tenths of what it ran while behind, at least one frame and at most a
+quarter slower at a time, never below 10 frames a second. A player whose frames
+keep waiting for ten seconds though it runs as many as the relay seals slows it
+a twentieth, so that backlog drains. After a third of the raise wait the match
+speeds up half the way to the slowest player's ceiling, at least one frame and
+at most a tenth of its rate at a time, up to its own speed. The ceiling is the
+player's tick cost and nineteen twentieths of what it ran in a ten-second
+backlog or when it fell behind a second time within five minutes, so a hitch of a
+few seconds holds nothing back. Messages, replays and saves are as above.
+
+The lobby enables continuous pacing only after every participating relay and
+every admitted game build support bit 2. An older game rejects the grant with
+“invalid gameplay clock”. An older relay silently drops the Ready request, so
+an upgraded game can keep retrying. For a rollback, stop issuing continuous
+certificates to new matches and let active continuous matches finish before
+downgrading their relays.
+
 When the lobby admits a match on three or more relays with federation
 adjudication, a relay missing for ten minutes ends that match without a winner.
 A short outage keeps its place. Losing a player's own connection still follows
