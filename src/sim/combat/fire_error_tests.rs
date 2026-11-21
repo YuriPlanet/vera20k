@@ -665,3 +665,41 @@ fn ares_heal_and_temporal_fire_errors() {
     assert_eq!(code("I2.medic_vs_healthy_infantry"), illegal);
     assert_ne!(code("U10.temporal_idle_moving"), FireError::Moving as i32);
 }
+
+/// Building GetFireError B1: retail RA2 has no `CanOccupyFire` field at all.
+/// A manned `CanBeOccupied` building must still be allowed to fire its own
+/// Primary gun; only YR's two-flag contract answers ILLEGAL without it.
+#[test]
+fn ra2_manned_garrison_passes_b1_without_can_occupy_fire() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let manned = corpus["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "B1.twin.manned_garrison")
+        .map(|row| resolve(&corpus["defaults"], &row["input"]))
+        .unwrap();
+
+    // Model the RA2 reader: the key is absent, so the bool defaults false.
+    let mut ra2 = manned.clone();
+    ra2["firer_type"]["can_occupy_fire"] = Value::Bool(false);
+
+    assert_eq!(evaluate(&manned, false).0, FireError::Ok as i32);
+    assert_eq!(
+        evaluate(&ra2, false).0,
+        FireError::Illegal as i32,
+        "YR still requires both flags"
+    );
+
+    crate::util::ra2_launch::set_override(true);
+    let code = evaluate(&ra2, false).0;
+    crate::util::ra2_launch::clear_override();
+    assert_eq!(
+        code,
+        FireError::Ok as i32,
+        "RA2 garrison fires its building gun"
+    );
+}
