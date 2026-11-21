@@ -512,14 +512,9 @@ pub(crate) fn render_multiplayer_setup(
             if let Some(item) = selected
                 && item.swatch.is_none()
             {
-                let mut face = crate::ui::skirmish_shell::combo_text_rect(rect, scale);
-                // VERA's online room: the name stops short of its badge.
-                if let Some((_, badge)) = player_badge(atlas, &view, &layout, combo.id) {
-                    face.w = badge.x - face.x;
-                }
                 texts.push(sized(
                     &item.text,
-                    face,
+                    crate::ui::skirmish_shell::combo_text_rect(rect, scale),
                     ShellAlign::V_CENTER,
                     super::text::combo_face_text_color(!view.enabled(combo.id)),
                     SHELL_CONTROL_TEXT_DEPTH,
@@ -532,10 +527,11 @@ pub(crate) fn render_multiplayer_setup(
                 continue;
             };
             // VERA's roster names the side in text and shows no flags or
-            // acceptance; its badges shrink to the row.
+            // acceptance; a player's badge stands in front of the name,
+            // shrunk to fit.
             if layout.roster {
-                if let Some((entry, rect)) =
-                    player_badge(atlas, &view, &layout, SetupColumn::Player.control(row))
+                if let Some(entry) = icon.badge.and_then(|file| atlas.wol_badge(file))
+                    && let Some(rect) = layout.badge_rect(&view, SetupColumn::Player.control(row))
                 {
                     push_entry_fitted(&mut controls, entry, rect, scale, SHELL_SWATCH_DEPTH);
                 }
@@ -561,19 +557,6 @@ pub(crate) fn render_multiplayer_setup(
                     layout.acceptance[row],
                     scale,
                     SHELL_CONTROL_DEPTH,
-                );
-            }
-            // VERA's online room: the badge over the name's face, as the
-            // colour list's swatch.
-            if let Some((entry, rect)) =
-                player_badge(atlas, &view, &layout, SetupColumn::Player.control(row))
-            {
-                push_flag_entry_clipped_centered(
-                    &mut controls,
-                    entry,
-                    rect,
-                    scale,
-                    SHELL_SWATCH_DEPTH,
                 );
             }
         }
@@ -1060,9 +1043,6 @@ pub(crate) fn render_multiplayer_setup(
     Ok(())
 }
 
-/// VERA's online room: a Player list's badge ([`SetupRowIcon::badge`]) and
-/// its cell, one badge wide at the right end of the list's face, as far
-/// short of the arrow as the name starts in from the left.
 /// VERA's room on a window wider than the shell, which stands at its right
 /// edge: the background's art left of the right panel and the lower strip,
 /// stretched across from the window's left edge, under the room's columns.
@@ -1113,34 +1093,6 @@ fn push_room_spread(
             SHELL_LOWER_STRIP_DEPTH - 0.000001,
         );
     }
-}
-
-fn player_badge(
-    atlas: &SkirmishShellChromeAtlas,
-    view: &SetupView,
-    layout: &MultiplayerSetupLayout,
-    control: u16,
-) -> Option<(SkirmishShellChromeEntry, RectPx)> {
-    use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET};
-    let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
-        return None;
-    };
-    let entry = atlas.wol_badge(view.row_icons.get(row)?.as_ref()?.badge?)?;
-    let [art_w, art_h] = entry.pixel_size;
-    let cell = layout
-        .page
-        .scale
-        .derive_rect(layout.control_rect(control)?, |rect| {
-            if layout.roster {
-                // At the right end of the name, shrunk to the row.
-                let width = (art_w * (rect.h as f32 / art_h.max(1.0)).min(1.0)).round() as i32;
-                return RectPx::new(rect.x + rect.w - width, rect.y, width, rect.h);
-            }
-            let width = art_w.round() as i32;
-            let right = rect.x + rect.w - COMBO_ARROW_RESERVE_W - COMBO_TEXT_LEFT_INSET;
-            RectPx::new(right - width, rect.y, width, COMBO_FACE_H)
-        });
-    Some((entry, cell))
 }
 
 /// The box around a group of VERA's roster, while a press in it does not
@@ -1203,11 +1155,6 @@ fn push_roster_cell(
         }
         return;
     }
-    let mut face = rect;
-    // VERA's online room: the name stops short of its badge.
-    if let Some((_, badge)) = player_badge(atlas, view, layout, combo.id) {
-        face.w = badge.x - face.x;
-    }
     let align = match SetupColumn::decode(combo.id) {
         Some((SetupColumn::Start | SetupColumn::Team, _)) => {
             ShellAlign::H_CENTER | ShellAlign::V_CENTER
@@ -1217,7 +1164,7 @@ fn push_roster_cell(
     texts.push(shell_text::draw_in_rect_scaled(
         &state.renderer.bit_font,
         &item.text,
-        rect_to_text_rect(face),
+        rect_to_text_rect(rect),
         rgb,
         align,
         [0.0; 2],
