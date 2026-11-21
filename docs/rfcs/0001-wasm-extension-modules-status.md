@@ -225,6 +225,9 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
     re-digested on frames where `page ≡ frame (mod 15)` (plus grown pages); the hash
     and checksum read the digests (RFC 4/15). Digests are saved.
 
+- The `Seldom` size ceiling in `object_turn_lookup_tests.rs` is 832 bytes (was 824):
+  the modifier cache pointer. Approved by the maintainer.
+
 ## Provisional numbering (open question 5)
 
 - Property IDs: section 7 names in first-appearance order, duplicates merged
@@ -273,9 +276,6 @@ modules, external modders, freeze), and the later items (`Launch`,
 
 ## Residuals
 
-- Policy call for the maintainer: the `Seldom` size ceiling in
-  `object_turn_lookup_tests.rs` went from 824 to 832 bytes for the modifier cache
-  pointer.
 - The stopped-module notice is English only.
 - Events not raised: stock 0, 2, 3, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
   `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
