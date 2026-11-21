@@ -1279,6 +1279,14 @@ impl FactoryRegistry {
     /// (the caller's `HouseClass::CheckBuildLimit`, `0x004C9CEA`, asked
     /// before the append).
     ///
+    /// The limit is asked on the start arm too, not only on the append: native
+    /// `StartProduction` reads `CheckBuildLimit` at `0x004C9CEA` before it
+    /// arms anything, and an idle factory is the case where the limit binds
+    /// hardest — a house at its `AirportDocks=` keeps an empty aircraft line,
+    /// and every frame's PRODUCE would start another. `force` is
+    /// StartNextQueued's own reissue of a type the house already paid for, and
+    /// it does not waive the limit.
+    ///
     /// Idle means `0x004C9C95..0x004C9CCF`: no held object, rate clear or
     /// +70 set, and an empty queue, unless `force` (StartNextQueued's
     /// Begin_Production, `0x004CA60A`, passes it as `shouldQueue`). So a
@@ -1312,6 +1320,13 @@ impl FactoryRegistry {
         if let Some(f) = self.factories.get_mut(&holder) {
             let idle = f.object.is_none()
                 && (force || (f.queue.is_empty() && (f.step_rate_frames == 0 || f.suspended)));
+            // 0x004C9CEA reads CheckBuildLimit before either arm. An idle line
+            // is where it binds hardest: nothing is building, so the house asks
+            // again every frame, and an AirportBound aircraft at its
+            // AirportDocks would otherwise start one more each time.
+            if idle && at_build_limit {
+                return EnqueueOutcome::AppendRefused;
+            }
             if !idle {
                 if i32::try_from(f.queue.len()).unwrap_or(i32::MAX) >= max_queued || at_build_limit
                 {
@@ -1338,7 +1353,13 @@ impl FactoryRegistry {
             f.changed = true;
             return EnqueueOutcome::Started;
         }
-        // No factory yet -> create one with the active build armed.
+        // No factory yet -> create one with the active build armed, under the
+        // same 0x004C9CEA limit. Native StartProduction reads CheckBuildLimit
+        // before its create arm too, so a house at its limit keeps its line
+        // from being armed even though FindFactory answered.
+        if at_build_limit {
+            return EnqueueOutcome::AppendRefused;
+        }
         self.insert(
             holder,
             Factory {
