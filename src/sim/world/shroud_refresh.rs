@@ -1684,8 +1684,7 @@ impl Simulation {
                 .each_represented_player_map()
                 .any(|house| admits(&house));
         }
-        self.session.current_house().iter().any(&mut admits)
-            || self.fog_viewers().iter().any(admits)
+        self.offline_player_map().iter().any(&mut admits) || self.fog_viewers().iter().any(admits)
     }
 
     /// RegrowFogAtCell4ACC50, with an explicit DFS stack preserving its
