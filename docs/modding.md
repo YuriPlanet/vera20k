@@ -116,6 +116,12 @@ You can also install a mod manually.
 The game then reads the mod's files as if you had copied them on top of the game folder.
 A mod made to be copied into the game folder works the same from its own folder.
 
+A classic Red Alert 2 mod can keep its original filenames. When the selected mod
+supplies the RA2 rules, art, AI or multiplayer mode files, VERA uses the RA2
+file family for Skirmish. A mod can replace just part of that family. For
+example, one that supplies its own `rules.ini` and `mpmodes.ini` can use the
+installed game's `ai.ini`. See [how VERA chooses the files](ini-roots.md).
+
 With **No mod** selected, an `ares.mix` already in the game folder is ignored, unless
 the [Ares setting](ares.md#the-ares-setting) is On; set to Off, no `ares.mix` is used.
 A selected mod can use that copy or provide its own, which takes precedence.
@@ -414,8 +420,10 @@ maps. The game's log says which files it adds.
 ### Add a map
 
 Put your `.yrm`, `.map` or `.mpr` file in VERA20k's `Maps` folder and restart the
-game to find it in Skirmish. For a loose map that needs your mod, use a `.yrm` file
-in the mod's folder. As in the original, a map can change any rule for that match.
+game to find it in Skirmish. Skirmish also finds loose multiplayer `.mpr` and
+`.yrm` files directly in the game folder or the selected mod's folder. Put a
+map that needs a particular mod in that mod's folder. As in the original, a
+map can change any rule for that match.
 
 VERA20k adds two things. Open the map in a text editor to set them:
 

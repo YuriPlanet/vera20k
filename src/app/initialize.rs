@@ -903,19 +903,19 @@ impl App {
                         .as_ref()
                         .is_none_or(|assets| assets.client_install().is_none())
                 {
-                    scenario_sources::list_available_maps()
-                .unwrap_or_else(|err| {
-                    log::warn!("Could not list fallback maps: {:#}", err);
-                    Vec::new()
-                })
-                .iter()
-                .enumerate()
-                .map(|(idx, map)| {
-                    crate::map::skirmish_scenarios::SkirmishScenarioRecord::from_map_menu_entry(
-                        idx, map,
-                    )
-                })
-                .collect()
+                    scenario_sources::list_available_maps(startup_asset_manager.as_ref())
+                        .unwrap_or_else(|err| {
+                            log::warn!("Could not list fallback maps: {err:#}");
+                            Vec::new()
+                        })
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, map)| {
+                            crate::map::skirmish_scenarios::SkirmishScenarioRecord::from_map_menu_entry(
+                                idx, map,
+                            )
+                        })
+                        .collect()
                 } else {
                     skirmish_scenario_records
                 };

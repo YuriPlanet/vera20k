@@ -2072,7 +2072,7 @@ mod tests {
             crate::rules::ini_parser::IniFile::from_str(&format!("[Basic]\nName={file_name}\n"));
         crate::map::skirmish_scenarios::SkirmishScenarioRecord::concrete_from_ini(
             0,
-            crate::map::skirmish_scenarios::SkirmishScenarioSource::LooseYrm(file_name.to_string()),
+            crate::map::skirmish_scenarios::SkirmishScenarioSource::LooseMap(file_name.to_string()),
             file_name,
             &ini,
         )

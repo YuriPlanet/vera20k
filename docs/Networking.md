@@ -108,7 +108,9 @@ mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every fi
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The effective file, catalog, archive and extension
 declarations from `mod.ini` also take part in this agreement; its display metadata does
-not. These choices are frozen at startup and reused when the asset manager is rebuilt.
+not. A classic RA2 folder mod's detected rules, art, AI, mode and archive names
+use these same agreement fields. A rollback uses the older build's file selection.
+These choices are frozen at startup and reused when the asset manager is rebuilt.
 For [mods distributed in parts](modding.md#mods-distributed-in-parts), the check
 compares the assembled files. ZIPs and extracted folders with the same files
 and loading declarations give the same agreement.

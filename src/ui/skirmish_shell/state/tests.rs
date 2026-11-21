@@ -52,7 +52,7 @@ fn test_scenario_record(
     let ini = IniFile::from_str(&format!("[Basic]\nName={name}\nGameMode={game_modes}\n"));
     SkirmishScenarioRecord::concrete_from_ini(
         source_ordinal,
-        SkirmishScenarioSource::LooseYrm(format!("{name}.yrm")),
+        SkirmishScenarioSource::LooseMap(format!("{name}.yrm")),
         &format!("{name}.yrm"),
         &ini,
     )
