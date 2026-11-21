@@ -1,6 +1,6 @@
 # 现状
 
-更新于 2026-11-20，分支 `feature/autoplay-v4`。
+更新于 2026-11-21，分支 `feature/autoplay-v4`。
 **这份文档只写当前代码的事实。** v2 时期的实测记录在 `history/status-v2.md`。
 
 ---
@@ -17,41 +17,41 @@
 - 每一步都是玩家能发出的命令：部署、建造、放置、对自己单位的下令。**它不跑
   native 电脑 AI 的决策块** —— 人类房子在 native 里本来就不跑那些。
 
-## 2. 已验证（2026-11-20）
+## 2. 已验证（2026-11-21）
 
 | 项 | 结果 |
 |---|---|
-| `--profile fast` 构建 | 通过，`vera20k.exe` 约 86 MB |
-| `cargo test -p vera20k-autoplay --lib` | **52 passed** |
-| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **166 passed** |
-| `cargo test -p vera20k --lib -- cameo_mirror` | **3 passed** |
+| `--profile fast` 构建 | 通过，`vera20k.exe` 约 91 MB |
+| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **172 passed** |
 | 改名 `retail` → `assist` | 无行为改动，构建与测试通过 |
 | 会话重构（`AutoplaySession`） | 行为保持：同一 host 调用、同一 take_back、同一顺序 |
+| 上游合并 `0e831f2c3` | 上游 377 提交并入，冲突四处，测试通过 |
+| 驻扎上限 `GARRISON_MAX = 4` | 步兵流失停止，limbo 52 → 8 |
+| 袭击支队（raid） | 三种子里出现第一场胜利（seed 24301，33977） |
 
-## 3. 没有验证的
+## 3. 基线（对局强度）
 
-- **对局强度**。下面所有胜负数字都来自 2026-11-02 的 v2 时期，此后策略改过
-  （改名、会话重构、上游合并 390 提交），**没有重测**。
-- **实机**。改名与会话重构之后没有启动过客户端。
+判据工具：`python -m tools.autoplay_check`，Death.mmx、america、normal、36000 ticks。
+每一格跑完写一行 JSON 到 `target/autoplay-results/`，`judge()` 只认四件事：
+军队（fighters）、闲置（idle）、未认领（unclaimed）、**push 门翻转次数**（`push_flips`）。
 
-### v2 时期的数字（仅作参照，不是 v4 的成绩）
+| 基线 | 提交 | seed 24301 | seed 19 | seed 10 |
+|---|---|---|---|---|
+| baseline-v2（驻扎上限后） | `7934c2764` | timeout own=130 army=68 | timeout own=108 army=63 | timeout own=121 army=72 |
+| raid（支队不再看军队大小） | `cbeb8ec34` | **won 33977** own=155 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
 
-1v1 hard，Death.mmx，12000 ticks，三种子（own vs enemy）：
+读法：三局都打满 36000 ticks 之前，只有第一场胜。第一场胜利来自「屯兵 + 袭扰」
+两条线分开：fist 留在家里等 1.2 倍优势，支队去打法娘的采矿与精炼。
 
-| Seed | Own | Enemy |
-|---|---|---|
-| 0x5EED | 35 | 47 |
-| 19 | 35 | 40 |
-| 10 | 35 | 45 |
+### 为什么基线必须是 36000 ticks
 
-24000 ticks 两图三种子：六局里四局活到四十分钟。1v7 hard 三种子两活。
-完整表格与判据见 `history/status-v2.md`。
+`PUSH_REST_FRAMES = 750`、census 采样每 600 帧一次，`autoplay_check` 的
+`PROGRESS_FRAMES = 150`。更粗的采样会把两次门翻转混成一次，翻转次数就读不出来。
 
 ## 4. 已知坏的 / 停用的
 
 | 项 | 状态 | 原因 |
 |---|---|---|
-| 驻扎 `garrison` | 已注释掉，代码保留 | 实测 1v7 lane 上 own 84 → 17；每个步枪兵都承重 |
 | `WALL_BREAKER_PRIORITY` | 未接线，`#[allow(dead_code)]` | 拆墙规则没有调用点 |
 | `MAIN_BATTLE_MAX_ENEMIES` | 未接线，`#[allow(dead_code)]` | 步兵下限规则没有调用点 |
 | `SCOUTS_OUT` | 未接线，`#[allow(dead_code)]` | 侦察规则没有调用点 |
