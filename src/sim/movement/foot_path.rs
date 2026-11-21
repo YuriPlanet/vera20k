@@ -67,6 +67,16 @@ struct FootSearchEntry<'a> {
     /// at the own cell exactly when it has that index
     /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::regular_cell_index`]).
     own_index: Option<usize>,
+    /// Whether the search asked about the own cell.
+    ///
+    /// This and [`Self::previous`] are cells because the search can only
+    /// share the entry: A* and path finishing hold the marker overlay that
+    /// [`crate::sim::pathfinding::SearchFootEntry::prepare_search_markers`]
+    /// lends out of [`Self::markers`] for the whole search while they keep
+    /// calling `classify` on the same entry, and the zone precheck, its retry
+    /// flood and A* each keep a `&dyn SearchFootEntry` copy of
+    /// [`crate::sim::pathfinding::MoverSearchFacts`]. Each search builds its
+    /// own entry on the thread that runs it, so no other thread sees them.
     read_own_cell: std::cell::Cell<bool>,
     /// The cell asked from: an expansion asks about up to eight neighbours
     /// from one cell.
@@ -81,7 +91,8 @@ struct FootSearchEntry<'a> {
 
 /// The last coordinate whose lookup found a real cell, with that cell. Such
 /// a lookup has no side effect, so it is not repeated; one that misses
-/// stamps the shared Dummy, so it is made at each ask.
+/// stamps the shared Dummy, so it is made at each ask. A cell for the reason
+/// at [`FootSearchEntry::read_own_cell`].
 #[derive(Default)]
 struct LastRealCell(std::cell::Cell<Option<((u16, u16), NativeCellIdentity)>>);
 
