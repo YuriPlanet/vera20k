@@ -953,11 +953,14 @@ impl LiveCommandSession {
                     last_probe,
                 } => {
                     if probe_due(last_probe, now, self.mode.wait_timing().initial_probe) {
-                        self.current.as_mut().unwrap().phase = FramePhase::InitialBarrier {
-                            entered_at,
-                            response_time_at_entry,
-                            last_probe: now,
-                        };
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::InitialBarrier {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
                         self.send_probe(context.frame, max_ahead)?;
                     }
                     self.service_and_receive(now, queues)?;
@@ -970,11 +973,14 @@ impl LiveCommandSession {
                     //647B2E/647B32: only a successful initial wait clears
                     //manager response histories, after the peer-frame clear.
                     self.transport.reset_response_time(true);
-                    self.current.as_mut().unwrap().phase = FramePhase::Sending {
-                        entered_at: now,
-                        response_time_at_entry: self.transport.response_time(),
-                        last_probe: now,
-                    };
+                    self.current = Some(CurrentFrame {
+                        phase: FramePhase::Sending {
+                            entered_at: now,
+                            response_time_at_entry: self.transport.response_time(),
+                            last_probe: now,
+                        },
+                        ..current
+                    });
                 }
                 FramePhase::Sending {
                     entered_at,
@@ -1017,11 +1023,14 @@ impl LiveCommandSession {
                     match sent {
                         SendPoll::Backpressure => {
                             if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
-                                self.current.as_mut().unwrap().phase = FramePhase::Sending {
-                                    entered_at,
-                                    response_time_at_entry,
-                                    last_probe: now,
-                                };
+                                self.current = Some(CurrentFrame {
+                                    phase: FramePhase::Sending {
+                                        entered_at,
+                                        response_time_at_entry,
+                                        last_probe: now,
+                                    },
+                                    ..current
+                                });
                                 self.send_probe(context.frame, max_ahead)?;
                             }
                             self.service_and_receive(now, queues)?;
@@ -1040,11 +1049,14 @@ impl LiveCommandSession {
                             return Ok(self.finish(NetworkQueuePass::SkipDispatch));
                         }
                         SendPoll::Complete { .. } => {
-                            self.current.as_mut().unwrap().phase = FramePhase::Waiting {
-                                entered_at,
-                                response_time_at_entry,
-                                last_probe,
-                            };
+                            self.current = Some(CurrentFrame {
+                                phase: FramePhase::Waiting {
+                                    entered_at,
+                                    response_time_at_entry,
+                                    last_probe,
+                                },
+                                ..current
+                            });
                         }
                     }
                 }
@@ -1054,11 +1066,14 @@ impl LiveCommandSession {
                     last_probe,
                 } => {
                     if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
-                        self.current.as_mut().unwrap().phase = FramePhase::Waiting {
-                            entered_at,
-                            response_time_at_entry,
-                            last_probe: now,
-                        };
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::Waiting {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
                         self.send_probe(context.frame, max_ahead)?;
                     }
                     self.service_and_receive(now, queues)?;

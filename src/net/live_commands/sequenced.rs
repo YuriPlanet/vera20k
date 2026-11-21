@@ -1781,10 +1781,9 @@ impl SequencedSession {
         }
         // An accepted batch leaves OutList; its records come back in its frame.
         let accepted = transport.ordering_accepted_through().unwrap_or(0);
-        while self.submissions.front().is_some_and(
+        while let Some(pending) = self.submissions.pop_front_if(
             |pending| matches!(pending.batch, SubmissionBatch::Sealed(id) if id <= accepted),
         ) {
-            let pending = self.submissions.pop_front().unwrap();
             queues
                 .commit_local_submission(&pending.records)
                 .map_err(super::CommandExchangeError::from)?;
@@ -1829,7 +1828,8 @@ impl SequencedSession {
                     .encode_packet(
                         &records,
                         FrameInfo {
-                            house_id: self.houses[usize::from(self.local_source)].unwrap(),
+                            house_id: self.houses[usize::from(self.local_source)]
+                                .expect("`new` seats the local source in the roster"),
                             event_frame: 0,
                             checksum: 0,
                             timing_word: 0,
@@ -1931,14 +1931,12 @@ impl SequencedSession {
         }
         self.check_watch_samples(context.frame)?;
         self.flush_local_commands(transport, queues, context, now)?;
-        if self
+        let Some(frame) = self
             .frames
-            .front()
-            .is_none_or(|frame| frame.frame != context.frame)
-        {
+            .pop_front_if(|frame| frame.frame == context.frame)
+        else {
             return Ok(NetworkQueuePass::Waiting);
-        }
-        let frame = self.frames.pop_front().unwrap();
+        };
         if let Some(desync) = frame.desync {
             self.delivery
                 .desync_frame
