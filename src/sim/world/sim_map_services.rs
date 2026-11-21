@@ -386,10 +386,18 @@ impl Simulation {
                     )
                 })?;
             // Preserve the existing ordinary-ore Recalc batch. Structural and
-            // CellAnim Mark paths have already completed synchronously.
-            let marked =
-                self.overlay_grid.as_ref().unwrap().pending_dirty_cells()[dirty_start..].to_vec();
-            self.publish_tiberium_cells(rules, registry, &marked);
+            // CellAnim Mark paths have already completed synchronously. The
+            // tail is walked by index: a deferred Recalc writes the cell's
+            // terrain and navigation receipts, never this dirty list.
+            if let (Some(grid), Some(terrain)) =
+                (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut())
+            {
+                for index in dirty_start..grid.pending_dirty_cells().len() {
+                    let cell = grid.pending_dirty_cells()[index];
+                    recalculate_tiberium_cell(grid, terrain, registry, cell);
+                }
+            }
+            self.finish_terrain_navigation_changes(rules, &[]);
         }
         Ok(())
     }
@@ -409,9 +417,7 @@ impl Simulation {
             (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut())
         {
             for &cell in cells {
-                if grid.cell(cell.0, cell.1).overlay_id.is_some() {
-                    grid.recalculate_deferred_cell(terrain, registry, cell);
-                }
+                recalculate_tiberium_cell(grid, terrain, registry, cell);
             }
         }
         self.finish_terrain_navigation_changes(rules, &[]);
@@ -657,5 +663,18 @@ impl Simulation {
         event: HouseAiActivationOrderTestEvent,
     ) {
         self.house_ai_activation_order_test_trace.push(event);
+    }
+}
+
+/// One cell of [`Simulation::publish_tiberium_cells`]'s batch: the deferred
+/// Recalc of a cell that still holds an overlay.
+fn recalculate_tiberium_cell(
+    grid: &mut crate::sim::overlay_grid::OverlayGrid,
+    terrain: &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
+    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    cell: (u16, u16),
+) {
+    if grid.cell(cell.0, cell.1).overlay_id.is_some() {
+        grid.recalculate_deferred_cell(terrain, registry, cell);
     }
 }

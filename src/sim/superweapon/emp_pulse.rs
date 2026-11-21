@@ -72,6 +72,8 @@ pub(super) fn launch(
     let firing_type = rules
         .super_weapon_index(&sw.id)
         .map_or(-1, |index| index as i32);
+    // A copy, as the launch began: a cannon that fires at itself detonates
+    // through the whole simulation, which can destroy listed buildings.
     let buildings = sim
         .houses
         .get(&owner)
