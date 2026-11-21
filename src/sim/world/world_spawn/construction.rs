@@ -13,7 +13,7 @@ use crate::sim::animation::{Animation, SequenceKind};
 use crate::sim::combat::Health;
 use crate::sim::game_entity::{GameEntity, TechnoConstructorInit};
 use crate::sim::houses::Houses;
-use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId, StringInterner};
 use crate::sim::miner::{Miner, MinerConfig, miner_kind_for_object};
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::scenario_session::ScenarioSession;
@@ -61,10 +61,10 @@ impl Simulation {
         })
     }
 
-    pub(super) fn construct_runtime_techno(
+    pub(super) fn construct_runtime_techno<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -72,9 +72,12 @@ impl Simulation {
         rules: &RuleSet,
         init: TechnoConstructorInit,
     ) -> Result<Option<GameEntity>, GeneratedTechnoInitError> {
-        let Some(obj) = rules.object(type_id) else {
+        let type_id = type_id.into();
+        let Some(obj) = self.interner.key_object_type(type_id, rules) else {
             return Ok(None);
         };
+        let owner = self.interner.intern_key(owner.into());
+        let type_id = self.interner.intern_key(type_id);
         self.construct_resolved_runtime_techno(obj, type_id, owner, rx, ry, facing, z, rules, init)
     }
 
@@ -83,8 +86,8 @@ impl Simulation {
     pub(super) fn construct_resolved_runtime_techno(
         &mut self,
         obj: &ObjectType,
-        type_id: &str,
-        owner: &str,
+        type_iid: InternedId,
+        owner_iid: InternedId,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -96,11 +99,9 @@ impl Simulation {
         // Original copy slices: object_health corpus / constructors.
         let health = Health::new(obj.strength);
         let category = EntityCategory::from(obj.category);
-        let uses_voxel = GameEntity::object_uses_voxel(type_id, obj, rules);
+        let uses_voxel = GameEntity::object_uses_voxel(self.interner.resolve(type_iid), obj, rules);
         let sight_range = (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE);
         let stable_id = self.substrate.allocate_stable_id();
-        let owner_iid = self.interner.intern(owner);
-        let type_iid = self.interner.intern(type_id);
         let techno_ctor_random_word =
             super::resolve_techno_constructor_word(&mut self.scenario_rng, init, None)?;
         let native_unique_id = self.next_native_runtime_id();

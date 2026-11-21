@@ -78,7 +78,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::{AresParaDropOwner, SuperWeaponType, TechnoTypeReference};
 use crate::sim::combat::TargetKind;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
@@ -436,18 +436,8 @@ pub(super) fn send_planes(
     {
         return false;
     }
-    let owner_name = sim.interner.resolve(owner).to_string();
     let plane = sim.with_object_placement_scope(|sim| {
-        sim.construct_object_limbo_at_height(
-            plane_type,
-            &owner_name,
-            0,
-            0,
-            0,
-            0,
-            rules,
-            frame_effects,
-        )
+        sim.construct_object_limbo_at_height(plane_type, owner, 0, 0, 0, 0, rules, frame_effects)
     });
     let Some(plane) = plane else {
         return false;
@@ -513,7 +503,7 @@ pub(super) fn send_planes(
             sim,
             rules,
             plane,
-            &owner_name,
+            owner,
             ObjectCategory::Infantry,
             infantry,
             count,
@@ -530,7 +520,7 @@ pub(super) fn send_planes(
                         sim,
                         rules,
                         plane,
-                        &owner_name,
+                        owner,
                         ty.category,
                         &ty.id,
                         count.max(0) as u32,
@@ -552,11 +542,11 @@ pub(super) fn send_planes(
 /// `type_id`, each at the cargo's head. A plane whose type declares no
 /// `Passengers=` gets its hold here: native carries a CargoClass in every
 /// Foot.
-fn board_passengers(
+fn board_passengers<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
     plane: u64,
-    owner_name: &str,
+    owner: impl Into<InternKey<'k>>,
     category: ObjectCategory,
     type_id: &str,
     count: u32,
@@ -565,10 +555,11 @@ fn board_passengers(
     let Some(object) = rules.object_in_category(category, type_id) else {
         return;
     };
+    let owner = owner.into();
     for _ in 0..count {
         let Some(passenger) = sim.construct_resolved_object_limbo_at_height(
             object,
-            owner_name,
+            owner,
             0,
             0,
             0,

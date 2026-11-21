@@ -32,8 +32,8 @@ use crate::sim::combat::veterancy::{has_weapon_ability, rank_from_u16};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::{GameEntity, GeneratedTechnoInit, TechnoConstructorInit};
 use crate::sim::houses::Houses;
-use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::production;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::MAX_SIGHT_RANGE;
@@ -661,9 +661,9 @@ impl Simulation {
 
                 if map_ent.category == EntityCategory::Structure {
                     // ReadBuildings44FC31 retains the row's resolved House for
-                    // upgrade constructors even if a shared callback changed
-                    // the parent owner. The raw authored name is not a key.
-                    let original_owner = sim.interner.resolve(owner_id).to_owned();
+                    // upgrade constructors (`owner_id`) even if a shared
+                    // callback changed the parent owner. The raw authored
+                    // name is not a key.
                     // `0x0044FD50..0x0044FDC3` walks `count` slots from the
                     // first and skips -1. A count above three reads past
                     // native's slot array into its coordinate locals; Rust
@@ -678,7 +678,7 @@ impl Simulation {
                         if sim
                             .spawn_authored_building_upgrade(
                                 upgrade_type,
-                                &original_owner,
+                                owner_id,
                                 map_ent.cell_x,
                                 map_ent.cell_y,
                                 z,
@@ -869,7 +869,7 @@ impl Simulation {
     fn spawn_authored_building_upgrade(
         &mut self,
         type_id: &str,
-        owner: &str,
+        owner: InternedId,
         rx: u16,
         ry: u16,
         z: u8,
@@ -1002,10 +1002,10 @@ impl Simulation {
     /// Spawn one object instance, standing finished (tests, tools, debug
     /// spawns).
     /// Returns the stable_id on success.
-    pub fn spawn_object(
+    pub fn spawn_object<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1017,10 +1017,10 @@ impl Simulation {
 
     /// Spawn a finished object on the current map, using these rules' overlay
     /// types for class placement and the building's GrandOpening.
-    pub fn spawn_object_with_map_overlays(
+    pub fn spawn_object_with_map_overlays<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1041,10 +1041,10 @@ impl Simulation {
 
     /// Place a fixture using its independently supplied overlay-type table.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn spawn_object_with_overlay_registry(
+    pub fn spawn_object_with_overlay_registry<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1064,10 +1064,10 @@ impl Simulation {
         )
     }
 
-    pub fn spawn_object_at_height(
+    pub fn spawn_object_at_height<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1086,10 +1086,10 @@ impl Simulation {
         )
     }
 
-    pub(crate) fn spawn_object_at_height_with_overlay_context(
+    pub(crate) fn spawn_object_at_height_with_overlay_context<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1097,7 +1097,10 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<u64> {
-        let object = rules.object(type_id)?;
+        let type_id = type_id.into();
+        let object = self.interner.key_object_type(type_id, rules)?;
+        let owner = self.interner.intern_key(owner.into());
+        let type_id = self.interner.intern_key(type_id);
         self.spawn_resolved_object_at_height(
             object,
             type_id,
@@ -1113,10 +1116,10 @@ impl Simulation {
 
     /// Place a fixture at an explicit height using its own overlay-type table.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn spawn_object_at_height_with_overlay_registry(
+    pub fn spawn_object_at_height_with_overlay_registry<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1140,8 +1143,8 @@ impl Simulation {
     pub(crate) fn spawn_resolved_object_at_height(
         &mut self,
         object: &ObjectType,
-        type_id: &str,
-        owner: &str,
+        type_id: InternedId,
+        owner: InternedId,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1218,10 +1221,10 @@ impl Simulation {
     /// paradrop cargo loading, where gamemd creates passengers directly into
     /// CargoClass without Unlimbo.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn spawn_object_limbo_at_height(
+    pub fn spawn_object_limbo_at_height<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1242,10 +1245,10 @@ impl Simulation {
         .expect("fresh Techno constructor initialization cannot fail")
     }
 
-    fn spawn_object_limbo_at_height_with_init(
+    fn spawn_object_limbo_at_height_with_init<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1254,9 +1257,12 @@ impl Simulation {
         init: TechnoConstructorInit,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<u64>, GeneratedTechnoInitError> {
-        let Some(obj) = rules.object(type_id) else {
+        let type_id = type_id.into();
+        let Some(obj) = self.interner.key_object_type(type_id, rules) else {
             return Ok(None);
         };
+        let owner = self.interner.intern_key(owner.into());
+        let type_id = self.interner.intern_key(type_id);
         self.spawn_resolved_object_limbo_at_height_with_init(
             obj,
             type_id,
@@ -1274,8 +1280,8 @@ impl Simulation {
     fn spawn_resolved_object_limbo_at_height_with_init(
         &mut self,
         obj: &ObjectType,
-        type_id: &str,
-        owner: &str,
+        type_id: InternedId,
+        owner: InternedId,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1308,10 +1314,10 @@ impl Simulation {
     /// Production and other limbo constructors share the same manager/child
     /// transaction; later delivery only Unlimbos this retained identity.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn create_production_object_limbo_at_height(
+    pub(crate) fn create_production_object_limbo_at_height<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1333,10 +1339,10 @@ impl Simulation {
     /// Construct one fully initialized runtime Techno and retain it in limbo
     /// for one or more placement attempts. Starting-force creation and held
     /// production both use this identity-preserving boundary.
-    pub fn construct_object_limbo_at_height(
+    pub fn construct_object_limbo_at_height<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1360,10 +1366,10 @@ impl Simulation {
 
     /// Retain the already selected Type::CreateInstance pointer through the
     /// same constructor/store/children/tracking transaction (Factory4C9C70).
-    pub(crate) fn construct_resolved_object_limbo_at_height(
+    pub(crate) fn construct_resolved_object_limbo_at_height<'k>(
         &mut self,
         obj: &ObjectType,
-        owner: &str,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -1371,9 +1377,11 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
+        let owner = self.interner.intern_key(owner.into());
+        let type_id = self.interner.intern(&obj.id);
         self.spawn_resolved_object_limbo_at_height_with_init(
             obj,
-            &obj.id,
+            type_id,
             owner,
             rx,
             ry,
@@ -2799,11 +2807,10 @@ impl Simulation {
         // and failure739A6E..739AA7 are retained in mcv-placement-causality.
         self.foot_mark_remove(stable_id, rules, registry, frame_effects);
         self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
-        let owner_str = self.interner.resolve(owner_id).to_string();
         let Some(mut destination) = self
             .construct_runtime_techno(
                 &yard_type,
-                &owner_str,
+                owner_id,
                 rx,
                 ry,
                 0,
@@ -3104,12 +3111,10 @@ impl Simulation {
         else {
             return;
         };
-        let unit_type = self.interner.resolve(unit_type_id).to_string();
-        let owner = self.interner.resolve(owner_id).to_string();
         let Some(unit) = self
             .construct_runtime_techno(
-                &unit_type,
-                &owner,
+                unit_type_id,
+                owner_id,
                 rx,
                 ry,
                 unlimbo_facing,

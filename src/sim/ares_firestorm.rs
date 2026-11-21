@@ -238,6 +238,9 @@ impl Simulation {
         if !self.ares_firestorm.switch(house, active) {
             return;
         }
+        // A copy: UpdateFirewall burns the sections' Foot victims through the
+        // whole simulation, whose deaths (a death weapon, a trigger) can
+        // destroy listed buildings while it is walked.
         let Some(buildings) = self
             .houses
             .get(&house)
@@ -883,7 +886,6 @@ impl Simulation {
             return;
         }
         let max_distance = object.guard_range.map_or(0, |range| range.to_num::<i32>());
-        let owner_name = self.interner.resolve(owner).to_owned();
         for direction in STRAIGHT_DIRECTIONS {
             let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
             let length = self.ares_link_length(
@@ -900,14 +902,7 @@ impl Simulation {
                 let rx = (i32::from(cell.0) + dx * distance) as u16;
                 let ry = (i32::from(cell.1) + dy * distance) as u16;
                 let Some(section) = self.construct_object_limbo_at_height(
-                    &object.id,
-                    &owner_name,
-                    rx,
-                    ry,
-                    0,
-                    0,
-                    rules,
-                    effects,
+                    &object.id, owner, rx, ry, 0, 0, rules, effects,
                 ) else {
                     continue;
                 };

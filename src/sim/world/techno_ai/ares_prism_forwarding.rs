@@ -175,12 +175,6 @@ fn weapon0_flh(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<ProjectileC
     )
 }
 
-fn senders(entities: &EntityStore, id: u64) -> Vec<u64> {
-    entities.get(id).map_or_else(Vec::new, |entity| {
-        entity.seldom.ares.ares_prism.senders.clone()
-    })
-}
-
 fn sender_at(entities: &EntityStore, id: u64, index: usize) -> Option<u64> {
     entities
         .get(id)
@@ -741,7 +735,12 @@ fn charge_delay_get(
     fire: &mut [i32],
 ) {
     if chain != end {
-        for sender in senders(&sim.substrate.entities, tower) {
+        let senders = sim
+            .substrate
+            .entities
+            .get(tower)
+            .map_or(&[][..], |entity| &entity.seldom.ares.ares_prism.senders);
+        for &sender in senders {
             charge_delay_get(
                 sim,
                 rules,
@@ -804,8 +803,11 @@ fn charge_delay_set(
     if delay == 0 {
         start_charge_anim(sim, tower, rules);
     }
-    for sender in senders(&sim.substrate.entities, tower) {
+    // By index: the recursion writes delays and anims, never Senders.
+    let mut index = 0;
+    while let Some(sender) = sender_at(&sim.substrate.entities, tower, index) {
         charge_delay_set(sim, rules, sender, chain + 1, charge, fire, longest_chain);
+        index += 1;
     }
 }
 

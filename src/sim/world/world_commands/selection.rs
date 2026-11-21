@@ -93,14 +93,15 @@ impl Simulation {
         let requested: BTreeSet<u64> = stable_ids.iter().copied().collect();
         // Deselect only omitted old members. Requested old members remain set,
         // so the final-admission gates below are never reapplied to them.
-        let keys: Vec<u64> = self.substrate.entities.keys_sorted();
-        for &id in &keys {
-            if !requested.contains(&id)
-                && let Some(e) = self.substrate.entities.get_mut(id)
-            {
-                e.seldom.selection.deselect();
-            }
-        }
+        // Each omitted entity is handed out, as a lookup by its id would.
+        self.substrate.entities.for_each_entry_mut(
+            |_| true,
+            |entry| {
+                if !requested.contains(&entry.id()) {
+                    entry.into_mut().seldom.selection.deselect();
+                }
+            },
+        );
         // Iterate the original payload, not the membership set: source order is
         // authoritative even though this sim layer stores only selected bits.
         for &stable_id in stable_ids {
@@ -209,12 +210,8 @@ impl Simulation {
     /// nothing; otherwise remove it from selection, then release Follow
     /// (0x005F4503..0x005F4513). The app owns the retained input ledger.
     pub(crate) fn object_deselect(&mut self, stable_id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && entity.seldom.selection.is_selected()
-        {
-            entity.seldom.selection.deselect();
-            self.lifecycle_outputs
-                .emit(super::super::LifecycleOutput::FollowReleased { stable_id });
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            deselect_entity(entity, &mut self.lifecycle_outputs);
         }
     }
 
@@ -275,9 +272,13 @@ impl Simulation {
                 .find(|entity| entity.seldom.selection.is_selected())
                 .map(|entity| entity.stable_id());
             if first.is_some_and(|first| self.select_unselects_all(first, stable_id)) {
-                for id in self.substrate.entities.keys_sorted() {
-                    self.object_deselect(id);
-                }
+                // Deselect writes only the visited object and the output
+                // channel, so the store is walked in place, in id order.
+                let outputs = &mut self.lifecycle_outputs;
+                self.substrate.entities.for_each_entry_mut(
+                    |_| true,
+                    |entry| deselect_entity(entry.into_mut(), outputs),
+                );
             }
         }
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
@@ -332,5 +333,18 @@ impl Simulation {
         }
         self.planning_select_tail_node(stable_id, context);
         true
+    }
+}
+
+/// [`Simulation::object_deselect`] on an entity already handed out.
+fn deselect_entity(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    outputs: &mut crate::sim::world::FrameChannel<crate::sim::world::LifecycleOutput>,
+) {
+    if entity.seldom.selection.is_selected() {
+        entity.seldom.selection.deselect();
+        outputs.emit(crate::sim::world::LifecycleOutput::FollowReleased {
+            stable_id: entity.stable_id(),
+        });
     }
 }

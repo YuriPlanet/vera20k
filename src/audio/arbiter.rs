@@ -568,6 +568,21 @@ pub struct SoundArbiter {
     handles: BTreeMap<HandleOwner, VocHandle>,
 }
 
+/// [`SoundArbiter::validate_loop_handle`]'s body over the arbiter's event
+/// records, so a walk of the handles can validate each in place.
+fn validate_or_clear(events: &[Option<EventRec>], handle: &mut VocHandle) -> Option<EventId> {
+    let id = handle.event?;
+    let ok = events
+        .get(id.0 as usize)
+        .and_then(Option::as_ref)
+        .is_some_and(|event| event.entry == handle.entry && event.serial == handle.serial);
+    if ok {
+        return Some(id);
+    }
+    handle.event = None;
+    None
+}
+
 impl SoundArbiter {
     pub fn new(now_ms: u64) -> Self {
         Self {
@@ -704,18 +719,7 @@ impl SoundArbiter {
     /// handle whose event has been recycled (different entry) or invalidated
     /// (serial mismatch) is cleared and reported as empty.
     pub fn validate_loop_handle(&mut self, owner: HandleOwner) -> Option<EventId> {
-        let handle = *self.handles.get(&owner)?;
-        let id = handle.event?;
-        let ok = self
-            .event(id)
-            .is_some_and(|event| event.entry == handle.entry && event.serial == handle.serial);
-        if ok {
-            return Some(id);
-        }
-        if let Some(stored) = self.handles.get_mut(&owner) {
-            stored.event = None;
-        }
-        None
+        validate_or_clear(&self.events, self.handles.get_mut(&owner)?)
     }
 
     /// `SoundEvent::SetLoopHandle @ 0x004060F0`: bind an owner's handle to an
@@ -797,23 +801,18 @@ impl SoundArbiter {
     /// Any other handle whose event is gone is dropped, the bookkeeping half
     /// of `VocHandle::ValidateOrClear`.
     pub fn loop_handle_owners(&mut self) -> Vec<u64> {
-        let owners: Vec<HandleOwner> = self.handles.keys().copied().collect();
         let mut live = Vec::new();
-        for owner in owners {
+        let events = &self.events;
+        self.handles.retain(|&owner, handle| {
             let HandleOwner::Positional(object) = owner else {
-                continue;
+                return true;
             };
-            if self.validate_loop_handle(owner).is_some()
-                || self
-                    .handles
-                    .get(&owner)
-                    .is_some_and(|handle| handle.loopable)
-            {
+            let keep = validate_or_clear(events, handle).is_some() || handle.loopable;
+            if keep {
                 live.push(object);
-            } else {
-                self.handles.remove(&owner);
             }
-        }
+            keep
+        });
         live
     }
 

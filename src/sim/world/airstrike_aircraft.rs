@@ -41,7 +41,6 @@ impl Simulation {
             return result;
         };
         let house_id = boris.owner();
-        let owner_name = self.interner.resolve(house_id).to_owned();
         let Some(target_entity) = self.substrate.entities.get(target) else {
             return result;
         };
@@ -73,16 +72,7 @@ impl Simulation {
         };
         for _ in 0..count {
             let plane = self.with_object_placement_scope(|sim| {
-                sim.construct_object_limbo_at_height(
-                    type_id,
-                    &owner_name,
-                    0,
-                    0,
-                    0,
-                    0,
-                    rules,
-                    effects,
-                )
+                sim.construct_object_limbo_at_height(type_id, house_id, 0, 0, 0, 0, rules, effects)
             });
             let Some(plane) = plane else {
                 break;

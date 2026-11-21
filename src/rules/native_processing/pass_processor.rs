@@ -1007,24 +1007,21 @@ impl RulesPassProcessor {
         self.families.get(&family).map_or(0, Vec::len)
     }
 
-    pub(super) fn begin_rules_member_read(
+    /// The member's section in `pass`, after its Armor read and its body
+    /// takes the pass; `None` when the member or its section is missing.
+    pub(super) fn begin_rules_member_read<'p>(
         &mut self,
         family: RulesTypeFamily,
         index: usize,
-        pass: &IniFile,
-    ) -> Option<(String, IniSection, IniSection)> {
-        let native_stored_id = self
-            .families
-            .get(&family)?
-            .get(index)?
-            .native_stored_id
-            .clone();
-        let raw = pass.section(&native_stored_id)?.clone();
-        let current_armor = self.families.get(&family)?.get(index)?.armor_id;
+        pass: &'p IniFile,
+    ) -> Option<&'p IniSection> {
+        let member = self.families.get(&family)?.get(index)?;
+        let raw = pass.section(&member.native_stored_id)?;
+        let current_armor = member.armor_id;
         let armor = if family.object_category().is_some() || family == RulesTypeFamily::Terrain {
             // Rules read the Ares way bind through Ares' armor catalog.
             match self.ares_armors.as_ref() {
-                Some(armors) => armors.read_binding(&raw, current_armor),
+                Some(armors) => armors.read_binding(raw, current_armor),
                 None => raw
                     .read_name("Armor", 0x80)
                     .map_or(current_armor, armor_index),
@@ -1034,8 +1031,8 @@ impl RulesPassProcessor {
         };
         let member = self.families.get_mut(&family)?.get_mut(index)?;
         member.armor_id = armor;
-        member.body.overlay_rules_pass(&raw);
-        Some((native_stored_id, raw, member.body.clone()))
+        member.body.overlay_rules_pass(raw);
+        Some(raw)
     }
 
     fn process_type_data(

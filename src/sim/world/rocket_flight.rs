@@ -350,6 +350,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return RocketProcessOutcome::default();
         };
+        // A working copy, as Jumpjet keeps one: the host's callbacks run
+        // through the whole simulation and read the installed instance
+        // (motion queries, the collision and cell-neighbour paths) while the
+        // flight steps, so it must not be taken out. The copy is written back
+        // unless a callback removed the owner or replaced its locomotor.
         let Some(mut rocket) = entity
             .locomotor
             .as_ref()

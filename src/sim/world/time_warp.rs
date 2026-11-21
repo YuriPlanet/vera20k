@@ -178,16 +178,14 @@ impl Simulation {
                 }
             }
 
-            let type_name = self.interner.resolve(type_id).to_owned();
-            let owner_name = self.interner.resolve(owner).to_owned();
             // Type+8C constructs at zero held Location.50D48C/50D49F
             // do not seek an existing resident or skip a still-present object.
             // For Buildings, Type+8C=45E880 constructs43B740.
             // Allocation/cast failure is unsafe natively at50D40F. Rust reports
             // unavailable construction rather than inventing a successful no-op.
             let Some(created) = self.construct_object_limbo_at_height(
-                &type_name,
-                &owner_name,
+                type_id,
+                owner,
                 0,
                 0,
                 0,
