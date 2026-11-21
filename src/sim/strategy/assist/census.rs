@@ -782,12 +782,19 @@ impl Census {
                     if !busy {
                         self.idle += 1;
                     }
-                }
-                self.tiers[slot.index()][tier] += 1;
-                let weights = roles.weights(&ty.id);
-                for role in ROLES {
-                    if weights.get(role) >= ROLE_FLOOR {
-                        self.able[role.index()] += 1;
+                    self.tiers[slot.index()][tier] += 1;
+                    // The job a unit can do is a job it can do *now*: a copy in
+                    // limbo cannot shoot, cannot be ordered and cannot be counted on
+                    // when the composition step asks whether a role is covered. This
+                    // is the same reading `fighters` above got, and for the same
+                    // reason — the shortfall vector is threat (all live enemy objects)
+                    // against able, so a house with a platoon in limbo read itself as
+                    // answering a role it could not answer.
+                    let weights = roles.weights(&ty.id);
+                    for role in ROLES {
+                        if weights.get(role) >= ROLE_FLOOR {
+                            self.able[role.index()] += 1;
+                        }
                     }
                 }
             }
