@@ -408,7 +408,10 @@ impl<'a> FrameEffects<'a> {
     }
 
     /// Sidebar6A6140's retained links, in Strip AI6A8DC6 order. A headless
-    /// frame has no local strip and publishes no automatic PLACE.
+    /// frame has no local strip and publishes no automatic PLACE. Whoever
+    /// lends the visits also lends the owner of the request clear
+    /// ([`Self::with_production_request_cleared`] or a client), or the strip
+    /// keeps a stale request.
     pub fn with_production_strip(
         self,
         visits: &'a [crate::sim::production::ProductionFactoryVisit],

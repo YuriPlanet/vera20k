@@ -308,6 +308,12 @@ impl FrameClient for FrameClientBoundary<'_> {
     }
 
     fn before_logic(&mut self, sim: &Simulation) {
+        // The save reads the scenario pause's elapsed clock, so a boundary
+        // lent a save without the pause would skip it without a sign.
+        debug_assert!(
+            self.campaign_save.is_none() || self.scenario_pause.is_some(),
+            "a campaign save is lent together with the scenario pause"
+        );
         if let (Some(save), Some(sidebar), Some(pause)) = (
             self.campaign_save.as_deref_mut(),
             self.sidebar.as_deref_mut(),
