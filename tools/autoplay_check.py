@@ -45,27 +45,24 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SEEDS = ("0x5EED",)
 DEFAULT_MAP = "Death.mmx"
 DEFAULT_TICKS = 36_000
+# How often the match prints a status line, in frames.
+#
+# The push gate holds for PUSH_REST_FRAMES (750, in
+# src/sim/strategy/assist/advance.rs) before it can turn back, so an interval
+# coarser than about a third of that aliases: two flips inside one interval read
+# as none, and the reading the five known issues turn on would be blind. 150
+# frames is 2.5 seconds and resolves the gate exactly.
+PROGRESS_FRAMES = 150
 DEFAULT_HISTORY = ROOT / "target" / "autoplay-results" / "history.jsonl"
 # The engine offers three; the spec's word "冷酷" has no fourth. Defaulting to
 # Normal while the spec asked for something harder is how every measurement in
 # this folder came to describe an easier game than the one being judged, so the
 # difficulty is now a recorded field and a flag.
 DEFAULT_DIFFICULTY = "normal"
-# The game speed index a headless run uses. Not cosmetic: `speed_normalize`
-# divides construction and infantry-action cadence by `speed + 1`, so a run at
-# the default index is not the match a player at max speed sees.
-# One. The game speed changes construction and infantry cadence through
-# `speed_normalize`, and it is **not** a performance knob: measured on the 1v7
-# lane, 24000 ticks, three seeds,
-#
-#     speed 1: own 77 / 33 / 19
-#     speed 6: own 11 / 5 / 47
-#
-# which is the difference between a lane that holds and one that does not. An
-# earlier revision of this file defaulted to 6 for the 20-40% wall-clock saving,
-# on a 12000-tick 1v1 measurement that showed no difference at all — the wrong
-# lane and the wrong length to notice it.
-DEFAULT_SPEED = 1
+# The game speed index is not a flag any more: src/bin/autoplay-match.rs does
+# not parse one, and the index it uses is the same for every run, so runs stay
+# comparable to each other. It is written here because the harness used to pass
+# `--speed`, and a run at a different index is a different match.
 # Matches to run at once when the caller does not say.
 #
 # One per core is far too many: a single match is itself multi-threaded and
@@ -83,10 +80,10 @@ def default_jobs() -> int:
 
 # The fields one run is judged by. `own` is the reading at a fixed tick; the
 # result says whether the house was still standing when the ticks ran out.
-JUDGED = ("own", "unowned", "stuck")
+JUDGED = ("army", "idle", "unowned", "push_flips")
 # The opening a run starts from. Two runs whose openings differ are not the
 # same experiment, so a drift here is a warning, not a delta.
-OPENING = ("start_credits", "start_units", "start_tech", "start_own", "roster")
+OPENING = ("start_credits", "start_own", "roster")
 
 RESULT = re.compile(r"(won|timeout|lost) at tick (\d+)")
 CRATE = re.compile(r"crate picked up at (\(\d+, \d+\)) by house (\S+)")
@@ -95,49 +92,37 @@ STANDING = re.compile(r"(\d+) standing")
 # The census row the match prints every interval: tick, credits, enemy credits,
 # power, own, enemy, ready, rejected, not-ready.
 CENSUS = re.compile(r"^\s*(\d+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", re.M)
-UNOWNED = re.compile(r"unowned=(\d+)")
-STUCK = re.compile(r"stuck=(\d+)")
-# One unit's decision line: the policy prints what each unit was told to do.
-# This is the only reading that can say whether a capability was ever used —
-# a job kind that never appears in it was never asked for, whatever the code
-# contains.
+# The status line the brain prints once per progress interval, read field by
+# field rather than whole: each one is a separate reading, and one pattern that
+# spans them all would drop every field the day one of them moves.
 #
-# The target is greedy up to `standing=` rather than `\S+`: a cell target prints
-# as `Cell((172, 89))`, which contains a space, and a non-space field silently
-# dropped every job that named one — harvest and defend both read zero while the
-# log had ninety-six harvest lines in it.
-UNIT_JOB = re.compile(
-    r"policy v\d+ unit: id=(\d+) (\S+) job=(\w+) target=(.+?) standing=(\d+)"
+# fighters is what the house has to fight with, idle how many of those have no
+# order, unclaimed how many nobody has claimed. The old log called these
+# army/stuck/unowned; the report keeps the old names so a history file written
+# before the rename still reads.
+UNCLAIMED = re.compile(r"unclaimed=(\d+)")
+IDLE = re.compile(r"idle=(\d+)")
+# The gate the push waits on. A gate that changes during a match is a turn the
+# whole army takes together, so the sequence is kept and counted rather than
+# reduced to its last value: alternating is worse than changing once.
+PUSH = re.compile(r"push=(\S+)")
+SQUADS = re.compile(r"squads=\[([^\]]*)\]")
+INCOME = re.compile(r"income=(-?\d+)/min")
+# The whole status line in one pattern, used where the question is about the
+# shape of a run rather than its last reading: how big the army got, and how big
+# it was the moment the push started. The fields are read separately above; this
+# one exists because "did the house mass before it attacked" cannot be answered
+# from the last line alone.
+STATUS = re.compile(
+    r"fighters=(\d+) idle=(\d+) "
+    r".*?push=(\S+) .*?squads=\[([^\]]*)\]"
 )
-# The kinds the policy can actually ask for. Anything outside this list is a
-# declared job nobody proposes, and the capability audit says so rather than
-# reporting it as zero uses of a thing that exists.
-PROPOSABLE = ("Deploy", "Harvest", "Assault", "Defend", "ReturnHome")
-ALL_JOBS = (
-    "Deploy",
-    "Harvest",
-    "ReturnOre",
-    "Repair",
-    "Capture",
-    "Garrison",
-    "Breach",
-    "Assault",
-    "Defend",
-    "Scout",
-    "Transport",
-    "Retreat",
-    "ReturnHome",
-)
-# The policy's own strength reading: what the house has to fight with, and what
-# it can see of the enemy, in hit points. An object count cannot tell thirty
-# tanks from thirty rifles, and the enemy grows when nothing meets it.
-ARMY = re.compile(r"army=(\d+)")
-EPOINTS = re.compile(r"epoints=(\d+)")
-# The opening a run starts from: without it two results are not comparable.
-START = re.compile(
-    r"start: map=(\S+) country=(\S+) credits=(-?\d+) unit_count=(-?\d+) "
-    r"tech=(-?\d+) own=(\d+) enemies=(\d+) roster=\[([^\]]*)\]"
-)
+ROSTER = re.compile(r"roster=\[([^\]]*)\]")
+# The house's strength, read off the status line. An object count is what the
+# brain actually has to fight with; the enemy count beside it in the census row
+# is the other half of the same reading.
+ARMY = re.compile(r"fighters=(\d+)")
+EPOINTS = re.compile(r"pts=(\d+)/")
 
 
 @dataclass
@@ -162,8 +147,7 @@ class MatchReport:
     country: str = ""
     start_credits: int = 0
     start_own: int = 0
-    start_units: int = 0
-    start_tech: int = 0
+
     roster: str = ""
     # The exchange, read off the census curve rather than its last row: how many
     # objects each side lost over the match. Two runs that end on the same count
@@ -171,27 +155,23 @@ class MatchReport:
     # unit composition has to move.
     own_lost: int = 0
     enemy_lost: int = 0
-    # How many distinct units were ever given each job kind, and how many
-    # decisions of that kind were logged. A capability the wish list asks for
-    # and the policy never asks for shows up here as zero, which is the point:
-    # "the code contains it" and "the house ever did it" are different claims,
-    # and only the second one is a feature.
-    jobs_used: dict[str, int] = field(default_factory=dict)
-
-    @property
-    def capabilities(self) -> dict[str, int]:
-        """Every job the policy could propose, with its use count.
-
-        A kind absent from the log reads zero rather than missing: the table is
-        the answer to "what does this policy actually do", and a gap in it would
-        read as "not measured" when the truth is "never happened".
-        """
-        return {kind: self.jobs_used.get(kind, 0) for kind in ALL_JOBS}
-
-    @property
-    def unused_capabilities(self) -> list[str]:
-        """The kinds declared in the registry that no unit was ever given."""
-        return [kind for kind, count in self.capabilities.items() if count == 0]
+    # The army at the end: how many fighters it has, how many of them are doing
+    # nothing, and how the army was divided. A house with forty fighters and
+    # thirty of them idle is not the army its count claims.
+    idle: int = 0
+    # The push gate the last status line reported, how many times it changed
+    # during the match, and the squad sizes at that last reading.
+    push: str = ""
+    push_flips: int = 0
+    squads: str = ""
+    # Income at the end, per minute, as the brain reports it.
+    income: int = 0
+    # How big the army was at its largest, and how big it was on the first
+    # status line that reported the push gate open. "The army walks out one unit
+    # at a time" is a claim about the second number: a house that attacks with
+    # five when it could have had thirty did not mass, whatever its final count.
+    peak_army: int = 0
+    army_at_push: int = 0
 
     @property
     def won(self) -> bool:
@@ -250,31 +230,44 @@ def parse_report(seed: str, text: str, seconds: float) -> MatchReport:
         # equal after very different fights.
         report.own_lost = losses(rows, 4)
         report.enemy_lost = losses(rows, 5)
-    # The last reading, not the worst: the starting force is unowned until the
-    # first post exists, and a maximum reports that first frame forever.
-    report.unowned = int(UNOWNED.findall(text)[-1]) if UNOWNED.findall(text) else 0
-    readings = STUCK.findall(text)
+        # The opening the match started from, read off its first census row:
+        # without it two results are not the same experiment.
+        report.start_credits = int(rows[0][1])
+        report.start_own = int(rows[0][4])
+    # The last reading, not the worst: a house that was idle at some point and
+    # then got an army moving is not a house that is idle now.
+    unclaimed = UNCLAIMED.findall(text)
+    report.unowned = int(unclaimed[-1]) if unclaimed else 0
+    readings = IDLE.findall(text)
     report.stuck = int(readings[-1]) if readings else 0
+    report.idle = report.stuck
     army = ARMY.findall(text)
     report.army = int(army[-1]) if army else 0
     epoints = EPOINTS.findall(text)
     report.epoints = int(epoints[-1]) if epoints else 0
+    pushes = PUSH.findall(text)
+    report.push = pushes[-1] if pushes else ""
+    # Every change of gate is a turn the whole army takes together. Counted on
+    # the sequence so that a gate alternating between two values reads worse
+    # than one that changed once, which is what the complaint describes.
+    report.push_flips = sum(1 for was, now in zip(pushes, pushes[1:]) if was != now)
+    squads = SQUADS.findall(text)
+    report.squads = squads[-1] if squads else ""
+    income = INCOME.findall(text)
+    report.income = int(income[-1]) if income else 0
+    status = STATUS.findall(text)
+    if status:
+        report.peak_army = max(int(row[0]) for row in status)
+        # The first open gate, not the last: the last one is after the army has
+        # already been ground down, which measures the battle rather than the
+        # decision to start it.
+        report.army_at_push = next(
+            (int(row[0]) for row in status if row[2] == "push"), 0
+        )
     report.yards = max((int(value) for value in re.findall(r"yard=(\d+)", text)), default=0)
     report.walls = max((int(value) for value in STANDING.findall(text)), default=0)
-
-    # What the house was ever actually asked to do. Counted per distinct unit
-    # rather than per log line: the unit line repeats every readout, so a raw
-    # count would measure log verbosity instead of how many soldiers took the
-    # job. `standing` is not involved — a unit that holds a job for a whole
-    # match is still one unit that took it.
-    seen_units: dict[str, set[str]] = {}
-    for unit, _type, kind, _target, _standing in UNIT_JOB.findall(text):
-        # `none` is the absence of a job, not one of them: counting it would put
-        # a row in the capability table for doing nothing.
-        if kind == "none":
-            continue
-        seen_units.setdefault(kind, set()).add(unit)
-    report.jobs_used = {kind: len(units) for kind, units in seen_units.items()}
+    roster = ROSTER.findall(text)
+    report.roster = roster[0] if roster else ""
     return report
 
 
@@ -319,10 +312,14 @@ def append_history(reports: list[MatchReport], args, path: Path) -> None:
                 "walls": report.walls,
                 "start_credits": report.start_credits,
                 "start_own": report.start_own,
-                "start_units": report.start_units,
-                "start_tech": report.start_tech,
                 "roster": report.roster,
-                "jobs": report.capabilities,
+                "idle": report.idle,
+                "push": report.push,
+                "push_flips": report.push_flips,
+                "squads": report.squads,
+                "income": report.income,
+                "peak_army": report.peak_army,
+                "army_at_push": report.army_at_push,
                 "seconds": round(report.seconds, 1),
             }) + "\n")
 
@@ -381,14 +378,21 @@ def survived(row: dict) -> bool:
 def judge(before: dict, after: dict) -> tuple[str, list[str], list[str]]:
     """What one cell did, and why.
 
-    Four things decide, and the docstring used to name a fifth:
+    Five things decide:
 
-    - **army**, the house's fighting strength in hit points. Thirty tanks and
-      thirty rifles are thirty objects and not the same army, so the object
-      count is not the judge. A row written before `army` existed falls back to
-      `own`, because comparing nothing is worse than comparing the old reading;
-    - **unowned** must not rise: a unit nobody owns is a bug;
-    - **stuck** must not rise: the spec's H2;
+    - **army**, what the house has to fight with. A row written before `army`
+      existed falls back to `own`, because comparing nothing is worse than
+      comparing the old reading;
+    - **stuck** must not rise. This is the reading behind "the army wanders": a
+      fighter with no order is one the push did not carry. The field keeps its
+      old name, but it is now read from the status line's `idle=`, which is
+      what the current brain counts; the `stuck=` it used to read is gone.
+      They are the same complaint from two sides: a unit the policy claimed and
+      could not move, and a unit it never claimed at all.
+    - **unclaimed** must not rise: a fighter nobody owns is a bug;
+    - **push_flips** must not rise. Every change of push gate is a turn the whole
+      army takes together, so a gate that alternates is a house that cannot
+      finish what it started;
     - **survival**: no seed may be lost that survived, and a house that holds
       longer is better.
 
@@ -409,7 +413,7 @@ def judge(before: dict, after: dict) -> tuple[str, list[str], list[str]]:
     elif now > was:
         better.append(f"{field} {was}->{now}")
 
-    for field in ("unowned", "stuck"):
+    for field in ("unowned", "stuck", "push_flips"):
         was, now = int(before.get(field, 0)), int(after.get(field, 0))
         if now > was:
             worse.append(f"{field} {was}->{now}")
@@ -471,38 +475,6 @@ def lost_arrow(before: dict, after: dict) -> str:
     return f"{pair(before)}->{pair(after)}"
 
 
-def capability_report(reports: list[MatchReport]) -> None:
-    """What the house was ever asked to do, summed over every cell of a run.
-
-    This is the acceptance reading the feature side needs and the object count
-    cannot supply. The wish list asks for capture, transport, infiltration,
-    superweapons, garrisons and walls; the keep rule judges hit points. A run can
-    score well on every existing field while never once exercising a capability,
-    and until this line existed there was no way to tell "we built it" from "the
-    house did it".
-
-    A kind declared in the registry that reads zero here is a feature that does
-    not exist in practice, whatever the code says.
-    """
-    ran = max((report.tick for report in reports), default=0)
-    print("", flush=True)
-    print(f"capabilities over {len(reports)} match(es), {ran} ticks:", flush=True)
-    total: dict[str, int] = {kind: 0 for kind in ALL_JOBS}
-    for report in reports:
-        for kind, count in report.capabilities.items():
-            total[kind] += count
-    width = max(len(kind) for kind in ALL_JOBS)
-    for kind in ALL_JOBS:
-        count = total[kind]
-        mark = "" if count else "   <- never asked for"
-        print(f"  {kind:<{width}}  {count:>4}{mark}", flush=True)
-    proposable_zero = [kind for kind in PROPOSABLE if total[kind] == 0]
-    if proposable_zero:
-        # A kind the policy issues every match when the game allows it, and did
-        # not issue here, is a defect in this run rather than a missing feature:
-        # something gated it off.
-        print(f"\n  a job the policy can issue was never issued: "
-              f"{', '.join(proposable_zero)}", flush=True)
 
 
 def compare_histories(baseline: Path, current: Path) -> None:
@@ -517,8 +489,8 @@ def compare_histories(baseline: Path, current: Path) -> None:
 
     header = (
         f"{'map':<14}{'country':<10}{'seed':<7}{'ticks':<7}{'brain':<7}{'opp':<5}{'diff':<8}"
-        f"{'own':<12}{'army':<12}{'enemy':<12}{'lost':<16}{'unowned':<10}{'stuck':<9}{'yards':<9}"
-        f"{'walls':<9}verdict"
+        f"{'own':<12}{'army':<12}{'enemy':<12}{'lost':<16}{'unclaimed':<10}{'idle':<7}"
+        f"{'peak':<7}{'push@':<7}{'flips':<7}{'yards':<7}{'walls':<7}verdict"
     )
     print("", flush=True)
     print(header, flush=True)
@@ -526,7 +498,8 @@ def compare_histories(baseline: Path, current: Path) -> None:
 
     # What makes two readings the same experiment. Enemy count, walls and the
     # opening are in it: a run that moved one of those is not a replay.
-    delta_fields = ("own", "enemy", "unowned", "stuck", "yards", "walls", "tick", "result")
+    delta_fields = ("own", "enemy", "unowned", "stuck", "peak_army", "army_at_push",
+                    "push_flips", "yards", "walls", "tick", "result")
     worse_cells: list[str] = []
     counts = {"same": 0, "better": 0, "worse": 0, "missing": 0}
     identical = True
@@ -554,8 +527,10 @@ def compare_histories(baseline: Path, current: Path) -> None:
             f"{arrow(was, now, 'own'):<12}{arrow(was, now, 'army'):<12}"
             f"{arrow(was, now, 'enemy'):<12}"
             f"{lost_arrow(was, now):<16}"
-            f"{arrow(was, now, 'unowned'):<10}{arrow(was, now, 'stuck'):<9}"
-            f"{arrow(was, now, 'yards'):<9}{arrow(was, now, 'walls'):<9}{verdict}",
+            f"{arrow(was, now, 'unowned'):<10}{arrow(was, now, 'stuck'):<7}"
+            f"{arrow(was, now, 'peak_army'):<7}{arrow(was, now, 'army_at_push'):<7}"
+            f"{arrow(was, now, 'push_flips'):<7}{arrow(was, now, 'yards'):<7}"
+            f"{arrow(was, now, 'walls'):<7}{verdict}",
             flush=True,
         )
         if worse:
@@ -592,55 +567,33 @@ def run_command(args: list[str]) -> int:
 
 
 def match_binary() -> Path | None:
-    """The fast-profile match binary, where cargo_run puts it.
+    """The fast-profile match binary, found the way cargo_run finds it.
 
-    Two packages ship a binary with this name: the engine crate's
-    `src/bin/autoplay-match.rs`, which drives the retail brain only, and the
-    autoplay crate's `src/bin/match.rs`, which is the one that takes `--brain v2`.
-    The newest wins because that is the one the build in this run just wrote — and
-    that is exactly how a run went wrong after the upstream merge: the engine
-    binary was rebuilt last, the harness picked it, `--brain v2` was refused as an
-    unknown flag, the process exited during argument parsing, and the report read
-    `own=0 enemy=0 jobs=none` instead of saying the wrong binary had been chosen.
+    This used to glob `ROOT/target/owned-worktrees/*/fast/autoplay-match.exe`,
+    which is right only when ROOT is the checkout that also holds the cache. In a
+    worktree ROOT holds no target at all, so the glob found nothing and the run
+    reported no binary while a good one sat in the primary checkout. The runner
+    already knows the rule — the cache is `CARGO_TARGET_DIR` when set, else the
+    primary checkout's `target/`, under `owned-worktrees/<namespace>` — so ask it
+    rather than keep a second copy of the rule that drifts.
 
-    So the newest is still preferred, but a candidate that does not accept
-    `--brain` is not offered for a v2 run at all.
+    The second thing this used to do was choose between two binaries that both
+    answer to this name. There is one now: src/bin/autoplay-match.rs, the assist
+    brain. The autoplay crate's `--brain v2` binary is gone with the retail
+    rename.
     """
-    owned = ROOT / "target" / "owned-worktrees"
-    if not owned.is_dir():
-        return None
-    candidates = sorted(owned.glob("*/fast/autoplay-match.exe"))
-    candidates += sorted(owned.glob("*/fast/autoplay-match"))
-    if not candidates:
-        return None
-    ready = [path for path in candidates if accepts_brain_flag(path)]
-    if ready:
-        return max(ready, key=lambda path: path.stat().st_mtime)
-    # No candidate takes the flag: fall back to the newest and let the run report
-    # the refusal rather than silently measuring the other policy.
-    return max(candidates, key=lambda path: path.stat().st_mtime)
+    from tools import cargo_run
 
-
-def accepts_brain_flag(binary: Path) -> bool:
-    """Whether this binary rejects `--brain`: its usage list is the answer.
-
-    `--help` exits through the same argument parser a run does, so a binary that
-    does not know the flag prints `unknown flag --brain` and a non-zero status.
-    Asked once per candidate and cached nowhere: a build in the same run can
-    replace the binary while the matrix is starting.
-    """
-    try:
-        done = subprocess.run(
-            [str(binary), "--brain", "v2", "--help"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    text = (done.stdout or "") + (done.stderr or "")
-    return "unknown flag --brain" not in text
+    # The second element is the profile the binary was built at, not a problem:
+    # resolve_binary reports no error, it just reports nothing found as (None,
+    # None). A run that silently fell back to a stale binary is what the old glob
+    # could do, so the profile is printed with the run it belongs to.
+    found, profile = cargo_run.resolve_binary(ROOT, "autoplay-match", "fast")
+    if found is not None:
+        print(f"autoplay_check: autoplay-match at profile {profile}", flush=True)
+    else:
+        print("autoplay_check: no unchanged fast-profile autoplay-match binary", flush=True)
+    return found
 
 
 def run_match(
@@ -649,41 +602,34 @@ def run_match(
     map_name: str,
     ticks: int,
     log_dir: Path,
-    brain: str = "retail",
     opponents: int = 1,
     country: str = "america",
-    start_credits: int | None = None,
-    start_units: int | None = None,
-    start_tech: int | None = None,
     difficulty: str = DEFAULT_DIFFICULTY,
-    speed: int = DEFAULT_SPEED,
 ) -> MatchReport:
     """Run one match and read its log.
 
     Every run is its own process, so the matrix is the pool: one process per
     map and seed, all of them side by side.
+
+    The flags are the ones src/bin/autoplay-match.rs parses and no others: that
+    binary is the assist brain and nothing else, so --brain, --speed and the
+    opening-credits flags are gone with it. Passing one it does not know makes
+    it exit during argument parsing, and the report then reads as an empty
+    match rather than as a refusal.
     """
     stem = map_name.replace("/", "_").replace("\\", "_")
-    log = log_dir / f"match-{stem}-{seed}-{brain}-{country}-{difficulty}-s{speed}.log"
+    log = log_dir / f"match-{stem}-{seed}-{country}-{difficulty}.log"
     started = time.monotonic()
     command = [
         str(binary),
         "--map", map_name,
         "--ticks", str(ticks),
         "--seed", seed,
-        "--brain", brain,
         "--opponents", str(opponents),
-        "--country", country,
+        "--opponent", country,
         "--difficulty", difficulty,
-        "--speed", str(speed),
+        "--progress", str(PROGRESS_FRAMES),
     ]
-    for flag, value in (
-        ("--credits", start_credits),
-        ("--units", start_units),
-        ("--tech", start_tech),
-    ):
-        if value is not None:
-            command += [flag, str(value)]
     with log.open("w", encoding="utf-8") as handle:
         subprocess.call(
             command,
@@ -695,13 +641,6 @@ def run_match(
     seconds = time.monotonic() - started
     text = log.read_text(encoding="utf-8", errors="replace")
     report = parse_report(seed, text, seconds)
-    start = START.search(text)
-    if start:
-        report.start_credits = int(start.group(3))
-        report.start_units = int(start.group(4))
-        report.start_tech = int(start.group(5))
-        report.start_own = int(start.group(6))
-        report.roster = start.group(8)
     report.map = map_name
     report.country = country
     return report
@@ -714,16 +653,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--map", default=DEFAULT_MAP, help="the map to play")
     parser.add_argument("--maps", default="",
                         help="comma separated maps, one match per map and seed")
-    parser.add_argument("--brain", default="retail", choices=["retail", "v2"],
-                        help="which policy drives the local house")
+    parser.add_argument("--brain", default="assist", choices=["assist"],
+                        help="which policy drives the local house; the assist brain is the one that exists")
     parser.add_argument("--countries", default="",
                         help="comma separated local factions: america,russia,yuri,...")
-    parser.add_argument("--start-credits", type=int, default=None,
-                        help="starting credits (default: the rules' Battle default)")
-    parser.add_argument("--start-units", type=int, default=None,
-                        help="starting units per house")
-    parser.add_argument("--start-tech", type=int, default=None,
-                        help="starting tech level")
+
     parser.add_argument("--history", default="",
                         help="append every result here (default target/autoplay-results/history.jsonl)")
     parser.add_argument("--baseline", default="",
@@ -735,10 +669,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="compare --baseline with --history and run nothing")
     parser.add_argument("--opponents", type=int, default=1,
                         help="computer houses against the local one")
-    parser.add_argument("--speed", type=int, default=DEFAULT_SPEED,
-                        help="the game speed index 0..=6; changes construction and "
-                             "infantry cadence through speed_normalize, so a run at "
-                             "the wrong index is not the match a player sees")
+
     parser.add_argument("--difficulty", default=DEFAULT_DIFFICULTY,
                         choices=["easy", "normal", "hard"],
                         help="the computer's difficulty; recorded in the history row because "
@@ -772,8 +703,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.skip_build:
         build = [sys.executable, "-m", "tools.cargo_run", "--", "build", "--profile", "fast"]
-        if args.brain == "v2":
-            build += ["-p", "vera20k-autoplay", "--features", "retail-fixture"]
+
         build += ["--bin", "autoplay-match"]
         code = run_command(build)
         if code != 0:
@@ -802,9 +732,7 @@ def main(argv: list[str] | None = None) -> int:
         reports = list(pool.map(
             lambda combo: run_match(
                 binary, combo[2], combo[0], args.ticks, log_dir,
-                args.brain, args.opponents, combo[1],
-                args.start_credits, args.start_units, args.start_tech,
-                args.difficulty, args.speed,
+                args.opponents, combo[1], args.difficulty,
             ),
             combos,
         ))
@@ -813,26 +741,22 @@ def main(argv: list[str] | None = None) -> int:
     for report in reports:
         print(f"{report.map} {report.country} seed {report.seed} [{args.brain}]: "
               f"{report.result} in {report.seconds:.0f}s", flush=True)
-        print(f"  start credits={report.start_credits} units={report.start_units} "
-              f"tech={report.start_tech} roster=[{report.roster}]", flush=True)
+        print(f"  start credits={report.start_credits} own={report.start_own} "
+              f"roster=[{report.roster}]", flush=True)
         print(f"  own={report.own} enemy={report.enemy} yards={report.yards} "
-              f"walls={report.walls} unowned={report.unowned} stuck={report.stuck} "
-              f"lost={report.exchange}", flush=True)
+              f"walls={report.walls} army={report.army} idle={report.idle} "
+              f"unclaimed={report.unowned} lost={report.exchange}", flush=True)
+        print(f"  push={report.push or 'none'} flips={report.push_flips} "
+              f"squads=[{report.squads}] income={report.income}/min", flush=True)
+        print(f"  peak army={report.peak_army} army at first push={report.army_at_push}",
+              flush=True)
         if report.plots:
             print(f"  superweapon plots: {', '.join(report.plots)}", flush=True)
         if report.crates:
             print(f"  crates picked up: {', '.join(report.crates)}", flush=True)
-        # The capability line: what the house was ever asked to do. A kind at
-        # zero is a feature that was never exercised, however much code it has.
-        used = {kind: count for kind, count in report.capabilities.items() if count}
-        idle = report.unused_capabilities
-        print(f"  jobs used: {used if used else 'none'}", flush=True)
-        if idle:
-            print(f"  never asked for: {', '.join(idle)}", flush=True)
 
     append_history(reports, args, history)
     print(f"\nhistory: {history}", flush=True)
-    capability_report(reports)
     if args.baseline:
         compare_histories(Path(args.baseline), history)
     return 0
