@@ -62,7 +62,7 @@
 //! keys. While that box is ticked, a language file added or rewritten in the
 //! settings folder — or in a checkout's `src/i18n`, which then replaces the
 //! shipped files by tag — is loaded again within a second
-//! ([`poll_language_files`]), so its texts follow without a restart.
+//! ([`LanguageFileWatch::poll`]), so its texts follow without a restart.
 
 // Outside data reaches this module: it refuses bad input, never panics.
 #![cfg_attr(
@@ -74,7 +74,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 
 use crate::util::time::{Duration, Instant};
 
@@ -315,12 +315,19 @@ impl Catalog {
     }
 }
 
+/// The languages in use. Process-global because its readers are the free
+/// functions [`tr`], [`label`], [`find`] and their kin, called from some 340
+/// places in the shell, loading, match and render code, none of which has an
+/// owner of the text in reach; a `static` must be `Sync`, so it sits behind a
+/// lock. In the game only the main thread reads or replaces it; parallel tests
+/// share it. The simulation never reads it.
 static CATALOG: LazyLock<RwLock<Catalog>> =
     LazyLock::new(|| RwLock::new(Catalog::new(languages(None))));
 
 /// Bumped at each change of the catalog ([`init`], [`select`], a reload of
 /// the language files), so the fonts read the language in use again
-/// ([`interface_language`]).
+/// ([`interface_language`]). Beside [`CATALOG`] for its reason, and an
+/// atomic so a text engine can compare it without taking the lock.
 static CATALOG_REVISION: AtomicU64 = AtomicU64::new(0);
 
 /// Put `next` in use ([`CATALOG_REVISION`]).
@@ -332,6 +339,11 @@ fn install_catalog(next: Catalog) {
 
 /// Whether every label displays its own string-table key instead of its text
 /// (Options' Developer page), VERA's own `VERA:` labels included.
+///
+/// This and [`STRING_KEYS_VALUES`] copy the Options profile's String Keys
+/// box (`set_show_string_keys` at startup and on each tick) into globals
+/// because [`tr`], [`label`] and [`apply`] answer from them, and those free
+/// functions are called with no Options in reach, beside [`CATALOG`].
 static SHOW_STRING_KEYS: AtomicBool = AtomicBool::new(false);
 /// Set by the every-screen hotkey: while the box is ticked, show the texts
 /// again without unticking it, so the two views compare in place.
@@ -368,52 +380,46 @@ pub fn toggle_string_keys() -> bool {
     STRING_KEYS_VALUES.fetch_xor(true, Ordering::Relaxed)
 }
 
-/// How often [`poll_language_files`] looks at the settings folder.
+/// How often [`LanguageFileWatch::poll`] looks at the settings folder.
 const LANGUAGE_FILE_POLL: Duration = Duration::from_secs(1);
 
 /// The settings folder's language files as the last poll saw them: name,
-/// size and modified time, sorted by name.
-struct LanguageFiles {
+/// size and modified time, sorted by name. The app's frontend owns one and
+/// lends it to each poll.
+#[derive(Default)]
+pub struct LanguageFileWatch {
     stamped: Vec<(String, u64, u128)>,
     last_poll: Option<Instant>,
 }
 
-static LANGUAGE_FILES: LazyLock<Mutex<LanguageFiles>> = LazyLock::new(|| {
-    Mutex::new(LanguageFiles {
-        stamped: Vec::new(),
-        last_poll: None,
-    })
-});
-
-/// While the Developer page's String Keys box is ticked, notice a language
-/// file added, removed or rewritten in `settings_dir` — or in the checkout's
-/// `src/i18n` when the game runs from one — and load the languages again,
-/// keeping the selected tag where it still exists. Checked at most once a
-/// second. The first poll of a session reloads too, so a checkout's files
-/// answer as soon as the box is ticked. True when the catalog was rebuilt, so
-/// the caller re-applies it to the loaded string table.
-pub fn poll_language_files(settings_dir: Option<&Path>) -> bool {
-    let mut watch = LANGUAGE_FILES
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let now = Instant::now();
-    if watch
-        .last_poll
-        .is_some_and(|last| now.saturating_duration_since(last) < LANGUAGE_FILE_POLL)
-    {
-        return false;
+impl LanguageFileWatch {
+    /// While the Developer page's String Keys box is ticked, notice a
+    /// language file added, removed or rewritten in `settings_dir` — or in
+    /// the checkout's `src/i18n` when the game runs from one — and load the
+    /// languages again, keeping the selected tag where it still exists.
+    /// Checked at most once a second. The first poll of a watch reloads too,
+    /// so a checkout's files answer as soon as the box is ticked. True when
+    /// the catalog was rebuilt, so the caller re-applies it to the loaded
+    /// string table.
+    pub fn poll(&mut self, settings_dir: Option<&Path>) -> bool {
+        let now = Instant::now();
+        if self
+            .last_poll
+            .is_some_and(|last| now.saturating_duration_since(last) < LANGUAGE_FILE_POLL)
+        {
+            return false;
+        }
+        let first = self.last_poll.is_none();
+        self.last_poll = Some(now);
+        let source_dir = source_language_dir();
+        let stamped = language_file_stamp(settings_dir, source_dir.as_deref());
+        if !first && stamped == self.stamped {
+            return false;
+        }
+        self.stamped = stamped;
+        reload_languages(settings_dir, source_dir.as_deref());
+        true
     }
-    let first = watch.last_poll.is_none();
-    watch.last_poll = Some(now);
-    let source_dir = source_language_dir();
-    let stamped = language_file_stamp(settings_dir, source_dir.as_deref());
-    if !first && stamped == watch.stamped {
-        return false;
-    }
-    watch.stamped = stamped;
-    drop(watch);
-    reload_languages(settings_dir, source_dir.as_deref());
-    true
 }
 
 /// The checkout's language files, `src/i18n` beside the working directory,

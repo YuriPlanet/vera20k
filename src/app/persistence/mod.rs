@@ -524,6 +524,7 @@ impl SaveRepository {
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         {
+            // A process-unique serial for staging file names.
             static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let directory = path
                 .parent()

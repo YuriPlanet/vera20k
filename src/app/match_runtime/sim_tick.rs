@@ -3412,6 +3412,7 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
         })
         .unwrap_or((1, 1, crate::rules::foundation::Foundation::default()));
     // Log at info level once per type_id change so it's visible in console.
+    // Process-wide, like the log it throttles.
     static LAST_LOG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let hash: u64 = type_id
         .as_bytes()

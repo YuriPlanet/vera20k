@@ -1030,6 +1030,8 @@ fn smudge_shp_candidates(name: &str, theater_ext: &str) -> Vec<String> {
 }
 
 fn forced_tiberium_image_name() -> Option<&'static str> {
+    // A process-wide debug switch, read once from the environment (listed with
+    // the render toggles in tools/telemetry-dashboard/README.md).
     static FORCED: OnceLock<Option<String>> = OnceLock::new();
     FORCED
         .get_or_init(|| {

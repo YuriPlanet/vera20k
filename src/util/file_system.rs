@@ -103,6 +103,10 @@ mod memory {
         bytes: Arc<[u8]>,
         modified_ms: u64,
     }
+    /// The browser build's stand-in for the disk that `std::fs` reaches
+    /// process-wide: callers use these free functions as they would `std::fs`
+    /// and hold no file-system owner, so the store is a `static`, and a
+    /// `static` must be `Sync`, hence the lock.
     static FILES: OnceLock<Mutex<BTreeMap<PathBuf, Entry>>> = OnceLock::new();
     /// The imported files. Each change to the map or the folder set is one
     /// insert, remove or retain, so a panic elsewhere while one is locked
@@ -126,6 +130,7 @@ mod memory {
         }
         result
     }
+    /// Beside [`FILES`] for its reason.
     static DIRECTORIES: OnceLock<Mutex<std::collections::BTreeSet<PathBuf>>> = OnceLock::new();
     /// The created folders; locked as [`files`] is.
     fn directories() -> MutexGuard<'static, std::collections::BTreeSet<PathBuf>> {

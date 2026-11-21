@@ -503,6 +503,8 @@ impl PlaybackObservation {
     }
 }
 
+/// Shared by the audio output thread, which fills the ring as it plays, and
+/// the main thread's [`PlaybackControl`]: hence the lock and atomics.
 struct SharedOutput {
     state: Mutex<RingState>,
     cancelled: AtomicBool,

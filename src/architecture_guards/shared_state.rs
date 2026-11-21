@@ -308,8 +308,9 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
     (
         "sim/movement/foot_path.rs",
         3,
-        "one search's own-cell mark and last real cell, written by its `&self` \
-         passability gate",
+        "one search's own-cell mark and last real cell: A* and path finishing \
+         hold the entry's marker overlay by `&` across every class question, \
+         so the entry is shared, never lent `&mut`",
     ),
     (
         "sim/movement/path_batch.rs",

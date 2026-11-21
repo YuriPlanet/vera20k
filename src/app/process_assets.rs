@@ -43,7 +43,7 @@ pub(crate) struct ProcessAssets {
     /// digest.
     mod_files: std::sync::Arc<std::sync::OnceLock<Result<ModFiles, String>>>,
     /// [`ProcessAssets::read_mod_files_ahead`] has started its thread.
-    mod_files_ahead: std::sync::atomic::AtomicBool,
+    mod_files_ahead: bool,
     /// That folder's map additions (`app::mod_additions`), read once: the
     /// matches play what the pre-match check compares.
     map_additions: std::sync::OnceLock<
@@ -189,7 +189,7 @@ impl ProcessAssets {
             media_archive_mode,
             ares_setting: Default::default(),
             mod_files: Default::default(),
-            mod_files_ahead: Default::default(),
+            mod_files_ahead: false,
             map_additions: Default::default(),
             resources: Default::default(),
             mod_name: None,
@@ -254,12 +254,11 @@ impl ProcessAssets {
     /// rarely waits. A mod's archives take a moment to read, and a run that
     /// never comes here (single player, a map picture) never reads them.
     /// Where no thread starts, that check reads them itself.
-    pub(crate) fn read_mod_files_ahead(&self) {
-        use std::sync::atomic::Ordering;
+    pub(crate) fn read_mod_files_ahead(&mut self) {
         let Some(dir) = self.resources.mod_folder.clone() else {
             return;
         };
-        if self.mod_files_ahead.swap(true, Ordering::Relaxed) {
+        if std::mem::replace(&mut self.mod_files_ahead, true) {
             return;
         }
         let files = std::sync::Arc::clone(&self.mod_files);

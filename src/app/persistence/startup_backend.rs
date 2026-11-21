@@ -42,6 +42,11 @@ const WINDOWS_APIS: [wgpu::Backend; 2] = [wgpu::Backend::Vulkan, wgpu::Backend::
 
 /// Where [`backends`] found the record, for [`record_loss`] and
 /// [`start_finished`].
+///
+/// This and [`STARTED`] are process-wide because their readers have no app
+/// state in reach: the panic and device-loss boxes (`system_dialog`), which
+/// the panic hook reaches, and [`starting`], which the GPU start calls as a
+/// plain `fn`. A `static` must be `Sync`, hence the atomic.
 static SETTINGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// Startup has finished ([`start_finished`]): a loss from now on is play's.
 static STARTED: AtomicBool = AtomicBool::new(false);

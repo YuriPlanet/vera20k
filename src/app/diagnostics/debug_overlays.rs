@@ -112,9 +112,8 @@ pub(crate) fn build_terrain_cost_overlay_instances(
     let height: u16 = terrain.height();
 
     // One-shot diagnostic on first call.
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| {
         // Sample a few cells to verify the grid has non-zero data.
         let sample_costs: Vec<u8> = (0..width.min(20)).map(|x| row_at(x, height / 2)).collect();
         log::info!(
@@ -128,7 +127,7 @@ pub(crate) fn build_terrain_cost_overlay_instances(
             sh,
             sample_costs,
         );
-    }
+    });
 
     let mut instances: Vec<SpriteInstance> = Vec::with_capacity(2048);
     let cam_x: f32 = state.match_state.input.camera_x;

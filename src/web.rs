@@ -11,6 +11,12 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "wasm-threads")]
 pub use wasm_bindgen_rayon::init_thread_pool;
 
+// Thread-locals because the JS host reaches the game only through the
+// `#[wasm_bindgen]` exports below, free functions with no receiver, and the
+// values they hand over (the canvas, JS callbacks, the audio players built on
+// Web Audio nodes, the winit proxy) are `!Send` JS handles that live on the
+// browser's main thread, the only thread that runs these exports and `App`.
+// `App` and the audio code take them from here; nothing else holds them.
 thread_local! {
     static CANVAS: RefCell<Option<web_sys::HtmlCanvasElement>> = const { RefCell::new(None) };
     static STATUS: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
