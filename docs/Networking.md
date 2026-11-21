@@ -551,6 +551,19 @@ The guest also reads the agreement before decoding the options body, so it can s
 the earlier build exchange its earlier layout. The lobby, relay, and VS31
 fragment framing keep their existing formats.
 
+**LAN Archon rooms.** Choose **Archon Mode** in the LAN lobby to open a
+Battle room with shared Houses. Players choose a group, and the host can move
+players between groups. The host sets the per-group player limit and can pick a
+start for each group. The first member shown in a group picks its country and
+colour, with a host override. Each group gets one House. AI opponents each get a
+separate House and start. A match requires an opponent and at least one group
+with two or more players. Other groups may have a single player.
+
+The LAN body carries the optional `room.archon` object with `max_controllers`.
+The existing team field identifies groups. At launch the host publishes the same
+explicit start for each group member. Lockstep and replay use the existing shared
+House path and retain one command source per player.
+
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
 as their name appears. Released clients use the same ladder messages. After a lobby

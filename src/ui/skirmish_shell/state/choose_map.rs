@@ -13,7 +13,7 @@ use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
     upsert_random_map_sentinel,
 };
-use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
+use crate::skirmish_modes::{MpModeClass, SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
 use crate::ui::shell::static_reveal::DialogStatics;
 
@@ -206,8 +206,7 @@ pub struct ChooseMapModalState {
     pub selected_mode: SkirmishModeSelection,
     /// `0x583`'s enable, set when the map list is built (`0x005E6CB3`).
     random_maps_allowed: bool,
-    /// [`ChooseMapContext::official_only`].
-    official_only: bool,
+    context: ChooseMapContext,
     pub filtered_record_indices: Vec<usize>,
     /// A saved seed becomes a playable scenario only after generation.
     saved_seeds: Vec<SavedSeed>,
@@ -266,6 +265,7 @@ enum ChooseMapList {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChooseMapContext {
     Skirmish,
+    Archon,
     /// `tournament_room`/`clan_room` are the WOL room tests `0x0077D940` and
     /// `0x0077D970`; both false on LAN.
     Network {
@@ -280,6 +280,7 @@ impl ChooseMapContext {
     fn permits(self, mode: &SkirmishGameMode) -> bool {
         match self {
             Self::Skirmish => mode.class.policy().lists_in_skirmish,
+            Self::Archon => mode.class == MpModeClass::Battle && mode.allies_allowed,
             Self::Network {
                 observer,
                 tournament_room,
@@ -322,30 +323,39 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) -> Self {
-        let selected_mode_id = mode_by_id(modes, current_mode_id)
-            .or_else(|| modes.first())
-            .map_or(current_mode_id, |mode| mode.id);
+        let mode_rows: Vec<SkirmishModeSelection> = modes
+            .iter()
+            .enumerate()
+            .filter(|(_, mode)| context.permits(mode))
+            .filter_map(|(index, mode)| match context {
+                ChooseMapContext::Skirmish => SkirmishModeSelection::for_skirmish_row(index, modes),
+                // Peers exchange only the ID, which resolves to the first match.
+                ChooseMapContext::Archon => mode_by_id(modes, mode.id)
+                    .filter(|admitted| std::ptr::eq(*admitted, mode))
+                    .map(|admitted| admitted.id.into()),
+                ChooseMapContext::Network { .. } => Some(mode.id.into()),
+            })
+            .collect();
+        let selected_mode_id = if context == ChooseMapContext::Archon {
+            mode_rows
+                .iter()
+                .find(|row| row.id == current_mode_id)
+                .or_else(|| mode_rows.first())
+                .map_or(current_mode_id, |row| row.id)
+        } else {
+            mode_by_id(modes, current_mode_id)
+                .or_else(|| modes.first())
+                .map_or(current_mode_id, |mode| mode.id)
+        };
         let mut state = Self {
             saved_selection: ChooseMapSelection {
                 mode: current_mode_id.into(),
                 record_index: current_record_index,
             },
-            mode_rows: modes
-                .iter()
-                .enumerate()
-                .filter(|(_, mode)| context.permits(mode))
-                .filter_map(|(index, mode)| {
-                    if context == ChooseMapContext::Skirmish {
-                        SkirmishModeSelection::for_skirmish_row(index, modes)
-                    } else {
-                        // Peers exchange only the ID, which resolves to the first match.
-                        Some(mode.id.into())
-                    }
-                })
-                .collect(),
+            mode_rows,
             selected_mode: selected_mode_id.into(),
             random_maps_allowed: false,
-            official_only: context.official_only(),
+            context,
             filtered_record_indices: Vec::new(),
             saved_seeds: Vec::new(),
             filtered_seed_indices: Vec::new(),
@@ -488,7 +498,7 @@ impl ChooseMapModalState {
     /// VERA: list the Online Maps row last. A room that takes only official
     /// maps has none.
     pub fn add_online_maps_row(&mut self) {
-        if self.official_only {
+        if self.context.official_only() {
             return;
         }
         if !self.mode_rows.contains(&ONLINE_MAPS_ROW.into()) {
@@ -609,7 +619,7 @@ impl ChooseMapModalState {
                 })
                 .filter_map(|index| {
                     let (row, _) = listed.iter().find(|(_, mode)| {
-                        is_valid_map(&records[index], mode, self.official_only)
+                        is_valid_map(&records[index], mode, self.context.official_only())
                     })?;
                     Some((index, *row))
                 })
@@ -622,10 +632,13 @@ impl ChooseMapModalState {
             self.map_scroll.cancel();
             return;
         }
-        let mode = self.selected_mode.resolve(modes);
+        let mode = self
+            .selected_mode
+            .resolve(modes)
+            .filter(|mode| self.context != ChooseMapContext::Archon || self.context.permits(mode));
         // Online maps list only under Online Maps and Favorites.
         self.filtered_record_indices = mode
-            .map(|mode| filter_records_for_mode(records, mode, self.official_only))
+            .map(|mode| filter_records_for_mode(records, mode, self.context.official_only()))
             .unwrap_or_default()
             .into_iter()
             .filter(|index| !records[*index].is_online() && self.matches_search(&records[*index]))
@@ -651,7 +664,8 @@ impl ChooseMapModalState {
         layout: &ChooseMapModalLayout,
     ) -> bool {
         let mode = mode.into();
-        if (is_own_row(mode.id) && !self.mode_rows.contains(&mode))
+        if ((is_own_row(mode.id) || self.context == ChooseMapContext::Archon)
+            && !self.mode_rows.contains(&mode))
             || (!is_own_row(mode.id) && mode.resolve(modes).is_none())
         {
             return false;
@@ -1163,6 +1177,31 @@ mod tests {
         let mut record = record(name);
         record.game_modes = game_modes.iter().map(|mode| mode.to_string()).collect();
         record
+    }
+
+    #[test]
+    fn archon_chooser_lists_only_shared_start_battle_modes_and_their_maps() {
+        let modes = stock_skirmish_modes();
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let records = [
+            record_for("Battle map", &["standard"]),
+            record_for("Campaign map", &["cooperative"]),
+            record_for("Team map", &["teamgame"]),
+        ];
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Archon,
+            3,
+            Some(1),
+            &modes,
+            &records,
+            &layout,
+        );
+        assert_eq!(modal.mode_rows(), &[1.into(), 9.into()]);
+        assert_eq!(modal.selected_mode.id, 1);
+        assert_eq!(modal.filtered_record_indices, [0]);
+        assert!(!modal.select_mode(3, &modes, &records, &layout));
+        assert!(modal.select_mode(9, &modes, &records, &layout));
+        assert_eq!(modal.filtered_record_indices, [2]);
     }
 
     #[test]

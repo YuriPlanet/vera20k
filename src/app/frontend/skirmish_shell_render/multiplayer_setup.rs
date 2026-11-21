@@ -62,7 +62,12 @@ pub(crate) fn render_multiplayer_setup(
         state.frontend.skirmish_preview_texture = None;
     }
     let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
-    let heading = localized_label(state, view.page().title_key, view.page().title_key);
+    let title_key = if view.archon {
+        "VERA:ArchonMode"
+    } else {
+        view.page().title_key
+    };
+    let heading = localized_label(state, title_key, title_key);
     let accept_highlight = state
         .frontend
         .multiplayer_setup
@@ -81,14 +86,14 @@ pub(crate) fn render_multiplayer_setup(
             ui.shown = true;
         }
         ui.statics
-            .set_map_labels(&view.mode_label, &view.map_label, now);
+            .set_labels(&heading, &view.mode_label, &view.map_label, now);
         let shown = ui.statics.paint(now, sliding);
         [
             (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),
             (
                 shown
                     .game_type
-                    .filter(|_| view.combo(CAMPAIGN_SERIES).is_none()),
+                    .filter(|_| !view.archon && view.combo(CAMPAIGN_SERIES).is_none()),
                 layout.mode_label,
                 ShellAlign::H_CENTER,
             ),
@@ -225,6 +230,8 @@ pub(crate) fn render_multiplayer_setup(
                     "GUI:Color" | "GUI:StartPosition" | "GUI:Team" => continue,
                     _ => key,
                 }
+            } else if view.archon && *key == "GUI:Team" {
+                &"VERA:ArchonGroup"
             } else {
                 key
             };
@@ -447,8 +454,13 @@ pub(crate) fn render_multiplayer_setup(
             );
             // Its art at 78% size, its words at the roster's.
             let small = layout.control_scale(BALANCE);
+            let group_label = if view.archon {
+                "VERA:ArchonGroupLimit"
+            } else {
+                "VERA:Teams"
+            };
             for (id, rect, caption) in [
-                (TEAM_COUNT, layout.teams_label, "VERA:Teams"),
+                (TEAM_COUNT, layout.teams_label, group_label),
                 (ROOM_SIZE, layout.room_size_label, "VERA:RoomSize"),
             ] {
                 if view.trackbars.iter().any(|bar| bar.id == id && bar.visible) {

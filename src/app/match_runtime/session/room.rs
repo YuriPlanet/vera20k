@@ -404,6 +404,32 @@ impl MatchSession {
         let Some(teams) = self.network_teams() else {
             return Ok(false);
         };
+        if let Some(room) = self.archon_room() {
+            let launch = self.editable_network_setup()?;
+            let mut moved = false;
+            for index in 0..launch.humans.len() {
+                let human = &launch.humans[index];
+                let Some(row) = human.raw_slot_index.filter(|_| !human.is_observer()) else {
+                    continue;
+                };
+                if room.may_join(launch, row, human.slot.team) {
+                    continue;
+                }
+                let available = room.available_group(launch, row);
+                let human = &mut launch.humans[index];
+                if let Some(team) = available {
+                    human.slot.team = team;
+                } else {
+                    human.set_observer(true);
+                }
+                moved = true;
+            }
+            for ai in &mut launch.opponents {
+                moved |= ai.team != LaunchTeam::None;
+                ai.team = LaunchTeam::None;
+            }
+            return Ok(moved);
+        }
         let launch = self.editable_network_setup()?;
         let on_team = |team: LaunchTeam| match team {
             LaunchTeam::Team(team) if team < teams => Some(usize::from(team)),
@@ -577,6 +603,7 @@ impl MatchSession {
             || self.network_room_full()
             || !self.network_no_open_player_row()
             || watches
+            || (self.archon_room().is_some() && self.available_archon_group(u8::MAX).is_none())
         {
             return None;
         }
@@ -823,6 +850,12 @@ impl MatchSession {
         }
         let observer = observer || self.network_teams().is_some();
         let other = || {
+            if observer
+                && self.archon_room().is_some()
+                && self.available_archon_group(u8::MAX).is_none()
+            {
+                return None;
+            }
             self.network_several_observers()
                 .then(|| self.network_free_row(!observer))
                 .flatten()

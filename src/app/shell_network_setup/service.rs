@@ -14,6 +14,7 @@ use crate::util::time::Instant;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HostOptions {
     pub(crate) launch: SkirmishLaunchSession,
+    pub(crate) archon: Option<crate::app::match_runtime::session::archon::ArchonRoom>,
     pub(crate) map_metadata: crate::app::match_runtime::session::NetworkMapMetadata,
     pub(crate) vacancies: [NetworkVacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
     pub(crate) observer_row: Option<u8>,
@@ -412,6 +413,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::HostSetup(HostOptions {
             launch,
+            archon,
             map_metadata,
             vacancies,
             observer_row,
@@ -517,6 +519,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 observer_row,
                 quick_match,
             )?;
+            if archon.is_some() || state.match_state.session.archon_room().is_some() {
+                state.match_state.session.accept_archon_room(archon)?;
+            }
             state.match_state.session.accept_network_map_metadata(
                 map_metadata,
                 local_map.as_deref(),
@@ -552,17 +557,19 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             }
             // Full options5E5AAB updates persistent Color for the local name,
             // independently of raw ColorEx and the two country preferences.
-            let local_color = state
-                .match_state
-                .session
-                .network_setup()
-                .expect("accepted setup")
-                .local_slot()
-                .color_index;
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .accept_network_local_color(local_color);
+            if archon.is_none() {
+                let local_color = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .expect("accepted setup")
+                    .local_slot()
+                    .color_index;
+                state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .accept_network_local_color(local_color);
+            }
             // The owner validates source identities and normalizes raw AI row
             // order before the native material-change comparison.
             // Original5E5E0A..5E5E1A combines the independent mapsame and
@@ -849,7 +856,7 @@ pub(super) fn place_player(
         return state
             .match_state
             .session
-            .accept_lan_peer_choices(index, choices, observer);
+            .accept_lan_peer_choices(index, choices, observer, true);
     }
     if observer != human.is_observer() {
         return state
@@ -860,6 +867,12 @@ pub(super) fn place_player(
     let row = human
         .raw_slot_index
         .ok_or_else(|| anyhow::anyhow!("moves name seated rows"))?;
+    let mut choices = choices;
+    let mut observer = observer;
+    state
+        .match_state
+        .session
+        .admit_archon_choices(index, &mut choices, &mut observer, true);
     state
         .match_state
         .session

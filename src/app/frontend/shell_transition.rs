@@ -269,6 +269,7 @@ pub(crate) enum ShellExitThen {
     LanBack,
     LanCreate {
         observe: bool,
+        kind: crate::app::shell_lan::LanCreateKind,
     },
     LanJoinAccepted(crate::app::shell_lan::LanJoinAcceptance),
     NetworkSetupBack(crate::ui::multiplayer_setup::SetupDialog),

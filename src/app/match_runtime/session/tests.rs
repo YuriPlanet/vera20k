@@ -296,13 +296,15 @@ fn a_vera_room_guest_watches_and_plays_again() {
             .unwrap();
     }
     session
-        .accept_lan_peer_choices(1, slot.clone(), false)
+        .accept_lan_peer_choices(1, slot.clone(), false, false)
         .unwrap();
     assert_eq!(guest(&session), (true, Some(4)));
     session
         .choose_network_row_kind(2, NetworkRowKind::Open)
         .unwrap();
-    session.accept_lan_peer_choices(1, slot, false).unwrap();
+    session
+        .accept_lan_peer_choices(1, slot, false, false)
+        .unwrap();
     assert_eq!(guest(&session), (false, Some(2)));
     assert_eq!(observer_rows(&session), [4]);
 }

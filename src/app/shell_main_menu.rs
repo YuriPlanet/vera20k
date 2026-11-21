@@ -1727,7 +1727,8 @@ impl App {
         super::shell_mod_import::pointer_button(state, false);
         Self::shell_menu_pointer(state, Some(false));
         if let Some(id) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
-            if let Some(result) = crate::ui::shell::modal::ModalResult::from_message_box_control(id) {
+            if let Some(result) = crate::ui::shell::modal::ModalResult::from_message_box_control(id)
+            {
                 Self::resolve_shell_message_box(state, result);
             } else {
                 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
@@ -2062,7 +2063,9 @@ impl App {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
             ShellExitThen::LanBack => Self::commit_lan_back(state),
-            ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),
+            ShellExitThen::LanCreate { observe, kind } => {
+                Self::commit_lan_create(state, observe, kind)
+            }
             ShellExitThen::LanJoinAccepted(accepted) => {
                 Self::open_joined_setup(
                     state,
@@ -2182,7 +2185,9 @@ impl App {
             Some(
                 crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_)
                     | crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
-                    | crate::app::frontend::state::ShellMessageBoxPurpose::AuthoredCampaignResult(_)
+                    | crate::app::frontend::state::ShellMessageBoxPurpose::AuthoredCampaignResult(
+                        _
+                    )
             )
         ) {
             return;

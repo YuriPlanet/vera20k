@@ -289,6 +289,14 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             .multiplayer_shell_runtime
             .set_cooperative_difficulty(value);
     } else if control == TEAM_COUNT {
+        if state.match_state.session.archon_room().is_some() {
+            let count = u8::try_from(value)?;
+            if !state.match_state.session.set_network_archon_limit(count)? {
+                super::chat_notice(state, "VERA:ArchonGroupFull", &[]);
+            }
+            queue(state, NetworkSetupRequest::PublishOptions);
+            return Ok(());
+        }
         // 1 is Off.
         let teams = u8::try_from(value).ok().filter(|teams| *teams >= 2);
         if state
@@ -399,6 +407,15 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             _ => None,
         };
         if let Some(observer) = observer.filter(|_| column == SetupColumn::Player) {
+            let team = if !observer && state.match_state.session.archon_room().is_some() {
+                let Some(team) = state.match_state.session.available_archon_group(combo.row) else {
+                    super::chat_notice(state, "VERA:ArchonGroupFull", &[]);
+                    return Ok(());
+                };
+                team
+            } else {
+                team
+            };
             let change = super::service::move_player(state, index, team, observer)?;
             super::service::publish_choices(state, change);
             return Ok(());
@@ -502,9 +519,19 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
 fn commit_row(
     state: &mut AppState,
     row: u8,
-    slot: crate::skirmish_launch::SkirmishLocalSlot,
+    mut slot: crate::skirmish_launch::SkirmishLocalSlot,
     observer: bool,
 ) -> anyhow::Result<()> {
+    let session = &state.match_state.session;
+    if session.host()
+        && session.archon_room().is_some()
+        && let Some(launch) = session.network_setup()
+        && launch.local_player().raw_slot_index == Some(row)
+        && launch.local_player().is_observer() == observer
+    {
+        let mut same_role = observer;
+        session.admit_archon_choices(launch.local_player_index, &mut slot, &mut same_role, true);
+    }
     state
         .match_state
         .session
@@ -514,7 +541,9 @@ fn commit_row(
         .session
         .network_setup()
         .expect("editable setup");
-    if launch.local_player().raw_slot_index == Some(row) {
+    if launch.local_player().raw_slot_index == Some(row)
+        && state.match_state.session.archon_room().is_none()
+    {
         state
             .frontend
             .multiplayer_shell_runtime
@@ -662,6 +691,9 @@ fn add_ai(
     let team = match group {
         Some(SetupGroup::Team(team)) => LaunchTeam::Team(team),
         Some(SetupGroup::Players) => state.match_state.session.network_default_team(),
+        Some(SetupGroup::NoTeam) if state.match_state.session.archon_room().is_some() => {
+            LaunchTeam::None
+        }
         _ => anyhow::bail!("Add AI belongs to a box header"),
     };
     let difficulty = match value {
@@ -810,7 +842,11 @@ pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow
             }
         }
     } else if dialog.host {
-        NetworkRoomReturn::LanHost
+        if let Some(archon) = state.match_state.session.archon_room() {
+            NetworkRoomReturn::LanArchonHost(archon)
+        } else {
+            NetworkRoomReturn::LanHost
+        }
     } else {
         crate::app::lan_service::admitted_host_room(state)
             .map(|(host, game_id)| NetworkRoomReturn::LanGuest {
@@ -939,10 +975,12 @@ pub(crate) fn commit_map_selection(
         );
     }
     state.frontend.random_map_retention.select_map(&file);
-    state
-        .frontend
-        .multiplayer_shell_runtime
-        .set_preferred_game_mode(mode_id);
+    if state.match_state.session.archon_room().is_none() {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .set_preferred_game_mode(mode_id);
+    }
     state.frontend.skirmish_preview_texture = None;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.invalidate_received_preview(map_changed);

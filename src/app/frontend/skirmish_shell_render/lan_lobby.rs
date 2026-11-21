@@ -15,7 +15,7 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::lan_shell::{JOIN, PAGE};
+use crate::ui::lan_shell::{JOIN, PAGE, VERA_PAGE};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
 
@@ -365,7 +365,7 @@ pub(crate) fn render_lan_lobby(
                     false,
                     SHELL_CONTROL_DEPTH,
                 );
-                if let Some(spec) = PAGE.button(button.id) {
+                if let Some(spec) = VERA_PAGE.button(button.id) {
                     let key = if button.id == JOIN && lobby.observer {
                         "GUI:Observe"
                     } else {
@@ -424,8 +424,8 @@ pub(crate) fn render_lan_lobby(
             ));
         }
     }
-    if let Some(picker) = creating {
-        paint_create_box(state, atlas, lobby, picker, &mut overlay);
+    if let Some(room) = creating {
+        paint_create_box(state, atlas, lobby, &room.picker, &mut overlay);
     }
     in_game_shell::render_shell_frame(
         state,

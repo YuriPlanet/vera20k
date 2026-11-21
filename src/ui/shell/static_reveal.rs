@@ -454,9 +454,13 @@ impl Default for DialogStatics {
 impl DialogStatics {
     /// The SHOW completion with the heading the dialog holds.
     pub(crate) fn show(&mut self, heading: &str, now: Instant) {
-        self.heading.set_text(heading, now);
+        self.set_heading(heading, now);
         self.heading.show(now);
         self.status_line.show(now);
+    }
+
+    pub(crate) fn set_heading(&mut self, heading: &str, now: Instant) {
+        self.heading.set_text(heading, now);
     }
 
     /// A hover message to the status line (`0x4B2`): a changed help restarts

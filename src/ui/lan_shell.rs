@@ -27,26 +27,34 @@ pub(crate) const PLAYERS: u16 = 0x53E;
 pub(crate) const CHAT_LOG: u16 = 0x53F;
 pub(crate) const OBSERVER_IMAGE: u16 = 0x75F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x760;
+pub(crate) const CREATE_ARCHON: u16 = 0x7200;
+
+const CREATE_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
+    id: CREATE,
+    dlu_top: 122,
+    csf_key: "GUI:New",
+    tooltip_key: "STT:LobbyButtonNew",
+    result: None,
+};
+const JOIN_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
+    id: JOIN,
+    dlu_top: 149,
+    csf_key: "GUI:Join",
+    tooltip_key: "STT:LobbyButtonJoin",
+    result: None,
+};
+const ARCHON_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
+    id: CREATE_ARCHON,
+    dlu_top: 176,
+    csf_key: "VERA:ArchonMode",
+    tooltip_key: "VERA:LanArchonCreateHelp",
+    result: None,
+};
 
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xBB),
     title_key: "GUI:Lobby",
-    stacked: &[
-        MenuPageButtonSpec {
-            id: CREATE,
-            dlu_top: 122,
-            csf_key: "GUI:New",
-            tooltip_key: "STT:LobbyButtonNew",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: JOIN,
-            dlu_top: 149,
-            csf_key: "GUI:Join",
-            tooltip_key: "STT:LobbyButtonJoin",
-            result: None,
-        },
-    ],
+    stacked: &[CREATE_BUTTON, JOIN_BUTTON],
     back: MenuPageButtonSpec {
         id: BACK,
         dlu_top: 346,
@@ -56,13 +64,18 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
+pub(crate) const VERA_PAGE: MenuPageSpec = MenuPageSpec {
+    stacked: &[CREATE_BUTTON, JOIN_BUTTON, ARCHON_BUTTON],
+    ..PAGE
+};
+
 /// Executed6040B0 against BB's original resource control IDs.
 pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
+    if let Some(button) = VERA_PAGE.button(control) {
+        return Some(button.tooltip_key);
+    }
     Some(match control {
-        CREATE => "STT:LobbyButtonNew",
-        JOIN => "STT:LobbyButtonJoin",
         OBSERVE => "STT:LobbyButtonObserve",
-        BACK => "STT:LobbyButtonBack",
         CHAT => "STT:LobbyEditInput",
         NAME => "STT:LobbyEditYourName",
         GAMES => "STT:LobbyListGames",
@@ -194,6 +207,7 @@ pub(crate) enum LanLobbyAction {
     Create {
         observe: bool,
     },
+    CreateArchon,
     Join {
         game_id: Option<u64>,
         observe: bool,
@@ -637,6 +651,7 @@ impl LanLobbyState {
             CREATE => LanLobbyAction::Create {
                 observe: self.observer,
             },
+            CREATE_ARCHON => LanLobbyAction::CreateArchon,
             JOIN | OBSERVE => LanLobbyAction::Join {
                 game_id: self.selected_game().map(|row| row.id),
                 observe: control == OBSERVE || self.observer,
@@ -793,18 +808,24 @@ pub(crate) struct LanLobbyLayout {
 }
 
 impl LanLobbyLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
+    pub(crate) fn new(width: i32, height: i32, modern: bool) -> Self {
+        Self::build(width, height, ShellScale::RETAIL, modern)
     }
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
+    pub(crate) fn responsive(width: i32, height: i32, modern: bool) -> Self {
+        Self::build(
+            width,
+            height,
+            ShellScale::from_screen(width, height),
+            modern,
+        )
     }
 
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
+    fn build(width: i32, height: i32, scale: ShellScale, modern: bool) -> Self {
+        let spec = if modern { &VERA_PAGE } else { &PAGE };
         let page = if scale.is_retail() {
-            menu_page::compute_layout(&PAGE, width as u32, height as u32)
+            menu_page::compute_layout(spec, width as u32, height as u32)
         } else {
-            menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32)
+            menu_page::compute_responsive_layout(spec, width as u32, height as u32)
         };
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
         // Executed original BB child setup60AAB0/include60C540/relayout60C4A0
@@ -986,7 +1007,7 @@ mod tests {
 
     #[test]
     fn layout_and_help_follow_original_bb_execution() {
-        let layout = LanLobbyLayout::new(800, 600);
+        let layout = LanLobbyLayout::new(800, 600, false);
         for row in native()["layout_800"].as_array().unwrap() {
             let id = row["id"].as_u64().unwrap() as u32;
             let expected: Vec<i32> = serde_json::from_value(row["rect"].clone()).unwrap();
@@ -1029,6 +1050,27 @@ mod tests {
                 row["key"].as_str()
             );
         }
+    }
+
+    #[test]
+    fn archon_has_a_separate_create_action_in_the_modern_lan_lobby() {
+        let native = LanLobbyLayout::new(800, 600, false);
+        let modern = LanLobbyLayout::new(800, 600, true);
+        assert_eq!(native.page.button_rect(CREATE_ARCHON), None);
+        for id in [CREATE, JOIN, BACK] {
+            assert_eq!(native.page.button_rect(id), modern.page.button_rect(id));
+        }
+        let button = modern.page.button_rect(CREATE_ARCHON).unwrap();
+        assert_eq!(
+            modern.control_at(button.x + button.w / 2, button.y + button.h / 2),
+            Some(CREATE_ARCHON)
+        );
+        let mut lobby = LanLobbyState::new("Tester", true);
+        assert_eq!(
+            lobby.activate(CREATE_ARCHON),
+            Some(LanLobbyAction::CreateArchon)
+        );
+        assert_eq!(lobby.activate(CREATE_ARCHON), None);
     }
 
     #[test]

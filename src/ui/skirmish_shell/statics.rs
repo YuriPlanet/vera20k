@@ -70,8 +70,15 @@ impl SkirmishStatics {
         self.map_label.show(now);
     }
 
-    /// Shared setup pages replace map/mode strings without replaying SHOW.
-    pub(crate) fn set_map_labels(&mut self, game_type: &str, map_label: &str, now: Instant) {
+    /// Shared setup pages update their labels after receiving room settings.
+    pub(crate) fn set_labels(
+        &mut self,
+        heading: &str,
+        game_type: &str,
+        map_label: &str,
+        now: Instant,
+    ) {
+        self.dialog.set_heading(heading, now);
         self.game_type.set_text(game_type, now);
         self.map_label.set_text(map_label, now);
     }

@@ -1,13 +1,13 @@
 //! Read-only BC/BD control projection. Native5EB060 builds Player entries;
 //!5EA180/5E9E70 gate their siblings. MatchSession is the sole setup authority.
 
-use crate::app::AppState;
 use crate::app::frontend::skirmish_shell_render::{
     combo_item_label, flag_pcx_for_side_item_data, side_item_data_for_country,
 };
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::shell_wol::lobby::player_badge;
-use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
+use crate::app::{App, AppState};
+use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam, SkirmishHumanSlot};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::trackbar::TrackbarRange;
@@ -167,6 +167,7 @@ pub(crate) fn room_size_shown(state: &AppState) -> bool {
 pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
+    let archon = session.archon_room().is_some();
     mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
     let capacity = session
         .network_setup_capacity()?
@@ -196,7 +197,8 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         .flatten();
     // In a mode with teams, VERA's rooms group their rows under headers:
     // with Teams set, one for each of its teams.
-    let grouped = several && session.network_team_room() && session.campaign_room().is_none();
+    let grouped =
+        several && (archon || session.network_team_room()) && session.campaign_room().is_none();
     let listed = if several {
         listed_rows(
             session,
@@ -273,6 +275,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let room = session.network_room();
     let dialog = super::dialog(state);
     let campaign = session.campaign_room().is_some();
+    let archon = session.archon_room();
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
     let clan_room = dialog.wol() && room.clan;
@@ -304,6 +307,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
     let ai_allowed = !campaign && mode.class.policy().lists_in_skirmish;
     let teams = (!campaign).then(|| session.network_teams()).flatten();
+    let group_is_open = |row, team| archon.is_none_or(|room| room.may_join(launch, row, team));
+    let start_capacity = if archon.is_some() {
+        map_index.map_or(capacity, |map| App::map_start_cells(state, map).len())
+    } else {
+        capacity
+    };
     // With Teams Off a room with teams is free-for-all and nobody is on a
     // team, so, as in a clan room, it has no Team lists.
     let no_team_lists = clan_room || grouped && teams.is_none();
@@ -330,12 +339,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         dialog.rows_per_page()
     };
     let stock_mode_label = label(state, &mode.ui_name_key);
-    let mut combos = super::campaign_room::setup_selectors(
-        &protocol.campaign_catalog,
-        session.campaign_room(),
-        host,
-        &stock_mode_label,
-    );
+    let mut combos = if archon.is_some() {
+        Vec::new()
+    } else {
+        super::campaign_room::setup_selectors(
+            &protocol.campaign_catalog,
+            session.campaign_room(),
+            host,
+            &stock_mode_label,
+        )
+    };
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
@@ -365,17 +378,42 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     }
                 };
                 let (caption, button) = match group {
-                    SetupGroup::Team(team) => (
-                        crate::i18n::tr_fill(
-                            "VERA:TeamGroup",
-                            &[("letter", &team_letter(state, team))],
-                        ),
-                        joins(LaunchTeam::Team(team)).then(join),
-                    ),
+                    SetupGroup::Team(team) => {
+                        let key = if let Some(room) = archon {
+                            crate::i18n::tr_fill(
+                                "VERA:ArchonGroupHeader",
+                                &[
+                                    ("letter", &team_letter(state, team)),
+                                    ("count", &count),
+                                    ("limit", &room.max_controllers()),
+                                ],
+                            )
+                        } else {
+                            crate::i18n::tr_fill(
+                                "VERA:TeamGroup",
+                                &[("letter", &team_letter(state, team))],
+                            )
+                        };
+                        let team = LaunchTeam::Team(team);
+                        let button = joins(team).then(|| {
+                            let (label, enabled) = join();
+                            (
+                                label,
+                                enabled
+                                    && local
+                                        .raw_slot_index
+                                        .is_some_and(|row| group_is_open(row, team)),
+                            )
+                        });
+                        (key, button)
+                    }
                     // The one box of a room with Teams Off has no caption;
                     // a spectator's Join seats it there.
                     SetupGroup::Players => (String::new(), (placed && !seated).then(join)),
-                    // Only an older host seats players on no team.
+                    SetupGroup::NoTeam if archon.is_some() => {
+                        (crate::i18n::tr("VERA:ArchonAiOpponents"), None)
+                    }
+                    // Only an older stock host seats players on no team.
                     SetupGroup::NoTeam => (fill("VERA:NoTeamGroup"), None),
                     SetupGroup::ClosedSeats => (fill("VERA:ClosedSeatsGroup"), None),
                     SetupGroup::Spectators => (
@@ -397,6 +435,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         .take(count)
                         .filter_map(|item| {
                             let Listed::Row(row) = *item else { return None };
+                            if archon.is_some()
+                                && session.network_archon_group_leader(row) != Some(row)
+                            {
+                                return None;
+                            }
                             let slot = session.network_row_choices(row)?;
                             (!slot.color_random).then_some(slot.color_index)
                         })
@@ -414,7 +457,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 // The host's Add AI in a team's box or the one box fills
                 // the room's AI seat, past the map's own where it shares
                 // bases.
-                let room = matches!(group, SetupGroup::Team(_) | SetupGroup::Players);
+                let room = if archon.is_some() {
+                    group == SetupGroup::NoTeam
+                } else {
+                    matches!(group, SetupGroup::Team(_) | SetupGroup::Players)
+                };
                 if let (true, Some(seat)) = (room, ai_seat) {
                     let item = |value: i32, text: String| SetupChoice {
                         value,
@@ -468,9 +515,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // (`service::place_player`).
         let host_moves = several && host && !is_local && human.is_some() && !observer;
         let choices = session.network_row_choices(row)?;
-        let country = choices.country_shell_value(observer);
-        let color = choices.color_shell_value();
-        let start = choices.start_position;
+        let archon_leader = session.network_archon_group_leader(row);
+        let group_choices = archon_leader
+            .filter(|leader| *leader != row)
+            .and_then(|leader| session.network_row_choices(leader));
+        let identity = group_choices.as_ref().unwrap_or(&choices);
+        let country = identity.country_shell_value(observer);
+        let color = identity.color_shell_value();
+        let start = identity.start_position;
         let team = choices.team.shell_value();
         let slot_value = if human.is_some() {
             0
@@ -495,6 +547,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     "VERA:QueuedName",
                     &[("place", &place), ("name", &human.name)],
                 ),
+                None if archon_leader == Some(row) => {
+                    crate::i18n::tr_fill("VERA:ArchonLeaderName", &[("name", &human.name)])
+                }
                 None => human.name.clone(),
             })
             .unwrap_or_else(|| {
@@ -686,17 +741,24 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 swatch: None,
             });
         }
+        let other_house = |human: &&SkirmishHumanSlot| {
+            // 5E9C00 checks visible A8DA90 pointers. A kicked peer stays
+            // admitted until type10 but has no row. For Archon, each group
+            // has one colour and one start, projected by its leader.
+            let Some(peer_row) = human.raw_slot_index else {
+                return false;
+            };
+            peer_row != row
+                && !human.is_observer()
+                && (archon.is_none()
+                    || (session.network_archon_group_leader(peer_row) == Some(peer_row)
+                        && (archon_leader.is_none() || human.slot.team != choices.team)))
+        };
         let color_claims = launch
             .humans
             .iter()
-            .filter(|human| {
-                //5E9C00 checks visibleA8DA90 pointers, not the source vector.
-                // A kicked peer remains admitted until type10 but has no row.
-                human.raw_slot_index.is_some()
-                    && human.raw_slot_index != Some(row)
-                    && !human.slot.color_random
-                    && !human.is_observer()
-            })
+            .filter(other_house)
+            .filter(|human| !human.slot.color_random)
             .map(|human| usize::from(human.slot.color_index))
             .chain(
                 launch
@@ -720,15 +782,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // VERA shared control: when the mode policy allows shared start
         // positions, a player may pick a start another player holds to join
         // that player's House. Such starts stay listed, marked "+".
-        let shares = human.is_some() && mode.class.policy().shared_start_positions;
+        let shares =
+            archon.is_none() && human.is_some() && mode.class.policy().shared_start_positions;
         let human_starts = launch
             .humans
             .iter()
-            .filter(|human| {
-                human.raw_slot_index.is_some()
-                    && human.raw_slot_index != Some(row)
-                    && !human.is_observer()
-            })
+            .filter(other_house)
             .map(|human| human.slot.start_position)
             .collect::<Vec<_>>();
         let start_claims = human_starts.iter().copied().filter(|_| !shares).chain(
@@ -738,23 +797,29 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .filter(|ai| ai.raw_slot_index != row)
                 .map(|ai| ai.start_position),
         );
-        let starts = skirmish_shell::available_start_choices(Some(start), start_claims, capacity)
-            .into_iter()
-            .map(|item| {
-                let mut choice = choice(state, item);
-                if shares
-                    && let SkirmishComboItem::Start(held @ LaunchStartPosition::Position(_)) = item
-                    && human_starts.contains(&held)
-                {
-                    choice.text.push('+');
-                }
-                choice
-            })
-            .collect::<Vec<_>>();
+        let starts =
+            skirmish_shell::available_start_choices(Some(start), start_claims, start_capacity)
+                .into_iter()
+                .map(|item| {
+                    let mut choice = choice(state, item);
+                    if shares
+                        && let SkirmishComboItem::Start(held @ LaunchStartPosition::Position(_)) =
+                            item
+                        && human_starts.contains(&held)
+                    {
+                        choice.text.push('+');
+                    }
+                    choice
+                })
+                .collect::<Vec<_>>();
         // With Teams set, the room's teams only. A room with teams has no
         // "no team": a player on none watches.
         let team_items = match teams {
             Some(count) => (0..count)
+                .filter(|team| {
+                    let team = LaunchTeam::Team(*team);
+                    choices.team == team || group_is_open(row, team)
+                })
                 .map(|team| SkirmishComboItem::Team(i32::from(team)))
                 .collect(),
             None => skirmish_shell::team_choices(mode.must_ally || grouped),
@@ -770,15 +835,28 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             (SetupColumn::Team, team, team_items),
         ] {
             let selected = choices.iter().position(|item| item.value == value);
+            let enabled = if archon.is_some() && human.is_some() && !observer {
+                match column {
+                    SetupColumn::Country | SetupColumn::Color => {
+                        (host || is_local) && archon_leader == Some(row)
+                    }
+                    SetupColumn::Start => host && archon_leader == Some(row),
+                    SetupColumn::Team => host || is_local,
+                    SetupColumn::Player => false,
+                }
+            } else {
+                (editable || switching && column == SetupColumn::Country || host_moves)
+                    && (column != SetupColumn::Team || mode.allies_allowed)
+            };
             combos.push(SetupCombo {
                 id: column.control(visible_row),
                 row,
-                enabled: (editable || switching && column == SetupColumn::Country || host_moves)
-                    && (column != SetupColumn::Team || mode.allies_allowed),
+                enabled,
                 visible: visible
                     && !bare
                     && (column == SetupColumn::Country || !observer)
-                    && !(column == SetupColumn::Team && no_team_lists),
+                    && !(column == SetupColumn::Team
+                        && (no_team_lists || archon.is_some() && ai.is_some())),
                 selected,
                 choices,
                 list_w: 0,
@@ -850,11 +928,19 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             enabled: host,
             visible: cooperative || campaign,
         },
-        // The Teams box's count: 1 is Off, then the teams.
+        // Archon reserves this control for the allowed number of controllers
+        // per House. Stock rooms retain the Teams count, with 1 as Off.
         SetupTrackbar {
             id: TEAM_COUNT,
-            value: options.teams.map_or(1, i32::from),
-            range: TrackbarRange::new(1, i32::from(*crate::skirmish_launch::ROOM_TEAMS.end()), 1),
+            value: archon.map_or_else(
+                || options.teams.map_or(1, i32::from),
+                |room| i32::from(room.max_controllers()),
+            ),
+            range: if archon.is_some() {
+                crate::ui::room_limits::PLAYERS
+            } else {
+                TrackbarRange::new(1, i32::from(*crate::skirmish_launch::ROOM_TEAMS.end()), 1)
+            },
             enabled: host && grouped,
             visible: dialog.modern && grouped,
         },
@@ -900,7 +986,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .position(|human| human.raw_slot_index == Some(row));
             let may_watch = match person {
                 Some(_) => true,
-                None => session.network_display_ai(row).map(|_| false)?,
+                None if archon.is_none() => session.network_display_ai(row).map(|_| false)?,
+                None => return None,
             };
             Some(DragRow {
                 row,
@@ -918,6 +1005,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     }
     Some(SetupView {
         campaign,
+        archon: archon.is_some(),
         first_row,
         row_count,
         page_len: listing.page_len,
@@ -960,8 +1048,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .as_ref()
             .and_then(|ui| ui.open_box)
             .filter(|_| dialog.modern),
-        team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
-        team_colors_enabled: host && teams.is_some(),
+        team_starts_enabled: archon.is_none() && host && teams.is_some() && map_index.is_some(),
+        team_colors_enabled: archon.is_none() && host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
         lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
         drag_rows,
@@ -970,7 +1058,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .multiplayer_setup
             .as_ref()
             .is_some_and(|ui| ui.map_offer.is_some()),
-        mode_label: if launch.selected_map_file.is_none() {
+        mode_label: if archon.is_some() {
+            crate::i18n::tr("VERA:ArchonMode")
+        } else if launch.selected_map_file.is_none() {
             label(state, "GUI:None")
         } else {
             stock_mode_label
@@ -1056,11 +1146,12 @@ fn listed_rows(
     // The free seats show no group: players take them by their box's Join,
     // and the host fills one with a box header's Add AI.
     let players: Vec<u8> = seated.filter(held).collect();
+    let archon = session.archon_room().is_some();
     let mut listed = Vec::new();
     // A header, how many players it counts, then its rows; a team's box
     // fills up to its lines with empty ones.
     let mut group = |header, count: usize, rows: Vec<u8>| {
-        let lines = if matches!(header, SetupGroup::Team(_)) {
+        let lines = if !archon && matches!(header, SetupGroup::Team(_)) {
             TEAM_BOX_ROWS
         } else {
             0
@@ -1089,7 +1180,7 @@ fn listed_rows(
                 .copied()
                 .filter(|row| !matches!(team_of(row), LaunchTeam::Team(team) if team < count))
                 .collect();
-            if !loners.is_empty() {
+            if archon || !loners.is_empty() {
                 group(SetupGroup::NoTeam, loners.len(), loners);
             }
         }
@@ -1111,10 +1202,15 @@ fn listed_rows(
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+    use crate::app::match_runtime::session::NetworkReturnContext;
 
     /// A VERA room on FOUR.MAP, with spectators: the host in row 0, a guest
     /// in row 1, rows 2 and 3 open.
     fn vera_room() -> MatchSession {
+        room(NetworkReturnContext::Wol)
+    }
+
+    fn room(context: NetworkReturnContext) -> MatchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/map_observation.command-bar.example.json",
         ))
@@ -1130,7 +1226,7 @@ mod tests {
         launch.humans.push(guest);
         let mode = launch.mode.clone();
         let mut session = MatchSession::default();
-        session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
+        session.enter_network(context);
         session
             .accept_network_setup(launch, true, Some(7), true)
             .unwrap();
@@ -1200,6 +1296,36 @@ mod tests {
         assert_eq!(
             listed[18..],
             [Header(ClosedSeats, 1), Row(3), Header(Spectators, 0)]
+        );
+    }
+
+    #[test]
+    fn archon_lists_compact_groups_and_provides_a_separate_ai_section() {
+        use crate::app::match_runtime::session::archon::ArchonRoom;
+        use Listed::{Header, Row};
+        use SetupGroup::{NoTeam, Spectators, Team};
+        let mut session = room(NetworkReturnContext::LanLobby);
+        session.set_network_teams(Some(3)).unwrap();
+        session
+            .accept_archon_room(Some(ArchonRoom::default()))
+            .unwrap();
+        assert_eq!(
+            listed_rows(
+                &session,
+                usize::from(session.network_player_row_limit()),
+                None,
+                true,
+                session.network_teams(),
+            ),
+            [
+                Header(Team(0), 1),
+                Row(0),
+                Header(Team(1), 1),
+                Row(1),
+                Header(Team(2), 0),
+                Header(NoTeam, 0),
+                Header(Spectators, 0),
+            ],
         );
     }
 

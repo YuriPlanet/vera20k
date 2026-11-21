@@ -344,6 +344,7 @@ fn host_options(
         state,
         NetworkSetupEvent::HostSetup(crate::app::shell_network_setup::HostOptions {
             launch,
+            archon: None,
             map_metadata,
             vacancies: [crate::app::match_runtime::session::NetworkVacancy::Open;
                 crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],

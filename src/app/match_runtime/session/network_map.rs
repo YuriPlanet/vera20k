@@ -266,6 +266,10 @@ impl MatchSession {
     ) -> anyhow::Result<Vec<crate::skirmish_launch::SkirmishHumanSlot>> {
         anyhow::ensure!(self.host, "only host may choose the map");
         anyhow::ensure!(
+            self.archon_room().is_none() || super::archon::ArchonRoom::supports_mode(&mode),
+            "Archon rooms require a Battle map with shared starts"
+        );
+        anyhow::ensure!(
             !file.is_empty() && capacity > 0,
             "map requires a valid participant capacity"
         );
@@ -510,6 +514,7 @@ impl MatchSession {
         opponents: Option<Vec<SkirmishAiSlot>>,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(self.host, "only host mode preparation may write AI state");
+        let archon = self.archon_room().is_some();
         let launch = self.editable_network_setup()?;
         if let Some(count) = declared_count {
             launch.ai_player_count = count;
@@ -517,6 +522,11 @@ impl MatchSession {
         if let Some(opponents) = opponents {
             let mut candidate = launch.clone();
             candidate.opponents = opponents;
+            if archon {
+                for ai in &mut candidate.opponents {
+                    ai.team = crate::skirmish_launch::LaunchTeam::None;
+                }
+            }
             validate_network_rows(&candidate)?;
             candidate.opponents.sort_by_key(|ai| ai.raw_slot_index);
             *launch = candidate;

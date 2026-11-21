@@ -32,6 +32,7 @@ pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i
         crate::app::shell_network_setup::dialog(state),
         teams,
         room_size,
+        state.match_state.session.archon_room().is_some(),
     );
     layout.roster_bottom
 }
@@ -46,6 +47,7 @@ pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
                 dialog,
                 listing.grouped,
                 crate::app::shell_network_setup::view::room_size_shown(state),
+                state.match_state.session.archon_room().is_some(),
             );
         }
     } else if state

@@ -169,6 +169,7 @@ impl Options {
             .ok_or_else(|| anyhow::anyhow!("server roster omits the signed-in player"))?;
         Ok(HostOptions {
             launch: self.launch,
+            archon: None,
             map_metadata: self.map_metadata,
             vacancies: self.vacancies,
             observer_row: self.observer_row,

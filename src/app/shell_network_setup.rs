@@ -763,6 +763,21 @@ impl App {
     /// catalog can have no eligible map; a WOL host then leaves the channel it
     /// just created.
     pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) -> bool {
+        Self::open_host_room(state, observe, None)
+    }
+
+    pub(crate) fn open_archon_host_setup(
+        state: &mut AppState,
+        archon: crate::app::match_runtime::session::archon::ArchonRoom,
+    ) -> bool {
+        Self::open_host_room(state, false, Some(archon))
+    }
+
+    fn open_host_room(
+        state: &mut AppState,
+        observe: bool,
+        archon: Option<crate::app::match_runtime::session::archon::ArchonRoom>,
+    ) -> bool {
         let dialog = SetupDialog {
             host: true,
             ..dialog(state)
@@ -776,11 +791,29 @@ impl App {
                 .wol
                 .as_ref()
                 .is_some_and(|visit| visit.modern_ui());
+        let battle_modes;
+        let modes = if archon.is_some() {
+            battle_modes = state
+                .frontend
+                .skirmish_modes
+                .iter()
+                .filter(|&mode| {
+                    crate::app::match_runtime::session::archon::ArchonRoom::supports_mode(
+                        &crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
+                    ) && crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, mode.id)
+                        .is_some_and(|canonical| std::ptr::eq(canonical, mode))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            &battle_modes
+        } else {
+            &state.frontend.skirmish_modes
+        };
         let result = state.frontend.multiplayer_shell_runtime.new_network_setup(
             profile(dialog),
             prefer_computer_mode,
             &state.frontend.scenario_catalog,
-            &state.frontend.skirmish_modes,
+            modes,
             state
                 .frontend
                 .skirmish_shell_state
@@ -811,12 +844,21 @@ impl App {
             launch.options.host_rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
         }
+        if archon.is_some() {
+            launch.options.teams =
+                Some(crate::app::match_runtime::session::archon::ArchonRoom::GROUP_COUNT);
+            launch.humans[0].slot.team = crate::skirmish_launch::LaunchTeam::Team(0);
+            for ai in &mut launch.opponents {
+                ai.team = crate::skirmish_launch::LaunchTeam::None;
+            }
+        }
         if let Err(error) = install_setup(
             state,
             launch,
             dialog,
             vacancies,
             Some(if observe { 0 } else { 7 }),
+            archon,
         ) {
             log::error!("Could not admit local network setup: {error:#}");
             abandon_host_setup(state, dialog);
@@ -886,6 +928,7 @@ impl App {
             dialog,
             [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
             observer_row,
+            None,
         ) {
             log::error!("Could not admit the {flavor:?} join: {error:#}");
             open_service_lobby(state, dialog);
@@ -911,6 +954,7 @@ fn install_setup(
     dialog: SetupDialog,
     vacancies: [NetworkVacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
     observer_row: Option<u8>,
+    archon: Option<crate::app::match_runtime::session::archon::ArchonRoom>,
 ) -> anyhow::Result<()> {
     let host = dialog.host;
     if !host {
@@ -925,6 +969,9 @@ fn install_setup(
         .match_state
         .session
         .accept_network_setup(launch, host, observer_row, dialog.modern)?;
+    if let Some(room) = archon {
+        state.match_state.session.accept_archon_room(Some(room))?;
+    }
     let quick_match = dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state);
     if dialog.wol() {
         let room = crate::app::shell_wol::lobby::room(state);
@@ -1105,6 +1152,9 @@ pub(crate) fn show_statics(state: &mut AppState) {
 pub(crate) fn remember_setup(state: &mut AppState) {
     let profile = profile(dialog(state));
     let session = &state.match_state.session;
+    if session.archon_room().is_some() {
+        return;
+    }
     if session.host()
         && let Some(launch) = session.network_setup()
     {

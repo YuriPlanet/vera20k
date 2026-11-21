@@ -656,7 +656,11 @@ impl App {
         let layout = Self::skirmish_choose_map_layout(state);
         state.frontend.skirmish_shell_state.choose_map_modal =
             Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
-                if state.frontend.shell_route.network_setup() {
+                if state.match_state.session.archon_room().is_some()
+                    && state.frontend.shell_route.network_setup()
+                {
+                    crate::ui::skirmish_shell::ChooseMapContext::Archon
+                } else if state.frontend.shell_route.network_setup() {
                     {
                         let room = state.match_state.session.network_room();
                         crate::ui::skirmish_shell::ChooseMapContext::Network {

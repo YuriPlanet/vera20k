@@ -32,6 +32,7 @@ use std::sync::Arc;
 
 pub(crate) use crate::sim::scenario_session::ScenarioGameMode as SessionMode;
 
+pub(crate) mod archon;
 mod connections;
 mod cooperative_round;
 mod network_map;
@@ -58,6 +59,7 @@ pub(crate) enum NetworkRoomReturn {
     #[default]
     Lobby,
     LanHost,
+    LanArchonHost(archon::ArchonRoom),
     LanGuest {
         host: String,
         game_id: u64,
@@ -390,6 +392,7 @@ pub(crate) enum NetworkSendRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NetworkSession {
     campaign_room: Option<crate::app::shell_network_setup::campaign_room::CampaignRoom>,
+    archon_room: Option<archon::ArchonRoom>,
     /// The WOL game channel's kind (`0x0077D940`/`0x0077D970`), fixed for
     /// the setup it hosts.
     room: NetworkRoom,
@@ -637,6 +640,7 @@ impl MatchSession {
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
             campaign_room: None,
+            archon_room: None,
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
             send_requests: Vec::new(),
@@ -651,6 +655,37 @@ impl MatchSession {
             return_context,
             phase: NetworkPhase::lobby(),
         });
+    }
+
+    pub(crate) fn archon_room(&self) -> Option<archon::ArchonRoom> {
+        self.network.as_ref()?.archon_room
+    }
+
+    pub(crate) fn accept_archon_room(
+        &mut self,
+        room: Option<archon::ArchonRoom>,
+    ) -> anyhow::Result<()> {
+        let network = self
+            .network
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no LAN visit"))?;
+        anyhow::ensure!(
+            network.return_context == NetworkReturnContext::LanLobby
+                && matches!(network.phase, NetworkPhase::Setup { .. }),
+            "Archon options require an editable LAN room"
+        );
+        network.archon_room = room;
+        Ok(())
+    }
+
+    pub(crate) fn network_archon_group_leader(&self, row: u8) -> Option<u8> {
+        self.archon_room()?;
+        let launch = self.network_setup()?;
+        let member = launch
+            .humans
+            .iter()
+            .find(|human| human.raw_slot_index == Some(row) && !human.is_observer())?;
+        archon::group_leader(launch, member.slot.team)?.raw_slot_index
     }
 
     /// Adopt a service-admitted setup. Native LAN own-node creation precedes
@@ -865,6 +900,7 @@ impl MatchSession {
         &mut self,
         human: crate::skirmish_launch::SkirmishHumanSlot,
     ) -> anyhow::Result<usize> {
+        let archon_groups = self.archon_group_choices();
         let host = self.host;
         let Some(NetworkSession {
             phase:
@@ -912,10 +948,12 @@ impl MatchSession {
             self.editable_network_setup()?.humans[index].slot.team = LaunchTeam::None;
             self.keep_players_on_teams()?;
         }
+        self.preserve_archon_group_choices(archon_groups)?;
         Ok(index)
     }
 
     pub(crate) fn remove_network_participant(&mut self, index: usize) -> anyhow::Result<()> {
+        let groups = self.archon_group_choices();
         let Some(NetworkSession {
             phase: NetworkPhase::Setup {
                 launch, admission, ..
@@ -937,7 +975,9 @@ impl MatchSession {
         if index < launch.local_player_index {
             launch.local_player_index -= 1;
         }
-        self.keep_spectator_row()
+        self.keep_spectator_row()?;
+        self.preserve_archon_group_choices(groups)?;
+        Ok(())
     }
 
     pub(crate) fn network_return_context(&self) -> Option<NetworkReturnContext> {
@@ -1068,6 +1108,7 @@ fn mode_default_team(mode: &crate::skirmish_launch::SkirmishLaunchMode) -> Launc
 #[derive(Clone, Copy)]
 pub(crate) enum PeerChoicePolicy<'a> {
     Lan,
+    Archon,
     /// `teams`: a VERA room's Teams count while it is set
     /// ([`MatchSession::network_teams`]); without it, gamemd's A to D.
     Wol {
@@ -1092,7 +1133,7 @@ pub(crate) fn apply_peer_choices(
     let current = launch.humans[index].slot.clone();
     let native_country = |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
     let countries = match policy {
-        PeerChoicePolicy::Lan => None,
+        PeerChoicePolicy::Lan | PeerChoicePolicy::Archon => None,
         PeerChoicePolicy::Wol { countries, .. } => countries,
     };
     let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
@@ -1115,9 +1156,15 @@ pub(crate) fn apply_peer_choices(
     }
     let native_color = |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
     if native_color(&choices) != native_color(&current) {
-        // 0x69B600: every node of the session and every AI row.
-        let taken = native_color(&choices).is_some_and(|color| {
-            network_color_in_use(launch, inactive_ai_options, color, listed_colors)
+        // 0x69B600 checks every stock node and AI row. An Archon colour
+        // belongs to its group leader, since the other nodes own no House.
+        let taken = native_color(&choices).is_some_and(|color| match policy {
+            PeerChoicePolicy::Archon => {
+                archon::ArchonRoom::color_in_use(launch, color, listed_colors)
+            }
+            PeerChoicePolicy::Lan | PeerChoicePolicy::Wol { .. } => {
+                network_color_in_use(launch, inactive_ai_options, color, listed_colors)
+            }
         });
         slot.color_random = choices.color_random || taken;
         if !slot.color_random {
@@ -1141,7 +1188,7 @@ pub(crate) fn apply_peer_choices(
         // its own teams and leaves any other pick on no team, which
         // `keep_players_on_teams` seats on the smallest team.
         slot.team = match policy {
-            PeerChoicePolicy::Lan => choices.team,
+            PeerChoicePolicy::Lan | PeerChoicePolicy::Archon => choices.team,
             PeerChoicePolicy::Wol {
                 teams: Some(teams), ..
             } => match choices.team {

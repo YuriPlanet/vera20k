@@ -64,8 +64,8 @@ impl MatchSession {
     /// its own.
     pub(crate) fn move_network_host(
         &mut self,
-        choices: SkirmishLocalSlot,
-        observer: bool,
+        mut choices: SkirmishLocalSlot,
+        mut observer: bool,
     ) -> anyhow::Result<PeerChoicesChange> {
         anyhow::ensure!(
             self.host && self.network_several_observers(),
@@ -78,9 +78,13 @@ impl MatchSession {
         let row = launch.humans[index]
             .raw_slot_index
             .ok_or_else(|| anyhow::anyhow!("the host has no row"))?;
-        let mut change =
-            self.accept_peer_choices(index, row, choices, observer, PeerChoicePolicy::Lan)?;
+        let groups = self.archon_group_choices();
+        let archon_refused = self.admit_archon_choices(index, &mut choices, &mut observer, true);
+        let policy = self.lan_choice_policy();
+        let mut change = self.accept_peer_choices(index, row, choices, observer, policy)?;
+        change.options |= archon_refused;
         change.options |= self.keep_players_on_teams()?;
+        change.options |= self.preserve_archon_group_choices(groups)?;
         Ok(change)
     }
 
@@ -91,8 +95,9 @@ impl MatchSession {
     pub(crate) fn accept_lan_peer_choices(
         &mut self,
         index: usize,
-        choices: SkirmishLocalSlot,
+        mut choices: SkirmishLocalSlot,
         observer: bool,
+        host_edit: bool,
     ) -> anyhow::Result<PeerChoicesChange> {
         anyhow::ensure!(self.host, "only the host checks LAN peer choices");
         let several = self.network_several_observers();
@@ -108,15 +113,28 @@ impl MatchSession {
         let Some(row) = human.raw_slot_index else {
             return Ok(PeerChoicesChange::default());
         };
-        let observer = if several {
+        let mut observer = if several {
             observer
         } else {
             human.is_observer()
         };
-        let mut change =
-            self.accept_peer_choices(index, row, choices, observer, PeerChoicePolicy::Lan)?;
+        let groups = self.archon_group_choices();
+        let archon_refused =
+            self.admit_archon_choices(index, &mut choices, &mut observer, host_edit);
+        let policy = self.lan_choice_policy();
+        let mut change = self.accept_peer_choices(index, row, choices, observer, policy)?;
+        change.options |= archon_refused;
         change.options |= self.keep_players_on_teams()?;
+        change.options |= self.preserve_archon_group_choices(groups)?;
         Ok(change)
+    }
+
+    fn lan_choice_policy(&self) -> PeerChoicePolicy<'static> {
+        if self.archon_room().is_some() {
+            PeerChoicePolicy::Archon
+        } else {
+            PeerChoicePolicy::Lan
+        }
     }
 
     fn accept_peer_choices(
@@ -419,7 +437,10 @@ impl MatchSession {
         row: u8,
         kind: NetworkRowKind,
     ) -> anyhow::Result<Option<crate::skirmish_launch::SkirmishHumanSlot>> {
-        self.change_network_row_kind(row, kind, false)
+        let groups = self.archon_group_choices();
+        let removed = self.change_network_row_kind(row, kind, false)?;
+        self.preserve_archon_group_choices(groups)?;
+        Ok(removed)
     }
 
     /// [`Self::set_network_row_kind`]; `own_move` lets VERA's host change
@@ -432,6 +453,7 @@ impl MatchSession {
         own_move: bool,
     ) -> anyhow::Result<Option<crate::skirmish_launch::SkirmishHumanSlot>> {
         anyhow::ensure!(self.host, "only the host may change participant row kinds");
+        let archon = self.archon_room().is_some();
         //5EC9F0 returns before any reset when the selected item pointer is unchanged.
         let current_kind = self
             .network_display_ai(row)
@@ -496,7 +518,11 @@ impl MatchSession {
                 color_index: defaults.color_index,
                 color_random: defaults.color_random,
                 start_position: defaults.start_position,
-                team: defaults.team,
+                team: if archon {
+                    crate::skirmish_launch::LaunchTeam::None
+                } else {
+                    defaults.team
+                },
                 difficulty,
             });
             launch.opponents.sort_by_key(|ai| ai.raw_slot_index);
@@ -621,6 +647,8 @@ impl MatchSession {
         choices: SkirmishLocalSlot,
     ) -> anyhow::Result<()> {
         let host = self.host;
+        let archon = self.archon_room().is_some();
+        let groups = self.archon_group_choices();
         let Some(NetworkSession {
             phase:
                 NetworkPhase::Setup {
@@ -658,11 +686,16 @@ impl MatchSession {
                 ai.color_index = choices.color_index;
                 ai.color_random = choices.color_random;
                 ai.start_position = choices.start_position;
-                ai.team = choices.team;
+                ai.team = if archon {
+                    crate::skirmish_launch::LaunchTeam::None
+                } else {
+                    choices.team
+                };
             } else {
                 inactive_choices[usize::from(row)] = choices;
             }
         }
+        self.preserve_archon_group_choices(groups)?;
         Ok(())
     }
 

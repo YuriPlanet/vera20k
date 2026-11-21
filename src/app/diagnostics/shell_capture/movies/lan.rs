@@ -643,6 +643,7 @@ impl LanCapture {
             state,
             NetworkSetupEvent::HostSetup(crate::app::shell_network_setup::HostOptions {
                 launch,
+                archon: None,
                 vacancies,
                 map_metadata: if self.target == LanTarget::CoopGuest {
                     setup::local_map_metadata(state, COOP_MAP)?

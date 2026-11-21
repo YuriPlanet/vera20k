@@ -32,8 +32,8 @@ pub(crate) const GAME_OPTIONS_OK: u16 = 0x7F03;
 /// VERA-only: the missing-map offer's Download and Leave.
 pub(crate) const MAP_OFFER_DOWNLOAD: u16 = 0x7F04;
 pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
-/// VERA-only, in the team bar under the roster: the Teams count and the
-/// host's Team Starts and Team Colors.
+/// VERA-only, in the team bar under the roster: the Teams count in a
+/// stock room, or the controller cap in an Archon room.
 pub(crate) const TEAM_COUNT: u16 = 0x7F0D;
 pub(crate) const TEAM_STARTS: u16 = 0x7F0E;
 pub(crate) const TEAM_COLORS: u16 = 0x7F11;
@@ -788,6 +788,7 @@ pub(crate) enum RoomBox {
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
     pub(crate) campaign: bool,
+    pub(crate) archon: bool,
     pub(crate) first_row: usize,
     pub(crate) row_count: usize,
     /// The first row of each page.
@@ -1721,9 +1722,20 @@ impl MultiplayerSetupLayout {
     }
     /// VERA's team bar for the room: with or without teams, and with or
     /// without the host's Room size ([`Self::arrange_team_bar`]).
-    pub(crate) fn fit_team_bar(&mut self, dialog: SetupDialog, teams: bool, room_size: bool) {
+    pub(crate) fn fit_team_bar(
+        &mut self,
+        dialog: SetupDialog,
+        teams: bool,
+        room_size: bool,
+        archon: bool,
+    ) {
         if self.roster {
-            self.arrange_team_bar(teams, dialog.wol(), dialog.host, room_size);
+            self.arrange_team_bar(
+                teams,
+                !archon && dialog.wol(),
+                !archon && dialog.host,
+                room_size,
+            );
         }
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
@@ -2081,6 +2093,7 @@ mod tests {
     fn vera_room_view() -> SetupView {
         SetupView {
             campaign: false,
+            archon: false,
             first_row: 0,
             row_count: 8,
             pages: vec![0],
@@ -2549,13 +2562,13 @@ mod tests {
         // Without teams the host's bar keeps only Room size, on one line;
         // a guest's roster then reaches the column's foot.
         let mut no_teams = popup_layout.clone();
-        no_teams.fit_team_bar(dialog(true, SetupFlavor::Wol, true), false, true);
+        no_teams.fit_team_bar(dialog(true, SetupFlavor::Wol, true), false, true, false);
         let room = no_teams.control_rect(ROOM_SIZE).unwrap();
         assert!(room.w > 0 && no_teams.team_bar.unwrap().y < room.y);
         assert_eq!(no_teams.control_rect(TEAM_COUNT).unwrap().w, 0);
         assert_eq!(no_teams.control_rect(TEAM_STARTS), None);
         assert!(no_teams.team_bar.unwrap().h < popup_layout.team_bar.unwrap().h);
-        guest.fit_team_bar(dialog(false, SetupFlavor::Wol, true), false, false);
+        guest.fit_team_bar(dialog(false, SetupFlavor::Wol, true), false, false, false);
         assert_eq!(guest.team_bar, None);
         assert_eq!(guest.roster_bottom, ROSTER_BOTTOM);
         view.open_box = None;

@@ -1960,7 +1960,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 let mut change = state
                     .match_state
                     .session
-                    .accept_lan_peer_choices(source, choices, observer)?;
+                    .accept_lan_peer_choices(source, choices, observer, false)?;
                 change.options |= refused;
                 // A VERA room's guest who starts or stops watching changes
                 // rows: the roster, then the options, as WOL's R arm.

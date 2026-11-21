@@ -999,6 +999,7 @@ fn build_host_options(
     draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
     Ok(crate::app::shell_network_setup::HostOptions {
         launch,
+        archon: None,
         map_metadata: map_metadata(&file)?,
         vacancies: [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT],
         observer_row: None,

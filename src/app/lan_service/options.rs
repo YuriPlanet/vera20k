@@ -223,6 +223,8 @@ impl ExtendedOptions {
 #[serde(deny_unknown_fields)]
 struct HostRoom {
     seed: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    archon: Option<crate::app::match_runtime::session::archon::ArchonRoom>,
     #[serde(with = "StockRoomSettings")]
     options: SkirmishLaunchOptions,
     mode: i32,
@@ -406,6 +408,9 @@ fn apply_host_room(
                 .accept_network_inactive_ai_options(room.ai)?;
         }
         (TaggedOptionsBody::Campaign { room, seed }, None) => {
+            if state.match_state.session.archon_room().is_some() {
+                state.match_state.session.accept_archon_room(None)?;
+            }
             state
                 .match_state
                 .session
@@ -733,6 +738,7 @@ fn projected_room(session: &MatchSession, cooperative_difficulty: i32) -> Result
         .network_setup()
         .ok_or_else(|| anyhow!("no admitted setup"))?;
     Ok(HostRoom {
+        archon: session.archon_room(),
         seed: session
             .network_start_seed()
             .ok_or_else(|| anyhow!("host seed is not initialized"))?,
@@ -794,6 +800,14 @@ fn host_options(
     let mode = crate::skirmish_modes::mode_by_id(modes, room.mode)
         .ok_or_else(|| anyhow!("unknown LAN game mode {}", room.mode))?;
     launch.mode = SkirmishLaunchMode::from_game_mode(mode);
+    if room.archon.is_some() {
+        use crate::app::match_runtime::session::archon::ArchonRoom;
+        ensure!(
+            ArchonRoom::supports_mode(&launch.mode)
+                && room.options.teams == Some(ArchonRoom::GROUP_COUNT),
+            "Archon room requires shared starts in Battle"
+        );
+    }
     launch.selected_map_file = Some(room.selected_map_file.clone());
     for choices in &room.humans {
         if let Some(human) = launch
@@ -833,6 +847,24 @@ fn host_options(
     }
     launch.ai_player_count = opponents.len() as i32;
     launch.opponents = opponents;
+    if let Some(archon) = room.archon {
+        ensure!(
+            launch
+                .opponents
+                .iter()
+                .all(|ai| ai.team == LaunchTeam::None)
+                && launch
+                    .humans
+                    .iter()
+                    .filter(|human| !human.is_observer())
+                    .all(|human| {
+                        human
+                            .raw_slot_index
+                            .is_none_or(|row| archon.may_join(&launch, row, human.slot.team))
+                    }),
+            "invalid Archon room roster"
+        );
+    }
     let vacancies = std::array::from_fn(|row| {
         session
             .network_vacancy(row as u8)
@@ -840,6 +872,7 @@ fn host_options(
     });
     Ok(HostOptions {
         launch,
+        archon: room.archon,
         map_metadata: metadata.clone(),
         vacancies,
         observer_row: session.network_observer_row(),
@@ -1187,6 +1220,44 @@ mod tests {
             )
             .unwrap();
         guest.accept_network_inactive_ai_options(room.ai).unwrap();
+        if options.archon.is_some() {
+            guest.accept_archon_room(options.archon).unwrap();
+        }
+    }
+
+    #[test]
+    fn archon_lan_options_reconstruct_one_house_with_two_command_sources() {
+        use crate::app::match_runtime::session::archon::ArchonRoom;
+
+        let mut host = fixture(true);
+        let mut launch = host.network_setup().unwrap().clone();
+        launch.options.teams = Some(ArchonRoom::GROUP_COUNT);
+        for human in &mut launch.humans {
+            human.slot.team = LaunchTeam::Team(0);
+        }
+        host.accept_network_setup(launch, true, Some(7), true)
+            .unwrap();
+        let room = ArchonRoom::new(3).unwrap();
+        host.accept_archon_room(Some(room)).unwrap();
+        host.set_network_row_kind(2, NetworkRowKind::Ai(AiDifficulty::Easy))
+            .unwrap();
+        let picks = room.plan_starts(host.network_setup().unwrap(), 2).unwrap();
+        host.set_network_seat_picks(&picks).unwrap();
+
+        let mut guest = fixture(false);
+        apply(&mut guest, &sent(&host));
+        assert_eq!(guest.archon_room(), Some(room));
+        let house = host.network_source_owner(0).unwrap();
+        assert_eq!(guest.network_source_owner(0).as_ref(), Some(&house));
+        assert_eq!(guest.network_source_owner(1).as_ref(), Some(&house));
+        let senders = [
+            guest.network_source_sender(0),
+            guest.network_source_sender(1),
+        ];
+        assert!(senders.iter().all(Option::is_some));
+        assert_ne!(senders[0], senders[1]);
+        assert_eq!(host.network_source_sender(0), senders[0]);
+        assert_eq!(host.network_source_sender(1), senders[1]);
     }
 
     #[test]
@@ -1687,7 +1758,7 @@ mod tests {
         request.country_random = false;
         let mut wol = lan.clone();
         let result = lan
-            .accept_lan_peer_choices(1, request.clone(), false)
+            .accept_lan_peer_choices(1, request.clone(), false, false)
             .unwrap();
         assert!(result.options);
         assert!(!result.roster);

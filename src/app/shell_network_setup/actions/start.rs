@@ -38,13 +38,25 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?
         .clone();
+    let archon = state.match_state.session.archon_room();
+    let archon_starts = if let Some(room) = archon {
+        let starts = super::super::view::local_map_index(state)
+            .map_or(0, |map| App::map_start_cells(state, map).len());
+        if let Err(error) = room.plan_starts(&launch, starts) {
+            message(state, error.message_key(), &[]);
+            return Ok(());
+        }
+        starts
+    } else {
+        0
+    };
     let humans = launch
         .humans
         .iter()
         .filter(|human| !human.is_observer())
         .count() as i32;
     let watch_ai = state.match_state.session.network_several_observers();
-    if !has_minimum_players(&launch, watch_ai) {
+    if archon.is_none() && !has_minimum_players(&launch, watch_ai) {
         message(state, "TXT_ONLY_ONE", &[]);
         return Ok(());
     }
@@ -212,7 +224,21 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .apply_network_ai_preparation(preparation.declared_count, preparation.opponents)?;
     // VERA's room with Teams set gives each player still on a Random start
     // one by team before the assignment's farthest free start would.
-    super::super::teams::team_starts(state, true)?;
+    if let Some(room) = archon {
+        let session = &mut state.match_state.session;
+        let launch = session
+            .network_setup()
+            .expect("mode callback retains setup");
+        match room.plan_starts(launch, archon_starts) {
+            Ok(picks) => session.set_network_seat_picks(&picks)?,
+            Err(error) => {
+                message(state, error.message_key(), &[]);
+                return Ok(());
+            }
+        }
+    } else {
+        super::super::teams::team_starts(state, true)?;
+    }
     let launch = state
         .match_state
         .session

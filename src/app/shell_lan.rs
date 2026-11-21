@@ -97,6 +97,17 @@ struct PendingJoin {
     canceling: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanCreateKind {
+    Stock,
+    Archon(crate::app::match_runtime::session::archon::ArchonRoom),
+}
+
+pub(crate) struct LanCreateDialog {
+    pub(crate) picker: RoomLimitsPicker,
+    kind: LanCreateKind,
+}
+
 pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
     /// The single-OK box's label, a CSF or `VERA:` one ([`crate::i18n::label`]).
@@ -106,8 +117,8 @@ pub(crate) struct LanShellRuntime {
     ///
     /// [`agreement::rules_differ_text`]: crate::app::shell_network_setup::agreement::rules_differ_text
     pub(crate) modal_body: Option<String>,
-    /// VERA's Create Game box while it is up: the room's limits.
-    pub(crate) create: Option<RoomLimitsPicker>,
+    /// VERA's Create Game box while it is up.
+    pub(crate) create: Option<LanCreateDialog>,
     pending_join: Option<PendingJoin>,
     requests: Vec<LanServiceRequest>,
 }
@@ -175,10 +186,11 @@ impl LanShellRuntime {
 
 pub(crate) fn layout(state: &AppState) -> LanLobbyLayout {
     let (width, height) = shell_layout::shell_screen_size(state);
+    let modern = !state.frontend.native_shell_ui;
     if shell_layout::fills_window(state) {
-        LanLobbyLayout::responsive(width as i32, height as i32)
+        LanLobbyLayout::responsive(width as i32, height as i32, modern)
     } else {
-        LanLobbyLayout::new(width as i32, height as i32)
+        LanLobbyLayout::new(width as i32, height as i32, modern)
     }
 }
 
@@ -259,7 +271,12 @@ impl App {
                     .frontend
                     .multiplayer_shell_runtime
                     .lan_create_observer();
-                Self::commit_lan_create(state, observe);
+                Self::commit_lan_create(state, observe, LanCreateKind::Stock);
+            }
+            NetworkRoomReturn::LanArchonHost(archon)
+                if !crate::app::lan_service::unavailable(state) =>
+            {
+                Self::commit_lan_create(state, false, LanCreateKind::Archon(archon));
             }
             NetworkRoomReturn::LanGuest { host, game_id, .. } => {
                 let text = crate::i18n::tr_fill("VERA:LanWaitingForHost", &[("host", &host)]);
@@ -279,10 +296,13 @@ impl App {
         }
     }
 
-    pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool) {
+    pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool, kind: LanCreateKind) {
         crate::app::lan_service::force_presence(state);
         state.frontend.lan = None;
-        Self::open_host_setup(state, observe);
+        match kind {
+            LanCreateKind::Stock => Self::open_host_setup(state, observe),
+            LanCreateKind::Archon(archon) => Self::open_archon_host_setup(state, archon),
+        };
     }
 }
 
@@ -518,11 +538,11 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         .multiplayer_shell_runtime
         .local_participant()
         .name;
-    if matches!(
+    let enters_room = matches!(
         action,
-        LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) && crate::app::lan_service::unavailable(state)
-    {
+        LanLobbyAction::Create { .. } | LanLobbyAction::CreateArchon | LanLobbyAction::Join { .. }
+    );
+    if enters_room && crate::app::lan_service::unavailable(state) {
         // Without its sockets the room would be one nobody sees: try them
         // again, and say why when they are still taken.
         crate::app::lan_service::open(state);
@@ -533,23 +553,31 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             return;
         }
     }
-    if matches!(
-        action,
-        LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) {
+    if enters_room {
         // The player chose another room: no longer wait for the old host.
         state.match_state.session.take_network_room_return();
     }
     match action {
         // VERA's lobby asks for its room's limits first.
-        LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
+        LanLobbyAction::Create { .. } | LanLobbyAction::CreateArchon
+            if !state.frontend.native_shell_ui =>
+        {
+            let kind = if action == LanLobbyAction::CreateArchon {
+                LanCreateKind::Archon(Default::default())
+            } else {
+                LanCreateKind::Stock
+            };
             let limits = state.frontend.room_limits;
             let runtime = state.frontend.lan.as_mut().expect("active BB");
-            runtime.create = Some(RoomLimitsPicker::new(limits));
+            runtime.create = Some(LanCreateDialog {
+                picker: RoomLimitsPicker::new(limits),
+                kind,
+            });
             runtime.lobby.cancel_pointer();
             state.frontend.shell_controller.push(MODAL, true);
         }
-        LanLobbyAction::Create { observe: _ } => create(state, &name),
+        LanLobbyAction::Create { .. } => create(state, &name, LanCreateKind::Stock),
+        LanLobbyAction::CreateArchon => {}
         LanLobbyAction::Join { game_id, observe } => {
             let reserved = reserved_names(state);
             let error = join_error(
@@ -785,7 +813,7 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
     }
 }
 
-fn create(state: &mut AppState, name: &str) {
+fn create(state: &mut AppState, name: &str, kind: LanCreateKind) {
     let observe = state
         .frontend
         .multiplayer_shell_runtime
@@ -797,7 +825,7 @@ fn create(state: &mut AppState, name: &str) {
     } else {
         App::leave_shell_dialog(
             state,
-            shell_transition::ShellExitThen::LanCreate { observe },
+            shell_transition::ShellExitThen::LanCreate { observe, kind },
         );
     }
 }
@@ -805,7 +833,7 @@ fn create(state: &mut AppState, name: &str) {
 /// The Create Game box's OK keeps its limits for the room and creates it;
 /// Cancel returns to the lobby.
 fn close_create_box(state: &mut AppState, confirmed: bool) {
-    let Some(picker) = state
+    let Some(room) = state
         .frontend
         .lan
         .as_mut()
@@ -817,13 +845,13 @@ fn close_create_box(state: &mut AppState, confirmed: bool) {
     let lobby = &mut state.frontend.lan.as_mut().expect("active BB").lobby;
     lobby.cancel_pointer();
     if confirmed {
-        state.frontend.room_limits = picker.limits;
+        state.frontend.room_limits = room.picker.limits;
         let name = state
             .frontend
             .multiplayer_shell_runtime
             .local_participant()
             .name;
-        create(state, &name);
+        create(state, &name, room.kind);
     } else {
         lobby.set_enabled(true);
     }
@@ -989,8 +1017,8 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         let lobby = &mut runtime.lobby;
         lobby.buttons.hovered = control;
-        if let Some(picker) = runtime.create.as_mut() {
-            picker.drag(&create_layout.room, ShellScale::RETAIL, x);
+        if let Some(room) = runtime.create.as_mut() {
+            room.picker.drag(&create_layout.room, ShellScale::RETAIL, x);
         } else if runtime.modal.is_none() && lobby.enabled {
             for (list, rect, count) in [
                 (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
@@ -1023,7 +1051,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
     };
-    if let Some(picker) = runtime.create.as_mut() {
+    if let Some(room) = runtime.create.as_mut() {
+        let picker = &mut room.picker;
         let buttons = &mut runtime.lobby.buttons;
         if pressed {
             let cue = match picker.press(&create_layout.room, ShellScale::RETAIL, x, y) {
@@ -1150,7 +1179,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             }
             lobby
                 .buttons
-                .press(control.filter(|control| matches!(*control, CREATE | JOIN | BACK)));
+                .press(control.filter(|control| VERA_PAGE.button(*control).is_some()));
             if lobby.buttons.pressed.is_some() {
                 App::play_main_menu_button_sound(state);
             }
