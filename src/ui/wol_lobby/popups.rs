@@ -228,9 +228,16 @@ fn popup_spec(create: bool, room: Option<RoomLimits>) -> NodeSpec {
                     CREATE_WATCHING,
                 ]
                 .map(|id| {
-                    NodeSpec::new(NodeKind::Text)
+                    let label = NodeSpec::new(NodeKind::Text)
                         .id((id | LABEL).into())
-                        .tooltip(" ")
+                        .tooltip(" ");
+                    // A press on an edit's title gives the edit the keys.
+                    match id {
+                        POPUP_PASSWORD | CREATE_NAME => {
+                            label.with(Prop::FocusTarget, Value::Int(id.into()))
+                        }
+                        _ => label,
+                    }
                 }),
             )
             .child(static_text(PLAYERS_CAPTION, Some("VERA:MaxPlayers"), field))

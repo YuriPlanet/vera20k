@@ -40,7 +40,7 @@ fn paint_create_box(
     overlay.controls.extend(super::wol_lobby::online_box(
         atlas,
         dialog,
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
     ));
     let controller = &state.frontend.shell_controller;
     let Some(root) = controller.root_in(MODAL) else {
@@ -59,7 +59,7 @@ fn paint_create_box(
         controller.gui(),
         root,
         ids,
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         style,
     );
     overlay.controls.extend(widgets.controls);

@@ -59,13 +59,13 @@ pub struct Placer {
 impl Placer {
     /// The retail placement on a `screen_w`x`screen_h` screen.
     pub fn new(screen_w: i32, screen_h: i32) -> Self {
-        Self::on(geom::ShellScale::RETAIL, screen_w, screen_h)
+        Self::on(geom::RETAIL_SCALE, screen_w, screen_h)
     }
 
     /// The placement on `scale`'s mapping: the retail screen for the retail
     /// mapping, the scaled 800x600 dialog otherwise.
     pub fn on(scale: geom::ShellScale, screen_w: i32, screen_h: i32) -> Self {
-        let (screen_w, screen_h) = if scale.is_retail() {
+        let (screen_w, screen_h) = if scale.is_unscaled() {
             (screen_w, screen_h)
         } else {
             (SHELL_BASE_W, SHELL_BASE_H)

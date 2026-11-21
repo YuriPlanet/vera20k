@@ -162,7 +162,7 @@ pub fn push_entry_native(
 /// One chrome atlas entry authored for the 800x600 dialog, placed at the
 /// authored `(x, y)` and grown by `scale`: the point maps through the scale like
 /// any authored rect, so it lands inside the centred dialog. Identity at
-/// [`ShellScale::RETAIL`], so an unscaled page emits the same native-size
+/// `RETAIL_SCALE`, so an unscaled page emits the same native-size
 /// sprite at the same point. [`push_entry_grown`] takes a window-space point.
 pub fn push_entry_scaled(
     out: &mut Vec<SpriteInstance>,
@@ -327,7 +327,7 @@ pub fn push_entry_top_clipped(
 ///
 /// `rect` is the device rect and `scale` stretches it: the tiling runs on the
 /// authored numbers and each piece is emitted scaled, so a wider plaque grows
-/// TROFM's gradient instead of repeating it. `ShellScale::RETAIL` reproduces
+/// TROFM's gradient instead of repeating it. `RETAIL_SCALE` reproduces
 /// the plain tiling.
 pub fn push_entry_wrapped_centered(
     out: &mut Vec<SpriteInstance>,
@@ -626,7 +626,7 @@ pub(crate) fn shuttered_column(panel: RightPanelRects) -> Vec<ColumnDraw> {
 /// window is larger, and the window clips it.
 ///
 /// `scale` is the layout's stretch: center and clip in authored pixels first,
-/// then map the resulting rectangle with the static panel artwork. `ShellScale::RETAIL`
+/// then map the resulting rectangle with the static panel artwork. `RETAIL_SCALE`
 /// reproduces the native 1:1 draw exactly.
 pub fn paint_warning_monitor(
     atlas: &MainMenuShellChromeAtlas,
@@ -653,7 +653,7 @@ fn paint_scaled_warning_monitor(
         return paint_kind4_static(entry, monitor, scale);
     }
     let native_window = scale.base_rect(monitor);
-    let mut sprite = paint_kind4_static(entry, native_window, ShellScale::RETAIL)?;
+    let mut sprite = paint_kind4_static(entry, native_window, crate::ui::shell::geom::RETAIL_SCALE)?;
     let drawn = scale.scale_rect(RectPx::new(
         sprite.position[0] as i32,
         sprite.position[1] as i32,
@@ -925,13 +925,13 @@ mod tests {
         let retail = crate::ui::shell::geom::right_panel_rects(1024, 768);
         assert_eq!(retail.stretch(), (1.0, 1.0));
 
-        let double = retail.scaled(ShellScale::from_screen(1600, 1200));
+        let double = retail.scaled(crate::ui::shell::geom::shell_scale(1600, 1200));
         assert_eq!(double.stretch(), (2.0, 2.0));
 
         // The shell keeps its shape, so a window only taller or only wider than
         // 800x600 leaves the panel at its native size.
         for (w, h) in [(800, 1200), (1600, 600)] {
-            let panel = retail.scaled(ShellScale::from_screen(w, h));
+            let panel = retail.scaled(crate::ui::shell::geom::shell_scale(w, h));
             assert_eq!(panel.stretch(), (1.0, 1.0), "{w}x{h}");
             assert_eq!(panel.tile.w, RIGHT_PANEL_WIDTH, "{w}x{h}");
         }
@@ -975,9 +975,9 @@ mod tests {
         // zero, y half-gap is one (0x0061595E..0x0061597E).
         let window = RectPx::new(670, 47, 93, 55);
         let entry = fake_entry(92.0, 53.0);
-        let retail = paint_scaled_warning_monitor(entry, window, ShellScale::RETAIL).unwrap();
+        let retail = paint_scaled_warning_monitor(entry, window, crate::ui::shell::geom::RETAIL_SCALE).unwrap();
         assert_eq!(retail.position, [670.0, 48.0]);
-        let scale = ShellScale::from_screen(1600, 1200);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
         let scaled = paint_scaled_warning_monitor(entry, scale.scale_rect(window), scale).unwrap();
         assert_eq!(scaled.position, [1340.0, 96.0]);
         assert_eq!(scaled.size, [184.0, 106.0]);
@@ -987,10 +987,10 @@ mod tests {
     fn warning_monitor_preserves_retail_640_and_downscaled_placement() {
         let entry = fake_entry(92.0, 53.0);
         let retail =
-            paint_scaled_warning_monitor(entry, RectPx::new(510, 47, 93, 55), ShellScale::RETAIL)
+            paint_scaled_warning_monitor(entry, RectPx::new(510, 47, 93, 55), crate::ui::shell::geom::RETAIL_SCALE)
                 .unwrap();
         assert_eq!(retail.position, [510.0, 48.0]);
-        let scale = ShellScale::from_screen(400, 300);
+        let scale = crate::ui::shell::geom::shell_scale(400, 300);
         let window = scale.scale_rect(RectPx::new(670, 47, 93, 55));
         let old = paint_kind4_static(entry, window, scale).unwrap();
         let new = paint_scaled_warning_monitor(entry, window, scale).unwrap();
@@ -1000,7 +1000,7 @@ mod tests {
 
     #[test]
     fn warning_monitor_edges_follow_fractional_letterboxed_panel_scaling() {
-        let scale = ShellScale::from_screen(1920, 1080);
+        let scale = crate::ui::shell::geom::shell_scale(1920, 1080);
         let window = scale.scale_rect(RectPx::new(670, 47, 93, 55));
         let sprite = paint_scaled_warning_monitor(fake_entry(92.0, 53.0), window, scale).unwrap();
         assert_eq!(sprite.position, [1446.0, 86.0]);
@@ -1008,19 +1008,19 @@ mod tests {
         assert_eq!(sprite.size, [166.0, 96.0]);
     }
 
-    /// `ShellScale::RETAIL` leaves the monitor at its native shape, centre-and-clip
+    /// `RETAIL_SCALE` leaves the monitor at its native shape, centre-and-clip
     /// included; a stretched layout grows the shape with its window.
     #[test]
     fn warning_monitor_shape_follows_the_layout_scale() {
         let entry = fake_entry(62.0, 44.0);
         let window = RectPx::new(640, 30, 200, 200);
-        let retail = paint_kind4_static(entry, window, ShellScale::RETAIL).expect("shape");
+        let retail = paint_kind4_static(entry, window, crate::ui::shell::geom::RETAIL_SCALE).expect("shape");
         assert_eq!(retail.size, [62.0, 44.0]);
         // Integer-halved gaps: (200-62)/2 right, (200-44)/2 down.
         assert_eq!(retail.position, [709.0, 108.0]);
 
         let stretched =
-            paint_kind4_static(entry, window, ShellScale::from_screen(1600, 1200)).expect("shape");
+            paint_kind4_static(entry, window, crate::ui::shell::geom::shell_scale(1600, 1200)).expect("shape");
         // 2x on both axes, then re-centred in the same window.
         assert_eq!(stretched.size, [124.0, 88.0]);
         assert_eq!(stretched.position, [678.0, 86.0]);
@@ -1040,7 +1040,7 @@ mod tests {
         // 0x00608500 sizes the 0x72B window to the SCRA frame exactly, so the
         // kind-4 draw fills it without centering or clipping.
         assert_eq!(window, RectPx::new(104, 142, 424, 220));
-        let sprite = paint_kind4_static(fake_entry(424.0, 220.0), window, ShellScale::RETAIL)
+        let sprite = paint_kind4_static(fake_entry(424.0, 220.0), window, crate::ui::shell::geom::RETAIL_SCALE)
             .expect("kind-4 SCRA frame");
 
         assert_eq!(sprite.position, [104.0, 142.0]);
@@ -1088,8 +1088,8 @@ mod tests {
                 MODAL_DEPTHS,
             )
         };
-        let retail = draw(ShellScale::RETAIL);
-        let fitted = draw(ShellScale::from_screen(1600, 1200));
+        let retail = draw(crate::ui::shell::geom::RETAIL_SCALE);
+        let fitted = draw(crate::ui::shell::geom::shell_scale(1600, 1200));
         assert_eq!(fitted.sprites[0].size, [902.0, 652.0]);
         let glyph = &retail.text[0].instances[0];
         let grown = &fitted.text[0].instances[0];
@@ -1121,7 +1121,7 @@ mod tests {
             ModalButtonFrames::default(),
             RectPx::new(dialog[0], dialog[1], dialog[2], dialog[3]),
             &[],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             MODAL_DEPTHS,
         );
         assert_eq!(draw.len(), 1);
@@ -1162,7 +1162,7 @@ mod tests {
                 pressed: true,
                 enabled: true,
             }],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             MODAL_DEPTHS,
         );
         assert_eq!(sprites.len(), 2);
@@ -1201,7 +1201,7 @@ mod tests {
                 pressed: false,
                 enabled: true,
             }],
-            ShellScale::from_screen(1600, 1200),
+            crate::ui::shell::geom::shell_scale(1600, 1200),
             MODAL_DEPTHS,
         );
         assert_eq!(sprites[0].size, [400.0, 240.0]);
@@ -1236,7 +1236,7 @@ mod tests {
                     enabled: true,
                 },
             ],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             MODAL_DEPTHS,
         );
         assert_eq!(sprites.len(), 2);

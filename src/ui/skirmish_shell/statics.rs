@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn map_statics_take_the_native_getters_parameters() {
-        let cases = vera20k_gui::fixtures::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         for control in [0x6EC, 0x5A8] {
             let case = cases
                 .iter()

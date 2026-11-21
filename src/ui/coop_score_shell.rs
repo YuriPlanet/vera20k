@@ -162,9 +162,9 @@ pub struct CoopScoreLayout {
 impl CoopScoreLayout {
     pub fn new(width: i32, height: i32, responsive: bool) -> Self {
         let scale = if responsive {
-            ShellScale::from_screen(width, height)
+            crate::ui::shell::geom::shell_scale(width, height)
         } else {
-            ShellScale::RETAIL
+            crate::ui::shell::geom::RETAIL_SCALE
         };
         let (page, controls) =
             layout_data::menu_page(&COOP_SCORE_PAGE, "0xBC6", scale, width, height);

@@ -80,8 +80,8 @@ pub enum UiEvent {
     Submitted { node: NodeId, text: String },
     Cancelled { node: NodeId },
     /// A left press in a `Modal` dialog with a `Rect` on its root, outside
-    /// it: a box that closes on a click elsewhere (VERA's player card)
-    /// hears it. The press reaches nothing under the box.
+    /// it: a box that closes on a click elsewhere (a pop-up card) hears
+    /// it. The press reaches nothing under the box.
     PressedOutside { dialog: DialogId },
     /// A press on a `Draggable` node left it by its `DragThreshold`: the
     /// node is carried from now on (an open drop-down closed, no event).
@@ -155,7 +155,7 @@ struct Dialog {
     root: NodeId,
     kind: DialogKind,
     pointer: Pointer,
-    /// Maps the dialog's device rects back to the authored 800x600 numbers
+    /// Maps the dialog's device rects back to the authored base-size numbers
     /// the native widget arithmetic runs on.
     scale: ShellScale,
 }
@@ -170,6 +170,8 @@ pub struct Gui {
     double_click: (UiMs, i32, i32),
     /// The text's length in the host's code page, for `MaxBytes`.
     byte_len: fn(&str) -> usize,
+    /// The host's unscaled mapping ([`Self::set_base_scale`]).
+    base_scale: ShellScale,
 }
 
 impl Gui {
@@ -183,7 +185,15 @@ impl Gui {
             // engine's `saved_file_input`).
             double_click: (500, 4, 4),
             byte_len: str::len,
+            base_scale: ShellScale::IDENTITY,
         }
+    }
+
+    /// The host's unscaled mapping of its base layout size: the scale a
+    /// dialog takes until [`Self::set_dialog_scale`], and the base a trackbar's
+    /// `ScaleScreen` fits into its rect. [`ShellScale::IDENTITY`] until set.
+    pub fn set_base_scale(&mut self, scale: ShellScale) {
+        self.base_scale = scale;
     }
 
     /// How many bytes a text takes in the host's code page (`MaxBytes`);
@@ -258,7 +268,7 @@ impl Gui {
         }
         let id = DialogId(self.next_dialog);
         self.next_dialog += 1;
-        self.dialogs.push(Dialog { id, root, kind, pointer: Pointer::default(), scale: ShellScale::RETAIL });
+        self.dialogs.push(Dialog { id, root, kind, pointer: Pointer::default(), scale: self.base_scale });
         Ok(id)
     }
 
@@ -384,7 +394,16 @@ impl Gui {
     fn route(&mut self, event: InputEvent, now: UiMs) -> InputResult {
         let Some(top) = self.dialogs.last() else { return InputResult::default() };
         let (root, modal) = (top.root, top.kind == DialogKind::Modal);
-        if let (InputEvent::PointerDown { x, y, button: MouseButton::Left }, Some(f)) = (&event, top.pointer.focus)
+        // A left press on a hovered label (`FocusTarget`) first gives its
+        // edit the keys, as `set_focus` does: no event, the caret keeps its
+        // blink phase. The press then goes on as any other.
+        if let InputEvent::PointerDown { button: MouseButton::Left, .. } = &event
+            && let Some(edit) = self.top_pointer().hovered.and_then(|n| self.focus_target(root, n))
+        {
+            let _ = self.set_focus(Some(edit));
+        }
+        if let (InputEvent::PointerDown { x, y, button: MouseButton::Left }, Some(f)) =
+            (&event, self.top_pointer().focus)
             && self.tree.node(f).is_ok_and(|n| n.bool_prop(Prop::BlurOnPress, false))
             && self.hit_at(root, *x, *y, true) != Some(f)
         {
@@ -418,6 +437,13 @@ impl Gui {
                 }
                 InputEvent::Key(Key::Enter) => {
                     self.with_ctx(now, |ctx| widget::combo::key(ctx, popup, Key::Enter));
+                    return InputResult { consumed: true };
+                }
+                // A `WheelPicks` list steps its selection and closes silently.
+                InputEvent::Wheel { lines }
+                    if self.tree.node(popup).is_ok_and(|n| n.bool_prop(Prop::WheelPicks, false)) =>
+                {
+                    self.with_ctx(now, |ctx| widget::combo::wheel_pick(ctx, popup, lines));
                     return InputResult { consumed: true };
                 }
                 _ => {}
@@ -483,7 +509,7 @@ impl Gui {
                     self.release(n, x, y, over == Some(n), now);
                 }
                 // A `ReleaseActivates` button takes any release over it,
-                // whatever the press did (VERA's utility cards).
+                // whatever the press did.
                 if let Some(n) = over.filter(|n| Some(*n) != held && self.release_activates(*n)) {
                     self.activate(n);
                 }
@@ -632,6 +658,22 @@ impl Gui {
         Some(crate::shell::new_edit::NewEdit { focused: self.focus() == Some(node), ..widget::edit::read(n) })
     }
 
+    /// NewEdit keeps Edit `node`'s caret in view (`scroll_to_caret`): its
+    /// `Top` becomes the first unit from which the text up to the caret fits
+    /// the field. `measure` is the host font's text width in base px; the
+    /// field is the node's rect at its dialog's scale less NewEdit's 3 px,
+    /// or for a framed edit (`TextInset`) less the inset and the caret's 2.
+    /// Running it again with nothing changed changes nothing, so a host may
+    /// run it every frame.
+    pub fn keep_caret_in_view(&mut self, node: NodeId, measure: &dyn Fn(&str) -> u32) -> Result<(), Refused> {
+        if self.tree.kind(node)? != NodeKind::Edit {
+            return Err(Refused::WrongKind);
+        }
+        let scale = self.scale_of(node)?;
+        widget::edit::keep_caret_in_view(&mut self.tree, node, scale, measure);
+        Ok(())
+    }
+
     /// Writes a NewEdit's text, caret and first shown unit to Edit `node`, as
     /// a host `set` (no event).
     pub fn set_edit_state(&mut self, node: NodeId, edit: &crate::shell::new_edit::NewEdit) -> Result<(), Refused> {
@@ -670,8 +712,7 @@ impl Gui {
     }
 
     /// The wheel for List `node` of the top dialog wherever the pointer is,
-    /// for a page whose one list takes every notch (VERA's Skirmish computer
-    /// rows); true when it scrolled (`Scrolled`). A hidden list takes none.
+    /// for a page whose one list takes every notch; true when it scrolled (`Scrolled`). A hidden list takes none.
     /// The list scrolls at its own dialog's scale, on top or not.
     pub fn wheel_list(&mut self, node: NodeId, lines: i32, now: UiMs) -> bool {
         if self.tree.kind(node) != Ok(NodeKind::List) || !self.tree.effective(node, Prop::Visible) {
@@ -682,7 +723,7 @@ impl Gui {
     }
 
     /// The wheel for the top dialog's open drop-down, for a host whose lists
-    /// take it (VERA's roster): `rows` on when the pointer at `x`, `y` is
+    /// take it: `rows` on when the pointer at `x`, `y` is
     /// over the list. True when a list is open, which then owns the wheel.
     pub fn wheel_popup(&mut self, rows: i32, x: i32, y: i32, now: UiMs) -> bool {
         let Some(node) = self.popup().filter(|n| !self.popup_hidden(*n)) else { return false };
@@ -693,13 +734,20 @@ impl Gui {
     }
 
     /// A key for the top dialog's open drop-down, for a host whose lists
-    /// take the keyboard (VERA's Keyboard page): Up/Down move its hot row,
+    /// take the keyboard: Up/Down move its hot row,
     /// Enter picks it, Escape closes. True when a list is open, which then
     /// owns the keys.
     pub fn key_popup(&mut self, key: Key, now: UiMs) -> bool {
         let Some(node) = self.popup().filter(|n| !self.popup_hidden(*n)) else { return false };
         self.with_ctx(now, |ctx| widget::combo::key(ctx, node, key));
         true
+    }
+
+    /// The `Edit` under `root` whose keys label `node` gives (its
+    /// `FocusTarget` host id).
+    fn focus_target(&self, root: NodeId, node: NodeId) -> Option<NodeId> {
+        let Ok(Some(Value::Int(id))) = self.tree.get(node, Prop::FocusTarget) else { return None };
+        self.find_id(root, *id).filter(|n| self.tree.kind(*n) == Ok(NodeKind::Edit))
     }
 
     fn popup_hidden(&self, node: NodeId) -> bool {
@@ -834,6 +882,18 @@ impl Gui {
         Ok(())
     }
 
+    /// Scrolls List `node` the least that shows `row` whole, at its dialog's
+    /// scale: above the top it becomes the top, below the last shown row
+    /// the last; the top stays within the range. No event (a host change).
+    pub fn ensure_row_visible(&mut self, node: NodeId, row: usize) -> Result<(), Refused> {
+        if self.tree.kind(node)? != NodeKind::List {
+            return Err(Refused::WrongKind);
+        }
+        let scale = self.scale_of(node)?;
+        widget::list::ensure_row_visible(&mut self.tree, node, scale, row);
+        Ok(())
+    }
+
     /// List `node` as it shows and hits now: its rows, top and scrollbar on
     /// its rect, at its dialog's scale (the row under a point, its range).
     pub fn list_geometry(&self, node: NodeId) -> Option<crate::shell::list::ShellListGeometry> {
@@ -851,7 +911,7 @@ impl Gui {
     /// The scale of the dialog `node` lies in, on top or not.
     fn scale_of(&self, node: NodeId) -> Result<ShellScale, Refused> {
         self.tree.kind(node)?;
-        Ok(self.dialog_index_of(node).map_or(ShellScale::RETAIL, |at| self.dialogs[at].scale))
+        Ok(self.dialog_index_of(node).map_or(self.base_scale, |at| self.dialogs[at].scale))
     }
 
     /// The stack index of the dialog `node` lies in.
@@ -915,7 +975,7 @@ impl Gui {
             // only on its 18x18 icon at the row's left; a `HitRect` takes it
             // anywhere.
             let rect = self.tree.screen_rect(node).unwrap_or_default();
-            let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
+            let scale = self.dialogs.last().map_or(self.base_scale, |d| d.scale);
             let anywhere = n.props.contains_key(&Prop::HitRect);
             if anywhere || scale.derive_rect(rect, |r| Rect::new(r.x, r.y, 18, 18)).contains(x, y) {
                 self.toggle(node);
@@ -984,8 +1044,8 @@ impl Gui {
     /// The scale trackbar `n` hits at: its `ScaleScreen`'s, else its dialog's.
     fn trackbar_scale(&self, n: &crate::node::Node) -> ShellScale {
         match n.props.get(&Prop::ScaleScreen) {
-            Some(Value::Rect(r)) => ShellScale::from_screen(r.w, r.h),
-            _ => self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale),
+            Some(Value::Rect(r)) => self.base_scale.in_window(r.w, r.h),
+            _ => self.dialogs.last().map_or(self.base_scale, |d| d.scale),
         }
     }
 
@@ -1503,6 +1563,45 @@ mod tests {
                 UiEvent::Activated { node: cancel },
             ]
         );
+    }
+
+    #[test]
+    fn multiline_enter_appends_crlf_and_clicks_the_default_only_for_a_trimmed_text() {
+        let (mut g, edit, ok, _) = page_with_edit();
+        g.set(edit, Prop::Multiline, Value::Bool(true)).unwrap();
+        g.set(edit, Prop::MaxLen, Value::Int(3)).unwrap();
+        g.set_focus(Some(edit)).unwrap();
+        // An empty text gains CRLF but clicks nothing.
+        assert!(g.input(InputEvent::Key(Key::Enter), 0).consumed);
+        assert_eq!(text_of(&g, edit), ("\r\n".into(), 0), "the caret stays where it was");
+        assert!(!g.drain_events().iter().any(|e| matches!(e, UiEvent::Activated { .. })));
+        // Typed at the kept caret, then past MaxLen on Enter.
+        g.input(InputEvent::Text("a".into()), 0);
+        g.drain_events();
+        g.input(InputEvent::Key(Key::Enter), 0);
+        assert_eq!(text_of(&g, edit), ("a\r\n\r\n".into(), 1));
+        let events = g.drain_events();
+        assert_eq!(events.last(), Some(&UiEvent::Activated { node: ok }));
+        assert!(events.contains(&UiEvent::Submitted { node: edit, text: "a\r\n\r\n".into() }));
+    }
+
+    #[test]
+    fn keep_caret_in_view_scrolls_the_field_less_newedit_or_frame_insets() {
+        let (mut g, edit, _, _) = page_with_edit();
+        // Ten px a unit; the 100 px rect shows 97 px, nine units.
+        let measure = |text: &str| text.encode_utf16().count() as u32 * 10;
+        g.set(edit, Prop::Text, Value::Text("abcdefghijkl".into())).unwrap();
+        g.keep_caret_in_view(edit, &measure).unwrap();
+        assert_eq!(g.edit_state(edit).unwrap().first_visible_unit, 3);
+        // Framed, 3 + 1 + 2 px less: a 95 px rect shows 89 px, eight units.
+        g.set(edit, Prop::TextInset, Value::Rect(Rect::new(3, 1, 1, 1))).unwrap();
+        g.set(edit, Prop::Rect, Value::Rect(Rect::new(0, 0, 95, 10))).unwrap();
+        g.keep_caret_in_view(edit, &measure).unwrap();
+        assert_eq!(g.edit_state(edit).unwrap().first_visible_unit, 4);
+        // The scroll only follows the caret back, never ahead of it.
+        g.set(edit, Prop::Caret, Value::Int(2)).unwrap();
+        g.keep_caret_in_view(edit, &measure).unwrap();
+        assert_eq!(g.edit_state(edit).unwrap().first_visible_unit, 2);
     }
     #[test]
     fn hidden_default_and_cancel_buttons_take_enter_and_escape_unless_disabled() {

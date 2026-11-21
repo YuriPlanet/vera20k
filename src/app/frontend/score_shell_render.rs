@@ -145,7 +145,7 @@ pub(crate) fn render_score_page(
     let origin = dialog_origin(screen.w, screen.h);
     let mut art_sprites = Vec::new();
     if let Some(background) = art.background {
-        if scale.is_retail() {
+        if scale.is_unscaled() {
             push_entry_native(
                 &mut art_sprites,
                 background,
@@ -167,7 +167,7 @@ pub(crate) fn render_score_page(
     if !leaving {
         let rows = page.visible_range().len();
         match (art.background_shaded, layout.shaded_rect(rows)) {
-            (Some(shaded), Some(rect)) if scale.is_retail() => {
+            (Some(shaded), Some(rect)) if scale.is_unscaled() => {
                 push_entry_crop(&mut art_sprites, shaded, origin, rect, SHADE_DEPTH)
             }
             (Some(shaded), Some(rect)) => {

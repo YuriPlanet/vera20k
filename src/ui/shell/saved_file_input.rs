@@ -9,7 +9,6 @@ use crate::ui::skirmish_shell::saved_seed_browser::{
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
 };
-use crate::util::time::Duration;
 use vera20k_gui::{InputEvent, Key, MouseButton, Prop, Value};
 use winit::keyboard::KeyCode;
 
@@ -21,28 +20,6 @@ pub enum BrowserInputResult<I> {
     /// GUIMainButtonSound, `0x0061374B`), or a row selected by a press (the
     /// list subclass's GenericClick, `0x0061AA43..0x0061AA5A`).
     Cue(PageCue),
-}
-
-/// Native list notifications use the host's double-click policy.
-#[cfg(windows)]
-pub fn host_double_click_limits() -> (Duration, i32, i32) {
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn GetDoubleClickTime() -> u32;
-        fn GetSystemMetrics(index: i32) -> i32;
-    }
-    // SAFETY: pointer-free Win32 queries with no ownership effects.
-    unsafe {
-        (
-            Duration::from_millis(u64::from(GetDoubleClickTime())),
-            GetSystemMetrics(36),
-            GetSystemMetrics(37),
-        )
-    }
-}
-#[cfg(not(windows))]
-pub fn host_double_click_limits() -> (Duration, i32, i32) {
-    (Duration::from_millis(500), 4, 4)
 }
 
 /// Puts the widgets on `layout` (a control without a rect is hidden) with
@@ -182,8 +159,8 @@ pub fn key<I: Clone + PartialEq>(
 }
 
 /// Each frame: the scrollbar arrow's repeat (`0x0061C690`), and NewEdit
-/// keeps the edit's caret in view (text widths in the font's authored
-/// units, so the field's base rect); the first shown unit is its `Top`.
+/// keeps the edit's caret in view (`measure`: text widths in the font's
+/// authored units).
 pub fn update<I: Clone + PartialEq>(
     browser: &mut SavedSeedBrowserState<I>,
     layout: &SavedSeedLayout,
@@ -193,9 +170,8 @@ pub fn update<I: Clone + PartialEq>(
     sync(browser, layout, extent);
     browser.ui.poll();
     browser.ui.drain_events();
-    if let (Some(rect), Some(node)) = (layout.name_edit, browser.node(EDIT)) {
-        let available = crate::ui::skirmish_shell::framed_edit_text_width(rect, layout.scale);
-        page::scroll_edit(browser.ui.gui_mut(), node, available, measure);
+    if let (Some(_), Some(node)) = (layout.name_edit, browser.node(EDIT)) {
+        let _ = browser.ui.gui_mut().keep_caret_in_view(node, &measure);
     }
 }
 

@@ -217,7 +217,7 @@ pub fn compute_layout(spec: &MenuPageSpec, screen_w: u32, screen_h: u32) -> Menu
     };
 
     MenuPageLayout {
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         movie_base,
         movie: RectPx::new(movie_x, movie_y, movie_w, movie_h),
@@ -277,7 +277,7 @@ pub fn compute_responsive_layout(
 ) -> MenuPageLayout {
     compute_layout_on(
         spec,
-        ShellScale::from_screen(screen_w as i32, screen_h as i32),
+        crate::ui::shell::geom::shell_scale(screen_w as i32, screen_h as i32),
     )
 }
 
@@ -289,7 +289,7 @@ pub fn compute_layout_for(
     screen_w: i32,
     screen_h: i32,
 ) -> MenuPageLayout {
-    if scale.is_retail() {
+    if scale.is_unscaled() {
         compute_layout(spec, screen_w as u32, screen_h as u32)
     } else {
         compute_layout_on(spec, scale)

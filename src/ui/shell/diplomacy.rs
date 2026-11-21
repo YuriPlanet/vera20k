@@ -14,7 +14,7 @@
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use vera20k_gui::shell::button::CheckboxFace;
+use crate::ui::shell::checkbox::CheckboxFace;
 use super::descriptor::DialogResourceId;
 use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};

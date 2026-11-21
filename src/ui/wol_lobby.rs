@@ -533,7 +533,7 @@ fn page_spec() -> NodeSpec {
 impl WolLobbyState {
     pub(crate) fn new(observer: bool, modern: bool) -> Self {
         let mut gui = Gui::new(128);
-        let (time, width, height) = crate::ui::shell::saved_file_input::host_double_click_limits();
+        let (time, width, height) = crate::ui::shell::controller::host_double_click_limits();
         gui.set_double_click(time.as_millis() as u64, width, height);
         let root = gui.create(NodeKind::Dialog, None).expect("an empty tree");
         let page = gui
@@ -554,7 +554,7 @@ impl WolLobbyState {
             card_dialog: None,
             gui,
             page,
-            scale: ShellScale::RETAIL,
+            scale: crate::ui::shell::geom::RETAIL_SCALE,
             epoch: Instant::now(),
         };
         // Join is created WS_DISABLED; the chat edit holds the focus.
@@ -722,19 +722,12 @@ impl WolLobbyState {
         self.gui.list_row_at(self.gui.find_id(self.page_root(), id.into())?, x, y)
     }
 
-    /// NewEdit keeps each edit's caret in view (`scroll_to_caret`, text
-    /// widths in the authored pixels); the first shown unit lives in `Top`.
+    /// NewEdit keeps each edit's caret in view (`measure`: text widths in
+    /// the authored pixels).
     pub(crate) fn scroll_edits(&mut self, measure: &dyn Fn(&str) -> u32) {
         for id in [CHAT, POPUP_PASSWORD, CREATE_NAME] {
-            let Some(rect) = self
-                .node(id)
-                .and_then(|node| self.gui.tree().screen_rect(node).ok())
-            else {
-                continue;
-            };
-            let available = (self.scale.base_rect(rect).w - 3).max(0) as u32;
             if let Some(node) = self.node(id) {
-                page::scroll_edit(&mut self.gui, node, available, measure);
+                let _ = self.gui.keep_caret_in_view(node, measure);
             }
         }
     }
@@ -1069,13 +1062,8 @@ impl WolLobbyState {
                 {
                     out.push(WolLobbyEffect::Cue(PageCue::ListClick));
                 }
-                // A press on an online setting's title gives its edit the keys.
-                if let Some(id @ (POPUP_PASSWORD | CREATE_NAME)) = over
-                    .filter(|id| self.popup.is_some() && id & LABEL != 0)
-                    .map(|id| id & !LABEL)
-                {
-                    self.focus_popup_edit(id);
-                }
+                // A press on an online setting's title gives its edit the
+                // keys: the title's `FocusTarget` ([`popups`]).
                 self.gui
                     .input(InputEvent::PointerDown { x, y, button: Left }, now);
             }
@@ -1248,7 +1236,7 @@ mod tests {
             let layout = WolLobbyLayout::new(
                 width.parse().unwrap(),
                 height.parse().unwrap(),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 &PAGE,
             );
             for (key, child) in case["controls"].as_object().unwrap() {
@@ -1298,10 +1286,10 @@ mod tests {
     #[test]
     fn online_sidebar_keeps_core_actions_and_never_reenables_removed_controls() {
         let mut lobby = WolLobbyState::new(false, true);
-        let layout = WolLobbyLayout::new(800, 600, ShellScale::RETAIL, lobby.page_spec());
+        let layout = WolLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
         assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, BACK]);
-        let retail = WolLobbyLayout::new(800, 600, ShellScale::RETAIL, &PAGE);
+        let retail = WolLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, &PAGE);
         assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
         assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
         assert_eq!(
@@ -1331,8 +1319,8 @@ mod tests {
     #[test]
     fn modern_body_keeps_useful_controls_and_hides_legacy_ones() {
         let mut lobby = WolLobbyState::new(false, true);
-        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
-        let legacy = WolLobbyState::new(false, false).layout(800, 600, ShellScale::RETAIL);
+        let layout = lobby.layout(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
+        let legacy = WolLobbyState::new(false, false).layout(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         let headers: Vec<_> = layout.sort_buttons().map(|(id, _)| id).collect();
         assert_eq!(headers, [SORT_ALPHA, SORT_PING, PLAYER_SORT_ALPHA]);
         for id in [
@@ -1384,8 +1372,8 @@ mod tests {
     #[test]
     fn modern_observe_checkbox_trails_the_players_heading() {
         let mut lobby = WolLobbyState::new(false, true);
-        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
-        let legacy = WolLobbyState::new(false, false).layout(800, 600, ShellScale::RETAIL);
+        let layout = lobby.layout(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
+        let legacy = WolLobbyState::new(false, false).layout(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         let rect = |id| layout.control_rect(id).unwrap();
         let (heading, toggle, players) = (rect(LABELS[1].0), rect(OBSERVER_TOGGLE), rect(PLAYERS));
         let plate = crate::ui::skirmish_shell::checkbox_icon_rect(toggle, layout.page.scale);
@@ -1426,7 +1414,7 @@ mod tests {
         assert_eq!(lobby.selected_row(GAMES), None);
 
         // A pointer resting on the second row finds it across a refill.
-        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
+        let layout = lobby.layout(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         let games = layout.control_rect(GAMES).unwrap();
         let list = lobby.shown_geometry(GAMES, games, 2, layout.page.scale);
         let (x, y) = (list.content.x + 1, list.content.y + list.metrics.row_h + 1);
@@ -1514,7 +1502,7 @@ mod tests {
         // The observer image is a box: its toggle, not an activation,
         // changes the preference.
         assert_eq!(lobby.activate(OBSERVER_IMAGE), None);
-        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
+        let layout = lobby.layout(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         lobby.sync(&layout);
         let rect = layout.control_rect(OBSERVER_IMAGE).unwrap();
         let (x, y) = (rect.x + rect.w / 2, rect.y + rect.h / 2);

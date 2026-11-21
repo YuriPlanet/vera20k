@@ -14,7 +14,7 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::stock_skirmish_modes;
 use crate::ui::shell::page::PageCue;
-use vera20k_gui::shell::trackbar::{THUMB_W, TrackbarHold};
+use vera20k_gui::shell::trackbar::THUMB_W;
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::page;
 use crate::ui::skirmish_shell::{
@@ -296,7 +296,7 @@ fn dropdown_scroll_drag(shell: &SkirmishShellState) -> Option<DropdownScrollDrag
 }
 
 /// The slider holding the mouse, and whether it follows the pointer.
-fn trackbar_hold(shell: &SkirmishShellState) -> Option<TrackbarHold<SkirmishTrackbarId>> {
+fn trackbar_hold(shell: &SkirmishShellState) -> Option<(SkirmishTrackbarId, bool)> {
     read_page(shell, |gui, _| {
         let id = gui.id_of(gui.pressed()?)?;
         let id = [
@@ -307,10 +307,7 @@ fn trackbar_hold(shell: &SkirmishShellState) -> Option<TrackbarHold<SkirmishTrac
         .into_iter()
         .find(|(node, _)| *node == id)?
         .1;
-        Some(TrackbarHold {
-            id,
-            dragging: gui.dragging(),
-        })
+        Some((id, gui.dragging()))
     })
 }
 
@@ -624,7 +621,7 @@ fn player_name_press_selects_it_and_typing_replaces_it_within_nineteen_bytes() {
     handle_option_mouse_up(&mut shell);
     let typed = |shell: &mut SkirmishShellState, event| {
         PAGE.with_borrow_mut(|(controller, _, _)| {
-            page::key(controller, shell, &layout, Some(event), |t| {
+            page::key(controller, shell, Some(event), |t| {
                 t.len() as u32 * 6
             })
         })
@@ -652,7 +649,7 @@ fn player_name_press_while_focused_selects_it_again() {
     let typed = |shell: &mut SkirmishShellState, text: &str| {
         let event = vera20k_gui::InputEvent::Text(text.into());
         PAGE.with_borrow_mut(|(controller, _, _)| {
-            page::key(controller, shell, &layout, Some(event), |t| t.len() as u32)
+            page::key(controller, shell, Some(event), |t| t.len() as u32)
         })
     };
     click(&mut shell);
@@ -1036,7 +1033,7 @@ fn checkbox_icon_click_toggles_but_label_click_does_not() {
     assert_eq!(shell.short_game, !initial);
     assert_eq!(drain_sounds(), vec![PageCue::Checkbox]);
 
-    let label = checkbox_text_rect(checkbox, crate::ui::shell::geom::ShellScale::RETAIL);
+    let label = checkbox_text_rect(checkbox, crate::ui::shell::geom::RETAIL_SCALE);
     handle_option_mouse_down(&mut shell, &layout, &[], label.x, label.y + 1);
     assert_eq!(shell.short_game, !initial);
     assert!(drain_sounds().is_empty());
@@ -1053,10 +1050,7 @@ fn a_press_above_the_admitted_strip_only_holds_the_mouse() {
         assert_eq!(shell.starting_credits, CREDITS_MAX, "y={y}");
         assert_eq!(
             trackbar_hold(&shell),
-            Some(TrackbarHold {
-                id: SkirmishTrackbarId::Credits0x511,
-                dragging: false,
-            })
+            Some((SkirmishTrackbarId::Credits0x511, false))
         );
         assert!(drain_sounds().is_empty());
     }
@@ -1148,10 +1142,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     assert!((5000..10000).contains(&selected));
     assert_eq!(
         trackbar_hold(&shell),
-        Some(TrackbarHold {
-            id: SkirmishTrackbarId::Credits0x511,
-            dragging: false,
-        })
+        Some((SkirmishTrackbarId::Credits0x511, false))
     );
     assert_eq!(drain_sounds(), vec![PageCue::ListClick]);
 

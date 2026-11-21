@@ -6,6 +6,10 @@ use super::list::{
     ListMetrics, ListScrollPart, ShellListGeometry, scrollbar_thumb_y, thumb_height,
 };
 
+/// Default combo metrics, measured from gamemd's `ComboDropWin` and owner-draw
+/// combo: the face height, the drop-down's row height, scrollbar width,
+/// scrollbar button height and minimum thumb height, and the arrow's reserve
+/// at the face's right.
 pub const COMBO_FACE_H: i32 = 24;
 pub const COMBO_DROPDOWN_ROW_H: i32 = 23;
 pub const COMBO_DROPDOWN_SCROLLBAR_W: i32 = 20;
@@ -16,7 +20,7 @@ pub const COMBO_ARROW_RESERVE_W: i32 = 20;
 /// The `ComboDropWin` dropdown's device metrics: the authored row, scrollbar and
 /// thumb sizes grown by the page's stretch, so a dropdown under a stretched
 /// combo has rows as tall as its face and stays the same number of rows deep.
-/// Identity at [`ShellScale::RETAIL`], where every field is the constant above.
+/// Identity on an unscaled mapping, where every field is the default above.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DropdownMetrics {
     pub row_h: i32,
@@ -89,7 +93,7 @@ impl ComboPopup {
         }
     }
     /// The same list on rows `row_height` tall, for a control drawn smaller
-    /// than the shell's own (VERA's roster).
+    /// than the default.
     pub fn with_row_height(mut self, row_height: i32) -> Self {
         self.row_height = row_height.max(1);
         self.rect.h = self.visible_rows as i32 * self.row_height;
@@ -181,7 +185,7 @@ mod tests {
         // 0x006184CD..0x006184D7: `x > right - 0x14`, `right` exclusive.
         let rect = RectPx::new(10, 20, 120, 21);
         let right = rect.x + rect.w;
-        let opens = |x| combo_arrow_hit_rect(rect, ShellScale::RETAIL).contains(x, 25);
+        let opens = |x| combo_arrow_hit_rect(rect, ShellScale::unscaled(800, 600)).contains(x, 25);
         assert!(!opens(right - 0x14));
         assert!(opens(right - 0x13));
         assert!(opens(right - 1));

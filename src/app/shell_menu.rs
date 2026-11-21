@@ -7,7 +7,8 @@
 //! Skirmish and the network rooms take it as Back. The menu is made of retail
 //! pieces: the three-button message box `0x121` on the Allied dialog art,
 //! launcher Options `0xD5` and the Main Menu's Exit Game quit. Each page
-//! answers whether Esc is free, so its own boxes and popups keep the key.
+//! answers whether Esc is free, so its own boxes keep the key; the page's
+//! widgets then see it first, so an open drop-down takes it and closes.
 
 use winit::event::KeyEvent;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -18,11 +19,13 @@ use crate::app::frontend::shell_transition;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
 use crate::ui::main_menu_dialogs::{OptionsDialogState, shell_menu};
+use crate::ui::shell::controller::gui_input;
 use crate::ui::shell::keyboard::KeyboardParent;
 
 impl App {
-    /// An Esc press on `screen`. True when the key was used: it closed a
-    /// dropdown, or opened the menu.
+    /// An Esc press on `screen`. True when the key was used: the page's
+    /// widgets took it (an open drop-down closes, without a cue), or it
+    /// opened the menu.
     pub(super) fn shell_menu_key(
         state: &mut AppState,
         event: &KeyEvent,
@@ -37,9 +40,22 @@ impl App {
         {
             return false;
         }
-        if !Self::close_page_dropdown(state, screen) {
-            Self::open_shell_menu(state);
+        // My Information's lists stay open under the menu: its Esc never
+        // reached them.
+        let my_info = screen == ScreenPage::Wol
+            && matches!(
+                state.frontend.wol.as_ref().map(|visit| &visit.page),
+                Some(super::shell_wol::WolPage::MyInformation(_))
+            );
+        let escape = gui_input(Some(KeyCode::Escape), false, event.text.as_deref())
+            .filter(|_| !my_info);
+        let controller = &mut state.frontend.shell_controller;
+        if escape.is_some_and(|escape| controller.on_input(escape)) {
+            return true;
         }
+        // A focused edit reported the Escape as its cancel; the menu takes it.
+        controller.discard_cancelled();
+        Self::open_shell_menu(state);
         true
     }
 
@@ -65,25 +81,6 @@ impl App {
             }
             ScreenPage::Skirmish | ScreenPage::NetworkSetup => Self::skirmish_leaves_escape(state),
             ScreenPage::Wol => Self::wol_leaves_escape(state),
-            _ => false,
-        }
-    }
-
-    /// A dropdown the page has open closes first.
-    fn close_page_dropdown(state: &mut AppState, screen: ScreenPage) -> bool {
-        match screen {
-            ScreenPage::Skirmish => {
-                crate::ui::skirmish_shell::random_map_page::close_list(
-                    &mut state.frontend.shell_controller,
-                ) || Self::close_skirmish_list(state)
-            }
-            ScreenPage::NetworkSetup => {
-                crate::ui::skirmish_shell::random_map_page::close_list(
-                    &mut state.frontend.shell_controller,
-                ) || (state.frontend.multiplayer_setup.is_some()
-                    && state.frontend.shell_controller.gui_mut().close_popup())
-            }
-            ScreenPage::Wol => Self::close_wol_open_list(state),
             _ => false,
         }
     }

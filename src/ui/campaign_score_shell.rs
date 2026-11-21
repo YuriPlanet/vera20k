@@ -344,8 +344,13 @@ impl CampaignScoreLayout {
             CampaignScoreDialog::Victory => "0x103",
             CampaignScoreDialog::CampaignEnd => "0xBC7",
         };
-        let (page, placed) =
-            layout_data::menu_page(dialog.page(), section, ShellScale::RETAIL, w, h);
+        let (page, placed) = layout_data::menu_page(
+            dialog.page(),
+            section,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            w,
+            h,
+        );
         let shift = match dialog {
             CampaignScoreDialog::Victory if w >= 800 => TEXT_UPPER_SHIFT,
             _ => 0,
@@ -732,7 +737,7 @@ mod tests {
     /// (`tools/storage_oracle/shell_relayout.py`), for both campaign sides.
     #[test]
     fn control_windows_match_executed_0x103_relayout_at_each_retail_size() {
-        use vera20k_gui::fixtures::executed_child_window_for_side as executed;
+        use crate::ui::shell::native_fixtures::executed_child_window_for_side as executed;
         let ids = CAMPAIGN_SCORE_CONTROLS.iter().map(|spec| spec.id);
         let ids: Vec<u16> = ids.chain([SCORE_ART_REGION_STATIC]).collect();
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {

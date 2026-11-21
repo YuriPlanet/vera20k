@@ -278,7 +278,7 @@ pub(crate) fn render_and_present(
 /// left to the black clear. gamemd itself draws 1:1, centred, at every size.
 fn splash_placement(client_width: u32, client_height: u32) -> ([u32; 2], RectPx) {
     if window_takes_fitted_shell((client_width, client_height)) {
-        let scale = ShellScale::from_screen(client_width as i32, client_height as i32);
+        let scale = crate::ui::shell::geom::shell_scale(client_width as i32, client_height as i32);
         (
             [SHELL_BASE_W as u32, SHELL_BASE_H as u32],
             scale.dialog_rect(),

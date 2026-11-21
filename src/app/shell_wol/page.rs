@@ -113,7 +113,7 @@ fn lines(visit: &mut super::WolVisit, dialog: DialogResourceId) -> Option<&mut V
 /// gives its list the rows; the root.
 fn sync(state: &mut AppState, dialog: DialogResourceId) -> Option<NodeId> {
     let (spec, rect_of, list) = widgets(state, dialog);
-    let root = leaf::place(state, dialog, ShellScale::RETAIL, spec, rect_of)?;
+    let root = leaf::place(state, dialog, crate::ui::shell::geom::RETAIL_SCALE, spec, rect_of)?;
     let frontend = &mut state.frontend;
     let rows = frontend
         .wol
@@ -582,11 +582,11 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let actions = with_last(state, |page, c, last| page.input(c, event, last));
     apply(state, actions.unwrap_or_default());
     // 0xCF's focused NewEdit keeps its caret in view: 0x00623880 paints
-    // from the first visible unit. Widths are the popup's retail pixels.
+    // from the first visible unit, at the popup's retail scale.
     if let Some(node) =
         leaf::root(state, PAGE_DIALOG).and(state.frontend.shell_controller.gui().focus())
     {
-        leaf::scroll_edit(state, node, ShellScale::RETAIL);
+        leaf::scroll_edit(state, node);
     }
 }
 

@@ -127,7 +127,10 @@ fn spec() -> NodeSpec {
                 .with(Prop::WheelStep, Value::Int(1)),
             KeyboardControl::Category => focus(NodeSpec::new(NodeKind::Combo))
                 .with(Prop::RowCount, Value::Int(0))
-                .with(Prop::OpenAnywhere, Value::Bool(true)),
+                .with(Prop::OpenAnywhere, Value::Bool(true))
+                // The open list's wheel steps the selection and closes it,
+                // silently (the combo's own step: CBN_SELCHANGE, no cue).
+                .with(Prop::WheelPicks, Value::Bool(true)),
             KeyboardControl::Capture => focus(NodeSpec::new(NodeKind::Text)),
             _ => NodeSpec::new(NodeKind::Text),
         };
@@ -367,7 +370,7 @@ impl KeyboardLayout {
     /// Gamemd's A3: the authored dialog centered in the window at its native
     /// size. Also the frame the in-game page sits in, which never scales.
     pub fn new(width: i32, height: i32, shell: Option<(InGameShellLayout, [i32; 2])>) -> Self {
-        Self::build(width, height, shell, ShellScale::RETAIL)
+        Self::build(width, height, shell, crate::ui::shell::geom::RETAIL_SCALE)
     }
 
     /// The responsive variant of [`Self::new`] for the front-end family page: the
@@ -375,7 +378,7 @@ impl KeyboardLayout {
     /// chrome where every other scaled family page puts it. Identity at the
     /// base size. The in-game frame keeps its own layout, so it takes `new`.
     pub fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, None, ShellScale::from_screen(width, height))
+        Self::build(width, height, None, crate::ui::shell::geom::shell_scale(width, height))
     }
 
     fn build(
@@ -387,7 +390,7 @@ impl KeyboardLayout {
         // Common60B7A0 ordinary controls use signed centering then clamp origins.
         let dlu = |template: RectPx| {
             let r = geom::dlu_rect(template.x, template.y, template.w, template.h);
-            if scale.is_retail() {
+            if scale.is_unscaled() {
                 in_game_shell::ordinary_child_rect(r, width, height)
             } else {
                 scale.scale_rect(r)
@@ -399,7 +402,7 @@ impl KeyboardLayout {
                 shell.lower_button_rect(width, size),
                 in_game_shell::status_line_rect(height),
             )
-        } else if scale.is_retail() {
+        } else if scale.is_unscaled() {
             // The front-end page is a family page: its heading, Back and
             // status line sit where every family page puts them.
             let page =

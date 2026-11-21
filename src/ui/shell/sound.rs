@@ -366,11 +366,8 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0xD6"]["sizes"].as_object().unwrap() {
             let (w, h) = size.split_once('x').unwrap();
-            let layout = ShellSoundLayout::new(
-                w.parse().unwrap(),
-                h.parse().unwrap(),
-                geom::ShellScale::RETAIL,
-            );
+            let layout =
+                ShellSoundLayout::new(w.parse().unwrap(), h.parse().unwrap(), geom::RETAIL_SCALE);
             for (key, child) in case["controls"].as_object().unwrap() {
                 let actual = match key.as_str() {
                     "0x52F" => layout.sliders[0],
@@ -435,10 +432,7 @@ mod tests {
         let range = vera20k_gui::shell::trackbar::TrackbarRange::new(0, 10, 1);
         for sample in native["pointers"].as_array().unwrap() {
             let x = rect.x + sample["x"].as_i64().unwrap() as i32;
-            set(
-                &mut state,
-                range.value_at_in(x, rect, geom::ShellScale::RETAIL),
-            );
+            set(&mut state, range.value_at_in(x, rect, geom::RETAIL_SCALE));
             assert_eq!(
                 state.positions()[0],
                 sample["position"].as_u64().unwrap() as u8
@@ -526,7 +520,7 @@ mod tests {
     fn shell_0xd6_disabled_sliders_take_no_press_and_a_rail_press_applies_once() {
         use super::super::page;
         use vera20k_gui::{DialogKind, InputEvent, MouseButton};
-        let layout = ShellSoundLayout::new(800, 600, geom::ShellScale::RETAIL);
+        let layout = ShellSoundLayout::new(800, 600, geom::RETAIL_SCALE);
         let mut gui = Gui::new(16);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
         gui.push_dialog(root, DialogKind::Page).unwrap();

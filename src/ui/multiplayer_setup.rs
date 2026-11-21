@@ -17,7 +17,7 @@ use crate::ui::shell::layout_data;
 use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self as page_nodes, PageEvent};
-use vera20k_gui::shell::trackbar::{TrackbarPress, TrackbarRange};
+use vera20k_gui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::SkirmishStatics;
 
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
@@ -578,9 +578,6 @@ impl SetupTrackbar {
     pub(crate) fn thumb_left(&self, rect: RectPx, scale: ShellScale) -> i32 {
         self.window_range().thumb_left_in(self.value, rect, scale)
     }
-    pub(crate) fn press(&self, x: i32, y: i32, rect: RectPx, scale: ShellScale) -> TrackbarPress {
-        self.window_range().press_in(self.value, x, y, rect, scale)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -848,9 +845,13 @@ impl MapOffer {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MultiplayerSetupState {
-    /// The first row of the page showing; in VERA's roster, the place it
-    /// is scrolled to ([`RosterScroll`]).
+    /// The first row of a native roster's page showing (Previous / Next).
+    /// VERA's roster keeps the place it is scrolled to on its scrollbar
+    /// node [`ROSTER_SCROLL`] instead.
     first_visible_row: usize,
+    /// VERA's roster's place while the room hides behind the lobby (its
+    /// dialog and scrollbar are torn down), for when it shows again.
+    pub(crate) parked_roster_top: Option<usize>,
     pub(crate) chat: LanChatState,
     /// The chat's draft and view while the room hides behind the lobby
     /// (its dialog is torn down), for when it shows again.
@@ -877,6 +878,7 @@ impl Default for MultiplayerSetupState {
     fn default() -> Self {
         Self {
             first_visible_row: 0,
+            parked_roster_top: None,
             chat: LanChatState::default(),
             parked_chat: None,
             notice: None,
@@ -915,20 +917,16 @@ impl MultiplayerSetupState {
         };
         self.first_visible_row = pages.get(page).copied().unwrap_or(0);
     }
-    /// The place VERA's roster shows, of the last `max_top`.
-    pub(crate) fn roster_top(&self, max_top: usize) -> usize {
-        self.first_visible_row.min(max_top)
-    }
-    /// VERA's roster scrolled to place `top` (its scrollbar).
-    pub(crate) fn scroll_roster_to(&mut self, top: usize) {
-        self.first_visible_row = top;
-    }
     /// An open roster list owns the wheel even at its ends. Once it closes,
-    /// the same gesture over the roster scrolls the teams again.
+    /// the same gesture over the roster (its area node `area`) scrolls the
+    /// teams again: its scrollbar node `scroll` ([`ROSTER_SCROLL`], one
+    /// place a step) moves and reports `Scrolled`, on which the host closes
+    /// the open list.
     pub(crate) fn wheel(
-        &mut self,
+        &self,
         gui: &mut Gui,
         area: Option<NodeId>,
+        scroll: Option<NodeId>,
         view: &SetupView,
         layout: &MultiplayerSetupLayout,
         x: i32,
@@ -936,12 +934,13 @@ impl MultiplayerSetupState {
         lines: f32,
         now: u64,
     ) -> bool {
-        let Some(roster) = layout.roster_scroll(view) else {
+        if layout.roster_scroll(view).is_none() {
             return false;
-        };
+        }
         if self.game_options || self.map_offer.is_some() || lines == 0.0 {
             return false;
         }
+        // Three places a notch of fractional lines, at least one, at most 30.
         let step = ((lines * 3.0).round() as i32).clamp(-30, 30);
         let step = if step == 0 {
             lines.signum() as i32
@@ -951,16 +950,10 @@ impl MultiplayerSetupState {
         if gui.wheel_popup(-step, x, y, now) {
             return true;
         }
-        // Over the roster (its area node `area`), its cells or the gaps
-        // between them.
+        // Over the roster, its cells or the gaps between them.
         if area.is_some_and(|area| gui.hit_at(area, x, y, false).is_some()) {
-            let top = self.roster_top(roster.max_top);
-            self.first_visible_row = top
-                .saturating_add_signed(-step as isize)
-                .min(roster.max_top);
-            // Its rows' controls move under the pointer: a hidden list closes.
-            if self.first_visible_row != top {
-                gui.close_popup();
+            if let Some(scroll) = scroll {
+                gui.wheel_list(scroll, step, now);
             }
             return true;
         }
@@ -1083,7 +1076,7 @@ impl MultiplayerSetupLayout {
         let mut page = if responsive {
             // VERA's room fills the window: its shell stands at the right
             // edge, and its roster and chat spread over the rest.
-            let scale = ShellScale::from_screen(width, height);
+            let scale = crate::ui::shell::geom::shell_scale(width, height);
             menu_page::compute_layout_on(
                 spec,
                 if dialog.modern {
@@ -1475,7 +1468,7 @@ impl MultiplayerSetupLayout {
                     TEAM_COUNT | ROOM_SIZE | TEAM_STARTS | TEAM_COLORS | BALANCE
                 ) =>
             {
-                ShellScale::from_screen(w, h)
+                crate::ui::shell::geom::shell_scale(w, h)
             }
             _ => self.page.scale,
         }
@@ -1521,7 +1514,8 @@ impl MultiplayerSetupLayout {
 }
 
 /// VERA's roster's scrollbar: a list whose rows are the places it scrolls
-/// to ([`RosterScroll`]), hit only on its bar.
+/// to ([`RosterScroll`]), hit only on its bar. Its `Top` is the place the
+/// roster shows: the bar, the wheel and parking move it, the view reads it.
 pub(crate) const ROSTER_SCROLL: u16 = 0x7F17;
 /// VERA's roster's whole area, a static that only says the pointer is over
 /// the roster (the wheel scrolls it there), behind its cells.
@@ -1863,10 +1857,14 @@ fn props(
         let bar = layout
             .roster_scroll(view)
             .and_then(|roster| roster.scrollbar);
+        // The node owns the place; `first_row` is its top read back within
+        // the range the roster has now (`view`), written back so the bar
+        // and the wheel work from it.
         props.extend([
             (Prop::RowCount, Value::Int(count as i32)),
             (Prop::VisibleRows, Value::Int((count - max_top) as i32)),
             (Prop::Top, Value::Int(view.first_row as i32)),
+            (Prop::WheelStep, Value::Int(1)),
             (Prop::HitRect, Value::Rect(bar.unwrap_or_default())),
         ]);
     }
@@ -2309,16 +2307,24 @@ mod tests {
             }
         }
         // The wheel scrolls three places a notch, no further than the last.
-        let mut ui = MultiplayerSetupState::default();
+        let ui = MultiplayerSetupState::default();
         let mut gui = Gui::new(8);
-        let roster = gui.create(NodeKind::Text, None).unwrap();
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        gui.push_dialog(root, vera20k_gui::DialogKind::Page).unwrap();
+        let roster = gui.create(NodeKind::Text, Some(root)).unwrap();
         gui.set(roster, Prop::Rect, Value::Rect(area)).unwrap();
         gui.set(roster, Prop::Tooltip, Value::Text(String::new())).unwrap();
-        let roster = Some(roster);
-        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -1.0, 0);
-        assert_eq!(ui.roster_top(scroll.max_top), 3);
-        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -100.0, 0);
-        assert_eq!(ui.roster_top(scroll.max_top), scroll.max_top);
+        let bar_node = gui.create(NodeKind::List, Some(root)).unwrap();
+        gui.set(bar_node, Prop::Rect, Value::Rect(area)).unwrap();
+        for (prop, value) in props(&ui, &view, &layout, ROSTER_SCROLL) {
+            gui.set(bar_node, prop, value).unwrap();
+        }
+        let (roster, scroll_node) = (Some(roster), Some(bar_node));
+        let top = |gui: &Gui| gui.list_view(bar_node).unwrap().top;
+        ui.wheel(&mut gui, roster, scroll_node, &view, &layout, area.x, area.y, -1.0, 0);
+        assert_eq!(top(&gui), 3);
+        ui.wheel(&mut gui, roster, scroll_node, &view, &layout, area.x, area.y, -100.0, 0);
+        assert_eq!(top(&gui), scroll.max_top);
         let mut ui = MultiplayerSetupState::default();
         // A room that fits shows no scrollbar.
         view.roster_scroll = (3, 0);

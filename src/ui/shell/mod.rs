@@ -4,10 +4,12 @@
 //! list, trackbar, edit) and the generic pixel geometry live in the
 //! `vera20k-gui` crate. This module keeps the retail shell's own layout
 //! knowledge (dialog resource ids and anchor rules, right-panel geometry, the
-//! layout pass, paging, the kind-1 static reveal and the `0x71C` monitor) and
-//! the dialog-specific state.
+//! layout pass, paging, the kind-1 static reveal and the `0x71C` monitor), the
+//! 800x600 base and the retail scaling rule, the checkbox art faces, the
+//! native fixtures the widgets' goldens replay, and the dialog-specific state.
 
 pub mod abort;
+pub mod checkbox;
 pub mod connection;
 pub mod controller;
 pub mod descriptor;
@@ -20,6 +22,8 @@ pub mod layout;
 pub mod layout_data;
 pub mod menu_page;
 pub mod modal;
+#[cfg(all(test, tests_ui))]
+pub mod native_fixtures;
 pub mod page;
 pub mod paging;
 pub mod pause_menu;

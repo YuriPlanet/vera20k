@@ -1046,10 +1046,8 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         }
     }
     for id in [NAME, CHAT] {
-        let rect = layout.rect(id).unwrap_or_default();
         if let Some(edit) = gui.find_id(root, id.into()) {
-            let available = (layout.page.scale.base_rect(rect).w - 3).max(0) as u32;
-            page::scroll_edit(gui, edit, available, |text| font.text_width(text));
+            let _ = gui.keep_caret_in_view(edit, &|text| font.text_width(text));
         }
     }
     if let Some(boxed) = boxed {

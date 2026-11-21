@@ -19,7 +19,6 @@ use crate::ui::mods_shell::{self, ModsLayout};
 use crate::ui::movies_credits_shell::{
     family_list_node, family_list_selected, find_family_list, set_family_list,
 };
-use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 use crate::ui::shell::modal::ShellBox;
 
 impl App {
@@ -67,28 +66,14 @@ impl App {
         let selected = picked.and_then(|folder| rows.iter().position(|row| row.folder == folder));
         *page = rows;
         // The top stays where it was, within the new range.
-        Self::update_mods_list(state, selected, |top, (_, last)| top.min(last));
+        Self::update_mods_list(state, selected, false);
     }
 
-    /// The list's tops for `rows` rows with `selected`: the one that shows
-    /// the selected row (or else the first), and the last.
-    fn mods_list_tops(rows: usize, selected: Option<usize>, layout: &ModsLayout) -> (usize, usize) {
-        let metrics = ListMetrics::scaled(layout.page.scale);
-        let geometry = list_box_geometry(layout.list, rows, 0, metrics);
-        let showing = selected
-            .unwrap_or(0)
-            .saturating_sub(geometry.visible_rows.saturating_sub(1));
-        (showing.min(geometry.max_top), geometry.max_top)
-    }
-
-    /// The page's rows and `selected` into its `List` node, at the top `top`
-    /// makes of the node's current one and [`Self::mods_list_tops`].
-    fn update_mods_list(
-        state: &mut AppState,
-        selected: Option<usize>,
-        top: impl FnOnce(usize, (usize, usize)) -> usize,
-    ) {
-        let layout = mods_layout(state);
+    /// The page's rows and `selected` into its `List` node. With `reveal`
+    /// the list shows the selected row as a new list does (from the first
+    /// row, scrolled into view); otherwise its top stays where it was,
+    /// within the new range.
+    fn update_mods_list(state: &mut AppState, selected: Option<usize>, reveal: bool) {
         let Some(rows) = state.frontend.mods.page.as_ref().map(Vec::len) else {
             return;
         };
@@ -96,9 +81,21 @@ impl App {
         let Some(node) = find_family_list(controller, mods_shell::DIALOG) else {
             return;
         };
-        let current = controller.gui().list_view(node).map_or(0, |view| view.top);
-        let top = top(current, Self::mods_list_tops(rows, selected, &layout));
-        set_family_list(controller.gui_mut(), node, rows, selected, top);
+        let gui = controller.gui_mut();
+        let current = gui.list_view(node).map_or(0, |view| view.top);
+        set_family_list(gui, node, rows, selected, if reveal { 0 } else { current });
+        match (reveal, selected) {
+            (true, Some(row)) => {
+                let _ = gui.ensure_row_visible(node, row);
+            }
+            (true, None) => {}
+            (false, _) => {
+                let last = gui.list_geometry(node).map_or(0, |list| list.max_top);
+                if current > last {
+                    let _ = gui.set(node, vera20k_gui::Prop::Top, vera20k_gui::Value::Int(last as i32));
+                }
+            }
+        }
     }
 
     /// Binds the controller to the page and keeps its `List` node, which a
@@ -109,14 +106,19 @@ impl App {
         let mods = &state.frontend.mods;
         let in_use = mods.page.as_ref().map(|rows| {
             let selected = rows.iter().position(|row| mods.in_use(row));
-            let top = Self::mods_list_tops(rows.len(), selected, &layout).0;
-            (rows.len(), selected, top)
+            (rows.len(), selected)
         });
         let controller = &mut state.frontend.shell_controller;
         controller.ensure_active(mods_shell::DIALOG);
         controller.set_scale(layout.page.scale);
-        if let Some(list) = in_use {
-            family_list_node(controller, mods_shell::DIALOG, layout.list, list);
+        if let Some((rows, selected)) = in_use {
+            let built = find_family_list(controller, mods_shell::DIALOG).is_none();
+            let list = (rows, selected, 0);
+            let node = family_list_node(controller, mods_shell::DIALOG, layout.list, list);
+            // A new instance scrolls the row in use into view.
+            if built && let (Some(node), Some(row)) = (node, selected) {
+                let _ = controller.gui_mut().ensure_row_visible(node, row);
+            }
         }
         layout
     }
@@ -388,7 +390,7 @@ impl App {
             rows.iter()
                 .position(|row| row.folder.as_deref() == Some(made.folder.as_str()))
         });
-        Self::update_mods_list(state, selected, |_, (showing, _)| showing);
+        Self::update_mods_list(state, selected, true);
         let files = made.copied.join(", ");
         let text = tr_fill("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
         let (open, close) = (tr("VERA:ModOpenItsFolder"), tr("VERA:Close"));

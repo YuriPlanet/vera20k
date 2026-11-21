@@ -70,7 +70,7 @@ pub(super) fn launcher_background_instances(
     let common = crate::ui::skirmish_shell::compute_layout_on(scale, width, height);
     let mut out = Vec::new();
     if let Some(background) = super::modals::generic_shell_background_entry(atlas, &common) {
-        if scale.is_retail() {
+        if scale.is_unscaled() {
             push_entry_native(&mut out, background, 0, 0, SHELL_PARENT_BACKGROUND_DEPTH);
         } else {
             // A scaled page grows the MNSCRN canvas with its dialog, as the

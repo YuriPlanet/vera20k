@@ -71,7 +71,7 @@ pub(crate) fn render_connection_shell(
             frames,
             screen,
             &buttons,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             depths,
         ));
         // 0x0064A7B0 draws one bar per live node, row 0 (local) with no lag.
@@ -111,7 +111,7 @@ pub(crate) fn render_connection_shell(
             None,
             None,
             false,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         if page.page_count() > 1 {
             let held = [ConnectionControl::PreviousPage, ConnectionControl::NextPage]

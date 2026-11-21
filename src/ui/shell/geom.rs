@@ -8,9 +8,46 @@
 //! half-up to the nearest button row; single-player and skirmish bias-truncate a
 //! tile index) because they are not proven equivalent at the half-row boundary.
 
-pub use vera20k_gui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, fit_window, layout_on,
-};
+pub use vera20k_gui::shell::geom::{RectPx, ScaledRects, ShellScale, layout_on};
+
+/// The logical shell is authored at 800x600; the fill-window pass scales that
+/// rectangle into the live window, keeping its 4:3 shape.
+pub const SHELL_BASE_W: i32 = 800;
+pub const SHELL_BASE_H: i32 = 600;
+
+/// The retail mapping: the 800x600 dialog is placed in the window by the
+/// host's dialog origin, never scaled. Every art fit keyed on this scale is
+/// then a no-op, so the fill-window path is the only source of drift.
+pub const RETAIL_SCALE: ShellScale = ShellScale::unscaled(SHELL_BASE_W, SHELL_BASE_H);
+
+/// The 800x600 shell scaled to fit a `screen_w`x`screen_h` window at its own
+/// shape, centred.
+pub const fn shell_scale(screen_w: i32, screen_h: i32) -> ShellScale {
+    ShellScale::fit(SHELL_BASE_W, SHELL_BASE_H, screen_w, screen_h)
+}
+
+/// The mapping the front-end shell takes in a window. Only the two sizes
+/// gamemd's shell runs at keep the retail layout: 800x600, and 640x480 with
+/// its own 640-wide art (`AllowModeToggle`). Any other window gets the
+/// 800x600 dialog scaled to fit at its own shape, centred.
+pub fn shell_scale_for_window(screen_w: i32, screen_h: i32) -> ShellScale {
+    if matches!((screen_w, screen_h), (800, 600) | (640, 480)) {
+        RETAIL_SCALE
+    } else {
+        shell_scale(screen_w, screen_h)
+    }
+}
+
+/// The window-filling variant of a retail layout: `base` laid out on the
+/// verified 800x600 dialog, then scaled to fit the `screen_w`x`screen_h`
+/// window, keeping its shape. Identity at the base size.
+pub fn fit_window<L: ScaledRects>(
+    screen_w: u32,
+    screen_h: u32,
+    base: impl FnOnce(u32, u32) -> L,
+) -> L {
+    vera20k_gui::shell::geom::fit_window(SHELL_BASE_W, SHELL_BASE_H, screen_w, screen_h, base)
+}
 
 // --- DLU base metrics (MS Sans Serif 8pt) ---
 pub const DLU_BASE_X: i32 = 6;
@@ -78,7 +115,7 @@ impl RightPanelRects {
     /// tile is its window tile.
     pub fn translate(self, dx: i32, dy: i32) -> Self {
         debug_assert!(
-            self.scale.is_retail(),
+            self.scale.is_unscaled(),
             "a scaled panel already fills its window"
         );
         Self {
@@ -92,7 +129,7 @@ impl RightPanelRects {
 
     /// The panel on `scale`'s mapping, scaled once from its 800x600 rects.
     pub fn scaled(self, scale: ShellScale) -> Self {
-        debug_assert!(self.scale.is_retail(), "panels scale once, from 800x600");
+        debug_assert!(self.scale.is_unscaled(), "panels scale once, from 800x600");
         Self {
             top: scale.scale_rect(self.top),
             tile: scale.scale_rect(self.tile),
@@ -221,7 +258,7 @@ pub fn right_panel_rects(screen_w: i32, screen_h: i32) -> RightPanelRects {
         tile,
         tile_count,
         bottom: RectPx::new(top.x, bottom_y, RIGHT_PANEL_WIDTH, bottom_h),
-        scale: ShellScale::RETAIL,
+        scale: RETAIL_SCALE,
         authored_tile: tile,
     }
 }

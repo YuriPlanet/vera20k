@@ -583,7 +583,6 @@ pub fn opponent_arrow(controller: &DialogController) -> Option<vera20k_gui::shel
 pub fn key(
     controller: &mut DialogController,
     state: &mut SkirmishShellState,
-    layout: &SkirmishShellLayout,
     event: Option<vera20k_gui::InputEvent>,
     measure: impl Fn(&str) -> u32,
 ) -> bool {
@@ -596,7 +595,7 @@ pub fn key(
     controller.on_input(event);
     let raw = controller.drain_events();
     handle(state, &[], page::page_events(controller.gui(), raw));
-    scroll_player_name(controller, layout, measure);
+    scroll_player_name(controller, measure);
     true
 }
 
@@ -611,14 +610,9 @@ pub fn over_name(controller: &DialogController, x: i32, y: i32) -> bool {
 }
 
 /// NewEdit keeps the name box's caret in view.
-pub fn scroll_player_name(
-    controller: &mut DialogController,
-    layout: &SkirmishShellLayout,
-    measure: impl Fn(&str) -> u32,
-) {
+pub fn scroll_player_name(controller: &mut DialogController, measure: impl Fn(&str) -> u32) {
     if let Some(node) = controller.control(DIALOG, PLAYER_NAME) {
-        let available = super::layout::framed_edit_text_width(layout.player_name, layout.scale);
-        page::scroll_edit(controller.gui_mut(), node, available, measure);
+        let _ = controller.gui_mut().keep_caret_in_view(node, &measure);
     }
 }
 

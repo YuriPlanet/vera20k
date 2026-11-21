@@ -183,7 +183,7 @@ pub(crate) fn push_skirmish_box(
     sprites: Option<&mut Vec<SpriteInstance>>,
     texts: Option<(&mut Vec<ShellTextDraw>, bool)>,
 ) {
-    let parts = shell_box.parts(w, h, ShellScale::RETAIL);
+    let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
     if let (Some(out), Some(atlas)) = (sprites, state.frontend.skirmish_shell_chrome.as_ref()) {
         let (at, edge) = (parts.dialog, OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68);
         if look.background.is_none() {
@@ -243,7 +243,7 @@ pub(crate) fn push_choose_map_prompt(
         && let Some(progress) = crate::app::map_library::download_progress(state)
     {
         let (w, h) = render_size(state);
-        let body = shell_box.parts(w, h, ShellScale::RETAIL).body;
+        let body = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE).body;
         let depth = BoxLook::skirmish(None).depths.button;
         super::modals::push_download_progress_bar(out, atlas, body, progress, depth);
     }

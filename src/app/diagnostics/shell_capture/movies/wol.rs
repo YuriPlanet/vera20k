@@ -1363,7 +1363,7 @@ impl WolCapture {
                     crate::ui::shell::modal::WAIT_TEMPLATE,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
-                    crate::ui::shell::geom::ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 );
                 welcome_click(state, layout.button(0));
                 ensure!(state.frontend.wol.is_none(), "Disconnect did not leave WOL");
@@ -2369,7 +2369,7 @@ impl WolCapture {
                             state,
                             crate::ui::skirmish_shell::checkbox_icon_rect(
                                 create.clan.context("0xC3 clan box")?,
-                                crate::ui::shell::geom::ShellScale::RETAIL,
+                                crate::ui::shell::geom::RETAIL_SCALE,
                             ),
                         );
                         self.event(frame, "0xC3 clan box (squad 7)");
@@ -3995,7 +3995,7 @@ impl WolCapture {
                 state,
                 crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.boxes[node],
-                    crate::ui::shell::geom::ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 ),
             );
         }
@@ -4790,7 +4790,7 @@ impl WolCapture {
                             state,
                             crate::ui::skirmish_shell::checkbox_icon_rect(
                                 create.clan.context("0xC3 clan box")?,
-                                crate::ui::shell::geom::ShellScale::RETAIL,
+                                crate::ui::shell::geom::RETAIL_SCALE,
                             ),
                         );
                         self.event(frame, "0xC3 clan box");

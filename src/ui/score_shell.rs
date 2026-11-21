@@ -241,7 +241,13 @@ vera20k_gui::scaled_rects!(ScoreLayout { page, table });
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
     let (w, h) = (screen_w as i32, screen_h as i32);
-    let (page, table) = layout_data::menu_page(&SCORE_PAGE, "0x108", ShellScale::RETAIL, w, h);
+    let (page, table) = layout_data::menu_page(
+        &SCORE_PAGE,
+        "0x108",
+        crate::ui::shell::geom::RETAIL_SCALE,
+        w,
+        h,
+    );
     ScoreLayout { page, table }
 }
 
@@ -546,7 +552,7 @@ mod tests {
     fn every_window_matches_the_executed_relayout() {
         // tools/storage_oracle/shell_relayout.py: the right-panel children
         // move with the screen, the table keeps its template windows.
-        use vera20k_gui::fixtures::executed_child_window as executed;
+        use crate::ui::shell::native_fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
             let at = |control| executed(0x108, control, w, h);
@@ -594,7 +600,7 @@ mod tests {
     fn every_table_static_reveals_with_its_native_parameters() {
         // tools/storage_oracle/shell_static_timers.py executes the getters for
         // each 0x108 control; the page's statics must carry what they return.
-        let cases = vera20k_gui::fixtures::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         let native = |control: u16| {
             let case = cases
                 .iter()

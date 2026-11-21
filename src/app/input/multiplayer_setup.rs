@@ -84,9 +84,7 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     }
     // NewEdit keeps the chat's caret in view.
     if let Some(chat) = controller.control(page, CHAT) {
-        let available = (layout.page.scale.base_rect(layout.chat).w - 3).max(0) as u32;
-        let measure = |text: &str| font.text_width(text);
-        crate::ui::shell::page::scroll_edit(controller.gui_mut(), chat, available, measure);
+        let _ = controller.gui_mut().keep_caret_in_view(chat, &|text| font.text_width(text));
     }
     // The widgets on screen follow the session between inputs too: a list
     // whose row moved away closes before it paints, a box opens.
@@ -111,19 +109,25 @@ pub(crate) fn park_chat(state: &mut AppState) {
         top: view.map_or(0, |view| view.top),
         rows: view.map_or(0, |view| view.rows),
     };
+    // VERA's roster's place, which its scrollbar node keeps.
+    let roster_top = controller
+        .control(page, ROSTER_SCROLL)
+        .and_then(|scroll| gui.list_view(scroll))
+        .map(|view| view.top);
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.parked_chat = Some(parked);
+        ui.parked_roster_top = roster_top;
     }
 }
 
 /// The room shows again: its rebuilt chat edit and log take the parked
-/// draft and view back, as the room left them.
+/// draft and view back, as the room left them, and VERA's roster its place.
 pub(crate) fn unpark_chat(state: &mut AppState) {
-    let Some(parked) = state
+    let Some((parked, roster_top)) = state
         .frontend
         .multiplayer_setup
         .as_mut()
-        .and_then(|ui| ui.parked_chat.take())
+        .and_then(|ui| Some((ui.parked_chat.take()?, ui.parked_roster_top.take())))
     else {
         return;
     };
@@ -131,6 +135,13 @@ pub(crate) fn unpark_chat(state: &mut AppState) {
         return;
     };
     let page = view.page().dialog;
+    if let Some(top) = roster_top {
+        let top = vera20k_gui::Value::Int(top as i32);
+        let controller = &mut state.frontend.shell_controller;
+        controller.set_prop(page, ROSTER_SCROLL, vera20k_gui::Prop::Top, top);
+        // Its rows' controls follow the place before they take input.
+        synced(state, false);
+    }
     let controller = &mut state.frontend.shell_controller;
     if let Some(edit) = controller.control(page, CHAT) {
         let _ = controller.gui_mut().set_edit_state(edit, &parked.edit);
@@ -343,34 +354,22 @@ pub(crate) fn drop_pointer(state: &mut AppState, close_list: bool) {
     }
 }
 
-/// The widgets' cues, then the session actions they asked for, in order;
-/// the scrollbars' new tops go to the roster and the chat log (the chat
+/// The widgets' cues, then the session actions they asked for, in order
+/// (the roster's scrollbar and the chat log keep their own tops; the chat
 /// log's rows take no selection).
 fn handle_events(state: &mut AppState, view: &SetupView) {
     if state.frontend.multiplayer_setup.is_none() {
         return;
     }
-    let page = view.page().dialog;
-    let top = |state: &AppState, id: u16| {
-        let controller = &state.frontend.shell_controller;
-        let root = controller.root_in(page);
-        let top = root.and_then(|root| {
-            crate::ui::shell::page::int(controller.gui(), root, id, vera20k_gui::Prop::Top)
-        });
-        top.unwrap_or(0).max(0) as usize
-    };
     for event in App::shell_page_events(state, false) {
         match event {
             PageEvent::Activated(crate::ui::shell::modal::control::OK) => {
                 crate::app::shell_network_setup::acknowledge_notice(state)
             }
-            // Its rows' controls move under the pointer: an open list closes.
+            // VERA's roster scrolled (its node keeps the place): its rows'
+            // controls move under the pointer, so an open list closes.
             PageEvent::Scrolled(ROSTER_SCROLL) => {
-                let top = top(state, ROSTER_SCROLL);
                 state.frontend.shell_controller.gui_mut().close_popup();
-                if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                    ui.scroll_roster_to(top);
-                }
             }
             // The host carried a roster row off its cell: its list closed.
             PageEvent::DragStarted(_) => {
@@ -549,8 +548,9 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     };
     let controller = &mut state.frontend.shell_controller;
     let area = controller.control(view.page().dialog, ROSTER_AREA);
+    let scroll = controller.control(view.page().dialog, ROSTER_SCROLL);
     let now = controller.now();
-    let taken = ui.wheel(controller.gui_mut(), area, &view, &layout, x, y, lines, now);
+    let taken = ui.wheel(controller.gui_mut(), area, scroll, &view, &layout, x, y, lines, now);
     handle_events(state, &view);
     taken
 }

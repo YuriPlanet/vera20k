@@ -39,7 +39,7 @@ pub(crate) fn render_network_failure(
         super::modals::push_message_box_backdrop_instances(
             &mut art,
             atlas,
-            &crate::ui::skirmish_shell::compute_layout_on(ShellScale::RETAIL, width, height),
+            &crate::ui::skirmish_shell::compute_layout_on(crate::ui::shell::geom::RETAIL_SCALE, width, height),
         );
     }
     let look = super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));

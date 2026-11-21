@@ -113,49 +113,50 @@ pub enum Prop {
     /// Trackbar: the value plaque at the right end (default on).
     ShowValue,
     /// Combo: a press anywhere on the face opens the list, not only on the
-    /// arrow (VERA's own Options lists).
+    /// arrow.
     OpenAnywhere,
     /// Combo: the drop-down rises to end at or above this y, but not above
-    /// the window top (VERA's Esc menu keeps its list above the box's footer).
+    /// the window top (a list kept above its box's footer).
     PopupBottom,
     /// The area the pointer hits, when other than `Rect`. A checkbox with one
-    /// takes a press anywhere in it, not only on its icon (VERA's Esc menu
-    /// rows, whose caption toggles too).
+    /// takes a press anywhere in it, not only on its icon (a row whose
+    /// caption toggles too).
     HitRect,
     Color,
     /// Combo: each row's colour swatch for the host to paint in place of its
     /// text (a palette index in decimal; empty for a text row).
     Swatches,
     /// Combo: px the drop-down grows to the right while its list scrolls
-    /// (VERA's thirty-start Start list keeps the face's width for captions).
+    /// (a narrow face whose list needs wider captions).
     PopupWiden,
     /// Combo: when the drop-down would end below this y it opens above the
-    /// face instead (VERA's longer Skirmish player list).
+    /// face instead (a long list low on the page).
     PopupFlipBelow,
     /// Combo: the open list's whole rect, when the host lays it out (the
     /// random-map dialog's lists hang flush under the face and may run past
     /// their rows); a press past the rows dismisses.
     PopupRect,
     /// List, Combo drop-down: rows this many px tall, not the shell's
-    /// (VERA's room: its chat at its smaller text, its roster's lists).
-    /// With a List's `VisibleRows`, the scrollbar ranges over the tops that
-    /// keep that many rows showing (VERA's roster).
+    /// (a list at smaller text). With a List's `VisibleRows`, the scrollbar
+    /// ranges over the tops that keep that many rows showing.
     RowHeight,
-    /// Trackbar: hits and drags at `ShellScale::from_screen` of this rect's
-    /// size, not its dialog's scale (VERA's team bar, drawn at 78%).
+    /// Trackbar: hits and drags at the GUI's base scale fitted to this rect's
+    /// size (`ShellScale::in_window`), not its dialog's scale (a bar drawn
+    /// smaller than its page).
     ScaleScreen,
     /// The node hovers, but a press or release passes to the node under it
-    /// (VERA's roster: a cell whose list does not open lets the press join
-    /// its group's box).
+    /// (a cell whose list does not open lets the press reach the box under
+    /// it).
     PressThrough,
     /// Combo: its open list neither shows nor takes input until cleared,
-    /// and then shows again as it was (VERA's room hides a list whose row
-    /// moved away).
+    /// and then shows again as it was (a list whose row moved away).
     PopupHidden,
     /// The text colour while the node is disabled, in place of its kind's.
     DisabledColor,
     /// Text, List rows: the caption's insets from the node's rect (or a
     /// row's) in base pixels, as `Rect { x: left, y: top, w: right, h: bottom }`.
+    /// Edit: a framed field; [`crate::Gui::keep_caret_in_view`] measures its
+    /// text area as the rect less the inset and the caret's 2 px.
     TextInset,
     /// List: a press still selects, but the selected row shows no fill
     /// (`LBS_NOSEL`, a chat transcript).
@@ -187,20 +188,33 @@ pub enum Prop {
     KeepsBlink,
     /// A control that is no edit takes the dialog's focus on a press, off
     /// the edits ([`crate::Gui::focused_control`]): a window that reads the
-    /// keys itself (VERA's Keyboard page's hotkey field), or one whose press
-    /// moves the focus off it (that page's category list).
+    /// keys itself (a hotkey field), or one whose press moves the focus off
+    /// it (a category list).
     FocusOnPress,
     /// Button: a left release over it activates it whatever the press did,
-    /// off it or none (VERA's utility cards, whose buttons act on the
-    /// release alone).
+    /// off it or none (buttons that act on the release alone).
     ReleaseActivates,
-    /// List: rows a wheel notch scrolls (3 unless set; VERA's Skirmish
-    /// computer rows take one).
+    /// List: rows a wheel notch scrolls (3 unless set).
     WheelStep,
+    /// Combo: while its list is open, the wheel anywhere picks the row next
+    /// to the selection (the previous for a notch up), within the rows, and
+    /// closes the list without `ComboClosed` (no close cue); `Changed` only
+    /// when the selection moved.
+    WheelPicks,
+    /// A label: a left press on it while it is hovered, enabled or not,
+    /// first gives the focus to the `Edit` with this host id in its dialog
+    /// (as `Gui::set_focus`: no event, the caret keeps its blink phase);
+    /// the press then goes on as any other (VERA's online settings' titles).
+    FocusTarget,
     /// Edit: a left press anywhere else in its dialog, on a control or not
-    /// and over an open drop-down too, takes its focus (VERA's Skirmish
-    /// name box).
+    /// and over an open drop-down too, takes its focus.
     BlurOnPress,
+    /// Edit: NewEdit's multiline style. Enter appends CRLF to the end
+    /// (`0x00614DEB`, past `MaxLen` and wherever the caret is, which stays)
+    /// and reports `Submitted`; it goes on to the dialog's `Default` button
+    /// only when the text is not empty once its trailing CR/LF go (the
+    /// owner's 0x501 handler clicks Send then, `0xCF`/`0x11E`).
+    Multiline,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -250,6 +264,8 @@ impl Prop {
             | Prop::FocusOnPress
             | Prop::ReleaseActivates
             | Prop::BlurOnPress
+            | Prop::Multiline
+            | Prop::WheelPicks
             | Prop::SelectOnFocus
             | Prop::AllSelected
             | Prop::ByteOnly => ValueType::Bool,
@@ -281,6 +297,7 @@ impl Prop {
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
             | Prop::RowHeight
+            | Prop::FocusTarget
             | Prop::WheelStep => ValueType::Int,
         }
     }
@@ -291,7 +308,7 @@ impl Prop {
                 kind == NodeKind::Button
             }
             Prop::TabStop => kind.is_focusable(),
-            Prop::KeepsBlink | Prop::BlurOnPress => kind == NodeKind::Edit,
+            Prop::KeepsBlink | Prop::BlurOnPress | Prop::Multiline => kind == NodeKind::Edit,
             Prop::FocusOnPress => !kind.is_container() && kind != NodeKind::Edit,
             Prop::Checked => kind == NodeKind::Checkbox,
             Prop::OpenAnywhere
@@ -299,7 +316,8 @@ impl Prop {
             | Prop::Swatches
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
-            | Prop::PopupRect => kind == NodeKind::Combo,
+            | Prop::PopupRect
+            | Prop::WheelPicks => kind == NodeKind::Combo,
             Prop::NoSelectionFill | Prop::WheelStep | Prop::MultiSelect | Prop::SelectedRows => {
                 kind == NodeKind::List
             }

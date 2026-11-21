@@ -173,7 +173,7 @@ mod tests {
     fn startup_timer_matches_the_native_getter() {
         // 0x00603240 for 0x71C, executed by
         // tools/storage_oracle/shell_static_timers.py.
-        let cases = vera20k_gui::fixtures::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5] {
             let case = cases
                 .iter()

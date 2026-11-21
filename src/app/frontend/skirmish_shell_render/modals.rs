@@ -100,7 +100,7 @@ pub(crate) fn render_saved_game_loading(
         layout.dialog,
         &[],
         &labels,
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
     let painted = super::in_game_shell::render_shell_frame(

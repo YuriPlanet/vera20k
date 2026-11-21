@@ -71,11 +71,6 @@ pub fn combo_dropdown_row_rect(content: RectPx, scale: ShellScale, visible_row: 
 /// (`0x102`'s name box `0x6A0`, the saved-file description `0x526`).
 pub const FRAMED_EDIT_TEXT_INSET: RectPx = RectPx::new(3, 1, 1, 1);
 
-/// The base px a framed edit in `rect` shows its text in, less the caret's.
-pub fn framed_edit_text_width(rect: RectPx, scale: ShellScale) -> u32 {
-    let inset = FRAMED_EDIT_TEXT_INSET;
-    (scale.base_rect(rect).w - inset.x - inset.w - 2).max(0) as u32
-}
 // Random-map setup dialog 0x105. Same 533x369-DLU frame, font and background as
 // choose-map. Its right-column controls sit 2-3 DLU left of choose-map's in the
 // resource (and the preview 2 DLU right), but every right-column rule here is
@@ -185,7 +180,7 @@ impl SkirmishShellLayout {
     /// The live height of the shell space: the authored 600 rows letterboxed
     /// below the strip on the retail layout, the scaled dialog's once scaled.
     pub fn shell_height(&self) -> i32 {
-        if self.scale.is_retail() {
+        if self.scale.is_unscaled() {
             if self.screen.h > 767 {
                 600
             } else {
@@ -199,7 +194,7 @@ impl SkirmishShellLayout {
     /// The width the shell *assets* are selected by. The 640-wide shapes belong to
     /// the unscaled layout only; a stretched page always takes the large art.
     pub fn authored_width(&self) -> i32 {
-        if self.scale.is_retail() {
+        if self.scale.is_unscaled() {
             self.screen.w
         } else {
             SHELL_BASE_W
@@ -385,7 +380,7 @@ impl ChooseMapModalLayout {
     /// The width the chooser's background assets are selected by: they exist at
     /// 640 and 800, so a stretched chooser takes the 800 shape.
     pub fn authored_width(&self) -> i32 {
-        if self.scale.is_retail() {
+        if self.scale.is_unscaled() {
             self.screen.w
         } else {
             SHELL_BASE_W
@@ -506,10 +501,15 @@ pub fn compute_layout_for_rows(
         start_combos: row_column(0, 324, 25, 73),
         team_combos: row_column(0, 364, 25, 73),
     };
-    let statics = layout_data::place("0x102", ShellScale::RETAIL, screen_w, screen_h);
+    let statics = layout_data::place(
+        "0x102",
+        crate::ui::shell::geom::RETAIL_SCALE,
+        screen_w,
+        screen_h,
+    );
     let at = |id| statics.get(id).unwrap_or_default();
     SkirmishShellLayout {
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         right_panel: right_panel_rects(screen_w, screen_h),
         map_preview: at(0x468),
@@ -592,14 +592,19 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
     let map_list = child_window(225, 78, 130, 211);
     let map_list = RectPx::new(map_list.x, map_list.y, map_list.w + LIST_WIDEN, map_list.h);
 
-    let mut rects = layout_data::place("0x6B", ShellScale::RETAIL, screen_w, screen_h);
+    let mut rects = layout_data::place(
+        "0x6B",
+        crate::ui::shell::geom::RETAIL_SCALE,
+        screen_w,
+        screen_h,
+    );
     // VERA's author line sits two pixels above `0x102`'s game type.
     if let Some(author) = rects.get(CHOOSE_MAP_AUTHOR) {
         rects.insert(CHOOSE_MAP_AUTHOR, author.translate(0, -2));
     }
     let at = |id| rects.get(id).unwrap_or_default();
     ChooseMapModalLayout {
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
         mode_list: widen_left(child_window(77, 78, 130, 211)),
@@ -624,10 +629,15 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
 /// players row is a trackbar, so it is shorter than the five combos.
 pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMapSetupLayout {
     let (screen_w, screen_h) = (screen_w as i32, screen_h as i32);
-    let rects = layout_data::place("0x105", ShellScale::RETAIL, screen_w, screen_h);
+    let rects = layout_data::place(
+        "0x105",
+        crate::ui::shell::geom::RETAIL_SCALE,
+        screen_w,
+        screen_h,
+    );
     let at = |id| rects.get(id).unwrap_or_default();
     RandomMapSetupLayout {
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
         label_rects: SETUP_ROWS.map(|(_, y, h, _)| dlu_rect(SETUP_LABEL_X, y, SETUP_LABEL_W, h)),
@@ -758,10 +768,15 @@ pub fn compute_saved_seed_layout(
 ) -> SavedSeedLayout {
     let (screen_w, screen_h) = (screen_w as i32, screen_h as i32);
     let (dialog, list, action) = mode.template();
-    let rects = layout_data::place(dialog, ShellScale::RETAIL, screen_w, screen_h);
+    let rects = layout_data::place(
+        dialog,
+        crate::ui::shell::geom::RETAIL_SCALE,
+        screen_w,
+        screen_h,
+    );
     let at = |id| rects.get(id).unwrap_or_default();
     SavedSeedLayout {
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
         title: at(0x694),
@@ -810,11 +825,11 @@ scaled_rects!(SavedSeedLayout {
 });
 
 /// The `0x102` common shell on the mapping a page already holds: the retail
-/// layout for [`ShellScale::RETAIL`], the responsive one otherwise. Pages drawn
+/// layout for `RETAIL_SCALE`, the responsive one otherwise. Pages drawn
 /// over the common shell (Launcher Options, Keyboard) rebuild it through this,
 /// so they cannot pick a different mapping than their own rects use.
 pub fn compute_layout_on(scale: ShellScale, screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
-    if scale.is_retail() {
+    if scale.is_unscaled() {
         compute_layout(screen_w, screen_h)
     } else {
         compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
@@ -1215,19 +1230,19 @@ mod tests {
         let rect = RectPx::new(423, 59, 44, 119);
 
         assert_eq!(
-            combo_face_rect(rect, ShellScale::RETAIL),
+            combo_face_rect(rect, crate::ui::shell::geom::RETAIL_SCALE),
             RectPx::new(423, 59, 44, 24)
         );
         assert_eq!(
-            combo_arrow_rect(rect, ShellScale::RETAIL),
+            combo_arrow_rect(rect, crate::ui::shell::geom::RETAIL_SCALE),
             RectPx::new(448, 60, 0, 0)
         );
         assert_eq!(
-            combo_text_rect(rect, ShellScale::RETAIL),
+            combo_text_rect(rect, crate::ui::shell::geom::RETAIL_SCALE),
             RectPx::new(425, 59, 24, 24)
         );
         assert_eq!(
-            combo_swatch_rect(rect, ShellScale::RETAIL),
+            combo_swatch_rect(rect, crate::ui::shell::geom::RETAIL_SCALE),
             RectPx::new(425, 61, 20, 20)
         );
     }
@@ -1237,7 +1252,7 @@ mod tests {
         // One pixel wider and taller than the resource conversion, like every
         // family child in the retail stills; the frames and the plaque sit
         // around this window.
-        use vera20k_gui::fixtures::executed_child_window as executed;
+        use crate::ui::shell::native_fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
             assert_eq!(layout.static_rect(0x529), executed(0x102, 0x529, w, h));
@@ -1272,7 +1287,7 @@ mod tests {
 
     #[test]
     fn right_panel_statics_and_status_line_match_the_executed_relayout() {
-        use vera20k_gui::fixtures::executed_child_window as executed;
+        use crate::ui::shell::native_fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
             assert_eq!(
@@ -1314,10 +1329,13 @@ mod tests {
         let rect = RectPx::new(71, 286, 150, 16);
 
         assert_eq!(
-            checkbox_icon_rect(rect, ShellScale::RETAIL),
+            checkbox_icon_rect(rect, crate::ui::shell::geom::RETAIL_SCALE),
             RectPx::new(71, 286, 18, 18)
         );
-        assert_eq!(checkbox_text_rect(rect, ShellScale::RETAIL).x, rect.x + 26);
+        assert_eq!(
+            checkbox_text_rect(rect, crate::ui::shell::geom::RETAIL_SCALE).x,
+            rect.x + 26
+        );
     }
 
     #[test]
@@ -1469,7 +1487,10 @@ mod tests {
         let base = compute_layout(800, 600);
         let layout = fit_window(1600, 1200, compute_layout);
 
-        assert_eq!(layout.scale, ShellScale::from_screen(1600, 1200));
+        assert_eq!(
+            layout.scale,
+            crate::ui::shell::geom::shell_scale(1600, 1200)
+        );
         assert_eq!(layout.screen, RectPx::new(0, 0, 1600, 1200));
         for (rect, base_rect) in [
             (layout.static_rect(0x617), base.static_rect(0x617)),

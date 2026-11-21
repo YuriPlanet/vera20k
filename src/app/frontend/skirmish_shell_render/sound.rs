@@ -54,7 +54,7 @@ pub(crate) fn render_sound_shell(
                 plaque: true,
                 disabled: false,
             };
-            paint_control(controls, &chrome, trackbar, ShellScale::RETAIL);
+            paint_control(controls, &chrome, trackbar, crate::ui::shell::geom::RETAIL_SCALE);
         }
         let profile = &state.persistence.options_profile;
         for (rect, checked) in [
@@ -65,7 +65,7 @@ pub(crate) fn render_sound_shell(
                 controls,
                 &chrome,
                 ControlPaint::Checkbox { rect, checked },
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
         }
         let geometry = ShellListGeometry::new(
@@ -83,7 +83,7 @@ pub(crate) fn render_sound_shell(
             selected,
             held,
             false,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         // 609FC7..609FE2/60A330 selects type3. MNBTTN uses native canvas
         // centered on the resource control, not the side column's SIDEBTTN.
@@ -104,7 +104,7 @@ pub(crate) fn render_sound_shell(
             frames,
             screen,
             &buttons,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             depths,
         );
         paint.controls.extend(sprites);
@@ -130,7 +130,7 @@ pub(crate) fn render_sound_shell(
             paint.text(&caption, layout.labels[index], ShellAlign::H_RIGHT);
             let value = vera20k_gui::shell::trackbar::value_text_rect(
                 layout.sliders[index],
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             paint.text(&positions[index].to_string(), value, centred);
         }

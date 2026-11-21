@@ -2,20 +2,12 @@
 name = "vera20k-gui"
 version = "0.3.8"
 edition = "2024"
-description = "Retained-mode GUI for VERA20k's front-end screens (docs/gui-library-api.md)"
+description = "Retained-mode, game-agnostic GUI library (docs/gui-library-api.md)"
 publish = false
 
 # No dependency on the engine crates: the host hands in images, text and input.
 [dependencies]
 web-time = "1"
-serde_json = { workspace = true, optional = true }
-
-[dev-dependencies]
-serde_json = { workspace = true }
-
-[features]
-# The native fixtures the host's tests replay too.
-test-support = ["dep:serde_json"]
 
 [lints]
 workspace = true

@@ -844,12 +844,6 @@ impl App {
             }
     }
 
-    /// Esc closes the login page's open name list or the Options page's open
-    /// translation list.
-    pub(super) fn close_wol_open_list(state: &mut AppState) -> bool {
-        options::close_list(state) || login::close_list(state)
-    }
-
     /// Keys while a WOL page shows. `0x10E` ignores IDOK/IDCANCEL
     /// (`0x007988C0`); the boxes' loop (`0x007759E0`) and the hidden or shown
     /// `0xC4` take none. `0x10F`'s and `0x113`'s NewEdits read keys.

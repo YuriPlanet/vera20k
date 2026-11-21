@@ -1569,7 +1569,6 @@ mod tests {
     use crate::assets::csf_file::CsfFile;
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
     use crate::ui::shell::geom::RectPx;
-    use vera20k_gui::shell::trackbar::TrackbarHold;
 
     /// The frame's cues and events.
     fn drained(state: &mut OptionsDialogState) -> (Vec<PageCue>, Vec<LauncherOptionsEvent>) {
@@ -1742,7 +1741,7 @@ mod tests {
         assert_eq!(state.trackbar_position(id), before);
         assert_eq!(
             state.shell_trackbar_hold(),
-            Some(TrackbarHold { id, dragging: true })
+            Some((id, true))
         );
         state.shell_mouse_move(rect.x + rect.w - 1, y - 400, &layout);
         assert_eq!(state.trackbar_position(id), 2);
@@ -1756,10 +1755,7 @@ mod tests {
         let layout = page(Category::Controls);
         let id = LauncherTrackbarId::Scroll;
         let rect = layout.trackbar_rect(id).unwrap();
-        let held = Some(TrackbarHold {
-            id,
-            dragging: false,
-        });
+        let held = Some((id, false));
         let x = rect.x + rect.w - 2;
         state.shell_mouse_down(x, rect.y + rect.h - 18, &layout);
         assert_eq!(state.trackbar_position(id), 3, "strict lower edge rejects");

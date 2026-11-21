@@ -244,7 +244,7 @@ pub(crate) fn shell_parent_background_instances(
     screen_h: i32,
     scale: crate::ui::shell::geom::ShellScale,
 ) -> Vec<SpriteInstance> {
-    let (entry, (x, y)) = match scale.is_retail() {
+    let (entry, (x, y)) = match scale.is_unscaled() {
         true if screen_w == 640 => (
             atlas.parent_background_640_mnscrns,
             crate::ui::shell::geom::dialog_origin(screen_w, screen_h),

@@ -81,7 +81,7 @@ impl<I> SavedSeedPrompt<I> {
     /// Both shapes use the shared native message-box templates: dialog,
     /// body, affirmative and negative.
     pub fn layout(&self, width: u32, height: u32) -> (RectPx, RectPx, RectPx, Option<RectPx>) {
-        let retail = crate::ui::shell::geom::ShellScale::RETAIL;
+        let retail = crate::ui::shell::geom::RETAIL_SCALE;
         let parts = self.shell_box().parts(width as i32, height as i32, retail);
         (parts.dialog, parts.body, parts.button(0), parts.rect_of(NO))
     }

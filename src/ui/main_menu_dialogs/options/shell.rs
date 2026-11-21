@@ -289,7 +289,7 @@ pub(crate) struct LauncherOptionsLayout {
     /// bottom (on the in-game menu, the ones it gives the column's rows),
     /// then the page's captions, settings and own buttons.
     pub(crate) controls: Vec<(Control, RectPx)>,
-    /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
+    /// The mapping the rects are in: `RETAIL_SCALE` centres the
     /// authored dialog in the window, otherwise the authored dialog is
     /// scaled to fit it, centred. Control sub-rects and art fits key on this.
     pub(crate) scale: ShellScale,
@@ -368,27 +368,27 @@ fn page_button(
 
 impl LauncherOptionsLayout {
     /// Gamemd's centred `0xD5`: the authored dialog placed in the window at
-    /// [`ShellScale::RETAIL`], or fitted where the panel is too short for the
+    /// `RETAIL_SCALE`, or fitted where the panel is too short for the
     /// column ([`retail_column_fits`]).
     pub(crate) fn new(width: i32, height: i32, category: Category) -> Self {
         let scale = if retail_column_fits(width, height) {
-            ShellScale::RETAIL
+            crate::ui::shell::geom::RETAIL_SCALE
         } else {
-            ShellScale::from_screen(width, height)
+            crate::ui::shell::geom::shell_scale(width, height)
         };
         Self::build(width, height, scale, category)
     }
 
     /// The same dialog scaled to fit the window.
     pub(crate) fn responsive(width: i32, height: i32, category: Category) -> Self {
-        let scale = ShellScale::from_screen(width, height);
+        let scale = crate::ui::shell::geom::shell_scale(width, height);
         Self::build(width, height, scale, category)
     }
 
     fn build(width: i32, height: i32, scale: ShellScale, category: Category) -> Self {
         // The scale centres a scaled page itself, so it takes no centring
         // offset of its own and every authored rect goes through the one scale.
-        let stretch = !scale.is_retail();
+        let stretch = !scale.is_unscaled();
         let (offset_x, offset_y) = if stretch {
             (0, 0)
         } else {
@@ -530,7 +530,7 @@ impl LauncherOptionsLayout {
             warning: nothing,
             status_help: in_game_shell::status_line_rect(height),
             controls,
-            scale: ShellScale::RETAIL,
+            scale: crate::ui::shell::geom::RETAIL_SCALE,
             screen: window,
             battle_frame: window,
             surface: OptionsSurface::InGame,
@@ -1255,15 +1255,11 @@ impl OptionsDialogState {
     }
 
     /// The slider holding the mouse, and whether it follows the pointer.
-    pub(crate) fn shell_trackbar_hold(
-        &self,
-    ) -> Option<vera20k_gui::shell::trackbar::TrackbarHold<LauncherTrackbarId>> {
+    #[cfg(test)]
+    pub(crate) fn shell_trackbar_hold(&self) -> Option<(LauncherTrackbarId, bool)> {
         self.shell
             .held_slider()
-            .map(|id| vera20k_gui::shell::trackbar::TrackbarHold {
-                id,
-                dragging: self.shell.gui.dragging(),
-            })
+            .map(|id| (id, self.shell.gui.dragging()))
     }
 
     /// The list that is open.
@@ -1315,7 +1311,6 @@ mod tests {
     use crate::ui::shell::pause_menu::{
         PauseMenuButton, PauseMenuLayout, PauseMenuTemplate, pause_menu_layout,
     };
-    use vera20k_gui::shell::trackbar::TrackbarHold;
 
     fn state() -> OptionsDialogState {
         OptionsDialogState::new(
@@ -1827,7 +1822,7 @@ mod tests {
     fn a_stretched_slider_maps_the_pointer_back_to_its_authored_track() {
         let mut dialog = state();
         let base = page(Category::Audio);
-        let scale = ShellScale::from_screen(1600, 1200);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
         let wide = LauncherOptionsLayout::responsive(1600, 1200, Category::Audio);
         let authored = base.trackbar_rect(LauncherTrackbarId::Score).unwrap();
         let stretched = wide.trackbar_rect(LauncherTrackbarId::Score).unwrap();
@@ -1836,7 +1831,7 @@ mod tests {
         let thumb = dialog.shell_trackbar_thumb_left(
             LauncherTrackbarId::Score,
             authored,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         let wide_thumb =
             dialog.shell_trackbar_thumb_left(LauncherTrackbarId::Score, stretched, scale);
@@ -1845,10 +1840,7 @@ mod tests {
         // thumb and the same position.
         let press = (authored.x + thumb + 5, authored.y + authored.h - 3);
         dialog.shell_mouse_down(press.0, press.1, &base);
-        let held = Some(TrackbarHold {
-            id: LauncherTrackbarId::Score,
-            dragging: true,
-        });
+        let held = Some((LauncherTrackbarId::Score, true));
         assert_eq!(dialog.shell_trackbar_hold(), held);
         let pressed_position = dialog.trackbar_position(LauncherTrackbarId::Score);
         dialog.shell_mouse_up(press.0, press.1, &base);
@@ -1983,9 +1975,14 @@ mod tests {
     fn esc_menu_controls_follow_the_widest_visible_caption() {
         let stats = tr("VERA:PerformanceStats");
         for width in [94, 166] {
-            let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |caption| {
-                if caption == stats { width } else { 40 }
-            });
+            let layout = LauncherOptionsLayout::esc_menu(
+                800,
+                600,
+                crate::ui::shell::geom::RETAIL_SCALE,
+                |caption| {
+                    if caption == stats { width } else { 40 }
+                },
+            );
             let face = layout.combo_rect(LauncherComboId::Language).unwrap();
             let gap = face.x - (labels(&layout)[0].0.x + width as i32);
             assert!(
@@ -2011,7 +2008,7 @@ mod tests {
             .collect();
         state.set_languages(languages, "0".to_owned());
         for (w, h) in [(640, 480), (1920, 1080)] {
-            let scale = ShellScale::for_window(w, h);
+            let scale = crate::ui::shell::geom::shell_scale_for_window(w, h);
             let layout = LauncherOptionsLayout::esc_menu(w, h, scale, |_| 100);
             let message_box = template_on(FOOTER_TEMPLATE, w, h, scale);
             let face = layout.combo_rect(LauncherComboId::Language).unwrap();
@@ -2052,7 +2049,10 @@ mod tests {
             return;
         }
         let mut state = state();
-        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |_| 100);
+        let layout =
+            LauncherOptionsLayout::esc_menu(800, 600, crate::ui::shell::geom::RETAIL_SCALE, |_| {
+                100
+            });
         let rect = button(&layout, LauncherButton::SetWindowSize);
         let (x, y) = (rect.x + 2, rect.y + 2);
         state.shell_mouse_down(x, y, &layout);
@@ -2084,7 +2084,10 @@ mod tests {
     #[test]
     fn esc_menu_checkboxes_publish_what_the_options_page_does() {
         let mut state = state();
-        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |_| 100);
+        let layout =
+            LauncherOptionsLayout::esc_menu(800, 600, crate::ui::shell::geom::RETAIL_SCALE, |_| {
+                100
+            });
         for id in [
             LauncherCheckboxId::FullScreen,
             LauncherCheckboxId::PerformanceStats,
@@ -2295,10 +2298,7 @@ mod tests {
         state.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, &layout);
         assert_eq!(
             state.shell_trackbar_hold(),
-            Some(TrackbarHold {
-                id: LauncherTrackbarId::Score,
-                dragging: true,
-            })
+            Some((LauncherTrackbarId::Score, true))
         );
         state.shell_mouse_move(799, 550, &layout);
         state.shell_mouse_up(799, 550, &layout);
@@ -2319,10 +2319,7 @@ mod tests {
         state.shell_mouse_down(rect.x + thumb + 5, rect.y + rect.h / 2, &layout);
         assert_eq!(
             state.shell_trackbar_hold(),
-            Some(TrackbarHold {
-                id: LauncherTrackbarId::Score,
-                dragging: true,
-            })
+            Some((LauncherTrackbarId::Score, true))
         );
         state.shell_cancel_pointer_gesture();
         let before = state.pack();
@@ -2339,10 +2336,7 @@ mod tests {
         let srect = gameplay
             .trackbar_rect(LauncherTrackbarId::Difficulty)
             .unwrap();
-        let held = Some(TrackbarHold {
-            id: LauncherTrackbarId::Difficulty,
-            dragging: false,
-        });
+        let held = Some((LauncherTrackbarId::Difficulty, false));
         // Above the admitted strip (the window's bottom 18 rows) the press
         // only takes the capture.
         state.shell_mouse_down(srect.x + 2, srect.y + 2, &gameplay);

@@ -16,7 +16,7 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::modal::{WolPageLayout, WolPageReceivedLayout};
 use crate::ui::wol_page::*;
 
-const SCALE: ShellScale = ShellScale::RETAIL;
+const SCALE: ShellScale = crate::ui::shell::geom::RETAIL_SCALE;
 
 /// A yellow static of string `key`.
 fn caption(state: &AppState, key: &str, rect: RectPx, align: ShellAlign) -> PaintLabel<'static> {

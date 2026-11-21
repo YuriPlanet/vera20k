@@ -1010,7 +1010,7 @@ mod tests {
             (x, y): (i32, i32),
         ) -> Option<WolLoginAction> {
             self.hit(
-                &WolLoginLayout::new(800, 600, ShellScale::RETAIL, login.policy),
+                &WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, login.policy),
                 x,
                 y,
             );
@@ -1031,7 +1031,7 @@ mod tests {
 
     #[test]
     fn layout_matches_the_executed_800x600_relayout() {
-        let layout = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy);
         let buttons: Vec<(u16, RectPx)> = layout
             .page
             .buttons
@@ -1067,7 +1067,7 @@ mod tests {
             "monitor 0x71C"
         );
         // 640x480: the right column moves left by 160, the left side stays.
-        let small = WolLoginLayout::new(640, 480, ShellScale::RETAIL, LoginPolicy::Legacy);
+        let small = WolLoginLayout::new(640, 480, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy);
         assert_eq!(
             small.page.button_rect(BACK),
             Some(RectPx::new(484, 409, 156, 42))
@@ -1152,7 +1152,7 @@ mod tests {
         assert_eq!(page.globals.password, "12345678", "limit 8");
         assert!(page.on(LOGIN, Prop::Enabled) && page.on(REMEMBER, Prop::Enabled));
         assert!(page.globals.changed);
-        let remember = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy)
+        let remember = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy)
             .rect_of(REMEMBER)
             .unwrap();
         page.click(&mut login, inside(remember));
@@ -1216,7 +1216,7 @@ mod tests {
         let mut page = Page::new(WolAccountGlobals::default(), Vec::new());
         let mut login = WolLoginState::open_online(&mut page.cx(), None, None);
         login.activate(&mut page.cx(), CREATE_ACCOUNT);
-        let rects = wol_account_form_layout_on(POPUP_AREA, 4, ShellScale::RETAIL);
+        let rects = wol_account_form_layout_on(POPUP_AREA, 4, crate::ui::shell::geom::RETAIL_SCALE);
         let root = page.ui.root_in(POPUP).unwrap();
         page::sync_rects(page.ui.gui_mut(), root, |id| {
             WolAccountForm::rect_of(&rects, id)
@@ -1356,7 +1356,7 @@ mod tests {
         assert!(page.globals.remember);
         // Unticking Remember password, on its box only, forgets it at once.
         let mut login = WolLoginState::open_online(&mut page.cx(), Some("Tanya"), None);
-        let remember = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online)
+        let remember = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online)
             .rect_of(FORM_REMEMBER)
             .unwrap();
         let caption = (remember.x + 30, remember.y + 5);
@@ -1371,7 +1371,7 @@ mod tests {
         );
         assert!(!page.on(FORM_REMEMBER, Prop::Checked) && login.remembered.is_none());
         // A press on a field gives it the keys.
-        let name_field = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online)
+        let name_field = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online)
             .rect_of(WolAccountForm::field_id(0))
             .unwrap();
         page.click(&mut login, inside(name_field));
@@ -1429,8 +1429,8 @@ mod tests {
 
     #[test]
     fn online_page_offers_play_the_sign_in_form_and_the_account_buttons() {
-        let layout = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online);
-        let native = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online);
+        let native = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy);
         assert_eq!(
             layout
                 .page
@@ -1528,11 +1528,11 @@ mod tests {
     fn account_popups_centre_on_the_page_left_of_the_button_column() {
         use crate::ui::shell::modal::wol_account_form_layout_on;
         for layout in [
-            WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online),
+            WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online),
             WolLoginLayout::new(
                 1920,
                 1080,
-                ShellScale::from_screen(1920, 1080),
+                crate::ui::shell::geom::shell_scale(1920, 1080),
                 LoginPolicy::Online,
             ),
         ] {

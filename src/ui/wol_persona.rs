@@ -295,7 +295,7 @@ mod tests {
                     dialog,
                     width.parse().unwrap(),
                     height.parse().unwrap(),
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 );
                 for (control, child) in case["controls"].as_object().unwrap() {
                     let id = u16::from_str_radix(&control[2..], 16).unwrap();

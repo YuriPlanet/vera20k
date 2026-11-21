@@ -1394,7 +1394,7 @@ mod tests {
     /// frame; at the shell's own size only its exact window has one.
     #[test]
     fn trackbar_below_the_shell_size_takes_the_nearest_frame() {
-        let half = ShellScale::from_screen(400, 300);
+        let half = crate::ui::shell::geom::shell_scale(400, 300);
         let slot = |plaque, w, h, scale| {
             drawn_trackbar_frame_slot(plaque, w, h, scale).map(|slot| TRACKBAR_FRAMES[slot])
         };
@@ -1402,7 +1402,10 @@ mod tests {
         assert_eq!(slot(true, 129, 21, half), Some((129, 21, 50)));
         assert_eq!(slot(false, 130, 22, half), None);
         assert_eq!(slot(true, 132, 22, half), None);
-        assert_eq!(slot(true, 130, 22, ShellScale::RETAIL), None);
+        assert_eq!(
+            slot(true, 130, 22, crate::ui::shell::geom::RETAIL_SCALE),
+            None
+        );
     }
 
     #[test]

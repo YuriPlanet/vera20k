@@ -271,15 +271,3 @@ pub(crate) fn status_key(state: &AppState) -> Option<&str> {
     let id = u16::try_from(gui.id_of(node)?).ok()?;
     tooltip_key(if id == NICKNAME_DROP { NICKNAME } else { id })
 }
-
-/// Esc closes the nickname combo's open list; true when one was open.
-pub(super) fn close_list(state: &mut AppState) -> bool {
-    page_open(state) && state.frontend.shell_controller.gui_mut().close_popup()
-}
-
-fn page_open(state: &AppState) -> bool {
-    matches!(
-        state.frontend.wol.as_ref().map(|visit| &visit.page),
-        Some(WolPage::Login(_))
-    )
-}

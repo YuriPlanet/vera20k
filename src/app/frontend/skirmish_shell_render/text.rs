@@ -135,7 +135,7 @@ pub(super) fn combo_face_text_color(disabled: bool) -> [f32; 3] {
 
 /// The owner-draw button's caption rect: the `0x612B70` type-1 offsets stay
 /// authored, so `scale` maps the button's device rect back for them and stretches
-/// the result. `ShellScale::RETAIL` reproduces the plain offsets.
+/// the result. `RETAIL_SCALE` reproduces the plain offsets.
 pub(super) fn button_label_rect_px(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
     scale.derive_rect(rect, |rect| {
         crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed)
@@ -930,11 +930,16 @@ mod tests {
             // column past the lists.
             let mut players_value = vera20k_gui::shell::trackbar::value_text_rect(
                 layout.control_rects[5],
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             players_value.w -= 1;
             let texts: Vec<RectPx> = (0..5)
-                .map(|row| combo_text_rect(layout.control_rects[row], ShellScale::RETAIL))
+                .map(|row| {
+                    combo_text_rect(
+                        layout.control_rects[row],
+                        crate::ui::shell::geom::RETAIL_SCALE,
+                    )
+                })
                 .chain([players_value])
                 .collect();
             for combo in crate::ui::skirmish_shell::SETUP_COMBO_ROWS {
@@ -1028,7 +1033,7 @@ mod tests {
         let content = RectPx::new(100, 50, 40, COMBO_DROPDOWN_ROW_H);
 
         assert_eq!(
-            combo_dropdown_text_fit_width(content, ShellScale::RETAIL),
+            combo_dropdown_text_fit_width(content, crate::ui::shell::geom::RETAIL_SCALE),
             20
         );
 
@@ -1078,11 +1083,13 @@ mod tests {
         // 196 less two 2 px insets and the 2 px caret leaves 190: 27 of the
         // font's 7 px advances.
         assert_eq!(map_search_tail(&font, &long, field.w), (&long[13..], 189));
-        let caret = map_search_caret_rect(&font, &long, field, ShellScale::RETAIL).unwrap();
+        let caret =
+            map_search_caret_rect(&font, &long, field, crate::ui::shell::geom::RETAIL_SCALE)
+                .unwrap();
         assert_eq!(caret, RectPx::new(529, 121, 2, 13));
         assert!(caret.x + caret.w <= field.x + field.w - LIST_TEXT_INSET);
         assert_eq!(
-            map_search_caret_rect(&font, "", field, ShellScale::RETAIL),
+            map_search_caret_rect(&font, "", field, crate::ui::shell::geom::RETAIL_SCALE),
             None
         );
     }
@@ -1127,17 +1134,21 @@ mod tests {
         );
         let combo = RectPx::new(423, 59, 44, 24);
 
-        let draw_rect = combo_face_text_draw_rect(combo, ShellScale::RETAIL);
+        let draw_rect = combo_face_text_draw_rect(combo, crate::ui::shell::geom::RETAIL_SCALE);
         assert_eq!(draw_rect, RectPx::new(425, 59, 42, 24));
-        assert_eq!(combo_face_text_fit_width(combo, ShellScale::RETAIL), 24);
+        assert_eq!(
+            combo_face_text_fit_width(combo, crate::ui::shell::geom::RETAIL_SCALE),
+            24
+        );
         let label = font.truncate_to_width(
             "ab cd",
-            combo_face_text_fit_width(combo, ShellScale::RETAIL),
+            combo_face_text_fit_width(combo, crate::ui::shell::geom::RETAIL_SCALE),
         );
 
         assert_eq!(label.as_ref(), "ab ");
         assert!(
-            font.text_width(label.as_ref()) <= combo_face_text_fit_width(combo, ShellScale::RETAIL)
+            font.text_width(label.as_ref())
+                <= combo_face_text_fit_width(combo, crate::ui::shell::geom::RETAIL_SCALE)
         );
     }
 }

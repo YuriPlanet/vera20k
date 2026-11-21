@@ -1,6 +1,5 @@
 //! `ScrollBar` behaviour: a lone vertical scrollbar on the shared scrollbar
-//! art (`0x0061C690`) that pages rows its host lays out itself (VERA's
-//! random-map Advanced rows). `Pos` runs over `0..=Max`; `RowCount` and
+//! art (`0x0061C690`) that pages rows its host lays out itself. `Pos` runs over `0..=Max`; `RowCount` and
 //! `VisibleRows` (the rows it pages over and how many show) size the thumb.
 //!
 //! It acts on the press as a trackbar does: an arrow (the drop-down

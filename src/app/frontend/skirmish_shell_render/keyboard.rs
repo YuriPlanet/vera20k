@@ -248,7 +248,7 @@ pub(crate) fn render_keyboard_shell(
         ),
         None,
         true,
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
     );
     let buttons =
         [KeyboardButton::Assign, KeyboardButton::ResetAll].map(|id| shell_paint::ModalButton {
@@ -523,7 +523,7 @@ mod tests {
     fn stretched_group_caption_and_frame_keep_native_geometry() {
         use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
 
-        let scale = ShellScale::from_screen(1600, 1200);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
         let group = scale.scale_rect(RectPx::new(95, 159, 207, 154));
         let (frame, caption) = group_box_geometry(group, 17, scale);
         assert_eq!(caption, RectPx::new(210, 318, 394, 34));

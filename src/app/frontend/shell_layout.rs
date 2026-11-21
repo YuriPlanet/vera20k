@@ -32,10 +32,10 @@ pub(crate) fn fills_window(state: &AppState) -> bool {
 }
 
 /// Whether a window of `size` gets the fitted shell
-/// ([`ShellScale::for_window`](crate::ui::shell::geom::ShellScale::for_window)).
+/// ([`shell_scale_for_window`](crate::ui::shell::geom::shell_scale_for_window)).
 /// The startup splash asks by surface size, before the app state exists.
 pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
-    !shell_scale_for_screen(size).is_retail()
+    !shell_scale_for_screen(size).is_unscaled()
 }
 
 /// How much a menu's software cursor grows: with a fitted menu's art, by the
@@ -48,7 +48,7 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
     }
     let fitted = if fills_window(state) {
         let (width, height) = shell_screen_size(state);
-        crate::ui::shell::geom::ShellScale::from_screen(width as i32, height as i32).factor()
+        crate::ui::shell::geom::shell_scale(width as i32, height as i32).factor()
     } else {
         1.0
     };
@@ -121,7 +121,7 @@ pub(crate) fn shell_menu_settings_layout(
 }
 
 pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> ShellScale {
-    ShellScale::for_window(size.0 as i32, size.1 as i32)
+    crate::ui::shell::geom::shell_scale_for_window(size.0 as i32, size.1 as i32)
 }
 
 /// The shared right-panel menu pages (`0x100` Single Player, `0x101` Movies &
@@ -273,7 +273,7 @@ mod tests {
         for size in [(800, 600), (640, 480)] {
             let layout = parts(size);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
-            assert!(layout.scale.is_retail());
+            assert!(layout.scale.is_unscaled());
         }
     }
 

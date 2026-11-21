@@ -333,7 +333,7 @@ pub mod tests {
     use super::*;
 
     fn native_params(dialog: u64, control: u64) -> Kind1Params {
-        let cases = vera20k_gui::fixtures::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         let case = cases
             .iter()
             .find(|case| case["dialog_id"] == dialog && case["control_id"] == control)

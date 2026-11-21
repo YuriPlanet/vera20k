@@ -471,21 +471,17 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
         return;
     };
-    if dialog.category_open() {
-        // The wheel steps the selection and closes the list, silently: the
-        // combo's own step (CBN_SELCHANGE without a close cue), which an open
-        // gui drop-down does not do (`wheel_popup` scrolls its rows).
-        let next = (dialog.category as i32 - lines.signum() as i32)
-            .clamp(0, dialog.categories.len().saturating_sub(1) as i32) as usize;
-        dialog.select_category(next);
-        return;
-    }
-    // The hovered command list takes three rows a notch.
+    // The open category list (`WheelPicks`) steps its selection a notch,
+    // any turn at all; otherwise the hovered command list takes three rows.
+    let lines = match dialog.category_open() {
+        true => lines.signum() as i32,
+        false => (lines * 3.0) as i32,
+    };
     dialog.ui.set_scale(layout.scale);
-    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel {
-        lines: (lines * 3.0) as i32,
-    });
-    dialog.ui.drain_events();
+    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines });
+    let events = dialog.ui.drain_events();
+    let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
+    apply(state, events);
 }
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {

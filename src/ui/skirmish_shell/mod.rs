@@ -26,7 +26,7 @@ pub use layout::{
     combo_face_rect, combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
     compute_layout, compute_layout_for_rows, compute_layout_on,
     compute_random_map_setup_layout, compute_saved_seed_layout, compute_setups_layout,
-    random_map_setup_dropdown_rect, FRAMED_EDIT_TEXT_INSET, framed_edit_text_width,
+    random_map_setup_dropdown_rect, FRAMED_EDIT_TEXT_INSET,
 };
 pub(crate) use state::CountryMenuCatalog;
 pub(crate) use state::status_help_key_for_hover_with_catalog;

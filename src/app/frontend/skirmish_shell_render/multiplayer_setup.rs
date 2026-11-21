@@ -119,9 +119,9 @@ pub(crate) fn render_multiplayer_setup(
     // the RA2 MNSCRN pair by default.
     if let Some(background) = atlas.lan_background(
         view.page().dialog.0,
-        if scale.is_retail() { width } else { 800 },
+        if scale.is_unscaled() { width } else { 800 },
     ) {
-        if scale.is_retail() {
+        if scale.is_unscaled() {
             push_entry_native(
                 &mut art,
                 background,
@@ -731,7 +731,7 @@ pub(crate) fn render_multiplayer_setup(
             overlay.controls.extend(super::wol_lobby::online_box(
                 atlas,
                 boxed.dialog,
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             ));
             let text_of = |id: i32| match u16::try_from(id).ok()? {
                 MAP_OFFER_BODY => Some(body.clone()),
@@ -751,7 +751,7 @@ pub(crate) fn render_multiplayer_setup(
             let widgets = paint_ids(
                 controller.root_in(MAP_OFFER_BOX),
                 &ids,
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 style,
             );
             overlay.controls.extend(widgets.controls);

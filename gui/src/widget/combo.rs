@@ -262,10 +262,9 @@ fn close_on(ctx: &mut Ctx<'_>, node: NodeId, pick: Option<usize>) {
     }
 }
 
-/// A key on the open list, for a host whose list takes the keyboard (VERA's
-/// Keyboard page): Up and Down move the hot row (from the selection) within
-/// the rows, keeping it shown; Enter picks it and Escape closes, both with
-/// the close cue.
+/// A key on the open list, for a host whose list takes the keyboard: Up and
+/// Down move the hot row (from the selection) within the rows, keeping it
+/// shown; Enter picks it and Escape closes, both with the close cue.
 pub(crate) fn key(ctx: &mut Ctx<'_>, node: NodeId, key: Key) {
     let Some(popup) = open_popup(ctx, node) else {
         *ctx.popup = None;
@@ -308,7 +307,7 @@ pub(crate) fn popup_move(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     sync_top(ctx, node, before);
 }
 
-/// The wheel over the open list (VERA's roster): `rows` rows on, kept in
+/// The wheel over the open list: `rows` rows on, kept in
 /// range, the hot row following the pointer.
 pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, rows: i32, x: i32, y: i32) {
     let Some(mut popup) = open_popup(ctx, node) else {
@@ -324,6 +323,26 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, rows: i32, x: i32, y: i32) 
     st.top_index = popup.first;
     popup.track_hot_row(&mut st.hot_row, x, y);
     sync_top(ctx, node, before);
+}
+
+/// The wheel on a `WheelPicks` combo's open list, wherever the pointer is
+/// (the combo's own wheel step: CBN_SELCHANGE without the close cue): the
+/// list closes with no event, and the row next to the selection (the
+/// previous for `lines` > 0, the next for `lines` < 0), within the rows,
+/// becomes selected, reported as `Changed` when it moved.
+pub(crate) fn wheel_pick(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) {
+    dismiss(ctx.tree, node);
+    *ctx.popup = None;
+    let Ok(n) = ctx.tree.node(node) else { return };
+    let last = row_count(n).saturating_sub(1);
+    let Some(selected) = selected(n) else { return };
+    let row = selected.saturating_add_signed(-(lines.signum() as isize)).min(last);
+    if row == selected {
+        return;
+    }
+    let value = Value::Int(row as i32);
+    let _ = ctx.tree.set(node, Prop::Selected, value.clone());
+    ctx.events.push(UiEvent::Changed { node, value, final_: true });
 }
 
 /// The open list's scroll-arrow repeat (`0x0061D215..0x0061D2C8`): the next
@@ -411,6 +430,31 @@ mod tests {
         g.key_popup(Key::Escape, 0);
         assert_eq!(g.drain_events(), vec![UiEvent::ComboClosed { node: c }]);
         assert_eq!(g.get(c, Prop::Selected).unwrap(), Some(&Value::Int(1)));
+    }
+
+    /// `WheelPicks`: a notch anywhere steps the selection within the rows
+    /// and closes the list with no `ComboClosed`; at an end, nothing moves.
+    #[test]
+    fn a_wheel_picks_list_steps_the_selection_and_closes_silently() {
+        let (mut g, c) = page_with_combo(3, 0);
+        g.set(c, Prop::WheelPicks, Value::Bool(true)).unwrap();
+        click(&mut g, 129, 25);
+        g.input(InputEvent::PointerMove { x: 500, y: 500 }, 0);
+        g.drain_events();
+        assert!(g.input(InputEvent::Wheel { lines: -1 }, 0).consumed);
+        assert_eq!(
+            g.drain_events(),
+            vec![UiEvent::Changed { node: c, value: Value::Int(1), final_: true }]
+        );
+        assert_eq!(g.popup(), None);
+        click(&mut g, 129, 25);
+        g.input(InputEvent::Wheel { lines: 1 }, 0);
+        g.input(InputEvent::Wheel { lines: 0 }, 0);
+        click(&mut g, 129, 25);
+        g.drain_events();
+        g.input(InputEvent::Wheel { lines: 2 }, 0);
+        assert_eq!(g.drain_events(), vec![], "already the first row");
+        assert_eq!((g.popup(), g.get(c, Prop::Selected).unwrap()), (None, Some(&Value::Int(0))));
     }
 
     #[test]

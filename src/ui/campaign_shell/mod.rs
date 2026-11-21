@@ -141,7 +141,7 @@ pub struct CampaignLayout {
     pub difficulty_label: RectPx,
     pub difficulty_value: RectPx,
     /// The mapping `fit_window` stretched the authored dialog
-    /// with; [`compute_layout`] always reports [`ShellScale::RETAIL`]. Paint and
+    /// with; [`compute_layout`] always reports `RETAIL_SCALE`. Paint and
     /// hit-testing both read their rects through this.
     pub scale: ShellScale,
 }
@@ -185,7 +185,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
     };
     let rects = layout_data::place(
         section,
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         screen_w as i32,
         screen_h as i32,
     );
@@ -199,7 +199,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
         slider: rect(DIFFICULTY_SLIDER),
         difficulty_label: rect(0xFF00),
         difficulty_value: rect(0xFF01),
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
     }
 }
 
@@ -469,7 +469,7 @@ mod tests {
     /// The page's nodes on a stretched 1600x1200 window, the slider at 1.
     fn page() -> (vera20k_gui::Gui, CampaignLayout) {
         use crate::ui::shell::page as shell_page;
-        let scale = ShellScale::from_screen(1600, 1200);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
         let layout = crate::ui::shell::geom::fit_window(1600, 1200, compute_layout);
         let mut gui = vera20k_gui::Gui::new(16);
         let root = gui.create(NodeKind::Dialog, None).unwrap();

@@ -190,14 +190,6 @@ pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
     }
 }
 
-/// NewEdit keeps the caret in view (`scroll_to_caret`) in `available` base
-/// px of its field; the first shown unit is the node's `Top`.
-pub fn scroll_edit(gui: &mut Gui, node: NodeId, available: u32, measure: impl Fn(&str) -> u32) {
-    let mut edit = gui.edit_state(node).unwrap_or_default();
-    edit.scroll_to_caret(available, measure);
-    let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
-}
-
 /// The GUI's events as cues and control-id events, in order: a control's
 /// cue comes before what it did.
 pub fn page_events(gui: &Gui, events: Vec<UiEvent>) -> Vec<PageEvent> {

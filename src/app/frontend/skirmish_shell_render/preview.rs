@@ -186,8 +186,8 @@ pub(crate) fn start_marker_picture(
         .collect::<Option<Vec<_>>>()?;
     let spacing = crate::render::bit_font::CHAR_SPACING as i32;
     let text_w = font.text_width(label) as i32;
-    let sprite = start_marker_top_left(0, 0, ShellScale::RETAIL);
-    let text = super::text::start_marker_label_origin(0, 0, ShellScale::RETAIL);
+    let sprite = start_marker_top_left(0, 0, crate::ui::shell::geom::RETAIL_SCALE);
+    let text = super::text::start_marker_label_origin(0, 0, crate::ui::shell::geom::RETAIL_SCALE);
     let (left, top) = (sprite.0.min(text.0), sprite.1.min(text.1));
     let right = (sprite.0 + art.width as i32).max(text.0 + text_w);
     let bottom = (sprite.1 + art.height as i32).max(text.1 + font.bitmap_rows as i32);

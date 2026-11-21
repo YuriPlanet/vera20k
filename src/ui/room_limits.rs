@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(limits(&gui, root).players, 2);
         release(&mut gui, 320, 110);
         // The thumb drags as far as thirty.
-        let thumb = LAYOUT.players.x + PLAYERS.thumb_left_in(2, LAYOUT.players, ShellScale::RETAIL);
+        let thumb = LAYOUT.players.x + PLAYERS.thumb_left_in(2, LAYOUT.players, crate::ui::shell::geom::RETAIL_SCALE);
         press(&mut gui, thumb + 6, 110);
         drag(&mut gui, 400);
         assert_eq!(limits(&gui, root).players, 30);

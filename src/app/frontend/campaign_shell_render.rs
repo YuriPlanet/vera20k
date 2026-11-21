@@ -86,7 +86,7 @@ fn campaign_sprites(
     // Background_Overlay (`0x0072E730`) at `[0x00B0FC1C]`: centred only from
     // 1024x768 up (`0x0072EC70`). A scaled dialog starts at the authored
     // origin instead, which the scale places in the window.
-    let background_origin = if scale.is_retail() {
+    let background_origin = if scale.is_unscaled() {
         crate::ui::shell::geom::dialog_origin(layout.page.screen.w, layout.page.screen.h)
     } else {
         (0, 0)

@@ -177,7 +177,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
         .collect();
 
     MainMenuShellLayout {
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         movie_base,
         movie: RectPx::new(movie_x, movie_y, movie_w, movie_h),

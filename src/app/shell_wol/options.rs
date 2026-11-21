@@ -315,12 +315,6 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     handle_events(state);
 }
 
-/// Escape closes the open translation list, without a cue.
-pub(super) fn close_list(state: &mut AppState) -> bool {
-    read(state, false, |_, _| ()).is_some()
-        && state.frontend.shell_controller.gui_mut().close_popup()
-}
-
 /// The open translation list, where it hits.
 pub(crate) fn translate_popup(state: &AppState) -> Option<ComboPopup> {
     read(state, false, |gui, root| {

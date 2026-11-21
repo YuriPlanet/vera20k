@@ -1,8 +1,10 @@
 //! Pixel geometry the widgets lay out on: window-space rects and the
-//! uniform mapping of an 800x600-authored shell into a live window.
+//! uniform mapping of a layout authored at a fixed base size into a live
+//! window.
 //!
-//! Render-agnostic; depends on plain integers only. The host's own layout
-//! (dialog templates, panels, anchors) builds on these.
+//! Render-agnostic; depends on plain integers only. The host picks the base
+//! size and when to scale; its own layout (dialog templates, panels, anchors)
+//! builds on these.
 
 /// Pixel rect in window space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -32,48 +34,62 @@ impl RectPx {
     }
 }
 
-/// The logical shell is authored at 800x600; the fill-window pass scales that
-/// rectangle into the live window, keeping its 4:3 shape.
-pub const SHELL_BASE_W: i32 = 800;
-pub const SHELL_BASE_H: i32 = 600;
-
-/// Corner-rounded uniform mapping from the 800x600 logical shell space into a
-/// live window: one factor on both axes, the largest that fits the window, with
-/// the scaled shell centred and the spare width or height left to the window's
-/// black clear. Identity at the base size, so a fill-window layout equals the
-/// retail layout there.
+/// Corner-rounded uniform mapping from a layout authored at a base size
+/// (`base_w`x`base_h`) into a live window: one factor on both axes, the
+/// largest that fits the window, with the scaled layout centred and the spare
+/// width or height left to the window's clear. Identity when the window is the
+/// base size, so a fill-window layout equals the authored layout there.
 ///
-/// Holds the window it maps into, not the derived factor and origin, so a
-/// layout carrying one stays `Eq` for the shell structs that compare it.
+/// Holds the base and the window it maps into, not the derived factor and
+/// origin, so a layout carrying one stays `Eq` for the structs that compare it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShellScale {
+    base_w: i32,
+    base_h: i32,
     screen_w: i32,
     screen_h: i32,
-    /// The scaled shell stands at the window's right edge instead of its
+    /// The scaled layout stands at the window's right edge instead of its
     /// centre ([`Self::anchored_right`]).
     right: bool,
 }
 
 impl ShellScale {
-    /// The retail mapping: the 800x600 dialog is placed in the window by
-    /// the host's dialog origin, never scaled. Every art fit keyed on this scale is
-    /// then a no-op, so the fill-window path is the only source of drift.
-    pub const RETAIL: Self = Self {
-        screen_w: SHELL_BASE_W,
-        screen_h: SHELL_BASE_H,
-        right: false,
-    };
+    /// The mapping that changes nothing and names no base: every rect maps to
+    /// itself. What a [`crate::Gui`] uses until the host gives it a base.
+    pub const IDENTITY: Self = Self::unscaled(1, 1);
 
-    pub fn from_screen(screen_w: i32, screen_h: i32) -> Self {
+    /// The unscaled mapping of a `base_w`x`base_h` layout: the host places the
+    /// layout in the window itself, never scaled. Every art fit keyed on this
+    /// scale is then a no-op.
+    pub const fn unscaled(base_w: i32, base_h: i32) -> Self {
+        Self::fit(base_w, base_h, base_w, base_h)
+    }
+
+    /// A `base_w`x`base_h` layout scaled to fit a `screen_w`x`screen_h`
+    /// window at its own shape, centred.
+    pub const fn fit(base_w: i32, base_h: i32, screen_w: i32, screen_h: i32) -> Self {
         Self {
+            base_w,
+            base_h,
             screen_w,
             screen_h,
             right: false,
         }
     }
 
-    /// The same mapping with the scaled shell at the window's right edge, the
-    /// spare width all at its left: VERA's game room spreads into it.
+    /// This mapping's base fitted into a `screen_w`x`screen_h` window instead,
+    /// centred.
+    pub const fn in_window(self, screen_w: i32, screen_h: i32) -> Self {
+        Self::fit(self.base_w, self.base_h, screen_w, screen_h)
+    }
+
+    /// The size the layout is authored at.
+    pub const fn base(self) -> (i32, i32) {
+        (self.base_w, self.base_h)
+    }
+
+    /// The same mapping with the scaled layout at the window's right edge,
+    /// the spare width all at its left, for a host page that spreads into it.
     pub fn anchored_right(self) -> Self {
         Self {
             right: true,
@@ -81,7 +97,7 @@ impl ShellScale {
         }
     }
 
-    /// The same mapping with the scaled shell centred again.
+    /// The same mapping with the scaled layout centred again.
     pub fn centred(self) -> Self {
         Self {
             right: false,
@@ -89,33 +105,21 @@ impl ShellScale {
         }
     }
 
-    /// The mapping the front-end shell takes in a window. Only the two sizes
-    /// gamemd's shell runs at keep the retail layout: 800x600, and 640x480 with
-    /// its own 640-wide art (`AllowModeToggle`). Any other window gets the
-    /// 800x600 dialog scaled to fit at its own shape, centred.
-    pub fn for_window(screen_w: i32, screen_h: i32) -> Self {
-        if matches!((screen_w, screen_h), (800, 600) | (640, 480)) {
-            Self::RETAIL
-        } else {
-            Self::from_screen(screen_w, screen_h)
-        }
-    }
-
-    /// The one factor both axes scale by: the largest at which the 800x600
-    /// shell still fits the window. Glyphs, the software cursor and every
-    /// rect use it, so the shell keeps its authored proportions.
+    /// The one factor both axes scale by: the largest at which the base
+    /// layout still fits the window. Glyphs, the software cursor and every
+    /// rect use it, so the layout keeps its authored proportions.
     pub fn factor(self) -> f32 {
-        let fit_w = self.screen_w as f32 / SHELL_BASE_W as f32;
-        let fit_h = self.screen_h as f32 / SHELL_BASE_H as f32;
+        let fit_w = self.screen_w as f32 / self.base_w as f32;
+        let fit_h = self.screen_h as f32 / self.base_h as f32;
         fit_w.min(fit_h)
     }
 
-    /// Where the scaled 800x600 shell sits in the window: centred, the spare
+    /// Where the scaled base layout sits in the window: centred, the spare
     /// width or height split between the two sides.
     pub fn dialog_rect(self) -> RectPx {
         let factor = self.factor();
-        let w = (SHELL_BASE_W as f32 * factor).round() as i32;
-        let h = (SHELL_BASE_H as f32 * factor).round() as i32;
+        let w = (self.base_w as f32 * factor).round() as i32;
+        let h = (self.base_h as f32 * factor).round() as i32;
         let spare = self.screen_w - w;
         let x = if self.right { spare } else { spare / 2 };
         RectPx::new(x, (self.screen_h - h) / 2, w, h)
@@ -128,22 +132,22 @@ impl ShellScale {
     }
 
     /// Where art drawn from the dialog's top-left corner sits in the window:
-    /// `retail`, wherever the retail page puts it, on the retail mapping, and
-    /// the scaled dialog's corner otherwise.
-    pub fn dialog_origin_or(self, retail: (i32, i32)) -> (i32, i32) {
-        if self.is_retail() {
-            retail
+    /// `unscaled`, wherever the host's unscaled page puts it, on the unscaled
+    /// mapping, and the scaled dialog's corner otherwise.
+    pub fn dialog_origin_or(self, unscaled: (i32, i32)) -> (i32, i32) {
+        if self.is_unscaled() {
+            unscaled
         } else {
             let dialog = self.dialog_rect();
             (dialog.x, dialog.y)
         }
     }
 
-    /// Is this the retail mapping — place the 800x600 shell in the window, never
-    /// scale it? Callers that keep a native-size draw for the retail layout
-    /// test this instead of inferring it from a rect.
-    pub fn is_retail(self) -> bool {
-        self.screen_w == SHELL_BASE_W && self.screen_h == SHELL_BASE_H
+    /// Is this the unscaled mapping — place the base layout in the window,
+    /// never scale it? Callers that keep a native-size draw for the unscaled
+    /// layout test this instead of inferring it from a rect.
+    pub fn is_unscaled(self) -> bool {
+        self.screen_w == self.base_w && self.screen_h == self.base_h
     }
 
     pub fn scale_rect(self, rect: RectPx) -> RectPx {
@@ -158,21 +162,20 @@ impl ShellScale {
     }
 
     /// The window-space point an authored point came to sit on, for layers placed
-    /// by origin rather than by rectangle — the loading screen's meter and its
-    /// country icon. Identity on the retail mapping.
+    /// by origin rather than by rectangle. Identity on the unscaled mapping.
     pub fn scale_point(self, point: [i32; 2]) -> [i32; 2] {
         let rect = self.scale_rect(RectPx::new(point[0], point[1], 0, 0));
         [rect.x, rect.y]
     }
 
-    /// Chrome art authored at `(w, h)` pixels in the 800x600 dialog, in window
-    /// space. Identity on the retail mapping.
+    /// Chrome art authored at `(w, h)` pixels in the base layout, in window
+    /// space. Identity on the unscaled mapping.
     pub fn art_size(self, w: f32, h: f32) -> [f32; 2] {
         let factor = self.factor();
         [w * factor, h * factor]
     }
 
-    /// The 800x600-space point a scaled device point came from: the point
+    /// The base-space point a scaled device point came from: the point
     /// form of [`Self::base_rect`]. A cursor mapped through it lets pointer
     /// arithmetic run on the authored pixels the paint path used.
     pub fn base_point(self, x: i32, y: i32) -> (i32, i32) {
@@ -182,7 +185,7 @@ impl ShellScale {
         (back(x - origin.x), back(y - origin.y))
     }
 
-    /// The 800x600-space rect a scaled device rect came from: the inverse of
+    /// The base-space rect a scaled device rect came from: the inverse of
     /// [`Self::scale_rect`]. Control geometry derived from a device rect maps
     /// through this first, so the insets and row counts run on the authored
     /// numbers the paint and input paths agree on.
@@ -201,10 +204,10 @@ impl ShellScale {
     /// Derive a control's sub-rect from its device rect: map back to the
     /// authored numbers, apply `derive` there, then scale the result. Paint
     /// and hit-testing both go through this, so a scaled control's drawn art
-    /// and its clickable area are the same rect. The retail mapping hands the
+    /// and its clickable area are the same rect. The unscaled mapping hands the
     /// rect to `derive` untouched, keeping every unscaled page byte-identical.
     pub fn derive_rect(self, rect: RectPx, derive: impl FnOnce(RectPx) -> RectPx) -> RectPx {
-        if self.is_retail() {
+        if self.is_unscaled() {
             derive(rect)
         } else {
             self.scale_rect(derive(self.base_rect(rect)))
@@ -257,31 +260,34 @@ macro_rules! unscaled {
 }
 unscaled!(u16, &'static str);
 
-/// The window-filling variant of a retail layout: `base` laid out on the
-/// verified 800x600 dialog, then scaled to fit the `screen_w`x`screen_h`
-/// window, keeping its shape. Identity at the base size.
+/// The window-filling variant of a layout authored at `base_w`x`base_h`:
+/// `layout` laid out at the base size, then scaled to fit the
+/// `screen_w`x`screen_h` window, keeping its shape. Identity at the base size.
 pub fn fit_window<L: ScaledRects>(
+    base_w: i32,
+    base_h: i32,
     screen_w: u32,
     screen_h: u32,
-    base: impl FnOnce(u32, u32) -> L,
+    layout: impl FnOnce(u32, u32) -> L,
 ) -> L {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    base(SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
+    let scale = ShellScale::fit(base_w, base_h, screen_w as i32, screen_h as i32);
+    layout(base_w as u32, base_h as u32).scaled_rects(scale)
 }
 
 /// A layout on `scale`'s mapping into a `screen_w`x`screen_h` window: laid out
-/// at the window's own size for the retail mapping, else laid out on the
-/// verified 800x600 dialog and scaled.
+/// at the window's own size for the unscaled mapping, else laid out at the
+/// mapping's base size and scaled.
 pub fn layout_on<L: ScaledRects>(
     scale: ShellScale,
     screen_w: i32,
     screen_h: i32,
     layout: impl FnOnce(i32, i32) -> L,
 ) -> L {
-    if scale.is_retail() {
+    if scale.is_unscaled() {
         layout(screen_w, screen_h)
     } else {
-        layout(SHELL_BASE_W, SHELL_BASE_H).scaled_rects(scale)
+        let (base_w, base_h) = scale.base();
+        layout(base_w, base_h).scaled_rects(scale)
     }
 }
 
@@ -314,11 +320,20 @@ impl<T: ScaledRects> ScaledRects for Option<T> {
 mod tests {
     use super::*;
 
+    /// A layout authored at 800x600, the size these cases are worked out at.
+    const BASE_W: i32 = 800;
+    const BASE_H: i32 = 600;
+    const UNSCALED: ShellScale = ShellScale::unscaled(BASE_W, BASE_H);
+
+    fn fit(screen_w: i32, screen_h: i32) -> ShellScale {
+        ShellScale::fit(BASE_W, BASE_H, screen_w, screen_h)
+    }
+
     #[test]
     fn fill_window_scale_keeps_the_shell_shape_and_centres_it() {
         // 21:9: the height limits the factor to 2.4, and the 1920-wide shell is
         // centred with 760 px of window on either side.
-        let wide = ShellScale::from_screen(3440, 1440);
+        let wide = fit(3440, 1440);
         assert_eq!(wide.factor(), 2.4);
         assert_eq!(wide.dialog_rect(), RectPx::new(760, 0, 1920, 1440));
         assert_eq!(
@@ -328,19 +343,13 @@ mod tests {
         assert_eq!(wide.base_point(2306, 478), (644, 199));
 
         // A window taller than 4:3 centres the shell vertically instead.
-        let tall = ShellScale::from_screen(1200, 1200);
+        let tall = fit(1200, 1200);
         assert_eq!(tall.factor(), 1.5);
         assert_eq!(tall.dialog_rect(), RectPx::new(0, 150, 1200, 900));
 
         // A 4:3 window is filled exactly, and 800x600 is the identity.
-        assert_eq!(
-            ShellScale::from_screen(1600, 1200).dialog_rect(),
-            RectPx::new(0, 0, 1600, 1200)
-        );
-        assert_eq!(
-            ShellScale::RETAIL.dialog_rect(),
-            RectPx::new(0, 0, SHELL_BASE_W, SHELL_BASE_H)
-        );
+        assert_eq!(fit(1600, 1200).dialog_rect(), RectPx::new(0, 0, 1600, 1200));
+        assert_eq!(UNSCALED.dialog_rect(), RectPx::new(0, 0, BASE_W, BASE_H));
     }
 
     #[test]
@@ -357,10 +366,10 @@ mod tests {
             (3440, 1440),
         ];
         for (w, h) in windows {
-            let scale = ShellScale::from_screen(w, h);
-            for x in 0..SHELL_BASE_W {
+            let scale = fit(w, h);
+            for x in 0..BASE_W {
                 for width in [38, 44, 117, 150, 180, 207] {
-                    let authored = RectPx::new(x, x % SHELL_BASE_H, width, 23);
+                    let authored = RectPx::new(x, x % BASE_H, width, 23);
                     assert_eq!(
                         scale.base_rect(scale.scale_rect(authored)),
                         authored,
@@ -379,18 +388,15 @@ mod tests {
             RectPx::new(rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4)
         }
 
-        // The retail mapping hands the rect to `derive` untouched, so the
+        // The unscaled mapping hands the rect to `derive` untouched, so the
         // default path keeps its exact bytes.
         let authored = RectPx::new(100, 200, 207, 23);
-        assert_eq!(
-            ShellScale::RETAIL.derive_rect(authored, inset),
-            inset(authored)
-        );
+        assert_eq!(UNSCALED.derive_rect(authored, inset), inset(authored));
 
         // A stretched device rect round-trips to the authored numbers, so the 2 px
         // inset is 2 authored pixels (4 device) rather than 2 device pixels: the
         // paint and input paths can never disagree by a scale factor.
-        let scale = ShellScale::from_screen(1600, 1200);
+        let scale = fit(1600, 1200);
         let device = scale.scale_rect(authored);
         assert_eq!(scale.base_rect(device), authored);
         assert_eq!(
@@ -400,6 +406,19 @@ mod tests {
         assert_eq!(
             scale.derive_rect(device, inset),
             RectPx::new(204, 404, 406, 38)
+        );
+    }
+
+    #[test]
+    fn identity_maps_every_rect_to_itself() {
+        let rect = RectPx::new(100, 200, 207, 23);
+        assert!(ShellScale::IDENTITY.is_unscaled());
+        assert_eq!(ShellScale::IDENTITY.factor(), 1.0);
+        assert_eq!(ShellScale::IDENTITY.scale_rect(rect), rect);
+        assert_eq!(ShellScale::IDENTITY.base_rect(rect), rect);
+        assert_eq!(
+            ShellScale::IDENTITY.derive_rect(rect, |r| r.translate(2, 2)),
+            rect.translate(2, 2)
         );
     }
 }

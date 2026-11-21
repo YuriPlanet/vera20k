@@ -1,31 +1,4 @@
-//! Owner-draw button and checkbox faces shared by the shell's painters.
-
-/// The face the owner-draw checkbox 0x006163A0 paints. Single-state boxes
-/// use `cue_i`/`cce_i`; after message 0x4E5(1) the box is dual-state and its
-/// partner flag (0x4E6) picks a half-lit face when the two sides differ.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckboxFace {
-    /// `cue_i.pcx`.
-    Unchecked,
-    /// `cce_i.pcx`: checked, and in dual-state mode answered too.
-    Checked,
-    /// `cce_il.pcx`: dual-state, checked but not answered.
-    CheckedAlone,
-    /// `cce_ir.pcx`: dual-state, answered but not checked.
-    AnsweredAlone,
-}
-
-impl CheckboxFace {
-    /// The dual-state face for a check state and its partner flag.
-    pub fn dual_state(checked: bool, partner: bool) -> Self {
-        match (checked, partner) {
-            (false, false) => Self::Unchecked,
-            (false, true) => Self::AnsweredAlone,
-            (true, false) => Self::CheckedAlone,
-            (true, true) => Self::Checked,
-        }
-    }
-}
+//! Owner-draw button faces and timing shared by the host's painters.
 
 /// Shared type2/type3 frame selection, original612F36..612F5B.
 /// Disabled state changes text after this selection, not the SHP index.
@@ -36,30 +9,6 @@ pub fn owner_button_frame(pressed: bool, highlighted: bool) -> usize {
         2
     } else {
         0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn type2_type3_frame_selection_matches_original_owner_instructions() {
-        let fixture: serde_json::Value = serde_json::from_str(crate::fixtures::text(
-            "tools/storage_oracle/owner_button_frame.json",
-        ))
-        .unwrap();
-        let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 4);
-        for case in cases {
-            assert_eq!(
-                owner_button_frame(
-                    case["pressed"].as_bool().unwrap(),
-                    case["highlighted"].as_bool().unwrap()
-                ),
-                case["frame"].as_u64().unwrap() as usize
-            );
-        }
     }
 }
 

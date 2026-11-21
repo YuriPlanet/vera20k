@@ -1,12 +1,13 @@
-//! Shell trackbar rules shared by every `msctls_trackbar32` control the shell
-//! subclasses: Skirmish, Generate Map, the launcher and in-game Options
-//! sliders, the sound sliders and the campaign difficulty.
+//! Trackbar rules ported from gamemd's subclassed `msctls_trackbar32`
+//! control.
 //! `ShellTrackbar__WndProc` `0x0061D950` owns the press, drag and paint
 //! arithmetic below. It keeps the position relative to the range minimum
 //! (`TBM_SETRANGE` `0x406`); `range` below is maximum minus minimum.
 
 use super::geom::{RectPx, ShellScale};
 
+/// Default metrics, measured from gamemd's trackbar.
+///
 /// Width the value plaque takes at the window's right end (`0x32`), unless
 /// the owner turns the plaque off with `0x4AC`.
 pub const PLAQUE_RESERVE: i32 = 50;
@@ -29,7 +30,12 @@ pub fn trackbar_position_from_x(
     relative.min(i64::from(range)) as i32
 }
 
-/// What a left press does on a shell trackbar.
+/// What a left press does on a shell trackbar. Every press on the window
+/// takes the capture (`SetCapture` at `0x0061E4DF`) until the button's
+/// release, or a move without it (`ReleaseCapture` at `0x0061E44E`); until
+/// then neither the dialog's status-help hit test (`WM_NCHITTEST`,
+/// `0x00622CCB`) nor another control sees the pointer. Only a press on the
+/// thumb drags (`+0xEC`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackbarPress {
     /// Off the window.
@@ -41,32 +47,6 @@ pub enum TrackbarPress {
     Drag,
     /// Beside the thumb: jump once to this position; later moves do not drag.
     Jump(i32),
-}
-
-impl TrackbarPress {
-    /// The hold this press starts on trackbar `id`, unless it misses the
-    /// window.
-    pub fn hold<Id>(self, id: Id) -> Option<TrackbarHold<Id>> {
-        match self {
-            TrackbarPress::Miss => None,
-            TrackbarPress::Drag => Some(TrackbarHold { id, dragging: true }),
-            TrackbarPress::Hold | TrackbarPress::Jump(_) => Some(TrackbarHold {
-                id,
-                dragging: false,
-            }),
-        }
-    }
-}
-
-/// A trackbar holding the mouse. Every press on the window takes the
-/// capture (`SetCapture` at `0x0061E4DF`) until the button's release, or a
-/// move without it (`ReleaseCapture` at `0x0061E44E`); until then neither the
-/// dialog's status-help hit test (`WM_NCHITTEST`, `0x00622CCB`) nor another
-/// control sees the pointer. Only a press on the thumb drags (`+0xEC`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TrackbarHold<Id = ()> {
-    pub id: Id,
-    pub dragging: bool,
 }
 
 /// gamemd-derived: the `WM_LBUTTONDOWN` path of `ShellTrackbar__WndProc @
@@ -110,7 +90,7 @@ pub fn thumb_left(position: i32, client_width: i32, reserve: i32, range: i32) ->
     1 + offset.clamp(i64::from(i32::MIN) + 1, i64::from(i32::MAX) - 1) as i32
 }
 
-/// A trackbar window and cursor in the authored 800x600 numbers the native
+/// A trackbar window and cursor in the authored base-size numbers the native
 /// arithmetic runs on. The admitted strip, thumb span and jump partition are all
 /// built from fixed pixel metrics, so a stretched window maps back first: the
 /// paint and input sides then agree on where the track ends and the plaque
@@ -126,7 +106,7 @@ pub struct AuthoredTrack {
 }
 
 /// [`AuthoredTrack`] for a device `window` with an absolute device `cursor`.
-/// Identity at [`ShellScale::RETAIL`].
+/// Identity on an unscaled mapping.
 pub fn authored_track(window: RectPx, cursor: (i32, i32), scale: ShellScale) -> AuthoredTrack {
     let base = scale.base_rect(window);
     let (x, y) = scale.base_point(cursor.0, cursor.1);
@@ -291,50 +271,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn launcher_trackbar_position_and_painted_thumb_match_original_instruction_goldens() {
-        // Reproduced by tools/storage_oracle/launcher_trackbar.py from the
-        // hash-checked retail executable. This compares the separate native
-        // range+1 pointer partition and range-only retained paint calculation.
-        let golden: serde_json::Value = serde_json::from_str(crate::fixtures::text(
-            "tools/storage_oracle/launcher_trackbar.json",
-        ))
-        .unwrap();
-        // BBB/B8 add geometries to the shared oracle; retain original D5 coverage.
-        let geometries: Vec<_> = golden["geometries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|geometry| matches!(geometry["width"].as_i64(), Some(128 | 180)))
-            .collect();
-        assert_eq!(geometries.len(), 16);
-        let (positions, pointers) = compare_with_goldens(geometries);
-        assert_eq!(positions, 92);
-        assert_eq!(pointers, 2736);
-    }
-
-    #[test]
-    fn runtime_shell_windows_match_original_instruction_goldens() {
-        // The runtime windows retail paints (Skirmish and the D5 audio
-        // sliders 129, Generate Map 226, the D5 plain sliders 181) with their
-        // owners' ranges; Credits runs 5000..10000 in steps of 100 (retail
-        // Rules).
-        let golden: serde_json::Value = serde_json::from_str(crate::fixtures::text(
-            "tools/storage_oracle/launcher_trackbar.json",
-        ))
-        .unwrap();
-        let geometries: Vec<_> = golden["geometries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|geometry| matches!(geometry["width"].as_i64(), Some(129 | 181 | 226)))
-            .collect();
-        assert_eq!(geometries.len(), 7);
-        let (positions, pointers) = compare_with_goldens(geometries);
-        assert_eq!(positions, 93);
-        assert_eq!(pointers, 1275);
-    }
-
-    #[test]
     fn every_press_on_the_window_holds_and_only_the_strip_moves() {
         // A 129x22 Skirmish window at position 0 of 50: the thumb spans 1..13.
         let press = |x, y| trackbar_press(0, x, y, 129, 22, PLAQUE_RESERVE, 50);
@@ -348,14 +284,6 @@ mod tests {
         assert_eq!(press(12, 21), TrackbarPress::Drag);
         assert_eq!(press(0, 5), TrackbarPress::Jump(0));
         assert_eq!(press(13, 5), TrackbarPress::Jump(4));
-        assert_eq!(TrackbarPress::Miss.hold(7), None);
-        for (kind, dragging) in [
-            (TrackbarPress::Hold, false),
-            (TrackbarPress::Drag, true),
-            (TrackbarPress::Jump(3), false),
-        ] {
-            assert_eq!(kind.hold(7), Some(TrackbarHold { id: 7, dragging }));
-        }
     }
 
     #[test]
@@ -364,16 +292,16 @@ mod tests {
         // same screen origin.
         let range = TrackbarRange::new(5000, 5500, 1);
         let authored = RectPx::new(404, 314, 129, 22);
-        let double = ShellScale::from_screen(1600, 1200);
+        let double = ShellScale::fit(800, 600, 1600, 1200);
         let device = double.scale_rect(authored);
 
-        // At the retail mapping each adapter is the plain call.
+        // At the unscaled mapping each adapter is the plain call.
         assert_eq!(
-            range.thumb_left_in(5000, authored, ShellScale::RETAIL),
+            range.thumb_left_in(5000, authored, ShellScale::unscaled(800, 600)),
             range.thumb_left(5000, authored.w)
         );
         assert_eq!(
-            range.press_in(0, 404, 324, authored, ShellScale::RETAIL),
+            range.press_in(0, 404, 324, authored, ShellScale::unscaled(800, 600)),
             range.press(0, 0, 10, authored.w, authored.h)
         );
 
@@ -390,69 +318,6 @@ mod tests {
             range.value_at_in(834, device, double),
             range.value_at(13, 129)
         );
-    }
-
-    #[test]
-    fn owner_setups_match_original_instruction_goldens() {
-        // Fresh windows through `0x406`, `0x405` and `0x400`
-        // (tools/storage_oracle/launcher_trackbar.py): saved values outside
-        // the range, the stepped read-back, a zero step and a minimum off
-        // the step.
-        let golden: serde_json::Value = serde_json::from_str(crate::fixtures::text(
-            "tools/storage_oracle/launcher_trackbar.json",
-        ))
-        .unwrap();
-        let setups = golden["setups"].as_array().unwrap();
-        assert_eq!(setups.len(), 77);
-        for setup in setups {
-            let integer = |key: &str| setup[key].as_i64().unwrap() as i32;
-            let range = TrackbarRange::new(integer("minimum"), integer("maximum"), integer("step"));
-            let value = range.set_up(integer("value"));
-            assert_eq!(value, range.min + integer("position"), "{setup}");
-            assert_eq!(range.stepped(value), integer("read_back"), "{setup}");
-        }
-    }
-
-    /// Compares the thumb projection and the pointer partition with the
-    /// original-instruction samples; returns how many of each it compared.
-    fn compare_with_goldens(geometries: Vec<&serde_json::Value>) -> (usize, usize) {
-        let integer = |value: &serde_json::Value, key: &str| value[key].as_i64().unwrap() as i32;
-        let mut position_count = 0;
-        let mut pointer_count = 0;
-        for geometry in geometries {
-            let width = integer(geometry, "width");
-            let reserve = integer(geometry, "reserve");
-            let range = integer(geometry, "maximum");
-            let minimum = geometry["minimum"].as_i64().unwrap_or(0) as i32;
-            let step = geometry["step"].as_i64().unwrap_or(1) as i32;
-            for sample in geometry["positions"].as_array().unwrap() {
-                let position = integer(sample, "position");
-                let left = thumb_left(position, width, reserve, range);
-                assert_eq!(
-                    left,
-                    integer(sample, "thumb_left"),
-                    "{geometry:?} {sample:?}"
-                );
-                assert_eq!(left + THUMB_W, integer(sample, "thumb_right"));
-                position_count += 1;
-            }
-            for sample in geometry["pointers"].as_array().unwrap() {
-                let x = integer(sample, "x");
-                let raw = trackbar_position_from_x(x, width, reserve, range);
-                let steps = TrackbarRange::new(minimum, minimum + range, step);
-                let position = steps.stepped(minimum + raw) - minimum;
-                assert_eq!(
-                    position,
-                    integer(sample, "position"),
-                    "width={width} reserve={reserve} range={range} x={x}"
-                );
-                let left = thumb_left(position, width, reserve, range);
-                assert_eq!(left, integer(sample, "thumb_left"));
-                assert_eq!(left + THUMB_W, integer(sample, "thumb_right"));
-                pointer_count += 1;
-            }
-        }
-        (position_count, pointer_count)
     }
 
     #[test]

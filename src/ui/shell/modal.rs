@@ -91,7 +91,7 @@ fn parts_in(template: &str, area: RectPx) -> BoxParts {
         body: rects.next().map_or(dialog, |(_, rect)| rect),
         centred: template == WAIT_TEMPLATE,
         buttons: rects.collect(),
-        scale: geom::ShellScale::RETAIL,
+        scale: geom::RETAIL_SCALE,
     }
 }
 
@@ -438,7 +438,7 @@ pub fn wol_account_form_layout_on(
     scale: geom::ShellScale,
 ) -> WolAccountFormLayout {
     let base = wol_account_form_layout(area, count);
-    if scale.is_retail() {
+    if scale.is_unscaled() {
         base
     } else {
         base.scaled_rects(scale)
@@ -637,8 +637,8 @@ pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
 /// frame (the `_in` layouts).
 pub fn menu_area(screen_w: i32, screen_h: i32) -> RectPx {
     let content = |w, h| RectPx::new(0, 0, w - geom::RIGHT_PANEL_WIDTH, h - geom::LOWER_STRIP_H);
-    let scale = geom::ShellScale::for_window(screen_w, screen_h);
-    if scale.is_retail() {
+    let scale = geom::shell_scale_for_window(screen_w, screen_h);
+    if scale.is_unscaled() {
         content(screen_w, screen_h)
     } else {
         scale.scale_rect(content(geom::SHELL_BASE_W, geom::SHELL_BASE_H))
@@ -686,7 +686,7 @@ mod tests {
         );
         // At 800x600 the 0x120 box centres on the page left of the button
         // column, OK directly above Cancel.
-        let parts = quit.parts(800, 600, geom::ShellScale::RETAIL);
+        let parts = quit.parts(800, 600, geom::RETAIL_SCALE);
         assert_eq!(
             parts.dialog,
             RectPx::new(91, 121, MESSAGE_BOX_W, MESSAGE_BOX_H)
@@ -705,7 +705,7 @@ mod tests {
         let menu = ShellBox::message("".into(), "O".into(), "C".into(), "E".into())
             .template(FOOTER_TEMPLATE);
         for (w, h) in [(640, 480), (1024, 800)] {
-            let scale = geom::ShellScale::for_window(w, h);
+            let scale = geom::shell_scale_for_window(w, h);
             let parts = menu.parts(w, h, scale);
             let panel = scale.base_rect(parts.dialog);
             let [options, cancel, exit] = [0, 1, 2].map(|i| scale.base_rect(parts.button(i)));
@@ -735,7 +735,7 @@ mod tests {
         // A fitted page (x2 at 1600x1200) centres a retail-size box on its
         // scaled content, and a scaled box where the 800x600 one sits.
         assert_eq!(menu_box(1600, 1200), RectPx::new(407, 405, 451, 326));
-        let scale = geom::ShellScale::from_screen(1600, 1200);
+        let scale = geom::shell_scale(1600, 1200);
         let notice = ShellBox::notice("b".into(), "OK".into());
         assert_eq!(
             notice.parts(1600, 1200, scale).dialog,
@@ -790,7 +790,7 @@ mod tests {
             .button(0x58D, "D")
             .button(0x58E, "C")
             .template(WAIT_TEMPLATE)
-            .parts(800, 600, geom::ShellScale::RETAIL);
+            .parts(800, 600, geom::RETAIL_SCALE);
         assert_eq!(wait.dialog, RectPx::new(91, 121, 451, 326));
         assert_eq!(wait.button(0), RectPx::new(255, 292, 126, 25));
         assert_eq!(wait.body, RectPx::new(168, 144, 297, 89));
@@ -814,7 +814,7 @@ mod tests {
                 let (w, h) = size.split_once('x').unwrap();
                 let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
                 let create = wol_create_game_layout(w, h, false);
-                let password = wol_channel_password_layout_on(w, h, geom::ShellScale::RETAIL);
+                let password = wol_channel_password_layout_on(w, h, geom::RETAIL_SCALE);
                 let at = |id| password.rect_of(id).unwrap();
                 let native_dialog = rect(&case["dialog"]);
                 assert_eq!(create.dialog.w, native_dialog.w, "{key} {size}");
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn lobby_popups_grow_with_a_scaled_page() {
-        let scale = geom::ShellScale::from_screen(1600, 1200);
+        let scale = geom::shell_scale(1600, 1200);
         let retail = wol_create_game_layout(800, 600, true);
         let scaled = wol_create_game_layout_on(1600, 1200, true, scale);
         assert_eq!(scaled.dialog, scale.scale_rect(retail.dialog));
@@ -864,11 +864,11 @@ mod tests {
             scale.scale_rect(retail.name.unwrap().1)
         );
         let password = |w, h, scale| wol_channel_password_layout_on(w, h, scale).rect_of(1);
-        let retail = password(800, 600, geom::ShellScale::RETAIL).unwrap();
+        let retail = password(800, 600, geom::RETAIL_SCALE).unwrap();
         assert_eq!(password(1600, 1200, scale), Some(scale.scale_rect(retail)));
         // A window the page keeps at retail size keeps the retail placement.
         assert_eq!(
-            wol_create_game_layout_on(1024, 768, true, geom::ShellScale::RETAIL),
+            wol_create_game_layout_on(1024, 768, true, geom::RETAIL_SCALE),
             wol_create_game_layout(1024, 768, true)
         );
     }

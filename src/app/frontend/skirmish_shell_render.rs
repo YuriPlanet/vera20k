@@ -1211,7 +1211,7 @@ mod tests {
             &mut out,
             entry,
             RectPx::new(100, 50, 30, 16),
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0.00057,
         );
 
@@ -1235,7 +1235,7 @@ mod tests {
             &mut out,
             entry,
             RectPx::new(200, 100, 60, 32),
-            ShellScale::from_screen(1600, 1200),
+            crate::ui::shell::geom::shell_scale(1600, 1200),
             0.00057,
         );
 
@@ -1258,7 +1258,7 @@ mod tests {
             &mut out,
             entry,
             RectPx::new(100, 50, 48, 16),
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0.00057,
         );
 
@@ -1282,7 +1282,7 @@ mod tests {
             &mut out,
             entry,
             RectPx::new(100, 50, 12, 6),
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0.00057,
         );
 
@@ -1678,7 +1678,7 @@ mod tests {
     #[test]
     fn start_marker_instances_apply_verified_shape_offsets() {
         assert_eq!(
-            start_marker_top_left(120, 70, ShellScale::RETAIL),
+            start_marker_top_left(120, 70, crate::ui::shell::geom::RETAIL_SCALE),
             (111, 64)
         );
     }
@@ -1699,11 +1699,11 @@ mod tests {
         assert_eq!(projected, vec![(845, 93)]);
         assert!(!preview.contains(projected[0].0, projected[0].1));
         assert_eq!(
-            start_marker_top_left(projected[0].0, projected[0].1, ShellScale::RETAIL),
+            start_marker_top_left(projected[0].0, projected[0].1, crate::ui::shell::geom::RETAIL_SCALE),
             (836, 87)
         );
         assert_eq!(
-            start_marker_label_origin(projected[0].0, projected[0].1, ShellScale::RETAIL),
+            start_marker_label_origin(projected[0].0, projected[0].1, crate::ui::shell::geom::RETAIL_SCALE),
             (843, 87)
         );
     }
@@ -1711,7 +1711,7 @@ mod tests {
     #[test]
     fn start_marker_labels_use_startbut_overlay_origin_and_yellow_color() {
         assert_eq!(
-            start_marker_label_origin(120, 70, ShellScale::RETAIL),
+            start_marker_label_origin(120, 70, crate::ui::shell::geom::RETAIL_SCALE),
             (118, 64)
         );
     }
@@ -1745,7 +1745,7 @@ mod tests {
         let content = RectPx::new(287, 84, 97, 161);
 
         assert_eq!(
-            combo_dropdown_text_fit_width(content, ShellScale::RETAIL),
+            combo_dropdown_text_fit_width(content, crate::ui::shell::geom::RETAIL_SCALE),
             77
         );
     }
@@ -1773,7 +1773,7 @@ mod tests {
     #[test]
     fn button_text_rect_follows_owner_draw_caller_contract() {
         let rect = RectPx::new(644, 241, 156, 42);
-        let retail = crate::ui::shell::geom::ShellScale::RETAIL;
+        let retail = crate::ui::shell::geom::RETAIL_SCALE;
         let released = super::text::button_label_rect_px(rect, false, retail);
         let pressed = super::text::button_label_rect_px(rect, true, retail);
 

@@ -128,7 +128,7 @@ pub(super) fn sync(
     // Only the focused edit takes keys, so only it scrolls; an assigned text
     // shows from its start.
     if let Some(node) = state.frontend.shell_controller.gui().focus() {
-        scroll_edit(state, node, scale);
+        scroll_edit(state, node);
     }
     Some(root)
 }
@@ -150,20 +150,12 @@ pub(super) fn place(
     Some(root)
 }
 
-/// NewEdit keeps its caret in view (`scroll_to_caret`, text widths in the
-/// box's authored pixels); the first shown unit lives in the edit's `Top`.
-/// Anything but an edit is left alone.
-pub(super) fn scroll_edit(state: &mut AppState, node: NodeId, scale: ShellScale) {
+/// NewEdit keeps its caret in view (text widths in the box's authored
+/// pixels). Anything but an edit is left alone.
+pub(super) fn scroll_edit(state: &mut AppState, node: NodeId) {
     let font = &state.renderer.bit_font;
     let gui = state.frontend.shell_controller.gui_mut();
-    if gui.tree().kind(node) != Ok(vera20k_gui::NodeKind::Edit) {
-        return;
-    }
-    let Ok(rect) = gui.tree().screen_rect(node) else {
-        return;
-    };
-    let available = (scale.base_rect(rect).w - 3).max(0) as u32;
-    page::scroll_edit(gui, node, available, |text| font.text_width(text));
+    let _ = gui.keep_caret_in_view(node, &|text| font.text_width(text));
 }
 
 /// Control `id`'s text under `dialog`'s root ("" when it has none).

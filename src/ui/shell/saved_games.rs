@@ -63,7 +63,7 @@ pub fn saved_game_layout(
         // Active60B550 uses parent left+10 and bottom-existingheight-1.
         blank: in_game_shell::status_line_rect(height),
         // The active-session dialog is anchored by 0x0060B7A0, never stretched.
-        scale: ShellScale::RETAIL,
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
     }
 }
 

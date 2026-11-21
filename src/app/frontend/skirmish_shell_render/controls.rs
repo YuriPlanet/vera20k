@@ -99,7 +99,7 @@ pub(super) fn push_group_or_plain_frame(
     outer_light: bool,
     scale: ShellScale,
 ) {
-    let rect = if scale.is_retail() {
+    let rect = if scale.is_unscaled() {
         rect
     } else {
         scale.base_rect(rect)
@@ -494,7 +494,7 @@ pub(super) enum ControlPaint {
     /// A checkbox in dual-state mode (message 0x4E5) or disabled: Diplomacy
     /// 0x73's Allies and Chat boxes.
     StatefulCheckbox {
-        face: vera20k_gui::shell::button::CheckboxFace,
+        face: crate::ui::shell::checkbox::CheckboxFace,
         disabled: bool,
         rect: RectPx,
     },
@@ -535,9 +535,9 @@ pub(super) fn paint_control(
     match paint {
         ControlPaint::Checkbox { checked, rect } => {
             let face = if checked {
-                vera20k_gui::shell::button::CheckboxFace::Checked
+                crate::ui::shell::checkbox::CheckboxFace::Checked
             } else {
-                vera20k_gui::shell::button::CheckboxFace::Unchecked
+                crate::ui::shell::checkbox::CheckboxFace::Unchecked
             };
             paint_checkbox_face(out, chrome, face, false, rect, scale);
         }
@@ -864,7 +864,7 @@ mod tests {
             ..Default::default()
         };
         let rect = RectPx::new(71, 286, 150, 16);
-        let icon = checkbox_icon_rect(rect, ShellScale::RETAIL);
+        let icon = checkbox_icon_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
 
         let mut out = Vec::new();
         paint_control(
@@ -874,7 +874,7 @@ mod tests {
                 checked: true,
                 rect,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].position, [icon.x as f32, icon.y as f32]);
@@ -892,7 +892,7 @@ mod tests {
                 checked: true,
                 rect,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert!(empty.is_empty());
     }
@@ -934,7 +934,7 @@ mod tests {
                     plaque: true,
                     disabled: false,
                 },
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             assert_eq!(out.len(), 5, "plaque (mid, left, right), thumb, frame");
             // TROFM's middle 50 columns (32..82) at its own height: its red
@@ -969,7 +969,7 @@ mod tests {
                 plaque: false,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(out.len(), 1, "no plaque, no frame of this size");
         assert_eq!(out[0].size, [12.0, 21.0]);
@@ -985,7 +985,7 @@ mod tests {
                 plaque: true,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert!(empty.is_empty());
     }
@@ -1008,7 +1008,7 @@ mod tests {
                     plaque: true,
                     disabled,
                 },
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             out.iter().map(|sprite| sprite.tint).collect::<Vec<_>>()
         };
@@ -1038,7 +1038,7 @@ mod tests {
                     plaque: reserve > 0,
                     disabled: false,
                 },
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             assert_eq!(out.len(), 1, "{width}x{height}");
             assert_eq!(out[0].position, [234.0, 96.0]);
@@ -1085,7 +1085,7 @@ mod tests {
                 crate::ui::shell::sound::ShellSoundLayout::new(
                     width as i32,
                     height as i32,
-                    crate::ui::shell::geom::ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 )
                     .sliders
                     .map(|rect| (true, rect)),
@@ -1246,7 +1246,7 @@ mod tests {
                 open: false,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].position, [95.0, 135.0]);
@@ -1302,9 +1302,9 @@ mod tests {
         };
         // w=150 selects combo_face_150 via combo_face_entry.
         let rect = RectPx::new(176, 100, 150, 24);
-        let face_rect = combo_face_rect(rect, ShellScale::RETAIL);
-        let swatch_rect = combo_swatch_rect(rect, ShellScale::RETAIL);
-        let arrow_rect = combo_arrow_rect(rect, ShellScale::RETAIL);
+        let face_rect = combo_face_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
+        let swatch_rect = combo_swatch_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
+        let arrow_rect = combo_arrow_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
         let tint = [0.25, 0.5, 0.75];
 
         let assert_face = |inst: &SpriteInstance| {
@@ -1331,7 +1331,7 @@ mod tests {
                 open: true,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(a.len(), 3, "face + swatch + arrow");
         assert_face(&a[0]);
@@ -1353,7 +1353,7 @@ mod tests {
                 open: false,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(b.len(), 3);
         assert_face(&b[0]);
@@ -1372,7 +1372,7 @@ mod tests {
                 open: false,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(c.len(), 2, "face + arrow, no swatch");
         assert_face(&c[0]);
@@ -1389,7 +1389,7 @@ mod tests {
                 open: false,
                 disabled: true,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(d.len(), 2);
         assert_face(&d[0]);
@@ -1397,7 +1397,7 @@ mod tests {
 
         // (e) the same face stretched 2x: the arrow grows with the face, so its
         // authored 3x1 gap to the face's right/top edges keeps its proportion.
-        let double = ShellScale::from_screen(1600, 1200);
+        let double = crate::ui::shell::geom::shell_scale(1600, 1200);
         let wide = double.scale_rect(rect);
         let wide_arrow = combo_arrow_rect(wide, double);
         let mut e = Vec::new();
@@ -1430,7 +1430,7 @@ mod tests {
                 open: true,
                 disabled: false,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert!(empty.is_empty());
     }
@@ -1506,7 +1506,7 @@ mod tests {
                 thumb,
                 pressed_part: None,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         // track(1) + up(1) + down(1) + thumb top/bottom/mid(3) + 2 bevel rings × 4
         // edges each (each ring: top/left/bottom/right solid rects) = 8.
@@ -1582,7 +1582,7 @@ mod tests {
                 thumb,
                 pressed_part: Some(DropdownScrollbarPart::UpArrow),
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert_eq!(pressed[1].uv_origin, up_p.uv_origin);
         assert_eq!(pressed[2].uv_origin, dn_r.uv_origin);
@@ -1597,7 +1597,7 @@ mod tests {
                 thumb,
                 pressed_part: None,
             },
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         assert!(empty.is_empty());
     }
@@ -1608,7 +1608,7 @@ mod tests {
         // (half-open): the last interior px (icon.x+17) HITS, the right edge
         // (icon.x+18) MISSES — the boundary the input toggle branch relies on.
         let rect = RectPx::new(71, 286, 150, 16);
-        let icon = checkbox_icon_rect(rect, ShellScale::RETAIL);
+        let icon = checkbox_icon_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
         assert_eq!(icon.w, 18, "C-Checkbox icon width is 18px");
         assert!(
             icon.contains(icon.x + icon.w - 1, icon.y),
@@ -1633,12 +1633,12 @@ const DISABLED_OVERLAY_KEEP: f32 = (255 - 0x60) as f32 / 256.0;
 fn paint_checkbox_face(
     out: &mut Vec<SpriteInstance>,
     chrome: &ControlChrome,
-    face: vera20k_gui::shell::button::CheckboxFace,
+    face: crate::ui::shell::checkbox::CheckboxFace,
     disabled: bool,
     rect: RectPx,
     scale: ShellScale,
 ) {
-    use vera20k_gui::shell::button::CheckboxFace;
+    use crate::ui::shell::checkbox::CheckboxFace;
     let entry = match face {
         CheckboxFace::Unchecked => chrome.checkbox_unchecked_cue_i,
         CheckboxFace::Checked => chrome.checkbox_checked_cce_i,

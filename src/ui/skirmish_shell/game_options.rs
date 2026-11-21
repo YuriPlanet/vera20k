@@ -276,7 +276,7 @@ impl GameOptionsLayout {
         let scale = page.scale;
         // The retail page sits in its own window; a fitted one is the
         // 800x600 page, scaled.
-        let menu = if scale.is_retail() {
+        let menu = if scale.is_unscaled() {
             crate::ui::shell::modal::menu_box(page.screen.w, page.screen.h)
                 .translate(page.screen.x, page.screen.y)
         } else {

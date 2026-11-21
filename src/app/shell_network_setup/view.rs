@@ -213,7 +213,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             room_size_shown(state),
         );
         let scroll = roster_scroll(&items, bottom);
-        let first_row = ui.map_or(0, |ui| ui.roster_top(scroll.max_top));
+        // Its scrollbar node keeps the place (none before the room's dialog
+        // is built), shown within the places the roster has now.
+        let controller = &state.frontend.shell_controller;
+        let top = match controller.prop(dialog.page().dialog, ROSTER_SCROLL, vera20k_gui::Prop::Top) {
+            Some(vera20k_gui::Value::Int(top)) => usize::try_from(*top).unwrap_or(0),
+            _ => 0,
+        };
+        let first_row = top.min(scroll.max_top);
         let top = scroll.stops.get(first_row).copied().unwrap_or(0);
         let places = roster_page(&items, top, bottom);
         (

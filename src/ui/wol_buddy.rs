@@ -644,7 +644,7 @@ mod tests {
             let layout = WolBuddyLayout::new(
                 width.parse().unwrap(),
                 height.parse().unwrap(),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             for (control, child) in case["controls"].as_object().unwrap() {
                 let actual = match control.as_str() {

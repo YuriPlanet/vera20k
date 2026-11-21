@@ -262,8 +262,13 @@ pub struct WolWelcomeLayout {
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
     let (w, h) = (screen_w as i32, screen_h as i32);
-    let (page, mut rects) =
-        layout_data::menu_page(&WOL_WELCOME_PAGE, "0x10E", ShellScale::RETAIL, w, h);
+    let (page, mut rects) = layout_data::menu_page(
+        &WOL_WELCOME_PAGE,
+        "0x10E",
+        crate::ui::shell::geom::RETAIL_SCALE,
+        w,
+        h,
+    );
     if let Some(rect) = rects.get(0x079F) {
         rects.insert(0x079F, rect.translate(1, 0));
     }
@@ -402,7 +407,7 @@ mod tests {
         let quit = ShellBox::message("Q".into(), "OK".into(), "Cancel".into(), String::new());
         let wait = WolWaitBox::new("Wait".into(), "D".into(), "C".into()).shell_box;
         for (w, h) in [(640, 480), (760, 600), (2560, 1600), (1200, 1600)] {
-            let scale = ShellScale::from_screen(w, h);
+            let scale = crate::ui::shell::geom::shell_scale(w, h);
             let parts = message.parts(w, h, scale);
             let native = quit.parts(w, h, scale);
             assert_eq!((parts.dialog, parts.body), (native.dialog, native.body));
@@ -416,9 +421,13 @@ mod tests {
             let disconnect = wait.rect_of(WAIT_DISCONNECT).unwrap();
             assert!(!disconnect.contains(check.x + check.w / 2, check.y + check.h / 2));
         }
-        let large = message.parts(2560, 1600, ShellScale::from_screen(2560, 1600));
+        let large = message.parts(2560, 1600, crate::ui::shell::geom::shell_scale(2560, 1600));
         assert_eq!(large.dialog, RectPx::new(456, 323, 1202, 869));
-        let retail = message_box("Notice".into(), "OK".into()).parts(800, 600, ShellScale::RETAIL);
+        let retail = message_box("Notice".into(), "OK".into()).parts(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+        );
         assert_eq!((retail.dialog.w, retail.dialog.h), (451, 326));
     }
 
@@ -526,7 +535,7 @@ mod tests {
         let same = fit_window(800, 600, compute_layout);
         assert_eq!(same.page.title, base.page.title);
         assert_eq!(same.rects, base.rects);
-        let scale = ShellScale::from_screen(1600, 1200);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
         let scaled = fit_window(1600, 1200, compute_layout);
         assert_eq!(scaled.page.scale, scale);
         assert_eq!(scaled.page.title, RectPx::new(1270, 18, 326, 38));

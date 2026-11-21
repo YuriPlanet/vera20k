@@ -13,7 +13,7 @@
 //! buttons' enables live in the dialogs' widgets ([`page_spec`],
 //! [`received_spec`]); the models keep the rows and the statics.
 
-use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
+use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, UiEvent, Value};
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{LanChatLine, apply_chat_length_limit};
@@ -106,7 +106,11 @@ pub(crate) fn page_spec() -> NodeSpec {
             ShellAlign::NONE,
         ))
         .child(static_text(STATUS, None, ShellAlign::NONE))
-        .child(button(SEND, "GUI:Page").with(Prop::Enabled, Value::Bool(false)))
+        .child(
+            button(SEND, "GUI:Page")
+                .with(Prop::Enabled, Value::Bool(false))
+                .with(Prop::Default, Value::Bool(true)),
+        )
         .child(button(CANCEL, "GUI:Cancel"))
         .child(
             node(NodeKind::Edit, NAME)
@@ -132,10 +136,29 @@ pub(crate) fn received_spec() -> NodeSpec {
             ShellAlign::H_RIGHT,
         ))
         .child(static_text(REPLY_TO, None, ShellAlign::NONE))
-        .child(button(SEND, "GUI:ReplyPage").with(Prop::Enabled, Value::Bool(false)))
+        .child(
+            button(SEND, "GUI:ReplyPage")
+                .with(Prop::Enabled, Value::Bool(false))
+                .with(Prop::Default, Value::Bool(true)),
+        )
         .child(button(BACK, "GUI:Back"))
-        .child(node(NodeKind::Edit, TEXT).with(Prop::MaxLen, Value::Int(REPLY_LIMIT)))
+        // The multiline NewEdit: Enter appends CRLF ([`Prop::Multiline`]).
+        .child(
+            node(NodeKind::Edit, TEXT)
+                .with(Prop::MaxLen, Value::Int(REPLY_LIMIT))
+                .with(Prop::Multiline, Value::Bool(true)),
+        )
         .child(transcript(RECEIVED_TRANSCRIPT))
+}
+
+/// Enter into `dialog`'s widgets; whether it clicked its default button,
+/// Send (a disabled one takes no click).
+fn enter_clicks_send(c: &mut DialogController, dialog: DialogResourceId) -> bool {
+    c.on_input(InputEvent::Key(Key::Enter));
+    let send = c.control(dialog, SEND);
+    c.drain_events()
+        .iter()
+        .any(|event| matches!(event, UiEvent::Activated { node } if Some(*node) == send))
 }
 
 /// Edit `id` of `dialog` as the NewEdit its getters read.
@@ -366,8 +389,13 @@ impl WolPageDialog {
             return actions;
         };
         match event {
-            // 0x4DA: BM_CLICK on 0x5C2, which a disabled button ignores.
-            InputEvent::Key(Key::Enter) => return self.activate(c, SEND, last),
+            // 0x4DA: BM_CLICK on 0x5C2 (the dialog's default button), which
+            // a disabled button ignores.
+            InputEvent::Key(Key::Enter) => {
+                if enter_clicks_send(c, PAGE_DIALOG) {
+                    return self.activate(c, SEND, last);
+                }
+            }
             // 0x4DB (0x0078D93A..0x0078D9FB): 0x00600C70 moves the focus to
             // the other tab stop (the widgets' Tab); from the name it locates
             // again.
@@ -501,27 +529,13 @@ impl WolPageReceived {
     ) -> Option<WolPageReceivedAction> {
         c.focused_control(RECEIVED_DIALOG)?;
         match event {
-            // The multiline NewEdit appends CRLF and sends 0x501; a text
-            // that is not empty once trimmed clicks Send. The caret stays
-            // where it was (unset is the old end).
-            InputEvent::Key(Key::Enter) => {
-                let mut reply = edit(c, RECEIVED_DIALOG, TEXT);
-                let caret = match c.prop(RECEIVED_DIALOG, TEXT, Prop::Caret) {
-                    Some(Value::Int(caret)) => *caret,
-                    _ => reply.display_text().chars().count() as i32,
-                };
-                reply.append_enter_line_end();
-                c.set_prop(RECEIVED_DIALOG, TEXT, Prop::Caret, Value::Int(caret));
-                c.set_prop(
-                    RECEIVED_DIALOG,
-                    TEXT,
-                    Prop::Text,
-                    Value::Text(reply.display_text()),
-                );
-                (!trim_line_end(&reply.units).is_empty())
-                    .then(|| self.activate(c, SEND))
-                    .flatten()
-            }
+            // The multiline NewEdit (the gui's `Multiline`) appends CRLF,
+            // keeping the caret, and sends 0x501; a text that is not empty
+            // once trimmed clicks Send, the default button, when enabled.
+            // The append runs no EN_CHANGE.
+            InputEvent::Key(Key::Enter) => enter_clicks_send(c, RECEIVED_DIALOG)
+                .then(|| self.activate(c, SEND))
+                .flatten(),
             InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab) => None,
             event => {
                 // EN_CHANGE (0x300): Send follows the text.
@@ -825,5 +839,26 @@ mod tests {
             })
         );
         assert!(text(&c, RECEIVED_DIALOG, TEXT).is_empty() && !enabled(&c, RECEIVED_DIALOG, SEND));
+    }
+
+    /// The reply's Enter appends CRLF wherever the caret is and clicks Send
+    /// only for a text that is not empty once trimmed.
+    #[test]
+    fn a_reply_enter_appends_crlf_and_sends_only_a_trimmed_text() {
+        let mut c = controller(RECEIVED_DIALOG, received_spec);
+        let mut received = WolPageReceived::new("Boris", false);
+        c.focus_control(RECEIVED_DIALOG, Some(TEXT));
+        assert_eq!(received.input(&mut c, ENTER), None);
+        assert_eq!(text(&c, RECEIVED_DIALOG, TEXT), "\r\n");
+        assert!(!enabled(&c, RECEIVED_DIALOG, SEND), "the append is no EN_CHANGE");
+        received.input(&mut c, typed("a"));
+        assert_eq!(text(&c, RECEIVED_DIALOG, TEXT), "a\r\n", "typed at the kept caret");
+        assert_eq!(
+            received.input(&mut c, ENTER),
+            Some(WolPageReceivedAction::Send {
+                name: "Boris".into(),
+                text: "a".encode_utf16().collect()
+            })
+        );
     }
 }

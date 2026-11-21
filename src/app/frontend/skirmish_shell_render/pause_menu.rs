@@ -164,7 +164,7 @@ pub(crate) fn render_pause_menu_shell(
             let (frame, caption_rect) = group_box_geometry(
                 internet.group,
                 font.cell_height() as i32,
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             let caption_width = Some(font.text_width(&group_caption) as i32);
             let white = chrome_atlas.white_pixel;
@@ -174,7 +174,7 @@ pub(crate) fn render_pause_menu_shell(
                 frame,
                 caption_width,
                 false,
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             paint.text(&group_caption, caption_rect, ShellAlign::NONE);
             let pause = &state.match_state.match_presentation.internet_pause;
@@ -184,15 +184,15 @@ pub(crate) fn render_pause_menu_shell(
                 let value = pause.positions[index];
                 let thumb_left = slider
                     .range()
-                    .thumb_left_in(value, rect, ShellScale::RETAIL);
+                    .thumb_left_in(value, rect, crate::ui::shell::geom::RETAIL_SCALE);
                 let trackbar = ControlPaint::Trackbar {
                     rect,
                     thumb_left,
                     plaque: true,
                     disabled: false,
                 };
-                paint_control(&mut paint.controls, &chrome, trackbar, ShellScale::RETAIL);
-                let at = value_text_rect(rect, ShellScale::RETAIL);
+                paint_control(&mut paint.controls, &chrome, trackbar, crate::ui::shell::geom::RETAIL_SCALE);
+                let at = value_text_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
                 paint.text(
                     &value.to_string(),
                     at,

@@ -1,5 +1,7 @@
-//! Shared native list and scrollbar geometry from 0x00618D40 / 0x0061C690.
-//! Native list rows use GAME.FNT height 17 + 2; inner rectangles exclude borders.
+//! Shared list and scrollbar geometry, ported from gamemd's native list
+//! (0x00618D40 / 0x0061C690). The default row is that list's GAME.FNT height
+//! 17 + 2; a host with other text sets its own metrics. Inner rectangles
+//! exclude borders.
 
 use super::geom::{RectPx, ShellScale};
 use crate::time::{Duration, Instant};
@@ -12,15 +14,16 @@ pub enum ListScrollPart {
     Track,
 }
 
+/// Default list metrics, measured from gamemd's native list: the row height,
+/// and the scrollbar child's width, arrow height and minimum thumb height
+/// (`0x0061C690`, the same native scrollbar the combo dropdowns use).
 pub const ROW_HEIGHT: i32 = 19;
-/// The list scrollbar child's width and arrow height, and the thumb's minimum
-/// height (`0x0061C690`, the same native scrollbar the combo dropdowns use).
 const SCROLLBAR_WIDTH: i32 = 20;
 const ARROW_HEIGHT: i32 = 22;
 const MIN_THUMB_HEIGHT: i32 = 14;
 
 /// A list box's row and scrollbar metrics in the pixels its page is drawn in:
-/// the native constants on the retail layout, grown with the window on a
+/// the default metrics on an unscaled layout, grown with the window on a
 /// stretched one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListMetrics {
@@ -31,6 +34,7 @@ pub struct ListMetrics {
 }
 
 impl ListMetrics {
+    /// The default metrics, unscaled.
     pub const RETAIL: Self = Self {
         row_h: ROW_HEIGHT,
         scrollbar_w: SCROLLBAR_WIDTH,
@@ -39,7 +43,7 @@ impl ListMetrics {
     };
 
     pub fn scaled(scale: ShellScale) -> Self {
-        if scale.is_retail() {
+        if scale.is_unscaled() {
             return Self::RETAIL;
         }
         let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
@@ -474,8 +478,8 @@ pub fn ftol_f64(value: f64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Timer expectations are from the61C690 instructions cited above; geometry
-    // separately replays the saved native scrollbar fixture below.
+    // Timer expectations are from the61C690 instructions cited above. The host
+    // replays the saved native scrollbar fixture against `thumb_height`.
     #[test]
     fn held_arrow_waits_500ms_then_steps_each_25ms_without_catch_up() {
         let geometry =
@@ -597,25 +601,6 @@ mod tests {
         assert_eq!(top, (track_top + 1).min(geometry.max_top));
     }
     #[test]
-    fn thumb_height_matches_native_sampled_geometry() {
-        let vectors: serde_json::Value = serde_json::from_str(crate::fixtures::text(
-            "tools/storage_oracle/saved_scrollbar.json",
-        ))
-        .unwrap();
-        let cases = vectors["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 450);
-        for case in cases {
-            assert_eq!(
-                thumb_height(
-                    case["height"].as_i64().unwrap() as i32,
-                    case["range"].as_u64().unwrap() as usize,
-                    ListMetrics::RETAIL,
-                ),
-                case["thumb"].as_i64().unwrap() as i32
-            );
-        }
-    }
-    #[test]
     fn border_and_scroll_range_share_one_geometry_for_hit_and_paint() {
         let list =
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 23, 10, ListMetrics::RETAIL);
@@ -631,8 +616,11 @@ mod tests {
     /// the same number of rows and the same scroll range as it did at 800x600.
     #[test]
     fn a_stretched_list_keeps_its_row_count_and_scroll_range() {
-        let double = ShellScale::from_screen(1600, 1200);
-        assert_eq!(ListMetrics::scaled(ShellScale::RETAIL), ListMetrics::RETAIL);
+        let double = ShellScale::fit(800, 600, 1600, 1200);
+        assert_eq!(
+            ListMetrics::scaled(ShellScale::unscaled(800, 600)),
+            ListMetrics::RETAIL
+        );
         let metrics = ListMetrics::scaled(double);
         assert_eq!(metrics.row_h, 38);
         assert_eq!(metrics.scrollbar_w, 40);

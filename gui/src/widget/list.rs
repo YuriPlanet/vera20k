@@ -18,7 +18,7 @@ use crate::shell::list::{
 };
 use crate::time::{Duration, Instant};
 
-/// One owner-draw list box (the movie list `0x129`, VERA's Mods list). Its
+/// One owner-draw list box (gamemd's movie list `0x129`, for one). Its
 /// row count, top and selection are reloaded from the props before every
 /// input and written back after it.
 #[derive(Debug, Default)]
@@ -178,6 +178,26 @@ pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: u
     let top = log_top(row_count(n), top, visible, rows, dropped);
     n.props.insert(Prop::RowCount, Value::Int(i32::try_from(rows).unwrap_or(i32::MAX)));
     n.props.insert(Prop::Top, Value::Int(top as i32));
+}
+
+/// Scrolls the least that shows `row` whole (a list box's LB_SETCURSEL
+/// scroll into view): a row above the top becomes the top, one below the
+/// last shown row the last; the top stays within the scroll range. No event
+/// (the host moved it).
+pub(crate) fn ensure_row_visible(tree: &mut Tree, node: NodeId, scale: ShellScale, row: usize) {
+    let Some(g) = geometry(tree, node, scale) else { return };
+    let Ok(n) = tree.node_mut(node) else { return };
+    let top = n.int_prop(Prop::Top, 0).max(0) as usize;
+    let visible = g.visible_rows.max(1);
+    let top = if row < top {
+        row
+    } else if row >= top + visible {
+        row + 1 - visible
+    } else {
+        top
+    };
+    let top = top.min(g.max_top);
+    n.props.insert(Prop::Top, Value::Int(i32::try_from(top).unwrap_or(i32::MAX)));
 }
 
 /// Drops the list's scrollbar hold.
@@ -429,6 +449,24 @@ mod tests {
         g.log_rows(list, 21, 2).unwrap();
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(3)));
         assert_eq!(g.get(list, Prop::RowCount).unwrap(), Some(&Value::Int(21)));
+    }
+
+    /// The host's scroll into view moves the top the least, within the
+    /// range, and reports nothing.
+    #[test]
+    fn ensure_row_visible_scrolls_the_least_within_the_range() {
+        let (mut g, list) = list_page(Value::Items(vec![String::new(); 60]));
+        g.drain_events();
+        g.ensure_row_visible(list, 20).unwrap();
+        assert_eq!(g.list_view(list).unwrap().top, 8, "row 20 the last of 13");
+        g.ensure_row_visible(list, 10).unwrap();
+        assert_eq!(g.list_view(list).unwrap().top, 8, "already shown");
+        g.ensure_row_visible(list, 3).unwrap();
+        assert_eq!(g.list_view(list).unwrap().top, 3);
+        g.set(list, Prop::Top, Value::Int(55)).unwrap();
+        g.ensure_row_visible(list, 59).unwrap();
+        assert_eq!(g.list_view(list).unwrap().top, 47, "within the range");
+        assert_eq!(g.drain_events(), vec![]);
     }
 
     #[test]

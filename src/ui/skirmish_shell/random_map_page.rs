@@ -521,11 +521,6 @@ pub fn view(
     (open, gui.pressed().and_then(control))
 }
 
-/// Closes the dialog's open list, without a cue (VERA's Esc).
-pub fn close_list(controller: &mut DialogController) -> bool {
-    controller.top_id() == Some(DIALOG) && controller.gui_mut().close_popup()
-}
-
 /// The control the pointer at `x`, `y` hovers on a fresh dialog in the
 /// given view.
 #[cfg(test)]

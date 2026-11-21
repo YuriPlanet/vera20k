@@ -858,7 +858,7 @@ mod tests {
 
     #[test]
     fn layout_and_help_follow_original_bb_execution() {
-        let layout = LanLobbyLayout::new(800, 600, ShellScale::RETAIL);
+        let layout = LanLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         for row in native()["layout_800"].as_array().unwrap() {
             let id = row["id"].as_u64().unwrap() as u32;
             let expected: Vec<i32> = serde_json::from_value(row["rect"].clone()).unwrap();

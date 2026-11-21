@@ -58,6 +58,28 @@ pub fn gui_input(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Opti
     }
 }
 
+/// Native list notifications use the host's double-click policy.
+#[cfg(windows)]
+pub fn host_double_click_limits() -> (Duration, i32, i32) {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetDoubleClickTime() -> u32;
+        fn GetSystemMetrics(index: i32) -> i32;
+    }
+    // SAFETY: pointer-free Win32 queries with no ownership effects.
+    unsafe {
+        (
+            Duration::from_millis(u64::from(GetDoubleClickTime())),
+            GetSystemMetrics(36),
+            GetSystemMetrics(37),
+        )
+    }
+}
+#[cfg(not(windows))]
+pub fn host_double_click_limits() -> (Duration, i32, i32) {
+    (Duration::from_millis(500), 4, 4)
+}
+
 struct Instance {
     id: DialogResourceId,
     dialog: vera20k_gui::DialogId,
@@ -80,7 +102,8 @@ pub struct DialogController {
 impl Default for DialogController {
     fn default() -> Self {
         let mut gui = Gui::new(4096);
-        let (time, width, height) = super::saved_file_input::host_double_click_limits();
+        gui.set_base_scale(crate::ui::shell::geom::RETAIL_SCALE);
+        let (time, width, height) = host_double_click_limits();
         gui.set_double_click(time.as_millis() as u64, width, height);
         gui.set_byte_len(|text| crate::util::native_string::acp_encode(text).len());
         Self { gui, stack: Vec::new(), epoch: Instant::now(), pending: Vec::new() }
@@ -264,6 +287,12 @@ impl DialogController {
     /// Events of the screen's own widgets since the last drain, in order.
     pub fn drain_events(&mut self) -> Vec<UiEvent> {
         std::mem::take(&mut self.pending)
+    }
+
+    /// Drops the edits' pending `Cancelled` reports: an Escape the screen
+    /// took for itself was no edit's cancel.
+    pub fn discard_cancelled(&mut self) {
+        self.pending.retain(|event| !matches!(event, UiEvent::Cancelled { .. }));
     }
 
     /// Wheel, keys and text for the top dialog's widgets; true when consumed.

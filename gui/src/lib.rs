@@ -1,11 +1,9 @@
-//! VERA20k's retained-mode GUI (docs/gui-library-api.md).
+//! A retained-mode, game-agnostic GUI (docs/gui-library-api.md).
 //!
 //! The host owns the window, the GPU and the game; this crate owns the node
 //! tree, input routing, the dialog stack and widget state. The host reads the
 //! laid-out tree and paints it with its own renderer.
 
-#[cfg(any(test, feature = "test-support"))]
-pub mod fixtures;
 pub mod gui;
 pub mod node;
 pub mod shell;

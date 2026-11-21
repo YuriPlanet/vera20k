@@ -108,7 +108,7 @@ pub fn place(dialog: &str, scale: ShellScale, width: i32, height: i32) -> RectTa
                 "Centred" => {
                     // Pixels from the dialog's corner, which stands at the
                     // half-margins beyond 800x600 (`0x0060AF50`).
-                    let (dx, dy) = if scale.is_retail() {
+                    let (dx, dy) = if scale.is_unscaled() {
                         (center_offset(width, 800), center_offset(height, 600))
                     } else {
                         (0, 0)

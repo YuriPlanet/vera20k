@@ -374,7 +374,7 @@ mod tests {
             let layout = WolOptionsLayout::new(
                 width.parse().unwrap(),
                 height.parse().unwrap(),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             for (key, child) in case["controls"].as_object().unwrap() {
                 let id = u16::from_str_radix(&key[2..], 16).unwrap();
@@ -459,9 +459,11 @@ mod tests {
 
     #[test]
     fn modern_page_keeps_only_play_music() {
-        let retail = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200));
+        let retail =
+            WolOptionsLayout::new(1600, 1200, crate::ui::shell::geom::shell_scale(1600, 1200));
         let modern =
-            WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
+            WolOptionsLayout::new(1600, 1200, crate::ui::shell::geom::shell_scale(1600, 1200))
+                .modern();
         assert_eq!(modern.checkbox_rect(MUSIC), retail.checkbox_rect(PAGES));
         for checkbox in CHECKBOXES.iter().filter(|checkbox| checkbox.id != MUSIC) {
             assert_eq!(modern.checkbox_rect(checkbox.id), None);
@@ -482,9 +484,11 @@ mod tests {
     #[test]
     fn modern_page_picks_the_chat_translation_language_and_ok_hands_it_back() {
         use crate::ui::shell::page::PageCue;
-        let retail = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200));
+        let retail =
+            WolOptionsLayout::new(1600, 1200, crate::ui::shell::geom::shell_scale(1600, 1200));
         let modern =
-            WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
+            WolOptionsLayout::new(1600, 1200, crate::ui::shell::geom::shell_scale(1600, 1200))
+                .modern();
         assert_eq!(retail.rect(TRANSLATE), None);
         let list = modern
             .rect(TRANSLATE)
@@ -543,7 +547,8 @@ mod tests {
     fn translate_in_matches_sits_under_the_list_and_ok_hands_back_its_state() {
         use crate::ui::shell::page::PageCue;
         let modern =
-            WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
+            WolOptionsLayout::new(1600, 1200, crate::ui::shell::geom::shell_scale(1600, 1200))
+                .modern();
         let list = modern.rect(TRANSLATE).unwrap();
         let row = modern.checkbox_rect(TRANSLATE_MATCHES).unwrap();
         assert!(row.y > list.y + list.h);
@@ -582,7 +587,7 @@ mod tests {
             display_asian: 0,
             ..WolPreferences::default()
         };
-        let layout = WolOptionsLayout::new(800, 600, ShellScale::RETAIL);
+        let layout = WolOptionsLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         let mut page = Page::new(&layout, &live);
         assert!(page.is_checked(PAGES) && !page.is_checked(ASIAN));
         assert!(!page.is_checked(BUDDIES));

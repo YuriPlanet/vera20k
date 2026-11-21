@@ -1782,10 +1782,13 @@ impl LanCapture {
                         .context("enabled BC trackbar")?;
                     let rect = layout.control_rect(control).context("trackbar window")?;
                     let y = rect.y + rect.h / 2;
-                    // Ask the shared native hit owner for a non-thumb jump. The
-                    // actual mouse handler performs the change and publication.
+                    // Ask the gui's trackbar rule (what its widget does with a
+                    // press) for a non-thumb jump. The actual mouse handler
+                    // performs the change and publication.
+                    let range = bar.window_range();
+                    let scale = layout.page.scale;
                     let (x, expected) = (rect.x..rect.x + rect.w)
-                        .find_map(|x| match bar.press(x, y, rect, layout.page.scale) {
+                        .find_map(|x| match range.press_in(bar.value, x, y, rect, scale) {
                             vera20k_gui::shell::trackbar::TrackbarPress::Jump(value)
                                 if value != bar.value =>
                             {
@@ -3415,7 +3418,7 @@ impl LanCapture {
                     state,
                     crate::ui::skirmish_shell::checkbox_icon_rect(
                         rect,
-                        crate::ui::shell::geom::ShellScale::RETAIL,
+                        crate::ui::shell::geom::RETAIL_SCALE,
                     ),
                 );
                 ensure!(

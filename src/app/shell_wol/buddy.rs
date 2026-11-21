@@ -478,9 +478,13 @@ fn sync_add(state: &mut AppState) -> Option<NodeId> {
         state.renderer.gpu.config.height as i32,
     );
     let layout = crate::ui::shell::modal::wol_add_buddy_layout(width, height);
-    leaf::sync(state, ADD_DIALOG, ShellScale::RETAIL, add_spec, |id| {
-        layout.rect_of(id)
-    })
+    leaf::sync(
+        state,
+        ADD_DIALOG,
+        crate::ui::shell::geom::RETAIL_SCALE,
+        add_spec,
+        |id| layout.rect_of(id),
+    )
 }
 
 fn add_open(state: &AppState) -> bool {

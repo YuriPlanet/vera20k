@@ -951,7 +951,7 @@ impl App {
         let prompt = chooser(state)?.message_box?;
         let shell_box = prompt.shell_box(String::new(), String::new(), String::new());
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
-        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         let controller = &mut state.frontend.shell_controller;
         if controller.top_id() != Some(shell_box.dialog) {
             controller.close(shell_box.dialog);
@@ -983,7 +983,7 @@ impl App {
             return false;
         };
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
-        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         if let Some(id) = Self::shell_box_pointer(state, &shell_box, &parts, down) {
             Self::answer_choose_map_prompt(state, prompt, id == OK);
             Self::drop_choose_map_prompt(state, &shell_box);
@@ -1256,13 +1256,11 @@ impl App {
     ) -> bool {
         let shift = state.platform.live_modifiers.shift_key();
         let event = crate::ui::shell::controller::gui_input(Some(code), shift, text);
-        let layout = skirmish_layout(state);
         let font = &state.renderer.bit_font;
         let frontend = &mut state.frontend;
         let focused = crate::ui::skirmish_shell::page::key(
             &mut frontend.shell_controller,
             &mut frontend.skirmish_shell_state,
-            &layout,
             event,
             |text| font.text_width(text),
         );
@@ -1289,7 +1287,7 @@ impl App {
             return false;
         };
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
-        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         state
             .frontend
             .shell_controller
@@ -1312,7 +1310,7 @@ impl App {
             return false;
         };
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
-        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         state
             .frontend
             .shell_controller
@@ -1369,7 +1367,7 @@ impl App {
             && state.frontend.shell_controller.gui().popup().is_some()
     }
 
-    /// Esc closes the page's open list, without a cue.
+    /// Closes the page's open list, without a cue.
     pub(super) fn close_skirmish_list(state: &mut AppState) -> bool {
         Self::skirmish_list_open(state) && state.frontend.shell_controller.gui_mut().close_popup()
     }
@@ -1429,11 +1427,9 @@ impl App {
             // closes without its cue; the press selects the name.
             Self::close_skirmish_list(state);
             Self::skirmish_page_pointer(state, Pointer::Down);
-            let layout = skirmish_layout(state);
             let font = &state.renderer.bit_font;
             crate::ui::skirmish_shell::page::scroll_player_name(
                 &mut state.frontend.shell_controller,
-                &layout,
                 |text| font.text_width(text),
             );
             return;

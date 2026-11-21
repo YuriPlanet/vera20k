@@ -9,7 +9,7 @@ use crate::app::AppState;
 use crate::app::input::dialog_page::pressed;
 use crate::app::input::diplomacy::DIALOG;
 use crate::render::shell_text::ShellAlign;
-use vera20k_gui::shell::button::CheckboxFace;
+use crate::ui::shell::checkbox::CheckboxFace;
 use crate::ui::shell::diplomacy::{DiplomacyControl, DiplomacyHeader, diplomacy_layout};
 use crate::ui::shell::geom::ShellScale;
 
@@ -57,7 +57,7 @@ pub(crate) fn render_diplomacy_shell(
                 disabled: !enabled,
                 rect,
             };
-            paint_control(controls, &control_chrome, control, ShellScale::RETAIL);
+            paint_control(controls, &control_chrome, control, crate::ui::shell::geom::RETAIL_SCALE);
         };
         for (row, shown) in view.rows.iter().enumerate() {
             let Some(shown) = shown else {
@@ -70,7 +70,7 @@ pub(crate) fn render_diplomacy_shell(
                     &mut paint.controls,
                     entry,
                     rect,
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                     SHELL_CONTROL_DEPTH,
                 );
             }
@@ -102,7 +102,7 @@ pub(crate) fn render_diplomacy_shell(
             // vertically centred (0x0061663A..0x00616674).
             let caption = paint.label(("GUI:TauntsOn", "Taunts On"));
             let at =
-                crate::ui::skirmish_shell::checkbox_text_rect(layout.taunts, ShellScale::RETAIL);
+                crate::ui::skirmish_shell::checkbox_text_rect(layout.taunts, crate::ui::shell::geom::RETAIL_SCALE);
             paint.text(&caption, at, ShellAlign::V_CENTER);
         }
         if let Some(mode_name) = &view.mode_name {

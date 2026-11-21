@@ -4,7 +4,7 @@
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
-use crate::ui::shell::page::{self, PageEvent};
+use crate::ui::shell::page::PageEvent;
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -50,14 +50,11 @@ fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
     if let Some(log) = controller.control(COOP_SCORE_DIALOG, CHAT_LOG) {
         let _ = controller.gui_mut().log_rows(log, rows, 0);
     }
-    if let (Some(chat), Some(rect)) = (
+    if let (Some(chat), Some(_)) = (
         controller.control(COOP_SCORE_DIALOG, CHAT),
         layout.control_rect(CHAT),
     ) {
-        let available = (layout.page.scale.base_rect(rect).w - 3).max(0) as u32;
-        page::scroll_edit(controller.gui_mut(), chat, available, |text| {
-            font.text_width(text)
-        });
+        let _ = controller.gui_mut().keep_caret_in_view(chat, &|text| font.text_width(text));
     }
 }
 
