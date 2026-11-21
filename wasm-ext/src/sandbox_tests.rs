@@ -215,6 +215,29 @@ fn get_many_reads_row_major_and_empties_a_gone_row() {
 }
 
 #[test]
+fn get_many_meters_property_reads_with_no_references() {
+    // Sixty-four Type properties at zero, no references, and a count output at 260.
+    let wat = r#"(module
+      (import "vera:sim@1.0" "get_many" (func $get_many (param i32 i32 i32 i32 i32 i32) (result i32)))
+      (memory (export "memory") 1)
+      (data (i32.const 260) "\01\00\00\00")
+      (func (export "on_frame")
+        (drop (call $get_many (i32.const 0) (i32.const 0) (i32.const 0) (i32.const 64)
+          (i32.const 256) (i32.const 260)))))"#;
+    let mut module = load(wat).expect("module loads");
+    let mut host = Recorder::default();
+    assert_eq!(
+        module.call(Export::Frame, 100, &mut host),
+        Err(Fault::Budget)
+    );
+    assert_eq!(i32_at(module.memory(), 260), 1);
+    module
+        .call(Export::Frame, 1_000, &mut host)
+        .expect("call succeeds");
+    assert_eq!(i32_at(module.memory(), 260), 0);
+}
+
+#[test]
 fn find_pages_by_sort_key_and_a_zero_capacity_query_scans_nothing() {
     // Query at 0 (scope Objects, whole map); each call pages with cap 2 from
     // `after` (offset 48) and stores the next key back into it.

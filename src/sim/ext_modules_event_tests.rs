@@ -6,7 +6,8 @@
 
 use vera20k_wasm_ext::triggers::{
     ACTION_MODULE, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE, EVENT_HOUSE_TRANSFERRED,
-    EVENT_PROPERTY_POLL, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_VARIABLE_POLL,
+    EVENT_MODIFIER_COUNT_POLL, EVENT_PROPERTY_POLL, EVENT_TAKE_DAMAGE, EVENT_TIMER,
+    EVENT_VARIABLE_POLL,
 };
 
 use super::trigger_tests::{hit, memory, received, scenario, sturdy_object};
@@ -243,6 +244,56 @@ fn a_property_poll_fires_on_the_transition_only() {
     hit(&mut scene, victim, 1);
     ticks(&mut scene, 3);
     assert_eq!(received(&scene), 1, "still below: no new transition");
+}
+
+#[test]
+fn modifier_count_poll_reads_only_its_origin_and_counts_zero_additions() {
+    use super::modifiers::{Modifier, ModifierOp, Stat};
+
+    let Some(mut scene) = scenario() else { return };
+    let target = sturdy_object(&scene);
+    let add = |scene: &mut HeadlessScenario, origin| {
+        let sim = &mut scene.runtime.simulation;
+        let handle = sim.substrate.allocate_stable_id();
+        let modifier = Modifier {
+            target,
+            stat: Stat::Firepower,
+            op: ModifierOp::Add,
+            value: 0,
+            expires: None,
+            source: 0,
+            group: 0,
+            origin,
+        };
+        sim.ext_modules
+            .modifiers
+            .insert(&mut sim.substrate.entities, handle, modifier)
+            .unwrap();
+        handle
+    };
+
+    add(&mut scene, ModuleSource::Mod);
+    let poll = Ev {
+        interval: 1,
+        id: 0,
+        ..Ev::on(EVENT_MODIFIER_COUNT_POLL)
+    };
+    let mut scene = installed(scene, &module(&def(0, 2, &[poll], &[]), target as i64, ""));
+    ticks(&mut scene, 2);
+    assert_eq!(received(&scene), 1, "the other origin does not count");
+    assert_eq!(first_record(&scene).3, 0);
+
+    let handle = add(&mut scene, ModuleSource::Map);
+    ticks(&mut scene, 2);
+    assert_eq!(received(&scene), 1, "the zero addition counts");
+
+    let sim = &mut scene.runtime.simulation;
+    sim.ext_modules
+        .modifiers
+        .remove(&mut sim.substrate.entities, handle)
+        .unwrap();
+    ticks(&mut scene, 2);
+    assert_eq!(received(&scene), 2, "removal returns the count to zero");
 }
 
 /// `VariablePoll` of a declared global variable every 20 frames: a change

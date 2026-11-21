@@ -3,12 +3,10 @@
 //!
 //! [`ModifierStore`] is the one owner: it holds every modifier by handle,
 //! expires them in the module phase, drops those of a removed object, and is
-//! saved and hashed with the modules. Each object with modifiers on a wired
-//! property carries a derived [`ModifierTerms`] in `Seldom`, rebuilt from the
-//! store on every addition, removal, expiry and load; the engine owners read
-//! only that cache, so an object without modifiers costs them one `None`
-//! check and computes exactly what it computed before. A property no
-//! modifier of the object touches also reads exactly as before.
+//! saved and hashed with the modules. Each object with modifiers carries
+//! derived stats and counts by origin and group in [`ModifierTerms`] in
+//! `Seldom`. The store rebuilds them on addition, removal, expiry and load.
+//! Objects and properties without modifier terms keep their original stats.
 //!
 //! Wired properties and where they compose:
 //! - `FirepowerMultiplier`: the Phobos `TechnoClass_FirepowerMultiplier`
@@ -334,6 +332,7 @@ impl Terms {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModifierTerms {
     stats: [Terms; Stat::COUNT],
+    group_counts: BTreeMap<(ModuleSource, i32), usize>,
 }
 
 impl ModifierTerms {
@@ -351,6 +350,15 @@ impl ModifierTerms {
 impl GameEntity {
     fn module_terms(&self) -> Option<&ModifierTerms> {
         self.seldom.module_modifiers.as_deref()
+    }
+
+    /// Active modifiers on this object from `origin` in `group`,
+    /// including modifiers whose terms leave the stat unchanged.
+    pub(super) fn module_modifier_count(&self, origin: ModuleSource, group: i32) -> usize {
+        self.module_terms()
+            .and_then(|terms| terms.group_counts.get(&(origin, group)))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// `stage` (the Phobos value for `stat`) with this object's module
@@ -581,7 +589,11 @@ impl ModifierStore {
         };
         let mut stats: [Terms; Stat::COUNT] = std::array::from_fn(|_| Terms::NONE);
         let mut added = [0i64; Stat::COUNT];
+        let mut group_counts = BTreeMap::new();
         for modifier in self.modifiers.values().filter(|m| m.target == target) {
+            *group_counts
+                .entry((modifier.origin, modifier.group))
+                .or_default() += 1;
             let slot = modifier.stat as usize;
             let own = modifier.value as f64 / modifier.stat.scale();
             match modifier.op {
@@ -595,8 +607,12 @@ impl ModifierStore {
         for ((terms, added), scale) in stats.iter_mut().zip(added).zip(ALL_STATS.map(Stat::scale)) {
             terms.added = added as f64 / scale;
         }
-        let none = stats.iter().all(Terms::is_none);
-        entity.seldom.module_modifiers = (!none).then(|| Box::new(ModifierTerms { stats }));
+        entity.seldom.module_modifiers = (!group_counts.is_empty()).then(|| {
+            Box::new(ModifierTerms {
+                stats,
+                group_counts,
+            })
+        });
     }
 }
 

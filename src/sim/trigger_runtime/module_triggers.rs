@@ -18,9 +18,41 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use vera20k_wasm_ext::EventRecord;
 use vera20k_wasm_ext::decide::EVENT_DEFEAT;
-use vera20k_wasm_ext::triggers::{ACTION_MODULE, ActionDef, EventDef, Repeat};
+use vera20k_wasm_ext::triggers::{
+    ACTION_MODULE, ActionDef, EVENT_DISTANCE_POLL, EVENT_MODIFIER_COUNT_POLL, EVENT_PROPERTY_POLL,
+    EVENT_TIMER, EVENT_VARIABLE_POLL, EventDef, Repeat,
+};
 
 use crate::sim::ext_modules::ModuleSource;
+
+/// Preview limits per source. Object polls can scan the entire live world
+/// before calling Wasm, so they have a smaller limit than other events.
+const MAX_TRIGGERS_PER_SOURCE: usize = 256;
+const MAX_OBJECT_POLLS_PER_SOURCE: usize = 16;
+
+/// A module may deliver one frame's worth before its backlog is checked.
+pub(crate) const MAX_RECORDS_PER_FRAME: usize = 1024;
+pub(crate) const MAX_BACKLOG_RECORDS: usize = 16 * MAX_RECORDS_PER_FRAME;
+pub(crate) const MAX_QUEUED_RECORDS: usize = MAX_BACKLOG_RECORDS + MAX_RECORDS_PER_FRAME;
+
+fn object_polls(scope: TriggerScope, events: &[EventDef]) -> usize {
+    if !matches!(scope, TriggerScope::Object { .. }) {
+        return 0;
+    }
+    events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.kind,
+                EVENT_DISTANCE_POLL
+                    | EVENT_MODIFIER_COUNT_POLL
+                    | EVENT_PROPERTY_POLL
+                    | EVENT_TIMER
+                    | EVENT_VARIABLE_POLL
+            )
+        })
+        .count()
+}
 
 /// What a trigger's events bind to (RFC 6a): every event of one trigger
 /// shares it, which `trigger_create` checks.
@@ -125,6 +157,8 @@ struct Queue {
     records: Vec<EventRecord>,
     /// Records before this were sorted for delivery in an earlier frame.
     sorted: u32,
+    /// A producer reached the cap before the module had a chance to drain.
+    overflowed: bool,
 }
 
 /// The registry. Every map is keyed by creation serial or type ID, so
@@ -168,7 +202,10 @@ impl ModuleTriggers {
     pub(crate) fn is_empty(&self) -> bool {
         self.triggers.is_empty()
             && self.deferred.is_empty()
-            && self.queues.values().all(|q| q.records.is_empty())
+            && self
+                .queues
+                .values()
+                .all(|q| q.records.is_empty() && !q.overflowed)
             && self.production_refusals.is_empty()
     }
 
@@ -233,6 +270,31 @@ impl ModuleTriggers {
 
     pub(crate) fn get(&self, handle: u64) -> Option<&ModuleTrigger> {
         self.triggers.get(&handle)
+    }
+
+    fn source_usage(&self, source: ModuleSource) -> (usize, usize) {
+        let mut definitions = 0;
+        let mut polls = 0;
+        for trigger in self
+            .triggers
+            .values()
+            .filter(|trigger| trigger.source == source)
+        {
+            definitions += 1;
+            polls += object_polls(trigger.scope, &trigger.events);
+        }
+        (definitions, polls)
+    }
+
+    pub(crate) fn can_create(
+        &self,
+        source: ModuleSource,
+        scope: TriggerScope,
+        events: &[EventDef],
+    ) -> bool {
+        let (definitions, polls) = self.source_usage(source);
+        definitions < MAX_TRIGGERS_PER_SOURCE
+            && polls + object_polls(scope, events) <= MAX_OBJECT_POLLS_PER_SOURCE
     }
 
     pub(crate) fn create(&mut self, handle: u64, trigger: ModuleTrigger) {
@@ -572,7 +634,12 @@ impl ModuleTriggers {
     }
 
     pub(crate) fn enqueue(&mut self, source: ModuleSource, record: EventRecord) {
-        self.queues.entry(source).or_default().records.push(record);
+        let queue = self.queues.entry(source).or_default();
+        if queue.records.len() == MAX_QUEUED_RECORDS {
+            queue.overflowed = true;
+        } else if !queue.overflowed {
+            queue.records.push(record);
+        }
     }
 
     /// Readies `source`'s queue for this frame's delivery and answers how
@@ -594,7 +661,7 @@ impl ModuleTriggers {
         queue.records[sorted..].sort_by_key(|record| record.subject);
         queue.sorted = queue.records.len() as u32;
         let ready = queue.records.len();
-        if ready > 0 {
+        if ready > 0 || queue.overflowed {
             self.queues.insert(source, queue);
         }
         ready
@@ -608,7 +675,7 @@ impl ModuleTriggers {
         let count = count.min(queue.records.len());
         queue.sorted = queue.sorted.saturating_sub(count as u32);
         let taken = queue.records.drain(..count).collect();
-        if queue.records.is_empty() {
+        if queue.records.is_empty() && !queue.overflowed {
             self.queues.remove(&source);
         }
         taken
@@ -616,6 +683,12 @@ impl ModuleTriggers {
 
     pub(crate) fn queued(&self, source: ModuleSource) -> usize {
         self.queues.get(&source).map_or(0, |q| q.records.len())
+    }
+
+    pub(crate) fn queue_overflowed(&self, source: ModuleSource) -> bool {
+        self.queues
+            .get(&source)
+            .is_some_and(|queue| queue.overflowed)
     }
 
     pub(crate) fn clear_queue(&mut self, source: ModuleSource) {
@@ -636,6 +709,12 @@ impl ModuleTriggers {
             checksum.fold_value(firing.trigger as u32);
             checksum.fold_value(firing.record.kind as u32);
         }
+        for (&source, queue) in &self.queues {
+            if queue.overflowed {
+                checksum.fold_value(u32::MAX);
+                checksum.fold_value(source as u32);
+            }
+        }
         for record in self.queues.values().flat_map(|q| &q.records) {
             checksum.fold_value(record.key as u32);
             checksum.fold_value(record.kind as u32);
@@ -651,6 +730,19 @@ impl ModuleTriggers {
     /// Restore checks: every binding, instance and queued record names a
     /// live trigger, and the derived kinds match the triggers.
     pub(crate) fn validate(&self) -> Result<(), String> {
+        for source in [ModuleSource::Mod, ModuleSource::Map] {
+            let (definitions, polls) = self.source_usage(source);
+            if definitions > MAX_TRIGGERS_PER_SOURCE || polls > MAX_OBJECT_POLLS_PER_SOURCE {
+                return Err(format!("{source:?} module trigger limits exceeded"));
+            }
+        }
+        if self
+            .queues
+            .values()
+            .any(|queue| queue.records.len() > MAX_QUEUED_RECORDS)
+        {
+            return Err("a module event queue exceeds its limit".into());
+        }
         let known = |handle: &u64| self.triggers.contains_key(handle);
         let bound = self
             .objects
