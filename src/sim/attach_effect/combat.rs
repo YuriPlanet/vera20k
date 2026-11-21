@@ -170,7 +170,8 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return false;
         };
-        if !target.phobos_unkillable() || target.health.current() <= 0 || input == 0 {
+        // With the Wasm module `Unkillable` modifiers composed on.
+        if !target.effect_unkillable() || target.health.current() <= 0 || input == 0 {
             return false;
         }
         let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {

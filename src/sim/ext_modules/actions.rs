@@ -9,8 +9,10 @@
 //!
 //! | ID | Name | Owner called |
 //! | --- | --- | --- |
+//! | 1000 | `FireWeapon` | `Simulation::commit_fire_visit` with `FireVisit::Direct`, the FireAt entry a mission calls once GetFireError (`0x006FC0B0`, range checked) answered Ok, as the deploy fire does; any other answer is `Refused`. Slot `value` 0 or 1, or the slot holding weapon `id`; aim at `cell`, else `other`, else the current target |
 //! | 1001 | `LaunchSuperWeapon` | `Simulation::fire_super_weapon` (HouseClass::Fire_SW `0x004FAE50`), manual target |
 //! | 1002 | `SpawnAnim` | `Simulation::trigger_play_anim_at_cell`, stock action 41's owner (PlayAnimAtWP `0x006E2290`) at a cell; `id` is the AnimType array index stock 41 takes, `house` optional |
+//! | 1003 | `AttachAnim` | `Simulation::spawn_anim_at_world` with the object as owner (SetOwnerObject `0x00424B50`), as team script action 51 (`0x006EF610`) attaches one: delay 0, one pass of the type's loops, draw flags `0x600`, at the object's GetCoords; `id` the AnimType array index |
 //! | 1004 | `Remove` | `Simulation::uninit_with_context` |
 //! | 1005 | `Kill` | `Simulation::commit_direct_damage_receiver`, damage = health, `C4Warhead=`, defenses ignored (as stock action 32, `0x006E2050`) |
 //! | 1006 | `Damage` | `Simulation::commit_direct_damage_receiver` with the warhead, armor applied |
@@ -23,8 +25,10 @@
 //! | 1013 | `ClearMindControl` | `Simulation::free_unit` on the controller (CaptureManagerClass::FreeUnit `0x00471FF0`) |
 //! | 1014 | `AddExperience` | `Veterancy::award_kill` (VeterancyClass::Add `0x0074FF50`) as for a kill worth `value`, at the object's own Cost (no house cost factor), only for a `Trainable=` type |
 //! | 1015 | `AddMoney` | `credit_income::add_credits` |
+//! | 1016 | `AllowType` | the house's forbidden types (`held::ActionHeld`), which CanBuild (`production::can_build`, `0x004F7870`) refuses like a room ban; 1 lifts the module's forbid |
 //! | 1017 | `SetOwner` | `Simulation::change_owner_with_rules` |
 //! | 1018 | `AddAmmo` | the `Ammo` write `set` uses at ammo + `value` |
+//! | 1019 | `AddPassenger` | `passenger::can_enter_transport` (the CAN_LOAD answer and alliance), then `passenger::board_passenger`, the PerCellProcess transport arm's boarding (Infantry `0x0051A3FC`, Unit `0x0073A6E8`), with the passenger anywhere on the map; a Unit or Aircraft transport only |
 //! | 1021 | `SetProperty` | `SimHost::set`, the one property writer |
 //! | 1022 | `Modify` | `SimHost::modify`, the modifier store's one entry |
 //! | 1023 | `RemoveModifiers` | `ModifierStore::remove_group` for the calling module's origin |
@@ -35,29 +39,36 @@
 //! | 1031 | `SetScore` | `Economy::set_score` (`+0x54E8`) |
 //! | 1032 | `AddScore` | `Economy::add_score`, the kill and capture awards' writer |
 //! | 1033 | `Log` | the module log |
-//! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`), permanent only |
+//! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`); a positive `value2` converts back through it after that many frames (`held::ActionHeld`) |
 //!
 //! Every other atomic action answers `(0, Unsupported)` and `has_kind`
 //! reports 0:
-//! - `FireWeapon`: FireAt runs only inside the shooter's own combat visit
-//!   (`world_fire::resolve_attacker_fire`); there is no standalone
-//!   Fire_At(target, weapon) entry to call.
-//! - `AttachAnim`: no owner keeps an animation on an object for a count of
-//!   frames.
-//! - `AllowType`: buildability comes from prerequisites, tech level and
-//!   `BuildLimit=`; no per-house allow list exists to write.
-//! - `AddPassenger`, `RemovePassenger`: boarding and unloading run through
-//!   the transport's radio and mission chain, not one call.
+//! - `RemovePassenger`: unloading is the transport's Unload mission
+//!   (`UnitClass::Mission_Unload @ 0x0073D630`, `transport_unload`): it
+//!   turns, searches an exit cell and ejects the cargo head one per 14..16
+//!   frames. No native operation takes a named passenger out; `SetMission`
+//!   with `Unload` orders the mission.
 //! - `CreateProjectile`, `DetonateProjectile`, `RemoveProjectile`: no
 //!   projectile references yet.
-//! - `Push`: no forced-motion owner.
-//! - The team actions: no team references yet.
+//! - `Push`: no forced-motion owner; the locomotors move objects only
+//!   toward their own destinations.
+//! - The team actions (`CreateTeamUnlimited`, `DisbandTeam`,
+//!   `AddTeamMember`, `RemoveTeamMember`): teams are numbered by the team
+//!   VM's own counter, not the shared creation counter, so a team has no
+//!   reference kind yet (appendix "References" and 7.1 `Team` first).
 //! - `Module`, which only a module trigger runs (it queues an `on_events`
 //!   record; `ext_modules::triggers`).
 //!
-//! Also unsupported: a timed `Convert` (`value2` other than 0), and
+//! Also unsupported: `FireWeapon` with a weapon `id` neither of the
+//! shooter's two slots holds at its rank (FireAt fires its own slots), or a
+//! slot other than 0 and 1;
+//! `AttachAnim` with `value2` other than 0 (an animation ends after its
+//! loops; no owner keeps one for a count of frames); `AddPassenger` into a
+//! building (garrisons and absorbers enter through their own arms); and
 //! `ClearMindControl` of the Psychic Dominator's permanent control (no
-//! controller to free it; `Refused`).
+//! controller to free it; `Refused`). `FireWeapon` and `AddPassenger` run
+//! their owners at once, wherever the action runs (module phase or an event
+//! site), not in the shooter's or passenger's own turn.
 //!
 //! # Stock actions (5.2)
 //!
@@ -127,8 +138,10 @@ use crate::sim::trigger_runtime::{StockActionCall, StockReference, StockReferenc
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
 /// Atomic action IDs (appendix 5.3 order from 1000; open question 5).
+pub const FIRE_WEAPON: i32 = 1000;
 pub const LAUNCH_SUPER_WEAPON: i32 = 1001;
 pub const SPAWN_ANIM: i32 = 1002;
+pub const ATTACH_ANIM: i32 = 1003;
 pub const REMOVE: i32 = 1004;
 pub const KILL: i32 = 1005;
 pub const DAMAGE: i32 = 1006;
@@ -141,8 +154,10 @@ pub const CLEAR_DISGUISE: i32 = 1012;
 pub const CLEAR_MIND_CONTROL: i32 = 1013;
 pub const ADD_EXPERIENCE: i32 = 1014;
 pub const ADD_MONEY: i32 = 1015;
+pub const ALLOW_TYPE: i32 = 1016;
 pub const SET_OWNER: i32 = 1017;
 pub const ADD_AMMO: i32 = 1018;
+pub const ADD_PASSENGER: i32 = 1019;
 pub const SET_PROPERTY: i32 = 1021;
 pub const MODIFY: i32 = 1022;
 pub const REMOVE_MODIFIERS: i32 = 1023;
@@ -155,9 +170,11 @@ pub const ADD_SCORE: i32 = 1032;
 pub const LOG: i32 = 1033;
 pub const CONVERT: i32 = 1034;
 
-const ATOMIC: [i32; 27] = [
+const ATOMIC: [i32; 31] = [
+    FIRE_WEAPON,
     LAUNCH_SUPER_WEAPON,
     SPAWN_ANIM,
+    ATTACH_ANIM,
     REMOVE,
     KILL,
     DAMAGE,
@@ -170,8 +187,10 @@ const ATOMIC: [i32; 27] = [
     CLEAR_MIND_CONTROL,
     ADD_EXPERIENCE,
     ADD_MONEY,
+    ALLOW_TYPE,
     SET_OWNER,
     ADD_AMMO,
+    ADD_PASSENGER,
     SET_PROPERTY,
     MODIFY,
     REMOVE_MODIFIERS,
@@ -705,29 +724,31 @@ impl Run<'_, '_, '_, '_> {
                     status(Status::Refused)
                 }
             }
-            CONVERT => {
-                let id = self.object(target)?;
-                if self.params.value2 != 0 {
-                    // Timed conversion (module residuals).
-                    return status(Status::Unsupported);
-                }
-                let object = techno_type(self.ctx.rules, self.params.id)?;
-                let destination = crate::rules::superweapon_type::TechnoTypeReference {
-                    category: object.category,
-                    id: object.id.clone(),
+            CONVERT => self.convert(target),
+            FIRE_WEAPON => self.fire_weapon(target),
+            ATTACH_ANIM => self.attach_anim(target),
+            ALLOW_TYPE => {
+                let owner = self.house(target)?;
+                techno_type(self.ctx.rules, self.params.id)?;
+                let allow = match self.params.value {
+                    0 => false,
+                    1 => true,
+                    value => return invalid(format!("AllowType value {value}")),
                 };
-                let converted = self.sim.convert_techno_type(
-                    id,
-                    &destination,
-                    self.ctx.rules,
-                    self.ctx.frame_effects,
-                );
-                if converted {
-                    Ok(0)
-                } else {
-                    status(Status::Refused)
-                }
+                let Some(house) = self
+                    .sim
+                    .houses
+                    .index_of(owner)
+                    .and_then(|index| u32::try_from(index).ok())
+                else {
+                    return status(Status::Gone);
+                };
+                // `techno_type` checked the ID is a registry position.
+                let type_id = self.params.id as u32;
+                self.sim.ext_modules.held.allow_type(house, type_id, allow);
+                Ok(0)
             }
+            ADD_PASSENGER => self.add_passenger(target),
             SET_SCORE | ADD_SCORE => {
                 let owner = self.house(target)?;
                 let score = self.value_i32("score")?;
@@ -769,7 +790,7 @@ impl Run<'_, '_, '_, '_> {
             -1 => None,
             id => {
                 let name = property_name(self.property(id)?).unwrap_or_default();
-                match Stat::from_property(name) {
+                match Stat::wired_property(name) {
                     Some(stat) => Some(stat),
                     // A modifiable property no modifier is wired to holds none.
                     None if super::property_id_range(super::MODIFIABLE).contains(&id) => {
@@ -784,14 +805,242 @@ impl Run<'_, '_, '_, '_> {
             _ => self.object(target)?,
         };
         let sim = &mut *self.sim;
-        sim.ext_modules.modifiers.remove_group(
+        let removed = sim.ext_modules.modifiers.remove_group(
             &mut sim.substrate.entities,
             id,
             self.ctx.source,
             self.params.arg2,
             stat,
         );
+        sim.raise_modifiers_expired(self.ctx.rules, self.ctx.frame_effects, &removed);
         Ok(0)
+    }
+
+    /// Convert: the type through Ares ConvertToType; a positive `value2`
+    /// converts back after that many frames (`held::ActionHeld`).
+    fn convert(&mut self, target: i64) -> Act<i64> {
+        let id = self.object(target)?;
+        let Ok(frames) = u32::try_from(self.params.value2) else {
+            return invalid(format!("Convert frames {}", self.params.value2));
+        };
+        let rules = self.ctx.rules;
+        let object = techno_type(rules, self.params.id)?;
+        let destination = crate::rules::superweapon_type::TechnoTypeReference {
+            category: object.category,
+            id: object.id.clone(),
+        };
+        let original = self
+            .sim
+            .entities()
+            .get(id)
+            .and_then(|entity| self.sim.entity_object_type(entity, rules))
+            .map(
+                |object| crate::rules::superweapon_type::TechnoTypeReference {
+                    category: object.category,
+                    id: object.id.clone(),
+                },
+            );
+        let Some(original) = original else {
+            return status(Status::Refused);
+        };
+        if !self
+            .sim
+            .convert_techno_type(id, &destination, rules, self.ctx.frame_effects)
+        {
+            return status(Status::Refused);
+        }
+        let frame = self.sim.session.binary_frame();
+        self.sim
+            .ext_modules
+            .held
+            .note_conversion(id, original, frames, frame);
+        Ok(0)
+    }
+
+    /// FireWeapon: the shooter's slot `value` (0 primary, 1 secondary), or
+    /// the slot holding weapon `id` at its rank (GetWeapon), at `cell`, else
+    /// `other`, else its current target, through FireAt's direct entry once
+    /// GetFireError answers Ok.
+    fn fire_weapon(&mut self, target: i64) -> Act<i64> {
+        use crate::sim::combat::combat_weapon::resolve_weapon_index;
+        use crate::sim::combat::fire_error::FireError;
+        use crate::sim::combat::fire_error_world::FireSubject;
+        let id = self.object(target)?;
+        let rules = self.ctx.rules;
+        let weapon_index = if self.params.id == -1 {
+            match self.params.value {
+                0 => 0,
+                1 => 1,
+                _ => return status(Status::Unsupported),
+            }
+        } else {
+            let Some(weapon) = u32::try_from(self.params.id)
+                .ok()
+                .and_then(|index| rules.weapon_at(index))
+            else {
+                return invalid(format!("no weapon {}", self.params.id));
+            };
+            let sim = &*self.sim;
+            let slot = sim.substrate.entities.get(id).and_then(|actor| {
+                let obj = sim.object_type(actor.type_ref(), rules)?;
+                [0, 1].into_iter().find(|&slot| {
+                    resolve_weapon_index(
+                        rules,
+                        actor,
+                        obj,
+                        slot,
+                        &sim.substrate.entities,
+                        &sim.interner,
+                    )
+                    .is_some_and(|selected| selected.weapon_id.eq_ignore_ascii_case(&weapon.id))
+                })
+            });
+            match slot {
+                Some(slot) => slot,
+                // FireAt fires only the shooter's own weapon slots.
+                None => return status(Status::Unsupported),
+            }
+        };
+        let aim = if self.params.cell != 0 {
+            let (x, y) = self.map_cell(self.params.cell)?;
+            TargetKind::Cell(x as u16, y as u16)
+        } else {
+            match decode(self.params.other)? {
+                Target::Object(other) if self.sim.entities().get(other).is_some() => {
+                    TargetKind::Entity(other)
+                }
+                Target::Object(_) => return status(Status::Gone),
+                Target::None => {
+                    let held = self
+                        .sim
+                        .entities()
+                        .get(id)
+                        .and_then(|entity| entity.attack_target.target());
+                    match held {
+                        Some(held) => held,
+                        None => return status(Status::Gone),
+                    }
+                }
+                other => return invalid(format!("{other:?} is not a FireWeapon target")),
+            }
+        };
+        let sim = &*self.sim;
+        let ready = sim.substrate.entities.get(id).is_some_and(|firer| {
+            firer.lifecycle.object_alive()
+                && !firer.lifecycle.in_limbo()
+                && sim.object_type(firer.type_ref(), rules).is_some_and(|obj| {
+                    FireSubject {
+                        world: sim,
+                        rules,
+                        fog: None,
+                        firer,
+                        obj,
+                        target: Some(aim),
+                        weapon_index,
+                    }
+                    .fire_error(true)
+                        == FireError::Ok
+                })
+        });
+        if !ready {
+            return status(Status::Refused);
+        }
+        let receipt = self.sim.commit_fire_visit(
+            crate::sim::combat::world_fire::FireVisit::Direct {
+                id,
+                target: aim,
+                weapon_index,
+            },
+            rules,
+            self.ctx.overlay_registry,
+            self.ctx.frame_effects,
+        );
+        if receipt.bridge_state_changed {
+            self.sim.publish_trigger_effects([
+                crate::sim::trigger_runtime::TriggerEffect::BridgeStateChanged,
+            ]);
+        }
+        Ok(0)
+    }
+
+    /// AttachAnim: one pass of animation `id` (its array index, as
+    /// `SpawnAnim` takes) attached to the object, as team script action 51
+    /// attaches one to each member.
+    fn attach_anim(&mut self, target: i64) -> Act<i64> {
+        let id = self.object(target)?;
+        let rules = self.ctx.rules;
+        let index = self.params.id;
+        let Some(type_name) = rules.anim_type_runtime_key_by_index(index) else {
+            return invalid(format!("no animation {index}"));
+        };
+        if self.params.value2 != 0 {
+            // A count of frames or "until removed" (module doc).
+            return status(Status::Unsupported);
+        }
+        let placed =
+            self.sim.entities().get(id).is_some_and(|entity| {
+                entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo()
+            });
+        let Some(world) = placed.then(|| self.sim.anim_owner_coords(id)).flatten() else {
+            return status(Status::Refused);
+        };
+        let type_id = self.sim.interner.intern(&type_name);
+        let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
+        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+            loop_count: 1,
+            draw_flags: 0x600,
+            owner: Some(id),
+            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                type_id, rx, ry, sub_x, sub_y, level,
+            )
+        };
+        match self.sim.spawn_anim_at_world(rules, descriptor, world) {
+            Ok(_) => Ok(0),
+            Err(_) => status(Status::Refused),
+        }
+    }
+
+    /// AddPassenger: the passenger (`other`) boards the transport (the
+    /// target) as the PerCellProcess transport arm boards one, once the
+    /// transport answers CAN_LOAD for it.
+    fn add_passenger(&mut self, target: i64) -> Act<i64> {
+        use crate::sim::passenger::{BoardingArm, board_passenger, can_enter_transport};
+        let carrier = self.object(target)?;
+        let passenger = self.object(self.params.other)?;
+        let rules = self.ctx.rules;
+        let sim = &*self.sim;
+        let placed = move |id: u64| {
+            sim.entities()
+                .get(id)
+                .filter(|entity| entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo())
+        };
+        let (Some(transport), Some(rider)) = (placed(carrier), placed(passenger)) else {
+            return status(Status::Refused);
+        };
+        if transport.category() == EntityCategory::Structure {
+            return status(Status::Unsupported);
+        }
+        let arm = match rider.category() {
+            EntityCategory::Infantry => BoardingArm::InfantryTransport,
+            EntityCategory::Unit => BoardingArm::UnitTransport,
+            _ => return status(Status::Refused),
+        };
+        if carrier == passenger || !can_enter_transport(sim, rules, passenger, carrier) {
+            return status(Status::Refused);
+        }
+        if board_passenger(
+            self.sim,
+            rules,
+            passenger,
+            carrier,
+            arm,
+            self.ctx.overlay_registry,
+            self.ctx.frame_effects,
+        ) {
+            Ok(0)
+        } else {
+            status(Status::Refused)
+        }
     }
 
     /// SetMission: `cell`, else `other`, is the mission's target or

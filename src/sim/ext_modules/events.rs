@@ -35,7 +35,9 @@
 //!   end of AddPassenger (`0x00710670`), `value` the passenger's size;
 //! - `HouseTransferred` at the end of ChangeOwner (`0x007014A0`), `house`
 //!   the old house;
-//! - `SuperWeaponLaunched` after SuperClass::Launch (`0x006CC390`).
+//! - `SuperWeaponLaunched` after SuperClass::Launch (`0x006CC390`);
+//! - `ModifierStart`, `ModifierStacks` and `ModifierExpire` on the modified
+//!   object, from the modifier store's callers (`ext_modules::modifiers`).
 //!
 //! Polling events (appendix 4.4): `PropertyPoll` and `VariablePoll`, checked
 //! at the start of the module phase every `interval` frames counted from the
@@ -61,9 +63,10 @@
 use std::collections::BTreeSet;
 
 use vera20k_wasm_ext::triggers::{
-    EVENT_BIRTH, EVENT_FIRE, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_PASSENGER_ADDED,
-    EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER,
-    EVENT_TRANSPORT_ENTERED, EVENT_VARIABLE_POLL, EventDef,
+    EVENT_BIRTH, EVENT_FIRE, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_MODIFIER_EXPIRE,
+    EVENT_MODIFIER_STACKS, EVENT_MODIFIER_START, EVENT_PASSENGER_ADDED, EVENT_PROPERTY_POLL,
+    EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_TRANSPORT_ENTERED,
+    EVENT_VARIABLE_POLL, EventDef,
 };
 use vera20k_wasm_ext::{Invalid, Status, VarScope, property_name};
 
@@ -78,7 +81,7 @@ use crate::sim::trigger_runtime::{
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3).
-const DELIVERED: [i32; 9] = [
+const DELIVERED: [i32; 12] = [
     EVENT_TAKE_DAMAGE,
     EVENT_KILLED,
     EVENT_FIRE,
@@ -88,6 +91,9 @@ const DELIVERED: [i32; 9] = [
     EVENT_PASSENGER_ADDED,
     EVENT_HOUSE_TRANSFERRED,
     EVENT_SUPER_WEAPON_LAUNCHED,
+    EVENT_MODIFIER_START,
+    EVENT_MODIFIER_EXPIRE,
+    EVENT_MODIFIER_STACKS,
 ];
 
 /// What `PropertyPoll` reads on a bound object (appendix 4.4); `Money` is
@@ -155,7 +161,10 @@ impl Host<'_, '_> {
             | EVENT_BIRTH
             | EVENT_TRANSPORT_ENTERED
             | EVENT_PASSENGER_ADDED
-            | EVENT_HOUSE_TRANSFERRED => object,
+            | EVENT_HOUSE_TRANSFERRED
+            | EVENT_MODIFIER_START
+            | EVENT_MODIFIER_EXPIRE
+            | EVENT_MODIFIER_STACKS => object,
             // Appendix 4.4: other properties are refused at creation.
             EVENT_PROPERTY_POLL => match property_name(def.id) {
                 Some("Money") => TriggerScope::Global,

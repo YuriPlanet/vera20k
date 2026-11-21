@@ -1392,7 +1392,8 @@ pub(crate) fn snapshot_get_rof(
                 .map_or(crate::util::native_x87::NativeF64Bits::ONE, |house| {
                     house.rof_bias()
                 }),
-            ae_rof: firer.map_or(1.0, |entity| entity.phobos_rof_multiplier()),
+            // With the Wasm module `ROFMultiplier` modifiers composed on.
+            ae_rof: firer.map_or(1.0, |entity| entity.effect_rof_multiplier()),
             // None describes the unpatched kernel, so a game without Ares
             // keeps the stock building-ammo shortcut and no FMUL.
             attached_rof: rules.ares().then(|| {

@@ -85,6 +85,8 @@ pub(crate) struct ModuleEvent {
     /// (−1 for none); not part of the record.
     pub(crate) weapon: i32,
     pub(crate) warhead: i32,
+    /// The modifier handle of a modifier event, 0 for none.
+    pub(crate) modifier: u64,
 }
 
 impl ModuleEvent {
@@ -103,6 +105,7 @@ impl ModuleEvent {
             poll: None,
             weapon: -1,
             warhead: -1,
+            modifier: 0,
         }
     }
 }
@@ -775,7 +778,7 @@ impl Simulation {
             other: event.other as i64,
             house,
             projectile: event.projectile as i64,
-            modifier: 0,
+            modifier: event.modifier as i64,
             cell: event.cell.map_or(0, |(x, y)| cell_ref(x, y)),
             value: event.value,
             value2: event.value2,
