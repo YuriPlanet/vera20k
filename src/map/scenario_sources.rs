@@ -2,6 +2,7 @@
 //!
 //! Map source resolution and consumed-byte identity are owned by `map::source`.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -18,6 +19,7 @@ use crate::map::skirmish_scenarios::{
 use crate::map::source::{game_folder_file_in, game_folders_in, read_map_ini_for_metadata};
 use crate::map::waypoints::DEFAULT_SKIRMISH_PLAYER_CAPACITY;
 use crate::rules::ini_parser::IniFile;
+use crate::util::case_insensitive_path::{native_listing, native_listing_over};
 use crate::util::config::GameConfig;
 use crate::util::native_string::decode_widened_utf8;
 
@@ -127,7 +129,11 @@ pub fn list_skirmish_scenario_records_with_assets(
 
     append_loose_pkt_records(&mut records, ra2_dir, assets, csf)?;
     append_loose_yro_records(&mut records, ra2_dir, assets, csf)?;
-    append_loose_yrm_records(&mut records, ra2_dir, assets)?;
+    append_loose_map_records(
+        &mut records,
+        &game_folders_in(ra2_dir, assets.mod_dir()),
+        crate::map::source::downloaded_maps_dir(),
+    )?;
 
     Ok(records)
 }
@@ -138,9 +144,8 @@ fn append_loose_pkt_records(
     assets: &AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
-    for (path, file_name) in
-        loose_files_with_extension(&game_folders_in(ra2_dir, assets.mod_dir()), "pkt")?
-    {
+    let paths = native_listing_over(&game_folders_in(ra2_dir, assets.mod_dir()))?;
+    for (path, file_name) in loose_files_with_extensions(paths, &["pkt"]) {
         // The wildcard scan would otherwise re-list every archived row a second
         // time from an extracted copy sitting beside the executable.
         if file_name.eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME)
@@ -175,9 +180,8 @@ fn append_loose_yro_records(
     manager: &mut AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
-    for (path, file_name) in
-        loose_files_with_extension(&game_folders_in(ra2_dir, manager.mod_dir()), "yro")?
-    {
+    let paths = native_listing_over(&game_folders_in(ra2_dir, manager.mod_dir()))?;
+    for (path, file_name) in loose_files_with_extensions(paths, &["yro"]) {
         // The campaign archive is skipped by name so its missions never reach
         // the skirmish chooser.
         if file_name.eq_ignore_ascii_case(MISSIONS_YRO_FILE_NAME) {
@@ -219,30 +223,44 @@ fn append_loose_yro_records(
     Ok(())
 }
 
-fn append_loose_yrm_records(
+fn append_loose_map_records(
     records: &mut Vec<SkirmishScenarioRecord>,
-    ra2_dir: &Path,
-    assets: &AssetManager,
+    game_folders: &[&Path],
+    maps_folder: Option<&Path>,
 ) -> Result<()> {
-    let mut files = loose_files_with_extension(&game_folders_in(ra2_dir, assets.mod_dir()), "yrm")?;
-    // VERA's downloaded maps follow; a game-folder file of the same name is
-    // the one a lookup finds (`source::local_map_path`).
-    if let Some(downloaded) = crate::map::source::downloaded_maps_dir()
+    let installed = native_listing_over(game_folders)?;
+    // The chooser selects by filename. The loader tries that name both literally
+    // and with a map extension appended in the game/mod folders before VERA's Maps.
+    let mut used_names: HashSet<_> = records
+        .iter()
+        .map(|record| record.file_name.to_ascii_lowercase())
+        .collect();
+    for path in installed
+        .iter()
+        .filter(|path| crate::map::source::is_loose_map_name(path))
+    {
+        for name in [path.file_name(), path.file_stem()].into_iter().flatten() {
+            if let Some(name) = name.to_str() {
+                used_names.insert(name.to_ascii_lowercase());
+            }
+        }
+    }
+    // Retail's loose map scan (SessionClass::ScanMultiplayerMapFiles, 0x00699980)
+    // lists *.YRM. VERA's own Maps folder also accepts .map and .mpr.
+    let mut files = loose_files_with_extensions(installed, &["yrm"]);
+    if let Some(downloaded) = maps_folder
         && crate::util::file_system::exists(downloaded)
     {
         // An unreadable Maps folder lists nothing, not a failed scan.
-        let kept = loose_files_with_extension(&[downloaded], "yrm").unwrap_or_else(|error| {
+        let paths = native_listing(downloaded).unwrap_or_else(|error| {
             log::warn!("Could not list {}: {error}", downloaded.display());
             Vec::new()
         });
-        for (path, file_name) in kept {
-            if !files
-                .iter()
-                .any(|(_, name)| name.eq_ignore_ascii_case(&file_name))
-            {
-                files.push((path, file_name));
-            }
-        }
+        files.extend(
+            loose_files_with_extensions(paths, &["yrm", "map", "mpr"])
+                .into_iter()
+                .filter(|(_, name)| used_names.insert(name.to_ascii_lowercase())),
+        );
     }
     for (path, file_name) in files {
         if let Some(record) = loose_yrm_record(&path, file_name, records.len()) {
@@ -252,7 +270,7 @@ fn append_loose_yrm_records(
     Ok(())
 }
 
-/// The Choose Map row of one loose `.yrm` file, from its own `[Basic]`;
+/// The Choose Map row of a loose map handled by the YRM reader, from its own `[Basic]`;
 /// `None` when it does not read as a map.
 pub fn loose_yrm_record(
     path: &Path,
@@ -270,37 +288,30 @@ pub fn loose_yrm_record(
     ))
 }
 
-/// The files of `folders` with `extension`: one folder, or the game folder
-/// with the mod folder's files copied on top (`source::game_folders`).
-fn loose_files_with_extension(
-    folders: &[&Path],
-    extension: &str,
-) -> Result<Vec<(PathBuf, String)>> {
+/// Keep eligible map files in native enumeration order.
+fn loose_files_with_extensions(paths: Vec<PathBuf>, extensions: &[&str]) -> Vec<(PathBuf, String)> {
     let mut files = Vec::new();
 
     // `SessionClass::ScanMultiplayerMapFiles` (`0x00699980`) lists with
     // FindFirstFileA (`0x00699AE6`, `0x00699C5D`, `0x0069A007`) and registers
     // each YRO as it is listed.
-    for path in crate::util::case_insensitive_path::native_listing_over(folders)? {
+    for path in paths {
         if !retail_enumerated_file(&path) {
             continue;
         }
-        let Some(file_name) = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(str::to_string)
-        else {
-            continue;
-        };
         let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
             continue;
         };
-        match ext.to_ascii_lowercase().as_str() {
-            ext if ext.eq_ignore_ascii_case(extension) => files.push((path, file_name)),
-            _ => {}
+        if extensions
+            .iter()
+            .any(|known| ext.eq_ignore_ascii_case(known))
+            && let Some(name) = path.file_name().and_then(|name| name.to_str())
+        {
+            let name = name.to_owned();
+            files.push((path, name));
         }
     }
-    Ok(files)
+    files
 }
 
 /// How a PKT-backed row's title is finished after the record is built.
@@ -477,6 +488,45 @@ mod tests {
     use super::*;
     use crate::map::preview::{PreviewSourceBounds, PreviewStartPoint};
     use crate::map::source::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[test]
+    fn skirmish_lists_custom_map_extensions_in_the_maps_folder() {
+        let game = TestDirectory::new("skirmish-game");
+        let maps = TestDirectory::new("skirmish-maps");
+        let header = b"[Basic]\nName=Harbor\nGameMode=standard\n[Waypoints]\n0=100011\n1=120013\n";
+        game.write("Mission.MAP", header);
+        maps.write("mission.map", header);
+        game.write("Double.map.yrm", header);
+        maps.write("double.map", header);
+        maps.write("Harbor.MaP", header);
+        maps.write("Valley.MpR", b"[Basic]\nName=Valley\n");
+        maps.write("Winter.yrm", b"[Basic]\nName=Winter\n");
+        maps.write("Notes.txt", header);
+        maps.write("listed.map", header);
+
+        let mut records = Vec::new();
+        append_pkt_records(
+            &mut records,
+            &IniFile::from_str("[MultiMaps]\n0=Listed\n[Listed]\nDescription=Listed\n"),
+            SkirmishScenarioSource::MissionsMdPkt,
+            None,
+            |_| Some(IniFile::from_str("[Basic]\nName=Listed\n")),
+        );
+        append_loose_map_records(&mut records, &[game.path()], Some(maps.path())).unwrap();
+        let names: Vec<_> = records.iter().map(|r| r.file_name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Listed.MAP",
+                "Double.map.yrm",
+                "Harbor.MaP",
+                "Valley.MpR",
+                "Winter.yrm"
+            ]
+        );
+        assert_eq!(records[2].display_name, "Harbor");
+        assert_eq!(records[2].multiplayer_start_waypoints.len(), 2);
+    }
 
     #[test]
     fn asset_aware_catalog_scans_use_the_selected_mod_without_global_setup() {

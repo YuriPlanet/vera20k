@@ -74,7 +74,7 @@ first, and the game folder is never changed.
 | What you can put here | What it does |
 | --- | --- |
 | A folder for your mod, inside `Mods` | Holds the mod's files. See [The Mods folder](#the-mods-folder). |
-| A `Maps` folder of `.yrm` files | Adds your maps to the map list, with or without a mod. Create the folder if it isn't there. Maps you download online go here too. |
+| A `Maps` folder of `.yrm`, `.map` or `.mpr` files | Adds your maps to Skirmish. Mods with their own client catalog use that catalog. Create the folder if it isn't there. Maps you download online go here too. |
 | `vera20k.<language>.ini` | Adds a language, or changes the game's text. See [translating](../src/i18n/README.md). |
 
 `config.toml` is here too. It says where the game folder is and which mod to play; the
@@ -413,8 +413,9 @@ maps. The game's log says which files it adds.
 
 ### Add a map
 
-Give the map a `.yrm` ending and put it in the `Maps` folder, or in your mod's folder if
-the map needs the mod. As in the original, a map can change any rule for that match.
+Put your `.yrm`, `.map` or `.mpr` file in VERA20k's `Maps` folder and restart the
+game to find it in Skirmish. For a loose map that needs your mod, use a `.yrm` file
+in the mod's folder. As in the original, a map can change any rule for that match.
 
 VERA20k adds two things. Open the map in a text editor to set them:
 
