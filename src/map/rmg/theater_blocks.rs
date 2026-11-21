@@ -89,8 +89,7 @@ impl TheaterTileBlocks {
     /// generator's 40 cliff pieces) whose TMP the lookup names but which did
     /// not load or parse. The cliff passes read each piece's template, so a
     /// generation with one missing is refused rather than drawn without it;
-    /// retail theaters hold every piece. The refusal is VERA's: gamemd reads
-    /// the absent template.
+    /// retail theaters hold every piece. The refusal is VERA's own.
     pub fn missing_cliff_tile(
         &self,
         lookup: &TilesetLookup,

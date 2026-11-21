@@ -547,8 +547,7 @@ impl RandomMapGenerationRetention {
 
     pub(super) fn accept_setup(&mut self, selected_map_file: &str) {
         self.accepted_launch = self.candidate.take().map(|generated| {
-            let start_staging =
-                AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
+            let start_staging = AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
             (
                 selected_map_file.to_owned(),
                 AcceptedRandomMapLaunch {
