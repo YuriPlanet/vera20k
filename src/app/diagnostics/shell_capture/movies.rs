@@ -118,6 +118,7 @@ pub(super) enum MoviesTarget {
     /// `entry_tick` of its entry slide.
     LoadSavedGame0xB7 {
         entry_tick: Option<u32>,
+        check_sidebar: bool,
     },
     /// Main Menu -> Options: dialog `0xD5` settled, or held at `entry_tick`
     /// of its entry slide.
@@ -215,6 +216,8 @@ enum Phase {
     /// The restart driver owns the route from the first live frame.
     CampaignRestart,
     LoadSavedGame,
+    SavedGameLoading,
+    SavedGameButtonsChecked,
     Options,
     /// Network pressed: waiting for the teardown to commit.
     NetworkLeaving,
@@ -416,6 +419,20 @@ impl MoviesCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if self.phase == Phase::SavedGameLoading {
+            if state.frontend.screen == GameScreen::InGame {
+                check_loaded_sidebar_buttons(state)?;
+                Self::restore_neutral_pointer(state);
+                self.route.push(json!({
+                    "frame": frame, "action": "loaded sidebar buttons opened Diplomacy and Options"
+                }));
+                self.phase = Phase::SavedGameButtonsChecked;
+            }
+            return Ok(());
+        }
+        if self.phase == Phase::SavedGameButtonsChecked {
+            return Ok(());
+        }
         if matches!(self.target, MoviesTarget::CampaignStart { .. }) && !self.saves_isolated {
             state
                 .persistence
@@ -815,7 +832,11 @@ impl MoviesCapture {
                 }
             }
             (Phase::LoadSavedGame, PresentedShell::Other | PresentedShell::LoadSavedGame) => {
-                let MoviesTarget::LoadSavedGame0xB7 { entry_tick } = self.target else {
+                let MoviesTarget::LoadSavedGame0xB7 {
+                    entry_tick,
+                    check_sidebar,
+                } = self.target
+                else {
                     bail!("load phase without a load target");
                 };
                 if let Some(target) = entry_tick {
@@ -842,6 +863,20 @@ impl MoviesCapture {
                 } else if rendered == PresentedShell::LoadSavedGame
                     && Self::slide_settled(state, ShellSlideKind::LoadSavedGame)
                 {
+                    if check_sidebar {
+                        // Start with the process state a confirmed Abort leaves behind.
+                        state.match_state.match_presentation.modal_latch = false;
+                        let layout = App::load_saved_game_layout(state);
+                        set_window_pointer_to_rect_center(state, layout.browser.action);
+                        App::handle_load_saved_game_mouse(state, true);
+                        App::handle_load_saved_game_mouse(state, false);
+                        ensure!(
+                            state.persistence.pending_load.is_some(),
+                            "Load did not queue the selected save"
+                        );
+                        self.phase = Phase::SavedGameLoading;
+                        return Ok(());
+                    }
                     Self::restore_neutral_pointer(state);
                     App::handle_load_saved_game_mouse_move(state);
                     self.route.push(
@@ -1440,6 +1475,12 @@ impl MoviesCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if matches!(
+            self.target,
+            MoviesTarget::LoadSavedGame0xB7 { check_sidebar: true, .. }
+        ) {
+            return Ok(self.phase == Phase::SavedGameButtonsChecked);
+        }
         if let Some(lan) = self.lan.as_ref() {
             return lan.ready(state);
         }
@@ -1575,12 +1616,13 @@ impl MoviesCapture {
             }
             | MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(_),
+                ..
             }
             | MoviesTarget::Options0xD5 {
                 entry_tick: Some(_),
                 ..
             } => true,
-            MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
+            MoviesTarget::LoadSavedGame0xB7 { entry_tick: None, .. }
             | MoviesTarget::Options0xD5 {
                 entry_tick: None, ..
             } => {
@@ -1668,7 +1710,7 @@ impl MoviesCapture {
                             == Some(target)
                     })
             }
-            MoviesTarget::LoadSavedGame0xB7 { entry_tick } => {
+            MoviesTarget::LoadSavedGame0xB7 { entry_tick, .. } => {
                 state.frontend.shell_route.load_saved_game()
                     && state.frontend.load_saved_game.is_some()
                     && entry_tick.is_none_or(|target| {
@@ -1989,6 +2031,36 @@ fn queue_peer_command(
         sim.session().tick(),
         command,
     ));
+    Ok(())
+}
+
+fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
+    use crate::ui::pause_menu::InGameMenuState;
+    use winit::event::{ElementState, MouseButton};
+
+    let mut opened = [InGameMenuState::Closed; 2];
+    for (index, dialog) in opened.iter_mut().enumerate() {
+        let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
+            .context("loaded match has no sidebar view")?;
+        let rect = state
+            .sidebar_frame()
+            .rect_to_frame(view.top_buttons[index].rect);
+        state.match_state.input.cursor_x = rect.x + rect.w / 2.0;
+        state.match_state.input.cursor_y = rect.y + rect.h / 2.0;
+        for edge in [ElementState::Pressed, ElementState::Released] {
+            crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+        }
+        // Options opens when the simulation consumes the queued request.
+        if index == 1 && !state.match_state.paused() {
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+        }
+        *dialog = state.match_state.match_presentation.in_game_menu;
+        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+    }
+    ensure!(
+        opened == [InGameMenuState::Diplomacy, InGameMenuState::Menu],
+        "loaded skirmish sidebar clicks opened {opened:?}; expected [Diplomacy, Menu]"
+    );
     Ok(())
 }
 
