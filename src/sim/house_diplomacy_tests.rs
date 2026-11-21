@@ -791,3 +791,47 @@ fn squad_alliances_ally_each_clan_list_and_fix_the_alliances() {
     sim.apply_squad_alliances(&rules, None);
     assert!(!sim.session.fixed_alliance());
 }
+
+/// A 120-player match allies more than 64 houses (Computer_Paranoid). The
+/// matrix still covers them, beyond a single `u64` mask, and answers as the
+/// graph does by name; before, it was never built for them, so every
+/// question went to the graph by name.
+#[test]
+fn the_ally_matrix_covers_more_than_64_houses() {
+    let rules = rules();
+    let (mut sim, _) = sim_with(&rules, &[("Player", "Americans", true)]);
+    let names: Vec<String> = (0..70).map(|index| format!("Computer{index}")).collect();
+    let ring = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let next = &names[(index + 1) % names.len()];
+            (name.to_ascii_uppercase(), set(&[next.as_str()]))
+        })
+        .collect();
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(ring),
+        &rules,
+    );
+    let ids: Vec<InternedId> = names.iter().map(|name| sim.interner.intern(name)).collect();
+    assert!(
+        sim.house_alliances.matrix(&sim.interner).is_some(),
+        "70 houses get a matrix"
+    );
+    let alliances = &sim.house_alliances;
+    for &asker in &ids {
+        for &other in &ids {
+            assert_eq!(
+                alliances.is_allied(&sim.interner, asker, other),
+                crate::map::houses::is_allied_with(
+                    alliances.as_map(),
+                    sim.interner.resolve(asker),
+                    sim.interner.resolve(other),
+                ),
+            );
+        }
+    }
+    assert!(alliances.is_allied(&sim.interner, ids[68], ids[69]));
+    assert!(alliances.is_allied(&sim.interner, ids[69], ids[0]));
+    assert!(!alliances.is_allied(&sim.interner, ids[0], ids[69]));
+}
