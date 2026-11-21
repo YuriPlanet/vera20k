@@ -178,10 +178,15 @@ pub struct EventDef {
 impl EventDef {
     pub const SIZE: usize = 32;
 
-    /// Whether a polling event's `reading op value` holds (appendix 4.4).
+    /// Whether a polling event's `reading op value` holds (appendix 4.4);
+    /// `DistancePoll` compares with `id`, its `value` being the cell.
     pub fn compares(&self, reading: i64) -> bool {
+        let constant = match self.kind {
+            EVENT_DISTANCE_POLL => i64::from(self.id),
+            _ => self.value,
+        };
         // `TriggerDef::parse` admitted only known operators.
-        Op::parse(self.op).is_ok_and(|op| op.holds(reading, self.value))
+        Op::parse(self.op).is_ok_and(|op| op.holds(reading, constant))
     }
 }
 

@@ -328,7 +328,7 @@ mod untriggered;
 pub(crate) use untriggered::{StockActionCall, StockReference, StockReferenceKind};
 
 pub(crate) use module_events::{
-    StockClass, StockReading, stock_class, stock_poll_due, value_filters_actor_house,
+    StockClass, StockInput, StockReading, stock_class, stock_poll_due, value_filters_actor_house,
     value_names_house,
 };
 pub(crate) use module_triggers::{DeferredFiring, ModuleTrigger, ModuleTriggers, TriggerScope};

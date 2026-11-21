@@ -1,11 +1,12 @@
 //! Module trigger events beyond the first four, on a retail map: a stock
-//! House event from its poll, `HouseTransferred`, `PropertyPoll`, a
-//! `VariablePoll` whose interval a variable change restarts, a weapon
-//! binding, and the chain depth cap.
+//! House event from its poll, `HouseTransferred` (and its mind-control
+//! value), `PropertyPoll`, a `VariablePoll` whose interval a variable change
+//! restarts, `DistancePoll`, `FatalDamage`, `Timer` counted on a bound
+//! object, weapon and projectile bindings, and the chain depth cap.
 
 use vera20k_wasm_ext::triggers::{
-    ACTION_MODULE, EVENT_FIRE, EVENT_HOUSE_TRANSFERRED, EVENT_PROPERTY_POLL, EVENT_TAKE_DAMAGE,
-    EVENT_VARIABLE_POLL,
+    ACTION_MODULE, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE, EVENT_HOUSE_TRANSFERRED,
+    EVENT_PROPERTY_POLL, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_VARIABLE_POLL,
 };
 
 use super::trigger_tests::{hit, memory, received, scenario, sturdy_object};
@@ -170,7 +171,7 @@ fn a_stock_credits_event_fires_from_the_house_poll() {
 }
 
 /// `HouseTransferred` on a bound object after ChangeOwner, carrying the
-/// old house.
+/// old house; `value` 0, as this is no mind control.
 #[test]
 fn a_house_transfer_raises_house_transferred() {
     let Some(scene) = scenario() else { return };
@@ -357,4 +358,177 @@ fn a_self_damaging_trigger_chain_stops_at_its_depth_cap() {
     assert_eq!(health(&scene), before - 10 - 2 * depth);
     assert_eq!(received(&scene), 2 * depth);
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+}
+
+/// A mind control's ChangeOwner (CaptureManager's) raises `HouseTransferred`
+/// with `value` 1.
+#[test]
+fn a_mind_control_transfer_reports_its_cause() {
+    let Some(scene) = scenario() else { return };
+    let victim = sturdy_object(&scene);
+    let transferred = def(0, 2, &[Ev::on(EVENT_HOUSE_TRANSFERRED)], &[]);
+    let mut scene = installed(scene, &module(&transferred, victim as i64, ""));
+    let runtime = &mut scene.runtime;
+    let sim = &mut runtime.simulation;
+    let old = sim.entities().get(victim).expect("victim").owner();
+    let new = *sim
+        .houses
+        .order()
+        .iter()
+        .find(|&&house| house != old)
+        .expect("a second house");
+    let rules = &runtime.resources.rules;
+    sim.change_owner_by_mind_control(
+        victim,
+        new,
+        rules,
+        Some(rules.overlay_registry()),
+        &mut FrameEffects::default(),
+    );
+    scene.tick();
+    assert_eq!(received(&scene), 1);
+    let (kind, subject, _, value, _) = first_record(&scene);
+    assert_eq!(
+        (kind, subject, value),
+        (EVENT_HOUSE_TRANSFERRED, victim as i64, 1)
+    );
+}
+
+/// `DistancePoll` on a bound object to its own cell, `< 1024` leptons: it
+/// fires at its first check, the reading under the threshold; one to a cell
+/// 40 cells away does not. `has_kind` lists the poll, and not Ares' events
+/// without Ares.
+#[test]
+fn a_distance_poll_compares_with_its_id() {
+    let Some(scene) = scenario() else { return };
+    let rules = &scene.runtime.resources.rules;
+    assert!(super::has_kind(rules, 0, EVENT_DISTANCE_POLL));
+    assert!(!rules.ares_form() && !super::has_kind(rules, 0, 62));
+    let victim = sturdy_object(&scene);
+    let at = crate::sim::movement::ground_pose::position_world_coord(
+        &scene.sim().entities().get(victim).expect("victim").position,
+    );
+    let (x, y) = ((at.x / 256) as u16, (at.y / 256) as u16);
+    let poll = |cell: i64| Ev {
+        op: 2, // Lt
+        interval: 1,
+        id: 1024,
+        value: cell,
+        ..Ev::on(EVENT_DISTANCE_POLL)
+    };
+    let far = super::cell_ref(x.saturating_add(40), y);
+    let mut scene = installed(
+        scene,
+        &module(&def(0, 2, &[poll(far)], &[]), victim as i64, ""),
+    );
+    ticks(&mut scene, 3);
+    assert_eq!(received(&scene), 0, "40 cells away");
+    let Some(scene) = scenario() else { return };
+    let near = super::cell_ref(x, y);
+    let mut scene = installed(
+        scene,
+        &module(&def(0, 2, &[poll(near)], &[]), victim as i64, ""),
+    );
+    ticks(&mut scene, 3);
+    assert_eq!(received(&scene), 1);
+    let (kind, subject, _, value, _) = first_record(&scene);
+    assert_eq!((kind, subject), (EVENT_DISTANCE_POLL, victim as i64));
+    assert!((0..1024).contains(&value), "the reading {value}");
+}
+
+/// `FatalDamage` on a bound object whose hit leaves no Strength, with the
+/// damage written.
+#[test]
+fn a_lethal_hit_raises_fatal_damage() {
+    let Some(scene) = scenario() else { return };
+    let victim = sturdy_object(&scene);
+    let fatal = def(0, 2, &[Ev::on(EVENT_FATAL_DAMAGE)], &[]);
+    let mut scene = installed(scene, &module(&fatal, victim as i64, ""));
+    hit(&mut scene, victim, 10);
+    scene.tick();
+    assert_eq!(received(&scene), 0, "a hit it survives");
+    let health = scene
+        .sim()
+        .entities()
+        .get(victim)
+        .expect("victim")
+        .health
+        .current();
+    hit(&mut scene, victim, health.saturating_mul(4));
+    scene.tick();
+    assert_eq!(received(&scene), 1);
+    let (kind, subject, _, value, _) = first_record(&scene);
+    assert_eq!(
+        (kind, subject, value),
+        (EVENT_FATAL_DAMAGE, victim as i64, i64::from(health))
+    );
+}
+
+/// `Timer` beside an object event counts on the bound object's instance:
+/// after a period ended, the next hit completes the trigger, whose record
+/// is the hit's.
+#[test]
+fn a_timer_with_an_object_event_latches_on_the_bound_object() {
+    let Some(scene) = scenario() else { return };
+    let victim = sturdy_object(&scene);
+    let timer = Ev {
+        interval: 4,
+        ..Ev::on(EVENT_TIMER)
+    };
+    let both = def(0, 2, &[Ev::on(EVENT_TAKE_DAMAGE), timer], &[]);
+    let mut scene = installed(scene, &module(&both, victim as i64, ""));
+    ticks(&mut scene, 5);
+    assert_eq!(received(&scene), 0, "the timer alone");
+    hit(&mut scene, victim, 10);
+    scene.tick();
+    assert_eq!(received(&scene), 1);
+    let (kind, subject, _, _, _) = first_record(&scene);
+    assert_eq!((kind, subject), (EVENT_TAKE_DAMAGE, victim as i64));
+}
+
+/// A `Fire` trigger bound to the GI weapon's projectile type fires for a
+/// shooter using it; `lookup(Projectile)` answers that ID.
+#[test]
+fn a_projectile_binding_raises_fire_for_its_shooter() {
+    use vera20k_wasm_ext::{NAME_PROJECTILE, TABLE_NAME_KIND};
+    let Some((mut scene, attacker, target)) = super::tests::gi_duel() else {
+        return;
+    };
+    let rules = &scene.runtime.resources.rules;
+    assert!(super::has_kind(rules, TABLE_NAME_KIND, NAME_PROJECTILE));
+    let weapon = rules.object("E1").expect("E1").weapon_list[0]
+        .clone()
+        .expect("E1 has a primary weapon");
+    let projectile = rules
+        .weapon(&weapon)
+        .and_then(|weapon| weapon.projectile.clone())
+        .expect("the weapon has a projectile");
+    let id = rules.projectile_index(&projectile).expect("projectile ID");
+    assert_eq!(
+        super::rules_name_id(rules, NAME_PROJECTILE, &projectile),
+        Some(Some(id as i32))
+    );
+    let projectile_ref = super::type_ref(NAME_PROJECTILE, id);
+    let fire = def(0, 2, &[Ev::on(EVENT_FIRE)], &[]);
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(
+            &scene.runtime.resources.rules,
+            ModuleSource::Map,
+            &module(&fire, projectile_ref, ""),
+        )
+        .expect("module installs");
+    scene.tick();
+    assert_eq!(
+        &memory(&scene)[72..80],
+        &[0; 8],
+        "create and bind answer Ok"
+    );
+    super::tests::first_hit(&mut scene, attacker, target, |_| {});
+    scene.tick();
+    assert!(received(&scene) >= 1);
+    let (kind, subject, _, _, _) = first_record(&scene);
+    assert_eq!(kind, EVENT_FIRE);
+    assert!([attacker as i64, target as i64].contains(&subject));
 }

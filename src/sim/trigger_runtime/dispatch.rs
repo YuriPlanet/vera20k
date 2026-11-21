@@ -204,6 +204,15 @@ impl Simulation {
             };
         }
         self.publish_trigger_effects(effects);
+        // Wasm module triggers on event 23 (RFC 0001 appendix 4.1), after
+        // the map's Tags and while the leaving Team still exists.
+        self.raise_module_global_stock_event(
+            rules,
+            frame_effects,
+            23,
+            None,
+            super::StockInput::NONE,
+        );
     }
 
     /// Original Tag6E53A0 attached-object ingress. `subject` chooses the
@@ -261,12 +270,18 @@ impl Simulation {
             let other = input
                 .source
                 .or(input.actor.filter(|actor| *actor != subject));
+            let stock = super::StockInput {
+                actor: input.actor,
+                source: input.source,
+                ares_source: input.ares_source,
+            };
             self.raise_module_stock_object_event(
                 context.rules(),
                 context.effects(),
                 input.kind,
                 subject,
                 other,
+                stock,
             );
         }
         tag.is_some()

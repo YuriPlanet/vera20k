@@ -1,19 +1,24 @@
-//! Stock events 0..61 for module triggers (RFC 0001 appendix 4.1): which of
-//! them reach module triggers, and their predicates, read through
-//! HasOccurred71E940's own House, waypoint and variable owners
-//! ([`Simulation::house_event_holds`], [`Simulation::near_waypoint`],
-//! [`super::TriggerRuntime::evaluate_event`]).
+//! Stock events 0..61 and Ares events 62..88 for module triggers (RFC 0001
+//! appendix 4.1, 4.2): which of them reach module triggers, and their
+//! predicates, read through HasOccurred71E940's own House, waypoint and
+//! variable owners ([`Simulation::house_event_holds`],
+//! [`Simulation::near_waypoint`], [`super::TriggerRuntime::evaluate_event`])
+//! and, for Ares' kinds, TEventExt::HasOccured (`ares_has_occurred`,
+//! Ares.dll 1004F7A0) on what the raise handed the Tag funnel.
 //!
 //! A module event's `value` names a house by its array index (−1 for any
 //! where the table allows it), not by Country as map events do; everything
 //! else reads as the map event would. Delivered (R) events reach module
 //! triggers at the Tag funnels map Tags use; House (H) and Logic (L) events
 //! are polled in the module phase, H every eighth frame and L every frame,
-//! as appendix 4 says. Stock events keep their stock repeat behavior: a
-//! repeating trigger fires on every check its condition holds.
+//! as appendix 4 says; global raised events (23, 50, Ares 75..77) reach
+//! every global module trigger at their raise. Stock events keep their
+//! stock repeat behavior: a repeating trigger fires on every check its
+//! condition holds.
 
 use vera20k_wasm_ext::triggers::EventDef;
 
+use super::{AresEventSource, TagEventInput};
 use crate::map::events::EventCondition;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
@@ -25,24 +30,47 @@ pub(crate) enum StockClass {
     Object,
     /// Delivered on a bound cell by the foot's per-cell Tag raise.
     Cell,
+    /// Raised with no object at its site, to global triggers.
+    Global,
     /// A House condition, checked every eighth frame.
     House,
     /// A logic condition, checked every frame.
     Logic,
 }
 
-/// The stock events module triggers take, with their class. The others
-/// answer `Unsupported` at `trigger_create`; the module's documentation
+/// The stock and Ares events module triggers take, with their class; Ares'
+/// (62..88) only when Ares plays, which `trigger_create` checks. The others
+/// answer `Unsupported` at `trigger_create`; `sim::ext_modules::events`
 /// lists them and why.
 pub(crate) const fn stock_class(kind: i32) -> Option<StockClass> {
     use StockClass::*;
     Some(match kind {
         1 | 4 | 6 | 7 | 29 | 34 | 35 | 38..=44 | 48 | 49 => Object,
+        62..=74 | 79 | 80 | 83..=85 => Object,
         25 | 26 => Cell,
-        5 | 8..=12 | 15..=22 | 30 | 32 | 52 | 55..=58 => House,
-        13 | 14 | 27 | 28 | 36 | 37 | 45..=47 | 60 | 61 => Logic,
+        23 | 50 | 75..=77 => Global,
+        5 | 8..=12 | 15..=22 | 30 | 32 | 52 | 55..=58 | 78 | 81 | 82 => House,
+        13 | 14 | 27 | 28 | 36 | 37 | 45..=47 | 60 | 61 | 86 => Logic,
         _ => return None,
     })
+}
+
+/// What a stock event's raise handed its Tag funnel (Tag6E53A0's actor and
+/// source, and the non-Techno source Ares passes), which the Ares
+/// predicates read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StockInput {
+    pub(crate) actor: Option<u64>,
+    pub(crate) source: Option<u64>,
+    pub(crate) ares_source: Option<AresEventSource>,
+}
+
+impl StockInput {
+    pub(crate) const NONE: Self = Self {
+        actor: None,
+        source: None,
+        ares_source: None,
+    };
 }
 
 /// Stock events whose `value` is a house array index, read as the house the
@@ -74,11 +102,14 @@ pub(crate) struct StockReading<'a> {
     /// The event's subject and other object (creation serials, 0 for none).
     pub(crate) subject: u64,
     pub(crate) other: u64,
+    /// What the raise handed the Tag funnel.
+    pub(crate) input: StockInput,
     /// The trigger's house for this firing (array index).
     pub(crate) trigger_house: Option<u32>,
     /// The frame polling counts from (`ElapsedTime`).
     pub(crate) poll_start: u32,
-    /// TechnoType `def.id`'s name, for 60 and 61.
+    /// The name of the type `def.id` names: a TechnoType for 60, 61 and
+    /// Ares' typed events, a SuperWeaponType for Ares 77.
     pub(crate) type_name: Option<&'a str>,
 }
 
@@ -110,6 +141,33 @@ impl Simulation {
             let admitted = actor.is_some() && (value == -1 || actor == u32::try_from(value).ok());
             return (admitted, actor);
         }
+        // Ares' kinds (62..88): TEventExt::HasOccured on the raise's own
+        // actor, source and Ares source, the trigger's house as the incoming
+        // House. A House event's record carries that house.
+        if (62..=88).contains(&kind) {
+            let condition = EventCondition {
+                kind,
+                value,
+                type_name: reading.type_name.map(str::to_owned),
+                team_name: None,
+            };
+            let input = TagEventInput {
+                kind,
+                actor: reading.input.actor,
+                source: reading.input.source,
+                ares_source: reading.input.ares_source,
+                ..TagEventInput::default()
+            };
+            let incoming = reading
+                .trigger_house
+                .and_then(|index| house_at(index as i32));
+            let holds = self.ares_has_occurred(&condition, input, incoming, rules) == Some(true);
+            let carried = match stock_class(kind) {
+                Some(StockClass::House) => reading.trigger_house,
+                _ => None,
+            };
+            return (holds, carried);
+        }
         match kind {
             // HasOccurred71EE57: the source Techno's House at predicate time.
             44 => (
@@ -117,6 +175,24 @@ impl Simulation {
                 None,
             ),
             34 => (self.near_waypoint(value, reading.subject), None),
+            // HasOccurred71EEA9's scan: a Team of TeamType `id`, empty and
+            // leaving the map (the raise precedes its destruction).
+            23 => {
+                let team_type = usize::try_from(def.id)
+                    .ok()
+                    .and_then(|index| self.stock_team_type_name(index))
+                    .and_then(|name| self.interner.get(name));
+                (
+                    team_type.is_some_and(|team_type| {
+                        self.team_script_vm.has_empty_leaving_team(Some(team_type))
+                    }),
+                    None,
+                )
+            }
+            // The crate pickup itself is the condition (the logic poll of
+            // the Scenario crate byte, which is cleared before the module
+            // phase).
+            50 => (true, None),
             8 => (true, reading.trigger_house),
             _ if stock_class(kind) == Some(StockClass::Object) => (true, None),
             _ if stock_class(kind) == Some(StockClass::House) => {

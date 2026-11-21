@@ -13,7 +13,9 @@
 //!   when the receiver's kill path names one;
 //! - `Fire`: the end of a FireAt that launched a bullet
 //!   (`world_fire::emit_admitted_fire`, Techno6FDD50);
-//! - `Timer`: the start of the module phase;
+//! - `Timer`: the start of the module phase, once for a global trigger and
+//!   once per instance (bound object, object of a bound type) for a trigger
+//!   whose other events are object events;
 //! - stock events, the other delivered events and the polling events:
 //!   [`super::events`].
 //!
@@ -24,15 +26,18 @@
 //! actions fire module triggers again, up to the caps in [`super::chains`];
 //! a firing past them waits for the next module phase.
 //!
+//! Weapon, warhead and projectile type bindings (name kinds 1, 2 and 3)
+//! serve the "Object + weapon" events (`Fire`): the event names the shot's
+//! weapon, its warhead and its projectile type.
+//!
 //! Residuals:
-//! - Projectile type bindings answer `Unsupported` (no `Projectile` name
-//!   kind yet); weapon and warhead bindings serve `Fire`.
 //! - Immediate actions are the kinds [`super::run_action`] implements, run
 //!   through it with the trigger house and the text `trigger_create` copied;
 //!   other kinds make `trigger_create` answer `Unsupported`.
-//! - A trigger mixing global events (`Timer`, house and logic events,
-//!   global polls, `Defeat`) with object or cell events answers
-//!   `Unsupported`.
+//! - A trigger mixing global events (house and logic events, global polls,
+//!   `Defeat`) with object or cell events answers `Unsupported`, as does
+//!   `Timer` with cell events. `Timer` with object events on a trigger bound
+//!   only to weapon types never fires: such a trigger has no instances.
 //! - The "flag" an event site checks is a per-kind test, then a map lookup
 //!   by subject, not a side column in entity storage (RFC 15.1, item 1).
 
@@ -41,8 +46,8 @@ use vera20k_wasm_ext::triggers::{
     FLAG_STARTS_DISABLED, FilterClause, FilterSubject, VarTarget,
 };
 use vera20k_wasm_ext::{
-    EventRecord, Fault, Invalid, NAME_TECHNO_TYPE, NAME_WARHEAD, NAME_WEAPON, SimModule, Status,
-    TriggerDef, VarScope, property_id, property_name,
+    EventRecord, Fault, Invalid, NAME_PROJECTILE, NAME_TECHNO_TYPE, NAME_WARHEAD, NAME_WEAPON,
+    SimModule, Status, TriggerDef, VarScope, property_id, property_name,
 };
 
 use super::{
@@ -52,7 +57,7 @@ use super::{
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
-use crate::sim::trigger_runtime::{ModuleTrigger, TriggerScope};
+use crate::sim::trigger_runtime::{ModuleTrigger, StockInput, TriggerScope};
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// Records one module receives per frame, and how many frames' worth may
@@ -81,10 +86,14 @@ pub(crate) struct ModuleEvent {
     /// A polling event's index in the trigger it is checked for: only that
     /// event latches.
     pub(crate) poll: Option<usize>,
-    /// Weapon and warhead IDs whose type bindings the event reaches
-    /// (−1 for none); not part of the record.
+    /// Weapon, warhead and projectile type IDs whose type bindings the
+    /// event reaches (−1 for none); not part of the record.
     pub(crate) weapon: i32,
     pub(crate) warhead: i32,
+    pub(crate) projectile_type: i32,
+    /// What a stock event's raise handed its Tag funnel, which the Ares
+    /// predicates read; not part of the record.
+    pub(crate) stock: StockInput,
 }
 
 impl ModuleEvent {
@@ -103,6 +112,8 @@ impl ModuleEvent {
             poll: None,
             weapon: -1,
             warhead: -1,
+            projectile_type: -1,
+            stock: StockInput::NONE,
         }
     }
 }
@@ -173,7 +184,7 @@ impl Host<'_, '_> {
     /// `trigger_create`: checks every event, clause and action, then adds
     /// the trigger to the trigger runtime.
     pub(super) fn create_trigger(&mut self, def: &TriggerDef) -> Result<(i64, Status), Invalid> {
-        if let Some(status) = super::decide::check_decide_key(def)? {
+        if let Some(status) = super::decide::check_decide_key(def, self.rules)? {
             return Ok((0, status));
         }
         let house = match def.house {
@@ -183,7 +194,7 @@ impl Host<'_, '_> {
                 None => return Ok((0, Status::Gone)),
             },
         };
-        let mut scope = None;
+        let (mut scope, mut timer) = (None, false);
         for event in &def.events {
             for clause in &event.clauses {
                 if let FilterSubject::Var { var, target } = clause.subject {
@@ -194,6 +205,12 @@ impl Host<'_, '_> {
                 Ok(this) => this,
                 Err(status) => return Ok((0, status)),
             };
+            // `Timer` takes the scope of the trigger's other events: each
+            // instance counts its periods (`raise_module_timers`).
+            if event.kind == EVENT_TIMER {
+                timer = true;
+                continue;
+            }
             scope = match (scope, this) {
                 (None, this) => Some(this),
                 (Some(a), b) if a == b => Some(a),
@@ -205,8 +222,12 @@ impl Host<'_, '_> {
                 _ => return Ok((0, Status::Unsupported)),
             };
         }
-        let Some(scope) = scope else {
-            return Ok((0, Status::Unsupported));
+        let scope = match (scope, timer) {
+            (None, true) => TriggerScope::Global,
+            (Some(TriggerScope::Cell), true) | (None, false) => {
+                return Ok((0, Status::Unsupported));
+            }
+            (Some(scope), _) => scope,
         };
         for action in &def.actions {
             if let Some(status) = self.check_action(action)? {
@@ -304,10 +325,10 @@ impl Host<'_, '_> {
                 return refuse("object or type");
             }
             Some(Ref::Type {
-                kind: NAME_WEAPON | NAME_WARHEAD,
+                kind: NAME_WEAPON | NAME_WARHEAD | NAME_PROJECTILE,
                 ..
             }) if scope != Some(TriggerScope::Object { weapon: true }) => {
-                return refuse("weapon or warhead");
+                return refuse("weapon, warhead or projectile");
             }
             _ => {}
         }
@@ -345,13 +366,13 @@ impl Host<'_, '_> {
                 }
             }
             Some(Ref::Type {
-                kind: kind @ (NAME_WEAPON | NAME_WARHEAD),
+                kind: kind @ (NAME_WEAPON | NAME_WARHEAD | NAME_PROJECTILE),
                 id,
             }) => {
-                let known = if kind == NAME_WEAPON {
-                    self.rules.weapon_at(id).is_some()
-                } else {
-                    self.rules.warhead_at(id).is_some()
+                let known = match kind {
+                    NAME_WEAPON => self.rules.weapon_at(id).is_some(),
+                    NAME_WARHEAD => self.rules.warhead_at(id).is_some(),
+                    _ => self.rules.projectile_at(id).is_some(),
                 };
                 if !known {
                     return Err(Invalid(format!("no type {id} of name kind {kind}")));
@@ -373,8 +394,6 @@ impl Host<'_, '_> {
                     triggers.unbind_cell(handle, (x, y))
                 }
             }
-            // Projectile type bindings (module residuals).
-            Some(Ref::Type { kind: 3, .. }) => return Ok(Status::Unsupported),
             Some(_) => {
                 return Err(Invalid(format!(
                     "{target:#x} cannot hold a trigger binding"
@@ -473,10 +492,14 @@ impl Simulation {
             None
         };
         let weapons: Vec<(i32, u32)> = if triggers.has_weapon_bindings() {
-            [(NAME_WEAPON, event.weapon), (NAME_WARHEAD, event.warhead)]
-                .into_iter()
-                .filter_map(|(kind, id)| Some((kind, u32::try_from(id).ok()?)))
-                .collect()
+            [
+                (NAME_WEAPON, event.weapon),
+                (NAME_WARHEAD, event.warhead),
+                (NAME_PROJECTILE, event.projectile_type),
+            ]
+            .into_iter()
+            .filter_map(|(kind, id)| Some((kind, u32::try_from(id).ok()?)))
+            .collect()
         } else {
             Vec::new()
         };
@@ -492,7 +515,10 @@ impl Simulation {
     }
 
     /// `Timer` triggers whose period ends this frame, from the start of the
-    /// module phase. A period counts from the trigger's creation frame.
+    /// module phase. A period counts from the trigger's creation frame. A
+    /// global trigger has one instance; a trigger with object events counts
+    /// the period on each instance: every bound object and every object of
+    /// a bound type, in creation order.
     pub(super) fn raise_module_timers(
         &mut self,
         rules: &RuleSet,
@@ -502,24 +528,31 @@ impl Simulation {
             return;
         }
         let frame = self.session.binary_frame();
-        for handle in self.trigger_runtime.module_triggers().global(EVENT_TIMER) {
+        for handle in self.trigger_runtime.module_triggers().handles() {
             let Some(trigger) = self.trigger_runtime.module_triggers().get(handle) else {
                 continue;
             };
             let Some(interval) = trigger
                 .events
                 .iter()
-                .find(|event| timer_due(event, trigger.created, frame))
+                .find(|event| event.kind == EVENT_TIMER && timer_due(event, trigger.created, frame))
                 .map(|event| event.interval)
             else {
                 continue;
             };
-            let event = ModuleEvent {
-                // The frame of the previous firing, or of creation.
-                value: i64::from(frame) - i64::from(interval),
-                ..ModuleEvent::new(EVENT_TIMER, 0)
+            let holders = if trigger.is_global() {
+                vec![0]
+            } else {
+                self.module_poll_holders(rules, handle)
             };
-            self.offer_module_event(rules, frame_effects, handle, 0, &event);
+            for holder in holders {
+                let event = ModuleEvent {
+                    // The frame of the previous firing, or of creation.
+                    value: i64::from(frame) - i64::from(interval),
+                    ..ModuleEvent::new(EVENT_TIMER, holder)
+                };
+                self.offer_module_event(rules, frame_effects, handle, holder, &event);
+            }
         }
     }
 

@@ -96,6 +96,37 @@ impl Event {
     pub const TECH_TYPE_EXISTS: i32 = 60;
     pub const TECH_TYPE_DOES_NOT_EXIST: i32 = 61;
 
+    // Ares events (appendix 4.2), only when Ares plays (`has_kind` answers
+    // 0 otherwise). `value` names a house by array index; `id` names the
+    // TechnoType (the SuperWeaponType for 77).
+    pub const UNDER_EMP: i32 = 62;
+    pub const UNDER_EMP_BY_HOUSE: i32 = 63;
+    pub const REMOVED_FROM_EMP: i32 = 64;
+    pub const REMOVED_FROM_EMP_BY_HOUSE: i32 = 65;
+    pub const IN_SPOTLIGHT: i32 = 66;
+    pub const DRIVER_KILLED: i32 = 67;
+    pub const DRIVER_KILLED_BY_HOUSE: i32 = 68;
+    pub const VEHICLE_TAKEN: i32 = 69;
+    pub const VEHICLE_TAKEN_BY_HOUSE: i32 = 70;
+    pub const ABDUCTED: i32 = 71;
+    pub const ABDUCTED_BY_HOUSE: i32 = 72;
+    pub const ABDUCTS_SOMETHING: i32 = 73;
+    pub const ABDUCTS_SOMETHING_OF_HOUSE: i32 = 74;
+    pub const SUPER_WEAPON_ACTIVATED: i32 = 75;
+    pub const SUPER_WEAPON_DEACTIVATED: i32 = 76;
+    pub const SUPER_WEAPON_NEAR_WAYPOINT: i32 = 77;
+    pub const HOUSE_REVERSE_ENGINEERED_TYPE: i32 = 78;
+    pub const SOMETHING_REVERSE_ENGINEERED: i32 = 79;
+    pub const TYPE_REVERSE_ENGINEERED: i32 = 80;
+    pub const HOUSE_OWNS_AT_LEAST: i32 = 81;
+    pub const HOUSE_OWNS_AT_MOST: i32 = 82;
+    pub const ATTACKED_OR_DESTROYED_BY_ANYBODY: i32 = 83;
+    pub const ATTACKED_OR_DESTROYED_BY_HOUSE: i32 = 84;
+    pub const DESTROYED_BY_HOUSE: i32 = 85;
+    pub const TYPE_COUNT_AT_MOST: i32 = 86;
+    pub const HOUSE_NO_KEEP_ALIVE_OBJECTS: i32 = 87;
+    pub const HOUSE_NO_KEEP_ALIVE_BUILDINGS: i32 = 88;
+
     // New delivered events (appendix 4.3).
     pub const TAKE_DAMAGE: i32 = 1000;
     pub const HIT_BY_WARHEAD: i32 = 1001;
@@ -367,6 +398,27 @@ impl Trigger {
         Self::on(Event::VARIABLE_POLL).poll(var.0, op, value, interval)
     }
 
+    /// A trigger on `HousePowerPoll`: fires when the trigger's house's power
+    /// output minus drain `op value` becomes true, checked every `interval`
+    /// frames. Set the house with [`Trigger::house`].
+    pub fn on_house_power(op: Op, value: i64, interval: i32) -> Self {
+        Self::on(Event::HOUSE_POWER_POLL).poll(-1, op, value, interval)
+    }
+
+    /// A trigger on `ModifierCountPoll`: fires when the number of this
+    /// module's modifiers in `group` on a bound object `op count` becomes
+    /// true, checked every `interval` frames.
+    pub fn on_modifier_count(group: i32, op: Op, count: i64, interval: i32) -> Self {
+        Self::on(Event::MODIFIER_COUNT_POLL).poll(group, op, count, interval)
+    }
+
+    /// A trigger on `DistancePoll`: fires when a bound object's distance in
+    /// leptons to the centre of `cell` (a [`Cell`] or [`crate::Waypoint`])
+    /// `op leptons` becomes true, checked every `interval` frames.
+    pub fn on_distance(cell: impl Ref, op: Op, leptons: i32, interval: i32) -> Self {
+        Self::on(Event::DISTANCE_POLL).poll(leptons, op, cell.raw(), interval)
+    }
+
     fn poll(mut self, id: i32, op: Op, value: i64, interval: i32) -> Self {
         if let Some(index) = (self.header.event_count as usize).checked_sub(1) {
             let def = &mut self.events[index].def;
@@ -475,9 +527,9 @@ impl Trigger {
         self.clause(3, 0, var.0, op, value)
     }
 
-    /// Binds the trigger to `reference` (an object, a type, a weapon or
-    /// warhead type for `Fire`, or a cell for stock events 25 and 26) at
-    /// [`Trigger::done`].
+    /// Binds the trigger to `reference` (an object, a type, a weapon,
+    /// warhead or projectile type for `Fire`, or a cell for stock events 25
+    /// and 26) at [`Trigger::done`].
     pub fn bind(mut self, reference: impl Ref) -> Self {
         match self.binds.get_mut(self.binds_len) {
             Some(slot) => {
@@ -714,6 +766,53 @@ view!(
 );
 
 view!(
+    /// `TransportExited` (appendix 4.3), on the passenger.
+    TransportExitedEvent {
+        passenger: Techno = |r| Techno(r.subject),
+        transport: Techno = |r| Techno(r.other),
+        /// The space the passenger occupied.
+        space: i64 = |r| r.value,
+        /// 1 for a garrison, 0 for a transport.
+        garrison: i64 = |r| r.value2,
+    }
+);
+
+view!(
+    /// `PassengerRemoved` (appendix 4.3), on the transport.
+    PassengerRemovedEvent {
+        transport: Techno = |r| Techno(r.subject),
+        passenger: Techno = |r| Techno(r.other),
+        space: i64 = |r| r.value,
+        garrison: i64 = |r| r.value2,
+    }
+);
+
+view!(
+    /// `AttackedBy` (appendix 4.3), on the target after the shot.
+    AttackedByEvent {
+        target: Techno = |r| Techno(r.subject),
+        attacker: Techno = |r| Techno(r.other),
+        weapon_slot: i64 = |r| r.value,
+        projectile: i64 = |r| r.projectile,
+    }
+);
+
+view!(
+    /// `FatalDamage` (appendix 4.3): the hit left no Strength; death
+    /// processing follows.
+    FatalDamageEvent {
+        victim: Techno = |r| Techno(r.subject),
+        /// The source; `NO_HANDLE` without one.
+        attacker: Techno = |r| Techno(r.other),
+        damage: i64 = |r| r.value,
+        /// Warhead ID, −1 when unknown.
+        warhead: i32 = |r| r.id,
+        /// The victim's position in leptons.
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+view!(
     /// `HouseTransferred` (appendix 4.3).
     HouseTransferredEvent {
         object: Techno = |r| Techno(r.subject),
@@ -744,7 +843,7 @@ view!(
 );
 
 view!(
-    /// `PropertyPoll` and `VariablePoll` (appendix 4.4).
+    /// The polling events (appendix 4.4).
     PollEvent {
         /// The polled object; `NO_HANDLE` for a global poll.
         subject: Techno = |r| Techno(r.subject),

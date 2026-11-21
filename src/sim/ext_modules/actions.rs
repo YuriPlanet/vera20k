@@ -1147,6 +1147,9 @@ impl Run<'_, '_, '_, '_> {
                 crate::sim::mission::MissionId::from_raw(mission),
             );
         }
+        // Wasm module `Birth` (appendix 4.3) for the object it made.
+        self.sim
+            .raise_module_birth(rules, self.ctx.frame_effects, placed, None);
         Ok(placed as i64)
     }
 

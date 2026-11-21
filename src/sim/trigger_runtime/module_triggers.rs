@@ -26,12 +26,12 @@ use crate::sim::ext_modules::ModuleSource;
 /// shares it, which `trigger_create` checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TriggerScope {
-    /// House and logic events, `Timer`, superweapon launches and global
-    /// polls: no binding, one instance.
+    /// House, logic and global raised events, `Timer` alone, superweapon
+    /// launches and global polls: no binding, one instance.
     Global,
-    /// Object events: object, type and tag bindings. `weapon` when every
-    /// event also admits weapon and warhead bindings (appendix 4.3 "Object +
-    /// weapon").
+    /// Object events, with or without `Timer`: object, type and tag
+    /// bindings. `weapon` when every event also admits weapon, warhead and
+    /// projectile type bindings (appendix 4.3 "Object + weapon").
     Object { weapon: bool },
     /// Events marked "cell binding" in appendix 4.1.
     Cell,
@@ -136,7 +136,8 @@ pub(crate) struct ModuleTriggers {
     objects: BTreeMap<u64, BTreeSet<u64>>,
     /// Bound TechnoType ID to its triggers.
     types: BTreeMap<u32, BTreeSet<u64>>,
-    /// Bound weapon or warhead type (name kind 1 or 2, ID) to its triggers.
+    /// Bound weapon, warhead or projectile type (name kind 1, 2 or 3, ID) to
+    /// its triggers.
     weapons: BTreeMap<(i32, u32), BTreeSet<u64>>,
     /// Bound cell (x, y) to its triggers.
     cells: BTreeMap<(u16, u16), BTreeSet<u64>>,
@@ -292,12 +293,13 @@ impl ModuleTriggers {
         removed
     }
 
-    /// Binds a weapon (name kind 1) or warhead (2) type.
+    /// Binds a weapon (name kind 1), warhead (2) or projectile (3) type.
     pub(crate) fn bind_weapon(&mut self, handle: u64, kind: i32, id: u32) {
         self.weapons.entry((kind, id)).or_default().insert(handle);
     }
 
-    /// Removes one weapon or warhead binding; false when there was none.
+    /// Removes one weapon, warhead or projectile binding; false when there
+    /// was none.
     pub(crate) fn unbind_weapon(&mut self, handle: u64, kind: i32, id: u32) -> bool {
         let removed = self
             .weapons
@@ -435,8 +437,8 @@ impl ModuleTriggers {
     }
 
     /// The triggers with an event of `kind` bound to `subject`, to its
-    /// TechnoType or to one of the weapon and warhead types in `weapons`
-    /// (name kind, ID), in creation order.
+    /// TechnoType or to one of the weapon, warhead and projectile types in
+    /// `weapons` (name kind, ID), in creation order.
     pub(crate) fn bound(
         &self,
         kind: i32,

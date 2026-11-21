@@ -2,92 +2,142 @@
 //! `Fire` and `Timer` (RFC 0001 appendix 4): what `trigger_create` accepts
 //! of each, where each is raised and what its record holds.
 //!
-//! Stock events 0..61 (appendix 4.1), read through the trigger runtime's
-//! own predicates (`trigger_runtime::module_events`):
-//! - object events 1, 4, 6, 7, 29, 34, 35, 38..44, 48, 49, raised for bound
-//!   objects at the object Tag funnel (`dispatch_object_tag_input`, the
-//!   Tag6E53A0 ingress every native site uses); `other` is the raise's
-//!   source or acting object;
+//! Stock events 0..61 and, when Ares plays (`rules.ares_form()`), Ares
+//! events 62..88 (appendix 4.1, 4.2), read through the trigger runtime's own
+//! predicates (`trigger_runtime::module_events`; Ares' through
+//! TEventExt::HasOccured 1004F7A0):
+//! - object events 1, 4, 6, 7, 29, 34, 35, 38..44, 48, 49 and Ares 62..74,
+//!   79, 80, 83..85, raised for bound objects at the object Tag funnel
+//!   (`dispatch_object_tag_input`, the Tag6E53A0 ingress every native site
+//!   uses); `other` is the raise's source or acting object;
 //! - cell events 25 and 26, for cells bound with a cell reference, from the
 //!   foot's per-cell arrival (Foot4D8A70..4D8B66): a bound cell on the
 //!   arrival cell's row (25) or column (26);
-//! - House events 5, 8..12, 15..22, 30, 32, 52, 55..58, polled every eighth
-//!   frame, and logic events 13, 14, 27, 28, 36, 37, 45..47, 60, 61, every
-//!   frame, at the start of the module phase.
+//! - global raised events, for every global trigger: 23 (team leaves map,
+//!   `id` a TeamType, beside TeamClass's event-23 Tag broadcasts 6E92D0 and
+//!   6EA49F), 50 (any crate, at Pickup481A7F where the crate marks the
+//!   Scenario crate byte) and Ares 75..77 (SWTypeExt::Activate 10032020 and
+//!   Deactivate 100325D0, which raise them on the owner's House Tags: a
+//!   trigger with a fixed house takes only its own house's);
+//! - House events 5, 8..12, 15..22, 30, 32, 52, 55..58 and Ares 78, 81, 82,
+//!   polled every eighth frame, and logic events 13, 14, 27, 28, 36, 37,
+//!   45..47, 60, 61 and Ares 86, every frame, at the start of the module
+//!   phase. Ares' `id` names the TechnoType (77: the SuperWeaponType).
 //!
 //! Stock events module triggers do not take (`Unsupported`):
 //! - 0 is private and never true;
 //! - 2 (spied) and 3 (thieved): no engine site raises them;
-//! - 23 (team leaves map) needs a TeamType argument module IDs do not
-//!   name yet; 24, 53, 54 and 59 reach only map CellTags and the Map tag
-//!   list, whose binding a module trigger has no form for;
+//! - 24, 53, 54 and 59 reach only map CellTags and the Map tag list, whose
+//!   binding a module trigger has no form for;
 //! - 31 (bridge destroyed): its raise knows the cell's native identity, not
 //!   its coordinates;
 //! - 33 (selected) depends on one player's selection and is off online;
-//! - 50 (any crate) reads the trigger runtime's dirty byte, cleared before
-//!   the module phase;
-//! - 51 (random delay) draws the native random stream for each trigger.
+//! - 51 (random delay) draws the native random stream for each trigger;
+//! - Ares 87 and 88 read `value` as Ares' ResolveHouseParam selector
+//!   (Country index or Player@X), not as a house index.
 //!
 //! New delivered events (appendix 4.3):
 //! - `Birth` after a produced object's RecordLastBuilt (`0x004FB6B0`), with
-//!   the factory or yard as `other` where the site knows it;
+//!   the factory or yard as `other` where the site knows it; after each
+//!   member a reinforcement placed (SpawnReinforcements 65D8E0's Unlimbo
+//!   loop 65E010 or its building exit, Chrono reinforcement 65EC30), the
+//!   building of TActionCreateBuilding 6E4200 (after its Grand_Opening),
+//!   each object HouseClass 50D440/50D320 recreates (stock actions 126 and
+//!   130), and a module's `CreateObject`;
 //! - `TransportEntered` (passenger) and `PassengerAdded` (transport) at the
 //!   end of AddPassenger (`0x00710670`), `value` the passenger's size;
+//!   `TransportExited` and `PassengerRemoved` after a cargo departure placed
+//!   its passenger (CargoClass::RemoveFirstPassenger 0x00473430, then the
+//!   route's Unlimbo);
+//! - `AttackedBy` on the target object after a FireAt that launched its
+//!   bullet (Techno6FDD50), beside the shooter's `Fire`;
+//! - `FatalDamage` after the Strength write that leaves 0 (Object5F5390),
+//!   before Kill and Destroy, which read the live Strength again;
 //! - `HouseTransferred` at the end of ChangeOwner (`0x007014A0`), `house`
-//!   the old house;
+//!   the old house, `value` 1 when CaptureManager's Capture (0x00471D40),
+//!   FreeUnit (0x004720D5), PsyDom's permanent capture or Ares' permanent
+//!   mind control and Dominator transfer the object;
 //! - `SuperWeaponLaunched` after SuperClass::Launch (`0x006CC390`).
 //!
-//! Polling events (appendix 4.4): `PropertyPoll` and `VariablePoll`, checked
-//! at the start of the module phase every `interval` frames counted from the
-//! trigger's creation, or from the latest change of a `VariablePoll`'s
-//! variable; an object on frames where that count matches its creation
-//! serial modulo `interval`. Each fires when its condition becomes true and
-//! only again after a check finds it false; the record's `value` is the
-//! reading.
+//! Polling events (appendix 4.4): `PropertyPoll`, `HousePowerPoll` (the
+//! trigger's house's `PowerOutput` minus `PowerDrain`), `ModifierCountPoll`
+//! (modifiers on the subject in group `id` that the trigger's module
+//! added), `DistancePoll` (the subject's `X`, `Y` to the centre of the cell
+//! or waypoint `value`, by Sqrt_Approx 0x4CAC40, compared with `id`) and
+//! `VariablePoll`, checked at the start of the module phase every
+//! `interval` frames counted from the trigger's creation, or from the latest
+//! change of a `VariablePoll`'s variable; an object on frames where that
+//! count matches its creation serial modulo `interval`. Each fires when its
+//! condition becomes true and only again after a check finds it false; the
+//! record's `value` is the reading.
 //!
 //! Residuals:
-//! - `HouseTransferred` carries `value` 0 also for a mind control: ChangeOwner
-//!   is not told why it runs (its 42 callers would have to say), and the
-//!   controller link is written after it returns.
-//! - `Birth` is raised for produced objects only, not for reinforcements,
-//!   spawned aircraft or crate units; `value` (production time) is −1.
-//! - Garrisons raise no `TransportEntered`/`PassengerAdded`.
+//! - `Birth` is not raised for paradropped reinforcement members (they
+//!   leave their plane later, raising `TransportExited`), spawned aircraft,
+//!   crate units, survivors or the map's own starting objects (placed before
+//!   modules install); `value` (production time) is −1.
+//! - Garrisons raise no passenger events, and cargo that leaves other than
+//!   by a departure (a dying or crashing transport, an uninit) raises no
+//!   `TransportExited`/`PassengerRemoved`.
 //! - Stock 19..22 read `value` as the class type index; the `id` form is
-//!   not read.
+//!   not read. Ares 77 compares the launched type's first 24 bytes with the
+//!   whole name of `id`.
 //! - Polls on type-bound triggers scan every object each frame for that
-//!   type (RFC 15.1 item 1 wants a side column).
-//! - The other 4.3 and 4.4 events answer `Unsupported`.
+//!   type (RFC 15.1 item 1 wants a side column); so does a type-bound
+//!   trigger's `Timer`.
+//! - The other 4.3 events answer `Unsupported`: `HitByWarhead` and
+//!   `HitTarget` (no raise point apart from `TakeDamage` that knows the
+//!   immune hit or the shooter's weapon), `SpawnFire`, `TargetChanged`,
+//!   `ProjectileIncoming`, `Detonated`, `Commanded`, `Crushed`,
+//!   `HouseTransfer` (before ChangeOwner, which would have to recheck),
+//!   the modifier events and `ProductionCancelled` (House Abandon 0x004FAA10
+//!   also settles every delivery).
 
 use std::collections::BTreeSet;
 
 use vera20k_wasm_ext::triggers::{
-    EVENT_BIRTH, EVENT_FIRE, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_PASSENGER_ADDED,
-    EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER,
-    EVENT_TRANSPORT_ENTERED, EVENT_VARIABLE_POLL, EventDef,
+    EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE,
+    EVENT_HOUSE_POWER_POLL, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_MODIFIER_COUNT_POLL,
+    EVENT_PASSENGER_ADDED, EVENT_PASSENGER_REMOVED, EVENT_PROPERTY_POLL,
+    EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_TRANSPORT_ENTERED,
+    EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
 };
-use vera20k_wasm_ext::{Invalid, Status, VarScope, property_name};
+use vera20k_wasm_ext::{Invalid, Status, VarScope, property_id, property_name};
 
 use super::triggers::variable_scope;
-use super::{Host, ModuleEvent, cell_ref, house_ref, techno_type};
+use super::{Host, ModuleEvent, Ref, cell_ref, decode_ref, house_ref, techno_type};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::trigger_runtime::{
-    StockClass, StockReading, TriggerScope, stock_class, stock_poll_due, value_filters_actor_house,
-    value_names_house,
+    StockClass, StockInput, StockReading, TriggerScope, stock_class, stock_poll_due,
+    value_filters_actor_house, value_names_house,
 };
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3).
-const DELIVERED: [i32; 9] = [
+const DELIVERED: [i32; 13] = [
     EVENT_TAKE_DAMAGE,
+    EVENT_ATTACKED_BY,
+    EVENT_FATAL_DAMAGE,
     EVENT_KILLED,
     EVENT_FIRE,
-    EVENT_TIMER,
     EVENT_BIRTH,
     EVENT_TRANSPORT_ENTERED,
+    EVENT_TRANSPORT_EXITED,
     EVENT_PASSENGER_ADDED,
+    EVENT_PASSENGER_REMOVED,
     EVENT_HOUSE_TRANSFERRED,
+    EVENT_TIMER,
     EVENT_SUPER_WEAPON_LAUNCHED,
+];
+
+/// The polling events (appendix 4.4), every one of which this engine checks.
+const POLLS: [i32; 5] = [
+    EVENT_PROPERTY_POLL,
+    EVENT_HOUSE_POWER_POLL,
+    EVENT_MODIFIER_COUNT_POLL,
+    EVENT_DISTANCE_POLL,
+    EVENT_VARIABLE_POLL,
 ];
 
 /// What `PropertyPoll` reads on a bound object (appendix 4.4); `Money` is
@@ -104,16 +154,20 @@ const OBJECT_POLL_PROPERTIES: [&str; 9] = [
     "LandType",
 ];
 
+/// The stock events a module trigger takes here: Ares' (62..88) only when
+/// Ares plays (appendix 4.2).
+fn takes_stock(rules: &RuleSet, kind: i32) -> bool {
+    stock_class(kind).is_some() && (kind < 62 || rules.ares_form())
+}
+
 /// Whether this engine raises event `kind`: `has_kind(0, kind)`.
-pub(super) fn raises(kind: i32) -> bool {
-    stock_class(kind).is_some()
-        || DELIVERED.contains(&kind)
-        || matches!(kind, EVENT_PROPERTY_POLL | EVENT_VARIABLE_POLL)
+pub(super) fn raises(rules: &RuleSet, kind: i32) -> bool {
+    takes_stock(rules, kind) || DELIVERED.contains(&kind) || POLLS.contains(&kind)
 }
 
 /// Events checked in the module phase rather than raised at a site.
 fn is_polled(kind: i32) -> bool {
-    matches!(kind, EVENT_PROPERTY_POLL | EVENT_VARIABLE_POLL)
+    POLLS.contains(&kind)
         || matches!(
             stock_class(kind),
             Some(StockClass::House | StockClass::Logic)
@@ -130,6 +184,19 @@ fn poll_due(interval: i32, start: u32, frame: u32, holder: u64) -> bool {
     frame > start && (frame - start) % interval == phase
 }
 
+/// The name of TechnoType or, for Ares 77, SuperWeaponType `def.id`, which
+/// stock events 60 and 61 and Ares' typed events compare.
+fn stock_type_name<'r>(rules: &'r RuleSet, def: &EventDef) -> Option<&'r str> {
+    match def.kind {
+        60 | 61 | 78 | 80 | 81 | 82 | 86 => techno_type(rules, def.id).map(|o| o.id.as_str()),
+        77 => usize::try_from(def.id)
+            .ok()
+            .and_then(|index| rules.super_weapon_order.get(index))
+            .map(String::as_str),
+        _ => None,
+    }
+}
+
 impl Host<'_, '_> {
     /// What `trigger_create` accepts of one event, and what it binds to:
     /// `Err(status)` for a kind this engine does not raise or a missing
@@ -140,21 +207,27 @@ impl Host<'_, '_> {
     ) -> Result<Result<TriggerScope, Status>, Invalid> {
         let object = TriggerScope::Object { weapon: false };
         let invalid = |why: String| Err(Invalid(format!("event {}: {why}", def.kind)));
-        let polling = matches!(
-            def.kind,
-            EVENT_TIMER | EVENT_PROPERTY_POLL | EVENT_VARIABLE_POLL
-        );
-        if polling && def.interval < 1 {
+        if (def.kind == EVENT_TIMER || POLLS.contains(&def.kind)) && def.interval < 1 {
             return invalid(format!("interval {}", def.interval));
         }
         let scope = match def.kind {
-            EVENT_TIMER | EVENT_SUPER_WEAPON_LAUNCHED => TriggerScope::Global,
+            EVENT_TIMER | EVENT_SUPER_WEAPON_LAUNCHED | EVENT_HOUSE_POWER_POLL => {
+                TriggerScope::Global
+            }
+            // Decision-only (appendix 4.5): Defeat asks about a house and
+            // needs no binding; ProductionQueued binds to the queued type.
+            vera20k_wasm_ext::decide::EVENT_DEFEAT => TriggerScope::Global,
+            vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED => object,
             EVENT_FIRE => TriggerScope::Object { weapon: true },
             EVENT_TAKE_DAMAGE
+            | EVENT_ATTACKED_BY
+            | EVENT_FATAL_DAMAGE
             | EVENT_KILLED
             | EVENT_BIRTH
             | EVENT_TRANSPORT_ENTERED
+            | EVENT_TRANSPORT_EXITED
             | EVENT_PASSENGER_ADDED
+            | EVENT_PASSENGER_REMOVED
             | EVENT_HOUSE_TRANSFERRED => object,
             // Appendix 4.4: other properties are refused at creation.
             EVENT_PROPERTY_POLL => match property_name(def.id) {
@@ -162,12 +235,24 @@ impl Host<'_, '_> {
                 Some(name) if OBJECT_POLL_PROPERTIES.contains(&name) => object,
                 _ => return invalid(format!("PropertyPoll of property {}", def.id)),
             },
+            // A modifier group; 0 counts the ungrouped ones.
+            EVENT_MODIFIER_COUNT_POLL if def.id < 0 => {
+                return invalid(format!("modifier group {}", def.id));
+            }
+            EVENT_MODIFIER_COUNT_POLL => object,
+            EVENT_DISTANCE_POLL => match decode_ref(def.value)? {
+                Some(Ref::Cell { .. }) => object,
+                Some(Ref::Waypoint(number)) if self.waypoint_cell(number).is_some() => object,
+                Some(Ref::Waypoint(_)) => return Ok(Err(Status::NotFound)),
+                _ => return invalid(format!("{:#x} is not a cell", def.value)),
+            },
             EVENT_VARIABLE_POLL => match variable_scope(&self.sim.ext_modules.vars, def.id)? {
                 VarScope::Object => object,
                 VarScope::Global | VarScope::House => TriggerScope::Global,
             },
             kind => {
-                let Some(class) = stock_class(kind) else {
+                let Some(class) = stock_class(kind).filter(|_| takes_stock(self.rules, kind))
+                else {
                     return Ok(Err(Status::Unsupported));
                 };
                 if let Some(status) = self.check_stock_arguments(def)? {
@@ -176,16 +261,18 @@ impl Host<'_, '_> {
                 match class {
                     StockClass::Object => object,
                     StockClass::Cell => TriggerScope::Cell,
-                    StockClass::House | StockClass::Logic => TriggerScope::Global,
+                    StockClass::Global | StockClass::House | StockClass::Logic => {
+                        TriggerScope::Global
+                    }
                 }
             }
         };
         Ok(Ok(scope))
     }
 
-    /// A stock event's `value` and `id` (appendix 4.1): house indices in
-    /// range, variables in their tables, a known TechnoType, an existing
-    /// waypoint (`NotFound` otherwise).
+    /// A stock event's `value` and `id` (appendix 4.1, 4.2): house indices
+    /// in range, variables in their tables, a known TechnoType, TeamType or
+    /// SuperWeaponType, an existing waypoint (`NotFound` otherwise).
     fn check_stock_arguments(&self, def: &EventDef) -> Result<Option<Status>, Invalid> {
         let houses = self.sim.houses.order().len() as i64;
         let in_range = |range: std::ops::Range<i64>| match range.contains(&def.value) {
@@ -195,20 +282,44 @@ impl Host<'_, '_> {
                 def.kind, def.value
             ))),
         };
+        let named = |found: bool, what: &str| match found {
+            true => Ok(None),
+            false => Err(Invalid(format!("event {} {what} {}", def.kind, def.id))),
+        };
+        let waypoint = || {
+            i32::try_from(def.value)
+                .ok()
+                .and_then(|waypoint| self.sim.trigger_waypoint_location(waypoint))
+                .is_none()
+                .then_some(Status::NotFound)
+        };
         match def.kind {
             kind if value_names_house(kind) => in_range(0..houses),
             kind if value_filters_actor_house(kind) && def.value != -1 => in_range(0..houses),
             27 | 28 => in_range(0..50),
             36 | 37 => in_range(0..100),
-            60 | 61 => match techno_type(self.rules, def.id) {
-                Some(_) => Ok(None),
-                None => Err(Invalid(format!("event {} TechnoType {}", def.kind, def.id))),
+            60 | 61 | 78 | 80 | 81 | 82 | 86 => {
+                named(techno_type(self.rules, def.id).is_some(), "TechnoType")
+            }
+            23 => named(
+                usize::try_from(def.id)
+                    .ok()
+                    .and_then(|id| self.sim.stock_team_type_name(id))
+                    .is_some(),
+                "TeamType",
+            ),
+            34 => Ok(waypoint()),
+            // Ares: the source's or the source House's array index.
+            63 | 65 | 68 | 70 | 72 | 74 | 84 | 85 => in_range(0..houses),
+            75 | 76 => in_range(0..self.rules.super_weapon_order.len() as i64),
+            77 => match stock_type_name(self.rules, def) {
+                Some(_) => Ok(i32::try_from(def.value)
+                    .ok()
+                    .and_then(|waypoint| self.sim.session.waypoint_cell(waypoint))
+                    .is_none()
+                    .then_some(Status::NotFound)),
+                None => named(false, "SuperWeaponType"),
             },
-            34 => Ok(i32::try_from(def.value)
-                .ok()
-                .and_then(|waypoint| self.sim.trigger_waypoint_location(waypoint))
-                .is_none()
-                .then_some(Status::NotFound)),
             _ => Ok(None),
         }
     }
@@ -228,18 +339,16 @@ impl Simulation {
         poll_start: u32,
     ) -> Option<Option<u32>> {
         match def.kind {
-            EVENT_PROPERTY_POLL | EVENT_VARIABLE_POLL => (event.poll == Some(bit)).then_some(None),
+            kind if POLLS.contains(&kind) => (event.poll == Some(bit)).then_some(None),
             kind if stock_class(kind).is_some() => {
-                let type_name = matches!(kind, 60 | 61)
-                    .then(|| techno_type(rules, def.id).map(|object| object.id.as_str()))
-                    .flatten();
                 let reading = StockReading {
                     def,
                     subject: event.subject,
                     other: event.other,
+                    input: event.stock,
                     trigger_house: house,
                     poll_start,
-                    type_name,
+                    type_name: stock_type_name(rules, def),
                 };
                 let (holds, carried) = self.module_stock_event_holds(&reading, rules);
                 holds.then_some(carried.or(event.house))
@@ -248,9 +357,9 @@ impl Simulation {
         }
     }
 
-    /// Stock object event `kind` raised on `subject` (appendix 4.1, the
-    /// object Tag funnel). Call it only when the trigger runtime's
-    /// `module_listens(kind)`.
+    /// Stock or Ares object event `kind` raised on `subject` (appendix 4.1,
+    /// 4.2, the object Tag funnel), with what the raise passed the funnel.
+    /// Call it only when the trigger runtime's `module_listens(kind)`.
     pub(crate) fn raise_module_stock_object_event(
         &mut self,
         rules: &RuleSet,
@@ -258,15 +367,55 @@ impl Simulation {
         kind: i32,
         subject: u64,
         other: Option<u64>,
+        stock: StockInput,
     ) {
         if stock_class(kind) != Some(StockClass::Object) {
             return;
         }
         let event = ModuleEvent {
             other: other.unwrap_or(0),
+            stock,
             ..ModuleEvent::new(kind, subject)
         };
         self.raise_module_event(rules, frame_effects, event);
+    }
+
+    /// A global raised stock event (23, 50, Ares 75..77) for every global
+    /// trigger with it. `owner` is the house whose House Tags the native
+    /// raise reaches, if any: the record carries it, and a trigger whose
+    /// house is fixed takes only that house's raise.
+    pub(crate) fn raise_module_global_stock_event(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        kind: i32,
+        owner: Option<InternedId>,
+        stock: StockInput,
+    ) {
+        if stock_class(kind) != Some(StockClass::Global)
+            || !self.trigger_runtime.module_listens(kind)
+        {
+            return;
+        }
+        let house = owner
+            .and_then(|owner| self.houses.index_of(owner))
+            .map(|index| index as u32);
+        let event = ModuleEvent {
+            house,
+            stock,
+            ..ModuleEvent::new(kind, 0)
+        };
+        for handle in self.trigger_runtime.module_triggers().global(kind) {
+            let fixed = self
+                .trigger_runtime
+                .module_triggers()
+                .get(handle)
+                .and_then(|trigger| trigger.house);
+            if owner.is_some() && fixed.is_some_and(|fixed| Some(fixed) != house) {
+                continue;
+            }
+            self.offer_module_event(rules, frame_effects, handle, 0, &event);
+        }
     }
 
     /// Events 25 and 26 for `actor` arriving at `cell`: every trigger bound
@@ -302,8 +451,8 @@ impl Simulation {
     }
 
     /// The polling events whose check falls on this frame, from the start
-    /// of the module phase: stock House and logic events on their stock
-    /// cadence, `PropertyPoll` and `VariablePoll` on their interval.
+    /// of the module phase: stock and Ares House and logic events on their
+    /// stock cadence, the 4.4 polls on their interval.
     pub(super) fn poll_module_events(
         &mut self,
         rules: &RuleSet,
@@ -371,9 +520,10 @@ impl Simulation {
         }
     }
 
-    /// The live objects an object poll checks: those bound to `handle`, and
-    /// every object of a type bound to it, in creation order.
-    fn module_poll_holders(&self, rules: &RuleSet, handle: u64) -> Vec<u64> {
+    /// The live objects an object poll or an object trigger's `Timer`
+    /// checks: those bound to `handle`, and every object of a type bound to
+    /// it, in creation order.
+    pub(super) fn module_poll_holders(&self, rules: &RuleSet, handle: u64) -> Vec<u64> {
         let triggers = self.trigger_runtime.module_triggers();
         let mut holders: BTreeSet<u64> = triggers.bound_objects(handle).into_iter().collect();
         let types = triggers.bound_types(handle);
@@ -396,7 +546,7 @@ impl Simulation {
     }
 
     /// A polling event's reading, as the trigger's module would read it
-    /// with `get` or `var_get`; `None` when the read is not `Ok`.
+    /// with `get` or `var_get`; `None` when a read is not `Ok`.
     fn module_poll_reading(
         &mut self,
         rules: &RuleSet,
@@ -407,18 +557,64 @@ impl Simulation {
     ) -> Option<i64> {
         let house = house.map_or(0, |index| house_ref(index as usize));
         self.with_module_host(rules, source, |host| {
-            let read = if def.kind == EVENT_PROPERTY_POLL {
-                host.read(if holder == 0 { house } else { holder as i64 }, def.id)
-            } else {
-                let scope = match variable_scope(&host.sim.ext_modules.vars, def.id) {
-                    Ok(VarScope::Object) => holder as i64,
-                    Ok(VarScope::House) => house,
-                    _ => 0,
-                };
-                host.read_var(scope, def.id)
+            let get = |reference: i64, name: &str| match property_id(name)
+                .map(|prop| host.read(reference, prop))
+            {
+                Some(Ok((value, Status::Ok))) => Some(value),
+                _ => None,
             };
-            match read {
-                Ok((value, Status::Ok)) => Some(value),
+            match def.kind {
+                EVENT_PROPERTY_POLL => {
+                    let reference = if holder == 0 { house } else { holder as i64 };
+                    match host.read(reference, def.id) {
+                        Ok((value, Status::Ok)) => Some(value),
+                        _ => None,
+                    }
+                }
+                EVENT_HOUSE_POWER_POLL => {
+                    Some(get(house, "PowerOutput")? - get(house, "PowerDrain")?)
+                }
+                // The module's own modifiers in group `id` (appendix 4.4).
+                EVENT_MODIFIER_COUNT_POLL => {
+                    host.sim.entities().get(holder)?;
+                    let count = host
+                        .sim
+                        .ext_modules
+                        .modifiers
+                        .iter()
+                        .filter(|(_, m)| {
+                            m.target == holder && m.group == def.id && m.origin == source
+                        })
+                        .count();
+                    Some(count as i64)
+                }
+                // VERA's reading: the subject's `X`, `Y` to the cell's
+                // centre, by the shared lepton distance (Sqrt_Approx).
+                EVENT_DISTANCE_POLL => {
+                    let (x, y) = match decode_ref(def.value).ok()?? {
+                        Ref::Cell { x, y } => (x, y),
+                        Ref::Waypoint(number) => host.waypoint_cell(number)?,
+                        _ => return None,
+                    };
+                    let centre = |cell: u16| i64::from(cell) * 256 + 128;
+                    let dx = centre(x) - get(holder as i64, "X")?;
+                    let dy = centre(y) - get(holder as i64, "Y")?;
+                    let (dx, dy) = (i32::try_from(dx).ok()?, i32::try_from(dy).ok()?);
+                    Some(i64::from(crate::sim::cell_kernel::native_xy_distance(
+                        dx, dy,
+                    )))
+                }
+                EVENT_VARIABLE_POLL => {
+                    let scope = match variable_scope(&host.sim.ext_modules.vars, def.id) {
+                        Ok(VarScope::Object) => holder as i64,
+                        Ok(VarScope::House) => house,
+                        _ => 0,
+                    };
+                    match host.read_var(scope, def.id) {
+                        Ok((value, Status::Ok)) => Some(value),
+                        _ => None,
+                    }
+                }
                 _ => None,
             }
         })
@@ -472,21 +668,49 @@ impl Simulation {
         }
     }
 
+    /// `TransportExited` on `passenger` and `PassengerRemoved` on `carrier`
+    /// after a cargo departure placed the passenger; `value` is the size it
+    /// occupied, `value2` 0 (a transport, not a garrison).
+    pub(crate) fn raise_module_passenger_removed(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        carrier: u64,
+        passenger: u64,
+        size: f64,
+    ) {
+        for (kind, subject, other) in [
+            (EVENT_TRANSPORT_EXITED, passenger, carrier),
+            (EVENT_PASSENGER_REMOVED, carrier, passenger),
+        ] {
+            if self.trigger_runtime.module_listens(kind) {
+                let event = ModuleEvent {
+                    other,
+                    value: size as i64,
+                    value2: 0,
+                    ..ModuleEvent::new(kind, subject)
+                };
+                self.raise_module_event(rules, frame_effects, event);
+            }
+        }
+    }
+
     /// `HouseTransferred` on `object` after ChangeOwner moved it from
-    /// `old_owner`.
+    /// `old_owner`; `value` 1 for a mind control.
     pub(crate) fn raise_module_house_transferred(
         &mut self,
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
         object: u64,
         old_owner: InternedId,
+        mind_control: bool,
     ) {
         if !self.trigger_runtime.module_listens(EVENT_HOUSE_TRANSFERRED) {
             return;
         }
         let event = ModuleEvent {
             house: self.houses.index_of(old_owner).map(|index| index as u32),
-            value: 0,
+            value: i64::from(mind_control),
             ..ModuleEvent::new(EVENT_HOUSE_TRANSFERRED, object)
         };
         self.raise_module_event(rules, frame_effects, event);

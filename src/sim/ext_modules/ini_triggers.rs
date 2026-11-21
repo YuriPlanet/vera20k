@@ -772,7 +772,7 @@ impl Simulation {
             let fail = |why: String| format!("[{section}] {}: {why}", event.key);
             let kind = vera20k_wasm_ext::event_kind_id(&event.name)
                 .ok_or_else(|| fail(format!("no event kind {}", event.name)))?;
-            if !super::events::raises(kind)
+            if !super::events::raises(rules, kind)
                 && !vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&kind)
             {
                 return Err(fail(format!("this game does not raise {} yet", event.name)));

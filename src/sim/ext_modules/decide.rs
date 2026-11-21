@@ -121,7 +121,10 @@ const fn splitmix64(mut x: u64) -> u64 {
 /// What `trigger_create` accepts of `decide_key` (appendix "Trigger
 /// definition"): a handler needs exactly one event with a decision form
 /// here, and a decision-only event (4.5) needs a handler.
-pub(super) fn check_decide_key(def: &TriggerDef) -> Result<Option<Status>, Invalid> {
+pub(super) fn check_decide_key(
+    def: &TriggerDef,
+    rules: &RuleSet,
+) -> Result<Option<Status>, Invalid> {
     if def.decide_key == -1 {
         return match def
             .events
@@ -142,7 +145,7 @@ pub(super) fn check_decide_key(def: &TriggerDef) -> Result<Option<Status>, Inval
         )));
     };
     if !DECIDABLE_EVENTS.contains(&event.kind) {
-        return match super::events::raises(event.kind) {
+        return match super::events::raises(rules, event.kind) {
             true => Err(Invalid(format!(
                 "event {} has no decision form",
                 event.kind

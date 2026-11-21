@@ -139,6 +139,12 @@ impl TypeRef {
         lookup(NameKind::Warhead, name).map(|id| Self::new(NameKind::Warhead, id))
     }
 
+    /// Projectile (BulletType) `name`'s type reference, bound as
+    /// [`TypeRef::weapon`] is.
+    pub fn projectile(name: &str) -> Result<Self> {
+        lookup(NameKind::Projectile, name).map(|id| Self::new(NameKind::Projectile, id))
+    }
+
     /// SuperWeaponType `name`'s type reference, for
     /// [`Order::launch_super_weapon`].
     pub fn super_weapon(name: &str) -> Result<Self> {

@@ -61,10 +61,10 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROPERTY, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
-    NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS,
-    SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION,
-    TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROJECTILE, NAME_PROPERTY, NAME_SUPER_WEAPON,
+    NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Order, Query,
+    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status,
+    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
@@ -502,7 +502,8 @@ struct Host<'a, 'f> {
 fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
-            events::raises(id) || vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&id)
+            events::raises(rules, id)
+                || vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&id)
         }
         TABLE_ACTION => actions::has_action(id, rules),
         TABLE_PROPERTY => property_name(id)
@@ -512,6 +513,7 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
             NAME_TECHNO_TYPE
                 | NAME_WEAPON
                 | NAME_WARHEAD
+                | NAME_PROJECTILE
                 | NAME_SUPER_WEAPON
                 | NAME_COUNTRY
                 | NAME_TEAM_TYPE
@@ -534,6 +536,7 @@ fn rules_name_id(rules: &RuleSet, kind: i32, name: &str) -> Option<Option<i32>> 
         NAME_COUNTRY => rules.country_index(name).map(|c| i32::from(c.0)),
         NAME_WEAPON => rules.weapon_index(name).map(|i| i as i32),
         NAME_WARHEAD => rules.warhead_index(name).map(|i| i as i32),
+        NAME_PROJECTILE => rules.projectile_index(name).map(|i| i as i32),
         NAME_SUPER_WEAPON => rules
             .super_weapon_index(name)
             .and_then(|i| i32::try_from(i).ok()),
@@ -556,6 +559,10 @@ fn rules_id_name(rules: &RuleSet, kind: i32, id: i32) -> Option<Option<&str>> {
             .ok()
             .and_then(|id| rules.warhead_at(id))
             .map(|warhead| warhead.id.as_str()),
+        NAME_PROJECTILE => u32::try_from(id)
+            .ok()
+            .and_then(|id| rules.projectile_at(id))
+            .map(|projectile| projectile.id.as_str()),
         NAME_SUPER_WEAPON => usize::try_from(id)
             .ok()
             .and_then(|i| rules.super_weapon_order.get(i))
