@@ -423,7 +423,15 @@ pub(super) fn advance(
         brain.push_progress = (tick, standing);
     }
     let stalled = push_stalled(brain.push_progress, tick, standing);
-    let mopping_up = brain.census.enemies.len() <= MOP_UP_OBJECTS || stalled;
+    // A field with no structure standing is a field army, whatever its size:
+    // the army's job there is to shoot what it can see, not to walk to the
+    // middle of the map and wait. The count and the stall are the other two
+    // ways this opens -- a handful left, or a minute without a kill -- and this
+    // is the one that was missing: measured on Death.mmx seed 10, the enemy
+    // ended with ten objects and no building, and the fist marched to the map
+    // centre for the rest of the match because ten is above MOP_UP_OBJECTS.
+    let mopping_up =
+        structures.is_empty() || brain.census.enemies.len() <= MOP_UP_OBJECTS || stalled;
     if mopping_up {
         targets.extend(
             brain
@@ -1205,6 +1213,81 @@ mod tests {
             "the nearest fighter is inside its reach and shoots: {:?}",
             out.orders
         );
+    }
+
+    /// A field army with no building left is the army's job whatever its size.
+    ///
+    /// The count and the stall were the only two ways the mop-up opened, so an
+    /// enemy holding nine units and nothing else was above the count with no
+    /// structure to besiege: the fist marched to the middle of the map and
+    /// stood there. Measured on Death.mmx seed 10, which ended with ten enemy
+    /// objects alive and the clock out.
+    #[test]
+    fn a_field_army_with_no_structure_left_is_targeted_whatever_its_size() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        sim.spawn_object("GACNST", "Americans", 5, 5, 255, &rules)
+            .expect("a yard");
+        sim.spawn_object("GAPILE", "Americans", 9, 5, 255, &rules)
+            .expect("a barracks");
+        sim.spawn_object("GAWEAP", "Americans", 5, 9, 255, &rules)
+            .expect("a war factory");
+        sim.spawn_object("GAPILL", "Americans", 3, 3, 255, &rules)
+            .expect("a pillbox so the base counts as defended");
+        let mut fighters = Vec::new();
+        for index in 0..10u16 {
+            fighters.push(
+                sim.spawn_object(
+                    "MTNK",
+                    "Americans",
+                    12 + index / 4,
+                    12 + index % 4,
+                    255,
+                    &rules,
+                )
+                .expect("a Grizzly"),
+            );
+        }
+        // Nine of them: one above MOP_UP_OBJECTS, and no structure at all.
+        let mut enemies = Vec::new();
+        for cell in [
+            (25u16, 25u16),
+            (26, 25),
+            (27, 25),
+            (25, 26),
+            (26, 26),
+            (27, 26),
+            (25, 27),
+            (26, 27),
+            (27, 27),
+        ] {
+            enemies.push(
+                sim.spawn_object("HTNK", "Russians", cell.0, cell.1, 255, &rules)
+                    .expect("a Russian heavy tank"),
+            );
+        }
+
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census = ledger(&rules, &sim, owner);
+        assert_eq!(brain.census.enemies.len(), 9, "nine, not a handful");
+        let obs = Observation::new(&sim, owner);
+        let mut out = Outbox::default();
+        assert!(
+            advance(&mut brain, &rules, &obs, &mut out),
+            "ten fighters push"
+        );
+        // The map's middle is (16,16), which is not in that block: an army
+        // walking anywhere else is the old behaviour, not this one.
+        assert!(
+            out.orders.iter().any(|order| {
+                matches!(order.goal, Goal::AttackMove { cell } if (25..=27).contains(&cell.0) && (25..=27).contains(&cell.1))
+            }),
+            "the fist walks at the tanks it can see: {:?}",
+            out.orders
+        );
+        let _ = (fighters, enemies);
     }
 }
 
