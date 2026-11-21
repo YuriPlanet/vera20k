@@ -78,6 +78,11 @@ enum Fetch {
 
 /// Every font asked for, by its place in [`fonts::bundled`]. A font is asked
 /// for once a session; one that fails stays out.
+///
+/// Process-wide because every [`super::TextEngine`] (shell, loading, match)
+/// registers the same fetched fonts, and a browser fetch completes in a
+/// promise continuation that holds none of them; a `static` must be `Sync`,
+/// hence this lock and [`ARRIVALS`]'s atomic.
 static FETCHES: Mutex<Vec<(usize, Fetch)>> = Mutex::new(Vec::new());
 /// Fonts fetched so far: an engine that saw fewer looks for new ones.
 static ARRIVALS: AtomicUsize = AtomicUsize::new(0);
