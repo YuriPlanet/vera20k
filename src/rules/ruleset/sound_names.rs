@@ -21,6 +21,13 @@ pub struct SoundNameId {
     index: u32,
 }
 
+impl SoundNameId {
+    /// The generation of the table that made this id.
+    pub fn generation(self) -> u64 {
+        self.table
+    }
+}
+
 /// The sound a sound event names, spelled exactly as the rules field that
 /// named it, case included.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -38,7 +45,8 @@ pub enum SoundName {
 impl SoundName {
     /// The name, read against `names` for a listed one. A listed name
     /// answers `None` against another table, or none: a rules rebuild ended
-    /// the events that named it.
+    /// the events that named it. The client reports that as a fault
+    /// (`GameSoundEvent::sound_id`): no table rebuilds while events run.
     pub fn resolve<'a>(&'a self, names: Option<&'a SoundNames>) -> Option<&'a str> {
         match self {
             Self::Listed(id) => names.and_then(|names| names.name_of(*id)),
@@ -103,6 +111,11 @@ impl SoundNames {
             return None;
         }
         self.names.get(id.index as usize).map(|name| &**name)
+    }
+
+    /// This table's generation; 0 for the empty table no build made.
+    pub fn generation(&self) -> u64 {
+        self.table
     }
 
     /// Whether this table holds `name`, spelled exactly so.

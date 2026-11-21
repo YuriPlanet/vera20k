@@ -18,6 +18,7 @@
 //! - sim/ has its own neutral event transport and never imports audio/.
 
 use crate::rules::ruleset::{SoundName, SoundNames};
+use std::sync::{Mutex, PoisonError};
 
 /// Where a positional sound plays: the world-pixel point the presentation
 /// frame draws it at, and the cell it occupies.
@@ -419,7 +420,9 @@ impl GameSoundEvent {
     }
 
     /// The sound this event names, read against the rules' sound-name
-    /// table `names` (`""` when it names none).
+    /// table `names` (`""` when it names none). A listed name that does not
+    /// read against `names` is a fault ([`report_unread_sound`]) and plays
+    /// nothing.
     pub fn sound_id<'a>(&'a self, names: Option<&'a SoundNames>) -> &'a str {
         let sound = match self {
             Self::AnimationStarted { sound_id, .. }
@@ -463,7 +466,13 @@ impl GameSoundEvent {
             // the `VoxClass` consumer resolves.
             Self::Eva { event, .. } | Self::EvaRemove { event } => return event,
         };
-        sound.resolve(names).unwrap_or("")
+        match sound.resolve(names) {
+            Some(name) => name,
+            None => {
+                report_unread_sound(sound, names);
+                ""
+            }
+        }
     }
 
     /// Get the positional source for spatial audio, if this event has one.
@@ -697,6 +706,44 @@ impl SoundEventQueue {
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
+}
+
+/// The (making table, read table) generation pairs a listed sound name has
+/// failed to read across, each logged once: a stale queue holds many events
+/// of one pair, and a warning per event would flood the log.
+static UNREAD_SOUND_TABLES: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
+
+/// A listed sound name read against a table other than the one that made it:
+/// every table rebuild finishes before a Simulation is staged, so this is a
+/// programming error. Debug builds stop on it; a release build logs it once
+/// per table pair and plays nothing, so the game carries on.
+fn report_unread_sound(sound: &SoundName, names: Option<&SoundNames>) {
+    let SoundName::Listed(id) = sound else {
+        return;
+    };
+    let pair = (id.generation(), names.map_or(0, SoundNames::generation));
+    let first = {
+        let mut seen = UNREAD_SOUND_TABLES
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let first = !seen.contains(&pair);
+        if first {
+            seen.push(pair);
+        }
+        first
+    };
+    if first {
+        log::warn!(
+            "a sound name of table {} was read against table {}: those sounds play nothing",
+            pair.0,
+            pair.1
+        );
+    }
+    debug_assert!(
+        false,
+        "sound name of table {} read against table {}",
+        pair.0, pair.1
+    );
 }
 
 #[cfg(all(test, tests_audio))]

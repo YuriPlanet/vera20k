@@ -843,3 +843,126 @@ fn fatal_stock_cues_reach_actual_sample_preparation_without_actor_owned_handles(
         );
     }
 }
+
+/// A staged match hands its sounds to the client by its own rules' names: a
+/// stock MTNK's first 105mm shot emits the weapon's `Report` as a listed id,
+/// and the production dispatcher plus the playback read
+/// (`GameSoundEvent::sound_id` against the match rules, as
+/// `SoundPlaybackInputs::consume` reads it) give back the field's text.
+#[test]
+fn a_staged_match_report_reads_back_as_its_rules_field() {
+    use super::dispatch_sim_sound_events;
+    use crate::audio::events::GameSoundEvent;
+    use crate::rules::ruleset::SoundName;
+
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut map = String::from_utf8(
+        assets
+            .resolve_ref("XMP03T4.MAP")
+            .expect("physical Hills")
+            .bytes
+            .to_vec(),
+    )
+    .expect("physical Hills INI text");
+    insert_records(
+        &mut map,
+        "Units",
+        "HandoffAttacker=<human player>,MTNK,256,30,85,64,Guard,None,0,-1,0,-1,1,1\n",
+    );
+    insert_records(
+        &mut map,
+        "Structures",
+        "HandoffTarget=Neutral,GAPOWR,256,31,85,0,None,0,0,1,0,0,0,None,None,None,0\n",
+    );
+    let directory = crate::map::source::test_support::TestDirectory::new("sound-name-handoff");
+    let path = directory.path().join("HANDOFF.map");
+    std::fs::write(&path, map).unwrap();
+    let name = path.to_str().unwrap();
+    let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+    launch.opponents[0].start_position = LaunchStartPosition::Position(1);
+    launch.options.bases = true;
+    launch.options.unit_count = 0;
+    launch.options.crates = false;
+    launch.options.shroud = false;
+    launch.options.fog_of_war = false;
+    let mut scene = load_session(&root, name, 0x1234_5678, launch)
+        .expect("physical Hills/Rules/ART staged as a match");
+    let sim = &scene.runtime.simulation;
+    let owner = sim.session().current_house().unwrap();
+    let local = sim.resolve(owner).to_owned();
+    let find = |kind: &str, cell| {
+        sim.entities()
+            .values()
+            .find(|e| {
+                sim.resolve(e.type_ref()) == kind && (e.position.rx(), e.position.ry()) == cell
+            })
+            .unwrap()
+            .stable_id()
+    };
+    let command = CommandEnvelope::new(
+        owner,
+        sim.session().tick() + 1,
+        Command::Attack {
+            attacker_id: find("MTNK", (30, 85)),
+            target_id: find("GAPOWR", (31, 85)),
+        },
+    );
+    scene.runtime.simulation.queue_command(command);
+    let mut heard = Vec::new();
+    for _ in 0..300 {
+        let commands = scene.runtime.simulation.take_due_commands();
+        let output = scene
+            .runtime
+            .advance_frame(
+                &commands,
+                crate::app::types::SIM_TICK_MS,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
+            .expect("ordinary staged frame");
+        let rules = &scene.runtime.resources.rules;
+        let mut queue = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            output.sound_events.iter().cloned(),
+            &scene.runtime.simulation,
+            rules,
+            Some(&local),
+            &mut |_| false,
+            &mut queue,
+            None,
+        );
+        heard.extend(
+            queue
+                .drain()
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        GameSoundEvent::VocAt {
+                            sound_id: SoundName::Listed(_),
+                            ..
+                        }
+                    )
+                })
+                .map(|event| event.sound_id(Some(rules.sound_names())).to_owned()),
+        );
+        if !heard.is_empty() {
+            break;
+        }
+    }
+    let report = &scene
+        .runtime
+        .resources
+        .rules
+        .weapon("105mm")
+        .unwrap()
+        .report;
+    assert!(!report.is_empty(), "retail 105mm Report");
+    assert!(
+        heard.first().is_some_and(|name| report.contains(name)),
+        "first listed positional sound {heard:?}, 105mm Report {report:?}"
+    );
+}
