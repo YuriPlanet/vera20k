@@ -1181,9 +1181,13 @@ fn dxc_beside_game() -> bool {
 /// adapter came through FXC after DXC had hidden it.
 ///
 /// Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the first
-/// API it lists; a start record asks for one alone
-/// (`persistence::startup_backend`). wgpu's own override (`WGPU_BACKEND`)
-/// wins over either, for reproducible shroud GPU comparisons.
+/// API it lists. An Intel card is the exception: its Vulkan driver has hung
+/// in the device request, old and current, so the start asks DirectX 12 for
+/// the card it found through Vulkan (`prefer_dx12_for`), with DXC and then
+/// with FXC, and keeps Vulkan only when DirectX 12 offers no card. A start
+/// record asks for one API alone (`persistence::startup_backend`). wgpu's
+/// own override (`WGPU_BACKEND`) wins over either, for reproducible shroud
+/// GPU comparisons.
 ///
 /// wgpu's DirectX 12 backend compiles shaders with Microsoft's DXC where
 /// `dxcompiler.dll` sits beside the game, and then lists no card whose driver
@@ -1209,32 +1213,52 @@ async fn choose_adapter(
         .create_surface(window.clone())
         .context("Failed to create wgpu surface from window")?;
     let first = instance.request_adapter(&adapter_options(&surface)).await;
-    let found = first
-        .as_ref()
-        .ok()
-        .map(|adapter| adapter.get_info().device_type);
-    if cfg!(target_os = "windows") && retry_dx12_with_fxc(found, backends) {
-        let fxc = instance_with(wgpu::Backends::DX12, &display, wgpu::Dx12Compiler::Fxc);
-        let fxc_surface = fxc
-            .create_surface(window.clone())
-            .context("Failed to create wgpu surface from window")?;
-        if let Ok(adapter) = fxc.request_adapter(&adapter_options(&fxc_surface)).await {
-            let info = adapter.get_info();
-            if info.device_type != wgpu::DeviceType::Cpu {
+    let found = first.as_ref().ok().map(wgpu::Adapter::get_info);
+    if cfg!(target_os = "windows")
+        && let Some(info) = &found
+        && prefer_dx12_for(info.backend, info.vendor, backends)
+    {
+        for compiler in [wgpu::Dx12Compiler::Auto, wgpu::Dx12Compiler::Fxc] {
+            let fxc = matches!(compiler, wgpu::Dx12Compiler::Fxc);
+            if let Some((dx12, dx12_surface, card)) = dx12_card(window, &display, compiler).await {
+                let card_info = card.get_info();
                 log::warn!(
-                    "DirectX 12 with DXC offered {}; {} (driver {} {}) answers with FXC, so its driver has no Shader Model 6 and the game draws through it with FXC. A graphics driver from late 2017 or newer would allow DXC",
-                    match found {
-                        Some(_) => "only the software renderer",
-                        None => "no adapter",
-                    },
+                    "Vulkan offered {} (driver {} {}), an Intel driver that has hung in the device request; DirectX 12 offers the card as {} (driver {} {}), so the game draws through DirectX 12{}",
                     info.name,
                     info.driver,
-                    info.driver_info
+                    info.driver_info,
+                    card_info.name,
+                    card_info.driver,
+                    card_info.driver_info,
+                    if fxc {
+                        " with FXC: its driver has no Shader Model 6 for DXC"
+                    } else {
+                        ""
+                    }
                 );
-                log_adapters(&fxc, wgpu::Backends::DX12).await;
-                return Ok((fxc, fxc_surface, adapter, true));
+                log_adapters(&instance, backends).await;
+                return Ok((dx12, dx12_surface, card, fxc));
             }
         }
+    }
+    if cfg!(target_os = "windows")
+        && retry_dx12_with_fxc(found.as_ref().map(|info| info.device_type), backends)
+        && let Some((fxc, fxc_surface, adapter)) =
+            dx12_card(window, &display, wgpu::Dx12Compiler::Fxc).await
+    {
+        let info = adapter.get_info();
+        log::warn!(
+            "DirectX 12 with DXC offered {}; {} (driver {} {}) answers with FXC, so its driver has no Shader Model 6 and the game draws through it with FXC. A graphics driver from late 2017 or newer would allow DXC",
+            match found {
+                Some(_) => "only the software renderer",
+                None => "no adapter",
+            },
+            info.name,
+            info.driver,
+            info.driver_info
+        );
+        log_adapters(&fxc, wgpu::Backends::DX12).await;
+        return Ok((fxc, fxc_surface, adapter, true));
     }
     if !first.as_ref().is_ok_and(graphics_card)
         && let Some((gl, gl_surface, adapter)) = gl_compatibility(window, &display, backends).await
@@ -1252,6 +1276,40 @@ async fn choose_adapter(
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 fn graphics_card(adapter: &wgpu::Adapter) -> bool {
     adapter.get_info().device_type != wgpu::DeviceType::Cpu
+}
+
+/// A graphics card through DirectX 12 alone, shaders compiled by `compiler`:
+/// the instance, its window surface and the adapter, or `None` when DirectX
+/// 12 offers no card that way (no adapter, or only the software renderer).
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+async fn dx12_card(
+    window: &Arc<Window>,
+    display: &OwnedDisplayHandle,
+    compiler: wgpu::Dx12Compiler,
+) -> Option<(wgpu::Instance, wgpu::Surface<'static>, wgpu::Adapter)> {
+    let instance = instance_with(wgpu::Backends::DX12, display, compiler);
+    let surface = instance.create_surface(window.clone()).ok()?;
+    let adapter = instance
+        .request_adapter(&adapter_options(&surface))
+        .await
+        .ok()?;
+    graphics_card(&adapter).then_some((instance, surface, adapter))
+}
+
+/// The PCI vendor of Intel's graphics.
+const INTEL_VENDOR: u32 = 0x8086;
+
+/// Whether a start whose first adapter is an Intel card through Vulkan asks
+/// DirectX 12 for the same card instead (`choose_adapter`). Intel's Vulkan
+/// driver has hung in the device request on an HD 620, on its 2017 package
+/// (21.20.16.4574) and on its 2023 one (31.0.101.2145), where DirectX 12 on
+/// the same card starts; other vendors keep wgpu's preference, Vulkan. A
+/// start that asks for Vulkan alone (`[VERA] GraphicsAPI=`, `WGPU_BACKEND`)
+/// keeps it.
+fn prefer_dx12_for(backend: wgpu::Backend, vendor: u32, backends: wgpu::Backends) -> bool {
+    backend == wgpu::Backend::Vulkan
+        && vendor == INTEL_VENDOR
+        && backends.contains(wgpu::Backends::DX12)
 }
 
 /// OpenGL in compatibility mode, for a start whose APIs (`choose_adapter`)
@@ -1382,6 +1440,31 @@ mod tests {
             wgpu::Backends::DX12
         ));
         assert!(!retry_dx12_with_fxc(Some(Cpu), wgpu::Backends::VULKAN));
+    }
+
+    /// An Intel card found through Vulkan is asked for through DirectX 12
+    /// where the start may ask for DirectX 12 at all; another vendor's card,
+    /// or one found through DirectX 12 already, is kept.
+    #[test]
+    fn an_intel_card_on_vulkan_is_asked_for_through_directx_12() {
+        use super::{INTEL_VENDOR, prefer_dx12_for};
+        use wgpu::Backend::{Dx12, Vulkan};
+        assert!(prefer_dx12_for(
+            Vulkan,
+            INTEL_VENDOR,
+            wgpu::Backends::PRIMARY
+        ));
+        assert!(!prefer_dx12_for(Vulkan, 0x10de, wgpu::Backends::PRIMARY));
+        assert!(!prefer_dx12_for(
+            Dx12,
+            INTEL_VENDOR,
+            wgpu::Backends::PRIMARY
+        ));
+        assert!(!prefer_dx12_for(
+            Vulkan,
+            INTEL_VENDOR,
+            wgpu::Backends::VULKAN
+        ));
     }
 
     /// A lost device reaches the frame loop, and a working one does not. The
