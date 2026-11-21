@@ -129,7 +129,7 @@ fn a_runaway_module_is_disabled_and_the_match_goes_on() {
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("frame advances");
         notices += output
