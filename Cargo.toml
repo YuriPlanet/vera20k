@@ -13,7 +13,9 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "services/relay-protocol", "services/relay", "android"]
+members = ["src", "services/relay-protocol", "services/relay", "android", "wasm-ext"]
+# Module SDK examples build for wasm32 in their own workspace.
+exclude = ["sdk"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 

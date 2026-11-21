@@ -1,0 +1,21 @@
+[package]
+name = "vera20k-wasm-ext"
+version = "0.1.0"
+edition = "2024"
+description = "Sandbox for VERA20k Wasm extension modules (RFC 0001): load checks, metering and the vera:sim host boundary"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Desktop runs modules with Wasmtime. The browser build has no runtime yet
+# (RFC 0001 open question 1): loading a module there reports Unsupported.
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+wasmtime = { version = "51", default-features = false, features = ["cranelift", "runtime", "std"] }
+wasmparser = "0.245"
+
+[dev-dependencies]
+wat = "1"
+
+[lints]
+workspace = true

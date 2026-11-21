@@ -330,6 +330,11 @@ impl Simulation {
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }
+                // The Wasm module phase (RFC 0001 section 5; its place in the
+                // frame is open question 8). Without modules it does nothing.
+                if !self.ext_modules.is_empty() {
+                    self.run_ext_module_phase();
+                }
             }
             FrameStep::Shroud => {
                 self.tick_shroud_growth(UninitContext::new(rules).with_effects(effects));

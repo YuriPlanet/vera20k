@@ -231,6 +231,8 @@ pub mod houses;
 // --- Trigger runtime (map trigger evaluation during gameplay) ---
 pub mod team_script_vm;
 pub mod trigger_runtime;
+// Wasm extension modules: the module phase and the vera:sim host (RFC 0001).
+pub mod ext_modules;
 
 // --- AI, replay, selection, debug ---
 pub(crate) mod ai_build_need;

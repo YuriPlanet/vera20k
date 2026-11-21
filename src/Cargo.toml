@@ -132,6 +132,8 @@ tests-util = []
 [dependencies]
 # Shared authenticated datagram codec used by the standalone relay.
 vera20k-relay-protocol = { path = "../services/relay-protocol" }
+# Wasm extension modules (docs/rfcs/0001-wasm-extension-modules.md).
+vera20k-wasm-ext = { path = "../wasm-ext" }
 glam = { workspace = true }
 # Fixed-point arithmetic for simulation positions and other fixed-width mechanisms.
 # Native floating-point mechanisms document their numeric contract at their owner.
@@ -208,6 +210,8 @@ half = { version = "2", default-features = false, features = ["num-traits"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
+# Extension module tests write their modules in WAT.
+wat = "1"
 
 # The native client's tungstenite -> rand enables chacha20's RNG support, and
 # its handshake's sha1 -> hybrid-array enables typenum's const generics.

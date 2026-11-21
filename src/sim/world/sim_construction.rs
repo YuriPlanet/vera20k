@@ -298,6 +298,7 @@ impl Simulation {
             planning: planning::PlanningState::default(),
             replaying_recorded_commands: false,
             trigger_runtime: TriggerRuntime::default(),
+            ext_modules: Default::default(),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());
         // Authoritative map bounds are session state, known at construction —

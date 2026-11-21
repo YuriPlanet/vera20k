@@ -337,6 +337,10 @@ impl Simulation {
         // YR LogicClass trigger latches are save/lockstep state, even though
         // their camera/message outcomes stay app-owned and are not hashed.
         self.trigger_runtime.hash_state(hasher);
+        // Wasm extension modules; absent from stock play.
+        if !self.ext_modules.is_empty() {
+            self.ext_modules.hash_state(hasher);
+        }
         // ObjectClass+0x64, written by trigger action 99 and saved with the object.
         if !self.object_custom_sounds.is_empty() {
             b"object-custom-sounds-v1".hash(hasher);
