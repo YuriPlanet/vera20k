@@ -848,18 +848,6 @@ impl RuleSet {
             .map(|handle| &self.projectile_types[handle.0 as usize])
     }
 
-    /// Projectile `id`'s position in this set's projectiles (weapon order,
-    /// first reference first): the Projectile ID Wasm extension modules see
-    /// (RFC 0001 appendix 8.1; provisional numbering).
-    pub fn projectile_index(&self, id: &str) -> Option<u32> {
-        self.projectile_handle(id).map(|handle| handle.0)
-    }
-
-    /// The projectile at [`Self::projectile_index`] `index`.
-    pub fn projectile_at(&self, index: u32) -> Option<&ProjectileType> {
-        self.projectile_types.get(index as usize)
-    }
-
     /// Registered projectile types, including their retained animation references.
     pub fn projectiles_iter(&self) -> impl Iterator<Item = &ProjectileType> {
         self.projectiles

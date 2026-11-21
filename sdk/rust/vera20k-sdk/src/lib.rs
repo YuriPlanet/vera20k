@@ -155,11 +155,6 @@ impl TypeRef {
     pub fn super_weapon(name: &str) -> Result<Self> {
         lookup(NameKind::SuperWeapon, name).map(|id| Self::new(NameKind::SuperWeapon, id))
     }
-
-    /// Projectile (BulletType) `name`'s type reference.
-    pub fn projectile(name: &str) -> Result<Self> {
-        lookup(NameKind::Projectile, name).map(|id| Self::new(NameKind::Projectile, id))
-    }
 }
 
 /// The ID of animation `name`: the AnimType array position

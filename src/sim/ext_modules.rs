@@ -627,7 +627,6 @@ fn rules_name_id(rules: &RuleSet, kind: i32, name: &str) -> Option<Option<i32>> 
         NAME_SUPER_WEAPON => rules
             .super_weapon_index(name)
             .and_then(|i| i32::try_from(i).ok()),
-        NAME_PROJECTILE => rules.projectile_index(name).map(|i| i as i32),
         // The AnimType array position stock action 41 and `SpawnAnim` take;
         // the first of a repeated name, as the native name search finds it.
         NAME_ANIM => (0..)
@@ -667,10 +666,6 @@ fn rules_id_name(rules: &RuleSet, kind: i32, id: i32) -> Option<Option<&str>> {
             .ok()
             .and_then(|i| rules.super_weapon_order.get(i))
             .map(String::as_str),
-        NAME_PROJECTILE => u32::try_from(id)
-            .ok()
-            .and_then(|id| rules.projectile_at(id))
-            .map(|projectile| projectile.id.as_str()),
         NAME_ANIM => rules.anim_type_name_by_index(id),
         NAME_VOXEL_ANIM => usize::try_from(id)
             .ok()

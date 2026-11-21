@@ -44,8 +44,9 @@ pub const STOCK_EVENTS: [Option<&str>; 89] = [
 /// appendix 4.3 is numbered from here in table order.
 pub const FIRST_DELIVERED_EVENT: i32 = 1000;
 
-/// New delivered events (appendix 4.3) in table order; the number is
-/// [`FIRST_DELIVERED_EVENT`] plus the index.
+/// New events in appendix order, the number being [`FIRST_DELIVERED_EVENT`]
+/// plus the index: delivered events (4.3, 1000..1025), polling events (4.4,
+/// 1026..1030), then decision-only events (4.5, 1031..1036).
 #[rustfmt::skip]
 pub const DELIVERED_EVENTS: &[&str] = &[
     "TakeDamage", "HitByWarhead", "AttackedBy", "FatalDamage", "Killed", "Fire", "SpawnFire",
@@ -53,10 +54,14 @@ pub const DELIVERED_EVENTS: &[&str] = &[
     "TransportEntered", "TransportExited", "PassengerAdded", "PassengerRemoved", "Commanded",
     "Crushed", "HouseTransfer", "HouseTransferred", "ModifierStart", "ModifierExpire",
     "ModifierStacks", "Timer", "SuperWeaponLaunched", "ProductionCancelled",
+    // 4.4
+    "PropertyPoll", "HousePowerPoll", "ModifierCountPoll", "DistancePoll", "VariablePoll",
+    // 4.5
+    "ProductionAllowed", "ProductionQueued", "Defeat", "CommandAllowed", "Launch",
+    "ProjectileFrame",
 ];
 
-/// An event kind's number by name, ASCII case-insensitive. The polling (4.4)
-/// and decision-only (4.5) events have no numbers yet.
+/// An event kind's number by name, ASCII case-insensitive.
 pub fn event_kind_id(name: &str) -> Option<i32> {
     let stock = STOCK_EVENTS
         .iter()

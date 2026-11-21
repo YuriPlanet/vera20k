@@ -113,8 +113,7 @@ pub fn can_build(
     // refusal kept this is one branch.
     // A Wasm module's `AllowType` forbid (RFC 0001 appendix 5.3, VERA-only)
     // refuses the type to this house the same way, on every route.
-    if sim.module_refuses_production(rules, owner, obj)
-        || sim.ext_module_forbids(rules, owner, obj)
+    if sim.module_refuses_production(rules, owner, obj) || sim.ext_module_forbids(rules, owner, obj)
     {
         return CanBuild::No;
     }

@@ -234,10 +234,37 @@ fn trigger_action_numbers_match_the_action_kind_table() {
 /// The trigger-side event numbers are the appendix 4.3 table's.
 #[test]
 fn trigger_event_numbers_match_the_event_kind_table() {
-    use crate::triggers::{EVENT_FIRE, EVENT_KILLED, EVENT_TAKE_DAMAGE, EVENT_TIMER};
+    use crate::triggers::{
+        EVENT_FIRE, EVENT_KILLED, EVENT_PROPERTY_POLL, EVENT_TAKE_DAMAGE, EVENT_TIMER,
+        EVENT_VARIABLE_POLL,
+    };
     assert_eq!(crate::event_kind_id("takedamage"), Some(EVENT_TAKE_DAMAGE));
     assert_eq!(crate::event_kind_id("Killed"), Some(EVENT_KILLED));
     assert_eq!(crate::event_kind_id("Fire"), Some(EVENT_FIRE));
     assert_eq!(crate::event_kind_id("Timer"), Some(EVENT_TIMER));
+    assert_eq!(
+        crate::event_kind_id("PropertyPoll"),
+        Some(EVENT_PROPERTY_POLL)
+    );
+    assert_eq!(
+        crate::event_kind_id("VariablePoll"),
+        Some(EVENT_VARIABLE_POLL)
+    );
+    use crate::decide::{
+        EVENT_COMMAND_ALLOWED, EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED, EVENT_PRODUCTION_QUEUED,
+    };
+    assert_eq!(
+        crate::event_kind_id("ProductionAllowed"),
+        Some(EVENT_PRODUCTION_ALLOWED)
+    );
+    assert_eq!(
+        crate::event_kind_id("ProductionQueued"),
+        Some(EVENT_PRODUCTION_QUEUED)
+    );
+    assert_eq!(crate::event_kind_id("Defeat"), Some(EVENT_DEFEAT));
+    assert_eq!(
+        crate::event_kind_id("CommandAllowed"),
+        Some(EVENT_COMMAND_ALLOWED)
+    );
     assert_eq!(crate::event_kind_id("TechTypeDoesNotExist"), Some(61));
 }
