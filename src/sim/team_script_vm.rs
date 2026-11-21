@@ -1275,7 +1275,6 @@ impl TeamScriptVm {
             .is_some_and(|metadata| metadata.transports_return_on_unload)
     }
 
-    /// The team's TaskForce entries, none for a team without a TeamType.
     /// A restored save's TaskForces: a team indexes its slot counts by entry
     /// position, so a saved TaskForce with more entries than
     /// [`TASK_FORCE_SLOTS`] can only come from a damaged save. Members are
@@ -1291,6 +1290,7 @@ impl TeamScriptVm {
         Ok(())
     }
 
+    /// The team's TaskForce entries, none for a team without a TeamType.
     fn task_force_entries(&self, team: &TeamScriptState) -> &[TeamTaskForceEntry] {
         team.task_force_id
             .and_then(|id| self.task_forces.get(&id))

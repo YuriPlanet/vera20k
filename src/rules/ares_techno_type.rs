@@ -1525,11 +1525,6 @@ mod tests {
         assert_eq!(heal.amount_and_max(2), (1, NativeF64Bits::ONE));
     }
 
-    /// 1003DFB0's reads of the keys without a consumer and of the
-    /// presentation keys, with the 1003C710 defaults on a type that sets
-    /// none: pointers are Find only (an unknown name keeps null), the CSF
-    /// label keeps 31 bytes, and the sounds and `EVA.Lost` bind against the
-    /// fixed catalogs, a building keeping its unset `EVA.Lost`.
     /// CreateInitialPayload constructs each entry's count, so a huge entry
     /// stops at VERA's bound; a negative one stays as read.
     #[test]
@@ -1546,6 +1541,11 @@ mod tests {
         );
     }
 
+    /// 1003DFB0's reads of the keys without a consumer and of the
+    /// presentation keys, with the 1003C710 defaults on a type that sets
+    /// none: pointers are Find only (an unknown name keeps null), the CSF
+    /// label keeps 31 bytes, and the sounds and `EVA.Lost` bind against the
+    /// fixed catalogs, a building keeping its unset `EVA.Lost`.
     #[test]
     fn residual_and_presentation_keys_read_with_constructor_defaults() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
