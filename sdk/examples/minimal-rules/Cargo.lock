@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "minimal-rules"
 version = "0.1.0"
+dependencies = [
+ "vera20k-sdk",
+]
+
+[[package]]
+name = "vera20k-sdk"
+version = "0.1.0"

@@ -9,6 +9,9 @@ description = "Feasibility module for RFC 0001: pays a house every 15 frames fro
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 
+[dependencies]
+vera20k-sdk = { path = "../../rust/vera20k-sdk" }
+
 [profile.release]
 opt-level = "s"
 lto = true
