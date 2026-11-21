@@ -410,12 +410,16 @@ impl GpuContext {
             );
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let _ = DEVICE_IDENTITY.set(DeviceIdentity {
-            backend: adapter_info.backend,
-            vendor: adapter_info.vendor,
-            device: adapter_info.device,
-            name: adapter_info.name.clone(),
-        });
+        {
+            *DEVICE_IDENTITY
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(DeviceIdentity {
+                backend: adapter_info.backend,
+                vendor: adapter_info.vendor,
+                device: adapter_info.device,
+                name: adapter_info.name.clone(),
+            });
+        }
         on_adapter(&adapter_info);
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
@@ -709,6 +713,12 @@ impl GpuContext {
             .then_some(self.adapter_info.name.as_str())
     }
 
+    /// The graphics API the device draws through.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn graphics_api(&self) -> wgpu::Backend {
+        self.adapter_info.backend
+    }
+
     /// What the driver said once it has lost the graphics device: it crashed,
     /// Windows reset it after it stopped responding (TDR), or the card ran out
     /// of memory. Nothing reaches the screen after that, while the game would
@@ -972,6 +982,7 @@ static LOST_DEVICE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 /// start record (`persistence::startup_backend`) when the device is lost
 /// before startup finishes, which the panic hook reports too.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[derive(Clone)]
 pub(crate) struct DeviceIdentity {
     pub(crate) backend: wgpu::Backend,
     /// PCI vendor and device ids, the same on every API.
@@ -980,13 +991,21 @@ pub(crate) struct DeviceIdentity {
     pub(crate) name: String,
 }
 
+/// The last adapter chosen wins: a start whose first API could not start goes
+/// on with another (`persistence::startup_backend::after_failure`), and the
+/// record must hear of the API the game runs on, not the one it gave up.
+/// Process-wide, behind a lock, because the panic hook reads it from
+/// whichever thread panicked (`persistence::startup_backend::record_loss`).
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-static DEVICE_IDENTITY: std::sync::OnceLock<DeviceIdentity> = std::sync::OnceLock::new();
+static DEVICE_IDENTITY: Mutex<Option<DeviceIdentity>> = Mutex::new(None);
 
 /// The device the game runs on, once `GpuContext::new` chose it.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn device_identity() -> Option<&'static DeviceIdentity> {
-    DEVICE_IDENTITY.get()
+pub(crate) fn device_identity() -> Option<DeviceIdentity> {
+    DEVICE_IDENTITY
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
 }
 
 /// The driver's message once the graphics device is lost; `None` while it
