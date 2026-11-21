@@ -1295,7 +1295,7 @@ fn ticking_cues_survive_rule_changes_and_load_without_changing_gameplay_ids() {
             SimSoundEvent::VocAt { sound_id, .. },
         ] if *retired == ticking_sound_owner(old)
             && *fresh == ticking_sound_owner(old)
-            && sound_id.name_in(&rules) == "CrazyIvanAttack"));
+            && sound_id.name_in(replacement) == "CrazyIvanAttack"));
     }
 }
 
