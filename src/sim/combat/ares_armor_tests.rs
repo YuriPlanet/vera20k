@@ -80,6 +80,7 @@ fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
             rules.object("TARGET").unwrap(),
             sim.resolved_terrain.as_ref(),
             false,
+            0,
             &rules,
             &sim.interner,
         );
@@ -220,6 +221,7 @@ fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
             },
             greatest_threat::ThreatReference::NullCoord,
             None,
+            0,
         )
         .unwrap();
         MaskedX87Chop53::store_f64_masked_chop(result)

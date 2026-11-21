@@ -166,15 +166,54 @@ impl CsfFile {
     /// appends its fixed candidates, for a game whose files take Ares' forms
     /// (`ares`, `AssetManager::ships_ares`); native controls:
     /// tools/rules_oracle/ares_csf.
+    /// The base CSF this process uses. YR reads `ra2md.csf`; `-ra2` reads the
+    /// original RA2 `ra2.csf` shipped inside `language.mix`.
+    pub fn active_csf_name() -> &'static str {
+        if crate::util::ra2_launch::enabled() {
+            "ra2.csf"
+        } else {
+            "ra2md.csf"
+        }
+    }
+
     pub fn load_active<'a>(
         ares: bool,
         mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
-        let bytes = lookup("ra2md.csf").ok_or_else(|| AssetError::AssetNotFound {
-            name: "ra2md.csf".to_string(),
+        let csf_name = Self::active_csf_name();
+        let bytes = lookup(csf_name).ok_or_else(|| AssetError::AssetNotFound {
+            name: csf_name.to_string(),
         })?;
         let mut table = Self::from_bytes(bytes)?;
         let mut admitted = Vec::new();
+        // `-ra2` reads the original ra2.csf. The YR table is installed beside
+        // it and carries labels the base table does not (e.g. UI strings added
+        // for the expansion). Adopt those as fallbacks: a label ra2.csf has
+        // keeps its original value, missing ones answer from ra2md.csf.
+        if crate::util::ra2_launch::enabled()
+            && let Some(md_bytes) = lookup("ra2md.csf")
+            && let Ok(md_table) = Self::from_bytes(md_bytes)
+        {
+            // Absorb missing labels into the base table itself, not into the
+            // localization fallbacks: `i18n::apply` clears those right after
+            // this load, while entries survive. A label ra2.csf already has
+            // keeps its original value.
+            let mut added = 0usize;
+            if let (CsfEntries::Raw(base), CsfEntries::Raw(md)) =
+                (&mut table.entries, md_table.entries)
+            {
+                for (key, value) in md {
+                    if !base.contains_key(&key) {
+                        base.insert(key, value);
+                        added += 1;
+                    }
+                }
+            }
+            if added > 0 {
+                log::info!("RA2 CSF fallback: adopted {added} labels from ra2md.csf");
+                admitted.push("ra2md.csf".to_string());
+            }
+        }
         if !ares {
             return Ok((table, admitted));
         }
@@ -265,9 +304,22 @@ impl CsfFile {
         true
     }
 
-    /// Look up a string by label name (case-insensitive).
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.lookup_text(key).map(|text| text.value.as_str())
+    /// Look up a string by label name (case-insensitive). With Ares, a
+    /// `NOSTR:` label answers with its own text ([`Self::ares_literal`]).
+    pub fn get<'a>(&'a self, key: &'a str) -> Option<&'a str> {
+        self.ares_literal(key)
+            .or_else(|| self.lookup_text(key).map(|text| text.value.as_str()))
+    }
+
+    /// Ares 3.0 CSF_LoadString_1 (Ares.dll `10060E80`, hook `0x00734E83`):
+    /// before LoadString (`0x00734E60`) searches the table, a label that
+    /// starts with `NOSTR:` (case-sensitive `strncmp`) is answered with the
+    /// rest of itself, even when the table has that label.
+    fn ares_literal<'k>(&self, key: &'k str) -> Option<&'k str> {
+        match self.entries {
+            CsfEntries::Ares(_) => key.strip_prefix("NOSTR:").map(ares_dynamic_text),
+            CsfEntries::Raw(_) => None,
+        }
     }
 
     /// Stored key spelling and unnormalized text for the very same selected slot.
@@ -318,10 +370,21 @@ impl CsfFile {
 
     /// Native initialized-table lookup. Missing labels are visible, not an
     /// invitation for each caller to substitute its own English fallback.
+    /// With Ares, CSF_LoadString_2 (Ares.dll `10060EC0`, hook `0x00734EC2`)
+    /// formats the missing text as a dynamic string, which caps it like a
+    /// `NOSTR:` text.
     pub fn text<'a>(&'a self, key: &str) -> Cow<'a, str> {
-        self.get(key)
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(format!("MISSING:'{key}'")))
+        if let Some(literal) = self.ares_literal(key) {
+            return Cow::Owned(literal.to_owned());
+        }
+        if let Some(text) = self.lookup_text(key) {
+            return Cow::Borrowed(text.value.as_str());
+        }
+        let missing = format!("MISSING:'{key}'");
+        Cow::Owned(match self.entries {
+            CsfEntries::Ares(_) => ares_dynamic_text(&missing).to_owned(),
+            CsfEntries::Raw(_) => missing,
+        })
     }
 
     /// Number of entries in the string table.
@@ -360,6 +423,18 @@ fn localized(key: &str, value: &str) -> CsfText {
         raw: value.to_owned(),
         stored_key: key.to_ascii_uppercase(),
     }
+}
+
+/// Ares' CSFLoader::GetDynamicString (Ares.dll `100607C0`) formats a text
+/// into a 0x66-character buffer with `_TRUNCATE`: at most 101 characters
+/// show. `%hs` widens each label byte to one character, as the INI reader
+/// does.
+const ARES_DYNAMIC_TEXT_CHARS: usize = 0x66 - 1;
+
+fn ares_dynamic_text(text: &str) -> &str {
+    text.char_indices()
+        .nth(ARES_DYNAMIC_TEXT_CHARS)
+        .map_or(text, |(end, _)| &text[..end])
 }
 
 /// AbstractTypeClass's visible type name (`+0x60`): the constructor leaves
@@ -728,6 +803,42 @@ mod tests {
                 "base table is required in both profiles"
             );
         }
+    }
+
+    /// Ares' CSF_LoadString_1 (`0x00734E83`) answers a `NOSTR:` label with its
+    /// own text before the table search (`strncmp`, so case-sensitive); stock
+    /// YR searches the table and shows any other label missing.
+    #[test]
+    fn ares_nostr_labels_answer_with_their_own_text() {
+        let base = build_test_csf("NOSTR:Table", "from the table");
+        for ares in [false, true] {
+            let (table, _) = CsfFile::load_active(ares, |name| {
+                (name == "ra2md.csf").then_some(base.as_slice())
+            })
+            .unwrap();
+            if ares {
+                assert_eq!(table.get("NOSTR:Table"), Some("Table"));
+                assert_eq!(table.text("NOSTR:My Tank"), "My Tank");
+                assert_eq!(table.text("nostr:My Tank"), "MISSING:'nostr:My Tank'");
+            } else {
+                assert_eq!(table.get("NOSTR:Table"), Some("from the table"));
+                assert_eq!(table.text("NOSTR:My Tank"), "MISSING:'NOSTR:My Tank'");
+            }
+        }
+    }
+
+    /// Ares' GetDynamicString (`100607C0`) keeps 101 characters of a
+    /// `NOSTR:` text and of a missing label's text (`0x00734EC2`).
+    #[test]
+    fn ares_dynamic_texts_keep_101_characters() {
+        let base = build_test_csf("A", "a");
+        let (table, _) = CsfFile::load_active(true, |name| {
+            (name == "ra2md.csf").then_some(base.as_slice())
+        })
+        .unwrap();
+        let long = "x".repeat(150);
+        assert_eq!(table.text(&format!("NOSTR:{long}")), long[..101]);
+        assert_eq!(table.text(&long), format!("MISSING:'{}", &long[..92]));
     }
 
     #[test]

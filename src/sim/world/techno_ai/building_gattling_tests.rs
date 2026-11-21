@@ -113,7 +113,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         output.sound_events.iter().any(|event| {
             matches!(event,
             SimSoundEvent::GattlingLoop { owner, sound_id, .. }
-            if *owner == gattling_sound_owner(cannon) && sound_id == "GattlingGunAttackLoop1")
+            if *owner == gattling_sound_owner(cannon) && sound_id.name_in(&rules) == "GattlingGunAttackLoop1")
         })
     });
     assert!(
@@ -313,14 +313,14 @@ fn expected_sounds(events: &[Value], stage_up: bool) -> Vec<Sound> {
     sounds
 }
 
-fn sounds(sim: &Simulation, id: u64) -> Vec<Sound> {
+fn sounds(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<Sound> {
     let owner = gattling_sound_owner(id);
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
             SimSoundEvent::GattlingLoop {
                 owner: o, sound_id, ..
-            } if *o == owner => Some(Sound::Loop(sound_id.clone())),
+            } if *o == owner => Some(Sound::Loop(sound_id.name_in(rules).to_string())),
             SimSoundEvent::GattlingLoopStop { owner: o } if *o == owner => Some(Sound::Stop),
             SimSoundEvent::GattlingLoopRelease { owner: o } if *o == owner => Some(Sound::Release),
             _ => None,
@@ -365,7 +365,7 @@ fn with_draws(sim: &mut Simulation, row: &Value, call: impl FnOnce(&mut Simulati
 
 /// The row's recorded Gattling state, `+0xC4` and `+0x148`, and the loop
 /// events the calls made.
-fn assert_gattling(sim: &Simulation, id: u64, row: &Value, stage_before: i32) {
+fn assert_gattling(sim: &Simulation, rules: &RuleSet, id: u64, row: &Value, stage_before: i32) {
     let name = &row["input"]["name"];
     let native = &row["gattling"];
     let entity = sim.substrate.entities.get(id).unwrap();
@@ -396,7 +396,7 @@ fn assert_gattling(sim: &Simulation, id: u64, row: &Value, stage_before: i32) {
         "{name} +0x148"
     );
     assert_eq!(
-        sounds(sim, id),
+        sounds(sim, rules, id),
         expected_sounds(row["events"].as_array().unwrap(), stage > stage_before),
         "{name} loop"
     );
@@ -492,7 +492,7 @@ fn gattling_attack_matches_the_original() {
             }),
             "{name} FireAt"
         );
-        assert_gattling(&sim, building, row, stage_before);
+        assert_gattling(&sim, &rules, building, row, stage_before);
         if let Some(event) = fire_at {
             let elite = state_is_elite(input);
             // A second run uses the complete live receiver (no boundary
@@ -638,7 +638,7 @@ fn gattling_guard_matches_the_original() {
             row["status"].as_u64().unwrap(),
             "{name} status"
         );
-        assert_gattling(&sim, building, row, stage_before);
+        assert_gattling(&sim, &rules, building, row, stage_before);
     }
 }
 
@@ -681,7 +681,7 @@ fn gattling_idle_decay_matches_the_original() {
             );
             0
         });
-        assert_gattling(&sim, building, row, stage_before);
+        assert_gattling(&sim, &rules, building, row, stage_before);
     }
 }
 
@@ -865,7 +865,7 @@ fn gattling_cadence_matches_the_original() {
                 "gattling": native,
                 "events": native_events,
             });
-            assert_gattling(&sim, building, &frame_row, stage_before);
+            assert_gattling(&sim, &rules, building, &frame_row, stage_before);
             stage_before = native["stage"].as_i64().unwrap() as i32;
         }
     }
@@ -952,14 +952,14 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             entity.gattling.value(),
         )
     };
-    let loops = |output: &crate::sim::world::SimFrameOutput| {
+    let loops = |output: &crate::sim::world::SimFrameOutput, rules: &RuleSet| {
         output
             .sound_events
             .iter()
             .filter_map(|event| match event {
                 SimSoundEvent::GattlingLoop {
                     owner: o, sound_id, ..
-                } if *o == owner => Some(Sound::Loop(sound_id.clone())),
+                } if *o == owner => Some(Sound::Loop(sound_id.name_in(rules).to_string())),
                 SimSoundEvent::GattlingLoopStop { owner: o } if *o == owner => Some(Sound::Stop),
                 SimSoundEvent::GattlingLoopRelease { owner: o } if *o == owner => {
                     Some(Sound::Release)
@@ -1013,7 +1013,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             );
             shots[stage_before as usize] += 1;
         }
-        sounds.extend(loops(&output));
+        sounds.extend(loops(&output, &scenario.runtime.resources.rules));
     }
     println!("YAGGUN: stage-ups at {stage_ups:?}, shots per stage {shots:?}");
     assert_eq!(stage_ups.len(), 2, "two stage-ups");
@@ -1049,11 +1049,11 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             },
         )],
     );
-    let mut sounds = loops(&order);
+    let mut sounds = loops(&order, &scenario.runtime.resources.rules);
     let dropped = (0..600_u32)
         .find(|_| {
             let output = retail_frame(&mut scenario, Vec::new());
-            sounds.extend(loops(&output));
+            sounds.extend(loops(&output, &scenario.runtime.resources.rules));
             !state(&scenario).1
         })
         .expect("the cannon drops the MCV");
@@ -1063,7 +1063,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
     );
     let wound_down = (0..60_u32).find(|_| {
         let output = retail_frame(&mut scenario, Vec::new());
-        sounds.extend(loops(&output));
+        sounds.extend(loops(&output, &scenario.runtime.resources.rules));
         let (mission, _, stage, value) = state(&scenario);
         mission == Some(MissionType::Guard) && (stage, value) == (0, 0)
     });

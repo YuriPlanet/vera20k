@@ -626,7 +626,7 @@ impl Simulation {
         // player who owns the planter (+0x21C).
         if let Some(sound_id) = attach_sound {
             self.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(&sound_id),
                 audible_to: Some([planter_house, planter_house]),
                 rx: position.rx(),
                 ry: position.ry(),
@@ -860,11 +860,18 @@ impl Simulation {
         expired: u64,
     ) {
         for &carrier in &bombs.carriers {
+            // Every object's expiry comes here, so a carrier whose bomb
+            // another object planted is only read: a hand-out would wake it
+            // and enter the store's touch logs.
             if let Some(bomb) = substrate
                 .entities
-                .get_mut(carrier)
+                .get_mut_if(carrier, |entity| {
+                    entity
+                        .bomb
+                        .as_ref()
+                        .is_some_and(|bomb| bomb.planter == Some(expired))
+                })
                 .and_then(|entity| entity.bomb.as_mut())
-                && bomb.planter == Some(expired)
             {
                 bomb.planter = None;
             }

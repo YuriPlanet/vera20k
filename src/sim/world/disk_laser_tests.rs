@@ -315,11 +315,11 @@ fn assert_laser(actual: LaserBirth, expected: &Value, context: &str) {
     );
 }
 
-fn sounds(sim: &Simulation, begin: usize) -> Vec<Value> {
+fn sounds(rules: &RuleSet, sim: &Simulation, begin: usize) -> Vec<Value> {
     sim.sound_events[begin..].iter().filter_map(|event| match event {
         SimSoundEvent::VocAt { sound_id, audible_to, rx, ry, sub_x, sub_y, world_z_leptons } => {
             assert!(audible_to.is_none(), "Disk native NULL handle has no House admission gate");
-            Some(json!({"name": sound_id, "coords": [i32::from(*rx) * 256 + sub_x.to_num::<i32>(), i32::from(*ry) * 256 + sub_y.to_num::<i32>(), *world_z_leptons]}))
+            Some(json!({"name": sound_id.name_in(rules), "coords": [i32::from(*rx) * 256 + sub_x.to_num::<i32>(), i32::from(*ry) * 256 + sub_y.to_num::<i32>(), *world_z_leptons]}))
         }
         _ => None,
     }).collect()
@@ -484,10 +484,14 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                         paired = false;
                         damage_count += 1;
                     }
-                    for actual in sounds(&scene.sim, sound_start).into_iter().filter(|event| {
-                        event["name"] == rules.general.disk_laser_charge_up().unwrap()
-                            || event["name"] == weapon.report[0]
-                    }) {
+                    for actual in
+                        sounds(&rules, &scene.sim, sound_start)
+                            .into_iter()
+                            .filter(|event| {
+                                event["name"] == rules.general.disk_laser_charge_up().unwrap()
+                                    || event["name"] == weapon.report[0]
+                            })
+                    {
                         let call = &row["sound_calls"][sound_count];
                         let name = match int(&call["sound_id"]) {
                             0 => rules.general.disk_laser_charge_up().unwrap(),
@@ -671,7 +675,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                             _ => None,
                         })
                         .collect();
-                    let sound = sounds(sim, sound_start);
+                    let sound = sounds(&rules, sim, sound_start);
                     sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, false);
                     (
                         lasers,

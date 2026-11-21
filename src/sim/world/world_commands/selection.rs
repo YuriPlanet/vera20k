@@ -325,7 +325,7 @@ impl Simulation {
             stable_id,
             context.effects().selection_voice_enabled(),
         ) {
-            let sound_id = sound_id.to_owned();
+            let sound_id = rules.sound_name(sound_id);
             self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: stable_id,
                 sound_id,

@@ -3,7 +3,7 @@
 //! here; the physical AEGIS raster has its own original-instruction packet.
 use super::*;
 use crate::app::presentation::render::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_ground_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_ground_object_instances,
 };
 use crate::render::batch::InstanceBufferPool;
 use crate::render::sinking::{SinkingWaterlines, apply_waterline_clip, tests};
@@ -55,7 +55,7 @@ fn native_sinking_clip_survives_camera_scissor_and_ground_upload() {
             );
             body.zshape_origin = [world_y, 480.0];
             apply_waterline_clip(&mut body.draw_state, tests::draw_input(&mut cache, input));
-            let ground = lower_ground_object_instances(vec![PlannedObjectInstance::object(
+            let ground = lower_ground_object_instances(vec![OwnedPlannedObject::object(
                 ObjectDraw {
                     id: 1,
                     layer: TacticalLayer(2),
@@ -268,7 +268,7 @@ fn assert_ground_pose_upload_and_replay(
                         crate::render::native_z::ZGradient::Vertical,
                         false,
                     );
-                    let layer = lower_ground_object_instances(vec![PlannedObjectInstance::object(
+                    let layer = lower_ground_object_instances(vec![OwnedPlannedObject::object(
                         ObjectDraw {
                             id: 1,
                             layer: TacticalLayer(2),

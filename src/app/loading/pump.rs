@@ -464,6 +464,7 @@ impl LoadingRequest {
                 .launch_session()
                 .map(|launch| launch.mode.override_file.as_str()),
             self.startup().session_mode(),
+            self.startup().ai_file(asset_manager),
             self.the_team_enabled,
             self.startup().match_seed(),
             progress,
@@ -511,10 +512,14 @@ impl LoadingRequest {
         {
             loaded = loaded.with_mod_additions(&additions)?;
         }
-        match map_additions {
-            Some(additions) => loaded.with_mod_additions(additions),
-            None => Ok(loaded),
+        let mut loaded = match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions)?,
+            None => loaded,
+        };
+        if !matches!(self.startup(), LoadingStartup::Network(_)) {
+            loaded = loaded.with_ra2_campaign_fixups(map_file)?;
         }
+        Ok(loaded)
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
@@ -1147,7 +1152,15 @@ fn bind_early_country_loading(
             index.0
         )
     })?;
-    let palette_name = country.files().1.to_owned();
+    // `-ra2`: original game.exe binds one MPLS.PAL for every Country (only
+    // the observer uses MPLSOBS.PAL). The YR per-country MPLSU/MPLSR/... PALs
+    // in the Country table are absent from an RA2 install, so keep them out
+    // of the frozen early observation and let the SHP render with MPLS.PAL.
+    let palette_name = if crate::util::ra2_launch::enabled() {
+        "MPLS.PAL".to_owned()
+    } else {
+        country.files().1.to_owned()
+    };
     let palette = if palette_name.is_empty() {
         None
     } else {
@@ -1373,33 +1386,33 @@ fn prepare_session_for_loading(
     }
 }
 
-/// VERA: a network match plays the rules its room took from its host
-/// (`HostRules`), which the room's agreement already compared. A replay
-/// applies the exact simulation switches recorded by its blueprint.
+/// VERA: a network match plays the switches its room agreed on
+/// ([`MatchSession::network_personal_rules`]); the session holds this start
+/// frozen. A replay applies the exact simulation switches recorded by its
+/// blueprint; an offline game plays the player's own.
+///
+/// [`MatchSession::network_personal_rules`]: crate::app::match_runtime::session::MatchSession::network_personal_rules
 fn play_startup_personal_rules(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
+    session: &crate::app::match_runtime::session::MatchSession,
     startup: &LoadingStartup,
 ) {
-    if startup.authored_campaign().is_some() {
-        return process_assets.use_personal_rules(Default::default());
-    }
-    let room = match startup {
-        LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
+    let rules = match startup {
+        LoadingStartup::Network(_) => session
+            .network_personal_rules()
+            .unwrap_or_else(|| Err("the start has no room setup".into()))
+            .unwrap_or_else(|error| {
+                // The room's agreement refused these before its start.
+                log::error!("The room's rules do not read: {error}");
+                Default::default()
+            }),
+        LoadingStartup::AuthoredCampaignReplay { .. } => Default::default(),
         LoadingStartup::Replay { launch, .. } => {
-            return process_assets
-                .use_personal_rules(launch.personal_rules().cloned().unwrap_or_default());
+            launch.personal_rules().cloned().unwrap_or_default()
         }
         _ => return process_assets.use_own_personal_rules(),
     };
-    match room.personal_rules() {
-        Ok(rules) => process_assets.use_personal_rules(rules),
-        // A network room refused these before its start; a replay plays on
-        // without them and its check reports the difference.
-        Err(error) => {
-            log::error!("The room's rules do not read: {error}");
-            process_assets.use_personal_rules(Default::default());
-        }
-    }
+    process_assets.use_personal_rules(rules);
 }
 
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
@@ -1412,10 +1425,14 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
-    play_startup_personal_rules(&mut state.process_assets, request.startup());
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());
+    play_startup_personal_rules(
+        &mut state.process_assets,
+        &state.match_state.session,
+        request.startup(),
+    );
     let mut request = request.with_skirmish_colors(
         state
             .rules()
@@ -2413,8 +2430,7 @@ fn poll_network_load_wait(
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
             let text =
-                crate::app::frontend::shell_pass::resolve_csf(state, "TXT_SYSTEM_NOT_RESPONDING")
-                    .into_owned();
+                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {

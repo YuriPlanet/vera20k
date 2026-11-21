@@ -56,6 +56,20 @@ impl RulesPassProcessor {
                     "StopSound",
                     member.anim_references.stop_sound.take(),
                 );
+                // Tiberian Sun's BounceSound= and ExpireSound=, read as
+                // Firestorm 2.0 reads them (0x00419181..0x00419216):
+                // ReadString 0x80 and VocClass::From_Name (0x00664ED0), an
+                // empty or unknown name keeping the slot. gamemd reads neither.
+                member.anim_references.bounce_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "BounceSound",
+                    member.anim_references.bounce_sound.take(),
+                );
+                member.anim_references.expire_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "ExpireSound",
+                    member.anim_references.expire_sound.take(),
+                );
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
                 // This retains the existing fresh/unowned read projection;
@@ -403,6 +417,10 @@ impl RulesPassProcessor {
                 }
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.em_effect = raw.read_bool("EMEffect", current.em_effect);
+                // Firestorm's web keys (`docs/ts-webs.md`), which gamemd
+                // lacks: plain bool and int reads that allocate nothing, so
+                // their place among the YR keys changes no other read.
+                current.web = crate::rules::warhead_type::WarheadWeb::read_pass(current.web, raw);
                 // The stock way reads DebrisTypes after EMEffect, allocating.
                 let debris_types = match ares_debris_types {
                     Some(types) => types,

@@ -45,6 +45,8 @@ Tile03ZAdjust=-10
         automatic_tube_bases: [-1; 4],
         cliff_ranges: crate::map::theater::TheaterCliffRanges::default(),
         rmg_tiles: crate::map::theater::RmgTileKeys::default(),
+        ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 

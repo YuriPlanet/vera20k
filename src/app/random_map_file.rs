@@ -216,6 +216,7 @@ pub(crate) fn generate_from_game(
         active_mod,
         // The game's files decide, whatever the player's own setting.
         crate::util::ares_launch::AresSetting::Auto,
+        crate::util::kratos_launch::KratosSetting::Auto,
         false,
     )?;
     let (assets, rules, _) = process.manager_and_rules_with_tile_cache();
@@ -238,7 +239,11 @@ pub(crate) fn run_desktop(
     output: &std::path::Path,
     mod_switch: Option<&crate::app::mods::ModSwitch>,
 ) -> Result<RandomMapReport> {
-    let config = crate::util::config::GameConfig::load()?;
+    let mut config = crate::util::config::GameConfig::load()?;
+    // RA2 Mode's theaters, as the game the launcher starts plays them.
+    config.use_ra2_mode(
+        crate::app::spawn_probe::existing_profile(config.paths.settings_dir()).ra2_mode,
+    );
     let map = generate_from_game(
         &config,
         crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
@@ -308,6 +313,7 @@ mod tests {
                 .media_archive_mode,
             None,
             crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();
@@ -404,6 +410,7 @@ mod tests {
                 crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
                 crate::app::mods::launch_mod(&config.paths, None).unwrap(),
                 crate::util::ares_launch::AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto,
                 false,
             )
             .unwrap()

@@ -496,7 +496,7 @@ pub struct SkirmishLaunchOptions {
     /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
-    /// Balance automatically, which 0.3.3 and 0.3.4 hosts send with Teams.
+    /// Balance automatically, which hosts on 0.3.2 to 0.3.4 send with Teams.
     /// Read only so that their options parse; nothing reads it, and it is
     /// never sent.
     #[serde(default, skip_serializing)]
@@ -507,9 +507,8 @@ pub struct SkirmishLaunchOptions {
     /// waits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<String>,
-    /// VERA's room rules: the host's Terrain Deformation and personal
-    /// rules, which every player's match plays. Left out while the room has
-    /// neither.
+    /// VERA's room rules: the host's Options switches ([`HostRules`]). Left
+    /// out while all are off.
     #[serde(default, skip_serializing_if = "HostRules::is_empty")]
     pub host_rules: HostRules,
 }
@@ -517,8 +516,9 @@ pub struct SkirmishLaunchOptions {
 /// VERA: the rules a network room plays besides its options, which only its
 /// host sets: the host's Terrain Deformation box, Superweapon Limit and
 /// Building Production Queue.
-/// Every player's match plays these instead of their own; offline games play
-/// the player's own (`ProcessAssets::use_personal_rules`).
+/// Every player's match plays these instead of their own, except in a co-op
+/// campaign (`MatchSession::network_personal_rules`); offline games play the
+/// player's own (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostRules {
@@ -582,9 +582,15 @@ fn is_zero(value: &u8) -> bool {
 /// team at 30 seats, as the lobby takes them.
 pub const ROOM_TEAMS: std::ops::RangeInclusive<u8> = 2..=15;
 
-/// The teams gamemd's Team list holds, A to D (`team_choices`). Skirmish and
-/// a VERA room with Teams Off keep it.
+/// The teams gamemd's Team list holds, A to D (`team_choices`). A skirmish
+/// on a map of eight or fewer starts and a VERA room with Teams Off keep it;
+/// it is also where `room_team_label` starts naming teams past D.
 pub const NATIVE_TEAMS: u8 = 4;
+
+/// The teams a skirmish Team list holds on a map past gamemd's eight starts,
+/// A to O: as many as a VERA room ([`ROOM_TEAMS`]). A map of eight or fewer
+/// keeps gamemd's [`NATIVE_TEAMS`].
+pub const SKIRMISH_TEAMS: u8 = 15;
 
 impl Default for SkirmishLaunchOptions {
     fn default() -> Self {
@@ -690,6 +696,45 @@ pub struct RoomOptions {
     pub teams: Option<u8>,
 }
 
+/// The session values `[MultiplayerDialogSettings]` seeds that C2's proc
+/// (`Dialog0xC2__DlgProc`, `0x0078F7F0`) handles but YR's skirmish and room
+/// dialogs never show: Tech Level, Bases (`0x00A8B258`), Fog of War
+/// (`0x00A8B31F`), Multi-Engineer (`0x00A8B26C`) and Harvester Truce
+/// (`0x00A8B31D`). VERA's Game Options show them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionOptions {
+    pub tech_level: i32,
+    pub bases: bool,
+    pub fog_of_war: bool,
+    pub multi_engineer: bool,
+    pub harvester_truce: bool,
+}
+
+/// C2's Short Game click (`Dialog0xC2__DlgProc`, `0x0078FB8D..0x0078FBB0`):
+/// a short game needs bases, so ticking it ticks Bases. Only a click does
+/// this; values restored from settings stay as they are.
+pub fn click_short_game(short_game: &mut bool, bases: &mut bool) {
+    *short_game = !*short_game;
+    if *short_game {
+        *bases = true;
+    }
+}
+
+/// C2's Bases click (`0x0078FAAA..0x0078FAC9`): unticking it unticks Short
+/// Game.
+pub fn click_bases(bases: &mut bool, short_game: &mut bool) {
+    *bases = !*bases;
+    if !*bases {
+        *short_game = false;
+    }
+}
+
+impl Default for SessionOptions {
+    fn default() -> Self {
+        SkirmishLaunchOptions::default().session_options()
+    }
+}
+
 impl SkirmishLaunchOptions {
     pub fn room_options(&self) -> RoomOptions {
         RoomOptions {
@@ -705,6 +750,24 @@ impl SkirmishLaunchOptions {
         self.ally_change_allowed = room.ally_change_allowed;
         self.bans = room.bans;
         self.teams = room.teams;
+    }
+
+    pub fn session_options(&self) -> SessionOptions {
+        SessionOptions {
+            tech_level: self.tech_level,
+            bases: self.bases,
+            fog_of_war: self.fog_of_war,
+            multi_engineer: self.multi_engineer,
+            harvester_truce: self.harvester_truce,
+        }
+    }
+
+    pub fn set_session_options(&mut self, session: SessionOptions) {
+        self.tech_level = session.tech_level;
+        self.bases = session.bases;
+        self.fog_of_war = session.fog_of_war;
+        self.multi_engineer = session.multi_engineer;
+        self.harvester_truce = session.harvester_truce;
     }
 }
 
@@ -1187,6 +1250,16 @@ impl SkirmishLaunchSession {
         }
     }
 
+    /// Whether the match seats a house the computer runs: a computer
+    /// player, or Cooperative's, whose declared count can outlast its rows.
+    /// VERA: a network match that seats none reads the original AI INI
+    /// (`retail_sources::match_ai_file`).
+    pub fn seats_computers(&self) -> bool {
+        self.ai_player_count > 0
+            || !self.opponents.is_empty()
+            || self.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
+    }
+
     fn view(&self) -> LaunchSessionView<'_> {
         LaunchSessionView {
             mode: &self.mode,
@@ -1544,7 +1617,7 @@ mod tests {
         );
     }
 
-    /// A 0.3.3 or 0.3.4 host's options still parse with its Balance
+    /// The options of a host on 0.3.2 to 0.3.4 still parse with its Balance
     /// automatically, and the setting never goes out again.
     #[test]
     fn an_older_hosts_balance_automatically_parses_and_is_never_sent() {
@@ -1689,6 +1762,21 @@ mod tests {
                 case["name"]
             );
         }
+    }
+
+    /// VERA: a match seats a computer with a computer's row, with a
+    /// declared count that outlasts its rows, and in Cooperative; human
+    /// players alone seat none.
+    #[test]
+    fn a_match_seats_computers_by_its_rows_its_declared_count_or_its_mode() {
+        let mut session = random_test_session();
+        assert!(session.seats_computers());
+        session.opponents.clear();
+        assert!(session.seats_computers());
+        session.ai_player_count = 0;
+        assert!(!session.seats_computers());
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(session.seats_computers());
     }
 
     #[test]

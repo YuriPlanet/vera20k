@@ -72,7 +72,7 @@ function relayable(data) {
   return { candidate: { candidate: candidate.candidate, sdpMid, sdpMLineIndex, usernameFragment } };
 }
 
-export function createSignaling({ origin, iceServers = [], clientIpHeader }) {
+export function createSignaling({ origins, iceServers = [], clientIpHeader }) {
   const groups = new Map();
   const finishers = new Map();
   const handshakes = rateLimit(SIGNAL_LIMITS.handshakesPerSecond);
@@ -129,7 +129,7 @@ export function createSignaling({ origin, iceServers = [], clientIpHeader }) {
     upgrade(req, socket, head, url) {
       const reject = () => socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       const key = groupKey(clientAddress(req, clientIpHeader));
-      if (!handshakes() || req.headers.origin !== origin || !key
+      if (!handshakes() || !origins.has(req.headers.origin) || !key
         || finishers.size >= SIGNAL_LIMITS.connections) { reject(); return; }
       const address = admit(key, url.searchParams.get('prefer'));
       if (!address) { reject(); return; }

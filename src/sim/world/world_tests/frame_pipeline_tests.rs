@@ -569,7 +569,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         ParticleTypeId(0),
         IVec3::ZERO,
         IVec3::ZERO,
-        rules.particle_type(ParticleTypeId(0)),
+        &rules,
         &mut sim,
     );
     sim.substrate.particle_systems.insert({
@@ -755,7 +755,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.sound_events.emit(SimSoundEvent::AnimationStarted {
         anim_id: 9,
-        sound_id: "WaterfallLoop".to_owned(),
+        sound_id: crate::rules::ruleset::SoundName::Unlisted("WaterfallLoop".into()),
         world: crate::sim::anim_class::AnimWorldCoord {
             x: 128,
             y: 128,
@@ -1068,4 +1068,27 @@ fn runtime_frame_call_order_matches_the_app_seam() {
         "a due command executes in the runtime frame that drained it"
     );
     assert!(runtime.simulation.take_due_commands().is_empty());
+}
+
+/// A frame is one native logic frame however fast the host paced it, so the
+/// session's simulated clock must not follow the step its caller declared
+/// (issue #5107: the client declares 22 ms, headless 66 ms).
+#[test]
+fn the_session_clock_counts_native_frames_not_the_host_step() {
+    let mut client = Simulation::new();
+    let mut headless = Simulation::new();
+    for _ in 0..3 {
+        client.advance_tick(&[], None, None, None, 22);
+        headless.advance_tick(&[], None, None, None, 66);
+    }
+    assert_eq!(
+        client.session.total_sim_ms(),
+        headless.session.total_sim_ms(),
+        "22 ms and 66 ms steps report different simulated time for 3 frames"
+    );
+    assert_eq!(
+        client.session.total_sim_ms(),
+        3 * 1000 / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND),
+        "3 native frames are 200 ms, not 3 x the host's step"
+    );
 }

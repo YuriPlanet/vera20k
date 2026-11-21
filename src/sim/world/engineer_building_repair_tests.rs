@@ -861,7 +861,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
                     "{boundary}: raw RNG word/order"
                 );
             }
-            let played = fixture.sim.sound_events[sound_start..].iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "BuildingRepaired")).count();
+            let played = fixture.sim.sound_events[sound_start..].iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&fixture.rules) == "BuildingRepaired")).count();
             let expected = arrival["lifecycle"]
                 .as_array()
                 .unwrap()

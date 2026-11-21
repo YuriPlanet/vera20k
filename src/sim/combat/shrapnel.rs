@@ -351,7 +351,10 @@ pub(super) fn emit_projectile_shrapnel(
             );
             (
                 ProjectileTarget::of_cell(&cell),
-                crate::sim::projectile::cell_ref_target_coord(&cell),
+                crate::sim::projectile::cell_ref_target_coord(
+                    world.resolved_terrain.as_ref(),
+                    &cell,
+                ),
             )
         };
         construct(world, target, Some(initial_target_position), Some((rx, ry)));

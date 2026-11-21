@@ -1270,3 +1270,114 @@ fn a_resume_names_the_agreed_timing_of_every_player() {
     let short = text.replacen("[Relay]\n", "[Relay]\nResumePings=12\nResumeCursor=2\n", 1);
     assert!(relay(&short).is_err());
 }
+
+/// VERA shared control (docs/spawn.md "Shared starts"): in a mode with shared
+/// starts, humans who write one start play one House, led by the lowest
+/// SourceIndex there; the House counts once.
+#[test]
+fn humans_on_one_start_share_its_house() {
+    // Sources 0 and 1 share start 2; source 2 plays alone.
+    let file = |local: usize| {
+        let extra = format!(
+            "[SpawnLocations]\n{}=2\n{}=2\n",
+            house_key(local, 0),
+            house_key(local, 1)
+        );
+        parse_network(&network_spawn(3, local, &extra)).session
+    };
+    let host = file(0);
+    let member = file(1);
+    let mut shared = member.clone();
+    shared.local_player_index = 0;
+    assert_eq!(shared, host, "only the local index differs");
+    let leaders: Vec<_> = host
+        .humans_with_house_leaders()
+        .map(|(_, _, leader)| leader)
+        .collect();
+    assert_eq!(leaders, [0, 0, 2]);
+    assert!(host.shares_start(&host.humans[1]));
+    assert_eq!(host.required_start_count(), 2);
+    assert!(host.house_roster_is_consistent());
+    // A relay still certifies and times every player.
+    let relayed = network_spawn(
+        3,
+        0,
+        &format!(
+            "{}ResumePings=10,20,30\nResumeCursor=0\n[SpawnLocations]\nMulti1=2\nMulti2=2\n",
+            relay_section(0, 0b111)
+        ),
+    );
+    let network = parse_network(&relayed);
+    assert_eq!(network.session.required_start_count(), 2);
+    let SpawnTransport::Relay(relay) = network.transport else {
+        panic!("relay transport")
+    };
+    assert_eq!(relay.resume.unwrap().pings.len(), 3);
+}
+
+#[test]
+fn a_shared_house_counts_once_for_colours_teams_and_players() {
+    let shared = "[SpawnLocations]\nMulti1=2\nMulti2=2\n";
+    // The launcher writes the leader's colour for a member; the House's
+    // colour is the leader's, so neither a repeat nor another colour clashes.
+    let same_color = network_spawn(3, 0, shared).replacen("Color=1", "Color=0", 1);
+    assert!(SpawnRequest::parse(&same_color).is_ok());
+    let other_color = network_spawn(3, 0, shared).replacen("Color=1", "Color=2", 1);
+    assert!(SpawnRequest::parse(&other_color).is_ok());
+    // Without a shared start the colours of separate Houses still clash.
+    assert!(
+        SpawnRequest::parse(&network_spawn(3, 0, "").replacen("Color=1", "Color=0", 1)).is_err()
+    );
+    // A member plays its leader's team: MustAlly admits a member without one.
+    let teams = format!("{shared}[HouseTeams]\nMulti1=0\nMulti3=1\n");
+    let session = parse_network(&in_mode(9, network_spawn(3, 0, &teams))).session;
+    assert!(!session.all_allied());
+    // Two humans in one House are one playing participant.
+    assert!(
+        SpawnRequest::parse(&network_spawn(
+            2,
+            0,
+            "[SpawnLocations]\nMulti1=0\nMulti2=0\n"
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn only_humans_share_a_start_and_only_where_the_mode_allows() {
+    let ai = |extra: &str| {
+        network_spawn(
+            2,
+            0,
+            &format!(
+                "[HouseHandicaps]\nMulti3=1\nMulti4=1\n[HouseCountries]\nMulti3=3\nMulti4=4\n\
+                 [HouseColors]\nMulti3=6\nMulti4=7\n[SpawnLocations]\n{extra}"
+            ),
+        )
+        .replacen("[Settings]\n", "[Settings]\nAIPlayers=2\n", 1)
+    };
+    assert!(SpawnRequest::parse(&ai("Multi1=2\nMulti2=2\nMulti3=3\nMulti4=4\n")).is_ok());
+    for broken in [
+        // An AI on a human's start.
+        "Multi1=2\nMulti3=2\n",
+        // Two AI on one start.
+        "Multi3=4\nMulti4=4\n",
+    ] {
+        assert!(SpawnRequest::parse(&ai(broken)).is_err(), "{broken}");
+    }
+    // A spectator still has no start, shared or not.
+    let spectator = "[IsSpectator]\nMulti3=Yes\n[SpawnLocations]\nMulti1=4\nMulti3=4\n";
+    assert!(SpawnRequest::parse(&network_spawn(3, 0, spectator)).is_err());
+    // Cooperative shares no start.
+    let enemies = "[HouseHandicaps]\nMulti3=1\nMulti4=1\n[HouseCountries]\nMulti3=8\nMulti4=7\n\
+         [HouseColors]\nMulti3=2\nMulti4=3\n";
+    let cooperative = |starts: &str| {
+        in_mode(
+            3,
+            network_spawn(2, 0, &format!("{enemies}[SpawnLocations]\n{starts}")),
+        )
+        .replacen("[Settings]\n", "[Settings]\nAIPlayers=2\n", 1)
+    };
+    assert!(SpawnRequest::parse(&cooperative("Multi1=0\nMulti2=1\n")).is_ok());
+    assert!(SpawnRequest::parse(&cooperative("Multi1=0\nMulti2=0\n")).is_err());
+}

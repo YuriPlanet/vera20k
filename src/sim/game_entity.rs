@@ -326,10 +326,9 @@ pub struct GameEntity {
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
-    /// Active low-bridge TubeClass movement. Active YR behaviour — not to be
-    /// confused with the subterranean tunnel locomotor, which is Tiberian Sun
-    /// legacy and was removed as unreachable in stock YR.
-    /// `movement::tube_movement` owns it.
+    /// Foot's retained map tunnel byte, cursor and target. DrawIt and radio
+    /// test presence. [`Self::active_tube`] applies the signed movement gate.
+    /// `movement::tube_movement` owns the payload.
     #[serde(default)]
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`),
@@ -690,9 +689,8 @@ pub struct Seldom {
     barrel_elevation: crate::sim::movement::FacingClass,
     /// UnitClass+6C8. The constructor clears this next-Unit reference at
     /// 7353EC; the map reader74368C, ChangeOwner7463A0 and Find_Path4D3920
-    /// share it (original gamemd.exe instructions). Not yet ported: the
-    /// Accelerates speed hand-off in Process_Drive_Track 4B1218 / Ship 6A08F0
-    /// and the IsTrain-gated Stop_Moving/track consumers (no retail IsTrain).
+    /// share it with the accelerating Drive/Ship speed hand-off (4B1218 /
+    /// 6A08E0) and IsTrain Stop_Moving (4AFE4D / 69F55D).
     unit_follower: Option<u64>,
     /// UnitClass+6D0, constructed false at7353F8. This retained byte is
     /// independent of incoming links: PointerExpired7446E0 clears only the
@@ -985,6 +983,24 @@ pub struct Seldom {
     /// [`UnloadKeep`]: crate::sim::transport_unload::UnloadKeep
     #[serde(default)]
     pub(crate) transport_unload_keep_count: crate::sim::transport_unload::UnloadKeep,
+    /// Tiberian Sun's limpets (Firestorm TechnoClass+0x214/+0x218), a
+    /// [`Limpets`] that `sim::limpet` owns. Nothing unless a `LimpetFactor=`
+    /// warhead hit the object; [`FootSpeedState::limpeted`] spares the speed
+    /// query this read otherwise.
+    ///
+    /// [`Limpets`]: crate::sim::limpet::Limpets
+    /// [`FootSpeedState::limpeted`]: crate::sim::components::FootSpeedState::limpeted
+    #[serde(default)]
+    pub(crate) limpets: crate::sim::limpet::Limpets,
+    /// Tiberian Sun's web timer (Firestorm InfantryClass+0x370), a
+    /// [`WebTimer`] that `sim::infantry` owns. Nothing unless a `Webby=`
+    /// warhead webbed the man; a byte in his [`InfantryRuntime`] spares
+    /// every other object this read.
+    ///
+    /// [`WebTimer`]: crate::sim::infantry::WebTimer
+    /// [`InfantryRuntime`]: crate::sim::infantry::InfantryRuntime
+    #[serde(default)]
+    pub(crate) web: crate::sim::infantry::WebTimer,
     /// The Ares 3.0 TechnoExt and BuildingExt state, an [`AresPart`] kept out
     /// of line and only once Ares code writes it.
     #[serde(default)]
@@ -1425,9 +1441,11 @@ impl GameEntity {
             let quotient = if object.pip_wrap() == 0 {
                 1
             } else {
-                // Native IDIV likewise faults for MIN/-1; the ordinary
-                // signed quotient truncates toward zero.
-                current / object.pip_wrap()
+                // IDIV's signed quotient, truncated toward zero. Native
+                // faults on the one overflowing pair (Ammo=-2147483648 with
+                // PipWrap=-1); outside data never stops the game, so that
+                // pair wraps to i32::MIN instead.
+                current.wrapping_div(object.pip_wrap())
             };
             object.reload.wrapping_add(
                 object
@@ -1786,7 +1804,7 @@ impl GameEntity {
     }
 
     /// `Foot+0x6B6`, the occupation enable; see the field.
-    pub(crate) fn foot_occupation_enabled(&self) -> bool {
+    pub fn foot_occupation_enabled(&self) -> bool {
         self.foot_occupation_enabled.get()
     }
 
@@ -2170,6 +2188,12 @@ impl GameEntity {
         self.body_facing.current(frame)
     }
 
+    /// The body heading at `frame` as Ares reads it: its own copy of Current
+    /// (Ares.dll `0x10009CC0`) on `+0x388`.
+    pub fn body_facing_current_ares(&self, frame: u32) -> u16 {
+        self.body_facing.current_ares(frame)
+    }
+
     /// The body heading's high byte at `frame`, the 8-bit direction a reader
     /// that drops the DirStruct's low byte sees.
     pub fn body_facing_byte(&self, frame: u32) -> u8 {
@@ -2545,6 +2569,8 @@ impl GameEntity {
                 railgun_particle_system: Default::default(),
                 damage_smoke_system_id: Default::default(),
                 transport_unload_keep_count: Default::default(),
+                limpets: Default::default(),
+                web: Default::default(),
                 #[cfg(feature = "phobos")]
                 shield: None,
             }),
@@ -3090,6 +3116,32 @@ mod tests {
             (4, 3, 5)
         );
         assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
+    }
+
+    /// StartReloading6FB080's `Reload + ReloadIncrement * q * q` with `q` the
+    /// ammo count over `PipWrap=`: the overflowing pair (`i32::MIN` over -1)
+    /// no longer panics, and an ordinary pair keeps IDIV's quotient.
+    #[test]
+    fn reload_duration_divides_by_pip_wrap_without_overflow() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=ODD\n1=WRAP\n\
+                 [ODD]\nAmmo=5\nReload=10\nReloadIncrement=1\nPipWrap=-1\n\
+                 [WRAP]\nAmmo=9\nReload=10\nReloadIncrement=1\nPipWrap=2\n",
+            ))
+            .unwrap();
+        let duration = |name: &str, current: i32| {
+            let mut entity = GameEntity::test_default(1, name, "Americans", 10, 20);
+            let mut ammo = TechnoAmmo::new(5);
+            ammo.set_current_for_test(current);
+            entity.install_ammo_for_test(Some(ammo));
+            entity.start_reloading_ammo(rules.object(name).unwrap(), 0);
+            entity.seldom.ammo_reload_timer.remaining(0)
+        };
+        // i32::MIN wraps; MIN * MIN wraps to 0, so the clock runs Reload.
+        assert_eq!(duration("ODD", i32::MIN), 10);
+        // -7 / 2 truncates toward zero to -3: 10 + 9.
+        assert_eq!(duration("WRAP", -7), 19);
     }
 
     fn native_cloak_fixture() -> &'static serde_json::Value {

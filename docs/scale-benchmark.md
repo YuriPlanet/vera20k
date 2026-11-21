@@ -1,0 +1,118 @@
+# The scale benchmark
+
+VERA20k is meant to run 20,000 units and 30 players. This is the one battle
+that claim is measured on, how it is timed, and what the numbers are.
+
+```sh
+export RA2_DIR="/path/to/Yuri's Revenge"
+python -m tools.scale_bench            # the simulation tick, then the client frame
+python -m tools.scale_bench sim        # only the simulation tick
+python -m tools.scale_bench client     # only the client frame
+python -m tools.scale_bench hashes     # equal state hashes across thread counts and runs
+python -m tools.scale_bench sim --pools 4   # only the four-thread tick
+```
+
+## The battle
+
+The battle is a map, so the benchmark and the game play the same thing.
+`python -m tools.scale_map target/scale/battle30.map --size 250 --starts 30 --battle`
+writes it: the flat 500 by 500 cell match map with its 30 starts, ore and
+trees, and in its own `[TaskForces]`, `[ScriptTypes]`, `[TeamTypes]`, `[Tags]`
+and `[Triggers]` an army for whichever house sits at each start
+([tools/scale_battle.py](../tools/scale_battle.py) says how, with the engine
+facts it relies on). The game loads it as any skirmish map.
+
+It is played as an offline skirmish of one local house and 29 computer houses,
+with the game's default options and seed `0x5EED0001`:
+
+- Every start's house fields 780 units, 23,400 in all, in 78 squads of ten:
+  riflemen, other infantry, tanks and artillery, mixed by the start's place in
+  the grid so that neighbours field different armies.
+- A front is the line between two neighbouring starts, with eight waypoints
+  both houses patrol. The first squads land a few cells short of their fronts
+  between seconds 8 and 14, and each squad patrols between two of its front's
+  waypoints for good. A patrolling team attacks what its leader's scan finds,
+  and its members pick targets themselves while they move, so the two houses
+  of a front keep meeting.
+- A squad is a marker team of one unit and a body team of the other nine.
+  When the marker dies, a trigger lands a new marker and body beside the
+  house's start, and they patrol out to the same post. What is left of the old
+  body fights on. The army so keeps its size on average: it dips to about
+  seven eighths around frame 1,200 and climbs back.
+- The map sets three rules for itself: `[General] AINearestEnemy=yes`
+  ([what it does](ai-nearest-enemy.md)), so the computer houses fight each
+  other and not only the human, and `Immune=yes` and `LegalTarget=no` on the
+  construction yards and MCVs, so no house is defeated and the battle never
+  ends.
+
+In a 3,000-frame run the map holds between 20,900 and 23,900 mobile objects.
+From frame 500 on about 15 of them die and 15 arrive each frame, some 1,000
+shots are in the air, and the frames make about 330 objects each, shots and
+animations included.
+
+`sim-bench --scenario battle` checks that the battle is the one meant: every
+100 frames it prints the mobile objects alive, lost and made, and the run fails
+when a measured window loses nothing or the battle falls under 20,000 mobile
+objects. A change that makes the armies stop fighting cannot pass as a faster
+tick. `python -m tools.run_test_map battle` plays the same battle in small
+(four starts, 60 units a house, `tests/maps/battle.map`).
+
+## What is timed
+
+Both programs are built with the `shipping` profile, as released games are
+(`cargo build --profile shipping`; the game with `--no-default-features`).
+
+- **The simulation tick.** `sim-bench --scenario battle` plays 3,000 frames at
+  the client's 22 ms step and times each `SimRuntime` frame. The first 300
+  frames, in which the armies arrive and meet, are left out. It reports the
+  mean, median, 99th percentile and largest frame of the other 2,700, with
+  every CPU thread in the worker pool and again with four (`--threads 4`), the
+  cores an older PC has.
+- **The client frame.** The game itself plays the same map from a launcher's
+  start (`vera20k -SPAWN`, [External launches](spawn.md)) with its window
+  hidden, and counts its main thread's CPU time from frame 300 to frame 3,000
+  ([spawn test switches](../tools/spawn/README.md)): what a drawn picture
+  costs, and what the match service of one simulation frame costs (the tick's
+  tail and the frame and world copy the next tick leaves for drawing, without
+  the tick itself). Their sum is the client frame: one picture of one
+  simulation frame, whatever the picture and tick rates were.
+
+Each figure is taken three times, each run under the build lock
+`tools.cargo_run` uses, so no cooperating Cargo build runs beside it. The
+report gives the median and the spread of the runs, and the benchmark fails
+when the runs of a figure differ by more than 5%. Every run of the battle must
+end in the same state hash, whatever the thread count.
+
+## Numbers
+
+Measured on an Apple M4 Mac mini (4 performance and 6 efficiency cores, 16 GB).
+
+The baseline is the engine before the work this benchmark was made for
+(2026-11-24, `main` at c8f724622 with the benchmark itself). Three runs of each
+figure; the table gives their median and, in brackets, the runs.
+
+| Figure | Baseline | Goal |
+|---|---|---|
+| Mean tick, every CPU thread | 85.5 ms (87.0, 85.3, 85.5) | 15 ms |
+| 99th-percentile tick, every CPU thread | 138.6 ms (138.6, 138.9, 137.0) | 69.3 ms |
+| Mean tick, four threads | 88.3 ms (88.1, 88.3, 90.1) | 44.1 ms |
+| Client frame | 15.8 ms (15.7, 15.8, 15.9) | 7.9 ms |
+
+The median tick was 84.2 ms and the largest 222 ms; the four-thread runs' 99th
+percentiles were 142, 153 and 164 ms. The client frame was 5.3 ms for a drawn
+picture and 10.5 ms for the match service of a simulation frame. The process
+used 2.2 cores with every thread in the pool and 1.6 with four: the tick was
+one thread's work. Every run ended in state hash `2b60126ee960919b`.
+
+`target/scale/runs.jsonl` keeps every timed run a checkout makes.
+
+The goal: a mean tick of at most 15 ms, and the 99th-percentile tick, the
+four-thread tick and the client frame each at most half their baseline.
+
+## Sim-scale deviations
+
+Where the engine differs from gamemd to reach these numbers, the difference is
+recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
+
+None yet: the changes made so far for this benchmark leave every result as
+it was.

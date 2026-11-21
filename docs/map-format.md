@@ -2,9 +2,9 @@
 
 For people who write map editors and map tools. A VERA20k map is an ordinary
 Yuri's Revenge map file (`.map`, `.yrm` or `.mmx`). VERA20k reads every map the
-original game reads, the same way. On top of that it reads two things the original
-can't: bigger maps and maps for more than eight players. There is no new file
-type and no version number to write; the map's own values say which rules apply.
+original game reads, the same way. It also supports bigger maps, more than eight
+players, and snow maps with VERA's bundled breakable ice. The map's values
+select these features.
 
 If you only want to make a map by hand, [Modding VERA20k](modding.md#add-a-map) is
 shorter.
@@ -13,11 +13,21 @@ shorter.
 
 A map plays in both games when:
 
-- the width plus height in `[Map] Size=` is 512 or less, and
-- it has at most eight start waypoints (0 to 7).
+- the width plus height in `[Map] Size=` is 512 or less,
+- it has at most eight start waypoints (0 to 7), and
+- its painted terrain exists in the original game.
 
-Write such a map exactly as the original game expects. A map past either limit
-plays only in VERA20k.
+Maps past either size or player limit, and maps that use VERA’s ice tiles,
+require VERA20k.
+
+## Bundled ice for snow maps
+
+`[Map] Theater=SNOW` with `VeraIce=yes` selects VERA's ice tiles for this map.
+Use `[Basic] NewINIFormat=4`. Write ordinary eleven-byte `IsoMapPack5` cell
+records with the 32-bit little-endian tile number at byte offset 4, sub-tile 0
+at offset 8, height at offset 9 and the per-cell ice growth flag at offset 10.
+Tile IDs 4096, 4160 and 4224 are solid ice. The original snow tile IDs keep
+their normal meanings. See [tile numbers and editor setup](ts-ice.md#use-the-bundled-ice-in-a-map).
 
 ## Map size
 

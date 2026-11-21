@@ -216,7 +216,7 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
-                // A random map's `.yrm` export copies its sections as stored.
+                // A random map export copies its sections as stored.
                 ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
                 ("rules/native_processing/pass_processor.rs", 1),
@@ -513,9 +513,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
-                // A received map's case-folded name check; a file it finds is
-                // kept only when it holds the same verified bytes.
-                "map/source.rs",
+                // Mod package staging: the game-root check asks whether any
+                // entry is an asset, parts are sorted by name before they
+                // merge, and copies land at their own names.
+                "util/mod_package.rs",
             ],
         ),
         (
@@ -715,6 +716,11 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/greatest_threat.rs", 1),
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
+                // Whether the local player sees a Techno's glow: Ares'
+                // ShouldDraw hooks (100477D0, 10047470) ask VisualCharacter,
+                // which reads +0x41A. Only the A-plane draw list
+                // (`alpha_shape_draws`) asks.
+                ("sim/world/alpha_shape.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/lifecycle.rs", 7),
                 ("sim/world/lifecycle/discovery.rs", 2),
@@ -2342,6 +2348,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_nav_com_aux",
             "FootClass::Set_NavComAux (0x004D94A0) stores Foot+0x5A0; EventClass::Execute \
              calls it after Set_Destination (0x004C74BA)",
+        ),
+        (
+            "sim/movement/hover.rs",
+            "set_head",
+            "Hover's path head, stored by ProcessMovement when it accepts a tunnel exit (0x005150EE)",
         ),
         (
             "sim/movement/teleport_movement.rs",

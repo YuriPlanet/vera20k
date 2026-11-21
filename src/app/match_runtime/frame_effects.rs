@@ -6,7 +6,7 @@ use super::sound_dispatch::dispatch_sim_sound_events;
 use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
-use crate::app::sidebar_projection::SidebarProjectionState;
+use crate::app::sidebar_projection::SidebarModel;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
@@ -38,7 +38,7 @@ type TacticalRadarSetter<'a> =
     dyn FnMut(bool, Option<&mut SfxPlayer>, &RuleSet) -> Option<GameSoundEvent> + 'a;
 /// MainTick55DBCD's campaign save, given the strip and the elapsed clock this
 /// boundary also lends to Strip6A8F42's request clear and to scenario pauses.
-type CampaignSave<'a> = dyn FnMut(&Simulation, &mut SidebarProjectionState, &mut super::frame_pacer::ScenarioElapsedClock)
+type CampaignSave<'a> = dyn FnMut(&Simulation, &mut SidebarModel, &mut super::frame_pacer::ScenarioElapsedClock)
     + 'a;
 
 struct ScenarioPauseOwners<'a> {
@@ -74,7 +74,7 @@ pub(crate) struct FrameClientBoundary<'a> {
     scenario_pause: Option<ScenarioPauseOwners<'a>>,
     /// The local production strip, for Strip6A8F42's synchronous request
     /// clear and the campaign save's sidebar order.
-    sidebar: Option<&'a mut SidebarProjectionState>,
+    sidebar: Option<&'a mut SidebarModel>,
     campaign_save: Option<&'a mut CampaignSave<'a>>,
     /// Whether the result's own EVA line is withheld for a commander clip
     /// (`Custom End Game Movie`,
@@ -155,10 +155,16 @@ impl<'a> FrameClientBoundary<'a> {
         self
     }
 
-    fn consume_queued_audio(&mut self, sim: &Simulation) {
+    fn consume_queued_audio(&mut self, sim: &Simulation, rules: &RuleSet) {
         let events = self.output.drain();
         if let Some((sfx, inputs)) = self.playback.as_mut() {
-            inputs.consume(sfx, &events, Some(sim), self.local_owner);
+            inputs.consume(
+                sfx,
+                &events,
+                Some(sim),
+                Some(rules.sound_names()),
+                self.local_owner,
+            );
         }
     }
 
@@ -228,7 +234,7 @@ impl<'a> FrameClientBoundary<'a> {
     /// scenario pause's elapsed clock.
     pub(crate) fn with_sidebar(
         mut self,
-        sidebar: &'a mut SidebarProjectionState,
+        sidebar: &'a mut SidebarModel,
         campaign_save: Option<&'a mut CampaignSave<'a>>,
     ) -> Self {
         self.sidebar = Some(sidebar);
@@ -487,7 +493,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
             self.output,
             self.eva_text.as_deref_mut(),
         );
-        self.consume_queued_audio(sim);
+        self.consume_queued_audio(sim, rules);
         self.delivered = delivered + pending.len();
     }
 
@@ -513,7 +519,7 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
         // Earlier death sounds and637A10's queued EndPlanningModeSound
         // must reach the existing SFX owner before the availability cue.
         self.consume(sim, rules, sim.sound_events());
-        self.consume_queued_audio(sim);
+        self.consume_queued_audio(sim, rules);
         let Some(setter) = self.tactical_radar.as_deref_mut() else {
             return;
         };
@@ -522,7 +528,13 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
             return;
         };
         if let Some((sfx, inputs)) = self.playback.as_mut() {
-            inputs.consume(sfx, &[sound], Some(sim), self.local_owner);
+            inputs.consume(
+                sfx,
+                &[sound],
+                Some(sim),
+                Some(rules.sound_names()),
+                self.local_owner,
+            );
         }
     }
 }
@@ -587,7 +599,7 @@ mod tactical_radar_tests {
         let expected = rules.general.end_planning_mode_sound.as_ref().unwrap();
         assert!(matches!(
             boundary.output.iter().collect::<Vec<_>>().as_slice(),
-            [crate::audio::events::GameSoundEvent::UiSound { sound_id }] if sound_id == expected
+            [crate::audio::events::GameSoundEvent::UiSound { sound_id }] if sound_id.name_in(&rules) == expected
         ));
         boundary.set_available(&sim, &rules, true);
         assert!(boundary.output.is_empty());

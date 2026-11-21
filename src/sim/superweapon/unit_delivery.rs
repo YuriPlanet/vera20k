@@ -262,7 +262,7 @@ fn apply(
             request.cell.1,
         );
         sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            sound.clone(),
+            rules.sound_name(sound),
             crate::sim::anim_class::AnimWorldCoord {
                 x: ground.x,
                 y: ground.y,

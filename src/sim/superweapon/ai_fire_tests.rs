@@ -958,6 +958,7 @@ fn retail_walk_reads_each_object() {
             &sim.houses[&americans],
             Some(russians),
             sim.substrate.entities.get(id).unwrap(),
+            RallyLadder::BestRally,
         )
     };
     // The 4x4 yard's centre cell.

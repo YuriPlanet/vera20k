@@ -67,7 +67,7 @@ pub(super) fn mission_permits_scatter(entity: &GameEntity, rules: &RuleSet) -> b
 /// `UnitClass::Scatter` refusals before the coordinate
 /// (`0x00743A5C..0x00743BAA`), in native order:
 /// - `+0x28C` (`0x006F3280`): effective Sleep, Sticky or Unload, or
-///   `IsTrain=` (unparsed; no retail type sets it);
+///   a train (TechnoClass::CanScatter, 0x006F32B7);
 /// - an active Teleport locomotor (the active class, not the installed slot:
 ///   a Chrono Miner's temporary Drive is eligible);
 /// - the mission's `Scatter=` unless forced;
@@ -79,6 +79,7 @@ pub(super) fn mission_permits_scatter(entity: &GameEntity, rules: &RuleSet) -> b
 /// None draws RNG or writes state. Evidence for the flag-free prefix:
 /// tools/spatial_oracle/unit_scatter_state.{py,json,meta.json}.
 pub(super) fn unit_scatter_admitted(
+    interner: &StringInterner,
     unit: &GameEntity,
     flags: ScatterFlags,
     rules: &RuleSet,
@@ -88,7 +89,15 @@ pub(super) fn unit_scatter_admitted(
     if rules.ares_form() && unit.driver_killed() {
         return false;
     }
-    if matches!(unit.mission.effective().raw(), 0 | 6 | 16) {
+    if matches!(unit.mission.effective().raw(), 0 | 6 | 16)
+        || interner
+            .object_type_in_category(
+                unit.type_ref(),
+                crate::rules::object_type::ObjectCategory::Vehicle,
+                rules,
+            )
+            .is_some_and(|ty| ty.is_train)
+    {
         return false;
     }
     let Some(locomotor) = unit.locomotor.as_ref() else {
@@ -441,7 +450,13 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame()) {
+        if !unit_scatter_admitted(
+            &self.interner,
+            unit,
+            flags,
+            rules,
+            self.session.binary_frame(),
+        ) {
             return;
         }
         if let Some(cell) = self.scatter_nearby_cell(id, rules) {
@@ -485,9 +500,14 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return Ok(());
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame())
-            || crate::sim::mission::control::current_control(rules, &unit.mission)
-                .is_some_and(|entry| entry.paralyzed)
+        if !unit_scatter_admitted(
+            &self.interner,
+            unit,
+            flags,
+            rules,
+            self.session.binary_frame(),
+        ) || crate::sim::mission::control::current_control(rules, &unit.mission)
+            .is_some_and(|entry| entry.paralyzed)
             || unit
                 .miner
                 .as_ref()

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "8 histories: half and quarter turns both ways, mid-turn retarget, one-step, sub-step and instant turns, and frame wrap. Ares Current only; the SHP and AlphaImage draws that read it are not executed.",
+  "assumptions": [
+    "Same setup as the stock histories; Ares 3.0 (ARES_SHA256) mapped at 0x10000000 without its loader.",
+    "After each stock Current, Ares Current reads the same retained object and global frame; it writes nothing else."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "set": "0x004C9220",
+    "snap": "0x004C9300",
+    "current": "0x004C93D0",
+    "ares_current": "0x10009CC0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.facing_class --ares-dll <Ares.dll>",
+  "payload_sha256": "696c0a7e27940352d0624bc39d6fccc17ebccdff324f074dddf23f4b3f674c48"
+}

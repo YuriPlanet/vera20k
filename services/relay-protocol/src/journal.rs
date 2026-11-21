@@ -271,9 +271,22 @@ impl JournalDirectory {
         journal.pending = 0;
     }
 
+    /// Tries one room at once and queues a failed removal for `retry`. Only
+    /// the room that just ended is tried here: a relay that ends rooms often
+    /// must not repeat the earlier removals that already failed, since each
+    /// of those costs disk work on the relay's own thread.
     fn retire(&mut self, room: [u8; 16]) {
-        self.retiring.insert(room);
-        self.remove_retiring();
+        let path = self.path(&room);
+        let removed = present(fs::remove_file(path.join("stream.data")))
+            .and_then(|()| present(fs::remove_file(path.join("stream.index"))))
+            .and_then(|()| present(fs::remove_dir(&path)));
+        if removed.is_ok() {
+            if let Some(bytes) = self.reserved.remove(&room) {
+                self.total -= bytes;
+            }
+        } else {
+            self.retiring.insert(room);
+        }
     }
 
     /// Retries removals that failed, such as a transient disk error, at most
@@ -283,22 +296,9 @@ impl JournalDirectory {
             return;
         }
         self.retry_at = now_ms.saturating_add(1000);
-        self.remove_retiring();
-    }
-
-    fn remove_retiring(&mut self) {
-        for room in std::mem::take(&mut self.retiring) {
-            let path = self.path(&room);
-            let removed = present(fs::remove_file(path.join("stream.data")))
-                .and_then(|()| present(fs::remove_file(path.join("stream.index"))))
-                .and_then(|()| present(fs::remove_dir(&path)));
-            if removed.is_ok() {
-                if let Some(bytes) = self.reserved.remove(&room) {
-                    self.total -= bytes;
-                }
-            } else {
-                self.retiring.insert(room);
-            }
+        let pending = std::mem::take(&mut self.retiring);
+        for room in pending {
+            self.retire(room);
         }
     }
 }

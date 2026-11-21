@@ -1072,3 +1072,34 @@ fn additionally_registered_scenario_house_round_trips_through_snapshot() {
         Err(SnapshotRestoreError::InvalidHouseScenarioName { owner, .. }) if owner == hostile
     ));
 }
+
+/// A team counts its members in six TaskForce slots by entry position, so a
+/// saved TaskForce with a seventh entry is refused as a damaged save before
+/// recruitment can index past the slots.
+#[test]
+fn a_saved_task_force_past_the_team_slots_is_refused() {
+    use crate::sim::team_script_vm::{
+        TASK_FORCE_SLOTS, TeamMemberTypeIdentity, TeamTaskForceDefinition, TeamTaskForceEntry,
+    };
+    let mut sim = Simulation::new();
+    let entry = TeamTaskForceEntry {
+        member_type: TeamMemberTypeIdentity {
+            category: crate::rules::object_type::ObjectCategory::Infantry,
+            id: sim.interner.intern("E1"),
+        },
+        count: 1,
+    };
+    sim.team_script_vm
+        .register_task_force(TeamTaskForceDefinition {
+            id: sim.interner.intern("WIDE"),
+            source: crate::rules::team_ai_ini::TeamAiDefinitionSource::FixedAimd,
+            group: -1,
+            entries: vec![entry; TASK_FORCE_SLOTS + 1],
+        });
+    let refusal = sim.restore_after_snapshot_load().unwrap_err();
+    assert!(matches!(
+        refusal,
+        SnapshotRestoreError::InvalidTeamState { .. }
+    ));
+    assert!(refusal.to_string().starts_with("this save is damaged"));
+}

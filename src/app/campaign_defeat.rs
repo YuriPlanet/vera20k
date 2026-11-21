@@ -22,31 +22,12 @@
 
 use super::{App, AppState};
 use crate::app::match_bootstrap::PreparedCampaignStartup;
-use crate::ui::shell::modal::ModalResult;
 
 /// What a lost campaign mission does after its audio teardown.
 #[derive(Debug)]
 pub(crate) struct CampaignDefeat {
     /// The same mission's Start_Scenario, when VERA can rebuild it.
     retry: Option<Box<PreparedCampaignStartup>>,
-}
-
-/// Where the `TXT_TO_REPLAY` answer goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReplayRoute {
-    /// Yes (`0x5AE`, result 0): the same mission again.
-    Restart,
-    /// No (control 2 or IDOK, result 1): back to the shell.
-    Shell,
-}
-
-/// `0x006860EA test eax,eax; jz 0x006860F6`: only result 0 restarts.
-pub(crate) fn replay_route(result: ModalResult) -> ReplayRoute {
-    if result == ModalResult::MessageBox(0) {
-        ReplayRoute::Restart
-    } else {
-        ReplayRoute::Shell
-    }
 }
 
 impl App {
@@ -79,39 +60,37 @@ impl App {
 
     /// The Lose movie has returned: ask over the empty shell backdrop.
     pub(super) fn open_campaign_replay_prompt(state: &mut AppState, defeat: CampaignDefeat) {
-        let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-        let labels = crate::ui::main_menu_dialogs::ShellMessageBoxLabels::campaign_replay(&csf);
+        let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+        let shell_box = crate::ui::main_menu_dialogs::campaign_replay(&csf);
         Self::destroy_current_shell_dialog(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::open_shell_message_box(
             state,
-            crate::app::frontend::state::ShellMessageBox {
-                labels,
-                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(
-                    defeat.retry,
-                ),
-            },
+            shell_box,
+            crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(defeat.retry),
         );
     }
 
+    /// `0x006860EA test eax,eax; jz 0x006860F6`: only Yes (answer 0)
+    /// restarts; No, Escape and Enter (1) return to the shell.
     pub(super) fn answer_campaign_replay(
         state: &mut AppState,
         retry: Option<Box<PreparedCampaignStartup>>,
-        route: ReplayRoute,
+        answer: usize,
     ) {
-        match (route, retry) {
-            (ReplayRoute::Restart, Some(startup)) => {
+        match (answer == 0, retry) {
+            (true, Some(startup)) => {
                 log::info!("Campaign defeat: replaying {}", startup.scenario());
                 Self::start_campaign_scenario(
                     state,
                     crate::app::loading::pump::LoadingRequest::campaign(*startup),
                 );
             }
-            (ReplayRoute::Restart, None) => {
+            (true, None) => {
                 log::warn!("Campaign defeat: no campaign start to replay; returning to the shell");
                 Self::resume_shell_after_campaign_defeat(state);
             }
-            (ReplayRoute::Shell, _) => Self::resume_shell_after_campaign_defeat(state),
+            (false, _) => Self::resume_shell_after_campaign_defeat(state),
         }
         state.platform.window.request_redraw();
     }
@@ -121,26 +100,5 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::resume_shell_after_match(state);
-    }
-}
-
-#[cfg(all(test, tests_app))]
-mod tests {
-    use super::*;
-    use crate::ui::shell::modal::control;
-
-    /// Yes sits in the OK slot (`0x5AE` -> 0) and restarts; No sits in
-    /// Cancel's (control 2 -> 1) and, like Escape, returns to the shell.
-    #[test]
-    fn only_the_yes_slot_replays_the_mission() {
-        let route = |control| replay_route(ModalResult::from_message_box_control(control).unwrap());
-        assert_eq!(route(control::OK), ReplayRoute::Restart);
-        assert_eq!(route(control::CANCEL), ReplayRoute::Shell);
-        assert_eq!(
-            replay_route(ModalResult::MessageBox(
-                crate::ui::shell::modal::MESSAGE_BOX_DISMISSED
-            )),
-            ReplayRoute::Shell
-        );
     }
 }

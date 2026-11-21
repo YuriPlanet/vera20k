@@ -70,7 +70,8 @@ pub(crate) fn place_beacon_mode_transition(
 
 /// The live owner of [`place_beacon_mode_transition`]: Display's bytes are
 /// the sidebar gadget state's, and entry runs Unselect_All (`0x004AC9EA`).
-/// The cursor rows reset by vt+0x48/+0x50 follow from the bytes.
+/// A change also clears the power byte (`0x004AC9C7`). The cursor rows reset
+/// by vt+0x48/+0x50 follow from the bytes.
 pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeRequest) {
     let gadgets = &state.match_state.match_presentation.sidebar_gadget_state;
     let modes = DisplayModes {
@@ -97,6 +98,7 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
     gadgets.repair_mode_on = next.repair;
     gadgets.sell_mode_on = next.sell;
     gadgets.place_beacon_mode_on = next.beacon;
+    gadgets.power_mode_on = false;
     if next.beacon {
         crate::app::input::dispatch::unselect_all(state);
     }

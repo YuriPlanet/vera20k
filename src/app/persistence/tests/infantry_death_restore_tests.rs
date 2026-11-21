@@ -98,7 +98,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             .sound_events
             .iter()
             .filter(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT"))
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id.name_in(&rules) == "DEATHREPORT"))
             .count(),
         1
     );
@@ -135,7 +135,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     assert!(!restored.pending_delete().contains_object(&victim));
     assert_eq!(death_ids(&restored), effects);
     assert!(!next.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT")));
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id.name_in(&rules) == "DEATHREPORT")));
 }
 
 /// A corpse saved mid-sequence keeps its action and Stage through the load

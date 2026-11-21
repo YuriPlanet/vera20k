@@ -47,6 +47,11 @@ pub struct StartupAgreement {
     /// another build or other rules desyncs later, so it never starts.
     build: u64,
     rules: u64,
+    /// VERA: what this game's simulation took from the contents of its
+    /// picture and model files (the app passes `RuleSet::file_inputs_hash`),
+    /// which no room compares. Games whose files would make their battles
+    /// differ never start.
+    files: u64,
 }
 
 impl StartupAgreement {
@@ -58,6 +63,7 @@ impl StartupAgreement {
         fps: u16,
         frame_send_rate: NonZeroU32,
         world_hash: u64,
+        file_inputs: u64,
         version: &str,
         rules_digest: &str,
     ) -> Result<Self, StartupError> {
@@ -110,6 +116,7 @@ impl StartupAgreement {
             world_hash,
             build: digest64(version.as_bytes()),
             rules: digest64(rules_digest.as_bytes()),
+            files: file_inputs,
         })
     }
 
@@ -136,7 +143,7 @@ impl StartupAgreement {
 
     /// Each part of this client's start identity, for the report of a match
     /// that never started: two clients' reports show which part differs.
-    pub fn report_parts(&self) -> [(&'static str, u64); 9] {
+    pub fn report_parts(&self) -> [(&'static str, u64); 10] {
         let mut houses = Vec::with_capacity(2 * self.houses.len());
         for &(row, house) in &self.houses {
             houses.extend([row, house as u8]);
@@ -151,6 +158,7 @@ impl StartupAgreement {
             ("world", self.world_hash),
             ("build", self.build),
             ("rules", self.rules),
+            ("asset_files", self.files),
         ]
     }
 
@@ -163,7 +171,7 @@ impl StartupAgreement {
     }
 
     fn identity(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(40 + 2 * self.houses.len());
+        let mut bytes = Vec::with_capacity(48 + 2 * self.houses.len());
         bytes.push(self.houses.len() as u8);
         for &(row, house) in &self.houses {
             bytes.extend([row, house as u8]);
@@ -176,6 +184,7 @@ impl StartupAgreement {
         bytes.extend(self.world_hash.to_le_bytes());
         bytes.extend(self.build.to_le_bytes());
         bytes.extend(self.rules.to_le_bytes());
+        bytes.extend(self.files.to_le_bytes());
         bytes
     }
 }

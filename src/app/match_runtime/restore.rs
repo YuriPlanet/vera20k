@@ -79,6 +79,10 @@ pub(crate) fn commit_prepared_load(
     });
     state.match_state.startup.acknowledge_saved_load(campaign);
     if from_menu {
+        // Main_Game sets State_Machine's admission latch at 0x0048CE7E
+        // after shell admission, including a successful Load Saved Game.
+        // The previous match's Abort may have cleared it at 0x0048CAA1.
+        state.match_state.match_presentation.modal_latch = true;
         crate::app::loading::pump::present_game_mode_blank(state);
     }
 
@@ -231,29 +235,18 @@ pub(crate) fn commit_prepared_load(
     // without reordering.
     state.match_state.match_presentation.active_sidebar_tab =
         crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
-    #[cfg(feature = "phobos")]
-    let sw_sidebar_expanded = committed
-        .details
-        .sidebar_order
-        .as_ref()
-        .map(|order| order.sw_sidebar_expanded());
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_order(committed.details.sidebar_order);
-    #[cfg(feature = "phobos")]
-    if let Some(expanded) = sw_sidebar_expanded {
-        // `ScenarioExt::SWSidebar_Enable` survives the load like the strips.
-        state.match_state.match_presentation.sw_sidebar.expanded = expanded;
-    }
+        .model.restore_order(committed.details.sidebar_order);
 
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_credits_counter(owner.as_deref(), committed.credits_counter);
+        .model.restore_credits_counter(owner.as_deref(), committed.credits_counter);
     if let Some(owner) = owner {
         state
             .match_state

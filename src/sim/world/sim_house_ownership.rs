@@ -540,6 +540,14 @@ impl Simulation {
         else {
             return;
         };
+        crate::sim::ra2_all02_diagnostic::on_owner_change(
+            self,
+            stable_id,
+            old_owner,
+            new_owner,
+            rules,
+            "BEFORE",
+        );
         // FootChangeOwner4DBEFB removes at the current cell before its
         // Techno delegate, including the same-owner refusal at7014A0.
         self.remove_unit_sensors_at_current(stable_id, rules, registry);
@@ -778,6 +786,14 @@ impl Simulation {
             &mut self.houses,
             stable_id,
             new_owner,
+        );
+        crate::sim::ra2_all02_diagnostic::on_owner_change(
+            self,
+            stable_id,
+            old_owner,
+            new_owner,
+            rules,
+            "AFTER",
         );
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.

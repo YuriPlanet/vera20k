@@ -9,9 +9,8 @@ use crate::sim::cell_kernel::{CellCoordinate, cell_center};
 use crate::sim::combat::{FiredBullet, RAD_NO_ATTACKER, admit_fired_bullet};
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
-use crate::sim::movement::ground_pose::query_ground_height;
+use crate::sim::movement::ground_pose::{deck_surface_z, query_ground_height};
 use crate::sim::projectile::{ProjectileCoord, ProjectilePayload, ProjectileTarget};
-use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::native_x87::NativeF64Bits;
 
 impl Simulation {
@@ -211,8 +210,9 @@ impl Simulation {
         };
         location.z = query_ground_height(&cells, location)
             .expect("direct strike ground query requires a supported native slope");
-        if cells.flags(cells.lookup(cell)) & 0x100 != 0 {
-            location.z = location.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+        let target = cells.lookup(cell);
+        if cells.flags(target) & 0x100 != 0 {
+            location.z = deck_surface_z(&cells, target, location.z);
         }
         Some(location)
     }

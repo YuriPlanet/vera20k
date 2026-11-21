@@ -1640,7 +1640,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         cues: RefCell<Vec<SimSoundEvent>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 let name = match event {
                     SimSoundEvent::VocAt { sound_id, .. }
@@ -1648,7 +1648,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
                     SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
                     _ => continue,
                 };
-                if matches!(name.as_str(), "ConscriptDie" | "BuildingGenericDie") {
+                if matches!(name.name_in(rules), "ConscriptDie" | "BuildingGenericDie") {
                     self.cues.borrow_mut().push(event.clone());
                 }
             }
@@ -1720,7 +1720,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         matches!(cues.as_slice(), [
         SimSoundEvent::VocAt { sound_id: child, .. },
         SimSoundEvent::VocAtCoord { sound_id: parent, coordinate, flags: 0 },
-    ] if child == "ConscriptDie" && parent == "BuildingGenericDie"
+    ] if child.name_in(&rules) == "ConscriptDie" && parent.name_in(&rules) == "BuildingGenericDie"
         && *coordinate == location),
         "unexpected death cue order/API: {cues:?}"
     );

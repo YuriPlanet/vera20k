@@ -207,7 +207,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
                 .sound_events
                 .iter()
                 .filter(|event| {
-                    matches!(event, SimSoundEvent::VocCentered { sound_id } if sound_id == "Cheer")
+                    matches!(event, SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&scene.runtime.resources.rules) == "Cheer")
                 })
                 .count(),
             usize::from(index == 1)

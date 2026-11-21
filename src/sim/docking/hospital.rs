@@ -85,11 +85,11 @@ pub(super) fn mission_repair(
                         building.position.ry(),
                     ),
                 });
-                if let Some(sound_id) = rules.crate_rules.heal_crate_sound.clone() {
+                if let Some(sound_id) = rules.crate_rules.heal_crate_sound.as_deref() {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&building.position);
                     sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound_id,
+                        rules.sound_name(sound_id),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,
                             y: coordinate.y,

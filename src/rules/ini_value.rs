@@ -308,12 +308,24 @@ impl IniSection {
     /// This projection keeps an absent constructor value as Option::None and
     /// returns canonical names for actual reads, including action0's "None".
     pub(crate) fn read_action_name(&self, key: &str) -> Option<&'static str> {
+        self.read_action_name_with(key, None)
+    }
+
+    /// [`Self::read_action_name`] that also knows `extra`, an action past
+    /// gamemd's table (a VERA type's own action, such as Tiberian Sun's
+    /// IonCannon).
+    pub(crate) fn read_action_name_with(
+        &self,
+        key: &str,
+        extra: Option<&'static str>,
+    ) -> Option<&'static str> {
         self.fold_rules_values(key, None, |_, raw| {
             let name = strtrim_ascii(truncate_native_bytes(raw, 0x1f));
             Some(
                 ACTION_NAMES
                     .iter()
                     .copied()
+                    .chain(extra)
                     .find(|candidate| candidate.eq_ignore_ascii_case(name))
                     .unwrap_or(ACTION_NAMES[0]),
             )
@@ -356,6 +368,20 @@ impl IniSection {
             ("personblue", 11),
             ("personpurple", 12),
         ];
+        if crate::rules::ares_switch::ares_way() {
+            // Ares INIClass_GetPipIdx (hook 0x004748A0, body 1005CC40, resumes
+            // 0x00474907) replaces the whole function: ReadString(2048) with
+            // an empty default, so a missing or empty value keeps the current
+            // FRAME; then the same 11 names (0x0081B958..0x0081B9B0, strcmpi),
+            // else Parser<int>::TryParse, else the current frame. A negative
+            // integer keeps the current frame here; Ares would draw it.
+            return self.read_string_with(key, 2048, current, |current, value| {
+                PIPS.iter()
+                    .find_map(|&(name, frame)| name.eq_ignore_ascii_case(value).then_some(frame))
+                    .or_else(|| parse_ares_int(value).and_then(|frame| u32::try_from(frame).ok()))
+                    .unwrap_or(current)
+            });
+        }
         // Constructor1/7 and every mapped frame close over indices0..=12.
         // The adjacent literal pointers are original81B9B0/81B9B8; their
         // unrelated numeric table values must not become pip return values.
@@ -584,6 +610,19 @@ impl IniSection {
         let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_coord3(value).unwrap_or(previous)
+        })
+    }
+
+    /// Kratos PP v0.2.4 INIBuffer::GetParsed<CoordStruct> zeroes its three
+    /// integers and accepts any nonzero count from Parser<int, 3>::Parse.
+    pub(crate) fn read_kratos_coord3(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
+        self.read_string_with(key, 2048, default, |previous, value| {
+            let mut coords = [0; 3];
+            if scan_ares_fields(value, &mut coords) > 0 {
+                coords
+            } else {
+                previous
+            }
         })
     }
 

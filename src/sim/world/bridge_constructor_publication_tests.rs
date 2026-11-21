@@ -167,6 +167,34 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
 }
 
 #[test]
+fn live_bridge_constructor_restores_raised_deck_on_steep_slope() {
+    let (mut sim, rules, _) = fixture();
+    let coord = (16, 16);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let anchor = terrain.native_cell_identity((16, 16));
+    // A collapsed segment retains the authored deck but has no live structure.
+    terrain.set_authored_high_bridge_deck(anchor, 14);
+    let cell = terrain.cell_mut_for_test(coord.0, coord.1).unwrap();
+    // The fixed base and local level can coincide while the ground slopes.
+    cell.level = 10;
+    cell.slope_type = 9;
+    assert!(!cell.bridge_facts.has_structural_bridge());
+
+    LivePublication {
+        frame_effects: crate::sim::world::FrameEffects::default(),
+        sim: &mut sim,
+        rules: &rules,
+        collapsed: false,
+    }
+    .construct_bridge_overlay((16, 16), 24, -1)
+    .unwrap();
+
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    assert_eq!(sim.cell_overlay(anchor).overlay_id, Some(24));
+    assert_eq!(terrain.corrected_high_bridge_deck_level(coord), Some(14));
+}
+
+#[test]
 fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
     use crate::map::entities::EntityCategory;
     use crate::sim::world::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest};

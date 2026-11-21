@@ -570,7 +570,7 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
     };
     let fire_coord = crate::sim::anim_class::AnimWorldCoord::from(ev.fire_coord);
     let (fire_rx, fire_ry, fire_sub_x, fire_sub_y, _) = fire_coord.to_cell_sub_z();
-    assert_eq!(sound_id, "GIAttack");
+    assert_eq!(sound_id.name_in(&rules), "GIAttack");
     assert_eq!(audible_to, &None);
     assert_eq!(
         (*rx, *ry, *sub_x, *sub_y, *world_z_leptons),

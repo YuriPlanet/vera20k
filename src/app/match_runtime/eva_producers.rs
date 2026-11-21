@@ -88,7 +88,8 @@
 //!   `GoOffline 0x004523DE` (`EVA_BuildingOnLine/OffLine`, human house only):
 //!   `sim::building_power::go_building_online` / `go_building_offline`, called
 //!   for map-placed buildings (`sim::world::world_spawn`), `EventClass::Execute`
-//!   (`Command::SetBuildingOnLine`; YR has no UI that queues the event) and
+//!   (`Command::SetBuildingOnLine`, queued by Ares' power mode,
+//!   `app::input::power_mode`; YR has no UI that queues it) and
 //!   `TriggerAction::Execute` (`sim::trigger_runtime`).
 //!
 //! Multiplayer only (GameMode 5 refuses them), produced:
@@ -204,7 +205,11 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         | SuperWeaponKind::SonarPulse
         | SuperWeaponKind::EMPulse
         | SuperWeaponKind::Firestorm
-        | SuperWeaponKind::DropPod => return None,
+        | SuperWeaponKind::DropPod
+        // VERA's tag is past the `JA`. RESIDUAL: Firestorm speaks a Super's
+        // `RechargeVoice=` (read at 0x60D19B..0x60D1A3), a Tiberian Sun speech file;
+        // VERA reads none of those voice keys.
+        | SuperWeaponKind::IonCannon => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",

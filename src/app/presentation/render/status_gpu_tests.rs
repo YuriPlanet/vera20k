@@ -2,7 +2,7 @@
 //! producer, retail resources and production replay. Location, HP, selection,
 //! hover and surface planes are consumer inputs, not lifecycle parity claims.
 use super::draw_plan_lowering::{
-    NativeDisplayOrder, PlannedObjectInstance, lower_ground_object_instances,
+    NativeDisplayOrder, OwnedPlannedObject, lower_ground_object_instances,
 };
 use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::ui_overlays::{StatusViewport, techno_extras_for_parent};
@@ -125,7 +125,7 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         assert_eq!(status.fills.len(), visible_pips);
         let display = NativeDisplayOrder::new(&[1]);
         let draw = display.object_draw(1, SpriteEncoding::Plain).unwrap();
-        let mut parent = PlannedObjectInstance::object(draw, vec![]);
+        let mut parent = OwnedPlannedObject::object(draw, vec![]);
         parent.status = Some(status);
         let mut layer = lower_ground_object_instances(vec![parent]);
         super::object_extras::defer_health_to_frame(&mut layer, cam.camera_pos, zoom);
@@ -371,7 +371,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             ..Default::default()
         },
     ] {
-        let mut parent = PlannedObjectInstance::object(
+        let mut parent = OwnedPlannedObject::object(
             display.object_draw(id, SpriteEncoding::Plain).unwrap(),
             vec![],
         );
@@ -2085,9 +2085,9 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 let draw = display.object_draw(id, SpriteEncoding::Plain).unwrap();
                 let mut parent = if actor_category == EntityCategory::Structure {
-                    PlannedObjectInstance::building(draw, vec![])
+                    OwnedPlannedObject::building(draw, vec![])
                 } else {
-                    PlannedObjectInstance::object(draw, vec![])
+                    OwnedPlannedObject::object(draw, vec![])
                 };
                 parent.status = Some(strip);
                 if wrench_composed && actor["selected"] == true {

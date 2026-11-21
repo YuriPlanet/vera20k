@@ -13,6 +13,7 @@ use super::*;
 use crate::sim::aircraft::attack_mission::{StrikeFacts, StrikeHost, strike_visit};
 use crate::sim::aircraft::fire_at::{AircraftShot, FireAtHost};
 use crate::sim::projectile::ProjectileVelocity;
+use crate::sim::world::HumanPlayerClients;
 
 #[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "aircraft_release_tests.rs"]
@@ -349,12 +350,12 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         }
     }
 
-    /// [`Simulation::human_player_clients`] of the owner: each human house's
-    /// map takes what its own client would, and in a campaign a
+    /// [`Simulation::human_player_client_set`] of the owner: each human
+    /// house's map takes what its own client would, and in a campaign a
     /// `PlayerControl=` house's shot asks the player's map too.
-    fn player_clients(&mut self) -> Vec<InternedId> {
-        self.entity().map_or_else(Vec::new, |entity| {
-            self.strike.world.human_player_clients(entity.owner())
+    fn player_clients(&mut self) -> HumanPlayerClients {
+        self.entity().map_or(HumanPlayerClients::None, |entity| {
+            self.strike.world.human_player_client_set(entity.owner())
         })
     }
 

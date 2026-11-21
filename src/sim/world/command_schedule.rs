@@ -739,10 +739,9 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let applied = self.apply_command_with_overlays(
             sender,
-            &cmd_owner_str,
+            cmd.owner,
             &cmd.payload,
             rules,
             overlay_registry,
@@ -1037,11 +1036,10 @@ impl Simulation {
         let sender = sender
             .filter(|_| self.session.execution_topology().is_lockstep())
             .map(|house| {
-                let owner = self.interner.resolve(house.owner);
                 (
-                    owner,
+                    house.owner,
                     house.house_id,
-                    self.resolve_command_grant_source(owner, house.house_id),
+                    self.resolve_command_grant_source(house.owner.into(), house.house_id),
                 )
             });
         let mut run_start = 0;
@@ -1073,6 +1071,11 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    // The receiver refuses an attached slave in every game mode.
+                    if entity.seldom.slave.owner().is_some() {
+                        orders -= 1;
+                        continue;
+                    }
                     if sender.is_some_and(|(owner, source, granted_source)| {
                         // A semantic PlanningRecord can have native payload
                         // bytes without coming from the native queue.
@@ -1088,7 +1091,7 @@ impl Simulation {
                             CommandCapability::PrimaryHouse
                         };
                         self.command_actor_outside_scope(
-                            owner,
+                            owner.into(),
                             granted_source,
                             entity_id,
                             capability,
@@ -1100,7 +1103,7 @@ impl Simulation {
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    ) || entity.low_bridge_tube_state.is_some()
+                    ) || entity.active_tube().is_some()
                     {
                         continue;
                     }
@@ -1609,14 +1612,17 @@ struct GroupMemberTarget {
 }
 
 /// The spread's height of a Cell: its signed level (`+0x11B`), plus
-/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`). The
-/// target's is EBX (`0x0064D2AA..0x0064D2DF`), which Can_Enter_Cell receives;
+/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`) in the
+/// absence of a fixed deck. The target's is EBX (`0x0064D2AA..0x0064D2DF`),
+/// which Can_Enter_Cell receives;
 /// a candidate's is measured against it (`0x0064D55F..0x0064D592`).
 /// Native executions: tools/spatial_oracle/group_spread_gates.{py,json,meta.json}.
 fn spread_height(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> i32 {
     let level = i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
     if terrain.native_cell_flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        level + BRIDGE_DECK_HEIGHT_LEVELS
+        terrain
+            .corrected_high_bridge_deck_at(cell)
+            .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from)
     } else {
         level
     }

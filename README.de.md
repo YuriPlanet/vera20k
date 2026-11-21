@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K Titelbild" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
@@ -15,7 +15,8 @@
 
 VERA20K ist eine neue Engine für Red Alert 2: Yuri's Revenge. Sie spielt sich wie das Original, mit
 denselben Einheiten, Karten und demselben Aussehen, und läuft unter Windows, macOS und Linux. Sie
-ist für größere Schlachten gebaut, mit bis zu 30 Spielern und 20.000 Einheiten auf einer Karte.
+ist für größere Schlachten mit bis zu 20.000 Einheiten auf einer Karte gebaut. Offline-Gefechte bieten
+bis zu 120 Spielerplätze, LAN- und Online-Partien bis zu 30.
 
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
@@ -34,7 +35,7 @@ Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) 
 ## Projektziele
 
 1. Spielmechanik, Grafik und Atmosphäre des ursprünglichen Red Alert 2: Yuri's Revenge bewahren.
-2. Größere Schlachten ermöglichen: bis zu **30 Spieler** und **20.000 Einheiten** auf 500×500-Karten.
+2. Größere Schlachten auf 500×500-Karten ermöglichen, mit bis zu **20.000 Einheiten**, **120 Spielerplätzen** in Offline-Gefechten und **30** in LAN- und Online-Partien.
 3. Bekannte RTS-Funktionen integrieren und einige, die es noch nie gab.
 4. Integrierter Mehrspieler-Client
 
@@ -120,7 +121,9 @@ Final Alert, YRpp, Ares, Phobos und viele andere.
 
 Copyright © 2026 Halvor Nikolai Rusten und die Mitwirkenden an VERA20K.
 Lizenziert unter der [GPLv3](LICENSE-GPL) mit [zusätzlichen Bedingungen](LEGAL.md#additional-terms).
-Dieses Repository enthält keine Spieldateien.
+VERA20K enthält mit Genehmigung Schnee- und Eiskacheln aus Tiberian Sun: Firestorm.
+Sie bleiben Eigentum von Electronic Arts. Die Spieldateien für Red Alert 2: Yuri's Revenge
+stammen aus deiner eigenen Installation.
 Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots und das
 App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic Arts gehören.
 VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts

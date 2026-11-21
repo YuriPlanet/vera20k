@@ -216,6 +216,7 @@ impl LocomotorState {
         match kind {
             LocomotorKind::Drive
             | LocomotorKind::Walk
+            | LocomotorKind::Mech
             | LocomotorKind::Hover
             | LocomotorKind::Ship
             | LocomotorKind::Teleport
@@ -270,7 +271,11 @@ impl LocomotorState {
     pub fn is_ground_mover(&self) -> bool {
         matches!(
             self.kind,
-            LocomotorKind::Drive | LocomotorKind::Walk | LocomotorKind::Hover | LocomotorKind::Ship
+            LocomotorKind::Drive
+                | LocomotorKind::Walk
+                | LocomotorKind::Mech
+                | LocomotorKind::Hover
+                | LocomotorKind::Ship
         )
     }
 
@@ -377,7 +382,9 @@ impl LocomotorState {
     /// receivers75CA80/517210, tools/spatial_oracle/locomotor_at_coord.
     pub fn step_head(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.head(),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                state.head()
+            }
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => runtime.head(),
             _ => None,
         }
@@ -385,7 +392,7 @@ impl LocomotorState {
 
     pub(crate) fn set_step_head(&mut self, head: Option<crate::sim::components::DriveCoord>) {
         // Hover's head has one writer, its ProcessMovement (`hover_process`).
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
+        if let (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
             state.store_head(head);
@@ -523,7 +530,9 @@ impl LocomotorState {
 
     pub fn walk_destination(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.destination(),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                state.destination()
+            }
             _ => None,
         }
     }
@@ -544,9 +553,20 @@ impl LocomotorState {
         }
     }
 
+    pub(in crate::sim::movement) fn walk_runtime_mut(
+        &mut self,
+    ) -> Option<&mut piggyback::WalkRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state),
+            _ => None,
+        }
+    }
+
     pub fn walk_is_moving(&self) -> Option<bool> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state.moving()),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                Some(state.moving())
+            }
             _ => None,
         }
     }
@@ -557,7 +577,7 @@ impl LocomotorState {
         &mut self,
         coord: Option<crate::sim::components::DriveCoord>,
     ) {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
+        if let (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
             state.assign_destination(coord);
@@ -579,9 +599,7 @@ impl LocomotorState {
     /// nonnull head is admitted and before testing its remaining distance.
     /// Does not stand for the whole Process.
     pub(crate) fn begin_walk_motion(&mut self) {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
-            (self.kind, &mut self.runtime_payload)
-        {
+        if let Some(state) = self.walk_runtime_mut() {
             state.begin_motion();
         }
     }
@@ -599,16 +617,28 @@ impl LocomotorState {
         }
     }
 
+    pub(super) fn mech_move_to(&mut self, coord: crate::sim::components::DriveCoord) {
+        if let (LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
+            (self.kind, &mut self.runtime_payload)
+        {
+            state.mech_move_to(coord);
+        }
+    }
+
     /// Stop75ADA0 differs from null MoveTo: no-head Stop also clears +36
     /// and dispatches the owner's +54C callback. The world receiver performs
     /// that dispatch before returning; this primitive returns its admission.
     pub(crate) fn stop_walk(&mut self) -> bool {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
-            (self.kind, &mut self.runtime_payload)
-        {
-            return state.stop();
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.stop(),
+            (LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                // Mech Stop_Moving 5B0120 drops the destination and keeps
+                // IsMoving while a head remains. It has no infantry callback.
+                state.assign_destination(None);
+                false
+            }
+            _ => false,
         }
-        false
     }
 
     /// `Lock` (ILocomotion +0xB0): Walk `0x0075CB30` nulls its destination

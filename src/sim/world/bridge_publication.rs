@@ -247,14 +247,21 @@ impl BridgePublicationHost for LivePublication<'_> {
         }
         self.retain_real_write(cell);
     }
-    fn fallout(&mut self, cell: Cell) {
+    fn corrected_deck_at(&self, (x, y): CellCoord) -> Option<i16> {
+        let terrain = self.terrain();
+        let index = terrain.native_fixed_cell_index(x, y)?;
+        terrain.corrected_high_bridge_deck_at(Cell::Real(index))
+    }
+    fn fallout(&mut self, cell: Cell, corrected_deck_level: Option<i16>) {
         self.collapsed = true;
-        let (x, y) = self.coord(cell);
-        blow_up_bridge_cell_fallout(
+        let point = self.coord(cell);
+        publish_bridge_cell_fallout(
             self.sim,
             self.rules,
-            x as u16,
-            y as u16,
+            PendingBridgeCell {
+                point,
+                corrected_deck_level,
+            },
             Some(self.rules.overlay_registry()),
             &mut self.frame_effects,
         );

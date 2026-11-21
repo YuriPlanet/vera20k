@@ -24,6 +24,9 @@ pub struct Hooks {
 }
 
 static HOOKS: OnceLock<Hooks> = OnceLock::new();
+/// Set by the Android activity's JNI callback ([`note_changed`]), which runs
+/// on a Java thread with no game state, and taken by the LAN lobby on the
+/// game thread: hence a process-wide atomic.
 static CHANGED: AtomicBool = AtomicBool::new(false);
 
 /// Install the activity hooks. The Android crate calls this once, before the

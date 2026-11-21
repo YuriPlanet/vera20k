@@ -29,23 +29,29 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     use crate::rules::terrain_rules::LandType;
     use crate::sim::pathfinding::zone_map::ZoneGrid;
 
-    let mut cells: Vec<_> = (0..6).map(|x| drivable_slope_cell(x, 0, 0)).collect();
+    let mut cells: Vec<_> = (0..7).map(|x| drivable_slope_cell(x, 0, 0)).collect();
     cells[1].land_type = LandType::Tunnel.as_index();
     cells[1].tube_index = Some(TubeId(0));
-    // (4, 0) stays open: the exit's Scatter goes there.
+    // Direction-8 Unit admission at 73F218 reads the exit mouth's own tube.
+    cells[5].land_type = LandType::Tunnel.as_index();
+    cells[5].tube_index = Some(TubeId(1));
+    // The exit opens east onto (6, 0). The westward side faces into the tunnel.
     for cell in &mut cells[2..4] {
         cell.ground_walk_blocked = true;
         cell.base_ground_walk_blocked = true;
     }
     let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
-        6,
+        7,
         1,
         cells,
-        vec![TubeFact::explicit((1, 0), (5, 0), 2, vec![2, 2, 2, 2])],
+        vec![
+            TubeFact::explicit((1, 0), (5, 0), 2, vec![2; 4]),
+            TubeFact::explicit((5, 0), (1, 0), 6, vec![6; 4]),
+        ],
     );
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let zones =
-        ZoneGrid::build_with_native_bridge_geometry(&grid, &terrain, &[], 6, 1, Some((6, 1)));
+        ZoneGrid::build_with_native_bridge_geometry(&grid, &terrain, &[], 7, 1, Some((7, 1)));
     let mut sim = Simulation::with_seed(71);
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
     entity.set_owner_for_test(sim.intern("Americans"));
@@ -248,27 +254,31 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     // no track selected; the next Processes drive on from there. This
     // fixture's playfield reaches past its one-row map, so the Scatter's
     // cell may lie off the grid: a fresh SetDestination (the setter the
-    // Scatter calls) sends the unit to (4, 0) instead.
-    sim.set_unit_destination(
+    // Scatter calls) sends the unit out through its east-facing opening. Unit
+    // Can_Enter_Cell (73F24B..73F2ED) refuses the westward cell inside.
+    assert!(sim.set_unit_destination(
         1,
-        NavTargetRef::cell(4, 0),
+        NavTargetRef::cell(6, 0),
         &rules,
         true,
         &mut crate::sim::world::FrameEffects::default(),
-    );
+    ));
     let exit_frame = sim.session.binary_frame();
     let arrived = (exit_frame + 1..exit_frame + 300).any(|frame| {
         sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();
-        (entity.position.rx(), entity.position.ry()) == (4, 0)
+        (entity.position.rx(), entity.position.ry()) == (6, 0)
     });
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(
         arrived,
-        "the unit drove off the exit to (4, 0): position={:?}",
-        entity.position
+        "the unit drove off the exit to (6, 0): position={:?}, nav={:?}, path={:?}, head={:?}",
+        entity.position,
+        entity.navigation.nav_com(),
+        entity.navigation.path_replay().remaining_directions(),
+        committed_track_head(entity)
     );
 }
 
@@ -569,6 +579,65 @@ fn drive_ship_slope_process_samples_stationary_retargets_and_keeps_rng() {
         );
         assert_eq!(sim.scenario_rng.logical_state(), rng_before);
     }
+}
+
+#[test]
+fn drive_slope_tracks_the_surface_on_and_below_a_high_bridge() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+
+    let mut terrain =
+        crate::map::resolved_terrain::test_grid(3, 3, |rx, ry| drivable_slope_cell(rx, ry, 9));
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((1, 1), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    let mut sim = Simulation::new();
+    let mut entity = GameEntity::test_default(1, "DRIVE", "Americans", 1, 1);
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("DRIVE"));
+    entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    sim.substrate.entities.insert(entity);
+
+    let slope = |sim: &Simulation, frame| {
+        state_for_entity(sim.substrate.entities.get(1).unwrap())
+            .unwrap()
+            .render_phase(frame)
+    };
+    drive_ship_slope_process_tick(&mut sim, &terrain, 10);
+    assert_eq!(
+        slope(&sim, 13),
+        SlopeRenderPhase::Stable(9),
+        "ground under the deck"
+    );
+
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(true);
+    drive_ship_slope_process_tick(&mut sim, &terrain, 14);
+    assert_eq!(
+        slope(&sim, 14),
+        SlopeRenderPhase::Stable(0),
+        "the elevated deck"
+    );
+
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(false);
+    drive_ship_slope_process_tick(&mut sim, &terrain, 15);
+    assert_eq!(
+        slope(&sim, 15),
+        SlopeRenderPhase::Transition {
+            from_slope: 0,
+            to_slope: 9,
+            phase_num: 0,
+            phase_den: 3,
+        }
+    );
 }
 
 #[test]

@@ -215,6 +215,7 @@ impl Simulation {
             lifecycle_outputs: FrameChannel::default(),
             unit_voice_visit_interest: Default::default(),
             mission_spawned_entities: false,
+            ice_zones_stale: false,
             ownership_changed_since_output: false,
             frame_overlay_updates: Vec::new(),
             frame_overlay_removals: Vec::new(),
@@ -255,6 +256,8 @@ impl Simulation {
             native_allocated_cell_cursor: None,
             real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180::default(),
             dynamic_terrain_cells: Default::default(),
+            ice_cracks: Vec::new(),
+            terrain_dent: None,
             bridge_state: None,
             pending_bridge_collapses: Default::default(),
             overlay_grid: None,
@@ -315,7 +318,7 @@ impl Simulation {
     // sub-cell rotation and paradrop sub-cell; destruction smudge, survivor and
     // debris and the smudge type pick; the overlay/wall damage roll; ore growth
     // and spread (queue, direction, variant, TIBTRE); the building damage-fire
-    // type and start frame.
+    // type and start frame; a Smoke system's children's AI.
     pub(crate) fn bridge_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // bridge collapse/debris/explosion

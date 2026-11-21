@@ -21,7 +21,7 @@ fn rules() -> RuleSet {
 }
 
 fn world(rules: &RuleSet, anchor_state: u8) -> Simulation {
-    family_world(rules, anchor_state, 25, BridgeStampFamily::Nesw)
+    family_world(rules, anchor_state, 25, BridgeStampFamily::Nesw, 0)
 }
 
 fn family_world(
@@ -29,11 +29,12 @@ fn family_world(
     anchor_state: u8,
     anchor_overlay: u8,
     stamp: BridgeStampFamily,
+    level: u8,
 ) -> Simulation {
     let cells = (0..9)
         .flat_map(|y| {
             (0..9).map(move |x| {
-                crate::sim::world::lifecycle_tests::common_raw_terrain_cell(x, y, 0, false)
+                crate::sim::world::lifecycle_tests::common_raw_terrain_cell(x, y, level, false)
             })
         })
         .collect();
@@ -174,7 +175,7 @@ fn bridge_damage_exact_height_runs_body_and_detaches_only_after_collapse() {
 #[test]
 fn wooden_body_damage_collapses_through_the_live_publication_host() {
     let rules = rules();
-    let mut sim = family_world(&rules, 9, 0xed, BridgeStampFamily::Nwse);
+    let mut sim = family_world(&rules, 9, 0xed, BridgeStampFamily::Nwse, 0);
     let cell = sim
         .resolved_terrain
         .as_ref()
@@ -202,6 +203,82 @@ fn wooden_body_damage_collapses_through_the_live_publication_host() {
     assert_eq!(sim.cell_overlay(cell).overlay_data, 0);
     assert_eq!(flags(&sim, cell) & 0x100, 0);
     assert_eq!(flags(&sim, body) & 0x100, 0);
+}
+
+#[cfg(tests_sim_world_a_b)]
+#[test]
+fn collapse_hits_incoming_tank_on_depressed_side_lane() {
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::{DriveLocomotionRuntime, at_coord::AtCoordQuery};
+    use crate::sim::occupancy::{CellObjectMember, VEHICLE_OCCUPATION_BIT};
+    use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+
+    let rules = rules();
+    let mut sim = family_world(&rules, 15, 25, BridgeStampFamily::Nesw, 4);
+    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        base: 0,
+        off_fc: -9,
+        off_100: -9,
+        off_104: 18,
+        off_108: 18,
+    });
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let lane = terrain.native_cell_identity((3, 4));
+    terrain.write_native_cell_level(lane, 0);
+    assert_eq!(terrain.corrected_high_bridge_deck_at(lane), Some(8));
+    let head = DriveCoord::cell(3, 4, 8 * GROUND_LEVEL_HEIGHT_LEPTONS);
+    let stock_probe = DriveCoord {
+        z: BRIDGE_DECK_HEIGHT_LEPTONS,
+        ..head
+    };
+
+    // Supply the transition boundary: the tank is linked in the adjacent
+    // cell and has committed its incoming bridge reservation and Drive head.
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 3, 3, 0, &rules)
+        .unwrap();
+    let actor = sim.substrate.entities.get_mut(tank).unwrap();
+    actor.locomotor = Some(
+        crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Drive,
+        ),
+    );
+    assert!(
+        actor
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .install_drive_state_for_test(Some(
+                DriveLocomotionRuntime::default().with_head_to_for_test(Some(head)),
+            ))
+    );
+    let at = AtCoordQuery::from_entity(actor).unwrap();
+    assert!(at.matches(head));
+    assert!(!at.matches(stock_probe));
+    assert_eq!(
+        sim.cell_object_list_location(CellObjectMember::Entity(tank))
+            .unwrap()
+            .0,
+        (3, 3)
+    );
+    sim.substrate
+        .raw_cell_occupation
+        .mark_deck(3, 4, VEHICLE_OCCUPATION_BIT);
+
+    let mut drivers = BridgeDamageDrivers::new(&mut sim, &rules, FrameEffects::default());
+    assert!(drivers.apply_damage_to_cell((3, 4)));
+    assert_eq!(
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .corrected_high_bridge_deck_at(lane),
+        None
+    );
+    assert!(
+        sim.entities()
+            .get(tank)
+            .is_none_or(|actor| !actor.lifecycle.object_alive())
+    );
 }
 
 #[test]
@@ -444,8 +521,11 @@ impl BridgePublicationHost for ReenteringHost<'_> {
     fn middles(&self, family: Family) -> Option<(i32, [i32; 2])> {
         self.live.middles(family)
     }
-    fn fallout(&mut self, c: Cell) {
-        self.live.fallout(c);
+    fn corrected_deck_at(&self, coord: CellCoord) -> Option<i16> {
+        self.live.corrected_deck_at(coord)
+    }
+    fn fallout(&mut self, c: Cell, corrected_deck_level: Option<i16>) {
+        self.live.fallout(c, corrected_deck_level);
         let hit = if c == self.anchor {
             Some((2, 4))
         } else if c == self.forward {

@@ -261,14 +261,7 @@ impl FailureCapture {
                         )
                     })
                     .context("EA Quit hit geometry")?;
-                let point = set_window_pointer_to_rect_center(state, layout.quit);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.quit);
                 self.quit = Some(json!({"held_frame":frame,"observed_bucket":now,"point":point}));
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"real EA Quit Game clicked","point":point}));
             }
@@ -411,7 +404,7 @@ impl FailureCapture {
             "removed peer retains private connection"
         );
         let lost_line = crate::assets::csf_file::format_csf(
-            &App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
+            &state.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
             &[crate::assets::csf_file::CsfArg::Str(&self.peer_name)],
         );
         let lost_count = state
@@ -547,11 +540,12 @@ impl FailureCapture {
             if render == held.first_render {
                 return Ok(false);
             }
-            let rect = crate::ui::shell::modal::body_ok_layout(
+            let rect = crate::ui::shell::modal::menu_message_box(
+                1,
                 state.render_width() as i32,
                 state.render_height() as i32,
             )
-            .ok;
+            .button(0);
             set_window_pointer_to_rect_center(state, rect);
             network_failure::cursor_moved(state);
             if held.pressed_render.is_none() {

@@ -336,7 +336,7 @@ fn compare(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
         else {
             panic!("{input}: expected the positional native Voc request");
         };
-        assert_eq!(sound_id, name, "{input}: sound identity");
+        assert_eq!(sound_id.name_in(&rules), name, "{input}: sound identity");
         assert!(audible_to.is_none(), "{input}: native context0");
         assert_eq!(
             [

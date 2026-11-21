@@ -134,15 +134,15 @@ impl HouseFactoryAbandonment {
 /// Building Production Queue option also sets through the scenario's rules)
 /// skips both the busy refusal (`0x4FA520`) and the held-product abandon
 /// (`0x4C9C7B`), so the PRODUCE appends to the factory queue instead.
-pub fn enqueue_by_type(
+pub fn enqueue_by_type<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
-    type_id: &str,
+    owner: impl Into<InternKey<'k>>,
+    type_id: impl Into<InternKey<'k>>,
     effects: &mut FrameEffects<'_>,
     force: bool,
 ) -> bool {
-    let Some(obj) = rules.object(type_id) else {
+    let Some(obj) = sim.interner.key_object_type(type_id.into(), rules) else {
         return false;
     };
     let Some(selection) = super::ProductionSelection::for_type(rules, obj) else {
@@ -278,14 +278,14 @@ pub(crate) fn enqueue_selected<'k>(
 
 /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` puts the
 /// category's running build on hold.
-pub(crate) fn suspend_production(
+pub(crate) fn suspend_production<'k>(
     interner: &StringInterner,
     production: &mut ProductionState,
     session: &ScenarioSession,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     category: ProductionCategory,
 ) -> bool {
-    let Some(owner_id) = interner.get(owner) else {
+    let Some(owner_id) = interner.key_id(owner.into()) else {
         return false;
     };
     let frame = session.binary_frame();
@@ -437,6 +437,7 @@ pub(super) fn settle_abandoned(
     if let Some(category) = category {
         refund_abandoned(sim, rules, owner_id, category, &abandoned);
     }
+    clear_abandoned_parallel_factory(sim, rules, holder, owner_id, abandoned.type_id);
     let category = category.map(ProductionCategory::object_category);
     // NPSE 2.0 AbandonProduction C33B50..C33B79 reads product Naval.
     let naval = sim
@@ -496,44 +497,40 @@ pub(super) fn abandon_production(
     owner: InternedId,
     effects: &mut FrameEffects<'_>,
 ) {
-    // Phobos `FactoryClass_AbandonProduction_Phobos 0x4CA07A` nulls the
-    // house's category pointer for a forbidden category or product, without
-    // checking which factory abandoned it.
-    clear_abandoned_parallel_factory(sim, rules, holder, owner);
     if let Some(abandoned) = sim.production.factories().pending_abandonment(holder) {
         settle_abandoned(sim, rules, owner, holder, abandoned, effects);
     }
     sim.production.edit_factories().remove_factory(holder);
 }
 
+/// `FactoryClass_AbandonProduction` at `0x4CA07A`, after the refund: the
+/// house's category pointer is nulled without checking which factory
+/// abandoned the object. Ares (`10024EE0`) does so for any factory and
+/// product, Phobos for a building's factory and a forbidden category or
+/// product.
 fn clear_abandoned_parallel_factory(
     sim: &mut Simulation,
     rules: &RuleSet,
     holder: FactoryHolder,
     owner: InternedId,
+    type_id: InternedId,
 ) {
-    let FactoryHolder::Building(_) = holder else {
-        return;
-    };
-    if !rules.parallel_ai_queues_act() {
+    let serial = rules.serial_ai_queues_act();
+    if !serial && !(matches!(holder, FactoryHolder::Building(_)) && rules.parallel_ai_queues_act())
+    {
         return;
     }
-    let product = sim
-        .production
-        .factories()
-        .pending_abandonment(holder)
-        .and_then(|abandoned| rules.object(sim.interner.resolve(abandoned.type_id)))
-        .map(|object| {
-            (
-                object.category,
-                object.naval,
-                object.forbid_parallel_ai_queues,
-            )
-        });
+    let product = sim.object_type(type_id, rules).map(|object| {
+        (
+            object.category,
+            object.naval,
+            object.forbid_parallel_ai_queues,
+        )
+    });
     let Some((category, naval, forbidden)) = product else {
         return;
     };
-    if !forbidden && !rules.parallel_ai_queues().forbids_category(category, naval) {
+    if !serial && !forbidden && !rules.parallel_ai_queues().forbids_category(category, naval) {
         return;
     }
     let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(category, naval);
@@ -587,7 +584,7 @@ fn refund_abandoned(
 /// remains the sole owner of the held object, queue and Factory lifetime.
 #[derive(Debug, Clone, Copy)]
 pub enum ProductionCancellation<'a> {
-    Type { type_id: &'a str, naval: bool },
+    Type { type_id: InternKey<'a>, naval: bool },
     Category(ProductionCategory),
     Selected(super::ProductionSelection),
 }
@@ -606,7 +603,7 @@ pub fn cancel_production_for_owner<'k>(
 ) -> bool {
     let request = match request {
         ProductionCancellation::Type { type_id, naval } => {
-            let Some(object) = rules.object(type_id) else {
+            let Some(object) = sim.interner.key_object_type(type_id, rules) else {
                 return false;
             };
             let Some(mut selection) = super::ProductionSelection::for_type(rules, object) else {
@@ -875,7 +872,7 @@ pub(super) fn record_last_built(
             ObjectCategory::Aircraft => rules.general.create_aircraft_sound(),
             ObjectCategory::Building => None,
         })
-        .map(str::to_owned);
+        .map(|sound| rules.sound_name(sound));
     let type_index = interner
         .type_array_index(type_id, category, rules)
         .expect("a produced object belongs to its class Type registry");

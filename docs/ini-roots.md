@@ -32,8 +32,8 @@ MoviePrefix=movies_example
 Ares=yes
 ```
 
-Each section is optional. With no `[Files]` section, the mod inherits the
-host's `[ini]` settings. With `[Files]`, omitted entries use the stock names
+Each section is optional. A mod with no loading declarations can use its
+conventional files as described below. With `[Files]`, omitted entries use the stock names
 below, independent of the host's custom names. Rules, Art and AI must then
 all resolve to nonempty, readable files before loading continues.
 
@@ -61,12 +61,27 @@ theater INI is absent, the existing loader tries the stock name.
 The catalog formats stay the same. `Modes` reads the native MPModes sections
 and rows; `MapCatalog` reads a PKT's `[MultiMaps]` and per-map sections. Naming
 a launcher's unrelated settings file does not convert its format. Loose
-PKT, YRO and YRM discovery still follows the initial catalog.
+Skirmish checks loose PKT catalogs, YRO archives and multiplayer maps after
+the initial catalog.
 
 Optional catalogs keep their existing missing-file behavior. Sound and EVA
 can produce empty catalogs; absent campaign or mission files do not become
 stock campaign data. Selecting a different root does not add support for an
 unimplemented gameplay key.
+
+## Classic Red Alert 2 folder mods
+
+For a selected mod without loading declarations or a CnCNet client catalog,
+VERA looks for `rules.ini`, `art.ini`, `ai.ini` or `mpmodes.ini` in the
+mod itself, including standard numbered `expandNN.mix` archives. It chooses
+the RA2 family only when the package has no corresponding Yuri’s Revenge
+roots or numbered YR expansion archives. An explicit custom INI profile
+takes precedence.
+
+In that family, `rules.ini`, `art.ini` and `ai.ini` resolve through the normal
+mod and installation lookup. `mpmodes.ini` names the actual mode INIs, and
+Skirmish uses `missions.pkt` and `multi.mix` for the classic map catalog.
+Selecting **No mod** returns to the configured installation defaults.
 
 ## Archive names
 

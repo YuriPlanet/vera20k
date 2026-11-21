@@ -68,6 +68,9 @@ impl RocketHost for RocketProcessHost<'_> {
     fn trig(&self) -> &TrigTable {
         self.trig
     }
+    fn vera_only_map(&self) -> bool {
+        self.sim.session.map_exceeds_original_size()
+    }
     fn spawn_owner_is_elite(&self) -> bool {
         self.owner()
             .seldom
@@ -185,14 +188,14 @@ impl RocketHost for RocketProcessHost<'_> {
             .sim
             .interner
             .object_type(owner.type_ref(), self.rules)
-            .and_then(|object| object.aux_sound1.clone())
+            .and_then(|object| object.aux_sound1.as_deref())
         else {
             return;
         };
-        let event = super::SimSoundEvent::voc_at(sound, &owner.position);
+        let event = super::SimSoundEvent::voc_at(self.rules.sound_name(sound), &owner.position);
         self.sim.sound_events.emit(event);
     }
-    fn structural_bridge_floor(&self) -> Option<i32> {
+    fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
         let terrain = self.sim.resolved_terrain.as_ref()?;
         let cells = NativeCellQuery::canonical(terrain);
         let [x, y, _] = self.location();
@@ -200,7 +203,10 @@ impl RocketHost for RocketProcessHost<'_> {
         if cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL == 0 {
             return None;
         }
-        crate::sim::cell_kernel::native_cell_own_coords(cell, &cells).map(|(_, _, z)| z as i32)
+        let (_, _, z) = crate::sim::cell_kernel::native_cell_own_coords(cell, &cells)?;
+        let ground = z as i32;
+        let deck = crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, ground);
+        Some((ground, deck))
     }
     fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
         let Some(warhead) = self.warhead(warhead) else {

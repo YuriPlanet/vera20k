@@ -221,10 +221,10 @@ fn offline(sim: &Simulation, id: u64) -> bool {
         .is_offline()
 }
 
-fn sounds(events: &[SimSoundEvent], name: &str) -> usize {
+fn sounds(rules: &RuleSet, events: &[SimSoundEvent], name: &str) -> usize {
     events
         .iter()
-        .filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == name))
+        .filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(rules) == name))
         .count()
 }
 
@@ -327,7 +327,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     ));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
     assert_eq!(lines(&events, russians, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOnline"), 0);
+    assert_eq!(sounds(&rules, &events, "RobotTankOnline"), 0);
     sim.substrate
         .entities
         .get_mut(tanks[0])
@@ -348,7 +348,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     ));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 2);
     let guard = MissionId::from_known(MissionType::Guard);
     for id in tanks {
         let tank = sim.substrate.entities.get(id).unwrap();
@@ -390,7 +390,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     ));
     assert!(sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOnline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOnline"), 2);
     assert!(sim.techno_player_controllable(tanks[0], &rules));
 }
 
@@ -426,7 +426,7 @@ fn destroying_the_center_switches_its_robot_tanks_off() {
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 2);
 }
 
 /// ChangeOwner (`0x0070158A..0x007015E6`) runs Removed_From_Game on the old
@@ -467,7 +467,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 2);
     // Working for the Russians, it does not count for them.
     run_until(&mut sim, &rules, &grid, 60, &mut events, |_| false);
     assert!(!sim.has_powered_center(russians));
@@ -506,7 +506,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
     assert!(working(&sim));
     assert_eq!(lines(&events, russians, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
     assert_eq!(
-        sounds(&events, "RobotTankOnline"),
+        sounds(&rules, &events, "RobotTankOnline"),
         usize::from(rival_was_offline)
     );
     assert!(!offline(&sim, rival));
@@ -552,7 +552,7 @@ fn a_robot_tank_without_a_powered_center_goes_offline_when_it_moves() {
     ));
     assert_eq!(cell(&sim, tank), (10, 16));
     assert!(height(&sim, tank) > 0);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 1);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 1);
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 0);
     run_until(&mut sim, &rules, &grid, 120, &mut events, |_| false);
     let rest = sim.substrate.entities.get(tank).unwrap().position;
@@ -566,7 +566,7 @@ fn a_robot_tank_without_a_powered_center_goes_offline_when_it_moves() {
         (rest.rx(), rest.ry(), rest.sub_x(), rest.sub_y())
     );
     assert!(offline(&sim, tank));
-    assert_eq!(sounds(&events, "RobotTankOffline"), 1);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 1);
 }
 
 /// Retail ROBO through the production frame: an established hover survives
@@ -864,7 +864,7 @@ fn deactivate_sound_waits_for_the_ares_placement_mutex() {
     let events = sim.sound_events.take_for_test();
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert_eq!(
-        sounds(&events, "RobotTankOffline"),
+        sounds(&rules, &events, "RobotTankOffline"),
         if rules.ares() { 1 } else { 2 }
     );
 }

@@ -145,6 +145,10 @@ pub(crate) trait OverlayMarkHost {
     fn in_bounds(&mut self, coord: (i16, i16)) -> Result<bool, Self::Error>;
     /// `CellClass+0x11C`.
     fn slope(&self, cell: NativeCellIdentity) -> u8;
+    /// A supported high-bridge run can override the slope under its deck.
+    fn admits_authored_bridge_grade(&self, _anchor: NativeCellIdentity) -> bool {
+        false
+    }
     /// `CellClass+0x44`, [`NO_OVERLAY`] for none.
     fn identity(&self, cell: NativeCellIdentity) -> i32;
     /// `CellClass+0x11E`.
@@ -218,11 +222,14 @@ pub(crate) fn mark_overlay<H: OverlayMarkHost>(
     let flags = request.flags;
     // 0x005FC5BC: the Overlay's own CellClass, retained through the tail.
     let anchor = host.cell(request.cell);
-    if !overlay_mark_accepts_slope(id, host.slope(anchor)) {
+    let high = high_bridge_stamp_for_overlay(id);
+    // VERA compatibility at the stock 0x005FC5CD gate. A supported authored
+    // span runs above the slope, so the ground cannot refuse its body overlay.
+    if !overlay_mark_accepts_slope(id, host.slope(anchor))
+        && !(high.is_some() && host.admits_authored_bridge_grade(anchor))
+    {
         return Ok(OverlayMarkOutcome::SlopeRefused);
     }
-
-    let high = high_bridge_stamp_for_overlay(id);
     if let Some((family, direction)) = high {
         // 0x005FC5EE..0x005FC62C: the four high-bridge identities stamp
         // their span first, then continue at the Railroad test.

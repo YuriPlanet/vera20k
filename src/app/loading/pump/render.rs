@@ -21,10 +21,8 @@ use crate::render::draw_state::DrawState;
 use crate::render::gpu::GpuContext;
 use crate::render::loading_screen_chrome::{LoadingScreenAtlas, LoadingScreenEntry};
 use crate::render::shell_surface_present::ShellSurfacePresenter;
-use crate::render::shell_text::{
-    ScissorRect, ShellAlign, ShellTextDraw, TextRect, draw_in_rect_scaled,
-};
-use crate::ui::shell::geom::ShellScale;
+use crate::render::shell_text::{ScissorRect, ShellTextDraw, TextRect, draw_in_rect_scaled};
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 
 const BACKGROUND_DEPTH: f32 = 0.90;
 const PREVIEW_DEPTH: f32 = 0.80;
@@ -1114,7 +1112,7 @@ mod tests {
                     Some(title),
                     Some(bar),
                     solid,
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 );
                 assert_eq!(instances.len(), 3, "{filename} {size:?}");
                 for ((draw, entry), role) in instances
@@ -1171,7 +1169,7 @@ mod tests {
                 pair("bar_size"),
                 None,
                 pair("font_size"),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 0,
             );
             let mut progress = LoadingProgressState::standard_skirmish();
@@ -1184,7 +1182,7 @@ mod tests {
                 &progress,
                 layout.bar_origin.map(|value| value as f32),
                 None,
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             let clip = row["clip_rect"].as_array().unwrap();
             let clip_width = clip[2].as_i64().unwrap() as f32;
@@ -1280,7 +1278,7 @@ mod tests {
             entry,
             [24.0, 332.0],
             100,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             PROGRESS_DEPTH,
         );
 
@@ -1302,7 +1300,7 @@ mod tests {
             [707, 376],
             MARKER_DEPTH,
             clip,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
 
         assert_eq!(instances.len(), 1);
@@ -1326,7 +1324,7 @@ mod tests {
             [715, 400],
             MARKER_DEPTH,
             clip,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         push_entry_clipped(
             &mut instances,
@@ -1334,7 +1332,7 @@ mod tests {
             [520, 367],
             MARKER_DEPTH,
             clip,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
 
         assert!(instances.is_empty());

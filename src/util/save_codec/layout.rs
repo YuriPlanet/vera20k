@@ -99,6 +99,12 @@ impl de::Error for Error {
     }
 }
 
+// A thread-local because serde gives a `Deserialize` impl no context: the
+// impls that check a decoded value (`control_authority`, `zone_map` and the
+// others that call [`describing`]) sit under derived parents, and a
+// `DeserializeSeed` would have to be forwarded by every one of those parents.
+// [`Describing`] sets it for one [`describe`] on this thread and restores it on
+// return and unwind, so a save decoded anywhere else always reads `false`.
 thread_local! {
     static DESCRIBING: Cell<bool> = const { Cell::new(false) };
 }

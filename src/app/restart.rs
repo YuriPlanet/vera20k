@@ -13,6 +13,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// Whether the Mods page asked for a restart. Process-global because its
+/// reader, [`start_again_if_asked`] in `entry::finish`, runs after the event
+/// loop has returned and the app state that asked is gone; an atomic because
+/// a `static` must be `Sync`.
 static ASKED: AtomicBool = AtomicBool::new(false);
 
 /// Start the game again when this copy has shut down. The caller then leaves

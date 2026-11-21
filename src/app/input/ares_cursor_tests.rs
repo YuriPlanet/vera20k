@@ -44,6 +44,7 @@ fn query<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> Ac
         selected,
         modifier: OrderModifier::Normal,
         force_move_key: false,
+        force_fire_key: false,
         order_mode: OrderMode::Move,
         planning: false,
         mouse_over: true,
@@ -103,6 +104,7 @@ fn cursor_keys_name_the_tactical_cursors() {
     assert_eq!(moving, Some(CursorFeedbackKind::Move));
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..query(&sim, &rules, &selected)
     };
     let (firing, firing_table) = forced.selection_action(FAR, None);
@@ -118,6 +120,32 @@ fn cursor_keys_name_the_tactical_cursors() {
         CursorFeedbackKind::AresAction(spin)
     );
     assert_eq!(sim.state_hash(), before);
+}
+
+/// Ares' EMP deployer hook (`0x0051E3B0`) returns before the Techno
+/// What_Action whose entry hooks write the table (`0x7000CD`), so an EMP'd
+/// GI over himself shows the stock NoDeploy, not his `Cursor.NoDeploy`.
+#[test]
+fn an_emped_deployer_shows_the_stock_no_deploy() {
+    let patch = "[MouseCursors]\nStill=110,1,0,63,1\n[E1]\nCursor.NoDeploy=Still\n";
+    let Some((mut sim, rules)) = scene(patch) else {
+        return;
+    };
+    let gi = sim
+        .spawn_object("E1", "Local", 12, 5, 0, &rules)
+        .expect("GI");
+    sim.resolve_type_handles(&rules);
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .set_emp_remaining_for_test(150);
+    let selected = [gi];
+    let hover = crate::app::input::entity_pick::hover_object_by_id(&sim, gi, "Local");
+    let (kind, table) = query(&sim, &rules, &selected).selection_action((12, 5), hover);
+    assert_eq!(kind, Some(CursorFeedbackKind::NoDeploy));
+    assert_eq!(
+        tactical(kind.unwrap(), &table, 1, Some(&rules)),
+        CursorFeedbackKind::NoDeploy
+    );
 }
 
 /// `0x653CA6`: the radar keeps an overridden action only when its cursor has
@@ -140,6 +168,7 @@ fn the_radar_keeps_an_override_only_with_radar_frames() {
     );
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..radar
     };
     let still = rules.ares_mouse_cursors().find("Still").unwrap();

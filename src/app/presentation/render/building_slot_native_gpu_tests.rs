@@ -383,7 +383,7 @@ impl SlotGpu {
                         sprite.alpha
                     ));
                 }
-                let layers = lower_object_instances(parents);
+                let layers = lower_object_instances(parents.into());
                 let layer = &layers[layer_index];
                 assert_eq!(layer.owners, [slot]);
                 assert_eq!(layer.instances.len(), 1);

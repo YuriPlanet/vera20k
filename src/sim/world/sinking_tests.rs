@@ -334,7 +334,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
                     world,
                 } => {
                     assert_eq!(*anim_id, id);
-                    assert_eq!(sound_id, sound_name);
+                    assert_eq!(sound_id.name_in(&rules), sound_name);
                     serde_json::json!(["sound_boundary", "Foot+544", [world.x, world.y, world.z]])
                 }
                 SimSoundEvent::VocAt {
@@ -343,7 +343,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
                     world_z_leptons,
                     ..
                 } => {
-                    assert_eq!(sound_id, sound_name);
+                    assert_eq!(sound_id.name_in(&rules), sound_name);
                     assert!(audible_to.is_none(), "VoiceSinking has no human-owner gate");
                     serde_json::json!(["sound_boundary", "0x0", [29056, 15232, world_z_leptons]])
                 }

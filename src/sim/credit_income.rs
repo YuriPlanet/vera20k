@@ -370,6 +370,32 @@ pub(crate) fn produce_cash_on_grand_opening(
     }
 }
 
+/// Ares `BuildingClass_Put_ProduceCash @ 10014490` (hook `0x004409F4`):
+/// an upgrade put with a nonzero `ProduceCashDelay` starts its own timer,
+/// CashUpgradeTimers[UpgradeLevel - 1], with a stock Start (no extra frame).
+/// A zero-capacity host leaves UpgradeLevel at 0, so Ares writes the
+/// BuildingExt bytes before that array (`+0x48`/`+0x50`); VERA starts
+/// nothing there.
+pub(crate) fn ares_produce_cash_on_put(
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    host_id: u64,
+    delay: i32,
+) {
+    if delay == 0 {
+        return;
+    }
+    let Some(host) = substrate.entities.get_mut(host_id) else {
+        return;
+    };
+    let Ok(slot) = usize::try_from(host.building_upgrades().count()) else {
+        return;
+    };
+    if (1..=host.seldom.ares.cash_upgrade_timers.len()).contains(&slot) {
+        *ares_cash_timer_mut(host, slot) = CdTimer::started(session.binary_frame() as i32, delay);
+    }
+}
+
 /// The ProduceCash block of `BuildingClass::Update`: the stock block
 /// ([`stock_produce_cash_step`]), or in a game read the Ares way
 /// (`RuleSet::ares_form`) the hook that replaces it
@@ -1736,5 +1762,72 @@ mod tests {
             entity.seldom.ares.bounty_display.take_pending_for_test(),
             25
         );
+    }
+
+    /// Ares BuildingClass_Put_ProduceCash (10014490, hook 0x4409F4): an
+    /// upgrade put on its host starts its own cash timer for its
+    /// `ProduceCashDelay` there, so the Update hook pays first when one frame
+    /// is left, `delay - 1` frames on, not a `delay + 1` restart later.
+    #[test]
+    fn an_ares_upgrade_starts_its_cash_timer_when_put() {
+        use crate::sim::mission::state::MissionTestFixture;
+        use crate::sim::mission::{MissionDispatchTimer, MissionId};
+        use crate::sim::world::{FrameEffects, UninitContext};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=OIL\n1=PUMP\n\
+             [OIL]\nStrength=100\nUpgrades=1\n\
+             [PUMP]\nStrength=100\nPowersUpBuilding=OIL\n\
+             ProduceCashAmount=5\nProduceCashDelay=10\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = house(&mut sim, "A", true, 0);
+        let host = sim
+            .spawn_object_at_height("OIL", "A", 10, 10, 0, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(host)
+            .unwrap()
+            .mission
+            .apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_raw(-1),
+                queued: MissionId::from_raw(5),
+                suspended: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(0),
+            });
+        let pump = sim
+            .construct_object_limbo_at_height(
+                "PUMP",
+                "A",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                &mut FrameEffects::default(),
+            )
+            .unwrap();
+        sim.session.set_binary_frame_for_test(50);
+        assert!(sim.try_install_building_upgrade(pump, host, &rules, UninitContext::new(&rules)));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(host)
+                .unwrap()
+                .seldom
+                .ares
+                .cash_upgrade_timers[0],
+            CdTimer::started(50, 10)
+        );
+        sim.session.set_binary_frame_for_test(59);
+        let before = credits(&sim, owner);
+        produce_cash_step(&mut sim, host, &rules);
+        assert_eq!(credits(&sim, owner) - before, 5);
     }
 }
