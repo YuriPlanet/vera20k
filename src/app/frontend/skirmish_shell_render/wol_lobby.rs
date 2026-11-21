@@ -447,19 +447,21 @@ pub(crate) fn paint_wol_lobby_children(
             Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
             None => name_end - name_x,
         };
-        // A header that still exceeds one row at the tightest font fit
-        // ends in an ellipsis.
+        // A header that exceeds one row even at the tightest font fit is
+        // cut at the font's own width and ends in three dots, as VERA's
+        // texts write an ellipsis (GAME.FNT has no "…"): squeezed, the
+        // dots run together.
         let mut caption = std::borrow::Cow::Borrowed(row.text.as_str());
         if modern {
+            use crate::render::bit_font::Fit;
             let width = name_w.max(1) as u32;
-            caption = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
-                if font.text_width(&row.text) <= width {
-                    return std::borrow::Cow::Borrowed(row.text.as_str());
-                }
-                let end =
-                    font.truncate_to_width(&row.text, width.saturating_sub(font.text_width("…")));
-                std::borrow::Cow::Owned(format!("{end}…"))
-            });
+            if !font.fitted(Fit::TIGHTEST, |font| font.text_width(&row.text) <= width) {
+                caption = font.fitted(Fit::NONE, |font| {
+                    let end = font
+                        .truncate_to_width(&row.text, width.saturating_sub(font.text_width("...")));
+                    std::borrow::Cow::Owned(format!("{end}..."))
+                });
+            }
         }
         paint.texts.push(text(
             &caption,
