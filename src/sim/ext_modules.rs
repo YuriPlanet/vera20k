@@ -19,7 +19,8 @@
 //!   in `vera.vars` ([`vars`]);
 //! - writes of `Health`, `Owner`, `Rank`, `Mission`, `Ammo` and `Online`
 //!   through their owners ([`writes`]);
-//! - runtime triggers and `on_events` delivery ([`triggers`]);
+//! - runtime triggers and `on_events` delivery ([`triggers`]), and
+//!   decisions through `on_decide` ([`decide`]);
 //! - names of weapons, warheads, TeamTypes and action kinds;
 //! - the `action` import ([`actions`]): atomic actions and stock trigger
 //!   actions through their owners, for direct calls and trigger actions;
@@ -68,6 +69,7 @@ use vera20k_wasm_ext::{
 
 mod actions;
 mod cells;
+mod decide;
 mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
@@ -192,6 +194,9 @@ pub struct ExtModules {
     /// The mod's `[VeraWasm] MapUI=`, kept for client modules (phase 2).
     /// Not saved: a loaded match reads the default.
     map_ui: MapUi,
+    /// Decision budget use and `random` substreams of the current frame
+    /// ([`decide`]); not saved.
+    decide: decide::DecideState,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -494,7 +499,10 @@ struct Host<'a, 'f> {
 /// `has_kind`, the same in every call (the rules stage included).
 fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
-        vera20k_wasm_ext::triggers::TABLE_EVENT => triggers::RAISED_EVENTS.contains(&id),
+        vera20k_wasm_ext::triggers::TABLE_EVENT => {
+            triggers::RAISED_EVENTS.contains(&id)
+                || vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&id)
+        }
         TABLE_ACTION => actions::has_action(id, rules),
         TABLE_PROPERTY => property_name(id)
             .is_some_and(|name| READABLE.contains(&name) || Stat::from_property(name).is_some()),
@@ -1596,3 +1604,7 @@ mod action_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_ini_trigger_tests.rs"]
 mod ini_trigger_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_decide_tests.rs"]
+mod decide_tests;

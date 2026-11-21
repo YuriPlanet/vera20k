@@ -32,6 +32,7 @@
 //! - The "flag" an event site checks is a per-kind test, then a map lookup
 //!   by subject, not a side column in entity storage (RFC 15.1, item 1).
 
+use vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS;
 use vera20k_wasm_ext::triggers::{
     ACTION_MODULE, ACTION_SET_VAR, ActionDef, ActionTarget, EVENT_FIRE, EVENT_KILLED,
     EVENT_TAKE_DAMAGE, EVENT_TIMER, EventDef, FLAG_STARTS_DISABLED, FilterClause, FilterSubject,
@@ -158,9 +159,8 @@ impl Host<'_, '_> {
     /// `trigger_create`: checks every event, clause and action, then adds
     /// the trigger to the trigger runtime.
     pub(super) fn create_trigger(&mut self, def: &TriggerDef) -> Result<(i64, Status), Invalid> {
-        // Decision handlers come with the decidable events (open question 10).
-        if def.decide_key != -1 {
-            return Ok((0, Status::Unsupported));
+        if let Some(status) = super::decide::check_decide_key(def)? {
+            return Ok((0, status));
         }
         let house = match def.house {
             0 => None,
@@ -195,6 +195,7 @@ impl Host<'_, '_> {
             events: def.events.clone(),
             actions: def.actions.clone(),
             ini: false,
+            decide_key: def.decide_key,
         };
         self.sim
             .trigger_runtime
@@ -342,7 +343,7 @@ impl Host<'_, '_> {
 /// positive `Timer` interval and variable clauses whose target fits the
 /// variable's scope.
 fn check_event(vars: &VarStore, event: &EventDef) -> Result<Option<Status>, Invalid> {
-    if !RAISED_EVENTS.contains(&event.kind) {
+    if !RAISED_EVENTS.contains(&event.kind) && !DECISION_ONLY_EVENTS.contains(&event.kind) {
         return Ok(Some(Status::Unsupported));
     }
     if event.kind == EVENT_TIMER && event.interval < 1 {
@@ -508,7 +509,7 @@ impl Simulation {
 
     /// The trigger house when the definition names none: the subject's
     /// current owner, else the Neutral house (RFC 6a).
-    fn module_trigger_house(&self, rules: &RuleSet, subject: u64) -> Option<u32> {
+    pub(super) fn module_trigger_house(&self, rules: &RuleSet, subject: u64) -> Option<u32> {
         let owner = self.entities().get(subject).map(|entity| entity.owner());
         let neutral = || {
             rules
@@ -523,7 +524,7 @@ impl Simulation {
 
     /// Whether every clause holds, each read as the trigger's module would
     /// read it with `get` or `var_get`. A reading that is not `Ok` fails.
-    fn module_clauses_hold(
+    pub(super) fn module_clauses_hold(
         &mut self,
         rules: &RuleSet,
         source: ModuleSource,
@@ -575,38 +576,7 @@ impl Simulation {
         let (source, actions) = (trigger.source, trigger.actions.clone());
         let trigger_house =
             house.and_then(|index| self.houses.order().get(index as usize).copied());
-        let house = house.map_or(0, |index| house_ref(index as usize));
-        let [x, y, z] = if event.at_subject {
-            self.with_module_host(rules, source, |host| {
-                ["X", "Y", "Z"].map(|name| {
-                    match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
-                        Some(Ok((value, Status::Ok))) => i32::try_from(value).unwrap_or(-1),
-                        _ => -1,
-                    }
-                })
-            })
-        } else {
-            [-1; 3]
-        };
-        let record = EventRecord {
-            key: 0,
-            kind: event.kind,
-            trigger: handle as i64,
-            holder: holder as i64,
-            subject: event.subject as i64,
-            other: event.other as i64,
-            house,
-            projectile: event.projectile as i64,
-            modifier: 0,
-            cell: event.cell.map_or(0, |(x, y)| cell_ref(x, y)),
-            value: event.value,
-            value2: -1,
-            id: event.id,
-            frame: self.session.binary_frame() as i32,
-            x,
-            y,
-            z,
-        };
+        let record = self.module_event_record(rules, source, handle, holder, event, house);
         for action in actions {
             if action.kind == ACTION_MODULE {
                 self.trigger_runtime.module_triggers_mut().enqueue(
@@ -659,6 +629,52 @@ impl Simulation {
                     action.kind
                 ),
             }
+        }
+    }
+
+    /// The `EventRecord` of `event` for trigger `handle` on `holder`, with
+    /// key 0 and the house at array index `house` (0 for none): what a
+    /// firing queues for `on_events`, and what a decision request carries.
+    pub(super) fn module_event_record(
+        &mut self,
+        rules: &RuleSet,
+        source: ModuleSource,
+        handle: u64,
+        holder: u64,
+        event: &ModuleEvent,
+        house: Option<u32>,
+    ) -> EventRecord {
+        let house = house.map_or(0, |index| house_ref(index as usize));
+        let [x, y, z] = if event.at_subject {
+            self.with_module_host(rules, source, |host| {
+                ["X", "Y", "Z"].map(|name| {
+                    match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
+                        Some(Ok((value, Status::Ok))) => i32::try_from(value).unwrap_or(-1),
+                        _ => -1,
+                    }
+                })
+            })
+        } else {
+            [-1; 3]
+        };
+        EventRecord {
+            key: 0,
+            kind: event.kind,
+            trigger: handle as i64,
+            holder: holder as i64,
+            subject: event.subject as i64,
+            other: event.other as i64,
+            house,
+            projectile: event.projectile as i64,
+            modifier: 0,
+            cell: event.cell.map_or(0, |(x, y)| cell_ref(x, y)),
+            value: event.value,
+            value2: -1,
+            id: event.id,
+            frame: self.session.binary_frame() as i32,
+            x,
+            y,
+            z,
         }
     }
 

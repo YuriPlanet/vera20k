@@ -608,6 +608,13 @@ impl TriggerRuntime {
         self.module.listens(kind)
     }
 
+    /// Whether a module trigger decides event `kind`: the one check a
+    /// decision point makes before it builds a request (RFC 0001 15.1).
+    #[inline]
+    pub(crate) fn module_decides(&self, kind: i32) -> bool {
+        self.module.decides(kind)
+    }
+
     /// VERA-only match-checksum terms
     /// ([`Simulation::compute_multiplayer_frame_checksum`]): each set
     /// Scenario global, then each set local (high bit set), then each live

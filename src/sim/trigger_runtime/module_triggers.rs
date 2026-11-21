@@ -17,6 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use vera20k_wasm_ext::EventRecord;
+use vera20k_wasm_ext::decide::EVENT_DEFEAT;
 use vera20k_wasm_ext::triggers::{ACTION_MODULE, ActionDef, EVENT_TIMER, EventDef, Repeat};
 
 use crate::sim::ext_modules::ModuleSource;
@@ -45,12 +46,27 @@ pub(crate) struct ModuleTrigger {
     /// stopped module, which takes only its module actions along.
     #[serde(default)]
     pub(crate) ini: bool,
+    /// `TriggerDef.decide_key`: the decision handler's dispatch key, −1
+    /// for none. A trigger with one raises decision requests in place of
+    /// delivery (RFC 6f, `sim::ext_modules::decide`).
+    #[serde(default = "no_decide_key")]
+    pub(crate) decide_key: i32,
+}
+
+const fn no_decide_key() -> i32 {
+    -1
 }
 
 impl ModuleTrigger {
-    /// A trigger whose events need no binding (`Timer`).
+    /// A trigger whose events need no binding (`Timer`, `Defeat`).
     pub(crate) fn is_global(&self) -> bool {
-        self.events.iter().all(|event| event.kind == EVENT_TIMER)
+        self.events
+            .iter()
+            .all(|event| matches!(event.kind, EVENT_TIMER | EVENT_DEFEAT))
+    }
+
+    pub(crate) const fn decides(&self) -> bool {
+        self.decide_key != -1
     }
 
     pub(crate) fn admits_difficulty(&self, difficulty: i32) -> bool {
@@ -97,6 +113,10 @@ pub(crate) struct ModuleTriggers {
     /// Derived: the event kinds of every trigger, sorted, rebuilt on each
     /// create and remove. The flag event sites check first.
     kinds: Vec<i32>,
+    /// Derived as `kinds`, from the triggers with a decision handler, which
+    /// `kinds` leaves out: the flag decision points check.
+    #[serde(default)]
+    decide_kinds: Vec<i32>,
 }
 
 impl ModuleTriggers {
@@ -108,6 +128,12 @@ impl ModuleTriggers {
     /// before building a payload.
     pub(crate) fn listens(&self, kind: i32) -> bool {
         self.kinds.binary_search(&kind).is_ok()
+    }
+
+    /// Whether a trigger with a decision handler has an event of `kind`.
+    /// Decision points ask this before building a request.
+    pub(crate) fn decides(&self, kind: i32) -> bool {
+        self.decide_kinds.binary_search(&kind).is_ok()
     }
 
     pub(crate) fn has_type_bindings(&self) -> bool {
@@ -232,8 +258,32 @@ impl ModuleTriggers {
             .filter(|handle| {
                 self.triggers
                     .get(handle)
-                    .is_some_and(|t| t.events.iter().any(|e| e.kind == kind))
+                    .is_some_and(|t| !t.decides() && t.events.iter().any(|e| e.kind == kind))
             })
+            .collect()
+    }
+
+    /// The triggers with a decision handler for `kind`: every global one,
+    /// else those bound to `subject` or to `type_id`, in creation order.
+    pub(crate) fn deciders(&self, kind: i32, subject: u64, type_id: Option<u32>) -> Vec<u64> {
+        let of_kind = |t: &ModuleTrigger| t.decides() && t.events.iter().any(|e| e.kind == kind);
+        if kind == EVENT_DEFEAT {
+            return self
+                .triggers
+                .iter()
+                .filter(|(_, t)| of_kind(t))
+                .map(|(&handle, _)| handle)
+                .collect();
+        }
+        let by_object = self.objects.get(&subject).into_iter().flatten();
+        let by_type = type_id
+            .and_then(|id| self.types.get(&id))
+            .into_iter()
+            .flatten();
+        let handles: BTreeSet<u64> = by_object.chain(by_type).copied().collect();
+        handles
+            .into_iter()
+            .filter(|handle| self.triggers.get(handle).is_some_and(of_kind))
             .collect()
     }
 
@@ -363,19 +413,24 @@ impl ModuleTriggers {
         }
         let mut rebuilt = self.clone();
         rebuilt.rebuild_kinds();
-        if rebuilt.kinds != self.kinds {
+        if rebuilt.kinds != self.kinds || rebuilt.decide_kinds != self.decide_kinds {
             return Err("module trigger event kinds disagree with the triggers".into());
         }
         Ok(())
     }
 
     fn rebuild_kinds(&mut self) {
-        let kinds: BTreeSet<i32> = self
-            .triggers
-            .values()
-            .flat_map(|t| t.events.iter().map(|e| e.kind))
-            .collect();
-        self.kinds = kinds.into_iter().collect();
+        let kinds = |decides: bool| {
+            let kinds: BTreeSet<i32> = self
+                .triggers
+                .values()
+                .filter(|t| t.decides() == decides)
+                .flat_map(|t| t.events.iter().map(|e| e.kind))
+                .collect();
+            kinds.into_iter().collect()
+        };
+        self.kinds = kinds(false);
+        self.decide_kinds = kinds(true);
     }
 }
 
