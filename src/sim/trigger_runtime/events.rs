@@ -51,7 +51,12 @@ impl Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         live_index: usize,
     ) -> bool {
-        let type_index = self.trigger_runtime.trigger(live_index).unwrap().type_index;
+        crate::sim::ra2_all02_diagnostic::on_trigger_evaluation(self, rules);
+        let type_index = self
+            .trigger_runtime
+            .trigger(live_index)
+            .expect("callers pass a live Trigger")
+            .type_index;
         // The definition is read in place: every predicate below reads
         // through `&self`, and the one write (the entered-House arm's
         // retained Event+54) follows its last read of the condition.
@@ -300,7 +305,17 @@ impl Simulation {
                 //The null incoming House reaches the original generic true
                 //tail without writing persistence.
                 let Some(owner) = incoming_house else {
-                    return !self.event_house_lookup_rejects(condition.value, rules);
+                    let fallback = !self.event_house_lookup_rejects(condition.value, rules);
+                    crate::sim::ra2_all02_diagnostic::on_building_count_event(
+                        self,
+                        rules,
+                        None,
+                        condition.kind,
+                        condition.value,
+                        -1,
+                        fallback,
+                    );
+                    return fallback;
                 };
                 let Some(type_name) = usize::try_from(condition.value).ok().and_then(|index| {
                     rules
@@ -317,6 +332,15 @@ impl Simulation {
                     })
                 });
                 let result = (count != 0) == (condition.kind == 32);
+                crate::sim::ra2_all02_diagnostic::on_building_count_event(
+                    self,
+                    rules,
+                    Some(owner),
+                    condition.kind,
+                    condition.value,
+                    count,
+                    result,
+                );
                 if result {
                     *persistence = true;
                 }
@@ -436,7 +460,7 @@ impl Simulation {
             13 | 51 => self
                 .trigger_runtime
                 .trigger(live_index)
-                .unwrap()
+                .expect("callers pass a live Trigger")
                 .timer
                 .expired(self.session.binary_frame() as i32),
             //71EC83/71F284 routes these discrete events through71EC9A:
@@ -506,7 +530,13 @@ impl Simulation {
                 .len();
             for ordinal in 0..count {
                 let bit = 1u32.wrapping_shl(ordinal as u32);
-                let completed = self.trigger_runtime.trigger(index).unwrap().completed & bit != 0;
+                let completed = self
+                    .trigger_runtime
+                    .trigger(index)
+                    .expect("the Trigger was read live at the top of this check")
+                    .completed
+                    & bit
+                    != 0;
                 if !completed {
                     #[cfg(any(test, feature = "dev-overlays"))]
                     let before = persistence;
@@ -565,7 +595,7 @@ impl Simulation {
                     {
                         self.trigger_runtime.triggers[index]
                             .as_mut()
-                            .unwrap()
+                            .expect("the Trigger was read live at the top of this check")
                             .completed |= bit;
                     }
                 }
@@ -577,7 +607,7 @@ impl Simulation {
                 {
                     self.trigger_runtime.triggers[index]
                         .as_mut()
-                        .unwrap()
+                        .expect("the Trigger was read live at the top of this check")
                         .retained_house = Some(house);
                 }
             }

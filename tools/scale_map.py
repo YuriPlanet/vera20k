@@ -5,6 +5,7 @@ Usage:
     python -m tools.scale_map target/scale/flat500.map
     python -m tools.scale_map target/scale/flat200.map --size 100
     python -m tools.scale_map target/scale/match500.map --starts 30
+    python -m tools.scale_map target/scale/battle30.map --starts 30 --battle
 
 `--size N` writes `Size=0,0,N,N`. Its diamond spans 2N cells on each of the
 rx and ry axes, so the default N=250 is a 500x500-cell map. gamemd's cell
@@ -22,6 +23,12 @@ clumps of trees between the starts. Above eight starts it also
 writes `[Basic] MaxPlayers=N`, so the lobby seats a player at each. A fixed seed places the ore and trees, so
 the same arguments always write the same map.
 
+`--battle` (with `--starts`) also writes the scale battle: a few Rules keys,
+more waypoints, and the teams, scripts, triggers and Tags that give every
+start's house an army, send its squads to patrol the fronts it shares with its
+neighbours and replace them as they fall (see `tools.scale_battle`).
+`--battle N` fields N units a house instead of that module's UNITS_PER_HOUSE.
+
 `--ore-fields N` rings each start with N fields instead of one, spread evenly
 round it, and `--ore-radius R` sets a field's radius in cells; both leave a
 field where the committed maps have it when left alone. A crowded map wants
@@ -36,6 +43,7 @@ import struct
 from pathlib import Path
 
 from tools.render_depth_fixture import pack_lcw, pack_lzo
+from tools.scale_battle import UNITS_PER_HOUSE, battle_sections
 
 CLEAR_TILE = 0
 # TIB01..TIB20, the ore overlays: their positions in the retail [OverlayTypes] list.
@@ -155,6 +163,7 @@ def build_map(
     cell_array_width: int | None = None,
     ore_fields: int = 1,
     ore_radius: float | None = None,
+    battle: int | None = None,
 ) -> str:
     if cell_array_width is None:
         cell_array_width = 512 if size <= 256 else 1024
@@ -164,6 +173,8 @@ def build_map(
                          'and at most 500 for y*1000+x cell keys')
     if starts is not None and starts < 2:
         raise ValueError('a match needs at least two starts')
+    if battle is not None and starts is None:
+        raise ValueError('a battle needs the match map: give starts')
     cells = bytearray()
     for y in range(1, 2 * size):
         for x in range(1, 2 * size):
@@ -172,6 +183,7 @@ def build_map(
     overlay = bytearray(b'\xff' * cell_array_width * cell_array_width)
     overlay_data = bytearray(cell_array_width * cell_array_width)
     terrain = ''
+    battle_waypoints, battle_text = {}, ''
     if starts is None:
         start_cells = ring_starts(size)
         name = f'Scale Flat {2 * size}x{2 * size}'
@@ -188,9 +200,16 @@ def build_map(
             f'{y * 1000 + x}={tree}\n' for (x, y), tree in sorted(trees.items(), key=lambda item: (item[0][1], item[0][0]))
         )
         name = f'Scale Match {2 * size}x{2 * size} {starts} starts'
+        if battle is not None:
+            battle_waypoints, battle_text = battle_sections(
+                size, start_cells, set(ore) | set(trees), battle)
+            battle_text = '\n' + battle_text
+            name = f'Scale Battle {2 * size}x{2 * size} {starts} starts'
     if cell_array_width > 512:
         name = f'Large Size {size}x{size} - {len(start_cells)} Starts'
-    waypoints = '\n'.join(f'{index}={ry * 1000 + rx}' for index, (rx, ry) in enumerate(start_cells))
+    waypoints = '\n'.join(
+        f'{index}={ry * 1000 + rx}'
+        for index, (rx, ry) in (dict(enumerate(start_cells)) | battle_waypoints).items())
     # VERA's lobby seats more than the eight retail starts only on a map that
     # declares them (`skirmish_player_capacity`: MaxPlayers 9 to 30).
     max_players = f'MaxPlayers={len(start_cells)}\n' if len(start_cells) > 8 else ''
@@ -225,7 +244,7 @@ Level=0.032
 
 [IsoMapPack5]
 {pack_lzo(bytes(cells))}
-'''
+{battle_text}'''
 
 
 def main() -> None:
@@ -235,6 +254,8 @@ def main() -> None:
     parser.add_argument('output', type=Path, help='Map path to write')
     parser.add_argument('--size', type=int, default=250, help='Size= width and height (default 250)')
     parser.add_argument('--starts', type=int, help='Grid starts with ore and trees, for the match scenario')
+    parser.add_argument('--battle', type=int, nargs='?', const=UNITS_PER_HOUSE, metavar='UNITS',
+                        help=f'with --starts: the scale battle, UNITS a house (default {UNITS_PER_HOUSE})')
     parser.add_argument('--cell-array-width', type=int, choices=(512, 1024), default=None,
                         help='overlay encoding width (default: select from map Size)')
     parser.add_argument('--ore-fields', type=int, default=1,
@@ -242,6 +263,8 @@ def main() -> None:
     parser.add_argument('--ore-radius', type=float, default=None,
                         help='ore field radius in cells (default: a tenth of the start pitch)')
     args = parser.parse_args()
+    if args.battle is not None and args.starts is None:
+        parser.error('--battle needs --starts')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # Explicit LF: the map is committed and regenerated byte-identically, so
     # the writer must not follow the host platform's newline translation.
@@ -252,6 +275,7 @@ def main() -> None:
             cell_array_width=args.cell_array_width,
             ore_fields=args.ore_fields,
             ore_radius=args.ore_radius,
+            battle=args.battle,
         ),
         encoding='ascii',
         newline='\n',

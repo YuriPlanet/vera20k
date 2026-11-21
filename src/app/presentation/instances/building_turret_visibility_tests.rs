@@ -116,7 +116,8 @@ impl Patriot {
         let colors = HouseColorMap::default();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
         );
         let input = ShpInputs {
             runtime: &self.runtime,
@@ -143,8 +144,9 @@ impl Patriot {
             building_zshape: None,
         };
         let order = NativeDisplayOrder::from_world(&self.runtime.simulation, None);
-        let mut planned = Vec::new();
+        let mut planned = PlannedObjects::default();
         build_shp_instances_from_inputs(&input, &mut planned, &order);
+        let planned = planned.into_owned();
         planned
             .iter()
             .find(|object| object.parent.id == self.id)
@@ -177,7 +179,8 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
         building_voxel_turret_visible(
             crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
-                &Default::default(), false
+                &Default::default(),
+                false
             )
             .object(scene.id)
             .unwrap(),

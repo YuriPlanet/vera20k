@@ -34,7 +34,10 @@ origin. `/v1/*` forwards the existing method, path, Authorization, the headers a
 game signs in with (`Vera-Version`, `Vera-Build`, `Vera-Quick-Match`,
 `Vera-Host-Handover`, `Vera-Watch-AI`, `Vera-Language` and `Vera-Changes`) and body without JSON
 conversion, following redirects or replaying requests. It preserves the upstream
-status and body. CORS permits only `VERA_WEB_ORIGIN`, GET/POST and those headers with
+status and body. `VERA_WEB_ORIGIN` is required: the origin of every site that serves
+the game, comma-separated (`https://game.example.com,https://www.example.org`), each
+exactly as the browser sends it, so `www.` and a port count. CORS permits only those
+origins, each answered under its own name, GET/POST and those headers with
 Content-Type. Ambient cookies are not forwarded. Deploy a gateway at least as new as
 the browser package it serves: an older one refuses a newer package's sign-in headers
 at its CORS check, and that sign-in fails.

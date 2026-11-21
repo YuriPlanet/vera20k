@@ -1,62 +1,72 @@
-//! `0x117`'s left-side children on the shared control owners: the "Match
-//! Status" caption and the status transcript `0x53F` (an owner-draw list,
-//! `0x50014151`). The WOL page compositor draws them over its own art and
+//! `0x117`'s left-side children from their widgets
+//! ([`crate::ui::wol_quick_match::spec`]): the "Match Status" caption and
+//! the status transcript `0x53F` (an owner-draw list, `0x50014151`), its
+//! rows the page's. The WOL page compositor draws them over its own art and
 //! chrome.
 
-use super::controls::list_controls;
-use super::text::rect_to_text_rect;
-use super::wol_lobby::{WolLobbyPaint, label, row_rgb};
-use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
-use crate::app::AppState;
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::shell::geom::RectPx;
-use crate::ui::wol_quick_match::{MATCH_STATUS_KEY, WolQuickMatchLayout, WolQuickMatchPage};
+use super::gui_paint::{GuiStyle, paint_gui_ids};
+use super::wol_lobby::WolLobbyPaint;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::render::bit_font::BitFont;
+use crate::ui::wol_quick_match::{
+    CAPTION, DIALOG, TRANSCRIPT, WolQuickMatchLayout, WolQuickMatchPage,
+};
 
 pub(crate) fn paint_wol_quick_match_children(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     ui: &WolQuickMatchPage,
     layout: &WolQuickMatchLayout,
 ) -> WolLobbyPaint {
-    let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
-        return paint;
+    let controller = &frontend.shell_controller;
+    let gui = controller.gui();
+    let Some(root) = controller.root_in(DIALOG) else {
+        return WolLobbyPaint::default();
     };
-    let font = &state.renderer.bit_font;
-    let scale = layout.page.scale;
-    let text = |value: &str, rect: RectPx, rgb: [f32; 3]| {
-        shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            rect_to_text_rect(rect),
-            rgb,
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        )
+    // Only the rows the list shows are named.
+    let list = gui.find_id(root, TRANSCRIPT.into());
+    let top = list
+        .and_then(|list| gui.list_view(list))
+        .map_or(0, |view| view.top);
+    let shown = list
+        .and_then(|list| gui.list_geometry(list))
+        .map_or(0, |geometry| geometry.visible_rows);
+    let rows_of = |id: i32| {
+        (id == i32::from(TRANSCRIPT)).then(|| {
+            let rows = ui.lines.iter().enumerate();
+            rows.map(|(row, line)| match (top..top + shown).contains(&row) {
+                true => (String::from_utf16_lossy(&line.text), line.color),
+                false => (String::new(), line.color),
+            })
+            .collect()
+        })
     };
-    paint.texts.push(text(
-        &label(state, MATCH_STATUS_KEY),
-        layout.caption,
-        SHELL_LABEL_TEXT_RGB,
-    ));
-    let geometry = ui.list.geometry(layout.transcript, ui.lines.len(), scale);
-    list_controls(&mut paint.controls, atlas, geometry, &ui.list, false, scale);
-    for (visible, line) in ui
-        .lines
-        .iter()
-        .skip(ui.list.top_index)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let row = scale.derive_rect(geometry.row(visible), |row| {
-            RectPx::new(row.x + 2, row.y, row.w - 4, row.h)
-        });
-        paint.texts.push(text(
-            &String::from_utf16_lossy(&line.text),
-            row,
-            row_rgb(line.color),
-        ));
+    let style = GuiStyle {
+        rows_of: Some(&rows_of),
+        control_lists: true,
+        ..Default::default()
+    };
+    let mut paint = paint_gui_ids(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        gui,
+        root,
+        [CAPTION, TRANSCRIPT],
+        layout.page.scale,
+        style,
+    );
+    WolLobbyPaint {
+        controls: paint.take_lane(crate::render::hud_paint::Material::Controls),
+        icons: Vec::new(),
+        texts: paint.texts,
     }
-    paint
 }

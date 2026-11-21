@@ -216,7 +216,7 @@ fn patrol_saved_pursuit_and_return_continue_in_independent_worlds() {
         let (mut live, rules, id, _) = continuation_world(state);
         // Native Load689470 resets Scenario RNG to Seed(0). The reference
         // side starts at that same post-load cursor, not its saved Seed(1).
-        live.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *live.scenario_rng = crate::sim::rng::SimRng::new(0);
         let terrain = live.resolved_terrain.as_ref().unwrap().clone();
         let bytes = crate::sim::snapshot::GameSnapshot::save(&live, 0, 0, "patrol.map", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)

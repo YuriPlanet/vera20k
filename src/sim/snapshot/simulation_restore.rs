@@ -69,7 +69,7 @@ impl Simulation {
             check("object", object_id, "type", entity.type_ref())?;
             check("object", object_id, "owner", entity.owner())?;
         }
-        for (&key, house) in &self.houses {
+        for (&key, house) in &*self.houses {
             let object_id = u64::from(key.index());
             check("House", object_id, "key", key)?;
             check("House", object_id, "type", house.house_type_id())?;
@@ -134,6 +134,9 @@ impl Simulation {
             .map_err(SnapshotRestoreError::InvalidRadiationSiteOrder)?;
         self.validate_planning_references()
             .map_err(|reason| SnapshotRestoreError::InvalidPlanningReferences { reason })?;
+        self.team_script_vm
+            .validate_restored_task_forces()
+            .map_err(|reason| SnapshotRestoreError::InvalidTeamState { reason })?;
         if let Some(owner) = self.session.current_house()
             && !self.houses.contains_key(&owner)
         {
@@ -187,7 +190,7 @@ impl Simulation {
                 return Err(SnapshotRestoreError::InvalidInfantryDyingMark { object_id });
             }
         }
-        for (&owner, house) in &self.houses {
+        for (&owner, house) in &*self.houses {
             house.validate_scenario_name().map_err(|reason| {
                 SnapshotRestoreError::InvalidHouseScenarioName { owner, reason }
             })?;
@@ -269,7 +272,7 @@ impl Simulation {
                 });
             }
         }
-        if let Some(grid) = &self.smudge_grid {
+        if let Some(grid) = &*self.smudge_grid {
             for (object_id, object) in grid.objects() {
                 if object.object_alive() || !object.in_limbo() {
                     return Err(SnapshotRestoreError::InvalidSmudgeLifetime { object_id });
@@ -424,7 +427,8 @@ impl Simulation {
     }
 
     /// Player-file CellLoad4839F0 / Map no-init565190 crate resets.
-    /// Internal simulation continuations keep their saved crates.
+    /// Internal simulation continuations and Ares games keep their saved
+    /// crates.
     pub(crate) fn restore_map_authority_after_user_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -585,7 +589,11 @@ impl Simulation {
             if !zones.is_native_load_pending() {
                 return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
             }
-            if !self.retains_snapshot_continuation() {
+            // Ares skips both resets, so a loaded Ares game keeps its crates:
+            // CellClass_Load_Crates (hook 0x00483BF1 -> 0x00483BFE, Ares.dll
+            // 1006ADE0) and MapClass_CTOR_NoInit_Crates (0x00565215 ->
+            // 0x0056522D, 1006AEC0).
+            if !self.retains_snapshot_continuation() && !rules.ares() {
                 self.reset_crates_after_user_load(saved_land)?;
             }
         }

@@ -32,8 +32,14 @@ pub(crate) enum FrameStep {
     Shroud,
     /// The scenario lighting transition.
     Lighting,
+    /// The Firestorm ice chain's growth (`Simulation::tick_ice_growth`),
+    /// which Firestorm 2.0 LogicClass::AI runs before its tiberium updates.
+    IceGrowth,
     /// Ore growth and spread.
     OreGrowth,
+    /// The Firestorm ice chain's solidify pass (`Simulation::solidify_ice`),
+    /// after the tiberium updates (LogicClass::AI 0x506f84).
+    IceSolidify,
     /// `BombListClass::UpdateAll` (`0x0055B4E1`).
     BombList,
     /// `Kamikaze__Update` (`0x0055B4F0`).
@@ -85,13 +91,15 @@ pub(crate) enum FrameStep {
 }
 
 /// The master frame's steps before its tail, in the order they run.
-pub(crate) const LOGIC_STEPS: [FrameStep; 20] = [
+pub(crate) const LOGIC_STEPS: [FrameStep; 22] = [
     FrameStep::SessionCommands,
     FrameStep::AdmitCommands,
     FrameStep::Triggers,
     FrameStep::Shroud,
     FrameStep::Lighting,
+    FrameStep::IceGrowth,
     FrameStep::OreGrowth,
+    FrameStep::IceSolidify,
     FrameStep::BombList,
     FrameStep::Kamikaze,
     FrameStep::TeamScript,
@@ -119,7 +127,7 @@ impl FrameStep {
             Self::Triggers => phase::TRIGGERS,
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
-            Self::OreGrowth => phase::ORE_GROWTH,
+            Self::IceGrowth | Self::OreGrowth | Self::IceSolidify => phase::ORE_GROWTH,
             Self::BombList | Self::LocalAnims => return None,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
@@ -137,13 +145,16 @@ impl FrameStep {
     }
 }
 
-/// What one frame visit reads, fixed for the whole visit and for a resume of
-/// its tail.
+/// The rules, time and effects bound for one frame visit, and the temporary
+/// tube-turn set passed from the object updates to the wake phase.
 pub(super) struct FrameInputs<'a> {
     rules: &'a RuleSet,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     tick_ms: u32,
     effects: FrameEffects<'a>,
+    /// Wake producers skipped by this visit's Logic pass. Consumed before
+    /// any tail suspension; a resumed tail never repeats the wake pass.
+    tube_turns: std::collections::BTreeSet<u64>,
 }
 
 impl<'a> FrameInputs<'a> {
@@ -162,6 +173,7 @@ impl<'a> FrameInputs<'a> {
             overlay_registry,
             tick_ms,
             effects,
+            tube_turns: Default::default(),
         }
     }
 }
@@ -193,7 +205,7 @@ impl Simulation {
     /// The steps the frames since the last call entered, in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn take_frame_step_trace(&mut self) -> Vec<FrameStep> {
-        std::mem::take(&mut self.frame_step_trace)
+        std::mem::take(&mut *self.frame_step_trace)
     }
 
     /// Advance exactly one authoritative simulation frame.
@@ -231,7 +243,7 @@ impl Simulation {
         self.apply_debug_tools(rules);
         let mut inputs = FrameInputs::new(rules, overlay_registry, tick_ms, effects.reborrow());
         // A failed earlier frame never reached collection; drop its value.
-        self.frame_sync_checksum = None;
+        *self.frame_sync_checksum = None;
         self.combat_light_requests.discard();
         self.screen_shake_updates.discard();
         // The wrapping native frame counter is committed LATE (the tail's
@@ -339,7 +351,9 @@ impl Simulation {
                 self.tick_fog_regrowth(UninitContext::new(rules).with_effects(effects));
             }
             FrameStep::Lighting => self.tick_scenario_lighting_transition(rules),
+            FrameStep::IceGrowth => self.tick_ice_growth(rules, overlay_registry),
             FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry, effects)?,
+            FrameStep::IceSolidify => self.solidify_ice(rules, overlay_registry),
             // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
             FrameStep::BombList => Self::bomb_list_update(
                 &self.interner,
@@ -406,7 +420,8 @@ impl Simulation {
                 let object_pass =
                     self.advance_live_object_pass(rules, overlay_registry, effects)?;
                 frame.ownership_changed |= object_pass.ownership_changed();
-                frame.spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
+                inputs.tube_turns = object_pass.tube_turns;
+                frame.spawned_entities |= std::mem::take(&mut *self.mission_spawned_entities);
                 frame.destroyed_structure |= object_pass.destroyed_structure;
                 frame.bridge_state_changed |= object_pass.bridge_state_changed;
                 // Gate Open runs in Building Mission AI; factory clearance
@@ -414,7 +429,7 @@ impl Simulation {
                 // Ready/Commence.
             }
             // Native gate and cadence in `spawn_wakes_for_frame`.
-            FrameStep::Wakes => self.spawn_wakes_for_frame(rules),
+            FrameStep::Wakes => self.spawn_wakes_for_frame(rules, &inputs.tube_turns),
             FrameStep::Vision => {
                 // Sources open, move and close their sight at their own events
                 // (Unlimbo, arrival, Limbo), so an object spawned after this
@@ -454,24 +469,41 @@ impl Simulation {
                 // and passengers board in their class PerCellProcess.
             }
             FrameStep::LocalAnims => {
-                for id in self.substrate.anims.local_ids() {
-                    // No expiry reaches a presentation anim, which nothing
-                    // lists: it ends with its owner's UnInit instead
-                    // (`AnimConstructorInput::Presentation`).
-                    if self.presentation_anim_orphaned(id) {
-                        self.destroy_anim(id, rules);
-                        continue;
+                // A visit can make and end local anims. The walk visits those
+                // that stood when it began, as a copy of the list would; an
+                // ended one's visit did nothing. It reads the list a stretch
+                // at a time, so most anims cost it no search of the list.
+                let end = self.substrate.anims.local_id_end();
+                let mut stretch = [0; 64];
+                let mut cursor = None;
+                loop {
+                    let count = self
+                        .substrate
+                        .anims
+                        .local_ids_after(cursor, end, &mut stretch);
+                    let Some(&last) = stretch[..count].last() else {
+                        break;
+                    };
+                    cursor = Some(last);
+                    for &id in &stretch[..count] {
+                        // No expiry reaches a presentation anim, which nothing
+                        // lists: it ends with its owner's UnInit instead
+                        // (`AnimConstructorInput::Presentation`).
+                        if self.presentation_anim_orphaned(id) {
+                            self.destroy_anim(id, rules);
+                            continue;
+                        }
+                        frame.bridge_state_changed |= self
+                            .visit_anim(id, rules, overlay_registry, effects)
+                            .map_err(|error| {
+                                FrameAdvanceError::new(
+                                    self.session.tick(),
+                                    self.session.binary_frame(),
+                                    id,
+                                    error.to_string(),
+                                )
+                            })?;
                     }
-                    frame.bridge_state_changed |= self
-                        .visit_anim(id, rules, overlay_registry, effects)
-                        .map_err(|error| {
-                            FrameAdvanceError::new(
-                                self.session.tick(),
-                                self.session.binary_frame(),
-                                id,
-                                error.to_string(),
-                            )
-                        })?;
                 }
             }
             // Follows the object loop.
@@ -479,14 +511,11 @@ impl Simulation {
                 frame.bridge_state_changed |=
                     self.update_ion_blasts(rules, overlay_registry, effects);
                 self.alpha_shapes.purge_disabled();
-                // Ares' `ObjectClass_Update_AlphaLight` (`0x005F3E70`) places
-                // each surviving glow from its object's live GetCoords ahead
-                // of the Tactical's draw.
-                if rules.ares() {
-                    self.update_alpha_shape_screens(rules);
-                }
             }
             FrameStep::CrateRegen => {
+                // Firestorm's pending terrain dent (Firestorm 2.0 0x51EA50)
+                // runs in this slot of its LogicClass::AI.
+                self.finish_terrain_dent(rules, effects);
                 // Called between `AlphaShapeClass::PurgeDisabled` and the
                 // Tactical, Factory and House callbacks, on the
                 // pre-increment frame counter this tick's steps have all
@@ -613,13 +642,13 @@ impl Simulation {
         // VERA appends money, health and trigger terms to the native fold.
         if self.session.execution_topology().command_queue_route() == CommandQueueRoute::Multiplayer
         {
-            self.frame_sync_checksum = Some(FrameSyncChecksum {
+            *self.frame_sync_checksum = Some(FrameSyncChecksum {
                 frame: self.session.binary_frame(),
                 checksum: self.compute_multiplayer_frame_checksum(),
             });
         }
 
-        let context = if let Some(sync) = &self.frame_sync_checksum {
+        let context = if let Some(sync) = &*self.frame_sync_checksum {
             let checksum = sync.checksum.as_ref().map_err(|error| {
                 FrameAdvanceError::new(
                     self.session.tick(),
@@ -659,7 +688,7 @@ impl Simulation {
                 Err(NetworkCommandError::Interrupted(reason)) => {
                     frame
                         .commands
-                        .extend(std::mem::take(&mut self.frame_command_admissions));
+                        .extend(std::mem::take(&mut *self.frame_command_admissions));
                     return Ok(FrameTailResult::Interrupted(reason));
                 }
                 Err(error) => {
@@ -677,7 +706,7 @@ impl Simulation {
         if pass == Some(NetworkQueuePass::Waiting) {
             frame
                 .commands
-                .extend(std::mem::take(&mut self.frame_command_admissions));
+                .extend(std::mem::take(&mut *self.frame_command_admissions));
             return Ok(FrameTailResult::Waiting(context.expect("network context")));
         }
 
@@ -724,8 +753,8 @@ impl Simulation {
         };
         frame
             .commands
-            .extend(std::mem::take(&mut self.frame_command_admissions));
-        self.replaying_recorded_commands = false;
+            .extend(std::mem::take(&mut *self.frame_command_admissions));
+        *self.replaying_recorded_commands = false;
         if failure.is_some() {
             //64CCEB's modal precedes Queue_AI clearing GameActive648266.
             //No retirement, staged MegaMission execution or frame commit yet.
@@ -750,6 +779,7 @@ impl Simulation {
             overlay_registry: _,
             tick_ms,
             ref mut effects,
+            ..
         } = *inputs;
         // MainTick55DE45 -> PlanMgr637550 publishes command-generated plans
         // after Queue_AI, using any TIMING change it just applied. Native
@@ -764,8 +794,8 @@ impl Simulation {
 
         // Commit the wrapping native frame LATE, after every phase has observed
         // frame N. Stored-start timer consumers therefore capture N, and the
-        // next admitted advance begins on N+1. Host-provided milliseconds are
-        // retained for diagnostics only and never determine the frame.
+        // next admitted advance begins on N+1. The host's step paces the frame
+        // and never sets the session clock, which counts native frames.
         self.session.commit_native_frame(tick_ms);
         self.enter_frame_step(FrameStep::FrameCommit);
         #[cfg(any(test, feature = "test-support"))]
@@ -893,14 +923,14 @@ impl Simulation {
 
     /// HouseClass::Update4F860F/4F8736 has not yet published its request.
     pub fn pending_outcome_wait(&self) -> Option<crate::sim::house_state::HouseOutcomeKind> {
-        match &self.frame_continuation {
+        match &*self.frame_continuation {
             Some(FrameContinuation::Outcome(pending)) => Some(pending.cursor.kind),
             _ => None,
         }
     }
 
     pub(crate) fn validate_frame_continuation_for_restore(&self) -> Result<(), &'static str> {
-        if let Some(FrameContinuation::Outcome(pending)) = &self.frame_continuation {
+        if let Some(FrameContinuation::Outcome(pending)) = &*self.frame_continuation {
             let owner = self
                 .houses
                 .order()
@@ -957,7 +987,10 @@ impl Simulation {
     }
 
     pub fn pending_network_wait(&self) -> bool {
-        matches!(self.frame_continuation, Some(FrameContinuation::Waiting(_)))
+        matches!(
+            *self.frame_continuation,
+            Some(FrameContinuation::Waiting(_))
+        )
     }
 
     pub fn pending_network_interruption(&self) -> Option<NetworkInterruption> {
@@ -976,7 +1009,7 @@ impl Simulation {
         let Some(FrameContinuation::Waiting(pending)) = self.frame_continuation.take() else {
             unreachable!("checked wait continuation")
         };
-        self.frame_continuation = Some(FrameContinuation::Interrupted(
+        *self.frame_continuation = Some(FrameContinuation::Interrupted(
             NetworkInterruptionContinuation {
                 interruption,
                 tick_ms: pending.tick_ms,
@@ -1015,7 +1048,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if !matches!(
-            self.frame_continuation,
+            *self.frame_continuation,
             Some(FrameContinuation::Checksum(_) | FrameContinuation::Interrupted(_))
         ) {
             return Err(FrameAdvanceError::new(
@@ -1098,7 +1131,7 @@ impl Simulation {
         let result = match result {
             Ok(result) => result,
             Err(error) => {
-                self.frame_continuation = Some(FrameContinuation::Waiting(pending));
+                *self.frame_continuation = Some(FrameContinuation::Waiting(pending));
                 return Err(error);
             }
         };
@@ -1126,7 +1159,7 @@ impl Simulation {
         let trigger_effects = if outcome_waiting {
             Vec::new()
         } else {
-            std::mem::take(&mut self.trigger_effects)
+            std::mem::take(&mut *self.trigger_effects)
         };
         // Preserve the established terminal-frame gate: these are committed
         // light-vector facts and the next admitted frame clears the producer
@@ -1153,12 +1186,12 @@ impl Simulation {
         let overlay_updates = if outcome_waiting {
             Vec::new()
         } else {
-            std::mem::take(&mut self.frame_overlay_updates)
+            std::mem::take(&mut *self.frame_overlay_updates)
         };
         let overlay_removals = if outcome_waiting {
             Vec::new()
         } else {
-            std::mem::take(&mut self.frame_overlay_removals)
+            std::mem::take(&mut *self.frame_overlay_removals)
         };
         let fire_events = if outcome_waiting {
             Vec::new()
@@ -1198,7 +1231,7 @@ impl Simulation {
         let tick_ms = inputs.tick_ms;
         // An owner change outside the object pass (a MindControl shot)
         // reaches the tick's report too.
-        frame.ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
+        frame.ownership_changed |= std::mem::take(&mut *self.ownership_changed_since_output);
         let frame_committed = if let FrameTailResult::Complete(committed) = result {
             committed
         } else {
@@ -1215,7 +1248,7 @@ impl Simulation {
             };
             let (network_failure, network_waiting, outcome_waiting) = match result {
                 FrameTailResult::Checksum(failure) => {
-                    self.frame_continuation =
+                    *self.frame_continuation =
                         Some(FrameContinuation::Checksum(NetworkFailureContinuation {
                             failure,
                             tick_ms,
@@ -1224,7 +1257,7 @@ impl Simulation {
                     (Some(failure), false, false)
                 }
                 FrameTailResult::Waiting(context) => {
-                    self.frame_continuation =
+                    *self.frame_continuation =
                         Some(FrameContinuation::Waiting(NetworkWaitContinuation {
                             context,
                             tick_ms,
@@ -1233,7 +1266,7 @@ impl Simulation {
                     (None, true, false)
                 }
                 FrameTailResult::Interrupted(interruption) => {
-                    self.frame_continuation = Some(FrameContinuation::Interrupted(
+                    *self.frame_continuation = Some(FrameContinuation::Interrupted(
                         NetworkInterruptionContinuation {
                             interruption,
                             tick_ms,
@@ -1243,7 +1276,7 @@ impl Simulation {
                     (None, false, false)
                 }
                 FrameTailResult::OutcomeWait(cursor) => {
-                    self.frame_continuation =
+                    *self.frame_continuation =
                         Some(FrameContinuation::Outcome(HouseOutcomeContinuation {
                             cursor,
                             tick_ms,
@@ -1293,15 +1326,16 @@ impl Simulation {
                 }
             };
         }
-        spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
+        spawned_entities |= std::mem::take(&mut *self.mission_spawned_entities);
         bridge_state_changed |= self
             .trigger_effects
             .iter()
             .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
-        self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
+        let ice_zones_stale = std::mem::take(&mut *self.ice_zones_stale);
+        *self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
             rules,
             overlay_registry,
-            bridge_state_changed,
+            bridge_state_changed || ice_zones_stale,
             destroyed_structure || spawned_entities,
         );
         profile_phase!(OVERLAYS);
@@ -1365,7 +1399,7 @@ impl Simulation {
             self.frame_profile.record(phases, total);
         }
         // Resuming a suspended frame can transfer ownership in its remaining tail.
-        ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
+        ownership_changed |= std::mem::take(&mut *self.ownership_changed_since_output);
         MasterFrameOutput {
             network_failure: None,
             network_waiting: false,

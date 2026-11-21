@@ -151,15 +151,10 @@ impl SetupComboInput {
     ) -> Result<bool> {
         if let Some((control, index, expected)) = self.popup.take() {
             let view = setup::view(state).context("presented setup combo")?;
-            let layout = setup_input::layout(state);
-            let ui = state
-                .frontend
-                .multiplayer_setup
-                .as_ref()
-                .context("setup popup owner")?;
+            let open = setup_input::open_list(state);
             ensure!(
                 expected == value
-                    && ui.popup.control == Some(control)
+                    && open.map(|(id, _)| id) == Some(control)
                     && view
                         .combo(control)
                         .is_some_and(|combo| combo.row as usize == row
@@ -169,29 +164,28 @@ impl SetupComboInput {
                                 .is_some_and(|choice| choice.value == value)),
                 "setup popup changed before its rendered choice click"
             );
-            let popup = ui
-                .popup_geometry(&view, &layout)
-                .context("presented setup popup geometry")?;
+            let popup = open.context("presented setup popup geometry")?.1.popup;
             let Some(rect) = popup.row_rect(index) else {
                 // Player shows only three rows. Scroll the retained item through
                 // normal input, then require another presentation before clicking.
                 let geometry = popup.scroll_geometry();
                 let bar = geometry.scrollbar.context("setup popup scrollbar")?;
                 let down = index >= popup.first + popup.visible_rows;
-                let (x, y) =
-                    crate::ui::shell::list::scrollbar_arrow_origins(bar, geometry.metrics.arrow_h)
-                        [usize::from(down)];
+                let (x, y) = vera20k_gui::shell::list::scrollbar_arrow_origins(
+                    bar,
+                    geometry.metrics.arrow_h,
+                )[usize::from(down)];
                 setup_click(
                     state,
                     RectPx::new(x, y, bar.w - 2, geometry.metrics.arrow_h),
                 );
                 ensure!(
-                    state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
-                        ui.popup.control == Some(control)
+                    setup_input::open_list(state).is_some_and(|(id, list)| {
+                        id == control
                             && if down {
-                                ui.popup.top_index > popup.first
+                                list.popup.first > popup.first
                             } else {
-                                ui.popup.top_index < popup.first
+                                list.popup.first < popup.first
                             }
                     }),
                     "setup popup scrollbar did not advance toward the retained item"
@@ -201,11 +195,7 @@ impl SetupComboInput {
             };
             setup_click(state, rect);
             ensure!(
-                state
-                    .frontend
-                    .multiplayer_setup
-                    .as_ref()
-                    .is_some_and(|ui| ui.popup.control.is_none()),
+                setup_input::open_list(state).is_none(),
                 "setup combo input did not close popup"
             );
             return Ok(true);
@@ -229,11 +219,7 @@ impl SetupComboInput {
             crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale),
         );
         ensure!(
-            state
-                .frontend
-                .multiplayer_setup
-                .as_ref()
-                .is_some_and(|ui| ui.popup.control == Some(control)),
+            setup_input::open_list(state).map(|(id, _)| id) == Some(control),
             "actual setup combo arrow did not open"
         );
         self.popup = Some((control, index, value));

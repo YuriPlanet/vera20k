@@ -380,7 +380,7 @@ fn follow_friendlies_tube_uses_exit_cell_and_does_not_touch_attack_target() {
     let cells = (0..32)
         .flat_map(|y| (0..32).map(move |x| test_loader_clear_cell(x, y)))
         .collect();
-    f.sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+    *f.sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
         32,
         32,
         cells,

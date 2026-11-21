@@ -241,9 +241,9 @@ impl Simulation {
             return;
         }
         self.substrate.pending_delete.remove_object(stable_id);
-        // RESIDUAL: each particle's own destructor announces its expiry
-        // (`0x0062D9C8`); VERA only conceals them. No listener holds a
-        // particle id.
+        // Each particle's own destructor announces its expiry
+        // (`0x0062D9C8`); the common destructor below gives it to the glows,
+        // the only listener that holds a particle id.
         self.finalize_and_remove_common(stable_id, context, 1);
     }
 
@@ -783,7 +783,12 @@ impl Simulation {
                     // vector is freed. Ordinary AI retirement has no children left;
                     // direct disposal must still remove each individual AIR entry.
                     for particle in system.particles() {
-                        self.substrate.conceal_particle(particle.stable_id());
+                        let id = particle.stable_id();
+                        self.substrate.conceal_particle(id);
+                        // ParticleDtor62D9C8 announces the expiry: a glow
+                        // waits for PurgeDisabled, or under Ares goes now.
+                        self.alpha_shapes.pointer_expired(id);
+                        self.delete_alpha_shape(id, context.rules());
                     }
                 }
                 system.is_some()
@@ -825,6 +830,10 @@ impl Simulation {
             // constructor-owned child's ticket).
             None => false,
         };
+        // Ares `ObjectClass_DTOR` (hook `0x005F3D65`, `Ares.dll 100476E0`).
+        if removed {
+            self.delete_alpha_shape(stable_id, context.rules());
+        }
         debug_assert!(
             removed || kind.is_none(),
             "{kind:?} {stable_id} left no store at its destructor"
@@ -903,7 +912,9 @@ impl Simulation {
             }
         }
         self.substrate.pending_delete.finish_drain();
-        self.substrate.anims.drain_local_deletes();
+        for anim in self.substrate.anims.drain_local_deletes() {
+            self.delete_anim_alpha_shape(anim);
+        }
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.

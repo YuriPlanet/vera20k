@@ -68,16 +68,19 @@ pub struct RmgOptions {
     /// tech buildings the generator seats.
     pub tech_building_amount: i32,
     /// VERA extension: derelict combat buildings, 0 = none. A 0..100 slider
-    /// that scatters neutral, unpowered military buildings (radar, lab,
-    /// refinery, war factory, barracks, power, yard) over open ground.
+    /// that scatters neutral, unpowered military buildings (`[Extras]
+    /// Derelicts=`, else the Rules' `[AI]` construction yard, barracks, battle
+    /// lab and war factory lists) over open ground.
     pub derelict_amount: i32,
     /// VERA extension: damage level, 0 = leave building health as generated.
     /// A 0..100 slider that randomly damages every neutral building on the map
     /// for a war-torn look; stronger than the War Damage Extra wins.
     pub damage_amount: i32,
-    /// VERA extension: extra civilians, 0 = only the original urban foots. A
-    /// 0..100 slider that scatters civilian infantry and vehicles (the same
-    /// kinds a town already places) over open ground, all on Neutral.
+    /// VERA extension: civilians, 0 = none. A 0..100 slider that scatters
+    /// civilian infantry and vehicles (the same kinds a town places) over open
+    /// ground, all on Neutral. At 0 the urban districts (Ares' `UrbanAreas`,
+    /// Urban Presence) place no foot traffic either, so the default leaves
+    /// out the original urban foots.
     pub civilian_amount: i32,
     /// VERA extension: animals, 0 = none. A 0..100 slider that scatters the
     /// rules' `Name=Animal …` infantry and vehicles on Neutral ground.

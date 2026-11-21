@@ -37,9 +37,9 @@ fn stream<'a>(corpus: &'a Value, state: &Value, name: &str) -> &'a str {
 }
 
 fn restore_rng(sim: &mut Simulation, corpus: &Value, state: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "main"));
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "scenario"));
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "mapgen"));
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "main"));
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "scenario"));
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "mapgen"));
 }
 
 fn assert_rng(sim: &Simulation, corpus: &Value, state: &Value, label: &str) {
@@ -84,7 +84,7 @@ impl Scene {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let bounds = &control["input"]["map"]["coordinate_bounds"];
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
                 int(&control["input"]["map"]["size"][0]),
                 int(&bounds[0]),
@@ -126,7 +126,7 @@ impl Scene {
             visibility.mark_visible(x, y);
         }
         sim.fog.by_owner_mut_for_test().insert(owner, visibility);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(3));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(3));
         let wall_type = sim.interner.get("GAWALL").unwrap();
         Some(Self {
             sim,

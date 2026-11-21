@@ -32,7 +32,7 @@ fn guard_pick(patch: &str, wall_owner: &str) -> Option<Option<TargetKind>> {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     let tank = sim
         .spawn_object_with_overlay_registry("MTNK", "Russians", 16, 16, 64, rules, &registry)
         .expect("scanner");

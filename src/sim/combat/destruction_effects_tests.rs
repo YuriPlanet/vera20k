@@ -1067,9 +1067,9 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             // Match the native control's complete ambient streams after
             // setup. The physical Super section above is parsed by the same
             // production reader; ignoreDefenses bypasses armor calculation.
-            sim.main_rng = SimRng::new(1);
-            sim.scenario_rng = SimRng::new(1);
-            sim.mapgen_rng = SimRng::new(1);
+            *sim.main_rng = SimRng::new(1);
+            *sim.scenario_rng = SimRng::new(1);
+            *sim.mapgen_rng = SimRng::new(1);
             replay = sim.scenario_rng.clone();
             for (stream, rng) in [
                 ("main", sim.main_rng.native_state_hex()),
@@ -1393,7 +1393,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             assert!(smudges.cell(x, y).type_id.is_none() && field("smudge").is_none());
         }
         let marks_before = smudges.clone();
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_before"].as_str().unwrap()
@@ -1640,7 +1640,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         cues: RefCell<Vec<SimSoundEvent>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 let name = match event {
                     SimSoundEvent::VocAt { sound_id, .. }
@@ -1648,7 +1648,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
                     SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
                     _ => continue,
                 };
-                if matches!(name.as_str(), "ConscriptDie" | "BuildingGenericDie") {
+                if matches!(name.name_in(rules), "ConscriptDie" | "BuildingGenericDie") {
                     self.cues.borrow_mut().push(event.clone());
                 }
             }
@@ -1720,7 +1720,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         matches!(cues.as_slice(), [
         SimSoundEvent::VocAt { sound_id: child, .. },
         SimSoundEvent::VocAtCoord { sound_id: parent, coordinate, flags: 0 },
-    ] if child == "ConscriptDie" && parent == "BuildingGenericDie"
+    ] if child.name_in(&rules) == "ConscriptDie" && parent.name_in(&rules) == "BuildingGenericDie"
         && *coordinate == location),
         "unexpected death cue order/API: {cues:?}"
     );

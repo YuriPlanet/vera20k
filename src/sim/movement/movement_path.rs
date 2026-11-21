@@ -19,6 +19,9 @@ use super::PathfindingContext;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum MovePathFailure {
     MissingGrid,
+    /// A malformed retained direction or tube index that 429780 would read
+    /// beyond the represented direction table or tube registry.
+    UnrepresentedPrefix,
     Search(zone_search::PathSearchFailure),
 }
 
@@ -140,7 +143,7 @@ mod tests {
         )
         .expect("the finished route reaches the Foot");
         let mut queue = crate::sim::components::FootPathQueue::default();
-        queue.install_directions(&path);
+        queue.install_directions(&path, false);
         assert_eq!(queue.remaining_directions(), &[2, 1, 1]);
     }
 

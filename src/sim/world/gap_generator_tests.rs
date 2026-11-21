@@ -341,7 +341,7 @@ fn defeat_does_not_reclassify_an_active_hostile_gap() {
 
     let hash = sim.state_hash();
     let bytes = crate::util::save_codec::serialize(&sim.fog).unwrap();
-    sim.fog = crate::util::save_codec::deserialize(&bytes).unwrap();
+    *sim.fog = crate::util::save_codec::deserialize(&bytes).unwrap();
     assert_eq!(
         sim.state_hash(),
         hash,
@@ -535,7 +535,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             .active()
     );
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0); // native Scenario load reset
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0); // native Scenario load reset
     let before = sim.state_hash();
     let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "gap-power-order", 0);
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -597,7 +597,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             "{}",
             case["name"]
         );
-        views.push((live.fog, viewer, shrouded));
+        views.push((live.fog.into_inner(), viewer, shrouded));
     }
     views
 }
@@ -869,12 +869,12 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
 pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, bool)> {
     let (mut sim, rules, viewer, gapper, _) = fixture();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     sim.session.set_current_house_for_test(Some(viewer));
     let source = sim
         .spawn_object("SIGHT", "Americans", 16, 16, 0, &rules)
         .expect("source Unlimbo");
-    let mut views = vec![(sim.fog.clone(), viewer, true)];
+    let mut views = vec![((*sim.fog).clone(), viewer, true)];
     sim.spawn_object("POWER", "Soviet", 2, 2, 0, &rules)
         .expect("power Unlimbo");
     let gap = sim
@@ -893,16 +893,16 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
             .active()
     );
     assert_ne!(viewer, gapper);
-    views.push((sim.fog.clone(), viewer, true));
+    views.push(((*sim.fog).clone(), viewer, true));
     sim.techno_limbo_with_rules(source, &rules);
     refresh(&mut sim, &rules);
     assert!(!sim.fog.sight_is_latched(source, viewer));
-    views.push((sim.fog.clone(), viewer, true));
+    views.push(((*sim.fog).clone(), viewer, true));
     for (frame, open) in [(119, true), (120, false)] {
         sim.session.set_binary_frame_for_test(frame);
         sim.tick_pending_shroud_conceal(UninitContext::new(&rules));
         assert_eq!(sim.fog.is_cell_revealed(viewer, 16, 16), open);
-        views.push((sim.fog.clone(), viewer, open));
+        views.push(((*sim.fog).clone(), viewer, open));
     }
     views
 }
@@ -912,7 +912,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
 pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, InternedId)> {
     let (mut sim, rules, a, b, c) = fixture();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let hostile = sim.intern("Neutral");
     sim.houses
         .register(HouseState::new(hostile, 3, None, false, 10_000, 10));
@@ -948,11 +948,11 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
         assert!(sim.fog.is_cell_visible(b, 16, 16));
         assert!(!sim.fog.is_cell_visible(c, 16, 16));
         assert!(!sim.fog.is_cell_revealed(c, 16, 16));
-        views.push((sim.fog.clone(), b, c));
+        views.push(((*sim.fog).clone(), b, c));
     }
     sim.techno_limbo_with_rules(gap, &rules);
     assert!(!sim.fog.is_cell_revealed(c, 16, 16));
-    views.push((sim.fog.clone(), b, c));
+    views.push(((*sim.fog).clone(), b, c));
     views
 }
 

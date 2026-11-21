@@ -411,6 +411,11 @@ impl Simulation {
         ctx: &mut ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
+        // BulletClass::AI opens with ObjectClass::AI, which Ares'
+        // `ObjectClass_Update_AlphaLight` (`0x005F3E70`, `10047730`) heads.
+        if rules.ares() {
+            self.update_alpha_shape(id, ObjectKind::Projectile, rules);
+        }
         // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
         if rules.ares()
             && let Some(bullet) = self.projectiles.get(id)
@@ -589,6 +594,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         let context =
             self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
@@ -609,6 +615,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         if !result.alive {
             let retired = self.retire_non_entity_object(
@@ -694,7 +701,11 @@ impl Simulation {
             }
             Some(ObjectKind::Terrain) => {
                 // TerrainClass::AI @ 0x0071C730 calls ObjectClass::AI first
-                // (`0x0071C738`).
+                // (`0x0071C738`), whose entry Ares hooks
+                // (`ObjectClass_Update_AlphaLight`).
+                if rules.ares() {
+                    self.update_alpha_shape(id, ObjectKind::Terrain, rules);
+                }
                 self.object_ai_sounds(id, rules, &mut ctx.effects);
                 if let Err(error) = crate::sim::terrain_spawn::tick_terrain_object_ai(
                     self,
@@ -814,7 +825,7 @@ impl Simulation {
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         ) && !self.quiet(id)
-            && entity.low_bridge_tube_state.is_some()
+            && entity.active_tube().is_some()
         {
             return outcome;
         }

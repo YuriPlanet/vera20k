@@ -85,6 +85,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::game_entity::NameNote;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
@@ -161,7 +162,7 @@ impl C4Detonation {
 
     /// The C4 arm's write (`0x0051A5A7..0x0051A608`): the fuse starts at
     /// `frame` with the planter as C4AppliedBy.
-    pub(crate) fn plant(&mut self, frame: i32, fuse: i32, planter: u64) {
+    pub(crate) fn plant(&mut self, frame: i32, fuse: i32, planter: u64, _: NameNote) {
         self.pending = Some(PendingC4Detonation::new(
             CdTimer::started(frame, fuse),
             Some(planter),
@@ -242,6 +243,7 @@ impl C4Detonation {
     /// Install a fixture's latch.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, pending: Option<PendingC4Detonation>) {
+        NameNote::fixture();
         self.pending = pending;
     }
 }
@@ -361,10 +363,11 @@ impl Simulation {
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
             self.substrate.flash_building(building, flash, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
+                let note = target.note_names();
                 target
                     .building
                     .pending_c4_detonation
-                    .plant(frame as i32, fuse, id);
+                    .plant(frame as i32, fuse, id, note);
             }
         }
         if let Some(infantry) = self.substrate.entities.get_mut(id) {
@@ -427,10 +430,11 @@ impl Simulation {
             let fuse = rules.c4_delay_frames();
             self.substrate.flash_building(building, fuse / 2, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
+                let note = target.note_names();
                 target
                     .building
                     .pending_c4_detonation
-                    .plant(frame as i32, fuse, id);
+                    .plant(frame as i32, fuse, id, note);
             }
             let context = UninitContext::new(rules).with_effects(effects);
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);

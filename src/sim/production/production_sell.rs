@@ -654,7 +654,7 @@ pub fn sell_stage_zero(
         // already reached in this visit, so playback waits for its next head.
         // Select before native44AA3D HandleReturnedSlaves.
         if let Some(sound_id) = sim.deploy_voice_request(rules, id, true) {
-            let sound_id = sound_id.to_owned();
+            let sound_id = rules.sound_name(sound_id);
             sim.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: id,
                 sound_id,
@@ -896,7 +896,7 @@ fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
                 entity.owner(),
                 entity.position,
                 undeploys(rules, object) && object.foundation.dimensions() == (1, 1),
-                object.packup_sound.clone(),
+                object.packup_sound.as_deref(),
             ))
         })
     else {
@@ -907,14 +907,20 @@ fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     }
     let audible_to = Some([owner, owner]);
     if !qualifying_undeploy(sim, rules, id)
-        && let Some(sound) = rules.general.sell_sound.clone()
+        && let Some(sound) = rules.general.sell_sound.as_deref()
     {
-        sim.sound_events
-            .emit(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+        sim.sound_events.emit(SimSoundEvent::voc_at_for(
+            rules.sound_name(sound),
+            audible_to,
+            &position,
+        ));
     }
     if let Some(sound) = packup {
-        sim.sound_events
-            .emit(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+        sim.sound_events.emit(SimSoundEvent::voc_at_for(
+            rules.sound_name(sound),
+            audible_to,
+            &position,
+        ));
     }
 }
 

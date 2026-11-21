@@ -11,6 +11,7 @@ use crate::app::match_runtime::session::{
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
 use crate::app::shell_network_setup::{self as setup, NetworkSetupEvent, NetworkSetupRequest};
+use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::*;
 use crate::ui::lan_shell::{LanChatLine, LanGameRow, LanPlayerRow};
 use crate::ui::shell::geom::RectPx;
@@ -530,9 +531,9 @@ impl LanCapture {
     }
     fn settle(&mut self, state: &mut AppState) {
         MoviesCapture::restore_neutral_pointer(state);
-        if state.frontend.shell_route.lan_lobby() {
+        if state.frontend.shell_route == ShellRoute::LanLobby {
             lobby::cursor_moved(state);
-        } else if state.frontend.shell_route.network_setup() {
+        } else if state.frontend.shell_route == ShellRoute::NetworkSetup {
             setup_input::cursor_moved(state);
         }
         self.phase = LanPhase::Settle(SETTLE_FRAMES);
@@ -645,7 +646,12 @@ impl LanCapture {
                 launch,
                 vacancies,
                 map_metadata: if self.target == LanTarget::CoopGuest {
-                    setup::local_map_metadata(state, COOP_MAP)?
+                    setup::local_map_metadata(
+                        state.platform.game_config.as_ref(),
+                        &state.frontend.scenario_catalog,
+                        &state.process_assets,
+                        COOP_MAP,
+                    )?
                 } else {
                     self.map_metadata()?
                 },
@@ -870,7 +876,7 @@ impl LanCapture {
         );
         setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
         let view = setup::view(state).context("BD")?;
-        let expected = App::csf_label(state, "NAME:COOPDESC21", "NAME:COOPDESC21");
+        let expected = state.csf_label("NAME:COOPDESC21", "NAME:COOPDESC21");
         ensure!(
             view.cooperative && view.cooperative_description.as_deref() == Some(expected.as_str()),
             "BD lacks the received campaign's description"
@@ -991,7 +997,10 @@ impl LanCapture {
                 for index in &peers {
                     ensure!(
                         crate::app::loading::pump::accept_network_loading_progress(
-                            state, *index, terminal,
+                            &mut state.frontend,
+                            &state.match_state.session,
+                            *index,
+                            terminal,
                         ),
                         "controlled peer completion was refused"
                     );
@@ -1035,9 +1044,13 @@ impl LanCapture {
             {
                 App::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                        crate::ui::main_menu_shell::MainMenuShellAction::Network,
-                    ),
+                    crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                    move |state| {
+                        crate::app::App::handle_main_menu_shell_action(
+                            state,
+                            crate::ui::main_menu_shell::MainMenuShellAction::Network,
+                        )
+                    },
                 );
                 ensure!(
                     state.frontend.shell_exit.is_some(),
@@ -1053,7 +1066,9 @@ impl LanCapture {
                     "BB acquired a competing setup"
                 );
                 let name = self.human(!self.target.guest())?.name;
-                let rect = lobby::layout(state).name;
+                let rect = lobby::layout(state)
+                    .rect(crate::ui::lan_shell::NAME)
+                    .unwrap_or_default();
                 lobby_click(state, rect);
                 lobby::key_press(state, Some(KeyCode::Home), None);
                 for _ in 0..32 {
@@ -1064,7 +1079,7 @@ impl LanCapture {
                 // Set the real BB checkbox through its native icon hit owner.
                 // This also makes repeated captures independent of saved preference.
                 let want_observer = self.target.host_observer();
-                let current = state.frontend.lan.as_ref().context("BB")?.lobby.observer;
+                let current = state.frontend.multiplayer_shell_runtime.lan_observer();
                 if current != want_observer
                     || (want_observer
                         && !state
@@ -1072,7 +1087,9 @@ impl LanCapture {
                             .multiplayer_shell_runtime
                             .lan_create_observer())
                 {
-                    let rect = lobby::layout(state).observer_toggle;
+                    let rect = lobby::layout(state)
+                        .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                        .unwrap_or_default();
                     lobby_click(state, rect);
                     if want_observer
                         && !state
@@ -1080,7 +1097,9 @@ impl LanCapture {
                             .multiplayer_shell_runtime
                             .lan_create_observer()
                     {
-                        let rect = lobby::layout(state).observer_toggle;
+                        let rect = lobby::layout(state)
+                            .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                            .unwrap_or_default();
                         lobby_click(state, rect);
                     }
                 }
@@ -1095,7 +1114,9 @@ impl LanCapture {
                         self.phase = LanPhase::MainReturn;
                     }
                     LanTarget::Chat => {
-                        let rect = lobby::layout(state).chat;
+                        let rect = lobby::layout(state)
+                            .rect(crate::ui::lan_shell::CHAT)
+                            .unwrap_or_default();
                         lobby_click(state, rect);
                         lobby::key_press(state, None, Some("Hello"));
                         lobby::key_press(state, Some(KeyCode::Enter), None);
@@ -1140,7 +1161,9 @@ impl LanCapture {
                                 open: true,
                             }]),
                         );
-                        let rect = lobby::layout(state).games;
+                        let rect = lobby::layout(state)
+                            .rect(crate::ui::lan_shell::GAMES)
+                            .unwrap_or_default();
                         lobby_click(state, RectPx::new(rect.x + 8, rect.y + 26, 4, 4));
                         lobby::service_event(
                             state,
@@ -1416,7 +1439,13 @@ impl LanCapture {
                                 .position(|map| map.player_capacity >= 3)
                                 .context("a map for three players")?;
                             crate::app::shell_network_setup::commit_map_selection(
-                                state, mode_id, index, None,
+                                state.platform.game_config.as_ref(),
+                                &mut state.frontend,
+                                &mut state.match_state,
+                                &state.process_assets,
+                                mode_id,
+                                index,
+                                None,
                             )?;
                             let file = state
                                 .match_state
@@ -1531,7 +1560,7 @@ impl LanCapture {
                             let view =
                                 setup::view(state).context("BC projection after departure")?;
                             ensure!(
-                                view.host
+                                view.dialog.host
                                     // Visible vacant rows retain their country flag;
                                     // only participant status must disappear.
                                     && view.row_icons[1].as_ref().is_none_or(|icon| {
@@ -1547,7 +1576,7 @@ impl LanCapture {
                                 "removed peer remains in the rendered BC projection"
                             );
                             ensure!(
-                                state.frontend.shell_route.network_setup()
+                                state.frontend.shell_route == ShellRoute::NetworkSetup
                                     && state
                                         .frontend
                                         .multiplayer_setup
@@ -1741,14 +1770,7 @@ impl LanCapture {
                         );
                         setup_click(state, arrow);
                         ensure!(
-                            state
-                                .frontend
-                                .multiplayer_setup
-                                .as_ref()
-                                .context("BC popup")?
-                                .popup
-                                .control
-                                == Some(control),
+                            setup_input::open_list(state).map(|(id, _)| id) == Some(control),
                             "actual combo arrow did not open its popup"
                         );
                         self.route
@@ -1774,11 +1796,14 @@ impl LanCapture {
                         .context("enabled BC trackbar")?;
                     let rect = layout.control_rect(control).context("trackbar window")?;
                     let y = rect.y + rect.h / 2;
-                    // Ask the shared native hit owner for a non-thumb jump. The
-                    // actual mouse handler performs the change and publication.
+                    // Ask the gui's trackbar rule (what its widget does with a
+                    // press) for a non-thumb jump. The actual mouse handler
+                    // performs the change and publication.
+                    let range = bar.window_range();
+                    let scale = layout.page.scale;
                     let (x, expected) = (rect.x..rect.x + rect.w)
-                        .find_map(|x| match bar.press(x, y, rect, layout.page.scale) {
-                            crate::ui::shell::trackbar::TrackbarPress::Jump(value)
+                        .find_map(|x| match range.press_in(bar.value, x, y, rect, scale) {
+                            vera20k_gui::shell::trackbar::TrackbarPress::Jump(value)
                                 if value != bar.value =>
                             {
                                 Some((x, value))
@@ -1807,13 +1832,7 @@ impl LanCapture {
                         "trackbar did not change canonical options"
                     );
                     ensure!(
-                        state
-                            .frontend
-                            .multiplayer_setup
-                            .as_ref()
-                            .context("BC trackbar release")?
-                            .trackbar_hold
-                            .is_none(),
+                        !setup_input::slider_held(&state.frontend.shell_controller),
                         "trackbar capture survived mouse release"
                     );
                     ensure!(
@@ -1843,7 +1862,7 @@ impl LanCapture {
                         .context("BC chat")?
                         .chat;
                     ensure!(
-                        chat.edit.units.is_empty(),
+                        crate::app::input::multiplayer_setup::chat_text(state).is_empty(),
                         "chat Enter did not clear NewEdit"
                     );
                     ensure!(
@@ -1864,15 +1883,12 @@ impl LanCapture {
             } if rendered == PresentedShell::NetworkSetup => {
                 use crate::ui::multiplayer_setup::SetupColumn;
                 let view = setup::view(state).context("presented settings popup")?;
-                let layout = setup_input::layout(state);
-                let ui = state.frontend.multiplayer_setup.as_ref().context("BC")?;
+                let open = setup_input::open_list(state);
                 ensure!(
-                    ui.popup.control == Some(control),
+                    open.map(|(id, _)| id) == Some(control),
                     "settings popup changed before presentation"
                 );
-                let popup = ui
-                    .popup_geometry(&view, &layout)
-                    .context("presented popup geometry")?;
+                let popup = open.context("presented popup geometry")?.1.popup;
                 ensure!(
                     view.combo(control)
                         .and_then(|combo| combo.choices.get(index))
@@ -1883,14 +1899,7 @@ impl LanCapture {
                 let row_rect = popup.row_rect(index).context("visible popup choice")?;
                 setup_click(state, row_rect);
                 ensure!(
-                    state
-                        .frontend
-                        .multiplayer_setup
-                        .as_ref()
-                        .context("BC")?
-                        .popup
-                        .control
-                        .is_none(),
+                    setup_input::open_list(state).is_none(),
                     "choice click did not close popup"
                 );
                 let (column, row) =
@@ -2026,7 +2035,7 @@ impl LanCapture {
                         "host Start prompt changed readiness or omitted the eligible button prompt"
                     );
                     let expected =
-                        App::csf_label(state, "GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                        state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                     let actual = state
                         .frontend
                         .multiplayer_setup
@@ -2279,7 +2288,7 @@ impl LanCapture {
                 ensure!(bb.games.is_empty(), "returned BB retained old games");
                 if self.target == LanTarget::ModernHostLeft {
                     let key = "VERA:HostLeftRoomClosed";
-                    let expected = App::csf_label(state, key, key);
+                    let expected = state.csf_label(key, key);
                     let text: Vec<_> = bb
                         .chat
                         .lines
@@ -2313,17 +2322,27 @@ impl LanCapture {
             LanPhase::Loading
                 if state.frontend.screen == GameScreen::Loading
                     && self.target == LanTarget::RemoteLoadingProgress
-                    && crate::app::loading::pump::next_native_loading_frame(state)
+                    && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                         == Some(crate::app::loading::pump::NextLoadingFrame::First) =>
             {
                 // The original renderer has now created its immutable source
                 // rows. Supply only the remote service milestone, never local progress.
                 ensure!(
-                    crate::app::loading::pump::accept_network_loading_progress(state, 1, 50),
+                    crate::app::loading::pump::accept_network_loading_progress(
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        1,
+                        50
+                    ),
                     "remote loading service input refused"
                 );
                 ensure!(
-                    !crate::app::loading::pump::accept_network_loading_progress(state, 0, 50),
+                    !crate::app::loading::pump::accept_network_loading_progress(
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        0,
+                        50
+                    ),
                     "local loading progress accepted remote input"
                 );
                 self.event(
@@ -2402,8 +2421,7 @@ impl LanCapture {
                                 .is_some_and(|house| !house.is_to_die()),
                         "timeout did not flag only the mapped remote House before first simulation tick"
                     );
-                    let template =
-                        App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
+                    let template = state.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
                     let text = crate::assets::csf_file::format_csf(
                         &template,
                         &[crate::assets::csf_file::CsfArg::Str(
@@ -2557,11 +2575,12 @@ impl LanCapture {
                     LanTarget::HostObserveOffered => None,
                     _ => Some(crate::ui::shell::abort::AbortButton::Leave),
                 };
-                self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                self.abort_input = Some(abort_return::AbortReturnInput::begin(
                     state,
                     &mut self.route,
                     frame,
-                    choice,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
                 self.phase = LanPhase::AbortInput;
             }
@@ -2607,8 +2626,7 @@ impl LanCapture {
                     ensure!(!destructs_pending, "defeat preceded the DESTRUCT execution");
                     // MPlayer_Defeated's local line (4FC271..4FC2DB) names the
                     // House by its own +0x1602A, the host's handle.
-                    let template =
-                        App::csf_label(state, "TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
+                    let template = state.csf_label("TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
                     let line = crate::assets::csf_file::format_csf(
                         &template,
                         &[crate::assets::csf_file::CsfArg::Str(
@@ -2633,11 +2651,12 @@ impl LanCapture {
                         "tick":tick,"latch":state.match_state.match_presentation.modal_latch,
                         "message_rows":rows}),
                     );
-                    self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                    self.abort_input = Some(abort_return::AbortReturnInput::begin(
                         state,
                         &mut self.route,
                         frame,
-                        None,
+                        abort_return::AbortGoal::Choose(None),
+                        true,
                     )?);
                     self.phase = LanPhase::ObservedAbort;
                 }
@@ -2691,7 +2710,7 @@ impl LanCapture {
                     state.match_state.session.network_connected_source_indices() == [0],
                     "the peer's connection was not dropped"
                 );
-                let template = App::csf_label(state, "TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let template = state.csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
                 let line = crate::assets::csf_file::format_csf(
                     &template,
                     &[crate::assets::csf_file::CsfArg::Str(peer_name)],
@@ -2727,7 +2746,7 @@ impl LanCapture {
                 self.phase = LanPhase::Settle(2);
             }
             LanPhase::CoopOutcome => {
-                if !crate::app::input::coop_score::active(state) {
+                if !crate::app::input::coop_score::active(&state.frontend) {
                     return Ok(());
                 }
                 ensure!(
@@ -3050,34 +3069,14 @@ impl LanCapture {
                     before.enabled && !before.checked && !before.partner,
                     "peer Allies box {before:?}"
                 );
-                let point = set_window_pointer_to_rect_center(
-                    state,
-                    layout.control_rect(DiplomacyControl::Allies(1)),
-                );
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.control_rect(DiplomacyControl::Allies(1)));
                 ensure!(
                     row(state) == Some(before),
                     "the box changed before the event executed"
                 );
                 // The open dialog runs network-modal frames, which hold the
                 // queued event; Return lets it execute.
-                let back = set_window_pointer_to_rect_center(
-                    state,
-                    layout.control_rect(DiplomacyControl::Return),
-                );
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let back = click_in_game(state, layout.control_rect(DiplomacyControl::Return));
                 self.route
                     .push(json!({"frame":frame,"action":"Allies box pressed, Return",
                     "point":point,"return":back}));
@@ -3109,10 +3108,15 @@ impl LanCapture {
                     .simulation;
                 let order = sim.houses().order().to_vec();
                 let name = |index: usize| {
-                    crate::app::presentation::house_ui::house_ui_name(state, order[index])
-                        .unwrap_or_default()
+                    crate::app::presentation::house_ui::house_ui_name(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        order[index],
+                    )
+                    .unwrap_or_default()
                 };
-                let template = App::csf_label(state, "TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
+                let template = state.csf_label("TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
                 let line = |a: usize, b: usize| {
                     crate::assets::csf_file::format_csf(
                         &template,
@@ -3176,17 +3180,6 @@ impl LanCapture {
                 .map(|message| message.text.clone())
                 .collect()
         };
-        let click = |state: &mut AppState, rect: RectPx| {
-            let point = set_window_pointer_to_rect_center(state, rect);
-            crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-            for edge in [
-                winit::event::ElementState::Pressed,
-                winit::event::ElementState::Released,
-            ] {
-                crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-            }
-            point
-        };
         match step {
             0 => {
                 let color = state
@@ -3217,12 +3210,12 @@ impl LanCapture {
                         .map(|chat| chat.checked)
                 };
                 ensure!(checked(state) == Some(true), "peer chat box not checked");
-                let point = click(state, layout.control_rect(DiplomacyControl::Chat(1)));
+                let point = click_in_game(state, layout.control_rect(DiplomacyControl::Chat(1)));
                 ensure!(
                     checked(state) == Some(false),
                     "the chat box click left it checked"
                 );
-                click(state, layout.control_rect(DiplomacyControl::Return));
+                click_in_game(state, layout.control_rect(DiplomacyControl::Return));
                 self.route
                     .push(json!({"frame":frame,"action":"peer chat box cleared","point":point}));
                 self.phase = LanPhase::Chat(2);
@@ -3249,7 +3242,7 @@ impl LanCapture {
                     }
                 };
                 let prefix = crate::assets::csf_file::format_csf(
-                    &App::csf_label(state, "TXT_FROM", "TXT_FROM"),
+                    &state.csf_label("TXT_FROM", "TXT_FROM"),
                     &[crate::assets::csf_file::CsfArg::Str(&host)],
                 );
                 // Enter: the chat-mask set, now empty of connected peers.
@@ -3384,7 +3377,13 @@ impl LanCapture {
                 self.phase = LanPhase::Taunt(1);
             }
             1 => {
-                crate::app::input::taunt::receive(state, 0x82);
+                crate::app::input::taunt::receive(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    0x82,
+                );
                 let received = playing(state);
                 ensure!(received != Some(false), "the received taunt is not playing");
                 super::super::skirmish::press_diplomacy_tab(state)?;
@@ -3399,33 +3398,18 @@ impl LanCapture {
                     "TauntsOn is not shown checked"
                 );
                 let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
-                let click = |state: &mut AppState, rect: RectPx| {
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            edge,
-                        );
-                    }
-                    point
-                };
                 // A press on the caption is outside the 18x18 icon.
                 let rect = layout.control_rect(DiplomacyControl::Taunts);
-                click(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
+                click_in_game(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
                 ensure!(
                     diplomacy::view(state).taunts == Some(true),
                     "a caption press toggled TauntsOn"
                 );
-                let point = click(
+                let point = click_in_game(
                     state,
                     crate::ui::skirmish_shell::checkbox_icon_rect(
                         rect,
-                        crate::ui::shell::geom::ShellScale::RETAIL,
+                        crate::ui::shell::geom::RETAIL_SCALE,
                     ),
                 );
                 ensure!(
@@ -3435,7 +3419,13 @@ impl LanCapture {
                 if let Some(sfx) = state.audio.sfx_player.as_mut() {
                     sfx.stop_all();
                 }
-                crate::app::input::taunt::receive(state, 0x83);
+                crate::app::input::taunt::receive(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    0x83,
+                );
                 ensure!(
                     playing(state) != Some(true),
                     "a taunt played with TauntsOn cleared"
@@ -3443,7 +3433,10 @@ impl LanCapture {
                 // A send past the 5 s clock is refused by the player's own
                 // TauntsOn.
                 crate::app::input::taunt::execute(
-                    state,
+                    &mut state.frontend.multiplayer_shell_runtime,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
                     2,
                     crate::app::match_runtime::frame_pacer::wall_clock_ms() + 60_000,
                 );
@@ -3506,7 +3499,7 @@ impl LanCapture {
         }
         if self.phase == LanPhase::CoopNextLoading {
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         if self.phase == LanPhase::RemoteProgress {
@@ -3526,7 +3519,7 @@ impl LanCapture {
                 "network handoff became offline"
             );
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         Ok(self.phase == LanPhase::Settle(0)
@@ -3541,7 +3534,7 @@ impl LanCapture {
         if let Some(live) = &self.live {
             return live.receipt(state);
         }
-        let presentation = crate::app::loading::pump::network_loading_presentation(state);
+        let presentation = crate::app::loading::pump::network_loading_presentation(&state.frontend);
         if self.target == LanTarget::HostObserverGo {
             use crate::render::loading_screen_chrome::LoadingArtVariant;
             let loading = presentation
@@ -3590,7 +3583,10 @@ fn cooperative_mode(state: &AppState) -> Result<&crate::skirmish_modes::Skirmish
 /// Click Cooperative in the open chooser's game types; `+0x4C` lists the
 /// campaigns, whose labels this returns.
 fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let mode_id = cooperative_mode(state)?.id;
     let modal = state
         .frontend
@@ -3604,7 +3600,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
         .position(|mode| mode.id == mode_id)
         .context("Cooperative listed on the network")?;
     let point = list_row_point(modal.mode_geometry(&layout), row, modal.mode_top_index);
-    chooser_press(state, point);
+    super::super::skirmish::click_chooser(state, point);
     let modal = state
         .frontend
         .skirmish_shell_state
@@ -3634,7 +3630,10 @@ fn use_soviet_campaign_row(state: &mut AppState, labels: &[String]) -> Result<()
 
 /// Selects a Cooperative chooser row and presses Use Map.
 fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let modal = state
         .frontend
         .skirmish_shell_state
@@ -3642,7 +3641,7 @@ fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
         .as_ref()
         .context("chooser")?;
     let point = list_row_point(modal.map_geometry(&layout), row, modal.map_top_index);
-    chooser_press(state, point);
+    super::super::skirmish::click_chooser(state, point);
     ensure!(
         state
             .frontend
@@ -3652,14 +3651,17 @@ fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
             .is_some_and(|modal| modal.highlighted_filtered_index == Some(row)),
         "chooser row {row} was not selected"
     );
-    let button = layout.use_map_button;
-    chooser_press(state, (button.x + button.w / 2, button.y + button.h / 2));
+    let button = layout.rect(0x6C5);
+    super::super::skirmish::click_chooser(
+        state,
+        (button.x + button.w / 2, button.y + button.h / 2),
+    );
     Ok(())
 }
 
 /// The middle of a chooser list's row.
 fn list_row_point(
-    geometry: crate::ui::shell::list::ShellListGeometry,
+    geometry: vera20k_gui::shell::list::ShellListGeometry,
     row: usize,
     top: usize,
 ) -> (i32, i32) {
@@ -3668,14 +3670,6 @@ fn list_row_point(
         geometry.content.x + 4,
         geometry.content.y + (row.saturating_sub(top) as i32) * row_h + row_h / 2,
     )
-}
-
-/// A press and release on the chooser through its production handlers.
-fn chooser_press(state: &mut AppState, (x, y): (i32, i32)) {
-    state.match_state.input.cursor_x = x as f32;
-    state.match_state.input.cursor_y = y as f32;
-    App::handle_choose_map_modal_mouse_down(state);
-    App::handle_choose_map_modal_mouse_up(state);
 }
 
 fn session_receipt(state: &AppState) -> Value {
@@ -3740,8 +3734,10 @@ impl RandomMapInput {
                             (2..=crate::map::rmg::MAX_PLAYERS as usize).contains(&players),
                             "random maps support two to thirty starts"
                         );
-                        let layout =
-                            crate::app::frontend::shell_layout::random_map_setup_layout(state);
+                        let layout = crate::app::frontend::shell_layout::random_map_setup_layout(
+                            &state.renderer,
+                            &state.frontend.screen,
+                        );
                         let slider = layout.control_rects[5];
                         let x = (slider.x..slider.x + slider.w)
                             .find(|&x| {
@@ -3839,7 +3835,7 @@ fn setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Lan,
         )),
@@ -3855,12 +3851,6 @@ fn lobby_click(state: &mut AppState, rect: RectPx) {
     lobby::mouse(state, MouseButton::Left, true);
     lobby::mouse(state, MouseButton::Left, false);
 }
-fn setup_click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
-    setup_input::cursor_moved(state);
-    setup_input::mouse(state, MouseButton::Left, true);
-    setup_input::mouse(state, MouseButton::Left, false);
-}
 /// New, then OK in VERA's Create Game box, keeping the host's last limits.
 fn create_lan_game(state: &mut AppState) -> Result<()> {
     lobby_button(state, crate::ui::lan_shell::CREATE)?;
@@ -3868,13 +3858,9 @@ fn create_lan_game(state: &mut AppState) -> Result<()> {
         .frontend
         .lan
         .as_ref()
-        .is_some_and(|runtime| runtime.create.is_some())
+        .is_some_and(|runtime| runtime.creating)
     {
-        let ok = crate::ui::shell::modal::lan_create_game_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
-        )
-        .ok;
+        let ok = lobby::create_box_layout(state).ok;
         lobby_click(state, ok);
     }
     Ok(())

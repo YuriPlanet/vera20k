@@ -144,33 +144,41 @@ impl Simulation {
     /// most 256 leptons apart (a straight neighbour for 1x1 pieces). Ares
     /// tests no owner.
     pub fn ares_can_traverse_to(&self, source_id: u64, target_id: u64, rules: &RuleSet) -> bool {
+        self.ares_traversing_occupants(source_id, target_id, rules)
+            .is_some()
+    }
+
+    /// The same leading occupants are offered by the cursor and moved by the
+    /// receiver. VERA refuses an order that would move an attached slave.
+    fn ares_traversing_occupants(
+        &self,
+        source_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> Option<&[u64]> {
         if source_id == target_id {
-            return false;
+            return None;
         }
         let entities = &self.substrate.entities;
-        let (Some(source), Some(target)) = (entities.get(source_id), entities.get(target_id))
-        else {
-            return false;
-        };
+        let source = entities.get(source_id)?;
+        let target = entities.get(target_id)?;
         let structure = crate::map::entities::EntityCategory::Structure;
         if source.category() != structure || target.category() != structure {
-            return false;
+            return None;
         }
-        let (Some(source_type), Some(target_type)) = (
-            self.object_type(source.type_ref(), rules),
-            self.object_type(target.type_ref(), rules),
-        ) else {
-            return false;
-        };
-        if i64::from(target.passenger_role().occupants().count())
-            >= i64::from(target_type.max_number_occupants)
-            || source.passenger_role().occupants().is_empty()
+        let source_type = self.object_type(source.type_ref(), rules)?;
+        let target_type = self.object_type(target.type_ref(), rules)?;
+        let occupants = source.passenger_role().occupants().ids();
+        let free = i64::from(target_type.max_number_occupants)
+            - i64::from(target.passenger_role().occupants().count());
+        if free <= 0
+            || occupants.is_empty()
             || !target_type.can_be_occupied
             || !source_type
                 .building_type_ext()
                 .same_trench(target_type.building_type_ext())
         {
-            return false;
+            return None;
         }
         // CoordStruct::DistanceFrom (sqrt of the squared sum) <= 256.0: the
         // integer square compares the same.
@@ -178,7 +186,16 @@ impl Simulation {
         let from = crate::sim::movement::ground_pose::object_location(source, terrain);
         let to = crate::sim::movement::ground_pose::object_location(target, terrain);
         let [dx, dy, dz] = [to.x - from.x, to.y - from.y, to.z - from.z].map(i64::from);
-        dx * dx + dy * dy + dz * dz <= 256 * 256
+        if dx * dx + dy * dy + dz * dz > 256 * 256 {
+            return None;
+        }
+        let moving = &occupants[..occupants.len().min(free as usize)];
+        (!moving.iter().any(|&id| {
+            entities
+                .get(id)
+                .is_some_and(|occupant| occupant.seldom.slave.owner().is_some())
+        }))
+        .then_some(moving)
     }
 
     /// `BuildingExt::ExtData::doTraverseTo @ 100130E0`, past
@@ -236,23 +253,12 @@ impl Simulation {
             u16::try_from(y).ok()?,
             crate::sim::movement::locomotor::MovementLayer::Ground,
         )?;
-        if !self.ares_can_traverse_to(source_id, target_id, rules) {
-            return None;
-        }
-        let source = self.substrate.entities.get(source_id)?;
-        let target = self.substrate.entities.get(target_id)?;
-        let max = i64::from(
-            self.object_type(target.type_ref(), rules)?
-                .max_number_occupants,
-        );
-        let free = max - i64::from(target.passenger_role().occupants().count());
-        let occupants = source.passenger_role().occupants().ids();
-        let moved = usize::try_from(free).unwrap_or(0).min(occupants.len());
+        let moving = self.ares_traversing_occupants(source_id, target_id, rules)?;
         if self.session.has_custom_control_grants() {
             let sender = sender?;
             // The same head prefix is admitted and moved. A retained pointer
             // awaiting expiry has no live actor to authorize.
-            if occupants.iter().take(moved).any(|&id| {
+            if moving.iter().any(|&id| {
                 self.substrate.entities.get(id).is_some_and(|occupant| {
                     !self
                         .control_scope_for_source(sender, occupant.owner())
@@ -262,16 +268,16 @@ impl Simulation {
                 return None;
             }
         }
-        Some((source_id, target_id, moved))
+        Some((source_id, target_id, moving.len()))
     }
 
     pub(crate) fn ares_trench_redirect_admits(
         &self,
-        sender: i8,
+        sender: Option<i8>,
         event: &AresTrenchRedirectRecord,
         rules: &RuleSet,
     ) -> bool {
-        self.ares_trench_redirect_transfer(Some(sender), event, rules)
+        self.ares_trench_redirect_transfer(sender, event, rules)
             .is_some()
     }
 

@@ -195,7 +195,7 @@ fn building_uninit_expires_attached_fires_then_limbo_uninits_them_and_survives_s
         assert!(sim.sound_events.iter().any(|event| matches!(event,
             SimSoundEvent::ObjectSoundReleased { owner } if *owner == *id)));
     }
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "building-expiry", 0);
     sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -765,7 +765,7 @@ fn deployment_attachment_expiry_clears_only_the_matching_pointer() {
 fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
     let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for owner in [100, 101] {
         sim.substrate
             .entities
@@ -847,7 +847,7 @@ fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
 fn the_last_anim_naming_an_owner_releases_it_through_writes_loads_and_removals() {
     let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for owner in [100, 101] {
         sim.substrate
             .entities
@@ -863,7 +863,7 @@ fn the_last_anim_naming_an_owner_releases_it_through_writes_loads_and_removals()
     }
     let parachuted =
         |sim: &Simulation, owner| sim.substrate.entities.get(owner).unwrap().is_parachuted();
-    sim.substrate.anims = crate::util::save_codec::deserialize(
+    *sim.substrate.anims = crate::util::save_codec::deserialize(
         &crate::util::save_codec::serialize(&sim.substrate.anims).unwrap(),
     )
     .unwrap();
@@ -1417,7 +1417,7 @@ fn combat_explosion_uses_the_verified_constructor_row_and_plays_report() {
         sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                if *anim_id == id && sound_id == "EXPLOSION06"
+                if *anim_id == id && sound_id.name_in(&rules) == "EXPLOSION06"
         )),
         "explosion must emit its art `Report=`, got {:?}",
         sim.sound_events
@@ -1542,7 +1542,7 @@ fn anim_store_saves_as_before_and_notes_every_hand_out() {
 fn runtime_anim_retains_native_identity_and_spends_it_before_asset_failure() {
     let rules = runtime_rules("[LIVE]\nRate=900\nEnd=2\n", &[("LIVE", 2)]);
     let mut sim = Simulation::new();
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     let live = sim.interner.intern("LIVE");
     let missing = sim.interner.intern("UNBOUND");
@@ -1558,6 +1558,38 @@ fn runtime_anim_retains_native_identity_and_spends_it_before_asset_failure() {
     assert_eq!(sim.anim(id).unwrap().native_unique_id, 1002);
     assert_ne!(id as i32, 1002, "stable handles have an independent owner");
     assert_eq!(sim.scenario_rng.logical_state(), rng);
+}
+
+/// A local anim skips its constructor stream exactly when the constructor
+/// would neither draw nor return a draw.
+#[test]
+fn only_random_rate_bouncer_and_meteor_constructors_draw() {
+    let rules = runtime_rules(
+        "[FLASH]\nEnd=2\n[RATED]\nRandomRate=50,150\nEnd=2\n\
+         [BOUNCY]\nBouncer=yes\nEnd=2\n[ROCK]\nIsMeteor=yes\nEnd=2\n",
+        &[("FLASH", 2), ("RATED", 2), ("BOUNCY", 2), ("ROCK", 2)],
+    );
+    let coord = AnimWorldCoord {
+        x: 128,
+        y: 128,
+        z: 20,
+    };
+    for (name, draws) in [
+        ("FLASH", false),
+        ("RATED", true),
+        ("BOUNCY", true),
+        ("ROCK", true),
+    ] {
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        assert_eq!(super::spawn::constructor_draws(config), draws, "{name}");
+        let mut rng = crate::sim::rng::SimRng::new(7);
+        let before = rng.logical_state();
+        let taken = anim_constructor_draws(config, coord, &mut rng).unwrap();
+        // Equal RandomRate bounds return a rate without a draw, so only the
+        // skipped side must leave the stream as it was.
+        assert!(draws || rng.logical_state() == before, "{name}");
+        assert_eq!(taken != AnimConstructorDraws::default(), draws, "{name}");
+    }
 }
 
 #[test]
@@ -1762,7 +1794,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         true,
         AnimOccupationOperation::Mark,
     );
@@ -1773,7 +1805,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Clear,
     );
@@ -1784,7 +1816,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Mark,
     );
@@ -1794,7 +1826,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Clear,
     );
@@ -1832,8 +1864,8 @@ fn make_infantry_occupation_reads_constructor_side_flags_without_sprite_state() 
             crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
         overlays.cell_mut_for_test(x, y).overlay_data = native["state"].as_u64().unwrap() as u8;
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(terrain);
-        sim.overlay_grid = Some(overlays);
+        *sim.resolved_terrain = Some(terrain);
+        *sim.overlay_grid = Some(overlays);
         assert!(sim.bridge_state.is_none());
         let world = AnimWorldCoord {
             x: i32::from(x) * 256 + 128,
@@ -1881,7 +1913,7 @@ fn make_infantry_occupation_reads_constructor_side_flags_without_sprite_state() 
 fn a_make_infantry_anim_left_of_the_map_edge_occupies_cell_zero() {
     const SIZE: u16 = 8;
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(
+    *sim.resolved_terrain = Some(
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
             SIZE,
             SIZE,
@@ -1931,7 +1963,7 @@ fn a_make_infantry_anim_left_of_the_map_edge_occupies_cell_zero() {
 fn a_make_infantry_anim_writes_owner_minus_one_on_a_real_or_dummy_cell() {
     const SIZE: u16 = 8;
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(
+    *sim.resolved_terrain = Some(
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
             SIZE,
             SIZE,
@@ -2176,7 +2208,7 @@ fn bouncer_launch_int_min_axes_match_the_original() {
         let mut sim = Simulation::with_seed(0);
         // The recorded seed describes native setup, not this constrained
         // boundary. Import every logical RNG field without reseeding it.
-        sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             row["rng_before"].as_str().unwrap(),
         );
         let type_id = sim.interner.intern(name);
@@ -2412,9 +2444,9 @@ fn middle_world(art_text: &str, frames: i32) -> (RuleSet, Simulation) {
             terrain.cell_mut_for_test(rx, ry).unwrap().accepts_smudge = true;
         }
     }
-    sim.resolved_terrain = Some(terrain);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
+    *sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
     (rules, sim)
 }
 
@@ -3327,7 +3359,7 @@ fn anim_store_slots_scheduler_and_hash_roundtrip() {
     assert!(sim.substrate.pending_delete.is_empty());
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // AnimStore/scheduler persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     let expected_order = sim.live_object_order_snapshot();
     let bytes = crate::util::save_codec::serialize(&sim).expect("serialize sim with AnimStore");
@@ -3373,7 +3405,7 @@ fn waypoint_cue_flare_scene() -> (Simulation, RuleSet, crate::sim::intern::Inter
     // MapRevealArea rejects the arena's default Size20 diamond edge at
     // (10,10). Install this scene's Size16 through the normal owner.
     sim.install_playfield_from_map_header(&map.header);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
     for (id, human) in [(player, true), (other, false)] {
@@ -3426,7 +3458,7 @@ fn waypoint_cue_flare_uses_tail_slot_reveals_current_house_and_keeps_first_start
     assert_eq!(anim.z_adjust, -300);
     assert!(anim.no_effects());
     assert!(anim.runtime.first_ai_guard);
-    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
+    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id.name_in(&rules)=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
     assert!(sim.fog.is_cell_revealed(player, 10, 10));
     assert!(!sim.fog.is_cell_revealed(player, 20, 20));
     let other = sim.interner.get("Other").unwrap();
@@ -3508,7 +3540,7 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
                 "424358 ends the flare before consuming19C"
             );
             assert!(sim.substrate.pending_delete.contains_object(&id));
-            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id=="EXPLOSIONSHARD")));
+            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id.name_in(&rules)=="EXPLOSIONSHARD")));
             sim.process_pending_delete();
             assert!(sim.anim(id).is_none());
         } else {

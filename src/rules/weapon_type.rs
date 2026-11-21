@@ -296,6 +296,12 @@ pub struct WeaponType {
     /// simulated child radiation beam takes the firing House's laser color.
     #[cfg(feature = "phobos")]
     pub phobos_beam_is_house_color: bool,
+    /// Kratos `NoMoneyNoTalk` (`WeaponTypeExt::TypeData`): the shot needs this
+    /// much available money (`can_fire` in `sim::combat::fire_error`); a
+    /// negative value refuses while the house holds more than its magnitude.
+    pub no_money_no_talk: i32,
+    /// Kratos `DontNeedMoney`: this weapon ignores `NoMoneyNoTalk`.
+    pub dont_need_money: bool,
 }
 
 impl WeaponType {
@@ -635,6 +641,12 @@ impl WeaponType {
                 )
             }))
             .filter(|range| range.values > 0),
+            no_money_no_talk: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_int("NoMoneyNoTalk", 0)
+            }),
+            dont_need_money: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_bool("DontNeedMoney", false)
+            }),
         }
     }
 }

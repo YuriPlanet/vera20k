@@ -287,7 +287,7 @@ fn mission_guard_matches_the_original() {
         if flag("target") {
             aim_at(&mut sim, building, target);
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         let returns = with_draws(&mut sim, row, |sim| {
             mission_guard(
                 sim,
@@ -569,8 +569,8 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
     assert_eq!(entity.mission.queued(), mission_of("guard"));
     assert_eq!(entity.building_body_state(), Some(1));
     assert_eq!(ready_latch(&sim, building), 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     object_ai_visit(&mut sim, building, &rules);
     let entity = sim.substrate.entities.get(building).unwrap();
     assert_eq!(entity.mission.current(), mission_of("guard"));
@@ -660,11 +660,11 @@ fn hidden_startup_matches_original_mission_and_rng() {
         entity
             .mission_leaf
             .set_building_ready_latch(input["ready"].as_u64().unwrap() as u8);
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         assert_hidden_startup_state(&sim, building, &row["initial"], name);
         assert_eq!(
@@ -786,7 +786,7 @@ fn building_dispatch_cadence_matches_the_original() {
                 (event[0].as_u64().unwrap(), kind)
             })
             .collect();
-        sim.scenario_rng = SimRng::new(1);
+        *sim.scenario_rng = SimRng::new(1);
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
         let start = sim.session.binary_frame();

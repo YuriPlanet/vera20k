@@ -46,7 +46,7 @@ pub(super) fn queue_stop_for_selected(state: &mut AppState) {
         return;
     }
     // VERA ferry: Stop also ends the selected transports' routes.
-    crate::app::input::ferry::stop_selected(state, &selected_ids);
+    crate::app::input::ferry::stop_selected(&mut state.match_state.input, &selected_ids);
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
@@ -110,10 +110,10 @@ pub(super) fn queue_stop_orders(
     rules
         .general
         .stop_sound
-        .as_ref()
+        .as_deref()
         .map_or_else(Vec::new, |sound_id| {
             vec![crate::audio::events::GameSoundEvent::UiSound {
-                sound_id: sound_id.clone(),
+                sound_id: rules.sound_name(sound_id),
             }]
         })
 }
@@ -235,10 +235,10 @@ pub(super) fn queue_scatter_orders(
     rules
         .general
         .scatter_sound
-        .as_ref()
+        .as_deref()
         .map_or_else(Vec::new, |sound_id| {
             vec![GameSoundEvent::UiSound {
-                sound_id: sound_id.clone(),
+                sound_id: rules.sound_name(sound_id),
             }]
         })
 }
@@ -285,10 +285,10 @@ pub(super) fn queue_area_guard_orders(
             return sounds;
         }
     }
-    if let Some(sound_id) = &rules.general.guard_sound {
+    if let Some(sound_id) = rules.general.guard_sound.as_deref() {
         // 730E73..730E8A: PlayAtPos750920, centre2000, volume1, no handle.
         sounds.push(GameSoundEvent::UiSound {
-            sound_id: sound_id.clone(),
+            sound_id: rules.sound_name(sound_id),
         });
     }
     sounds
@@ -321,7 +321,7 @@ pub(super) fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         return;
     }
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let Some(owner) = preferred_command_owner(state) else {
+    let Some(owner) = preferred_command_owner(&state.match_state.sim_runtime) else {
         return;
     };
     let local_owner = sim.interner().get(&owner);

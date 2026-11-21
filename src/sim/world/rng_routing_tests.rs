@@ -267,7 +267,7 @@ fn snapshot_load_resets_scenario_and_omits_process_globals() {
     for _ in 0..7 {
         sim.main_rng.next_u32();
     }
-    sim.mapgen_rng = SimRng::new(99);
+    *sim.mapgen_rng = SimRng::new(99);
     for _ in 0..3 {
         sim.mapgen_rng.next_u32();
     }
@@ -349,7 +349,7 @@ fn production_in_scenario_load_retains_live_seed_main_and_mapgen() {
     for _ in 0..7 {
         live.main_rng.next_u32();
     }
-    live.mapgen_rng = SimRng::new(99);
+    *live.mapgen_rng = SimRng::new(99);
     for _ in 0..3 {
         live.mapgen_rng.next_u32();
     }
@@ -404,12 +404,12 @@ fn saved_load_then_menu_reseed_matches_native_complete_rng_states() {
         let load = &row["after_scenario_save_load"];
         let before = &load["before"];
         let mut saved = Simulation::with_seed(0xAABB_CCDD);
-        saved.scenario_rng =
+        *saved.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
         let bytes = GameSnapshot::save(&saved, 0, 0, "menu-rng.map", 0);
         let mut live = Simulation::with_seed(load["global_seed_before"].as_u64().unwrap());
-        live.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
-        live.mapgen_rng =
+        *live.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
+        *live.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
         let live_before = live.rng_state();
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -479,7 +479,7 @@ fn cold_saved_load_retains_frontend_main_until_native_menu_reseed() {
             SimRng::from_native_state_hex_for_test(load["before"]["main"].as_str().unwrap()).into();
         let frontend_before = frontend_main.logical_state();
         let mut saved = Simulation::with_seed(0xFFFF_FFFF);
-        saved.scenario_rng =
+        *saved.scenario_rng =
             SimRng::from_native_state_hex_for_test(load["before"]["scenario"].as_str().unwrap());
         let bytes = GameSnapshot::save(&saved, 0, 0, "cold-menu-rng.map", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;

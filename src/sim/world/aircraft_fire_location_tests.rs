@@ -144,7 +144,7 @@ fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
         .as_array()
         .cloned()
         .unwrap_or_else(|| vec![json!(0), json!(0), json!(64), json!(64)]);
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             64,
             local[0].as_i64().unwrap() as i32,
@@ -465,7 +465,7 @@ fn aircraft_reengagement_matches_original_through_production_dispatch() {
         restored.restore_after_snapshot_load().unwrap();
         // The snapshot envelope's seed-reset policy is independent of the
         // persisted mission/navigation inputs compared in this fixture.
-        restored.scenario_rng = sim.scenario_rng.clone();
+        *restored.scenario_rng = (*sim.scenario_rng).clone();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for world in [&mut sim, &mut restored] {
             crate::sim::aircraft::tick_aircraft_missions(world, &rules);
@@ -600,7 +600,7 @@ fn fire_location_reads_restored_reservations_cargo_and_current_house() {
         restored.restore_after_snapshot_load().unwrap();
         // Save loading intentionally reinitializes Scenario RNG. Supply the
         // same continuation stream to isolate persistence of search inputs.
-        restored.scenario_rng = sim.scenario_rng.clone();
+        *restored.scenario_rng = (*sim.scenario_rng).clone();
         for world in [&mut sim, &mut restored] {
             assert_eq!(
                 selected(world.aircraft_find_fire_location(
@@ -619,6 +619,23 @@ fn fire_location_reads_restored_reservations_cargo_and_current_house() {
         }
         assert_eq!(sim.state_hash(), restored.state_hash(), "{name}");
     }
+}
+
+/// A live object's Cell NavCom holds its cell against a landing aircraft
+/// (`0x00419BF1`): the cell is not free for landing, and a cell nobody
+/// holds stays free.
+#[test]
+fn a_live_objects_cell_nav_com_holds_its_cell_against_a_landing_aircraft() {
+    let input = json!({"name": "reserved_holds_its_cell", "reserved": [[59, 64]]});
+    let (sim, rules) = fixture(&input);
+    assert!(
+        !sim.aircraft_cell_free_for_landing(1, (59, 64), true, &rules, &mut None),
+        "the cell a live object's NavCom holds is not free for landing"
+    );
+    assert!(
+        sim.aircraft_cell_free_for_landing(1, (59, 62), true, &rules, &mut None),
+        "a cell nobody holds stays free"
+    );
 }
 
 /// Unit737E43 restores a fatally hit surface ship, then737F7A unmarks it.
@@ -789,7 +806,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
     assert!(!sim.substrate.pending_delete.contains_object(&ship));
     assert!(sim.aircraft_cell_free_for_landing(hornet, (59, 64), false, &rules, &mut None));
     assert!(
-        sim.foot_land_zone_clear(hornet, target.unwrap(), &rules),
+        sim.foot_land_zone_clear(hornet, target.unwrap(), &rules, None),
         "empty bridge deck"
     );
     let before = sim.scenario_rng.logical_state();

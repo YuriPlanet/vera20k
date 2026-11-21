@@ -1,5 +1,11 @@
 //! Theater identity used by native high-bridge edge cleanup, 576770/576200.
 
+use crate::assets::asset_manager::AssetManager;
+use crate::assets::tmp_file::TmpFile;
+use crate::map::resolved_terrain::ResolvedTerrainCell;
+use crate::map::theater::TheaterData;
+use crate::rules::terrain_rules::{LandType, tmp_terrain_to_land_type};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HighBridgeRimTiles {
     pub base: i32,
@@ -96,6 +102,105 @@ impl HighBridgeRimTiles {
             }
             _ => false,
         }
+    }
+}
+
+/// The pristine WoodBridgeSet has separate template geometry from BridgeSet.
+#[derive(Debug, Clone, Default)]
+pub(super) struct WoodBridgeRimTiles(Vec<(i32, WoodBridgeRim)>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WoodBridgeRim {
+    direction: u8,
+    /// The first anchor is on the low strip of a start template.
+    anchor_subtile: Option<u8>,
+    road_subtile: u8,
+}
+
+impl WoodBridgeRim {
+    fn from_template(tmp: &TmpFile) -> Option<Self> {
+        let (direction, depth) = match (tmp.template_width, tmp.template_height) {
+            (depth @ (2 | 3), 5) => (2, depth),
+            (5, depth @ (2 | 3)) => (4, depth),
+            _ => return None,
+        };
+        let subtile = |along, across| {
+            if direction == 2 {
+                across * tmp.template_width + along
+            } else {
+                along * tmp.template_width + across
+            }
+        };
+        let tile = |along, across| tmp.tiles.get(subtile(along, across) as usize)?.as_ref();
+        let deck_height = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as u8;
+        // The two-deep raised road occupies the inner three lanes. A start
+        // template has a lower third row at the span, and an end has road
+        // at its span-facing edge. This is the retail Ovrpsb TMP layout
+        // (NewUrban Ovrpsb01/02/03/06) and works with reordered tile IDs.
+        if !(0..2).all(|along| {
+            (1..=3).all(|across| {
+                tile(along, across).is_some_and(|tile| {
+                    tile.has_damaged_data
+                        && tile.height == deck_height
+                        && tmp_terrain_to_land_type(tile.terrain_type) == LandType::Road
+                })
+            })
+        }) || (depth == 3
+            && !tile(2, 2).is_some_and(|tile| tile.has_damaged_data && tile.height < deck_height))
+        {
+            return None;
+        }
+        Some(Self {
+            direction,
+            anchor_subtile: (depth == 3).then(|| subtile(2, 2) as u8),
+            road_subtile: subtile(if depth == 3 { 1 } else { 0 }, 2) as u8,
+        })
+    }
+}
+
+impl WoodBridgeRimTiles {
+    pub(super) fn from_theater(theater: &TheaterData, assets: &AssetManager) -> Self {
+        let Some(bounds) = theater
+            .wood_bridge_set
+            .and_then(|set| theater.lookup.bounds().get(usize::from(set)))
+        else {
+            return Self::default();
+        };
+        let rims = (0..bounds.count)
+            .filter_map(|relative| {
+                let tile = bounds.start.checked_add(relative)?;
+                // Damaged art suffixes can carry a different footprint.
+                let filename = theater.lookup.filename_for_variant(tile, 0)?;
+                let tmp = TmpFile::from_bytes(assets.get_ref(filename)?).ok()?;
+                Some((i32::from(tile), WoodBridgeRim::from_template(&tmp)?))
+            })
+            .collect();
+        Self(rims)
+    }
+
+    fn at(&self, cell: &ResolvedTerrainCell, direction: u8) -> Option<WoodBridgeRim> {
+        self.0.iter().find_map(|&(tile, rim)| {
+            (cell.final_tile_index == tile && rim.direction == direction).then_some(rim)
+        })
+    }
+
+    pub(super) fn is_start(
+        &self,
+        anchor: &ResolvedTerrainCell,
+        approach: &ResolvedTerrainCell,
+        direction: u8,
+    ) -> bool {
+        self.at(anchor, direction).is_some_and(|rim| {
+            rim.anchor_subtile == Some(anchor.final_sub_tile)
+                && approach.final_tile_index == anchor.final_tile_index
+                && approach.final_sub_tile == rim.road_subtile
+        })
+    }
+
+    pub(super) fn is_end(&self, approach: &ResolvedTerrainCell, direction: u8) -> bool {
+        self.at(approach, direction).is_some_and(|rim| {
+            rim.anchor_subtile.is_none() && approach.final_sub_tile == rim.road_subtile
+        })
     }
 }
 

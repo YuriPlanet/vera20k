@@ -19,6 +19,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::trigger_runtime::TriggerRuntime;
 use crate::sim::vision::FogState;
+use crate::util::forked::Forked;
 
 use super::ChangedLooks;
 #[cfg(any(test, feature = "test-support"))]
@@ -60,7 +61,7 @@ impl Simulation {
     /// [`StringInterner::bind_types`]: crate::sim::intern::StringInterner::bind_types
     pub fn resolve_type_handles(&mut self, rules: &RuleSet) {
         self.interner.bind_types(rules);
-        self.rule_handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
+        *self.rule_handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
             rules,
             &mut self.interner,
         ));
@@ -93,13 +94,13 @@ impl Simulation {
     /// worlds. Native ReadGeneral owns the list names/order; both map binding
     /// and snapshot restoration project those names through this one writer.
     pub fn resolve_rule_animation_lists(&mut self, rules: &RuleSet) {
-        self.bridge_explosions = rules
+        *self.bridge_explosions = rules
             .bridge_rules
             .explosions
             .iter()
             .map(|name| self.interner.intern(name))
             .collect();
-        self.metallic_debris = rules
+        *self.metallic_debris = rules
             .general
             .metallic_debris
             .iter()
@@ -123,7 +124,7 @@ impl Simulation {
     pub(crate) fn resolved_rule_handles(
         &self,
     ) -> Option<crate::sim::type_handle_table::ResolvedRuleHandles> {
-        self.rule_handles
+        *self.rule_handles
     }
 
     /// Resolve an entity's type to its `ObjectType` through the interner's
@@ -158,9 +159,9 @@ impl Simulation {
         let mut session = ScenarioSession::from_descriptor(desc);
         session.record_random_seed(seed);
         let mut simulation = Self::construct(session);
-        simulation.native_unique_ids =
+        *simulation.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
-        simulation.state_hash_interval = None;
+        *simulation.state_hash_interval = None;
         simulation
     }
 
@@ -180,95 +181,98 @@ impl Simulation {
             reveal_viewers: Default::default(),
             civilian_house_memo: Default::default(),
             expiry_listeners: Default::default(),
-            path_batch: None,
+            path_batch: Forked::new(None),
             idle_sleep: Default::default(),
-            scan_batch: None,
+            scan_batch: Forked::new(None),
             effect_anims: Default::default(),
-            interner: crate::sim::intern::StringInterner::new(),
-            type_tech_levels: TypeTechLevels::default(),
-            rule_handles: None,
-            production: ProductionState::default(),
+            interner: Forked::new(crate::sim::intern::StringInterner::new()),
+            type_tech_levels: Forked::new(TypeTechLevels::default()),
+            rule_handles: Forked::new(None),
+            production: Forked::new(ProductionState::default()),
             terrain_objects: Default::default(),
-            ore_growth_config: crate::sim::ore_growth::OreGrowthConfig::disabled(),
-            ore_growth_state: crate::sim::ore_growth::OreGrowthState::new(0, 0),
-            session,
+            ore_growth_config: Forked::new(crate::sim::ore_growth::OreGrowthConfig::disabled()),
+            ore_growth_state: Forked::new(crate::sim::ore_growth::OreGrowthState::new(0, 0)),
+            session: Forked::new(session),
             #[cfg(feature = "debug-tools")]
             debug_tools: Default::default(),
-            frame_profiling: false,
+            frame_profiling: Forked::new(false),
             frame_profile: Default::default(),
-            object_placement_scope_depth: 0,
-            buildup_bypass: false,
+            object_placement_scope_depth: Forked::new(0),
+            buildup_bypass: Forked::new(false),
             #[cfg(feature = "phobos")]
-            reflected_warhead: None,
-            ares_made_up_rules: None,
-            scenario_rng: SimRng::new(seed),
-            main_rng: SimRng::new(seed),
-            mapgen_rng: SimRng::new(0),
-            native_unique_ids: None,
-            authored_tiberium_value_total: None,
+            reflected_warhead: Forked::new(None),
+            ares_made_up_rules: Forked::new(None),
+            scenario_rng: Forked::new(SimRng::new(seed)),
+            main_rng: Forked::new(SimRng::new(seed)),
+            mapgen_rng: Forked::new(SimRng::new(0)),
+            native_unique_ids: Forked::new(None),
+            authored_tiberium_value_total: Forked::new(None),
             post_load_particle_system_constructed: Default::default(),
-            native_map_tubes: crate::map::tubes::NativeMapTubes::default(),
-            load_objects: LoadObjectLifecycle::default(),
-            fog: FogState::default(),
+            native_map_tubes: Forked::new(crate::map::tubes::NativeMapTubes::default()),
+            load_objects: Forked::new(LoadObjectLifecycle::default()),
+            fog: Forked::new(FogState::default()),
             house_alliances: Default::default(),
             substrate: ObjectSubstrate::new(),
-            lifecycle_outputs: FrameChannel::default(),
+            lifecycle_outputs: Forked::new(FrameChannel::default()),
             unit_voice_visit_interest: Default::default(),
-            mission_spawned_entities: false,
-            ownership_changed_since_output: false,
-            frame_overlay_updates: Vec::new(),
-            frame_overlay_removals: Vec::new(),
+            mission_spawned_entities: Forked::new(false),
+            ice_zones_stale: Forked::new(false),
+            ownership_changed_since_output: Forked::new(false),
+            frame_overlay_updates: Forked::new(Vec::new()),
+            frame_overlay_removals: Forked::new(Vec::new()),
             terminal_score_snapshot: Default::default(),
             #[cfg(any(test, feature = "test-support"))]
-            lifecycle_test_events: Vec::new(),
+            lifecycle_test_events: Forked::new(Vec::new()),
             #[cfg(test)]
-            receiver_fixture: None,
-            trigger_effects: Vec::new(),
-            revision: 0,
+            receiver_fixture: Forked::new(None),
+            trigger_effects: Forked::new(Vec::new()),
+            revision: Forked::new(0),
             #[cfg(any(test, feature = "test-support"))]
-            frame_step_trace: Vec::new(),
+            frame_step_trace: Forked::new(Vec::new()),
             #[cfg(any(test, feature = "test-support"))]
-            house_ai_activation_order_test_trace: Vec::new(),
-            sound_events: FrameChannel::default(),
-            lighting_sources: crate::sim::light_sources::LightingSources::default(),
-            fire_events: FrameChannel::default(),
-            combat_light_requests: FrameChannel::default(),
-            screen_shake_updates: FrameChannel::default(),
-            projectiles: crate::sim::projectile::ProjectileStore::new(),
+            house_ai_activation_order_test_trace: Forked::new(Vec::new()),
+            sound_events: Forked::new(FrameChannel::default()),
+            lighting_sources: Forked::new(crate::sim::light_sources::LightingSources::default()),
+            fire_events: Forked::new(FrameChannel::default()),
+            combat_light_requests: Forked::new(FrameChannel::default()),
+            screen_shake_updates: Forked::new(FrameChannel::default()),
+            projectiles: Forked::new(crate::sim::projectile::ProjectileStore::new()),
             #[cfg(feature = "phobos")]
             warhead_anim_runtime: Default::default(),
-            waves: crate::sim::wave::WaveStore::new(),
-            active_wave_links: BTreeMap::new(),
-            object_custom_sounds: BTreeMap::new(),
+            waves: Forked::new(crate::sim::wave::WaveStore::new()),
+            active_wave_links: Forked::new(BTreeMap::new()),
+            object_custom_sounds: Forked::new(BTreeMap::new()),
             #[cfg(any(test, feature = "test-support"))]
-            bale_events: Vec::new(),
+            bale_events: Forked::new(Vec::new()),
             #[cfg(any(test, feature = "test-support"))]
-            bunker_wall_events: Vec::new(),
-            team_script_vm: TeamScriptVm::default(),
-            houses: crate::sim::houses::Houses::default(),
-            zone_grid: None,
-            path_grid: None,
-            structure_navigation_cells: BTreeSet::new(),
-            resolved_terrain: None,
-            shared_cell_dummy: SharedCellDummy::fresh(),
-            native_local_cell_cursor: None,
-            native_allocated_cell_cursor: None,
-            real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180::default(),
+            bunker_wall_events: Forked::new(Vec::new()),
+            team_script_vm: Forked::new(TeamScriptVm::default()),
+            houses: Forked::new(crate::sim::houses::Houses::default()),
+            zone_grid: Forked::new(None),
+            path_grid: Forked::new(None),
+            structure_navigation_cells: Forked::new(BTreeSet::new()),
+            resolved_terrain: Forked::new(None),
+            shared_cell_dummy: Forked::new(SharedCellDummy::fresh()),
+            native_local_cell_cursor: Forked::new(None),
+            native_allocated_cell_cursor: Forked::new(None),
+            real_cell_bridge_flags_0x1180: Forked::new(RealCellBridgeFlags0x1180::default()),
             dynamic_terrain_cells: Default::default(),
-            bridge_state: None,
+            ice_cracks: Forked::new(Vec::new()),
+            terrain_dent: Forked::new(None),
+            bridge_state: Forked::new(None),
             pending_bridge_collapses: Default::default(),
-            overlay_grid: None,
-            crate_authority: crate::sim::crates::CrateAuthority::default(),
-            smudge_grid: None,
-            radiation: crate::sim::radiation::RadiationState::default(),
-            bombs: crate::sim::bomb::BombList::default(),
-            kamikaze: crate::sim::kamikaze::KamikazeTracker::default(),
-            disk_lasers: disk_laser::DiskLasers::default(),
-            playfield_bounds: None,
-            playfield_size_height: None,
-            playfield_revision: 0,
-            bridge_explosions: Vec::new(),
-            metallic_debris: Vec::new(),
+            overlay_grid: Forked::new(None),
+            crate_authority: Forked::new(crate::sim::crates::CrateAuthority::default()),
+            smudge_grid: Forked::new(None),
+            radiation: Forked::new(crate::sim::radiation::RadiationState::default()),
+            bombs: Forked::new(crate::sim::bomb::BombList::default()),
+            kamikaze: Forked::new(crate::sim::kamikaze::KamikazeTracker::default()),
+            disk_lasers: Forked::new(disk_laser::DiskLasers::default()),
+            playfield_bounds: Forked::new(None),
+            playfield_size_height: Forked::new(None),
+            playfield_revision: Forked::new(0),
+            bridge_explosions: Forked::new(Vec::new()),
+            metallic_debris: Forked::new(Vec::new()),
             dirty_cells: Default::default(),
             power_states: Default::default(),
             building_upgrade_art_names: Default::default(),
@@ -280,31 +284,33 @@ impl Simulation {
             ares_chrono_warps: Default::default(),
             ares_firestorm: Default::default(),
             ares_tunnels: Default::default(),
-            ion_blasts: Vec::new(),
+            ion_blasts: Forked::new(Vec::new()),
             alpha_shapes: Default::default(),
-            terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
-            input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
-            quit_requested: false,
-            executed_exit_owner: None,
-            departed_senders: Vec::new(),
-            connection_lost: false,
-            frame_sync_checksum: None,
+            terrain_speed_config: Forked::new(terrain_speed::TerrainSpeedConfig::default()),
+            input_delay_ticks: Forked::new(u64::from(
+                crate::util::config::default_input_delay_ticks(),
+            )),
+            quit_requested: Forked::new(false),
+            executed_exit_owner: Forked::new(None),
+            departed_senders: Forked::new(Vec::new()),
+            connection_lost: Forked::new(false),
+            frame_sync_checksum: Forked::new(None),
             state_hash_interval: every_frame(),
             pending_commands: Default::default(),
             local_commands: Default::default(),
             dispatch_reserved_slots: Default::default(),
-            frame_command_admissions: Vec::new(),
-            frame_continuation: None,
-            planning: planning::PlanningState::default(),
-            replaying_recorded_commands: false,
-            trigger_runtime: TriggerRuntime::default(),
+            frame_command_admissions: Forked::new(Vec::new()),
+            frame_continuation: Forked::new(None),
+            planning: Forked::new(planning::PlanningState::default()),
+            replaying_recorded_commands: Forked::new(false),
+            trigger_runtime: Forked::new(TriggerRuntime::default()),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());
         // Authoritative map bounds are session state, known at construction —
         // vision must never run against a zero-dim first-tick window. Fixture
         // sims built without a descriptor (zero bounds) keep the lazy
         // derivation as a fallback inside the vision recompute.
-        out.fog = FogState::new(out.session.map_width(), out.session.map_height());
+        *out.fog = FogState::new(out.session.map_width(), out.session.map_height());
         out
     }
 
@@ -315,7 +321,7 @@ impl Simulation {
     // sub-cell rotation and paradrop sub-cell; destruction smudge, survivor and
     // debris and the smudge type pick; the overlay/wall damage roll; ore growth
     // and spread (queue, direction, variant, TIBTRE); the building damage-fire
-    // type and start frame.
+    // type and start frame; a Smoke system's children's AI.
     pub(crate) fn bridge_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // bridge collapse/debris/explosion
@@ -329,7 +335,7 @@ impl Simulation {
     /// the frontend. The app stores this clone until the next successful Start
     /// reseeds the gameplay pair.
     pub fn clone_scenario_rng(&self) -> SimRng {
-        self.scenario_rng.clone()
+        (*self.scenario_rng).clone()
     }
 
     // --- Main/global process stream (`main_rng`) ---
@@ -386,18 +392,18 @@ impl Simulation {
         reuse: Option<Simulation>,
     ) -> Simulation {
         // What the copy leaves out.
-        let mut fog = std::mem::take(&mut self.fog);
-        let entities = std::mem::replace(&mut self.substrate.entities, EntityStore::detached());
+        let mut fog = std::mem::take(&mut *self.fog);
+        let entities = std::mem::replace(&mut *self.substrate.entities, EntityStore::detached());
         let zone_grid = self.zone_grid.take();
         let path_grid = self.path_grid.take();
-        let team_script_vm = std::mem::take(&mut self.team_script_vm);
-        let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
-        let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        let team_script_vm = std::mem::take(&mut *self.team_script_vm);
+        let movement_pass_cache = std::mem::take(&mut *self.movement_pass_cache);
+        let reveal_viewers = std::mem::take(&mut *self.reveal_viewers);
         // CellClass +0xDC, one word per reserved cell: a city map's thousands
         // of buildings reserve tens of thousands, which cloned took most of
         // the copy. Only the AI's base planning reads them.
-        let base_reservations = std::mem::take(&mut self.substrate.base_reservations);
-        let structure_navigation_cells = std::mem::take(&mut self.structure_navigation_cells);
+        let base_reservations = std::mem::take(&mut *self.substrate.base_reservations);
+        let structure_navigation_cells = std::mem::take(&mut *self.structure_navigation_cells);
         // Each House's spatial threat grid (a large map's is 66,564 dwords,
         // thirty Houses about 8 MB) is AI state only gameplay reads.
         let spatial_threats: Vec<_> = self
@@ -407,16 +413,16 @@ impl Simulation {
             .collect();
         #[cfg(any(test, feature = "test-support"))]
         let test_recorders = (
-            std::mem::take(&mut self.lifecycle_test_events),
-            std::mem::take(&mut self.frame_step_trace),
-            std::mem::take(&mut self.house_ai_activation_order_test_trace),
+            std::mem::take(&mut *self.lifecycle_test_events),
+            std::mem::take(&mut *self.frame_step_trace),
+            std::mem::take(&mut *self.house_ai_activation_order_test_trace),
         );
         // What it syncs. The previous copy's other parts are freed on the
         // pool, and the syncs run there beside the clone of the rest.
         let mut synced = SyncedWorld::take(self);
         let (mut theirs, old_fog) = reuse.map_or_else(Default::default, |mut old| {
             let theirs = SyncedWorld::take(&mut old);
-            let old_fog = std::mem::take(&mut old.fog);
+            let old_fog = std::mem::take(&mut *old.fog);
             crate::sim::parallel::drop_on_pool(old);
             (theirs, old_fog)
         });
@@ -442,26 +448,26 @@ impl Simulation {
         let fog_copy = fog_copy.expect("fog copied beside the clone");
         synced.put(self);
         theirs.put(&mut copy);
-        copy.fog = fog_copy;
-        copy.house_alliances = self
+        *copy.fog = fog_copy;
+        *copy.house_alliances = self
             .house_alliances
             .detached(&self.interner, &copy.interner);
-        copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
-        self.fog = fog;
-        self.substrate.entities = entities;
-        self.zone_grid = zone_grid;
-        self.path_grid = path_grid;
-        self.team_script_vm = team_script_vm;
-        self.movement_pass_cache = movement_pass_cache;
-        self.reveal_viewers = reveal_viewers;
-        self.substrate.base_reservations = base_reservations;
-        self.structure_navigation_cells = structure_navigation_cells;
+        *copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
+        *self.fog = fog;
+        *self.substrate.entities = entities;
+        *self.zone_grid = zone_grid;
+        *self.path_grid = path_grid;
+        *self.team_script_vm = team_script_vm;
+        *self.movement_pass_cache = movement_pass_cache;
+        *self.reveal_viewers = reveal_viewers;
+        *self.substrate.base_reservations = base_reservations;
+        *self.structure_navigation_cells = structure_navigation_cells;
         #[cfg(any(test, feature = "test-support"))]
         {
             (
-                self.lifecycle_test_events,
-                self.frame_step_trace,
-                self.house_ai_activation_order_test_trace,
+                *self.lifecycle_test_events,
+                *self.frame_step_trace,
+                *self.house_ai_activation_order_test_trace,
             ) = test_recorders;
         }
         copy

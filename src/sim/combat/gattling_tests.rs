@@ -385,7 +385,7 @@ fn original_unit_fire_update_rows() {
                 entity.veterancy.set_elite();
             }
         }
-        sim.main_rng = SimRng::new(0x2A61);
+        *sim.main_rng = SimRng::new(0x2A61);
         sim.sound_events.clear_for_test();
         let mut probe = SimRng::new(0x2A61);
         sim.unit_fire_update_tail(
@@ -425,7 +425,7 @@ fn original_unit_fire_update_rows() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    Some(sound_id.clone())
+                    Some(sound_id.name_in(&rules).to_string())
                 }
                 _ => None,
             })
@@ -631,7 +631,7 @@ fn a_gattling_tank_spins_up_while_it_fights() {
             for sound in sounds {
                 match sound {
                     crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                        loops.push(sound_id);
+                        loops.push(sound_id.name_in(&spin.rules).to_string());
                     }
                     crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
                         loops.push("stop".to_string());

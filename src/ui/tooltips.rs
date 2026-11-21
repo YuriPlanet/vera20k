@@ -411,18 +411,18 @@ mod tests {
     }
 
     #[test]
-    fn inclusive_both_edges_vs_gadget_half_open() {
+    fn inclusive_both_edges_vs_control_half_open() {
         // Region {x:10, y:10, w:5, h:5}: the (15,15) corner pixel HITS the
-        // tip rect (inclusive) but MISSES a gadget rect of the same numbers
+        // tip rect (inclusive) but MISSES a control rect of the same numbers
         // (half-open) — the deliberate 1-px observable difference (study S1).
         let mut s = service_with(&[region(1, 10, 10, 5, 5, "tip")]);
         s.on_mouse_move(15, 15, 0);
         s.poll(1000);
         assert!(s.active().is_some(), "inclusive edge hits");
-        let gadget_rect = crate::ui::gadget::GadgetRect::new(10, 10, 5, 5);
+        let control_rect = crate::ui::shell::geom::RectPx::new(10, 10, 5, 5);
         assert!(
-            !gadget_rect.contains(15, 15),
-            "same point misses the gadget rect"
+            !control_rect.contains(15, 15),
+            "same point misses the control rect"
         );
         // One past the inclusive edge misses.
         let mut s2 = service_with(&[region(1, 10, 10, 5, 5, "tip")]);

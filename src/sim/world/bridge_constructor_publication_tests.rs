@@ -38,8 +38,8 @@ fn fixture_with_rules(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     (sim, rules, registry)
 }
 
@@ -164,6 +164,34 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
         assert_eq!(dummy(&sim), original["after_drain"]["dummy"]);
         assert_eq!(sim.native_unique_ids.as_ref().unwrap().current_raw(), 1001);
     }
+}
+
+#[test]
+fn live_bridge_constructor_restores_raised_deck_on_steep_slope() {
+    let (mut sim, rules, _) = fixture();
+    let coord = (16, 16);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let anchor = terrain.native_cell_identity((16, 16));
+    // A collapsed segment retains the authored deck but has no live structure.
+    terrain.set_authored_high_bridge_deck(anchor, 14);
+    let cell = terrain.cell_mut_for_test(coord.0, coord.1).unwrap();
+    // The fixed base and local level can coincide while the ground slopes.
+    cell.level = 10;
+    cell.slope_type = 9;
+    assert!(!cell.bridge_facts.has_structural_bridge());
+
+    LivePublication {
+        frame_effects: crate::sim::world::FrameEffects::default(),
+        sim: &mut sim,
+        rules: &rules,
+        collapsed: false,
+    }
+    .construct_bridge_overlay((16, 16), 24, -1)
+    .unwrap();
+
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    assert_eq!(sim.cell_overlay(anchor).overlay_id, Some(24));
+    assert_eq!(terrain.corrected_high_bridge_deck_level(coord), Some(14));
 }
 
 #[test]
@@ -293,10 +321,10 @@ fn constructor_side_admission_matches_original_foot_receiver() {
         }
         .construct_bridge_overlay((16, 16), 25, -1)
         .unwrap();
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 16, 16),
         );
-        sim.playfield_size_height = Some(16);
+        *sim.playfield_size_height = Some(16);
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         // These native controls retain constructor25 topology, then supply
@@ -434,14 +462,14 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
     }
     let retained_cells = cells(&sim);
     let retained_dummy = dummy(&sim);
-    sim.quit_requested = true;
+    *sim.quit_requested = true;
     sim.advance_tick(&[], None, None, None, 67);
     assert_eq!(sim.substrate.pending_delete.overlay_count(), 2);
     assert_eq!(sim.load_objects.registry_counts(), [2; 5]);
     assert!(sim.substrate.entities.get(100).is_some());
     assert!(sim.substrate.pending_delete.contains_object(&100));
     assert!(sim.substrate.pending_delete.contains_object(&101));
-    sim.quit_requested = false;
+    *sim.quit_requested = false;
     sim.advance_tick(&[], None, None, None, 67);
     assert_eq!(sim.substrate.pending_delete.overlay_count(), 0);
     assert_eq!(sim.load_objects.registry_counts(), [0; 5]);
@@ -457,7 +485,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
 fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     let (mut sim, _, _) = fixture();
     sim.session.set_binary_frame_for_test(1);
-    sim.fog = crate::sim::vision::FogState::new(33, 33);
+    *sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
     // A human player's house: its client map is the plane under test.
     sim.houses

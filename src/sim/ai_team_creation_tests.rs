@@ -465,3 +465,37 @@ fn a_command_driven_house_stands_down_from_team_creation() {
         "the selector never draws for a command-driven house"
     );
 }
+
+/// A non-finite running weight, which only a damaged save can hold, counts
+/// as weight 0 (FISTP's indefinite low dword) instead of stopping the draw.
+#[test]
+fn a_non_finite_saved_weight_draws_as_zero() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("H0");
+    let [broken, kept, broken_team, kept_team] =
+        ["BROKEN", "KEPT", "BROKENTEAM", "KEPTTEAM"].map(|name| sim.interner.intern(name));
+    let nan = NativeF64Bits::from_bits(f64::NAN.to_bits());
+    sim.team_script_vm
+        .register_ai_trigger(ai_trigger(broken, broken_team, None, nan));
+    sim.team_script_vm.register_ai_trigger(ai_trigger(
+        kept,
+        kept_team,
+        None,
+        NativeF64Bits::from_bits(3.0f64.to_bits()),
+    ));
+    let mut asked = Vec::new();
+    let picked = draw_ai_trigger(
+        &mut sim,
+        &rules,
+        owner,
+        None,
+        false,
+        |_, _, _, _| true,
+        |_, low, high| {
+            asked.push((low, high));
+            high
+        },
+    );
+    assert_eq!((asked, picked), (vec![(1, 3)], vec![kept_team]));
+}

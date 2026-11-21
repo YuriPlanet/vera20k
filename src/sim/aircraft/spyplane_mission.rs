@@ -165,10 +165,10 @@ fn snapshot(
     sim.refresh_object_sight(id, rules, damage, frame_effects);
     sim.refresh_object_sight_border(id, UninitContext::new(rules).with_effects(frame_effects));
     if sound
-        && let Some(camera) = rules.general.spy_plane_camera.clone()
+        && let Some(camera) = rules.general.spy_plane_camera.as_deref()
         && let Some(plane) = sim.substrate.entities.get(id)
     {
-        let event = SimSoundEvent::voc_at(camera, &plane.position);
+        let event = SimSoundEvent::voc_at(rules.sound_name(camera), &plane.position);
         sim.sound_events.emit(event);
     }
 }

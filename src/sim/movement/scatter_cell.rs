@@ -102,9 +102,10 @@ pub(super) fn select_neighbor<E>(
 pub(super) fn preferred_surface(terrain: &ResolvedTerrainGrid, candidate: (i16, i16)) -> bool {
     let cells = NativeCellQuery::canonical(terrain);
     let coord = (i32::from(candidate.0), i32::from(candidate.1));
-    if crate::sim::find_nearby_cell::project_world_coordinate_with_lookup(
+    if crate::sim::find_nearby_cell::project_world_coordinate_with_terrain(
         coord.0 * 256 + 128,
         coord.1 * 256 + 128,
+        Some(terrain),
         |x, y| cells.projection_view(x, y),
     ) != coord
     {

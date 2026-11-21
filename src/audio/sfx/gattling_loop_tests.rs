@@ -1082,7 +1082,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
     );
     assert!(
         matches!(initial_reports[0], SimSoundEvent::GattlingLoop { owner: actual, sound_id, .. }
-        if *actual == owner && sound_id == "GattlingGunAttackLoop1")
+        if *actual == owner && sound_id.name_in(rules) == "GattlingGunAttackLoop1")
     );
     let old = start_sim_ring(
         &mut sim,
@@ -1163,7 +1163,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
                     ..
                 } => {
                     assert_eq!(*started, owner);
-                    assert_eq!(sound_id, "GattlingGunAttackLoop2");
+                    assert_eq!(sound_id.name_in(rules), "GattlingGunAttackLoop2");
                     "loop"
                 }
                 other => panic!("unexpected production stage-transition fact: {other:?}"),

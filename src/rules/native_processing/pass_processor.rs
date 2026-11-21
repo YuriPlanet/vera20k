@@ -1064,7 +1064,8 @@ impl RulesPassProcessor {
                     .expect("allocated Side owns its Ares extension");
                 side.read_pass(
                     &id,
-                    i32::try_from(array_index).expect("[Sides] exceeds i32 identity space"),
+                    i32::try_from(array_index)
+                        .expect("SIDE_LIMIT keeps the Side registry within u8"),
                     pass,
                     _fixed_eva,
                     &side_types,

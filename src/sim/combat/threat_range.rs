@@ -285,6 +285,43 @@ pub(crate) fn scan_mission_for(entity: &GameEntity) -> ScanMission {
     }
 }
 
+/// The object's own `Threat_Range` in mode 1, in whole leptons: the range
+/// the Foot missions measure against. Mode 1 doubles `GuardRange=` or the
+/// wider live weapon range (see [`threat_range_leptons`]); the weapon ranges
+/// are read only when the type has no `GuardRange=`, as the native caller
+/// does.
+///
+/// Callers: Mission_Rescue's admission gate (`0x004DE0ED`, whose strict
+/// comparison is distance < range * 1.5) and the Foot Area Guard's leash
+/// (`0x004D6E4B`).
+pub(crate) fn object_threat_range(
+    sim: &crate::sim::world::Simulation,
+    id: u64,
+    rules: &crate::rules::ruleset::RuleSet,
+) -> i32 {
+    let Some(actor) = sim.substrate.entities.get(id) else {
+        return 0;
+    };
+    let Some(object) = sim.object_type(actor.type_ref(), rules) else {
+        return 0;
+    };
+    let ranges = if object.guard_range.is_none_or(|range| range.to_bits() == 0) {
+        std::array::from_fn(|index| {
+            super::combat_weapon::weapon_range(
+                actor,
+                object,
+                index as i32,
+                &sim.substrate.entities,
+                rules,
+                &sim.interner,
+            )
+        })
+    } else {
+        [0, 0]
+    };
+    threat_range_leptons(object, 1, ranges)
+}
+
 /// Acquisition radius for one scanning object. Weapon ranges are the live
 /// `GetWeaponRange(0/1)` results from [`super::combat_weapon::weapon_range`].
 /// The native scalar owns only mode selection, doubling and clamps; it does

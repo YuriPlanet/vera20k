@@ -570,7 +570,7 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
     };
     let fire_coord = crate::sim::anim_class::AnimWorldCoord::from(ev.fire_coord);
     let (fire_rx, fire_ry, fire_sub_x, fire_sub_y, _) = fire_coord.to_cell_sub_z();
-    assert_eq!(sound_id, "GIAttack");
+    assert_eq!(sound_id.name_in(&rules), "GIAttack");
     assert_eq!(audible_to, &None);
     assert_eq!(
         (*rx, *ry, *sub_x, *sub_y, *world_z_leptons),
@@ -913,13 +913,13 @@ fn an_illegal_shot_is_still_in_range() {
     sim.substrate
         .entities
         .insert(make_entity_owned(2, "HTNK", 5, 2, 300, "Americans"));
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let cells = (0..16u16)
         .flat_map(|ry| {
             (0..16u16).map(move |rx| crate::map::resolved_terrain::test_flat_cell(rx, ry))
         })
         .collect();
-    sim.resolved_terrain =
+    *sim.resolved_terrain =
         Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells));
     let target = TargetKind::Entity(2);
     let tank = sim.substrate.entities.get(1).unwrap();

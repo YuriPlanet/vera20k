@@ -1224,6 +1224,31 @@ class CacheTests(unittest.TestCase):
         self.assertTrue(older.exists())
         self.assertTrue(objects['old'].exists())
 
+    def test_automatic_pass_reclaims_older_executable_after_checkout_unlocks(self):
+        older, newer, objects, dependencies = self.older_executable()
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 1 << 62)  # Keep the reserve short.
+        lock = self.store / 'checkouts' / f'{self.namespace}.lock'
+        receipts = self.store / 'retention'
+
+        def automatic():
+            with cargo_run.build_lock(self.store / 'cargo.lock', 0):
+                cache.automatic_locked(self.root, self.store, policy, [self.target])
+
+        with patch.object(cache, '_dependencies', side_effect=dependencies), redirect_stderr(io.StringIO()):
+            with cargo_run.file_lock(lock, time.monotonic() + 5):
+                automatic()
+                (receipt,) = receipts.glob('*.json')
+                self.assertEqual(json.loads(receipt.read_text())['removable_groups'], 0)
+                automatic()
+                self.assertEqual(list(receipts.glob('*.json')), [receipt])
+                self.assertTrue(older.exists())
+            automatic()
+
+        self.assertFalse(older.exists())
+        self.assertFalse(objects['old'].exists())
+        for path in (newer, objects['new'], objects['shared']):
+            self.assertTrue(path.exists(), path)
+
     def test_under_budget_never_invokes_expensive_dependency_inspection(self):
         self.label()
         orphan = self.write('debug/deps/orphan.rcgu.o')

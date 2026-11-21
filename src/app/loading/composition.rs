@@ -42,12 +42,12 @@ pub(crate) const fn loading_art_viewport_size(render_width: u32) -> [i32; 2] {
 /// The mapping the loading screen paints in. gamemd centers the art viewport in
 /// the window and draws it 1:1; a window the shell family fits instead scales the
 /// authored dialog to fit it, centred, so every authored rect maps through this
-/// scale. [`ShellScale::RETAIL`] leaves every path exactly as gamemd has it.
+/// scale. `RETAIL_SCALE` leaves every path exactly as gamemd has it.
 pub(crate) fn loading_screen_scale(fill_window: bool, render_size: [u32; 2]) -> ShellScale {
     if fill_window {
-        ShellScale::from_screen(render_size[0] as i32, render_size[1] as i32)
+        crate::ui::shell::geom::shell_scale(render_size[0] as i32, render_size[1] as i32)
     } else {
-        ShellScale::RETAIL
+        crate::ui::shell::geom::RETAIL_SCALE
     }
 }
 
@@ -56,7 +56,7 @@ pub(crate) fn loading_screen_scale(fill_window: bool, render_size: [u32; 2]) -> 
 /// narrow/wide art branch, the centered origin and each rect — is computed from
 /// this size first, then mapped through the scale, so the two paths cannot drift.
 pub(crate) fn loading_authored_size(render_size: [u32; 2], scale: ShellScale) -> [u32; 2] {
-    if scale.is_retail() {
+    if scale.is_unscaled() {
         render_size
     } else {
         [SHELL_BASE_W as u32, SHELL_BASE_H as u32]
@@ -463,6 +463,16 @@ fn finish_loading_composition(
         |csf| localize_loading_text(csf, country),
     );
     let text_rects = loading_text_rects(render_size, &session.mode, scale);
+    // Original RA2 bakes the selected country's flag into the skirmish loading
+    // background SHP itself; the engine draws no minimap in the `mmpb` region —
+    // that is a Yuri's Revenge addition. Drop the map preview and its
+    // assigned-start markers under `-ra2` so only the authored flag shows.
+    // Campaign loads use a separate presentation and never reach this path.
+    let (preview, markers) = if crate::util::ra2_launch::enabled() {
+        (None, Vec::new())
+    } else {
+        (preview, markers)
+    };
     let layers = composition_layers(preview.is_some(), !markers.is_empty(), &text);
     LoadingCompositionSnapshot {
         scale,
@@ -1096,7 +1106,7 @@ mod tests {
             &test_launch_session(),
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             Some(image),
             &map,
             &map.waypoints,
@@ -1194,7 +1204,7 @@ mod tests {
             &session,
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             &assignments,
         );
 
@@ -1207,7 +1217,7 @@ mod tests {
             &session,
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             &assignments,
         );
         assert_eq!(with_filler.markers, baseline.markers);
@@ -1222,7 +1232,7 @@ mod tests {
             &session,
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             &assignments,
         );
         assert_ne!(with_inside.markers[0].anchor, baseline.markers[0].anchor);
@@ -1296,7 +1306,7 @@ mod tests {
             &session,
             Some(&csf),
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             Some(image),
             &map,
             &map.waypoints,
@@ -1368,11 +1378,16 @@ mod tests {
         let battle = mode("MPBattleMD.ini");
         let cooperative = mode("MPCoopMD.ini");
         assert_eq!(
-            loading_text_rects([640, 480], &cooperative, ShellScale::RETAIL).load_brief,
+            loading_text_rects(
+                [640, 480],
+                &cooperative,
+                crate::ui::shell::geom::RETAIL_SCALE
+            )
+            .load_brief,
             RectPx::new(16, 126, 318, 104)
         );
         assert_eq!(
-            loading_text_rects([800, 600], &battle, ShellScale::RETAIL),
+            loading_text_rects([800, 600], &battle, crate::ui::shell::geom::RETAIL_SCALE),
             LoadingTextRects {
                 country_name: RectPx::new(540, 310, 200, 20),
                 special_unit: RectPx::new(20, 90, 200, 20),
@@ -1381,11 +1396,17 @@ mod tests {
             }
         );
         assert_eq!(
-            loading_text_rects([1024, 768], &cooperative, ShellScale::RETAIL).load_brief,
+            loading_text_rects(
+                [1024, 768],
+                &cooperative,
+                crate::ui::shell::geom::RETAIL_SCALE
+            )
+            .load_brief,
             RectPx::new(132, 464, 398, 130)
         );
         assert_eq!(
-            loading_text_rects([799, 600], &battle, ShellScale::RETAIL).country_name,
+            loading_text_rects([799, 600], &battle, crate::ui::shell::geom::RETAIL_SCALE)
+                .country_name,
             RectPx::new(540, 310, 200, 20)
         );
     }
@@ -1398,8 +1419,9 @@ mod tests {
         };
 
         let battle = mode("MPBattleMD.ini");
-        let scale = ShellScale::from_screen(1600, 1200);
-        let authored = loading_text_rects([800, 600], &battle, ShellScale::RETAIL);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
+        let authored =
+            loading_text_rects([800, 600], &battle, crate::ui::shell::geom::RETAIL_SCALE);
 
         // Every layer places itself in the 800x600 dialog, then maps through the
         // page scale, so the copy stays on the art it labels at any window size.
@@ -1439,7 +1461,8 @@ mod tests {
 
         // gamemd's own mapping is untouched by the fit: the same dialog is
         // centered at 1:1 and the identity scale leaves each layer where it is.
-        let centered = loading_text_rects([1600, 1200], &battle, ShellScale::RETAIL);
+        let centered =
+            loading_text_rects([1600, 1200], &battle, crate::ui::shell::geom::RETAIL_SCALE);
         assert_eq!(
             centered.country_name,
             authored.country_name.translate(400, 300)
@@ -1499,7 +1522,7 @@ mod tests {
             &session,
             Some(&csf),
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             None,
             Vec::new(),
         );
@@ -1618,7 +1641,7 @@ mod tests {
                 &test_launch_session(),
                 None,
                 [800, 600],
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 &assignments,
             )
             .markers
@@ -1633,7 +1656,7 @@ mod tests {
             &test_launch_session(),
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             Some(image.clone()),
             &map(""),
             &starts,

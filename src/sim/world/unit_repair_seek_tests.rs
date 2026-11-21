@@ -52,7 +52,7 @@ fn useless_harvester_contact() -> Option<(Simulation, RuleSet, PathGrid, u64, u6
         .unwrap()
         .economy_mut()
         .set_credits_for_test(10_000);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(48, 48));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(48, 48));
     let targeter = spawn(&mut sim, &rules, "GAPOWR", "Americans", 40, 40);
     spawn(&mut sim, &rules, "NAPOWR", "Russians", 43, 43);
     spawn(&mut sim, &rules, "GAREFN", "Americans", 10, 10);

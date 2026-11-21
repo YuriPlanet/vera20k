@@ -86,7 +86,7 @@ fn gsi_04_05_reservation_successful_reveal_marks_expanded_rect_after_lists() {
 #[test]
 fn gsi_04_16_dustbowl_conyard_unlimbo_uses_local_size_edge() {
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(gsi_04_16_dustbowl_bounds());
+    *sim.playfield_bounds = Some(gsi_04_16_dustbowl_bounds());
     let rules = gsi_04_16_edge_gate_rules();
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 0, 10);
@@ -105,7 +105,7 @@ fn gsi_04_16_dustbowl_conyard_unlimbo_uses_local_size_edge() {
 #[test]
 fn gsi_04_16_committed_structure_owner_change_refreshes_new_house_edge() {
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(gsi_04_16_dustbowl_bounds());
+    *sim.playfield_bounds = Some(gsi_04_16_dustbowl_bounds());
     let rules = gsi_04_16_edge_gate_rules();
     let old_owner = sim.interner.intern("Americans");
     let new_owner = sim.interner.intern("Soviets");
@@ -129,7 +129,7 @@ fn gsi_04_16_committed_structure_owner_change_refreshes_new_house_edge() {
 #[test]
 fn gsi_04_16_caoild_reveal_and_owner_change_preserve_waypoint_edges() {
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(gsi_04_16_dustbowl_bounds());
+    *sim.playfield_bounds = Some(gsi_04_16_dustbowl_bounds());
     let rules = gsi_04_16_edge_gate_rules();
     let old_owner = sim.interner.intern("Americans");
     let new_owner = sim.interner.intern("Soviets");

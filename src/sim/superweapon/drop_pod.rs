@@ -552,10 +552,10 @@ impl Simulation {
         let draw = self.main_rng.next_u32();
         if let Some(sound) = weapon.and_then(|weapon| {
             let count = weapon.report.len();
-            (count != 0).then(|| weapon.report[draw as usize % count].clone())
+            (count != 0).then(|| weapon.report[draw as usize % count].as_str())
         }) {
             self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                sound,
+                rules.sound_name(sound),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: location.x,
                     y: location.y,

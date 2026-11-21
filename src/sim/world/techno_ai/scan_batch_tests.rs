@@ -75,7 +75,7 @@ fn a_tank_whose_scan_cannot_be_due_is_looked_up_once() {
         .arm(100, 30);
     sim.batch_target_scans();
     let before = sim.substrate.entities.lookups().0;
-    sim.answer_batched_scans(rules, None);
+    sim.answer_batched_work(rules, None);
     assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
 }
 
@@ -93,7 +93,7 @@ fn a_hunter_sees_a_hostile_admitted_during_the_pass_at_its_next_run() {
     let (mut serial, hunter) = hunting_tank_scene(rules);
     let (mut batched, _) = hunting_tank_scene(rules);
     batched.batch_target_scans();
-    batched.answer_batched_scans(rules, None);
+    batched.answer_batched_work(rules, None);
     // The hostile sleeps, so only the hunter's scan targets it.
     let admit = |sim: &mut Simulation| {
         let id = sim
@@ -180,7 +180,7 @@ fn a_hunter_whose_house_changes_enemy_during_the_pass_scans_live() {
     let (mut batched, ..) = scene();
     set_enemy(&mut batched, "Russians");
     batched.batch_target_scans();
-    batched.answer_batched_scans(rules, None);
+    batched.answer_batched_work(rules, None);
     let batch = batched.scan_batch.as_ref().unwrap();
     let answered = batch.answers.iter().find(|(id, _)| *id == hunter);
     assert_eq!(
@@ -212,7 +212,7 @@ fn a_save_keeps_the_setting_and_drops_the_answers() {
     let rules = &fixture.rules;
     let (mut sim, _) = hunting_tank_scene(rules);
     sim.batch_target_scans();
-    sim.answer_batched_scans(rules, None);
+    sim.answer_batched_work(rules, None);
     assert!(!sim.scan_batch.as_ref().unwrap().answers.is_empty());
     assert_eq!(
         crate::util::save_codec::serialize(&sim.scan_batch).unwrap(),

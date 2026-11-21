@@ -110,7 +110,7 @@ impl Simulation {
             (
                 "navigation_history",
                 digest(|h| {
-                    if let Some(zones) = &self.zone_grid {
+                    if let Some(zones) = &*self.zone_grid {
                         zones.fold_navigation_history(h);
                     }
                 }),
@@ -177,12 +177,16 @@ impl Simulation {
             ),
             (
                 "terrain_cells",
-                digest(|h| self.dynamic_terrain_cells.hash_simulation(h)),
+                digest(|h| {
+                    self.dynamic_terrain_cells.hash_simulation(h);
+                    self.hash_ice_cracks(h);
+                    self.hash_terrain_dent(h);
+                }),
             ),
             (
                 "burrowing",
                 digest(|h| {
-                    if let Some(terrain) = &self.resolved_terrain {
+                    if let Some(terrain) = &*self.resolved_terrain {
                         terrain.hash_burrowing_permissions(h);
                     }
                 }),
@@ -364,7 +368,7 @@ impl Simulation {
         }
         self.load_objects.hash_state(hasher);
         // Path searches waiting for the next frame's batch.
-        if let Some(batch) = &self.path_batch {
+        if let Some(batch) = &*self.path_batch {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
@@ -395,7 +399,7 @@ impl Simulation {
         // when the current terrain and House threat values are identical.
         // Ordinary native load rebuilds the hierarchy through581F50; its
         // resulting hash may intentionally differ from the live pre-save hash.
-        if let Some(zones) = &self.zone_grid {
+        if let Some(zones) = &*self.zone_grid {
             b"retained-navigation-history-v1".hash(hasher);
             zones.fold_navigation_history(hasher);
         }
@@ -405,7 +409,9 @@ impl Simulation {
         self.real_cell_bridge_flags_0x1180.hash(hasher);
         b"dynamic-terrain-cells-v2".hash(hasher);
         self.dynamic_terrain_cells.hash_simulation(hasher);
-        if let Some(terrain) = &self.resolved_terrain {
+        self.hash_ice_cracks(hasher);
+        self.hash_terrain_dent(hasher);
+        if let Some(terrain) = &*self.resolved_terrain {
             terrain.hash_burrowing_permissions(hasher);
         }
         self.hash_overlay_grid(hasher);
@@ -564,14 +570,14 @@ impl Simulation {
     fn hash_playfield_authority(&self, hasher: &mut impl Hasher) {
         if self.playfield_bounds.is_none()
             && self.playfield_size_height.is_none()
-            && self.playfield_revision == 0
+            && *self.playfield_revision == 0
         {
             // Preserve the historical headless-fixture stream while still
             // distinguishing every configured authority from absence.
             return;
         }
         b"playfield-authority-v2".hash(hasher);
-        match self.playfield_bounds {
+        match *self.playfield_bounds {
             None => 0u8.hash(hasher),
             Some(bounds) => {
                 1u8.hash(hasher);
@@ -708,7 +714,7 @@ impl Simulation {
 
     fn hash_waves(&self, hasher: &mut impl Hasher) {
         self.active_wave_links.len().hash(hasher);
-        for (&owner_id, &wave_id) in &self.active_wave_links {
+        for (&owner_id, &wave_id) in &*self.active_wave_links {
             owner_id.hash(hasher);
             wave_id.hash(hasher);
         }
@@ -791,7 +797,7 @@ impl Simulation {
 
     /// Hash per-player house state (BTreeMap = deterministic order).
     fn hash_houses(&self, hasher: &mut impl Hasher) {
-        for (owner, house) in &self.houses {
+        for (owner, house) in &*self.houses {
             owner.hash(hasher);
             if !house.permanent_factory_plans().is_empty() {
                 b"ares-permanent-factory-plans-v1".hash(hasher);
@@ -1072,7 +1078,7 @@ impl Simulation {
     }
 
     fn hash_bridge_state(&self, hasher: &mut impl Hasher) {
-        let Some(bridge_state) = &self.bridge_state else {
+        let Some(bridge_state) = &*self.bridge_state else {
             0u8.hash(hasher);
             return;
         };
@@ -1093,7 +1099,7 @@ impl Simulation {
     }
 
     fn hash_overlay_grid(&self, hasher: &mut impl Hasher) {
-        let Some(overlay_grid) = &self.overlay_grid else {
+        let Some(overlay_grid) = &*self.overlay_grid else {
             0u8.hash(hasher);
             return;
         };
@@ -1131,7 +1137,7 @@ impl Simulation {
     /// Hash persistent cell marks and transient Smudge identities. Constructor
     /// IDs and pending order affect later object identity and expiry consumers.
     fn hash_smudge_grid(&self, hasher: &mut impl Hasher) {
-        let Some(grid) = &self.smudge_grid else {
+        let Some(grid) = &*self.smudge_grid else {
             0u8.hash(hasher);
             return;
         };
@@ -1209,14 +1215,14 @@ impl Simulation {
         }
         // The Lightning Storm's globals; a match that never launched one hashes
         // the established `false`.
-        let storm_touched = self.lightning_storm != Default::default();
+        let storm_touched = *self.lightning_storm != Default::default();
         storm_touched.hash(hasher);
         if storm_touched {
             self.lightning_storm.hash(hasher);
         }
         // The Psychic Dominator's globals; the tag keeps a match that never
         // launched one on its established stream.
-        if self.psychic_dominator != Default::default() {
+        if *self.psychic_dominator != Default::default() {
             b"psychic-dominator-v1".hash(hasher);
             self.psychic_dominator.hash(hasher);
         }

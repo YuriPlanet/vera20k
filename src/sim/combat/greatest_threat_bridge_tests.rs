@@ -334,6 +334,8 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         scanner_facts: attacker_facts(firer, obj),
         harvester_immune: false,
         harvester_unit_ids: Vec::new(),
+        frame: 0,
+        scanner_web_duration: None,
     };
     let walk = WalkArgs {
         flags: 0x8042,

@@ -1375,7 +1375,7 @@ fn open_sfx_sink(
                 .map_err(|e| log::warn!("SFX low-latency output unavailable ({e}); using default"))
                 .ok()
         });
-    match low_latency {
+    let mut sink = match low_latency {
         Some(sink) => Ok(sink),
         // With no usable default device, rodio's own opener tries every other.
         None => DeviceSinkBuilder::from_default_device()
@@ -1385,7 +1385,10 @@ fn open_sfx_sink(
                     .open_sink_or_fallback()
             })
             .or_else(|_| DeviceSinkBuilder::open_default_sink()),
-    }
+    }?;
+    // Rodio's drop message can panic when stderr is a closed pipe.
+    sink.log_on_drop(false);
+    Ok(sink)
 }
 
 /// The browser keeps short blocks with a deeper queue; see

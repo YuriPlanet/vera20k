@@ -60,7 +60,8 @@ impl Simulation {
             return;
         };
         let names_self = TargetKind::from(target) == TargetKind::Entity(id);
-        entity.navigation.queue_nav_list(target, names_self);
+        let note = entity.note_names();
+        entity.navigation.queue_nav_list(target, names_self, note);
         if entity.navigation.nav_com().is_some()
             || entity.mission.effective().known() != Some(MissionType::Guard)
         {
@@ -144,7 +145,8 @@ impl Simulation {
             log::debug!("Foot {id} navigation list head: {cause}");
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.navigation.rotate_nav_list(head);
+            let note = entity.note_names();
+            entity.navigation.rotate_nav_list(head, note);
         }
     }
 }

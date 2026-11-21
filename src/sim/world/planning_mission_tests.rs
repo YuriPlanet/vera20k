@@ -8,7 +8,7 @@ fn scene() -> Option<(Simulation, crate::rules::ruleset::RuleSet, InternedId)> {
     let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 638120, 64);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     sim.session.game_options_mut_for_test().short_game = false;
     sim.session.game_options_mut_for_test().multi_engineer = false;
     let owner = sim.interner.get("Americans").unwrap();
@@ -361,7 +361,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
         // The gameplay hash does not include DoList, so compare its full
         // retained order, processed bits and retiming state explicitly too.
         assert_eq!(
-            live.simulation.pending_commands, replay.simulation.pending_commands,
+            *live.simulation.pending_commands, *replay.simulation.pending_commands,
             "publication queue at frame {frame}"
         );
         assert_eq!(
@@ -738,7 +738,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 &overlays,
                 (17, 12),
             );
-            sim.overlay_grid = Some(grid);
+            *sim.overlay_grid = Some(grid);
             assert!(sim.rebuild_dynamic_navigation(&rules));
             // Native Harvest73E67F..73E6C2 requires an owned instance of a
             // type in Dock=. An enemy refinery must not satisfy that gate.

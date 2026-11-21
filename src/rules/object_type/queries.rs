@@ -59,6 +59,11 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
+    /// The Kratos crawling offsets retained by this type.
+    pub(crate) fn kratos_crawling(&self) -> crate::rules::kratos_crawling_flh::CrawlingFlh<'_> {
+        self.weapon_offsets.kratos_crawling()
+    }
+
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.
     pub fn alternate_fire_flh(&self, port: usize) -> crate::rules::flh::Flh {
         self.weapon_offsets.alternate(port)
@@ -388,6 +393,13 @@ impl ObjectType {
     /// docked, named after the section.
     pub fn no_spawn_alt_model(&self) -> Option<&str> {
         self.no_spawn_alt_model.as_deref()
+    }
+
+    /// `SmallVisceroid=` or `LargeVisceroid=` of a VehicleType (UnitType
+    /// `+0xE18`/`+0xE19`); the SHP Unit shadow refuses both
+    /// (`0x00705FF3..0x00706007`, and Ares' `UnitClass_DrawSHP_DrawShadowEarlier`).
+    pub fn visceroid(&self) -> bool {
+        self.small_visceroid || self.large_visceroid
     }
 
     /// Read-only projection of the retained WaterImage pointer.
@@ -951,6 +963,23 @@ impl ObjectType {
         }
     }
 
+    /// Ares ObjectClass_DrawRadialIndicator (10049A70, hook 0x0041BE80): the
+    /// ring radius in cells of a Techno that is no Building. A set
+    /// RadialIndicatorRadius wins, a GapGenerator shows GapRadiusInCells, and
+    /// any other type shows its current weapon's range (vt+0x3F4) in whole
+    /// cells (`Range >> 8`). Zero or less draws nothing.
+    pub fn ares_techno_radial_radius(&self, weapon_range: Option<i32>) -> i32 {
+        if let Some(radius) = self.techno_combat.presentation().radial_indicator_radius() {
+            radius
+        } else if self.gap_generator {
+            self.gap_radius_in_cells
+        } else {
+            weapon_range
+                .filter(|range| *range > 0)
+                .map_or(0, |range| range >> 8)
+        }
+    }
+
     pub const fn attacks_friendlies(&self) -> bool {
         self.attack_friendlies
     }
@@ -1318,6 +1347,88 @@ impl ObjectType {
         self.vehicle_thief_sounds[usize::from(leaving)].as_deref()
     }
 
+    /// Every sound name this type's own fields hold, for the set's
+    /// sound-name table (`RuleSet::rebuild_sound_names`).
+    pub(crate) fn sound_names(&self) -> impl Iterator<Item = &str> {
+        let lists = [
+            &self.voice_select,
+            &self.voice_select_enslaved,
+            &self.voice_select_deactivated,
+            &self.voice_move,
+            &self.voice_attack,
+            &self.voice_die,
+            &self.die_sounds,
+            &self.move_sound,
+            &self.voice_comment,
+            &self.voice_feedback,
+            &self.voice_special_attack,
+        ];
+        let scalars = [
+            &self.voice_harvest,
+            &self.voice_deploy,
+            &self.voice_undeploy,
+            &self.voice_enter,
+            &self.voice_capture,
+            &self.ares_voice_repair,
+            &self.create_sound,
+            &self.damage_sound,
+            &self.crashing_sound,
+            &self.voice_crashing,
+            &self.sinking_sound,
+            &self.voice_sinking,
+            &self.voice_falling,
+            &self.turret_rotate_sound,
+            &self.activate_sound,
+            &self.deactivate_sound,
+            &self.ambient_sound,
+            &self.impact_water_sound,
+            &self.impact_land_sound,
+            &self.crush_sound,
+            &self.deploy_sound,
+            &self.buildup_sound,
+            &self.working_sound,
+            &self.not_working_sound,
+            &self.undeploy_sound,
+            &self.enter_water_sound,
+            &self.leave_water_sound,
+            &self.packup_sound,
+            &self.enter_transport_sound,
+            &self.leave_transport_sound,
+            &self.chrono_in_sound,
+            &self.chrono_out_sound,
+            &self.mind_cleared_sound,
+            &self.aux_sound1,
+            &self.aux_sound2,
+        ];
+        let overrides = self
+            .promotion_sounds
+            .iter()
+            .chain(&self.cloak_sounds)
+            .flatten();
+        let airstrike_voices = [false, true]
+            .into_iter()
+            .filter_map(|abort| self.techno_combat().presentation().airstrike_voice(abort))
+            .flatten();
+        lists
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .chain(
+                scalars
+                    .into_iter()
+                    .chain(&self.voice_attack_overrides)
+                    .chain(&self.vehicle_thief_sounds)
+                    .chain(overrides)
+                    .filter_map(|name| name.as_deref()),
+            )
+            .chain(airstrike_voices)
+            .chain(
+                self.sequence_sounds
+                    .iter()
+                    .map(|sound| sound.sound_id.as_str()),
+            )
+    }
+
     /// Storage reached by GetWeapon7177C0/7177E0; Ares1003DBC0 adds
     /// extension records, while a stock-way read keeps the fixed bound of
     /// `WEAPON_SLOT_COUNT`. Ares TechnoTypeClass_LoadFromINI_Weapons1
@@ -1511,6 +1622,13 @@ impl ObjectType {
         self.silo_damage
     }
 
+    /// Whether occupants fire from this building: `CanOccupyFire=`
+    /// (`+0x157C`), or in RA2 Mode, which has no such key, always
+    /// ([`Self::ra2_occupy_fire`]). `IsOccupied` and GetFireError's B1 read it.
+    pub(crate) fn occupants_fire(&self) -> bool {
+        self.can_occupy_fire || self.ra2_occupy_fire
+    }
+
     /// Store the type's `SiloDamage=` resolved in `art`.
     pub(crate) fn project_silo_damage(&mut self, art: &crate::rules::art_data::ArtRegistry) {
         self.silo_damage = self.art_silo_damage(art);
@@ -1546,6 +1664,16 @@ impl ObjectType {
     /// `Foundation::dimensions` already answers.
     pub fn is_1x1_with_undeploy(&self) -> bool {
         self.undeploys_into.is_some() && self.foundation.dimensions() == (1, 1)
+    }
+
+    /// YRpp `BuildingTypeClass::CanTogglePower`, inlined in DetermineAction's
+    /// power arm (`0x0069286F..0x00692891`) and Ares 3.0's (`1005C790`):
+    /// `TogglePower=` (`+0x154A`) with a positive drain (`+0xEE4`) or
+    /// `Powered=` (`+0x1573`).
+    pub fn can_toggle_power(&self) -> bool {
+        self.toggle_power
+            && (crate::sim::power_system::native_building_power_drain(self.power) > 0
+                || self.powered)
     }
 
     /// BuildingClass::CanBeSelectedNow's type test (`0x00459C03`): whether a

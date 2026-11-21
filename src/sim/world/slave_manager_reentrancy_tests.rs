@@ -79,7 +79,7 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
     let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let mut sim =
         super::refinery_dock_oracle_tests::world_with(&rules, &retail.processed_rules, |_| {});
-    sim.fog = FogState::new(33, 33);
+    *sim.fog = FogState::new(33, 33);
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.game_options_mut_for_test().short_game = false;
     sim.session.publish_started();
@@ -298,7 +298,7 @@ impl Scene {
         }
         assert_eq!(self.sim.sound_events.iter().filter(|event| matches!(event,
             SimSoundEvent::VocAt { sound_id, .. }
-                if Some(sound_id.as_str()) == self.rules.general.slaves_free_sound.as_deref()
+                if Some(sound_id.name_in(&self.rules)) == self.rules.general.slaves_free_sound.as_deref()
         )).count(), 1, "the first freed slave owns the liberation sound");
     }
 }

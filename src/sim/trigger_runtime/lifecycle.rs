@@ -266,7 +266,7 @@ impl Simulation {
         if let Some(definitions) = staged {
             self.trigger_runtime.definitions = definitions;
         }
-        self.team_script_vm = vm;
+        *self.team_script_vm = vm;
         for diagnostic in &diagnostics {
             log::warn!("Team AI install diagnostic: {diagnostic:?}");
         }
@@ -324,7 +324,7 @@ impl Simulation {
                 }
             }
         }
-        self.trigger_runtime = TriggerRuntime {
+        *self.trigger_runtime = TriggerRuntime {
             definitions,
             definitions_prepared: true,
             locals_set,
@@ -396,11 +396,11 @@ impl Simulation {
             next = typ.linked;
             self.trigger_runtime.triggers[index]
                 .as_mut()
-                .unwrap()
+                .expect("the Trigger was pushed just above")
                 .enabled = enabled;
             self.trigger_runtime.tags[tag_index]
                 .as_mut()
-                .unwrap()
+                .expect("the Tag was pushed at the top of this build")
                 .triggers
                 .insert(0, index);
         }
@@ -448,7 +448,9 @@ impl Simulation {
                 }
                 _ => continue,
             };
-            let trigger = trigger_runtime.triggers[index].as_mut().unwrap();
+            let trigger = trigger_runtime.triggers[index]
+                .as_mut()
+                .expect("the Trigger was read live at the top of this reset");
             trigger.timer.start(session.binary_frame() as i32, duration);
             trigger.completed &= !(1u32.wrapping_shl(ordinal as u32));
         }
@@ -484,7 +486,7 @@ impl Simulation {
             let tag = self.shared_trigger_tag(type_index);
             self.trigger_runtime.tags[tag]
                 .as_mut()
-                .unwrap()
+                .expect("`shared_trigger_tag` answers a live Tag")
                 .attached_cell = cell;
             //4AD2C9 repeats5657A0 after live construction; a miss stamps the
             // same retained Dummy a second time before CellReplace485250.

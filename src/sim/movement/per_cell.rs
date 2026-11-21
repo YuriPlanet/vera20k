@@ -145,8 +145,11 @@ impl Simulation {
             if restore && let Some(unit) = self.substrate.entities.get_mut(id) {
                 // Unit73A4E9 restores only the raw NavCom; unlike the Foot
                 // setter this does not clear NavComAux or change movement.
-                unit.navigation
-                    .store_nav_com(Some(crate::sim::components::NavTargetRef::object(contact)));
+                let note = unit.note_names();
+                unit.navigation.store_nav_com(
+                    Some(crate::sim::components::NavTargetRef::object(contact)),
+                    note,
+                );
             }
             self.foot_per_cell_process(id, PerCellReason::Arrival, rules, registry, effects);
             crate::sim::radio::transmit_to_contact(
@@ -157,12 +160,7 @@ impl Simulation {
                 effects,
             );
             // `0x0073A52B`: ILoco+0x5C, Hover's override included.
-            Self::locomotor_power_off(
-                &mut self.scenario_rng,
-                &mut self.substrate,
-                &self.resolved_terrain,
-                id,
-            );
+            self.locomotor_power_off(id, rules, registry, effects);
             return true;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -421,6 +419,12 @@ impl Simulation {
         if promote {
             self.mission_host_promote(id, self.session.binary_frame(), rules);
         }
+        // Firestorm 2.0 UnitClass::Per_Cell_Process 0x651890..0x651975 runs
+        // the ice chain after its promotion: a heavy unit cracks or breaks
+        // the ice it arrives on (docs/ts-ice.md).
+        if reason == PerCellReason::Arrival {
+            self.unit_arrival_ice(id, rules, registry, effects);
+        }
         // 0x0073ACD7..0x0073ADC4: a harvester (or weeder) off Enter/Unload
         // drops a refinery (weeder) contact at every track end.
         if reason == PerCellReason::Arrival {
@@ -648,7 +652,7 @@ impl Simulation {
         if let Some(sound) = flags.crush_sound.as_ref() {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::wall_crushed(
-                    sound.clone(),
+                    rules.sound_name(sound),
                     &actor.position,
                 ));
             //7509E0 completes before480CB0. The existing process owner may
@@ -1129,7 +1133,7 @@ impl Simulation {
                 if let Some(event) = self.substrate.entities.get(id).and_then(|actor| {
                     let object = self.object_type(actor.type_ref(), rules)?;
                     Some(SimSoundEvent::voc_at_location(
-                        object.voice_comment.get(1)?.clone(),
+                        rules.sound_name(object.voice_comment.get(1)?),
                         actor,
                         self.resolved_terrain.as_ref(),
                     ))
@@ -2034,7 +2038,7 @@ mod discovery_tests {
             .register(HouseState::new(player, 0, None, true, 0, 10));
         sim.houses
             .register(HouseState::new(enemy, 1, None, false, 0, 10));
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         let type_ref = sim.interner.intern("TEST");
         sim.substrate
             .entities

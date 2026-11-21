@@ -66,6 +66,8 @@ pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
             key.make_ascii_uppercase();
             f(std::str::from_utf8(key).expect("ASCII uppercasing keeps UTF-8"))
         }
+        // A name longer than the buffer is rare in rules data; folding it on
+        // the heap answers the same.
         None => f(&text.to_ascii_uppercase()),
     }
 }

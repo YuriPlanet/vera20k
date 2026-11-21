@@ -99,7 +99,36 @@ pub(crate) fn build(
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
-        if !object.has_radial_indicator() || entity.category() != EntityCategory::Structure {
+        if !object.has_radial_indicator() {
+            continue;
+        }
+        if entity.category() != EntityCategory::Structure {
+            // Ares ObjectClass_DrawRadialIndicator (10049A70, hook 0x0041BE80)
+            // fills the empty stock body every other Techno has: a ring for
+            // the player's own (0x0050B6F0), in the owner's colour, through
+            // Game::DrawRadialIndicator(false, true, coords, colour, radius,
+            // false, true).
+            let radius = entity.hud.ares_radial_radius();
+            if radius > 0 && sim.house_is_human_player(entity.owner()) {
+                let position = entity.hud.get_coords;
+                let index = colors
+                    .get(sim.interner().resolve(entity.owner()))
+                    .copied()
+                    .unwrap_or(crate::rules::house_colors::NO_REMAP);
+                draws.push(RadialIndicatorDraw {
+                    center: screen_center(viewport, position.x, position.y, position.z),
+                    radius: radius as f32,
+                    truncate_radius: true,
+                    pixel_radius: false,
+                    rgb: crate::render::palette_light::house_color_rgb(
+                        &rules.house_color_ramps,
+                        index,
+                    ),
+                    fade: true,
+                    rays: false,
+                    frame: sim.session().binary_frame() as i32,
+                });
+            }
             continue;
         }
         push_building_indicator(

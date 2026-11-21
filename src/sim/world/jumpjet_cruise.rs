@@ -30,7 +30,8 @@ use crate::sim::movement::ground_pose::{
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::jumpjet_movement::JumpjetRuntime;
 use crate::sim::movement::jumpjet_movement::jumpjet_flight::{
-    self, FlightOwnerKind, JumpjetFlightHost, STATE_DESCEND, STATE_HOLD, STATE_TRANSLATE,
+    self, FlightOwnerKind, JumpjetBridgeDeck, JumpjetFlightHost, STATE_DESCEND, STATE_HOLD,
+    STATE_TRANSLATE,
 };
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::RawCellKey;
@@ -178,6 +179,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 self.stable_id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
+                true,
             );
         }
         foot_set_location(
@@ -236,9 +238,18 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         ground_surface_z_at(xy, false, self.terrain(), None).unwrap_or(0)
     }
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
-        self.terrain().is_some_and(|terrain| {
-            terrain.native_cell_flags(terrain.native_cell_identity(self.cell_of(xy))) & 0x100 != 0
-        })
+        self.high_bridge_deck(xy).is_some()
+    }
+    fn high_bridge_deck(&self, xy: [i32; 2]) -> Option<JumpjetBridgeDeck> {
+        let terrain = self.terrain()?;
+        let cell = terrain.native_cell_identity(self.cell_of(xy));
+        if terrain.native_cell_flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL == 0 {
+            return None;
+        }
+        Some(
+            crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell)
+                .map_or(JumpjetBridgeDeck::Legacy, JumpjetBridgeDeck::Fixed),
+        )
     }
     fn cell_top_height(&self, xy: [i32; 2]) -> i32 {
         let (level, slope) = self.cell_terrain(xy);
@@ -956,7 +967,7 @@ mod tests {
     use crate::rules::jumpjet_params::JumpjetParams;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::ground_pose::position_world_coord;
-    use crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_ASCEND;
+    use crate::sim::movement::jumpjet_movement::jumpjet_flight::{STATE_ASCEND, STATE_GROUND};
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::util::fixed_math::SimFixed;
     use serde_json::Value;
@@ -984,14 +995,14 @@ mod tests {
         super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 24, 16, 0, None);
         // A playfield holding the corpus corridor (x 6..20, y 9..11), for the
         // orders' searches and `In_Bounds`.
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 12,
             off_fc: 0,
             off_100: 0,
             off_104: 16,
             off_108: 16,
         });
-        sim.playfield_size_height = Some(16);
+        *sim.playfield_size_height = Some(16);
         {
             let cell = sim
                 .resolved_terrain
@@ -1038,7 +1049,7 @@ mod tests {
         }
         entity.locomotor = Some(locomotor);
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 500);
         sim
     }
@@ -1070,7 +1081,7 @@ mod tests {
         let mut sim = hovering_jumpjet(0x40);
         let rules = crate::sim::crates::tests::crate_ruleset("");
         let registry = rules.overlay_registry();
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
         let wood = registry.id_for_name("WOOD").unwrap();
         sim.overlay_grid
             .as_mut()
@@ -1123,6 +1134,39 @@ mod tests {
             phase
         })
         .unwrap()
+    }
+
+    #[test]
+    fn a_jumpjet_touches_down_at_the_fixed_deck_above_a_depression() {
+        let (mut sim, rules) = touchdown_crate_fixture();
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let cell = terrain.native_cell_identity((10, 10));
+        terrain
+            .cell_mut_for_test(10, 10)
+            .unwrap()
+            .bridge_facts
+            .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF
+            | crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        terrain.set_authored_high_bridge_deck(cell, 8);
+        let deck_z = 8 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        let e = sim.substrate.entities.get_mut(1).unwrap();
+        e.position.put_z(deck_z);
+        let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
+        *runtime = runtime
+            .clone()
+            .with_destination_for_test(DriveCoord::cell(10, 10, deck_z));
+
+        assert_eq!(descend_once(&mut sim, &rules), STATE_GROUND);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .position
+                .exact_z_leptons(),
+            Some(deck_z),
+        );
     }
 
     #[test]
@@ -1781,7 +1825,7 @@ mod tests {
             let mut sim = hovering_jumpjet(0x40);
             // The owner's type is read through the world's interner once
             // rules are present.
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             {
                 let entity = sim.substrate.entities.get_mut(1).expect("jumpjet");
                 let runtime = entity

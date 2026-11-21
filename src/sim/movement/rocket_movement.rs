@@ -32,7 +32,7 @@ use crate::rules::missile_spawn::{MissileSpawnParams, RocketTypeExt};
 use crate::sim::components::DriveCoord;
 use crate::sim::timer::CdTimer;
 use crate::util::direction_tables::{facing16_between, native_atan_from_table};
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, lepton_to_cell_packed};
+use crate::util::lepton::lepton_to_cell_packed;
 use crate::util::native_trig::facing_step_world_xy;
 use crate::util::native_x87::{
     MaskedX87Chop53 as M, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
@@ -215,6 +215,9 @@ pub(crate) trait RocketHost {
     /// `[0x00A8ED84]`, the frame the timers count from.
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
+    /// `[Map] Size` width plus height past the original's 512 limit: the pitch
+    /// takes the true 64-bit square on a VERA-only map.
+    fn vera_only_map(&self) -> bool;
     /// Owner `+0x2D4` SpawnOwner is set and `VeterancyStruct::IsElite @
     /// 0x00750010` holds for its `+0x150`.
     fn spawn_owner_is_elite(&self) -> bool;
@@ -259,7 +262,7 @@ pub(crate) trait RocketHost {
     /// The owner's cell (GetCell, vtable `+0x1BC` -> `0x005F6960`): its own
     /// GetCoords Z (`0x00486840`) when it carries a structural bridge
     /// (`+0x140 & 0x100`), else `None`.
-    fn structural_bridge_floor(&self) -> Option<i32>;
+    fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)>;
     /// Detonate's explosion: `SelectAnim @ 0x0048A4F0(damage, warhead, land,
     /// &coord)` with the land of the cell holding `coord`, then
     /// `new AnimClass(type, &coord, 0, 1, 0x2600, -15, 0)`.
@@ -480,7 +483,7 @@ fn cruise(
             coords[0].wrapping_sub(destination.x),
         ]);
         let share = M::div(M::load_i32(left), M::load_i32(rocket.cruise_start_distance));
-        let angle = target_angle(destination, host.location());
+        let angle = target_angle(destination, host.location(), host.vera_only_map());
         let rest = M::sub(f64_value(NativeF64Bits::ONE), share);
         let toward_final = M::mul(
             M::mul(f32_value(block.pitch_final), share),
@@ -498,7 +501,7 @@ fn cruise(
 /// State 5 (`0x00662CBF..0x0066300A`) after the impact prediction: turn the
 /// pitch toward the target angle by at most TurnRate.
 fn dive(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &mut impl RocketHost) {
-    let angle = target_angle(rocket.destination, host.location());
+    let angle = target_angle(rocket.destination, host.location(), host.vera_only_map());
     let zero = M::load_i32(0);
     let pitch = rocket.pitch_value();
     let turn = f32_value(block.turn_rate);
@@ -645,9 +648,9 @@ fn predicted_impact(
     ));
     let floor = rocket.destination.z;
     let impact = nose <= floor
-        || host.structural_bridge_floor().is_some_and(|cell_floor| {
-            cell_floor == floor && nose <= floor.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)
-        })
+        || host
+            .structural_bridge_floor_and_deck()
+            .is_some_and(|(cell_floor, deck)| cell_floor == floor && nose <= deck)
         || host.height() <= 0;
     if impact {
         detonate(rocket, block, ext, host);
@@ -703,15 +706,22 @@ fn along_nose(rocket: &RocketRuntime, host: &impl RocketHost, length: MaskedX87V
 /// 0x00662B2E`) and the dive (`0x00662CBF..0x00662D2E`): the horizontal
 /// distance squares and sums in int32, and nothing left to cover is straight
 /// down.
-fn target_angle(destination: DriveCoord, here: [i32; 3]) -> MaskedX87Value {
-    let dx = destination.x.wrapping_sub(here[0]);
-    let dy = destination.y.wrapping_sub(here[1]);
+fn target_angle(destination: DriveCoord, here: [i32; 3], vera_only_map: bool) -> MaskedX87Value {
     let dz = destination.z.wrapping_sub(here[2]);
-    let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-    let distance = X87Chop53::load_f32(
-        sqrt_approx_f32(X87Chop53::load_i32(squared)).expect("a finite int32 has a finite root"),
-    )
-    .expect("Sqrt_Approx returns a finite value");
+    let squared = crate::util::native_coord::squared_xy_leptons_for_map(
+        [destination.x, destination.y],
+        [here[0], here[1]],
+        vera_only_map,
+    );
+    let squared = if vera_only_map {
+        X87Chop53::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+            .expect("a VERA-only squared distance is finite")
+    } else {
+        X87Chop53::load_i32(squared as i32)
+    };
+    let distance =
+        X87Chop53::load_f32(sqrt_approx_f32(squared).expect("a finite int32 has a finite root"))
+            .expect("Sqrt_Approx returns a finite value");
     if X87Chop53::compare(distance, X87Chop53::load_i32(0)) != X87Ordering::Greater {
         return f64_value(NEG_HALF_PI);
     }
@@ -788,6 +798,10 @@ mod tests {
         fn trig(&self) -> &TrigTable {
             self.trig
         }
+        fn vera_only_map(&self) -> bool {
+            // The oracle rows are original-executable samples.
+            false
+        }
         fn spawn_owner_is_elite(&self) -> bool {
             // VeterancyStruct::IsElite: Veterancy >= [0x007E37B4] (2.0f).
             self.input["spawner_veterancy"]
@@ -863,13 +877,19 @@ mod tests {
             self.events
                 .push(json!(["aux_sound", self.input["aux_sound"], coord]));
         }
-        fn structural_bridge_floor(&self) -> Option<i32> {
+        fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
             let (x, y) = cell_of(self.location);
             self.input["bridge_cells"]
                 .as_array()
                 .expect("bridge cells")
                 .contains(&json!([x, y]))
-                .then(|| int(&self.input["bridge_floor"]) as i32)
+                .then(|| {
+                    let floor = int(&self.input["bridge_floor"]) as i32;
+                    (
+                        floor,
+                        floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                    )
+                })
         }
         fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
             let (x, y) = cell_of(coord);
@@ -1150,5 +1170,31 @@ mod tests {
         move_to(&mut rocket, block, DriveCoord { x: 1, y: 1, z: 0 }, 0);
         assert_eq!(rocket.current_pitch, f32::INFINITY.to_bits());
         assert_eq!(rocket.draw_key_bits(block), Some(0x20));
+    }
+
+    /// `0x00662AA2`/`0x00662CBF`: `(46_341, 46_341)` wraps the native
+    /// horizontal square to 9,266 (96 leptons); the true square is 65,536.
+    /// With a 1,000-lepton drop the native angle is steep and the VERA-only
+    /// one shallow.
+    #[test]
+    fn vera_only_target_angle_uses_the_true_square() {
+        let destination = DriveCoord {
+            x: 46_341,
+            y: 46_341,
+            z: 1_000,
+        };
+        let here = [0, 0, 0];
+        let native = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            false,
+        )));
+        let vera_only = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            true,
+        )));
+        assert!(native > 1.0, "native steep angle {native}");
+        assert!(vera_only < 0.1, "true shallow angle {vera_only}");
     }
 }

@@ -7,13 +7,16 @@ use crate::rules::{
     art_data::AnimTypeRuntimeConfig, overlay_types::OverlayTypeRegistry, ruleset::RuleSet,
 };
 use crate::sim::components::DriveCoord;
-use crate::sim::movement::{ground_pose::query_ground_height, locomotor::MovementLayer};
+use crate::sim::movement::{
+    ground_pose::{corrected_deck_z, deck_surface_z, query_ground_height, z_at_height},
+    locomotor::MovementLayer,
+};
 use crate::sim::object_fall::ObjectFallState;
 use crate::sim::occupancy::RawCellKey;
-use crate::sim::world::Simulation;
+use crate::sim::world::{ObjectKind, Simulation};
 use crate::util::direction::direction_delta;
 use crate::util::direction_tables::{dir_from_facing16, facing16_between};
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(super) struct FlamingGuyState {
@@ -58,6 +61,17 @@ fn expire(state: &mut FlamingGuyState, runtime: &mut super::AnimRuntime, running
     runtime.current_frame = running.wrapping_mul(8).wrapping_add(1);
 }
 
+/// Anim425670 / 4260F0 split the stock ground and deck at the midpoint,
+/// with ties on the ground. Keep that layer choice relative to the two actual
+/// surfaces for a live fixed deck, including a deck lower than the floor.
+fn runner_prefers_deck(z: i32, ground: i32, fixed_deck: Option<i32>) -> bool {
+    if let Some(deck) = fixed_deck {
+        z.abs_diff(deck) < z.abs_diff(ground)
+    } else {
+        z.wrapping_sub(ground) > 2 * GROUND_LEVEL_HEIGHT_LEPTONS
+    }
+}
+
 impl Simulation {
     /// Native4260F0 reads raw occupation, not mover pathfinding costs.
     fn flaming_guy_can_enter(
@@ -75,7 +89,7 @@ impl Simulation {
             i32::from(cells.ground_fields(cell).0 as i8).wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS);
         let key = RawCellKey::from_native(terrain, cell);
         if cells.flags(cell) & 0x100 != 0
-            && coord.z.wrapping_sub(level_z) > 2 * GROUND_LEVEL_HEIGHT_LEPTONS
+            && runner_prefers_deck(coord.z, level_z, corrected_deck_z(terrain, cell))
         {
             return self
                 .substrate
@@ -240,18 +254,22 @@ impl Simulation {
                 let old_z = coord.z;
                 let ground =
                     query_ground_height(&cells, point(coord)).expect("native runner ground slope");
-                coord.z = ground.wrapping_add(
-                    if old_z > ground.wrapping_add(2 * GROUND_LEVEL_HEIGHT_LEPTONS) {
-                        BRIDGE_DECK_HEIGHT_LEPTONS
-                    } else {
-                        0
-                    },
-                );
+                let cell = cells.lookup_world(coord.x, coord.y);
+                let fixed_deck = corrected_deck_z(terrain, cell);
+                let on_deck = if fixed_deck.is_some() {
+                    runner_prefers_deck(old_z, ground, fixed_deck)
+                } else {
+                    old_z > ground.wrapping_add(2 * GROUND_LEVEL_HEIGHT_LEPTONS)
+                };
+                coord.z = if on_deck {
+                    fixed_deck.unwrap_or_else(|| z_at_height(ground, 0, true))
+                } else {
+                    ground
+                };
                 if !state.fall.falling() {
                     let ground = query_ground_height(&cells, point(coord))
                         .expect("native runner ground slope");
-                    if coord.z >= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS) {
-                        let cell = cells.lookup_world(coord.x, coord.y);
+                    if coord.z >= deck_surface_z(&cells, cell, ground) {
                         let position = cells.coord(cell);
                         if cells.flags(cell) & 0x100 == 0
                             && cells.flags(cells.lookup(neighbor(position, 6))) & 0x100 == 0
@@ -289,6 +307,14 @@ impl Simulation {
         }
         if retire {
             self.destroy_anim(id, rules);
+        }
+
+        // `ObjectClass::AI` (`0x00423B1E`) opens with Ares'
+        // `ObjectClass_Update_AlphaLight` (hook `0x005F3E70`,
+        // `Ares.dll 10047730`): the glow moves to the runner's spot before the
+        // fall below, and before any splash it spawns.
+        if rules.ares() {
+            self.update_alpha_shape(id, ObjectKind::Anim, rules);
         }
 
         // ObjectAI5F3F11..5F413A. Anim's PerCell callback is the base no-op;

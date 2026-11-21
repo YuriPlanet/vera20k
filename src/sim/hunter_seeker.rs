@@ -178,8 +178,6 @@ pub(crate) enum HunterSeekerHeight {
 const DESCEND_MIN_LEVEL: i32 = 10;
 /// 1004DC30's look-ahead: the current cell and up to 10 more steps.
 const LOOK_AHEAD_STEPS: i32 = 10;
-/// `CellClass::GetCoordsWithBridge`: a bridge cell (flag 0x100) adds 0x1A0.
-const BRIDGE_DECK_Z: i32 = 0x1A0;
 
 impl crate::sim::world::Simulation {
     fn is_hunter_seeker(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
@@ -412,10 +410,12 @@ impl crate::sim::world::Simulation {
                 cells.as_ref(),
             )
             .z;
-            if let Some(terrain) = terrain
-                && terrain.native_cell_flags(terrain.native_cell_identity((rx, ry))) & 0x100 != 0
-            {
-                z = z.wrapping_add(BRIDGE_DECK_Z);
+            if let Some(cells) = cells.as_ref() {
+                let cell = cells.lookup((rx, ry));
+                if cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
+                    // Keep GetCoordsWithBridge's legacy lift for unresolved decks.
+                    z = crate::sim::movement::ground_pose::deck_surface_z(cells, cell, z);
+                }
             }
             highest = highest.max(z);
             if step_index == 0 {
@@ -631,5 +631,72 @@ mod tests {
             HunterSeekerHeight::Stock,
             "without a Target the hook does nothing"
         );
+    }
+
+    #[test]
+    fn ares_hunter_seeker_looks_ahead_at_the_fixed_bridge_deck() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        use crate::sim::movement::facing_class::FacingClass;
+        use crate::util::fixed_math::SIM_ONE;
+
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nHunterSeekerDescendProximity=1000\n\
+             [AircraftTypes]\n0=TEST\n\
+             [TEST]\nHunterSeeker=yes\nStrength=100\nSpeed=10\n\
+             Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let hunter = sim.spawn_object("TEST", "A", 10, 10, 0, &rules).unwrap();
+        let entity = sim.substrate.entities.get_mut(hunter).unwrap();
+        entity
+            .attack_target
+            .set_for_test(Some(TargetKind::Cell(15, 10)));
+        entity.body_facing = FacingClass::new(0x3fff, 0); // East.
+        let at = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let fly = entity
+            .locomotor
+            .as_mut()
+            .and_then(|locomotor| locomotor.fly_runtime_mut())
+            .expect("the hunter flies");
+        fly.hunt_destination(DriveCoord {
+            x: at.x + 5000,
+            y: at.y,
+            z: 0,
+        });
+        fly.set_current_speed_for_test(SIM_ONE);
+
+        let terrain_with_deck = |fixed: bool| {
+            let cells = (0..16)
+                .flat_map(|ry| (0..16).map(move |rx| test_flat_cell(rx, ry)))
+                .collect();
+            let mut terrain = ResolvedTerrainGrid::from_cells(16, 16, cells);
+            for (rx, ground) in [(10, 2), (11, 6)] {
+                terrain.cell_mut_for_test(rx, 10).unwrap().level = ground;
+                let anchor = terrain.native_cell_identity((rx as i16, 10));
+                terrain.write_native_cell_flags(
+                    anchor,
+                    BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_ANCHOR_SELF,
+                );
+                if fixed {
+                    terrain.set_authored_high_bridge_deck(anchor, 8);
+                }
+            }
+            terrain
+        };
+        sim.install_resolved_terrain_for_new_map(terrain_with_deck(true));
+        assert_eq!(
+            sim.ares_hunter_seeker_height(hunter, &rules),
+            HunterSeekerHeight::Stock,
+            "rising ground beneath a level deck does not reset FlightLevel"
+        );
+
+        sim.install_resolved_terrain_for_new_map(terrain_with_deck(false));
+        assert!(matches!(
+            sim.ares_hunter_seeker_height(hunter, &rules),
+            HunterSeekerHeight::Level(_)
+        ));
     }
 }

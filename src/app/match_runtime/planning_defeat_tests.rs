@@ -59,7 +59,7 @@ impl SoundBoundary for OutcomeCueBoundary<'_, '_> {
         }) {
             let active = self.client.planning.as_ref().unwrap().0.active();
             let queued = self.client.output.iter().filter_map(|event| match event {
-                crate::audio::events::GameSoundEvent::UiSound { sound_id } => Some(sound_id.clone()),
+                crate::audio::events::GameSoundEvent::UiSound { sound_id } => Some(sound_id.name_in(rules).to_string()),
                 _ => None,
             }).collect();
             self.outcomes.push((active, queued));

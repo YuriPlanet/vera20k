@@ -488,6 +488,7 @@ pub(super) fn run_pipeline(
             map_h,
             stride: stride as i32,
             vera_fill: inputs.urban_fill,
+            civilian_amount: inputs.embellish.civilian_amount,
         };
         let entity_base = structures.len() + tech_placements.len();
         let run = |grid: &mut RmgGrid,

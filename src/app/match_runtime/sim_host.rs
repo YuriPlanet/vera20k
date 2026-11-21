@@ -383,11 +383,14 @@ impl SimHost {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
-            && let Some(runtime) = self.runtime.as_mut()
+            && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
+            // Box selection (AddSelectable 0x006D9EF0) can ask for the order
+            // before drawing. Sort while the Ground objects are still attached.
+            frame.display_order(&runtime.simulation);
             self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
@@ -420,7 +423,7 @@ impl SimHost {
     }
 
     /// Have every frame of this scenario answer the local sidebar's `types`
-    /// too (`SidebarProjectionState::asked_types`). A home frame captured
+    /// too (`SidebarModel::asked_types`). A home frame captured
     /// without one of them is dropped, so the next read captures it; a lent
     /// tick's frame stands, as the sidebar adds types only from a tick that
     /// has come back.

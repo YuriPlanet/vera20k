@@ -196,10 +196,9 @@ pub fn publish_production_changes_for_tests(
 /// publish_production_changes plus the world's existing scheduled tail.
 #[cfg(any(test, feature = "test-support"))]
 pub fn dispatch_production_changes_for_tests(sim: &mut Simulation, rules: &RuleSet) -> bool {
-    sim.session
-        .set_tick_for_test(sim.session.tick().saturating_add(1));
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick().saturating_add(1));
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let owners: Vec<_> = sim.houses.iter().map(|(&owner, _)| owner).collect();
     for owner in owners {
         publish_production_changes_for_tests(sim, rules, owner);
@@ -305,11 +304,19 @@ pub(in crate::sim) fn exit_produced_object(
         );
         if let Some(house) = sim.houses.get_mut(&owner_id) {
             house.ai_unit_choices_mut().clear(kind);
-            // Phobos `BuildingClass_KickOutUnit_UnitType/InfantryType/
-            // AircraftType` (`0x444119`, `0x444131`, `0x443CCA`) clears the
-            // house's factory slot at this prefix, before FreeRadio and
-            // placement retries can leave the product held.
-            if rules.parallel_ai_queues_act() {
+            // `BuildingClass_KickOutUnit_UnitType/InfantryType/AircraftType`
+            // (`0x444119`, `0x444131`, `0x443CCA`) clears the house's factory
+            // slot at this prefix, before FreeRadio and placement retries can
+            // leave the product held. Ares (`10024DC0`, `10024DA0`,
+            // `10024D60`) clears it whoever holds it, a Unit's by its own
+            // `Naval=`; Phobos only while it names this producer.
+            if rules.serial_ai_queues_act() {
+                let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
+                    product_type.category,
+                    product_type.naval,
+                );
+                house.ai_production_mut().set_parallel_factory(slot, None);
+            } else if rules.parallel_ai_queues_act() {
                 let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
                     product_type.category,
                     producer_type.naval,
@@ -812,6 +819,10 @@ fn kick_out_ares_clones(
     else {
         return;
     };
+    // A copy of the House's Building vector, as `vat_ids` below: each
+    // clone's constructor and exit run through the whole simulation, whose
+    // callbacks (a Unlimbo's triggers among them) can add or remove buildings
+    // while it is walked.
     let sources: Vec<u64> = sim
         .houses
         .get(&owner)

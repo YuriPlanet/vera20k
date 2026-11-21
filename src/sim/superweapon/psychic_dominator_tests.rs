@@ -222,7 +222,7 @@ fn retail_process_steps_match_native() {
                 .current_frame = stage;
             anim
         });
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             PsychicDominatorState::for_test(status, ORACLE_CELL, Some(americans), anim);
         let (target, current) = pair(&row["ambient"]);
         sim.session
@@ -241,7 +241,7 @@ fn retail_process_steps_match_native() {
             &mut crate::sim::world::FrameEffects::default(),
         );
 
-        let state = sim.psychic_dominator;
+        let state = *sim.psychic_dominator;
         assert_eq!(i32::from(state.status_number()), status_after, "{row}");
         let (x, y) = pair(&row["coords_after"]);
         assert_eq!(state.cell(), (x as i16, y as i16), "{row}");
@@ -318,7 +318,7 @@ fn retail_start_matches_native() {
         };
         rules.general.dominator_first_anim = set(&anims.0, &row["first"]);
         rules.general.dominator_second_anim = set(&anims.1, &row["second"]);
-        sim.psychic_dominator = PsychicDominatorState::default();
+        *sim.psychic_dominator = PsychicDominatorState::default();
         sim.session
             .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
         sim.session
@@ -333,7 +333,7 @@ fn retail_start_matches_native() {
             &mut sim, &rules, americans, sw_type, cell
         ));
 
-        let state = sim.psychic_dominator;
+        let state = *sim.psychic_dominator;
         assert_eq!(
             i32::from(state.status_number()),
             int(&row["status"]),
@@ -430,12 +430,12 @@ fn update_lighting_matches_native() {
         sim.session
             .lighting_mut()
             .set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
-        sim.lightning_storm = if row["storm"].as_bool().unwrap() {
+        *sim.lightning_storm = if row["storm"].as_bool().unwrap() {
             LightningStorm::raging_for_test(owner, (10, 10))
         } else {
             LightningStorm::default()
         };
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             PsychicDominatorState::for_test(psydom, ORACLE_CELL, Some(owner), None);
         let lighting_before = global_lighting_events(&sim);
 
@@ -499,7 +499,7 @@ fn ambient_step_matches_native() {
         let (start, duration) = pair(&row["timer"]);
         lighting.set_transition_timer_for_test(CdTimer::from_raw(start, duration));
         let psydom = u8::try_from(int(&row["psydom"])).unwrap();
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             PsychicDominatorState::for_test(psydom, ORACLE_CELL, Some(owner), None);
         let lighting_before = global_lighting_events(&sim);
 
@@ -715,7 +715,7 @@ fn retail_dominator_strike_captures_the_block() {
     loaded
         .restore_after_snapshot_load()
         .expect("mind-control links resolve");
-    assert_eq!(loaded.psychic_dominator, sim.psychic_dominator);
+    assert_eq!(*loaded.psychic_dominator, *sim.psychic_dominator);
     // Native saves no IonBlast.
     assert_eq!(loaded.ion_blasts().count(), 0);
     for id in [tank, conscript] {

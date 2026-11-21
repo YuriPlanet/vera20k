@@ -340,7 +340,7 @@ mod tests {
             [100, 8],
             Some([18, 20]),
             [135, 17],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
         let third = layout_loading_progress_row(
@@ -351,7 +351,7 @@ mod tests {
             [100, 8],
             Some([18, 20]),
             [135, 17],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             2,
         );
         // 64377D: 2 * (max(insignia20,bar8+6,font17)+padding4).
@@ -396,7 +396,7 @@ mod tests {
                 pair("bar_size"),
                 None,
                 pair("font_size"),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 0,
             );
             assert_eq!(
@@ -421,7 +421,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -440,7 +440,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -459,7 +459,7 @@ mod tests {
             [80, 5],
             None,
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -478,7 +478,7 @@ mod tests {
             [80, 5],
             Some([20, 10]),
             [0, 30],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -498,7 +498,7 @@ mod tests {
                     [80, 5],
                     Some([47, 23]),
                     [135, 17],
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                     node,
                 )
             })
@@ -535,7 +535,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [135, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
         assert_eq!(native.bar_origin, [20, 267]);
@@ -543,7 +543,7 @@ mod tests {
     }
     #[test]
     fn last_extended_loading_row_uses_the_same_scaled_viewport_as_its_meter() {
-        let scale = ShellScale::from_screen(1280, 720);
+        let scale = crate::ui::shell::geom::shell_scale(1280, 720);
         let row = layout_loading_progress_row(
             LoadingProgressRowPlacement::StandardSkirmish {
                 render_size: [1280, 720],

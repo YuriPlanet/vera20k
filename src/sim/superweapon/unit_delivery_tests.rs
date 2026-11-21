@@ -336,7 +336,7 @@ fn unit_delivery_pending_save_restores_deadline_payload_and_one_shot_completion(
     // empty arena before resuming its saved pending delivery.
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     restored.restore_after_snapshot_load().unwrap();
-    assert_eq!(restored.unit_deliveries, original.unit_deliveries);
+    assert_eq!(*restored.unit_deliveries, *original.unit_deliveries);
     restored.sound_events.clear_for_test();
     original.sound_events.clear_for_test();
     for frame in [19, 20, 21] {
@@ -362,7 +362,7 @@ fn unit_delivery_pending_save_restores_deadline_payload_and_one_shot_completion(
             .collect::<Vec<_>>()
     };
     assert_eq!(records(&restored), records(&original));
-    assert_eq!(restored.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).count(), 1);
+    assert_eq!(restored.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "DeliveryCue")).count(), 1);
 }
 
 #[test]
@@ -386,7 +386,7 @@ fn unit_delivery_base_override_survives_save_and_capture_without_affecting_ordin
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
         .sim;
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     assert!(
         !restored
@@ -704,7 +704,7 @@ fn unit_delivery_building_builds_up() {
         .set_current_house_for_test(sim.interner.get("Americans"));
     fire(&mut sim, &rules, "Americans", (12, 10));
     assert!(sim.sound_events.iter().any(
-        |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")
+        |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "DeliveryCue")
     ));
     let ids = payloads(&sim, "GAPOWR");
     assert_eq!(ids.len(), 1);
@@ -826,7 +826,7 @@ fn unit_delivery_same_due_requests_complete_newest_first_and_only_once() {
     assert!(sim.unit_deliveries.pending.is_empty());
     tick(&mut sim, &rules, None, &mut FrameEffects::default());
     assert_eq!(payloads(&sim, "MTNK").len(), 2);
-    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).count(), 2);
+    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "DeliveryCue")).count(), 2);
 }
 
 #[test]

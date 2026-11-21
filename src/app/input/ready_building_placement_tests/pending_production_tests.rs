@@ -81,7 +81,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             let left = press_cameo(&mut fixture, "E2", SidebarTab::Infantry, CameoPress::Left);
             assert_eq!(left.order, Some(CameoOrder::Produce));
             assert_eq!(
-                fixture.projection.cameo_request(e2),
+                fixture.projection.model.cameo_request(e2),
                 Some(CameoRequestState::Started)
             );
             assert!(
@@ -104,7 +104,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             assert!(right.sound);
             assert_eq!(right.eva, Some(sidebar_eva::EVA_ON_HOLD));
             assert_eq!(
-                fixture.projection.cameo_request(e2),
+                fixture.projection.model.cameo_request(e2),
                 Some(CameoRequestState::Held)
             );
             let pending = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
@@ -151,14 +151,14 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             assert!(factory.queue.is_empty());
             assert!(fixture.sim.entities().get(held_id).unwrap().in_limbo());
             assert_eq!(
-                fixture.projection.cameo_request(e2),
+                fixture.projection.model.cameo_request(e2),
                 Some(CameoRequestState::Held),
                 "linking preserves the pending HOLD request"
             );
             assert_eq!(
                 fixture
                     .projection
-                    .saved_order()
+                    .model.saved_order()
                     .unwrap()
                     .prediction_categories(),
                 native_e2_category_gates("receive_produce_then_suspend", ares_way)
@@ -196,13 +196,13 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             let resume = press_cameo(&mut fixture, "E2", SidebarTab::Infantry, CameoPress::Left);
             assert_eq!(resume.order, Some(CameoOrder::Produce));
             assert_eq!(
-                fixture.projection.cameo_request(e2),
+                fixture.projection.model.cameo_request(e2),
                 Some(CameoRequestState::Started)
             );
             assert_eq!(
                 fixture
                     .projection
-                    .saved_order()
+                    .model.saved_order()
                     .unwrap()
                     .prediction_categories(),
                 native_e2_category_gates("left_held_resume", ares_way),
@@ -259,7 +259,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
                 production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Russians")
                     .is_empty()
             );
-            assert_eq!(fixture.projection.cameo_request(e2), None);
+            assert_eq!(fixture.projection.model.cameo_request(e2), None);
             let sidebar = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
             let cameo = sidebar
                 .items
@@ -324,7 +324,7 @@ fn held_e2_resume_suppresses_a_vehicle_pending_request_before_dispatch() {
     assert!(
         fixture
             .projection
-            .saved_order()
+            .model.saved_order()
             .unwrap()
             .prediction_categories()
             .is_empty()
@@ -333,7 +333,7 @@ fn held_e2_resume_suppresses_a_vehicle_pending_request_before_dispatch() {
     assert_eq!(resumed.order, Some(CameoOrder::Produce));
     let vehicle = press_cameo(&mut fixture, "HTNK", SidebarTab::Vehicle, CameoPress::Left);
     assert_eq!(vehicle.order, Some(CameoOrder::Produce));
-    assert_eq!(fixture.projection.cameo_request(htnk), None);
+    assert_eq!(fixture.projection.model.cameo_request(htnk), None);
     let right = press_cameo(
         &mut fixture,
         "HTNK",
@@ -373,7 +373,7 @@ fn busy_infantry_left_and_queued_right_do_not_hold_the_current_head() {
     );
     assert_eq!(queued_left.order, Some(CameoOrder::Produce));
     assert_eq!(
-        fixture.projection.cameo_request(flakt),
+        fixture.projection.model.cameo_request(flakt),
         None,
         "a busy-category request has no pending-first flag"
     );

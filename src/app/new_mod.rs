@@ -234,7 +234,7 @@ mod tests {
         use crate::ui::match_layout::MatchLayoutFile;
         let (_, text) = STARTERS[1];
         let as_written = MatchLayoutFile::from_bytes(text.as_bytes());
-        assert!(as_written.for_side(Some("GDI")).is_none());
+        assert!(as_written.for_side(Some("GDI"), true).is_none());
         assert!(as_written.problems().is_empty());
         let uncommented: String = text
             .lines()
@@ -245,7 +245,7 @@ mod tests {
             .flat_map(|line| [line, "\n"])
             .collect();
         let example = MatchLayoutFile::from_bytes(uncommented.as_bytes());
-        assert!(example.for_side(Some("GDI")).is_some());
+        assert!(example.for_side(Some("GDI"), true).is_some());
         assert!(example.problems().is_empty(), "{:?}", example.problems());
     }
 

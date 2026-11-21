@@ -319,6 +319,26 @@ fn keep_screen_on(app: &AndroidApp) {
     );
 }
 
+/// Read one entry from the APK's assets through Android's AssetManager.
+fn packaged_bytes(app: &AndroidApp, file: &str) -> std::io::Result<Vec<u8>> {
+    let name = std::ffi::CString::new(file)?;
+    let mut asset = app
+        .asset_manager()
+        .open(&name)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, file.to_owned()))?;
+    Ok(asset.buffer()?.to_vec())
+}
+
+fn install_packaged_map(app: &AndroidApp) -> anyhow::Result<()> {
+    use vera20k::map::installed::{ARCTIC_MAP, install_arctic_map};
+
+    let maps = vera20k::util::config::GameConfig::load()?
+        .paths
+        .downloaded_maps_dir();
+    install_arctic_map(&maps, || packaged_bytes(app, ARCTIC_MAP))?;
+    Ok(())
+}
+
 /// Resolved by `android-activity`'s loader trampoline; the name is the ABI.
 ///
 /// Android calls the symbol with the activity's handle, which
@@ -357,6 +377,17 @@ fn android_main(app: AndroidApp) {
 
     let log_path = vera20k::entry::init_logging();
     vera20k::entry::log_banner(log_path.as_deref());
+    if let Err(error) = install_packaged_map(&app) {
+        log::warn!("Could not install the packaged skirmish map: {error:#}");
+    }
+    if let Some(root) = vera20k::util::platform_dir::get() {
+        use vera20k::assets::ice_pack;
+        if let Err(error) = ice_pack::install(&root.join(ice_pack::DIRECTORY), |name, _| {
+            packaged_bytes(&app, name)
+        }) {
+            log::warn!("Could not install the packaged ice terrain: {error}");
+        }
+    }
     // Bind the picker's callback before the player can reach the button, and say
     // whether it took: a silent failure here is what turned a missing folder
     // picker into an `UnsatisfiedLinkError` at the worst moment.

@@ -20,7 +20,7 @@ fn actor(id: u64, category: EntityCategory, kind: LocomotorKind) -> GameEntity {
 fn fixture(category: EntityCategory, kind: LocomotorKind) -> Simulation {
     let mut sim = Simulation::new();
     sim.substrate.entities.insert(actor(1, category, kind));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim
 }
 
@@ -350,7 +350,7 @@ fn an_airborne_fly_object_is_marked_without_joining_its_cell() {
 fn a_cruising_jumpjet_clears_the_deck_bit_on_remove_and_joins_nothing_on_put() {
     let mut sim = cruising_jumpjet();
     // Level-0 ground under the owner for the receiver's height test.
-    sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
+    *sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
         8, 8,
     )));
     sim.substrate
@@ -426,7 +426,7 @@ fn a_location_outside_the_map_is_marked_without_a_cell() {
             (0..4).map(move |x| crate::sim::world::common_raw_test_terrain_cell(x, y, 0, false))
         })
         .collect();
-    sim.resolved_terrain =
+    *sim.resolved_terrain =
         Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(4, 4, cells));
     assert!(sim.foot_mark_put(
         1,
@@ -525,4 +525,63 @@ fn a_listed_landed_jumpjet_units_mark_writes_its_vehicle_bit() {
     ));
     assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0x20);
+}
+
+/// `foot_mark_query_scope` drops the Foot's mark, asks the entry question with
+/// it dropped, and puts it back (`4B345B..4B34D1`). The body sees the Cell
+/// without the Foot, the scope answers what the body answers, and the world it
+/// leaves is the one it found: the list entry, the raw bits and the mark flag
+/// all come back.
+#[test]
+fn the_query_scope_puts_back_the_mark_it_dropped() {
+    let mut sim = fixture(EntityCategory::Unit, LocomotorKind::Drive);
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    assert!(sim.foot_mark_put(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
+    let listed = sim.substrate.occupancy.contains_entity(4, 4, 1);
+    let bits = sim.substrate.raw_cell_occupation.ground_bits(4, 4);
+    assert!(listed && bits != 0);
+    let before = sim.state_hash();
+    let answer = sim.foot_mark_query_scope(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+        |sim| sim.substrate.occupancy.contains_entity(4, 4, 1),
+    );
+    assert!(!answer, "the body asks with the mark dropped");
+    assert_eq!(
+        sim.state_hash(),
+        before,
+        "the scope leaves the marked world as it found it"
+    );
+    assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
+    assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), bits);
+}
+
+/// An object whose Mark(UP) the lifecycle refuses runs the body without a
+/// mark to put back, so the scope is the body.
+#[test]
+fn the_query_scope_of_an_unmarkable_object_is_the_body() {
+    let mut sim = fixture(EntityCategory::Unit, LocomotorKind::Drive);
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(true);
+    let answer = sim.foot_mark_query_scope(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+        |_sim| 3u8,
+    );
+    assert_eq!(answer, 3);
+    assert!(!sim.substrate.occupancy.contains_entity(4, 4, 1));
 }
