@@ -55,7 +55,7 @@ pub use player_name::{
     handle_player_name_tab, initialize_rows_for_selected_map, insert_player_name_text,
     player_name_caret_prefix, player_name_edit_rect_hit, player_row_visible,
     repair_teams_for_selected_mode, selected_player_rows, set_status_help_text,
-    update_player_name_scroll_for_caret,
+    skirmish_session_options, update_player_name_scroll_for_caret,
 };
 pub use random_map_extras::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,

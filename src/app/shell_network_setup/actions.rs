@@ -217,11 +217,16 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         .clone();
     match control {
         0x54E => {
-            options.short_game = !options.short_game;
-            if options.short_game {
-                options.bases = true;
-            }
+            crate::skirmish_launch::click_short_game(&mut options.short_game, &mut options.bases)
         }
+        BASES => {
+            crate::skirmish_launch::click_bases(&mut options.bases, &mut options.short_game)
+        }
+        // C2's other hidden session checkboxes: Multi-Engineer (0x78FB2B),
+        // Harvester Truce (0x78FBBB) and Fog of War (0x78FC07).
+        MULTI_ENGINEER => options.multi_engineer = !options.multi_engineer,
+        HARVESTER_TRUCE => options.harvester_truce = !options.harvester_truce,
+        FOG_OF_WAR => options.fog_of_war = !options.fog_of_war,
         0x3E8 => options.mcv_redeploy = !options.mcv_redeploy,
         0x54D => options.crates = !options.crates,
         0x69A => options.super_weapons = !options.super_weapons,
@@ -337,6 +342,7 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
                 }
                 options.host_rules.superweapon_limit = limit;
             }
+            TECH_LEVEL => options.tech_level = value,
             _ => anyhow::bail!("unknown setup slider"),
         }
         // A drag sends only when its value moves.

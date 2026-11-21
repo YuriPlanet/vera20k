@@ -453,6 +453,8 @@ impl App {
             superweapon_limit: profile.superweapon_limit,
             terrain_deformation: profile.terrain_deformation,
             skirmish_cheats: profile.skirmish_cheats,
+            session: state.frontend.skirmish_shell_state.session,
+            short_game: state.frontend.skirmish_shell_state.short_game,
         };
         state.frontend.skirmish_shell_state.game_options = Some(GameOptionsBox::new(rules));
         state.platform.window.request_redraw();
@@ -461,10 +463,15 @@ impl App {
     /// OK, Enter or Esc on the Game Options box: it closes, and the next
     /// game's rules and VERA.INI take what it shows.
     pub(super) fn close_skirmish_game_options(state: &mut AppState) {
-        let Some(open) = state.frontend.skirmish_shell_state.game_options.take() else {
+        let shell = &mut state.frontend.skirmish_shell_state;
+        let Some(open) = shell.game_options.take() else {
             return;
         };
         let rules = open.rules;
+        // The page keeps the session options with its own, and the Short
+        // Game unticking Bases may have unticked.
+        shell.session = rules.session;
+        shell.short_game = rules.short_game;
         let profile = &mut state.persistence.options_profile;
         let shared_rules_changed = (profile.superweapon_limit, profile.terrain_deformation)
             != (rules.superweapon_limit, rules.terrain_deformation);
