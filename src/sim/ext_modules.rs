@@ -67,6 +67,7 @@ use vera20k_wasm_ext::{
 
 mod actions;
 mod cells;
+mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
 mod rules;
@@ -1287,8 +1288,9 @@ impl Simulation {
     /// Those that ran `vera_init` and `on_rules` while `rules` were
     /// processed keep their state; the others run `vera_init` now, once
     /// every module's variables are declared. `rules_ini` is the merged
-    /// rules text `rules_get` reads. An error names the module; the match
-    /// must not start.
+    /// rules text `rules_get` reads. Then the mod's INI triggers are built
+    /// ([`ini_triggers`]). An error names the module or the INI section; the
+    /// match must not start.
     pub fn install_scenario_ext_modules(
         &mut self,
         rules: &RuleSet,
@@ -1304,13 +1306,13 @@ impl Simulation {
             policy,
             modules,
             log,
+            ini_triggers,
         } = prepared;
         self.ext_modules.log.extend(log);
         self.ext_modules.map_ui = policy.map_ui;
-        if modules.is_empty() {
-            return Ok(());
+        if !modules.is_empty() {
+            self.ext_modules.rules_ini = Some(rules_ini);
         }
-        self.ext_modules.rules_ini = Some(rules_ini);
         let mut uninitialized = Vec::new();
         for prepared in modules {
             let source = prepared.source;
@@ -1329,7 +1331,9 @@ impl Simulation {
             self.init_ext_slot(rules, position)
                 .map_err(|e| format!("the {source:?} module: {e}"))?;
         }
-        Ok(())
+        // The mod's INI triggers, once their modules can answer names.
+        self.install_ini_triggers(rules, &ini_triggers)
+            .map_err(|e| format!("the mod's rulesmd.ini: {e}"))
     }
 
     /// Instantiates the modules a save carried and puts back their state.
@@ -1510,3 +1514,7 @@ mod tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_trigger_tests.rs"]
 mod trigger_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_ini_trigger_tests.rs"]
+mod ini_trigger_tests;

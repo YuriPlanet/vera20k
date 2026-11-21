@@ -28,6 +28,9 @@ pub use action_kinds::{
     ATOMIC_ACTIONS, FIRST_ATOMIC_ACTION, STOCK_ACTIONS, action_kind_id, action_kind_name,
 };
 
+mod event_kinds;
+pub use event_kinds::{DELIVERED_EVENTS, FIRST_DELIVERED_EVENT, STOCK_EVENTS, event_kind_id};
+
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use native::SimModule;
 

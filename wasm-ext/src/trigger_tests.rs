@@ -94,6 +94,7 @@ impl SimHost for Triggers {
         _kind: i32,
         _target: i64,
         _params: &crate::ActionParams,
+        _text: &str,
     ) -> Result<(i64, Status), Invalid> {
         Ok((0, Status::Unsupported))
     }
@@ -220,4 +221,23 @@ fn malformed_custom_sections_reject_the_module() {
             .unwrap_or_else(|| panic!("{why}: module loaded"));
         assert!(error.to_string().contains(why), "{why}: {error}");
     }
+}
+
+/// The trigger-side action numbers are the appendix 5.3 table's.
+#[test]
+fn trigger_action_numbers_match_the_action_kind_table() {
+    use crate::triggers::{ACTION_MODULE, ACTION_SET_VAR};
+    assert_eq!(crate::action_kind_id("SetVar"), Some(ACTION_SET_VAR));
+    assert_eq!(crate::action_kind_id("Module"), Some(ACTION_MODULE));
+}
+
+/// The trigger-side event numbers are the appendix 4.3 table's.
+#[test]
+fn trigger_event_numbers_match_the_event_kind_table() {
+    use crate::triggers::{EVENT_FIRE, EVENT_KILLED, EVENT_TAKE_DAMAGE, EVENT_TIMER};
+    assert_eq!(crate::event_kind_id("takedamage"), Some(EVENT_TAKE_DAMAGE));
+    assert_eq!(crate::event_kind_id("Killed"), Some(EVENT_KILLED));
+    assert_eq!(crate::event_kind_id("Fire"), Some(EVENT_FIRE));
+    assert_eq!(crate::event_kind_id("Timer"), Some(EVENT_TIMER));
+    assert_eq!(crate::event_kind_id("TechTypeDoesNotExist"), Some(61));
 }
