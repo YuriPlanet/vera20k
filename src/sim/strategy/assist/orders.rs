@@ -1896,15 +1896,7 @@ pub(super) fn managed(
     tick: u64,
     out: &mut Outbox,
 ) {
-    // The depot when the house has one, the base's anchor otherwise.
-    let depot = brain.census.repair_building;
-    // With no bay, the walk ends beside the base: the yard's own cell is its
-    // foundation, and a Move to it is a walk that never arrives.
-    let post = brain
-        .census
-        .repair_cell
-        .or(brain.census.rally)
-        .or(brain.census.base_cell);
+
     // Collected before anything is written: the routine takes the unit, and
     // the ledger is borrowed while it is read.
     let retreating: Vec<(u64, (u16, u16), MissionId)> = brain
@@ -1930,6 +1922,17 @@ pub(super) fn managed(
         .map(|unit| (unit.entity_id, unit.cell, unit.mission))
         .collect();
     for (entity_id, cell, mission) in retreating {
+        // The bay this unit walks to: the nearest one the house owns, so two
+        // service depots share the work instead of every hurt unit crossing the
+        // base to the first. With no bay the walk ends beside the base — the
+        // yard's own cell is its foundation, and a Move to it is a walk that
+        // never arrives.
+        let site = brain.census.nearest_repair_site(cell);
+        let depot = site.map(|(_, entity)| entity);
+        let post = site
+            .map(|(cell, _)| cell)
+            .or(brain.census.rally)
+            .or(brain.census.base_cell);
         // Standing on the post is the end of the walk. The army does not get the
         // unit back yet — it is still under the line the retreat was called at —
         // but it does not need a routine either: attaching one only to have it

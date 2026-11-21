@@ -1720,3 +1720,65 @@ fn a_cell_across_the_water_is_not_an_order() {
         "and the near bank is"
     );
 }
+
+/// A house with two `UnitRepair=` bays sends a hurt unit to the *nearest* one.
+///
+/// The retreat used to read one `get_or_insert` slot from the census, so a
+/// house that owned two service depots sent every hurt unit to whichever the
+/// entity scan met first and the second pad stood idle all match — the user's
+/// 把载具拉回维修厂修复，修一辆另一个不修了 (m02257). The unit below is hurt at
+/// (6,20), a depot stands at (8,20) and another at (40,20): the click must be
+/// on the near one.
+#[test]
+fn a_hurt_unit_walks_to_the_nearest_repair_bay() {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=TANK\n[BuildingTypes]\n0=DEPOT\n\
+         [TANK]\nStrength=100\nSpeed=5\nPrimary=Gun\nArmor=none\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [Gun]\nDamage=10\nROF=20\nRange=4\nWarhead=SA\nProjectile=Bullet\n\
+         [SA]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [DEPOT]\nStrength=1000\nFoundation=3x3\nUnitRepair=yes\n\
+         NumberImpassableRows=1\n",
+    ))
+    .expect("depot rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    let tank = sim
+        .spawn_object("TANK", "Americans", 6, 20, 64, &rules)
+        .expect("a tank");
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .expect("the tank")
+        .health
+        .set_for_test(20);
+    let near = sim
+        .spawn_object("DEPOT", "Americans", 8, 20, 255, &rules)
+        .expect("a near depot");
+    let far = sim
+        .spawn_object("DEPOT", "Americans", 40, 20, 255, &rules)
+        .expect("a far depot");
+
+    let obs = Observation::new(&sim, owner);
+    let mut brain = AssistBrain::new(0xA17);
+    brain.rebuild_census(&rules, &obs);
+    assert_eq!(
+        brain.census.nearest_repair_site((6, 20)),
+        Some(((8, 20), near)),
+        "the near bay, not the one the scan met first"
+    );
+    assert_ne!(near, far);
+
+    let mut out = Outbox::default();
+    managed(&mut brain, &rules, &obs, 0, &mut out);
+    assert_eq!(
+        out.orders
+            .iter()
+            .find(|order| order.actor == tank)
+            .map(|order| order.goal),
+        Some(Goal::Enter { target: near }),
+        "the hurt tank is sent into the bay it can reach"
+    );
+}

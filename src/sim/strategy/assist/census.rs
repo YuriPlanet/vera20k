@@ -515,16 +515,14 @@ pub(super) struct Census {
     /// retreat running around the outside of its own base and arrives where it
     /// started — the unit that "returned to base" and then paced inside it.
     pub(super) rally: Option<(u16, u16)>,
-    /// The cell of the house's `UnitRepair=` building, when one stands: where a
-    /// hurt vehicle goes back to. The post a retreat walks to, instead of the
-    /// yard — a unit that walks home from a fight and stands there is a unit the
-    /// house paid for and cannot use.
-    pub(super) repair_cell: Option<(u16, u16)>,
-    /// The first `UnitRepair=` building itself, so the retreat can click it
-    /// rather than walk at its cell: entering the bay is an Enter order on the
-    /// building (`FootClass::ClickedAction`'s depot arm), and a cell cannot be
-    /// entered.
-    pub(super) repair_building: Option<u64>,
+    /// Every `UnitRepair=` bay the house owns, with its cell.
+    ///
+    /// There can be more than one, and the retreat used to read a single
+    /// `get_or_insert` slot: a house with two service depots sent every hurt
+    /// unit to whichever the scan met first, the second pad stood idle all
+    /// match, and the report was the plain one — 把载具拉回维修厂修复，修一辆另一个不修了
+    /// (m02257). The bay a hurt unit walks to is now the nearest one to it.
+    pub(super) repair_sites: Vec<((u16, u16), u64)>,
     /// How many enemy buildings are standing, strike sites or not.
     ///
     /// `enemies.len()` mixes units and buildings, and the two end a match
@@ -566,6 +564,18 @@ impl Census {
     /// One owner for the measure the reserve, the tree's gate and the vehicle
     /// line all read: three copies of the comparison is three chances for the
     /// house to call itself short in one place and served in another.
+    /// The `UnitRepair=` bay a hurt unit at `from` should walk to.
+    ///
+    /// The nearest one, with the entity id breaking ties so the choice is the
+    /// same on every frame: a unit sent to whichever bay the scan met first
+    /// crosses the whole base when the far bay is the one it walks past.
+    pub(super) fn nearest_repair_site(&self, from: (u16, u16)) -> Option<((u16, u16), u64)> {
+        self.repair_sites
+            .iter()
+            .copied()
+            .min_by_key(|(cell, entity)| (super::squared_distance(*cell, from), *entity))
+    }
+
     pub(super) fn harvesters_served(&self) -> bool {
         self.harvesters >= super::build::HARVESTERS_PER_REFINERY * self.refineries.max(1)
     }
@@ -700,8 +710,7 @@ impl Census {
         self.home_cells.clear();
         self.base_cell = None;
         self.yard_cells.clear();
-        self.repair_cell = None;
-        self.repair_building = None;
+        self.repair_sites.clear();
         self.ready.clear();
         self.harvesters = 0;
         self.refineries = 0;
@@ -760,8 +769,7 @@ impl Census {
                 }
                 self.base_cell.get_or_insert(entity.cell);
                 if traits.repairs_units {
-                    self.repair_cell.get_or_insert(entity.cell);
-                    self.repair_building.get_or_insert(entity.entity_id);
+                    self.repair_sites.push((entity.cell, entity.entity_id));
                 }
             }
             let points = if combat {

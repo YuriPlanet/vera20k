@@ -608,7 +608,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         // whether one is wanted is that list's answer, not a count's.
         Item::Support => 0,
         // One shed is enough: it repairs a whole army, one unit at a time.
-        Item::Repair => usize::from(census.repair_building.is_some()),
+        Item::Repair => usize::from(!census.repair_sites.is_empty()),
         Item::Superweapon => build::superweapons(rules, obs, census),
     }
 }
