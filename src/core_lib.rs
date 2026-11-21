@@ -63,6 +63,11 @@ pub mod headless_scenario;
 pub mod skirmish_launch;
 pub mod skirmish_modes;
 
+// JSON Lines control of one GPU-free skirmish (src/play_cli/README.md). A tool
+// module beside the engine: it reads the simulation's own owners and issues
+// its commands through them, and changes no gameplay.
+pub mod play_cli;
+
 // Fixture files that library tests read from the checkout; client tests reach
 // them through the `test-support` feature.
 #[cfg(any(test, feature = "test-support"))]

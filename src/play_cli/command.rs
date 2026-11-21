@@ -1,10 +1,10 @@
 //! Translate CLI arguments into existing simulation orders.
 
+use crate::sim::combat::TargetKind;
+use crate::sim::command::Command;
+use crate::sim::intern::InternedId;
+use crate::sim::production::ProductionCategory;
 use serde::Deserialize;
-use vera20k_core::sim::combat::TargetKind;
-use vera20k_core::sim::command::Command;
-use vera20k_core::sim::intern::InternedId;
-use vera20k_core::sim::production::ProductionCategory;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case", deny_unknown_fields)]
@@ -93,6 +93,28 @@ pub enum Order {
 }
 
 impl Order {
+    /// An order the simulation admits nothing for. Native's own admission
+    /// owner drops such an order; the CLI answers an error instead of
+    /// queueing one that silently does nothing.
+    pub(super) fn rejects(&self) -> Option<&'static str> {
+        match self {
+            Self::Rally { producers, .. } if producers.is_empty() => {
+                Some("a rally order needs at least one producer")
+            }
+            _ => None,
+        }
+    }
+
+    /// The objects an order names besides the ones it commands: the attack
+    /// target and the building a capture works on.
+    pub(super) fn referenced(&self) -> &[u64] {
+        match self {
+            Self::Attack { target, .. } => std::slice::from_ref(target),
+            Self::Capture { building, .. } => std::slice::from_ref(building),
+            _ => &[],
+        }
+    }
+
     pub(super) fn actors(&self) -> &[u64] {
         match self {
             Self::Move { unit, .. }

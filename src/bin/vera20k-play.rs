@@ -1,17 +1,14 @@
 //! Drive one headless skirmish over standard input and output. See `src/play_cli/README.md`.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use vera20k_core::play_cli::protocol::{self, Outcome};
+use vera20k_core::play_cli::{Session, SessionOptions};
 use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry};
 use vera20k_core::util::config::GameConfig;
 
-#[path = "../play_cli/mod.rs"]
-mod play_cli;
-use play_cli::{Event, Request, Session, SessionOptions};
-
-const MAX_LINE_BYTES: usize = 64 * 1024;
 const COUNTRIES: [LaunchCountry; 7] = [
     LaunchCountry::Russia,
     LaunchCountry::Cuba,
@@ -131,7 +128,7 @@ fn run(args: Args) -> Result<bool, String> {
         }
     };
     let stdin = io::stdin();
-    let mut input: Box<dyn BufRead> = match args.script {
+    let input: Box<dyn BufRead> = match args.script {
         Some(path) => {
             let file = std::fs::File::open(&path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
@@ -151,47 +148,13 @@ fn run(args: Args) -> Result<bool, String> {
     })?;
     let stdout = io::stdout();
     let mut output = stdout.lock();
-    write_event(&mut output, &ready)?;
+    protocol::write_event(&mut output, &ready)?;
     drop(ready);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        let count = input
-            .by_ref()
-            .take((MAX_LINE_BYTES + 1) as u64)
-            .read_until(b'\n', &mut line)
-            .map_err(|error| error.to_string())?;
-        let event = if count == 0 {
-            session.eof()
-        } else if line.len() > MAX_LINE_BYTES {
-            Event::Error {
-                message: format!("request exceeds {MAX_LINE_BYTES} bytes"),
-                fatal: true,
-            }
-        } else if line.iter().all(u8::is_ascii_whitespace) {
-            continue;
-        } else {
-            match serde_json::from_slice::<Request>(&line) {
-                Ok(request) => session.handle(request),
-                Err(error) => Event::Error {
-                    message: format!("invalid request: {error}"),
-                    fatal: false,
-                },
-            }
-        };
-        write_event(&mut output, &event)?;
-        match event {
-            Event::Finished { .. } => return Ok(true),
-            Event::Error { fatal: true, .. } => return Ok(false),
-            _ => {}
+    match protocol::run(&mut session, input, &mut output)? {
+        Outcome::Finished => Ok(true),
+        Outcome::Failed(message) => {
+            eprintln!("vera20k-play: {message}");
+            Ok(false)
         }
     }
-}
-
-fn write_event(output: &mut impl Write, event: &Event) -> Result<(), String> {
-    serde_json::to_writer(&mut *output, event).map_err(|error| error.to_string())?;
-    output
-        .write_all(b"\n")
-        .and_then(|()| output.flush())
-        .map_err(|error| error.to_string())
 }

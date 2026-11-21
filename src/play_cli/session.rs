@@ -2,19 +2,19 @@
 
 use std::path::PathBuf;
 
-use vera20k_core::headless_scenario;
-use vera20k_core::rules::object_type::ObjectCategory;
-use vera20k_core::sim::command::{Command, CommandEnvelope};
-use vera20k_core::sim::house_state::HouseOutcomeKind;
-use vera20k_core::sim::intern::InternedId;
-use vera20k_core::sim::production::{
+use crate::headless_scenario;
+use crate::rules::object_type::ObjectCategory;
+use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::house_state::HouseOutcomeKind;
+use crate::sim::intern::InternedId;
+use crate::sim::production::{
     ProductionCategory, build_options_for_owner, placement_preview_for_owner_with_overlays,
     power_balance_for_owner,
 };
-use vera20k_core::sim::runtime::SimRuntime;
-use vera20k_core::sim::world::{FrameEffects, Simulation, TickLane};
-use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry};
-use vera20k_core::util::fixed_math::SIM_TICK_HZ;
+use crate::sim::runtime::SimRuntime;
+use crate::sim::world::{FrameEffects, Simulation, TickLane};
+use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+use crate::util::fixed_math::SIM_TICK_HZ;
 
 use super::command::{Order, Request};
 use super::observe::{
@@ -60,11 +60,7 @@ impl Session {
             .current_house()
             .filter(|id| sim.houses().contains_key(id))
             .ok_or("skirmish did not load a local house")?;
-        let session = Self {
-            runtime: loaded.runtime,
-            house,
-            max_ticks: options.max_ticks,
-        };
+        let session = Self::from_runtime(loaded.runtime, house, options.max_ticks);
         let ready = Event::Ready {
             schema: SCHEMA,
             map: options.map,
@@ -72,6 +68,16 @@ impl Session {
             observation: session.observe(),
         };
         Ok((session, ready))
+    }
+
+    /// A session over a runtime the caller built, for a match loaded some
+    /// other way and for tests that need no retail files.
+    pub fn from_runtime(runtime: SimRuntime, house: InternedId, max_ticks: Option<u64>) -> Self {
+        Self {
+            runtime,
+            house,
+            max_ticks,
+        }
     }
 
     fn sim(&self) -> &Simulation {
@@ -108,6 +114,9 @@ impl Session {
         if sim.session().input_locked() {
             return Err("scenario input is locked".into());
         }
+        if let Some(reason) = order.rejects() {
+            return Err(reason.into());
+        }
         for &id in order.actors() {
             if !sim.entities().get(id).is_some_and(|actor| {
                 actor.owner() == self.house
@@ -116,6 +125,15 @@ impl Session {
                     && !actor.in_limbo()
             }) {
                 return Err(format!("object {id} is not an active local actor"));
+            }
+        }
+        for &id in order.referenced() {
+            if !sim
+                .entities()
+                .get(id)
+                .is_some_and(|target| target.is_alive())
+            {
+                return Err(format!("object {id} is not a living object"));
             }
         }
         if let Some((x, y)) = order.cell() {
@@ -134,11 +152,20 @@ impl Session {
                 .ok_or_else(|| format!("unknown order type {name:?}"))
         })?;
         let tick = sim.session().tick();
+        // The simulation's issue boundary owns control-grant admission
+        // (`Simulation::can_issue_local_command`, as the app's sender uses
+        // it). The receiver rechecks the subjects against the live state;
+        // the checks above only explain a refusal to the driver.
+        if !sim.can_issue_local_command(&payload, rules) {
+            return Err("the simulation refuses this order".into());
+        }
         let envelope = match payload {
             Command::DeployMcv { entity_id } => {
-                // D-key Event9 (0x00730AF0 → 0x004C76BC), including the
-                // receiver's weapons-factory cell gate. The sender above
-                // checks the actor's ownership before constructing it.
+                // D-key Event9 (0x00730AF0 → 0x004C76BC): the record is the
+                // DEPLOY event itself. The receiver's weapons-factory cell
+                // gate (0x004C778A..0x004C77DE) runs where native runs it.
+                // The sender above checks the actor's ownership before
+                // constructing the record.
                 let record = sim
                     .encode_deploy_record(self.house, entity_id)
                     .ok_or("could not encode deploy event")?;
@@ -259,7 +286,7 @@ impl Session {
         &self,
         x: u16,
         y: u16,
-    ) -> Result<&vera20k_core::map::resolved_terrain::ResolvedTerrainCell, String> {
+    ) -> Result<&crate::map::resolved_terrain::ResolvedTerrainCell, String> {
         self.sim()
             .resolved_terrain()
             .and_then(|terrain| terrain.cell(x, y))
