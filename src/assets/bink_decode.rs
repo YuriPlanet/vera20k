@@ -1430,21 +1430,22 @@ impl BinkDecoder {
     ///   - X_OFF / Y_OFF: i8 (motion offsets).
     ///   - INTRA_DC / INTER_DC: i16 (two bytes per value).
     ///
-    /// Port of `get_value` at libavcodec/bink.c:557-568.
+    /// Port of `get_value` at libavcodec/bink.c:557-568. The read is
+    /// checked: a hostile stream can ask a bundle for more values than it
+    /// decoded, and a read past the buffer gives 0 instead of a panic.
     fn get_value(&mut self, bundle_num: usize) -> i32 {
         let b = &mut self.bundles[bundle_num];
+        let at = b.cur_ptr;
+        let byte = |offset: usize| self.bundle_data.get(at + offset).copied().unwrap_or(0);
         if bundle_num == Src::XOff as usize || bundle_num == Src::YOff as usize {
-            let v = self.bundle_data[b.cur_ptr] as i8 as i32;
             b.cur_ptr += 1;
-            v
+            byte(0) as i8 as i32
         } else if bundle_num == Src::IntraDc as usize || bundle_num == Src::InterDc as usize {
-            let v = read_i16(&self.bundle_data, b.cur_ptr) as i32;
             b.cur_ptr += 2;
-            v
+            i16::from_ne_bytes([byte(0), byte(1)]) as i32
         } else {
-            let v = self.bundle_data[b.cur_ptr] as i32;
             b.cur_ptr += 1;
-            v
+            byte(0) as i32
         }
     }
 }
@@ -1520,11 +1521,6 @@ fn motion_copy_8x8(
 #[inline]
 fn write_i16(buf: &mut [u8], byte_off: usize, v: i16) {
     buf[byte_off..byte_off + 2].copy_from_slice(&v.to_ne_bytes());
-}
-
-#[inline]
-fn read_i16(buf: &[u8], byte_off: usize) -> i16 {
-    i16::from_ne_bytes([buf[byte_off], buf[byte_off + 1]])
 }
 
 /// Interleave two adjacent halves (size + size) based on bits read. Port of
@@ -1748,6 +1744,31 @@ mod tests {
         let base = ((chroma_rows - 1) as usize) * 8 * frame.stride_uv;
         scale_block_8x8_to_16x16(&[9u8; 64], &mut frame.u[base..], frame.stride_uv);
         assert_eq!(frame.u[base + 15 * frame.stride_uv + 15], 9);
+    }
+
+    /// A stream that asks the last bundle for more values than its buffer
+    /// holds reads 0 past the end instead of panicking.
+    #[test]
+    fn get_value_past_the_bundle_buffer_reads_zero() {
+        let h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: 8,
+            height: 8,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        let mut d = BinkDecoder::new(&h).unwrap();
+        let end = d.bundle_data.len();
+        d.bundle_data[end - 1] = 5;
+        d.bundles[Src::Run as usize].cur_ptr = end - 1;
+        assert_eq!(d.get_value(Src::Run as usize), 5);
+        assert_eq!(d.get_value(Src::Run as usize), 0);
     }
 
     #[test]

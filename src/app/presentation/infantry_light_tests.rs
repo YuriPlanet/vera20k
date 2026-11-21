@@ -118,7 +118,10 @@ fn assert_shp_light(runtime: &mut SimRuntime, id: u64, light: &CellLightGrid, ex
     let before = (
         sim.state_hash(),
         sim.rng_state(),
-        sim.resolved_terrain().unwrap().shared_cell_dummy().snapshot(),
+        sim.resolved_terrain()
+            .unwrap()
+            .shared_cell_dummy()
+            .snapshot(),
     );
     let frame = PresentationFrame::capture(runtime, &Default::default(), false);
     frame.display_order(sim);
@@ -130,7 +133,10 @@ fn assert_shp_light(runtime: &mut SimRuntime, id: u64, light: &CellLightGrid, ex
         (
             sim.state_hash(),
             sim.rng_state(),
-            sim.resolved_terrain().unwrap().shared_cell_dummy().snapshot()
+            sim.resolved_terrain()
+                .unwrap()
+                .shared_cell_dummy()
+                .snapshot()
         ),
         before,
     );
@@ -146,7 +152,7 @@ fn assert_shp_light_on_frame(
     expected: i32,
 ) {
     use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
-    use crate::app::presentation::render::draw_plan_lowering::ObjectTexture;
+    use crate::app::presentation::render::draw_plan_lowering::{ObjectTexture, PlannedObjects};
     use crate::render::sprite_atlas::{
         ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas,
     };
@@ -187,7 +193,7 @@ fn assert_shp_light_on_frame(
     let zshape_skips = std::cell::RefCell::default();
     let colors =
         crate::map::houses::HouseColorMap::from([(owner_name.to_owned(), HouseColorIndex(0))]);
-    let mut draws = Vec::new();
+    let mut draws = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime,
@@ -219,6 +225,7 @@ fn assert_shp_light_on_frame(
         &mut draws,
         frame.display_order(&runtime.simulation),
     );
+    let draws = draws.into_owned();
     let mut bodies = draws
         .iter()
         .filter(|draw| draw.parent.id == id)

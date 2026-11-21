@@ -473,3 +473,22 @@ fn a_peer_order_onto_a_cell_off_the_map_is_executed_and_play_goes_on() {
         "the Area Guard post off the map is kept"
     );
 }
+
+/// A decoded peer Move onto a high cell word re-encodes bit for bit, as the
+/// Cell tokens do, so the encoder no longer drops it.
+#[test]
+fn a_move_onto_a_high_cell_word_round_trips() {
+    let (sim, _rules, actor, _guard, _enemy) = combat_scene();
+    let local = sim.interner.get("Local").unwrap();
+    let order = Command::Move {
+        entity_id: actor,
+        target_rx: 0xFFFF,
+        target_ry: 0x8000,
+    };
+    let record = sim.encode_megamission_record(local, &order).unwrap();
+    assert_eq!(
+        sim.decode_native_command_record(&record, sim.session.tick() + 1)
+            .map(|envelope| envelope.payload),
+        Some(order)
+    );
+}

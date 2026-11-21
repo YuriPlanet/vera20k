@@ -132,6 +132,9 @@ pub(super) fn apply_response(
                 channels: list.channels.into_iter().map(Into::into).collect(),
             },
         ),
+        http::Response::WatchListFailed => {
+            super::lobby::watch_list_refresh(state, super::lobby::WatchListRefresh::Failed);
+        }
         http::Response::Matches {
             list: matches,
             refused_options,
@@ -181,7 +184,17 @@ pub(super) fn apply_response(
                         .map(Into::into)
                         .collect(),
                 ),
-            )
+            );
+            // Only the public list's own refresh establishes freshness. A
+            // room's option probe may belong to an older publication.
+            if refused_options.is_none() {
+                let refresh = if watches {
+                    super::lobby::WatchListRefresh::Listed
+                } else {
+                    super::lobby::WatchListRefresh::Unsupported
+                };
+                super::lobby::watch_list_refresh(state, refresh);
+            }
         }
         http::Response::Event(event) => {
             // The reason goes in the log: a guest who sees too little of the
@@ -209,6 +222,13 @@ pub(super) fn apply_response(
         } => match operation {
             "join" | "create" => {
                 if super::lobby::online_request_pending(state, id) {
+                    if let Some(switch) = service.switching_room.as_mut()
+                        && switch.request_id == id
+                        && failure == http::CommandFailure::Retryable
+                    {
+                        switch.failed(Instant::now());
+                        return;
+                    }
                     if failure == http::CommandFailure::Retryable {
                         // Both responses can be lost after a server-side commit.
                         // Acknowledge cleanup before binding another attempt.

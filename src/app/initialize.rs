@@ -564,36 +564,51 @@ impl App {
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let backends = crate::app::persistence::startup_backend::backends(
+        let named_api = options_profile.graphics_api.backend();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let first_backends = crate::app::persistence::startup_backend::backends(
             game_config
                 .as_ref()
                 .map(|config| config.paths.settings_dir()),
-            options_profile.graphics_api.backend(),
+            named_api,
         );
+        // An API that has no adapter here or cannot start (the one VERA.INI
+        // names, or the start record's DirectX 12 on a Windows without it)
+        // gives way to the next the start record allows, the default set last.
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let gpu = match GpuContext::new(
-            window.clone(),
-            event_loop.owned_display_handle(),
-            capture || hidden_spawn_window,
-            backends,
-            crate::app::persistence::startup_backend::starting,
-        ) {
-            // The API the start record asks for has no adapter here (DirectX
-            // 12 on a Windows without it): the default set; the record stays.
-            Err(error) if backends != wgpu::Backends::PRIMARY => {
-                log::warn!(
-                    "No graphics adapter through {backends:?} ({error:#}); starting on the default graphics APIs"
-                );
-                GpuContext::new(
+        let (gpu, backends) = {
+            let mut backends = first_backends;
+            loop {
+                let error = match GpuContext::new(
                     window.clone(),
                     event_loop.owned_display_handle(),
                     capture || hidden_spawn_window,
-                    wgpu::Backends::PRIMARY,
+                    backends,
                     crate::app::persistence::startup_backend::starting,
-                )?
+                ) {
+                    Ok(gpu) => break (gpu, backends),
+                    Err(error) => error,
+                };
+                let Some(next) = crate::app::persistence::startup_backend::after_failure(backends)
+                else {
+                    return Err(error);
+                };
+                log::warn!(
+                    "No graphics adapter through {backends:?} ({error:#}); starting on {next:?}"
+                );
+                backends = next;
             }
-            result => result?,
         };
+        // The API VERA.INI names gave way to another: the player is told,
+        // with the line to remove, while the start goes on.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(named) = named_api
+            && backends != first_backends
+            && !capture
+            && !hidden_spawn_window
+        {
+            crate::app::system_dialog::report_graphics_api_refused(named, gpu.graphics_api());
+        }
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
         // player is told why while the start goes on.

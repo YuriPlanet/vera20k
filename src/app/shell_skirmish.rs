@@ -1769,6 +1769,7 @@ impl App {
                 y,
             );
             Self::drain_skirmish_shell_ui_sounds(state);
+            Self::run_skirmish_menu_pick(state);
             return;
         }
         if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {

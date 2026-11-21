@@ -388,6 +388,12 @@ pub const DEBRIS_LIMIT: i32 = 256;
 /// value near `i32::MAX` exhausts memory; no carrier needs more.
 pub const SPAWNS_NUMBER_LIMIT: i32 = 128;
 
+/// VERA's bound on `SlavesNumber=`, read by `TechnoTypeClass::ReadINI`'s
+/// ReadInt (`0x00714E29`, `+0xD44`). `TechnoClass::Init_Managers` builds
+/// that many slaves the moment an `Enslaves=` master is constructed, so a
+/// value near `i32::MAX` exhausts memory; retail's Slave Miner has 5.
+pub const SLAVES_NUMBER_LIMIT: i32 = 128;
+
 /// Weapon-array slot the `Primary=` / `ElitePrimary=` keys name
 /// (`TechnoTypeClass+0x898` / `+0xA94`).
 pub const WEAPON_SLOT_PRIMARY: usize = 0;
@@ -1580,7 +1586,8 @@ pub struct ObjectType {
     /// Used by Slave Miner (SMIN) to spawn SLAV workers.
     pub enslaves: Option<String>,
     /// `TechnoType+0xD44`, `SlavesNumber=`: the slaves Init_Managers builds.
-    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0.
+    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0, at
+    /// most [`SLAVES_NUMBER_LIMIT`].
     pub slaves_number: i32,
     /// `TechnoType+0xD48`, `SlaveRegenRate=`: frames before a lost slave is
     /// regrown. ReadInt at `0x00714E08`; constructor 0.

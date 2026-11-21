@@ -110,7 +110,7 @@ lang: zh-CN
 | **操作** | 滚动速度【[Options] ScrollRate】、右键下令【[VERA] RightClickOrders】、小地图信标【[VERA] MinimapBeacons】、鼠标滚轮缩放【[VERA] MouseWheelZoom】、鼠标锁定在窗口内【[VERA] LockCursor】 |
 | **常规** | 语言【[VERA] Language】、原版 YR 风格【[VERA] YROriginalStyle】、平滑在线菜单【[VERA] SmoothOnlineMenus】、高清地图预览【[VERA] HdMapPreviews】*(网页版没有)*、VERA 图标【[VERA] VeraIcon】、跳过片头【[VERA] SkipIntro】*(下次启动生效)*、显示字符串键【[VERA] ShowStringKeys】；按钮：检查更新 *(对局中锁定，网页版没有)* |
 
-在 Windows 上，要以 OpenGL 兼容模式启动游戏，请在 `VERA.INI` 的 `[VERA]` 节中设置 `GraphicsAPI=opengl`。也可以选择 `vulkan` 或 `dx12`。默认值 `auto` 让游戏自动选择。如果 Vulkan 或 DirectX 12 在启动时卡住或丢失图形设备，下次自动启动时游戏会尝试另一个 API，并在与 `VERA.INI` 同目录的 `GraphicsLostAtStart.txt` 中记录失败原因。如果两个 API 都找不到硬件显卡，游戏会尝试 OpenGL。环境变量 `WGPU_BACKEND` 优先于上述设置。上面的语言列表会写入 `[VERA]` 节的 `Language=`，也可以手动修改。
+在 Windows 上，要以 OpenGL 兼容模式启动游戏，请在 `VERA.INI` 的 `[VERA]` 节中设置 `GraphicsAPI=opengl`。也可以选择 `vulkan` 或 `dx12`。如果指定的 API 无法启动，游戏会弹窗说明，并改用另一个 API 启动，同时跳过此前启动失败过的 API。默认值 `auto` 让游戏自动选择。如果 Vulkan 或 DirectX 12 在启动时卡住或丢失图形设备，下次自动启动时游戏会尝试另一个 API，并在与 `VERA.INI` 同目录的 `GraphicsLostAtStart.txt` 中记录失败原因。如果两个 API 都找不到硬件显卡，游戏会尝试 OpenGL。环境变量 `WGPU_BACKEND` 优先于上述设置。上面的语言列表会写入 `[VERA]` 节的 `Language=`，也可以手动修改。
 
 ## 二、游戏内
 

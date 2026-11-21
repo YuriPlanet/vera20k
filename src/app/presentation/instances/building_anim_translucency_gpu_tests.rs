@@ -5,6 +5,7 @@
 //! its actual slot emitter against the genuine GAPOWR_A original corpus.
 
 use super::*;
+use crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject;
 use crate::headless_scenario::HeadlessScenario;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
@@ -604,13 +605,14 @@ impl SlotScene {
         light: &crate::map::lighting::CellLightGrid,
         viewport: [f32; 4],
         anim_word: &dyn Fn(u64) -> u16,
-    ) -> Vec<PlannedObjectInstance> {
+    ) -> Vec<OwnedPlannedObject> {
         let sim = self.scene.sim();
         let rules = &self.scene.runtime.resources.rules;
         let building = sim.entities().get(self.plant).unwrap();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.scene.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
         );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
@@ -644,7 +646,7 @@ impl SlotScene {
         let attached_palette =
             crate::app::presentation::lighting::body_palette_light(light, cell, extra);
         let before = (sim.state_hash(), sim.rng_state());
-        let mut output = Vec::new();
+        let mut output = PlannedObjects::default();
         emit_building_anims(
             &mut output,
             &NativeDisplayOrder::from_world(&sim, None),
@@ -671,6 +673,7 @@ impl SlotScene {
             0,
             2,
         );
+        let output = output.into_owned();
         assert_eq!((sim.state_hash(), sim.rng_state()), before);
         output
     }

@@ -577,7 +577,7 @@ pub struct TeamScriptState {
     members: Vec<TeamMember>,
     /// `+0x88`: the members counted against each TaskForce entry, which
     /// `Add_Member` raises for the first entry of the member's type.
-    slot_counts: [i32; 6],
+    slot_counts: [i32; TASK_FORCE_SLOTS],
     /// `+0x84`: the team succeeded (script action 49). Its destruction then
     /// counts as its AI triggers' success.
     succeeded: bool,
@@ -832,6 +832,10 @@ impl<'de> Deserialize<'de> for MemberTeams {
         Ok(members)
     }
 }
+
+/// The TaskForce entries a team counts (`TeamClass+0x88`, six dwords); the
+/// TaskForce reader (`rules::team_ai_ini`) reads keys 0 to 5 only.
+pub(crate) const TASK_FORCE_SLOTS: usize = 6;
 
 /// Owns resolved TeamType/TaskForce/ScriptType definitions and live TeamClass
 /// state.
@@ -1269,6 +1273,21 @@ impl TeamScriptVm {
         team.team_type_id
             .and_then(|id| self.team_type_ini.get(&id))
             .is_some_and(|metadata| metadata.transports_return_on_unload)
+    }
+
+    /// A restored save's TaskForces: a team indexes its slot counts by entry
+    /// position, so a saved TaskForce with more entries than
+    /// [`TASK_FORCE_SLOTS`] can only come from a damaged save. Members are
+    /// not required to be live: `PointerExpired` drops only a team's head.
+    pub(crate) fn validate_restored_task_forces(&self) -> Result<(), &'static str> {
+        if self
+            .task_forces
+            .values()
+            .any(|task_force| task_force.entries.len() > TASK_FORCE_SLOTS)
+        {
+            return Err("a TaskForce has more entries than a team has slots");
+        }
+        Ok(())
     }
 
     /// The team's TaskForce entries, none for a team without a TeamType.

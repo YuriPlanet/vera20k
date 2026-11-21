@@ -392,6 +392,9 @@ pub struct SkirmishShellState {
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
     /// VERA's Setups page over the Skirmish page, its rows named by setup.
     pub setups_browser: Option<super::SavedSeedBrowserState<String>>,
+    /// The item last picked from Quick Team Setup or Bulk Seat Actions,
+    /// which the app carries out ([`super::MenuPick`]).
+    pub menu_pick: Option<super::MenuPick>,
     pub validation_modal: Option<SkirmishValidationModalState>,
     /// VERA's Game Options box, open over the page: it takes every press
     /// and key until OK, Enter or Esc closes it.
@@ -508,6 +511,7 @@ impl Default for SkirmishShellState {
             random_map_setup_modal: None,
             saved_seed_browser: None,
             setups_browser: None,
+            menu_pick: None,
             validation_modal: None,
             game_options: None,
             pending_ui_sounds: Vec::new(),
@@ -655,13 +659,9 @@ fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) 
         opponent.apply_inactive_combo_defaults(team_default);
     }
 
-    let open_row = state.open_combo_dropdown.map(|open| match open.id {
-        super::SkirmishComboId::AiType(idx) => idx + 1,
-        super::SkirmishComboId::Side(row)
-        | super::SkirmishComboId::Color(row)
-        | super::SkirmishComboId::Start(row)
-        | super::SkirmishComboId::Team(row) => row,
-    });
+    let open_row = state
+        .open_combo_dropdown
+        .and_then(|open| super::combos::combo_player_row(open.id));
     if open_row.is_some_and(|row| row != 0 && row >= capacity) {
         state.open_combo_dropdown = None;
         state.dropdown_scroll_drag = None;

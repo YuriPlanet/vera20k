@@ -452,7 +452,7 @@ impl WolCapture {
                 "the pointer missed the game row at {x}"
             );
         }
-        let help = crate::app::shell_wol::lobby::room_details(state).context("room details")?;
+        let help = crate::app::shell_wol::lobby::status_help(state);
         let (size, seats, limit, capacity_key) = if watch {
             (2, 1, 8, "VERA:LobbyWatchCapacity")
         } else {
@@ -471,16 +471,12 @@ impl WolCapture {
             crate::i18n::tr_fill(capacity_key, &[("count", &seats), ("max", &limit)]),
         ]);
         ensure!(
-            help.room_name == if watch { watch_room } else { "Friday Night" }
-                && help.title == titles[index]
-                && help.counts == details.join(" - "),
-            "incomplete details for row {index}: {} / {}",
-            help.title,
-            help.counts
+            help == details.join(" - "),
+            "incomplete status help for row {index}: {help}"
         );
         self.event(
             frame,
-            json!({"room and watch titles": titles, "hovered row": index, "status help": format!("{}\n{}", help.title, help.counts)}),
+            json!({"room and watch titles": titles, "hovered row": index, "status help": help}),
         );
         self.settle();
         Ok(())

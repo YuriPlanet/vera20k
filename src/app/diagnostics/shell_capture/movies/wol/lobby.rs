@@ -104,6 +104,46 @@ impl WolCapture {
             state.frontend.shell_route
         );
         self.event(frame, "Lobby: the public lobby over the hidden room");
+        // The destination can fill between listing and joining. The current
+        // host and their guests must still be together after the refusal.
+        let destination = local_games(state).remove(0);
+        let switch = |movie: &mut Self, state: &mut AppState| -> Result<()> {
+            service_event(
+                state,
+                WolServiceEvent::Channels {
+                    kind: GAME_CHANNEL,
+                    channels: vec![destination.clone()],
+                },
+            );
+            game_row_click(state, 0)?;
+            let layout = crate::app::shell_wol::lobby::layout(state);
+            lobby_button(state, &layout, lobby_ui::JOIN)?;
+            let requests = movie.requests(state, frame)?;
+            ensure!(
+                requests.iter().any(|request| matches!(request,
+                WolServiceRequest::JoinChannel { channel, .. } if channel == &destination))
+                    && !requests.contains(&WolServiceRequest::LeaveChannel),
+                "switching rooms must ask to join before giving up the host's seat: {requests:?}"
+            );
+            Ok(())
+        };
+        switch(self, state)?;
+        service_event(state, WolServiceEvent::Joined(Err(0x8004_006E)));
+        ensure!(
+            Self::lobby(state)?.message().is_some(),
+            "no room-full message"
+        );
+        let screen = &state.renderer.gpu.config;
+        let ok =
+            crate::ui::shell::modal::body_ok_layout(screen.width as i32, screen.height as i32).ok;
+        welcome_click(state, ok);
+        ensure!(
+            Self::lobby(state)?.message().is_none()
+                && crate::app::shell_wol::lobby::visiting(state)
+                && state.match_state.session.host()
+                && names(state) == seated,
+            "refused switch lost the original host or their guests"
+        );
         // The room goes on: Golf comes in and is seated, Natasha talks in the
         // room and leaves, and Hotel talks in the lobby.
         service_event(state, WolServiceEvent::UserJoined(member("Golf", 0, "")));
@@ -169,13 +209,37 @@ impl WolCapture {
             state.frontend.shell_route
         );
         self.event(frame, "Back to Room: the room as it is now");
-        // A second visit outlives the room: it closes, and the public lobby
-        // the player visits becomes their channel.
+        // On success the server emits channel_left followed by joined. Start
+        // the new room as a guest before applying its host's options.
+        setup_button(state, crate::ui::multiplayer_setup::LOBBY)?;
+        self.requests(state, frame)?;
+        service_event(state, visit_joined());
+        switch(self, state)?;
+        service_event(state, WolServiceEvent::ChannelLeft);
+        service_event(
+            state,
+            WolServiceEvent::Joined(Ok(WolJoined {
+                channel: destination.clone(),
+                members: vec![
+                    member("Alpha", MEMBER_OPERATOR, ""),
+                    member(NICKNAME, 0, ""),
+                ],
+            })),
+        );
+        ensure!(
+            !crate::app::shell_wol::lobby::visiting(state)
+                && !state.match_state.session.host()
+                && state.frontend.shell_route.network_setup()
+                && names(state).contains(&"Alpha".to_owned())
+                && !names(state).contains(&"Golf".to_owned()),
+            "successful room switch did not install the destination roster"
+        );
+        // A visit from the new room outlives that room when it closes.
         setup_button(state, crate::ui::multiplayer_setup::LOBBY)?;
         self.requests(state, frame)?;
         service_event(state, visit_joined());
         service_event(state, WolServiceEvent::ChannelLeft);
-        let closed = crate::i18n::tr_fill("VERA:VisitedRoomClosed", &[("room", &room.name)]);
+        let closed = crate::i18n::tr_fill("VERA:VisitedRoomClosed", &[("room", &destination.name)]);
         let channel = crate::app::shell_wol::lobby::current_channel(state).map(|room| room.name);
         let shown = state
             .frontend

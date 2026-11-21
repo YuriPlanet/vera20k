@@ -25,7 +25,7 @@ use glam::IVec3;
 use super::helpers::{TacticalAdmission, projection_admitted};
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::CellLightGrid;
@@ -148,7 +148,7 @@ impl DebrisView<'_> {
 pub(crate) fn voxel_anim_visitor<'a>(
     state: &'a AppState,
     order: &'a NativeDisplayOrder,
-) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
+) -> Option<impl FnMut(&mut PlannedObjects, u64) + 'a> {
     let (Some(rt), Some(assets)) = (
         state.match_state.sim_runtime.presentation(),
         state.process_assets.manager(),
@@ -167,7 +167,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
         axis: super::helpers::depth_axis(state),
     };
     let presentation = &state.match_state.match_presentation;
-    Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
+    Some(move |objects: &mut PlannedObjects, id: u64| {
         // A piece off the view is passed by before its type, palette and
         // floor are looked up.
         let Some(piece) = sim.voxel_anims().get(id).filter(|piece| view.admits(piece)) else {
@@ -184,13 +184,14 @@ pub(crate) fn voxel_anim_visitor<'a>(
             presentation.effective_house_color_map(),
             presentation.lighting.grid(),
         );
-        if let Some(object) = voxel_anim_draw_instance(
+        voxel_anim_draw_instance(
             id,
             piece,
             kind,
             palette,
             &view,
             order,
+            objects,
             // VoxelAnimClass draws uncached in the style 0xB43180 holds: its
             // shadow renders, then its body (`0x00749CBE`, `0x00749DA8`).
             |section, matrix| {
@@ -215,16 +216,15 @@ pub(crate) fn voxel_anim_visitor<'a>(
                 )?;
                 Some((body, shadow))
             },
-        ) {
-            objects.push(object);
-        }
+        );
     })
 }
 
 /// One admitted piece's draw ([`DebrisView::admits`]). Display membership is
 /// admission: storage alone never draws a piece. `render` rasterizes the
 /// bound physical model at the drawing matrix and places its body and shadow
-/// on the pose page.
+/// on the pose page. Plans the draw into `objects`; `None` when it draws
+/// nothing.
 fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
@@ -232,8 +232,9 @@ fn voxel_anim_draw_instance(
     (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
     view: &DebrisView<'_>,
     order: &NativeDisplayOrder,
+    objects: &mut PlannedObjects,
     render: impl FnOnce(i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
-) -> Option<PlannedObjectInstance> {
+) -> Option<()> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
     let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
@@ -247,22 +248,21 @@ fn voxel_anim_draw_instance(
         view.axis.origin_y,
         view.axis.world_height,
     );
-    let mut pieces = Vec::with_capacity(2);
-    if let Some(shadow) = shadow {
+    let shadow = shadow.map(|shadow| {
         // `0x2001`: the shadow blitter darkens what lies beneath.
         let draw_state = DrawState {
             fx_flags: FX_SHADOW,
             ..DrawState::default()
         };
-        pieces.push(pose_piece(
+        pose_piece(
             shadow,
             geometry.shadow,
             depth,
             draw_state,
             PaletteLight::default(),
             source_palette,
-        ));
-    }
+        )
+    });
     // `0x2800`, or `0x2804` for a `Translucent=` type (`0x00749DEB..0x00749E00`).
     let draw_state = if kind.translucent {
         DrawState::translucent(remap_row)
@@ -272,15 +272,16 @@ fn voxel_anim_draw_instance(
             ..DrawState::default()
         }
     };
-    pieces.push(pose_piece(
+    let body = pose_piece(
         body,
         geometry.body,
         depth,
         draw_state,
         palette_light,
         source_palette,
-    ));
-    Some(PlannedObjectInstance::object(parent, pieces))
+    );
+    objects.object(parent, shadow.into_iter().chain([body]));
+    Some(())
 }
 
 fn pose_piece(

@@ -18,7 +18,10 @@ use super::PhobosOreGathering;
 use super::{AbilityFlags, BarrelVoxelOffsets, BuildCategory, BuildingHiddenOccupancyProfile};
 use super::{DEBRIS_LIMIT, DEFAULT_LEPTON_MIND_CONTROL_OFFSET, DEFAULT_TECH_LEVEL, HouseMasks};
 use super::{InfantryPips, ObjectCategory, ObjectType};
-use super::{PipScale, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan, WEAPON_SLOT_COUNT};
+use super::{
+    PipScale, SLAVES_NUMBER_LIMIT, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan,
+    WEAPON_SLOT_COUNT,
+};
 
 /// The pi/180 double multiplied by `TechnoTypeClass::ReadINI @ 0x00712170`
 /// when storing RollAngle at `+0x3A0` (`FMUL [0x007F4FB8] @ 0x007123BC`).
@@ -719,7 +722,7 @@ impl ObjectType {
             // Slave Miner / economy fields
             // Constructor null; only the ordered Process owner reads it.
             enslaves: None,
-            slaves_number: section.read_int("SlavesNumber", 0),
+            slaves_number: section.read_int("SlavesNumber", 0).min(SLAVES_NUMBER_LIMIT),
             slave_regen_rate: section.read_int("SlaveRegenRate", 0),
             slave_reload_rate: section.read_int("SlaveReloadRate", 0),
             slaved: section.read_bool("Slaved", false),

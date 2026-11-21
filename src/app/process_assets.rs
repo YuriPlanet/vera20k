@@ -857,6 +857,7 @@ impl ProcessAssets {
         let settings = RulesSettings {
             terrain_deformation: rules.personal_rules().terrain_deformation(),
             superweapon_limit: rules.personal_rules().superweapon_limit(),
+            building_production_queue: rules.personal_rules().building_production_queue(),
             ares: match assets.ares_setting() {
                 crate::util::ares_launch::AresSetting::Auto => "auto",
                 crate::util::ares_launch::AresSetting::On => "on",

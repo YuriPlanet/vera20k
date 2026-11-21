@@ -1,4 +1,4 @@
-import init, { fonts_ready, import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
+import init, { fonts_ready, import_file, prepare_audio, restore_user_file, set_persistence_callbacks, set_replay_callback, start_game } from './pkg/vera20k.js';
 // Only a --threads package exports initThreadPool.
 import * as engine from './pkg/vera20k.js';
 
@@ -54,6 +54,11 @@ const TEXT = {
         help4: 'Nothing is uploaded. Game files are read into memory each time; Chrome and Edge remember the folder for next time.',
         help5: 'Needs WebGPU: a recent Chrome or Edge works best. Large installs need plenty of memory.',
         storage: 'Settings and saves are stored in this browser for this site.',
+        replayHistory: 'Local diagnostic replays',
+        downloadReplay: 'Download latest replay',
+        replayUnavailable: error => `Local replays are unavailable: ${error}`,
+        replaySaveFailed: error => `A replay could not be saved: ${error}`,
+        exitReplayFailed: 'Game exited, but a replay could not be saved. Download it from this page before closing.',
         saving: 'Saving user data…', saved: 'User data saved in this browser.',
         storageFailed: error => `User data could not be saved in this browser: ${error}`,
         exiting: 'Game exited. Finishing pending saves…',
@@ -93,6 +98,11 @@ const TEXT = {
         help4: '不会上传任何文件。游戏文件每次只读入内存；Chrome 和 Edge 会记住该文件夹，下次可直接使用。',
         help5: '需要 WebGPU，推荐使用新版 Chrome 或 Edge。完整安装需要较多内存。',
         storage: '设置和存档保存在此浏览器中（仅限本站）。',
+        replayHistory: '本机诊断录像',
+        downloadReplay: '下载最新录像',
+        replayUnavailable: error => `无法读取本机录像：${error}`,
+        replaySaveFailed: error => `录像保存失败：${error}`,
+        exitReplayFailed: '游戏已退出，但录像保存失败。请在关闭页面前下载录像。',
         saving: '正在保存用户数据…', saved: '用户数据已保存到此浏览器。',
         storageFailed: error => `无法在此浏览器中保存用户数据：${error}`,
         exiting: '游戏已退出，正在完成存档写入…',
@@ -244,8 +254,15 @@ async function finishExit() {
     hud.hidden = false;
     hud.classList.remove('fade');
     say(hud, 'exiting');
-    await saveQueue;
+    await Promise.all([saveQueue, replayQueue]);
+    if (replayFallback) {
+        launcher.classList.remove('leaving');
+        launcher.hidden = false;
+        start.disabled = true;
+        $('#local-replays').open = true;
+    }
     if (storageFailed) { say(hud, 'exitSaveFailed'); return; }
+    if (replayFallback) { say(hud, 'exitReplayFailed'); return; }
     // Ordinary tabs may refuse close(); the saved, exited state stays visible.
     say(hud, 'exited');
     window.close();
@@ -285,6 +302,77 @@ async function restore() {
         request.onerror = () => reject(request.error);
     });
     for (const { path, bytes, modified } of records) restore_user_file(path, new Uint8Array(bytes), modified);
+}
+
+// A replay is an exportable diagnostic, never an input to restore_user_file.
+// Keep only the newest downloadable segment, outside the save schema.
+let replayDb;
+let replayQueue = Promise.resolve();
+let replayPending = 0;
+let replayFallback;
+let replayDownloadUrl;
+function replayTransaction(mode, operation) {
+    return new Promise((resolve, reject) => {
+        const tx = replayDb.transaction('segments', mode);
+        let result;
+        tx.oncomplete = () => resolve(result);
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('Replay storage transaction aborted'));
+        operation(tx.objectStore('segments'), value => { result = value; });
+    });
+}
+function setReplayDownload(replay) {
+    if (replayDownloadUrl) URL.revokeObjectURL(replayDownloadUrl);
+    replayDownloadUrl = undefined;
+    const link = $('#download-replay');
+    link.hidden = !replay;
+    link.removeAttribute('href');
+    if (replay) {
+        replayDownloadUrl = URL.createObjectURL(replay.blob);
+        link.href = replayDownloadUrl;
+        link.download = replay.name;
+    }
+}
+async function openReplayArchive() {
+    replayDb = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('vera20k-wasm-replays', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('segments', { autoIncrement: true });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('Close other game tabs to open replay storage'));
+    });
+    const latest = await replayTransaction('readonly', (store, receive) => {
+        const read = store.openCursor(null, 'prev');
+        read.onsuccess = () => receive(read.result?.value);
+    });
+    setReplayDownload(latest);
+}
+async function startReplayCapture() {
+    // Even an unavailable database must not disable the manual export fallback.
+    set_replay_callback(recordReplay);
+    try {
+        await openReplayArchive();
+    } catch (error) {
+        say($('#replay-status'), 'replayUnavailable', error.message || String(error));
+    }
+}
+function recordReplay(name, bytes) {
+    // Blob takes a snapshot before the synchronous Rust callback returns.
+    const replay = { name, blob: new Blob([bytes], { type: 'application/json' }) };
+    replayPending++;
+    replayQueue = replayQueue.then(() => replayTransaction('readwrite', store => {
+        store.clear();
+        store.add(replay);
+    })).then(() => {
+        replayFallback = undefined;
+        setReplayDownload(replay);
+        $('#replay-status').textContent = '';
+    }).catch(error => {
+        // Offer the latest failed write for manual export without misreporting
+        // a settings/save failure. Earlier failed segments are not durable.
+        replayFallback = replay;
+        setReplayDownload(replayFallback);
+        say($('#replay-status'), 'replaySaveFailed', error.message || String(error));
+    }).finally(() => { replayPending--; });
 }
 
 // Resources to import, as [path below the game folder, File].
@@ -410,7 +498,7 @@ async function launch() {
         start_game(canvas, show);
         started = true;
         launcher.classList.add('leaving');
-        setTimeout(() => { launcher.hidden = true; }, 400);
+        setTimeout(() => { if (!exiting || !replayFallback) launcher.hidden = true; }, 400);
         canvas.focus();
     } catch (error) {
         setStep(steps.start, 'error');
@@ -435,6 +523,7 @@ try {
         const copy = bytes.slice();
         persist(store => store.put({ path, bytes: copy, modified }));
     }, path => persist(store => store.delete(path)));
+    await startReplayCapture();
 
     if (!isSecureContext || !navigator.gpu) {
         setStep(steps.browser, 'error');
@@ -516,5 +605,5 @@ try {
     setStatus('err', 'engineFailed', unisolated ? TEXT[lang].notIsolated : String(error));
 }
 window.addEventListener('beforeunload', event => {
-    if (pending || storageFailed) { event.preventDefault(); event.returnValue = ''; }
+    if (pending || storageFailed || replayPending || replayFallback) { event.preventDefault(); event.returnValue = ''; }
 });

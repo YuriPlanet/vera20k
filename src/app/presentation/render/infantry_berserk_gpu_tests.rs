@@ -5,7 +5,7 @@
 //! live SHP emitter, including its map/TMP depth inputs. CAOS has separate controls.
 
 use super::super::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectPieceInstance, PlannedObjects, lower_object_instances,
 };
 use super::*;
 use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
@@ -494,7 +494,8 @@ fn render_original_body_pixels(
             let gi = sim.entities().get(1).unwrap();
             let presented = crate::app::presentation::frame::PresentationFrame::capture(
                 &runtime,
-                &Default::default(), false,
+                &Default::default(),
+                false,
             );
             let gi_record = presented.object(1).unwrap();
             let before = sim.state_hash();
@@ -575,7 +576,7 @@ fn render_original_body_pixels(
             let position = [anchor[0] + entry.offset_x, anchor[1] + entry.offset_y];
             let gradient = pack_z_gradient(ZGradient::Vertical, false);
             assert_eq!(gradient, int(&body["gradient"]) as u32);
-            let mut objects = Vec::new();
+            let mut objects = PlannedObjects::default();
             if production {
                 let voxel_images =
                     RefCell::new(crate::render::voxel_image_cache::VoxelImageCache::default());
@@ -610,7 +611,7 @@ fn render_original_body_pixels(
                     &order,
                 );
             } else {
-                objects.push(PlannedObjectInstance::object(
+                objects.object(
                     parent,
                     vec![ObjectPieceInstance {
                         target: ObjectTexture::ShpPage(entry.page as usize),
@@ -631,7 +632,7 @@ fn render_original_body_pixels(
                             ..Default::default()
                         },
                     }],
-                ));
+                );
             }
             let layers = lower_object_instances(objects);
             let layer = &layers[2];

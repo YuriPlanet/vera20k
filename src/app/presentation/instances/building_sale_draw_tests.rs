@@ -200,8 +200,11 @@ fn gate_piece(
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
     let zshape_skips = std::cell::RefCell::default();
-    let presented =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
+    let presented = crate::app::presentation::frame::PresentationFrame::capture(
+        runtime,
+        &Default::default(),
+        false,
+    );
     let input = ShpInputs {
         runtime,
         frame: &presented,
@@ -227,8 +230,9 @@ fn gate_piece(
         building_zshape: Some((0, 0)),
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
-    let mut planned = Vec::new();
+    let mut planned = PlannedObjects::default();
     build_shp_instances_from_inputs(&input, &mut planned, &order);
+    let planned = planned.into_owned();
     let piece = planned
         .iter()
         .find(|planned| planned.parent.id == gate)

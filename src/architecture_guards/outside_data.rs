@@ -158,8 +158,8 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
     (
         "assets/bink_decode.rs",
         "index",
-        246,
-        "planes hold whole 16-pixel blocks of the header's size (`bink_file` admits up to 7680x4800), so each 8x8 or scaled 16x16 block lies inside, and a motion copy is checked against `ref_end`; each bundle refill checks `dec_end <= buf_end`, and `get_value` takes at most 64 values of a bundle per block from a bundle of 64 bytes a block; the DCT and residue lists are 128-entry arrays the scan machine fills with each of 64 positions at most once; tree, symbol and quantizer indexes are 4-bit",
+        242,
+        "planes hold whole 16-pixel blocks of the header's size (`bink_file` admits up to 7680x4800), so each 8x8 or scaled 16x16 block lies inside, and a motion copy is checked against `ref_end`; each bundle refill checks `dec_end <= buf_end`, and `get_value` reads its bundle through a checked read; the DCT and residue lists are 128-entry arrays the scan machine fills with each of 64 positions at most once; tree, symbol and quantizer indexes are 4-bit",
     ),
     (
         "assets/bink_decode.rs",

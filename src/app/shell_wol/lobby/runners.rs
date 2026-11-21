@@ -46,6 +46,7 @@ pub(super) fn new_runner(
         deferred: None,
         joining: None,
         matches: Vec::new(),
+        watch_list_stale: false,
         visit: None,
     })
 }

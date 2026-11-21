@@ -516,6 +516,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // A received map's case-folded name check; a file it finds is
                 // kept only when it holds the same verified bytes.
                 "map/source.rs",
+                // Mod package staging: the game-root check asks whether any
+                // entry is an asset, parts are sorted by name before they
+                // merge, and copies land at their own names.
+                "util/mod_package.rs",
             ],
         ),
         (
