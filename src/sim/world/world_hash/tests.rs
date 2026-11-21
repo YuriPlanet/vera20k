@@ -1398,6 +1398,18 @@ mod state_hash_field_tests {
         let reversed = house_sim(vec![second, first], 50);
         assert_ne!(baseline.state_hash(), reversed.state_hash());
 
+        // The base plan's defense cells (`HouseClass+0x5738`) are part of the
+        // plan's state, so they fold into the hash.
+        let mut with_cells = house_sim(vec![first, second], 50);
+        let owner = with_cells.interner.intern("Computer1");
+        with_cells
+            .houses
+            .get_mut(&owner)
+            .unwrap()
+            .base_plan_mut()
+            .set_defense_cells_for_test(vec![pack_base_plan_cell(3, 4)]);
+        assert_ne!(baseline.state_hash(), with_cells.state_hash());
+
         for changed in [
             house_sim(vec![first, second], 51),
             house_sim(
