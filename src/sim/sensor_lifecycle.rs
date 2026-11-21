@@ -128,9 +128,11 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
     ) {
         let Some((owner, center, radius)) = self.unit_sensor_parameters(id, rules) else {
+            self.fog.clear_unit_sensor_center(id);
             return;
         };
         self.apply_sensor_add(owner, center, radius, rules, registry);
+        self.fog.set_unit_sensor_center(id, center);
     }
 
     /// Foot Limbo4DB376 and ChangeOwner4DBEFB remove at current coordinates,
@@ -142,6 +144,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
     ) {
         self.remove_unit_sensors_at(id, None, rules, registry);
+        self.fog.clear_unit_sensor_center(id);
     }
     /// Calls back the cell's residents: Add/RemoveSensorsAt @
     /// 0x004DE7B0/0x004DE940 and the BuildingClass variants walk
@@ -508,23 +511,81 @@ impl Simulation {
         }
     }
 
+    /// `JumpjetLocomotionClass` runs PerCell(2) only at touchdown
+    /// (`tools/spatial_oracle/jumpjet_states.md`), so a unit that stays
+    /// airborne (`BalloonHover=yes`) never reaches the PerCell refresh below
+    /// and keeps its `SensorsSight=` circle at the cell where it unlimboed.
+    /// Re-stamp that circle on every airborne cell change, using the deposit
+    /// cell recorded here rather than Foot+55C (which high flight deliberately
+    /// leaves alone). Everything else about PerCell — sight, threat, crush,
+    /// crates — stays native.
+    pub(crate) fn refresh_airborne_sensor_at_cell_change(
+        &mut self,
+        stable_id: u64,
+        previous: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.lifecycle.in_limbo())
+        {
+            return;
+        }
+        let Some((_, current, _)) = self.unit_sensor_parameters(stable_id, rules) else {
+            return;
+        };
+        // An older save has no recorded centre; the cell just left is where
+        // Unlimbo stamped the circle, so this also self-heals after a load.
+        let old = self.fog.unit_sensor_center(stable_id).unwrap_or(previous);
+        if old == current {
+            return;
+        }
+        self.remove_unit_sensors_at(
+            stable_id,
+            Some((old.0 as i16, old.1 as i16)),
+            rules,
+            registry,
+        );
+        self.add_unit_sensors_at_current(stable_id, rules, registry);
+    }
+
     /// Foot4D8611/4D8621 executes both receivers for PerCellProcess(2),
-    /// including a terminal or chain callback in the same cell.
+    /// including a terminal or chain callback in the same cell. A circle that
+    /// [`Self::refresh_airborne_sensor_at_cell_change`] already moved to the
+    /// current cell is left alone: repeating the native remove+add here would
+    /// leave a second credit on every covered cell.
     pub fn refresh_unit_sensor_at_per_cell(
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let old = self
+        let Some(current) = self
             .substrate
             .entities
             .get(stable_id)
-            .map(|entity| entity.navigation.neighbor_state().cell());
-        if let Some(old) = old {
-            self.remove_unit_sensors_at(stable_id, Some(old), rules, registry);
-            self.add_unit_sensors_at_current(stable_id, rules, registry);
+            .map(|entity| (entity.position.rx(), entity.position.ry()))
+        else {
+            return;
+        };
+        let old = self.fog.unit_sensor_center(stable_id).map_or_else(
+            || {
+                self.substrate
+                    .entities
+                    .get(stable_id)
+                    .map(|entity| entity.navigation.neighbor_state().cell())
+                    .unwrap_or((0, 0))
+            },
+            |(x, y)| (x as i16, y as i16),
+        );
+        if old.0 >= 0 && old.1 >= 0 && (old.0 as u16, old.1 as u16) == current {
+            return;
         }
+        self.remove_unit_sensors_at(stable_id, Some(old), rules, registry);
+        self.add_unit_sensors_at_current(stable_id, rules, registry);
     }
 }
 
@@ -618,6 +679,64 @@ mod tests {
         // FootLimbo4DB376 removes the live owner's current-coordinate circle.
         sim.techno_limbo_with_rules(second, &rules);
         assert!(!sim.fog.has_sensor_for_house(soviet, 57, 30));
+    }
+
+    /// A `BalloonHover=yes` Jumpjet's PerCell runs only at touchdown, so
+    /// without the airborne re-stamp its `SensorsSight=` circle stays at the
+    /// factory forever and enemy cloaked units are never sensed. Crossing
+    /// cells must move the deposit, keep exactly one credit per cell, and
+    /// leave touchdown idempotent.
+    #[test]
+    fn airborne_sensor_circle_follows_cell_changes_without_double_credit() {
+        let rules = rules();
+        let mut sim = sim_with_map_authority();
+        let id = sim
+            .spawn_object_at_height("DEST", "Americans", 20, 30, 0, 0, &rules)
+            .unwrap();
+        let owner = sim.substrate.entities.get(id).unwrap().owner();
+        let index = |sim: &Simulation, x: u16| {
+            (30 * usize::from(sim.fog.width()) + usize::from(x)) as usize
+        };
+        assert!(sim.fog.has_sensor_for_house(owner, 20, 30));
+        assert!(sim.fog.has_sensor_for_house(owner, 13, 30));
+        assert!(!sim.fog.has_sensor_for_house(owner, 40, 30));
+
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .position
+            .set_rx_for_test(40);
+        sim.refresh_airborne_sensor_at_cell_change(id, (20, 30), &rules, None);
+        assert!(
+            !sim.fog.has_sensor_for_house(owner, 13, 30),
+            "the unlimbo cell's circle must be removed"
+        );
+        assert!(
+            sim.fog.has_sensor_for_house(owner, 40, 30),
+            "the circle follows the flying unit"
+        );
+        assert_eq!(sim.fog.sensors_by_house()[&owner][index(&sim, 40)], 1);
+
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .position
+            .set_rx_for_test(50);
+        sim.refresh_airborne_sensor_at_cell_change(id, (40, 30), &rules, None);
+        // A repeated call in the same cell is a no-op, not another credit.
+        sim.refresh_airborne_sensor_at_cell_change(id, (50, 30), &rules, None);
+        assert_eq!(sim.fog.sensors_by_house()[&owner][index(&sim, 50)], 1);
+        assert!(!sim.fog.has_sensor_for_house(owner, 13, 30));
+
+        // A later touchdown's PerCell(2) must not add a second circle.
+        sim.refresh_unit_sensor_at_per_cell(id, &rules, None);
+        assert_eq!(sim.fog.sensors_by_house()[&owner][index(&sim, 50)], 1);
+
+        // Limbo still removes the circle at the cell it now occupies.
+        sim.techno_limbo_with_rules(id, &rules, None);
+        assert!(!sim.fog.has_sensor_for_house(owner, 50, 30));
     }
 
     /// `FootClass::Unlimbo @ 0x004D7170` stamps the circle itself
