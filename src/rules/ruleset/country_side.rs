@@ -404,7 +404,9 @@ impl RuleSet {
     pub(crate) fn country_index_of_name(&self, name: &str) -> Option<CountryIdx> {
         let index = house_type_index_of_name(name, self.country_lookup_members());
         (index >= 0).then(|| {
-            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
+            CountryIdx(
+                u16::try_from(index).expect("COUNTRY_LIMIT keeps the Country registry within u16"),
+            )
         })
     }
 
@@ -626,7 +628,7 @@ impl RuleSet {
     pub fn allocated_sides(&self) -> impl Iterator<Item = (SideIdx, &str)> {
         self.side_ids.iter().enumerate().map(|(index, id)| {
             (
-                SideIdx(u8::try_from(index).expect("[Sides] exceeds u8 identity space")),
+                SideIdx(u8::try_from(index).expect("SIDE_LIMIT keeps the Side registry within u8")),
                 id.as_str(),
             )
         })

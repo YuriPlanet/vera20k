@@ -31,7 +31,8 @@ use super::{
 /// first: the asset decoders and their shared readers, the INI readers, the
 /// map file and section parsers, the language, config and mod package
 /// readers, the save codec and save admission, and the LAN and lockstep wire
-/// readers.
+/// readers with the lockstep queues and command decoders that take peers'
+/// records.
 const OUTSIDE_DATA_FILES: &[&str] = &[
     "assets/aud_file.rs",
     "assets/audio_bag.rs",
@@ -81,6 +82,7 @@ const OUTSIDE_DATA_FILES: &[&str] = &[
     "map/tubes.rs",
     "map/variable_names.rs",
     "map/waypoints.rs",
+    "net/command_exchange.rs",
     "net/event_packet.rs",
     "net/global.rs",
     "net/lan_messages.rs",
@@ -88,13 +90,19 @@ const OUTSIDE_DATA_FILES: &[&str] = &[
     "net/lan_messages/extended_setup.rs",
     "net/lan_messages/ingame.rs",
     "net/lan_messages/setup.rs",
+    "net/live_commands.rs",
+    "net/live_commands/sequenced.rs",
     "net/reliable.rs",
     "net/udp.rs",
+    "net/web_rtc.rs",
+    "net/web_socket.rs",
     "rules/ini_ares_syntax.rs",
     "rules/ini_parser.rs",
     "rules/ini_value.rs",
+    "sim/command.rs",
     "sim/snapshot.rs",
     "sim/snapshot/object_references.rs",
+    "sim/world/world_commands/records.rs",
     "util/base64.rs",
     "util/config.rs",
     "util/lcw.rs",
@@ -114,6 +122,7 @@ const RELAY_WIRE_FILES: &[&str] = &[
     "lib.rs",
     "link/codec.rs",
     "sequenced.rs",
+    "sequenced/federation.rs",
     "sequenced/pack.rs",
     "sequenced/watch.rs",
     "varint.rs",
@@ -126,7 +135,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "assets/aud_file.rs",
         "index",
         12,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "the chunk header reads lie below the `offset + CHUNK_HEADER_SIZE <= data.len()` the loop tests, the chunk slice ends at `min(data.len())`, and the format-1 byte loops index below the `data.len()` they test",
     ),
     (
         "assets/audio_bag.rs",
@@ -138,19 +147,19 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "assets/bink_audio.rs",
         "index",
         56,
-        "fixed-size transform and band tables indexed by counts the header admission bounds; frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "buffers are sized from `frame_len` (1 << 9..=11 by sample rate, raised by the channel count `new` admits to 1..=MAX_CHANNELS) and every coefficient index runs below it (a run ends at `min(frame_len)`); the band, quantizer and RLE tables are fixed arrays indexed below their length (`num_bands <= 25`, 4-bit codes, quantizers clamped to 95); the FFT indexes its own power-of-two plan",
     ),
     (
         "assets/bink_bits.rs",
         "index",
         6,
-        "VLC tables indexed by masked peeks of the bit reader; frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "`data` is read at `bit_pos >> 3` only after `bits_left` admits the read, and `bits_total` is the packet's `len * 8`; VLC tables are built from the fixed BINK_TREE tables and looked up by a peek `bits` wide into `1 << bits` entries",
     ),
     (
         "assets/bink_decode.rs",
         "index",
         246,
-        "64-coefficient blocks, scan tables and plane buffers indexed by masked or admitted values; frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "planes hold whole 16-pixel blocks of the header's size (`bink_file` admits up to 7680x4800), so each 8x8 or scaled 16x16 block lies inside, and a motion copy is checked against `ref_end`; each bundle refill checks `dec_end <= buf_end`, and `get_value` takes at most 64 values of a bundle per block from a bundle of 64 bytes a block; the DCT and residue lists are 128-entry arrays the scan machine fills with each of 64 positions at most once; tree, symbol and quantizer indexes are 4-bit",
     ),
     (
         "assets/bink_decode.rs",
@@ -168,7 +177,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "assets/csf_file.rs",
         "index",
         14,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "label slots come from `native_label_search` or the push just made, and the format scanner indexes `chars` only below the `chars.len()` its loops test",
     ),
     (
         "assets/csf_file.rs",
@@ -180,13 +189,13 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "assets/csf_file/ares_labels.rs",
         "index",
         36,
-        "ordered label slots indexed by positions its own searches return; frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "the DLL's sort and the CRT bsearch over the label slice: every index is a slot the algorithm derives below the length its loop tests (`count != 0`, `2 * hole + 2 < len`, `scan_right < len`, `scan_left > 0`), never a file offset",
     ),
     (
         "assets/ima_adpcm.rs",
         "index",
         15,
-        "step tables indexed by a step index clamped to MAX_STEP_INDEX or refused above it, and 4-bit codes; block reads frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "step tables indexed by a step index clamped to MAX_STEP_INDEX or refused above it, and 3-bit codes; a block is `block_align` bytes (`new` ends a stream whose stride is below the preamble) or the whole groups of a short tail, so the preamble and group slices lie inside it",
     ),
     (
         "assets/mix_archive.rs",
@@ -210,7 +219,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "assets/pcx_file.rs",
         "index",
         17,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "the header reads follow the 128-byte check and the palette slices the 897-byte one; the RLE scan is exactly `bytes_per_line * planes * height`, with `bytes_per_line >= width`, so each row and plane slice lies inside it; palettes are 256 entries looked up by u8; the encoder walks the RGB buffer it checked to be `width * height * 3`",
     ),
     (
         "assets/shp_decode.rs",
@@ -228,7 +237,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "assets/tmp_decode.rs",
         "index",
         5,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "a diamond row is copied only after its x and y range are checked inside the buffer; the extra planes are `checked_cell_slice`s of exactly `extra_width * extra_height` bytes, and each extra pixel's destination is checked inside the buffer before the write",
     ),
     (
         "assets/tmp_file.rs",
@@ -375,6 +384,18 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "the count of eight fixed waypoint keys fits an i32",
     ),
     (
+        "net/command_exchange.rs",
+        "expect",
+        1,
+        "the frame's send budget is set just above when the frame starts",
+    ),
+    (
+        "net/command_exchange.rs",
+        "index",
+        1,
+        "the records sent are a prefix no longer than `records.len()` (`min`)",
+    ),
+    (
         "net/event_packet.rs",
         "expect",
         5,
@@ -435,6 +456,24 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "a fixed field inside a fixed-size LAN message array",
     ),
     (
+        "net/live_commands.rs",
+        "expect",
+        4,
+        "`poll` starts the frame visit before its loop and `finish`; the PROCESS_TIME and TIMING records are fixed native records that always encode",
+    ),
+    (
+        "net/live_commands/sequenced.rs",
+        "expect",
+        5,
+        "the received time is set at the top of the same assembly step; `new` seats the local source in the roster; a desync names sources the assembler checked to be seated",
+    ),
+    (
+        "net/live_commands/sequenced.rs",
+        "index",
+        17,
+        "source indexes into the MAX_PEERS-sized tables are below MAX_PEERS (the relay ticket and ordering decoders refuse larger), and header slices lie inside packets this module encoded",
+    ),
+    (
         "net/reliable.rs",
         "index",
         4,
@@ -453,6 +492,18 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "each datagram range follows its length check against the scope header and capacity",
     ),
     (
+        "net/web_rtc.rs",
+        "index",
+        1,
+        "the copy length is checked against `buffer.len()` just above",
+    ),
+    (
+        "net/web_socket.rs",
+        "index",
+        1,
+        "the copy length is checked against `buffer.len()` just above",
+    ),
+    (
         "relay-protocol/envelope.rs",
         "index",
         4,
@@ -462,7 +513,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "relay-protocol/journal.rs",
         "index",
         2,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "room file names are checked to be 32 ASCII hex digits before the sixteen 2-digit slices, and a bounded page reads `count + 1` offsets before indexing `offsets[count]`",
     ),
     (
         "relay-protocol/lib.rs",
@@ -480,7 +531,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "relay-protocol/link/codec.rs",
         "index",
         1,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "`varint::read` returns a length within the bytes it read",
     ),
     (
         "relay-protocol/sequenced.rs",
@@ -492,7 +543,13 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "relay-protocol/sequenced.rs",
         "index",
         23,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "source indexes into the MAX_PEERS-sized tables are below MAX_PEERS (`Ticket::parse` and the ordering decoder refuse larger), a certificate is MAC-checked over the length `parse` and `is_ordering_certificate_len` admitted, and rate steps index the paced-rate table below its length",
+    ),
+    (
+        "relay-protocol/sequenced/federation.rs",
+        "index",
+        36,
+        "a roster is length-checked against its count, a ticket source and each silence, checksum and pace entry's source are below MAX_PEERS, a received frame's header and each entry end are checked against its length, outbox indexes lie between its base and end, and the clock sample index wraps below CLOCK_SAMPLES",
     ),
     (
         "relay-protocol/sequenced/pack.rs",
@@ -516,7 +573,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "relay-protocol/sequenced/watch.rs",
         "index",
         10,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "a watch ticket is its fixed TICKET_LEN array, and a watcher index is the `position` found in the same room, which nothing removes before its use",
     ),
     (
         "relay-protocol/sequenced/watch.rs",
@@ -555,6 +612,18 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "slices at boundaries the scanners found in the same token",
     ),
     (
+        "sim/command.rs",
+        "expect",
+        2,
+        "an Object target always has a token",
+    ),
+    (
+        "sim/command.rs",
+        "index",
+        45,
+        "fixed field offsets inside the fixed-size record and its payload; a TargetHouse body is one of the fixed inner lengths, all inside the payload",
+    ),
+    (
         "sim/snapshot.rs",
         "expect",
         1,
@@ -588,13 +657,13 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "util/lcw.rs",
         "index",
         32,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "every command checks its source run against `src.len()` and its write against `dest.len()` before copying, and a back-reference starts below the write position; the chunk reader checks each header and chunk against `data.len()`; the writer indexes its own block below the length its loops test",
     ),
     (
         "util/lzo.rs",
         "index",
         26,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "the decoder reads input only through `read_byte`, `read_u16_le_lzo` and `copy_literals`, which check `src.len()`, and writes only through `copy_literals` and `copy_match`, which check `dst.len()` and that a match starts inside the output; the chunk reader checks each chunk against `data.len()`; the writer indexes its own block below the length its loops test and a hash table of `1 << HASH_BITS` slots",
     ),
     (
         "util/mod_package.rs",
@@ -618,7 +687,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
         "util/save_codec/layout.rs",
         "index",
         8,
-        "frozen when this guard began, after the panic fixes bounded these reads; not reviewed site by site",
+        "it describes the save's Rust types, not file bytes: its maps are indexed by keys the tracer inserted, `choose` answers below the variant count, and a field index is below its layout count",
     ),
 ];
 

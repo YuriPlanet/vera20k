@@ -547,7 +547,8 @@ impl RandomMapGenerationRetention {
 
     pub(super) fn accept_setup(&mut self, selected_map_file: &str) {
         self.accepted_launch = self.candidate.take().map(|generated| {
-            let start_staging = AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
+            let start_staging =
+                AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
             (
                 selected_map_file.to_owned(),
                 AcceptedRandomMapLaunch {
@@ -875,8 +876,9 @@ pub(super) fn prepare_random_map_generation(
             asset_manager.get_ref(name)
         });
     // The launch load refuses the same theater with this message
-    // (app/loading/init.rs); the dialog has no message surface for a
-    // refused preparation, like the refusals above.
+    // (app/loading/init.rs). Here the refusal reaches the player as the
+    // dialog's generate-failed note (`fail_generate`), as the refusals above
+    // do; the note is one fixed sentence, so the missing piece is logged.
     if let Some(missing) =
         blocks.missing_cliff_tile(&theater.lookup, resolved_inputs.ids.cliffs.cliff_set)
     {

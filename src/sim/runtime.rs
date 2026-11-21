@@ -827,7 +827,9 @@ pub fn spawn_terrain_tile_animations(
         // constructor 0x00421EA0 has no refusal path). A refused launch
         // removes the anim; a refused Tiberium start, which fails after the
         // constructor registered and revealed the anim, leaves it registered
-        // without its ZAdjust (residual, in the anim constructor).
+        // without its ZAdjust (residual, in the anim constructor). The map
+        // plays on without a notice: only that tile's decoration is missing,
+        // and the log names the anim and cell for the modder.
         let id = match sim.spawn_anim_at_world(rules, descriptor, world) {
             Ok(id) => id,
             Err(error) => {
