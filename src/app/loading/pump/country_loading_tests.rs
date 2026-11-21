@@ -150,7 +150,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
         prepared.request.startup().launch_session().unwrap(),
         Some(&csf),
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         &[],
     );
     composition.bind_country_loading(late, Some(&csf));

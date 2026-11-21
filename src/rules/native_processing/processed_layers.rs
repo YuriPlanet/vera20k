@@ -35,6 +35,10 @@ impl ProcessedRulesLayers {
         &self.ares_inputs
     }
 
+    pub(crate) fn kratos_inputs(&self) -> &crate::rules::kratos_switch::KratosInputs {
+        &self.kratos_inputs
+    }
+
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {
         &self
             .native_type_construction_trace
@@ -225,7 +229,7 @@ impl ProcessedRulesLayers {
                     RulesTypeFamily::Animation => ObjectImageKind::Animation,
                     _ => ObjectImageKind::Ordinary,
                 };
-                image.load_unowned_shp(kind, theater);
+                image.load_unowned_shp(kind, theater, None);
                 if family == RulesTypeFamily::Building {
                     if let Some((turret, barrel)) =
                         super::voxel_frame_catalog::building_voxel_read_names(&member.body)
@@ -600,16 +604,24 @@ impl ProcessedRulesLayers {
             .map_or(0, Vec::len);
         let warhead_count = families.get(&RulesTypeFamily::Warhead).map_or(0, Vec::len);
         let particle_count = families.get(&RulesTypeFamily::Particle).map_or(0, Vec::len);
+        if let Some(member) = families
+            .values()
+            .flatten()
+            .find(|member| !member.building_foundation.valid())
+        {
+            return Err(RulesError::InvalidFoundation {
+                type_id: member.native_stored_id.clone(),
+            });
+        }
         if families.values().flatten().any(|member| {
-            !member.building_foundation.valid()
-                // Only a read the Ares way installs a custom foundation or
-                // weapon slots past the eighteen.
-                || (!registry.reads_ares_way
-                    && (matches!(
-                        member.building_foundation,
-                        crate::rules::foundation::Foundation::Custom(_)
-                            | crate::rules::foundation::Foundation::InvalidCustom
-                    ) || member.weapon_slots.has_extension_slots()))
+            // Only a read the Ares way installs a custom foundation or
+            // weapon slots past the eighteen.
+            (!registry.reads_ares_way
+                && (matches!(
+                    member.building_foundation,
+                    crate::rules::foundation::Foundation::Custom(_)
+                        | crate::rules::foundation::Foundation::InvalidCustom
+                ) || member.weapon_slots.has_extension_slots()))
                 || member
                     .weapon
                     .projectile

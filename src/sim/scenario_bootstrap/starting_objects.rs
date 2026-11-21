@@ -287,14 +287,14 @@ pub(super) fn ares_place_starting_construction_yard(
 /// 0x5D6F61), after a successful base-unit callback: each of the house's
 /// construction yards (ConYards, `+0x54`) is QueueMission(Construction, 1)ed
 /// and then, inside the placement scope (`0xA8E7AC`), Enter_Idle_Mode(0, 1)
-/// queues Guard and the Idle body behind it. A building's discovery
-/// (`0x00440D61`, `0x00440E5C`) follows the Unlimbo's own Enter_Idle_Mode(1,
-/// 1), which queued Construction. A human's yard is therefore not opened: its
-/// ready byte stays clear, the Construction never commences and the forced
-/// Guard stays current, with no build-up. A computer's yard opens (its
-/// current mission is the forced Guard), so the Construction commences here
-/// and the first Update's Mission_Construction restarts the build-up. An
-/// emptied BaseSpawnCell takes back its prior cell.
+/// queues Guard and the Idle body behind it. The yard opened during its
+/// Unlimbo, before that Unlimbo's own Enter_Idle_Mode(1, 1) queued
+/// Construction: a human's at its cell put (CellClass::AddContent's
+/// DiscoveredBy(PlayerPtr), `0x0047E9DC`, outside a campaign), a computer's
+/// at its owner discovery (`0x00440E76`, its current mission the forced
+/// Guard). Opening set its ready byte, so the Construction commences here and
+/// the first Update's Mission_Construction restarts the build-up. An emptied
+/// BaseSpawnCell takes back its prior cell.
 pub(super) fn ares_settle_starting_construction_yards(
     sim: &mut Simulation,
     owner: &str,
@@ -321,10 +321,9 @@ pub(super) fn ares_settle_starting_construction_yards(
         // The WithConst yard is unlimboed through the starting-object route
         // (`unlimbo_starting_object_near_base`), which — unlike the MCV
         // deploy's `unlimbo_constructed_parent` — leaves the body in
-        // Construction. Its queued Idle only applies on a later Update, so the
-        // first frame replays the build-up and, with the forced Guard current,
-        // Mission_Construction never runs to complete it: the build-up loops.
-        // Apply the Idle body now so a starting yard stands finished.
+        // Construction. BuildingClass::Begin_Mode (`0x00447780`) applies a new
+        // mode at once inside this scope (`0x004477A2..0x004477B0`), so the
+        // Idle body is current here, not only queued.
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.initialize_building_idle_body(sim.session.binary_frame() as i32);
         }

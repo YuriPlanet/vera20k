@@ -51,19 +51,17 @@ use vera20k_wasm_ext::{
 };
 
 use super::{
-    ActionContext, FRAME_BUDGET, GLOBAL_VARS, Host, LOCAL_VARS, ModuleSource, Ref, cell_ref,
-    decode_ref, house_ref, run_action, vars::VarStore,
+    ActionContext, GLOBAL_VARS, Host, LOCAL_VARS, ModuleSource, Ref, cell_ref, decode_ref,
+    house_ref, run_action, vars::VarStore,
 };
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
-use crate::sim::trigger_runtime::{ModuleTrigger, StockInput, TriggerScope};
+use crate::sim::trigger_runtime::{
+    MAX_BACKLOG_RECORDS, MAX_QUEUED_RECORDS, MAX_RECORDS_PER_FRAME, ModuleTrigger, StockInput,
+    TriggerScope,
+};
 use crate::sim::world::{FrameEffects, Simulation};
-
-/// Records one module receives per frame, and how many frames' worth may
-/// wait before it is stopped as unable to keep up (open question 7).
-pub const MAX_RECORDS_PER_FRAME: usize = 1024;
-pub const MAX_BACKLOG_FRAMES: usize = 16;
 
 /// An occurrence an event site hands over. Unset integers stay −1 and
 /// unset references 0, as the record layout asks.
@@ -236,6 +234,14 @@ impl Host<'_, '_> {
             if let Some(status) = self.check_action(action)? {
                 return Ok((0, status));
             }
+        }
+        if !self
+            .sim
+            .trigger_runtime
+            .module_triggers()
+            .can_create(self.source, scope, &def.events)
+        {
+            return Ok((0, Status::Refused));
         }
         let handle = self.sim.substrate.allocate_stable_id();
         let trigger = ModuleTrigger {
@@ -536,6 +542,9 @@ impl Simulation {
             let Some(trigger) = self.trigger_runtime.module_triggers().get(handle) else {
                 continue;
             };
+            if !trigger.enabled {
+                continue;
+            }
             let Some(interval) = trigger
                 .events
                 .iter()
@@ -831,8 +840,8 @@ impl Simulation {
     /// to `on_events` in batches the delivery area holds, while the frame
     /// budget lasts and up to [`MAX_RECORDS_PER_FRAME`]; the rest wait, in
     /// order, for the next frame. Records of a disabled or removed trigger,
-    /// and every record once the game has ended, are dropped. A backlog past
-    /// [`MAX_BACKLOG_FRAMES`] frames stops the module.
+    /// and every record once the game has ended, are dropped. The module
+    /// stops when producers hit the queue cap or delivery leaves too much backlog.
     pub(super) fn deliver_ext_module_events(
         &mut self,
         rules: &RuleSet,
@@ -850,9 +859,17 @@ impl Simulation {
             triggers.clear_queue(source);
             return Ok(());
         }
+        if triggers.queue_overflowed(source) {
+            return Err(Fault::Backlog(MAX_QUEUED_RECORDS + 1));
+        }
         let ready = triggers.prepare_delivery(source).min(MAX_RECORDS_PER_FRAME);
-        let (mut delivered, mut used) = (0, 0);
-        while delivered < ready && used < FRAME_BUDGET {
+        let frame = self.session.binary_frame();
+        let mut delivered = 0;
+        while delivered < ready {
+            let budget = self.ext_modules.slots[index].remaining_frame_ops(frame);
+            if budget == 0 {
+                break;
+            }
             let batch = self
                 .trigger_runtime
                 .module_triggers_mut()
@@ -861,16 +878,21 @@ impl Simulation {
                 break;
             }
             delivered += batch.len();
-            used += self.with_ext_module(
+            let used = self.with_ext_module(
                 rules,
                 overlay_registry,
                 frame_effects,
                 index,
-                |module: &mut SimModule, host| module.deliver(&batch, FRAME_BUDGET, host),
+                |module: &mut SimModule, host| module.deliver(&batch, budget, host),
             )?;
+            self.ext_modules.slots[index].charge_frame_ops(used);
         }
-        let backlog = self.trigger_runtime.module_triggers().queued(source);
-        if backlog > MAX_RECORDS_PER_FRAME * MAX_BACKLOG_FRAMES {
+        let triggers = self.trigger_runtime.module_triggers();
+        if triggers.queue_overflowed(source) {
+            return Err(Fault::Backlog(MAX_QUEUED_RECORDS + 1));
+        }
+        let backlog = triggers.queued(source);
+        if backlog > MAX_BACKLOG_RECORDS {
             return Err(Fault::Backlog(backlog));
         }
         Ok(())

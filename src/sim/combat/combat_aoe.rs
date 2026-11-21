@@ -298,17 +298,20 @@ impl From<&str> for AoEDamageOrigin {
 
 /// Apply_area_damage's entry (`0x004892BE`): an inert scenario or a zero
 /// damage returns at once. Ares DamageArea_NullDamage (10053940) lets a
-/// warhead with `AllowZeroDamage=yes` take a zero damage through the area.
+/// warhead with `AllowZeroDamage=yes` take a zero damage through the area,
+/// and Firestorm 2.0 `Explosion_Damage` lets a `Webby=` warhead's
+/// (`0x0045EE75..0x0045EE81`), so it still webs.
 pub(crate) fn area_damage_enters(
     damage: i32,
     warhead: &WarheadType,
     scenario_no_damage: bool,
     ares: bool,
 ) -> bool {
-    let zero_admitted = ares
-        && warhead
-            .ares_combat()
-            .is_some_and(|combat| combat.allow_zero_damage());
+    let zero_admitted = warhead.webby().is_some()
+        || ares
+            && warhead
+                .ares_combat()
+                .is_some_and(|combat| combat.allow_zero_damage());
     !scenario_no_damage && (damage != 0 || zero_admitted)
 }
 
@@ -586,6 +589,11 @@ impl AoECollector {
         // Each candidate's native Sqrt_Approx/ftol distance is compared to this
         // signed threshold; there is no exact-squared prefilter.
         let spread_leptons = cell_spread::splash_threshold_leptons(cell_spread);
+        // Each detonation's receivers are its own list: the commit walks it
+        // while a receiver's death detonates again and collects another, and
+        // the bullet path hands it on to its damage events. A run lasts one
+        // fire visit, so a buffer kept there would serve only those nested
+        // detonations.
         let mut result = AoEDamageResult::default();
         let exact_impact = layer_context
             .air_impact
@@ -1009,7 +1017,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
     ) else {
         return AoEDamageResult::default();
     };
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
+    for (dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()) {
         let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
         collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
     }
@@ -1084,6 +1092,15 @@ fn select_object_damage_layer(
     } else {
         0 // Unread by the topology selector on the non-bridge arm.
     };
+    if let Some(deck) = crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell) {
+        // Retain 0x0048955E's strict halfway split, using the actual clearance.
+        let midpoint = floor + (deck - floor) / 2;
+        return if impact.z_leptons > midpoint {
+            ListLayer::Bridge
+        } else {
+            ListLayer::Ground
+        };
+    }
     view.aoe_object_layer(impact.z_leptons, floor)
 }
 
@@ -1105,21 +1122,34 @@ fn impact_is_above_ground(
     // Ares DamageArea_DamageAir (100533A0, hook 0x4893BA): the height above
     // the floor must exceed DamageAirThreshold (default 0, the native
     // `floor < Z`); with `[General] DamageAirConsiderBridges=yes` a bridge
-    // cell (flag 0x100) measures from its 416-lepton deck once reached.
+    // cell (flag 0x100) measures from its live deck once reached.
     if rules.ares()
         && let Some(combat) = warhead.ares_combat()
     {
-        const BRIDGE_HEIGHT_LEPTONS: i32 = 416;
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::ground_pose::corrected_deck_z;
+        use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+
         let mut height = impact.z_leptons.wrapping_sub(floor);
-        if height >= BRIDGE_HEIGHT_LEPTONS
-            && rules.ares_warhead_globals().damage_air_consider_bridges()
-            && CellBridgeView::from_query(
-                &cells,
-                cells.lookup((impact_rx as i16, impact_ry as i16)),
-            )
-            .is_bridge_cell()
-        {
-            height -= BRIDGE_HEIGHT_LEPTONS;
+        if rules.ares_warhead_globals().damage_air_consider_bridges() {
+            let coord = (impact_rx as i16, impact_ry as i16);
+            // Below the native threshold only a fixed real deck can change
+            // the result. Preserve the original conditional Dummy lookup.
+            let deck = if height >= BRIDGE_DECK_HEIGHT_LEPTONS {
+                let cell = cells.lookup(coord);
+                (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+                    .then(|| crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, floor))
+            } else {
+                terrain
+                    .native_fixed_cell_index(coord.0, coord.1)
+                    .and_then(|index| corrected_deck_z(terrain, NativeCellIdentity::Real(index)))
+            };
+            if let Some(deck) = deck {
+                let above_deck = impact.z_leptons.wrapping_sub(deck);
+                if above_deck >= 0 {
+                    height = above_deck;
+                }
+            }
         }
         return height > combat.damage_air_threshold();
     }

@@ -407,10 +407,84 @@ pub(crate) fn visible_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 
 /// Tactical6D4E20 chooses shape first; centred white text is its missing-art
 /// branch. Its geometry follows the tactical viewport and is screen-fixed.
+/// The banner as nodes: its picture, or the result's text where no
+/// picture loaded; either is the layout's part `Banner`.
+pub(crate) struct BannerHuds {
+    picture: crate::app::presentation::picture_hud::PictureHud,
+    text: crate::app::presentation::text_hud::TextHud,
+}
+
+impl Default for BannerHuds {
+    fn default() -> Self {
+        Self {
+            picture: Default::default(),
+            text: crate::app::presentation::text_hud::TextHud::named(BANNER),
+        }
+    }
+}
+
+/// The banner's `veraui.ini` key.
+const BANNER: &str = "Banner";
+
+impl BannerHuds {
+    /// No banner this frame.
+    pub(crate) fn clear(&mut self) {
+        self.picture.begin();
+        self.picture.finish();
+        self.text.begin();
+    }
+}
+
 pub(crate) fn instances(
     state: &AppState,
     outcome_kind: HouseOutcomeKind,
+    huds: &mut BannerHuds,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    let quad = banner_quad(state, outcome_kind);
+    huds.picture.begin();
+    huds.picture.part(BANNER);
+    huds.text.begin();
+    let font = &state.renderer.bit_font;
+    let result = match quad {
+        BannerQuad::Picture(quad, camera) => {
+            let [x, y] = [quad.position[0] - camera[0], quad.position[1] - camera[1]];
+            huds.picture.picture(
+                crate::app::presentation::picture_hud::covering(x, y, quad.size[0], quad.size[1]),
+                quad,
+            );
+            (huds.picture.finish().to_vec(), Vec::new())
+        }
+        BannerQuad::Text(text, origin, camera) => {
+            huds.picture.finish();
+            huds.text.text_tinted(
+                vera20k_gui::Rect::new(
+                    origin[0],
+                    origin[1],
+                    font.text_width(&text) as i32,
+                    font.cell_height() as i32,
+                ),
+                &text,
+                [origin[0] as f32 + camera[0], origin[1] as f32 + camera[1]],
+                crate::app::presentation::text_hud::rgb([255; 3]),
+                0.00022,
+                None,
+                Some([1.0; 3]),
+            );
+            huds.text.finish(font);
+            (Vec::new(), huds.text.glyphs().copied().collect())
+        }
+    };
+    result
+}
+
+/// What the banner shows: its picture's quad, or the result's text from
+/// its top left in the box's pixels; each with the lane camera.
+enum BannerQuad {
+    Picture(SpriteInstance, [f32; 2]),
+    Text(String, [i32; 2], [f32; 2]),
+}
+
+fn banner_quad(state: &AppState, outcome_kind: HouseOutcomeKind) -> BannerQuad {
     let campaign = !state
         .match_state
         .sim_runtime
@@ -425,7 +499,7 @@ pub(crate) fn instances(
     let view = [width, height];
     let camera = field_parts::lane_camera(state, FieldPart::Banner);
     if let Some(quad) = active_art(state).and_then(|art| art.fit_quad(view, camera)) {
-        return (vec![quad], Vec::new());
+        return BannerQuad::Picture(quad, camera);
     }
     if let Some(quad) = state
         .match_state
@@ -435,31 +509,15 @@ pub(crate) fn instances(
         .or(state.renderer.outcome_banner_art.as_ref())
         .and_then(|art| art.quad(frame, view, camera))
     {
-        return (vec![quad], Vec::new());
+        return BannerQuad::Picture(quad, camera);
     }
-    let text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(String::new, |csf| csf.text(label).into_owned());
+    let text = state.csf_text(label);
     let font = &state.renderer.bit_font;
     let origin = centered_origin(
         view,
         [font.text_width(&text) as i32, font.cell_height() as i32],
     );
-    (
-        Vec::new(),
-        crate::render::sidebar_text::build_text(
-            font,
-            &text,
-            origin[0] as f32,
-            origin[1] as f32,
-            1.0,
-            0.00022,
-            [1.0; 3],
-            camera,
-        ),
-    )
+    BannerQuad::Text(text, origin, camera)
 }
 
 #[cfg(all(test, tests_app_presentation))]

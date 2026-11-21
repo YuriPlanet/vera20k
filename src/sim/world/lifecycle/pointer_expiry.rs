@@ -1004,6 +1004,9 @@ impl Simulation {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
         }
+        // Only an Ares Anim shape joins these listeners
+        // (`AlphaShapeClass_CTOR_Anims`); it touches no other listener's state.
+        self.alpha_shapes.anim_pointer_expired(expired_id);
         // VERA-only: each callback below clears only its own entity's fields
         // that name the Anim (`GameEntity::held_anims`) and draws nothing, so
         // visiting just the entities the anim-holder index finds, ascending,
@@ -1126,14 +1129,16 @@ impl Simulation {
             let mut named = self.production.factory_product_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
             // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
-            // `AnnounceInvalidPointer` hook at this dispatcher's entry
-            // (`0x7258D0`, resuming there) sends a removed building to every
-            // house's `HouseExt::OnDetach`, which clears the AI factory slots
-            // naming it; no other listener reads them.
-            let phobos_detach = context.rules.phobos() && control == PointerExpiryControl::Uninit;
+            // and Ares' `AnnounceInvalidPointer` hooks at this dispatcher's
+            // entry (`0x7258D0`, resuming there) send a removed building to
+            // every house's `HouseExt::OnDetach` / `InvalidatePointer` (Ares
+            // `100052B0`), which clear the AI factory slots naming it; no
+            // other listener reads them.
+            let slot_detach = (context.rules.phobos() || context.rules.ares())
+                && control == PointerExpiryControl::Uninit;
             for house in self.houses.values_mut() {
                 named |= house.forget_lost_building(expired_id);
-                if phobos_detach {
+                if slot_detach {
                     named |= house
                         .ai_production_mut()
                         .forget_parallel_factory(expired_id);

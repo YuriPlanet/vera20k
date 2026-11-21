@@ -194,8 +194,8 @@ impl RadSite {
         // The compiled capability decides which owner runs. Ares removes the
         // snow test outright: RadSiteClass_Radiate_UnhardcodeSnow (hook
         // `0x65B5FB` -> `0x10056DB0`) always resumes at `0x65B604`, past
-        // the substitution, so Mental Omega's `RadColor=200,100,0` stays
-        // amber on snow maps.
+        // the substitution, so an amber `RadColor=200,100,0` stays amber
+        // on snow maps.
         let channels = if !crate::rules::PHOBOS_ENABLED
             && !ares
             && crate::rules::object_image::ImageTheater::from_name(theater)
@@ -1046,7 +1046,7 @@ mod tests {
     }
 
     /// Ares's RadSiteClass_Radiate_UnhardcodeSnow (`0x65B5FB`) keeps every
-    /// `RadColor=` channel on a snow map: Mental Omega's amber field, not the
+    /// `RadColor=` channel on a snow map: an amber field stays amber, not the
     /// retail snow substitution's green-only light.
     #[test]
     fn ares_radiation_keeps_rad_color_on_snow() {

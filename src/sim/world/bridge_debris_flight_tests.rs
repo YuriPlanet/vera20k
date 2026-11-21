@@ -402,7 +402,7 @@ fn native_bridge_producer_primary_flight_landing_and_rng_continuation() {
             sim.scenario_rng.native_state_hex(),
             row["producer_rng_before"].as_str().unwrap()
         );
-        spawn_bridge_debris(&mut sim, &rules, &source);
+        spawn_bridge_debris(&mut sim, &rules, &source, None);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["producer_rng_after"].as_str().unwrap(),

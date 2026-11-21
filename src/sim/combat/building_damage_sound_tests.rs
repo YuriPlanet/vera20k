@@ -377,7 +377,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
                     sound_id,
                     coordinate,
                     flags,
-                } => Some((sound_id.as_str(), *coordinate, *flags)),
+                } => Some((sound_id.name_in(&rules), *coordinate, *flags)),
                 _ => None,
             })
             .collect();

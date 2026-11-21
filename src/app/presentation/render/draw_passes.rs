@@ -381,6 +381,8 @@ pub(super) fn dispatch_draw_passes(
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
+    // The Surrender box paints from its nodes, kept on its layout.
+    crate::app::input::surrender::sync(state);
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let world_depth = state
@@ -1242,7 +1244,8 @@ pub(super) fn dispatch_draw_passes(
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
-    // screen-fixed but clipped to the tactical view.
+    // screen-fixed but clipped to the tactical view. Ares' bottom-left lines
+    // (hook `0x006D4B25`) follow them in the same lanes.
     if text_in_frame {
         draw_pooled_ui_passthrough(
             &mut pass,

@@ -66,7 +66,7 @@ fn walk_destination_and_cell_producer_match_original_startup_conversion() {
             output["incoming"],
             "{row}"
         );
-        crate::sim::movement::set_walk_destination_coord(&mut entity, coord, Some(&terrain));
+        crate::sim::movement::set_walk_destination_coord(&mut entity, coord, Some(&terrain), 0);
         let loco = entity.locomotor.as_ref().unwrap();
         let dest = loco.walk_destination().unwrap();
         assert_eq!(

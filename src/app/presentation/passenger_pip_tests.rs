@@ -408,10 +408,10 @@ fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
             crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
         super::ui_overlays::scale_pip_draws(&sim, &record, None, sim.interner().get(OWNER), &rules)
             .into_iter()
-            .map(|pip| (pip.frame, pip.offset_pixels[0]))
+            .map(|pip| (pip.frame, pip.slot))
             .collect::<Vec<_>>()
     };
-    assert_eq!(draws(""), [(5, 0), (3, 4), (3, 8)]);
-    assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 8), (3, 12)]);
-    assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 4), (0, 8)]);
+    assert_eq!(draws(""), [(5, 0), (3, 1), (3, 2)]);
+    assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 2), (3, 3)]);
+    assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 1), (0, 2)]);
 }

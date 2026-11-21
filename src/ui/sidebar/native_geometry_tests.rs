@@ -59,8 +59,7 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
     cameos.set_scroll_row(SidebarTab::Building, scroll);
     build_sidebar_view_with_spec(
         spec(side),
-        screen[0] as f32,
-        screen[1] as f32,
+        SidebarFrame::for_layout(screen[0] as u32, screen[1] as u32, 100, &spec(side)),
         SidebarTab::Building,
         100,
         0,
@@ -92,12 +91,13 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
         let v = view(c.screen, c.side, 100, 0);
         let l = v.layout;
         let g = c.globals;
+        let body_y = l.origin(&spec(c.side), SidebarPart::Middle)[1];
         assert_eq!(
             [
                 l.sidebar_x as i32,
-                l.side1_y as i32,
+                body_y as i32,
                 v.panel_rect.w as i32,
-                (v.panel_rect.h - l.side1_y) as i32
+                (v.panel_rect.h - body_y) as i32
             ],
             c.body
         );
@@ -236,7 +236,7 @@ fn retail_allied_control_capture_anchors_connect_to_hit_rects() {
         }
     );
     assert_eq!(
-        radar_minimap_rect(800.),
+        v.layout.minimap_rect(&spec(0)),
         Rect {
             x: 648.,
             y: 49.,
@@ -260,6 +260,8 @@ fn radar_aperture_is_the_same_in_the_gdi_and_nod_tables() {
     for gdi_positions in [true, false] {
         let spec =
             SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, gdi_positions);
-        assert_eq!(radar_minimap_rect_with_spec(800., spec), aperture);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
+        let layout = compute_layout_with_spec(spec, frame);
+        assert_eq!(layout.minimap_rect(&spec), aperture);
     }
 }

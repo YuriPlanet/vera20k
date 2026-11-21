@@ -235,7 +235,14 @@ pub(super) fn tick_system_with(
     let (owner, owner_house) = (sys.owner_entity, sys.owner_house);
     // 0x0062F9AE..0x0062F9CF: each particle's AI (0x0062CE40) and move
     // (0x0062D5E0), last first.
-    for (index, id) in super::gas::reverse_ids(sys) {
+    let Some(walk) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |_| true)
+    else {
+        return;
+    };
+    for &(index, id) in &walk {
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
@@ -250,19 +257,17 @@ pub(super) fn tick_system_with(
             .particle_systems
             .commit_particle_tick(system, index, p);
     }
+    sim.substrate.particle_systems.return_walk(walk);
 
     // 0x0062F9D1..0x0062F9F6: destroy the marked ones, last first.
-    let Some(sys) = sim.particle_systems().get(system) else {
+    let Some(marked) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |p| p.marked_for_deletion)
+    else {
         return;
     };
-    let marked: Vec<u64> = sys
-        .particles
-        .iter()
-        .rev()
-        .filter(|p| p.marked_for_deletion)
-        .map(Particle::stable_id)
-        .collect();
-    for id in marked {
+    for &(_, id) in &marked {
         let particle = sim
             .substrate
             .particle_systems
@@ -272,6 +277,7 @@ pub(super) fn tick_system_with(
             sim.retire_particle(particle, rules);
         }
     }
+    sim.substrate.particle_systems.return_walk(marked);
 
     // 0x0062F9F8..0x0062FBC9: follow the owner, or end spawning without one.
     let facts = world.owner(sim, rules, owner);
@@ -309,7 +315,12 @@ pub(super) fn tick_system_with(
     let (location, target) = (sys.coords, sys.target_coords);
     // 0x0062FD38..0x0062FD47: from one lepton above the system.
     let from = IVec3::new(location.x, location.y, location.z.wrapping_add(1));
-    let to = wobble_target(frame, location, target);
+    let to = wobble_target(
+        frame,
+        location,
+        target,
+        sim.session.map_exceeds_original_size(),
+    );
     spawn_with_insert(sim, rules, system, pst.holds_what, from, to);
 }
 
@@ -344,18 +355,27 @@ fn sweep_target(sweep: OwnerSweep) -> IVec3 {
 /// `0x0062FC14..0x0062FD34`: the aim point pushed across the octant from
 /// the system to it, by the Sonic wave table at this frame, a third as far
 /// within 200 leptons. These squares and sum are integer, unlike the sweep's.
-fn wobble_target(frame: i32, location: IVec3, target: IVec3) -> IVec3 {
+/// A VERA-only map past the original's `[Map] Size` limit sums the true
+/// 64-bit square instead, where the wrap would change the near/far arm.
+pub(super) fn wobble_target(
+    frame: i32,
+    location: IVec3,
+    target: IVec3,
+    vera_only_map: bool,
+) -> IVec3 {
     let phase = usize::try_from(frame % 500).expect("the frame counter is not negative");
-    let [dx, dy, dz] = [
-        location.x.wrapping_sub(target.x),
-        location.y.wrapping_sub(target.y),
-        location.z.wrapping_sub(target.z),
-    ];
-    let sum = dz
-        .wrapping_mul(dz)
-        .wrapping_add(dy.wrapping_mul(dy))
-        .wrapping_add(dx.wrapping_mul(dx));
-    let root = sqrt_approx_f32(X87Chop53::load_i32(sum)).expect("an i32 is a finite float");
+    let squared = crate::util::native_coord::squared_xyz_leptons_for_map(
+        [location.x, location.y, location.z],
+        [target.x, target.y, target.z],
+        vera_only_map,
+    );
+    let squared = if vera_only_map {
+        X87Chop53::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+            .expect("a VERA-only particle offset is finite")
+    } else {
+        X87Chop53::load_i32(squared as i32)
+    };
+    let root = sqrt_approx_f32(squared).expect("a map-bounded particle offset is finite");
     let near = X87Chop53::compare(load(root), load(NEAR)) == X87Ordering::Less;
     let wave = i32::from(crate::sim::wave::sonic_wave_table()[phase]).wrapping_mul(12);
     let step = X87Chop53::ftol_i32_low_masked(
@@ -404,7 +424,7 @@ fn spawn_with_insert(
     else {
         return;
     };
-    let particle = Particle::new(kind, from, to, rules.particle_type(kind), sim);
+    let particle = Particle::new(kind, from, to, rules, sim);
     let back = sim
         .particle_rng()
         .next_raw_abs_modulo(INSERT_RANGE.min(count) as u32) as usize;

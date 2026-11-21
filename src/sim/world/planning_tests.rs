@@ -1260,7 +1260,7 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
         .unwrap();
     assert!(!sim.apply_planning_record(
         None,
-        "Americans",
+        "Americans".into(),
         &record,
         crate::rules::ruleset::RuleSet::empty_for_test()
     ));
@@ -1289,7 +1289,7 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
         .unwrap();
     assert!(!sim.apply_planning_record(
         None,
-        "Americans",
+        "Americans".into(),
         &record,
         crate::rules::ruleset::RuleSet::empty_for_test()
     ));
@@ -1411,7 +1411,7 @@ fn cell_attack_and_area_guard_tails_are_terminal_for_append() {
         sim.lifecycle_outputs.clear_for_test();
         assert!(!sim.apply_planning_record(
             None,
-            "Americans",
+            "Americans".into(),
             &record,
             crate::rules::ruleset::RuleSet::empty_for_test()
         ));
@@ -1471,7 +1471,7 @@ fn enter_tail_refuses_append_with_post_terminating_command() {
             None,
         )
         .unwrap();
-    assert!(!sim.apply_planning_record(None, "Americans", &record, &rules));
+    assert!(!sim.apply_planning_record(None, "Americans".into(), &record, &rules));
     assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
     assert_eq!(
         sim.lifecycle_outputs.as_slice(),

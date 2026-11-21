@@ -88,13 +88,13 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
     assert!(anim.hidden_for(Some(owner)) && anim.hidden_for(None));
     let launch_sounds = || {
         sim.sound_events.as_slice().iter().filter(|event| {
-        matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "Launch")
+        matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "Launch")
     }).count()
     };
     assert_eq!(launch_sounds(), 1);
     assert!(sim.sound_events.as_slice().iter().any(|event| {
         matches!(event, SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 0 }
-            if sound_id == "Launch" && coordinate.x == ground[0]
+            if sound_id.name_in(&rules) == "Launch" && coordinate.x == ground[0]
                 && coordinate.y == ground[1] && coordinate.z == ground[2] - 9)
     }));
     let count = sim.anims().count();
@@ -105,7 +105,7 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
             .as_slice()
             .iter()
             .filter(|event| {
-                matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "Launch")
+                matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "Launch")
             })
             .count(),
         1

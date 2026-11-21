@@ -105,8 +105,7 @@ turret (1004B320, 0x6F9E50) follow their keys.
 
 ## Not covered
 
-- `NoSelfGuardArea` (the stock self-click Area Guard arm is not ported) and
-  `DamageSparksParticleSystems`; the rest is in part 2 below.
+- `DamageSparksParticleSystems`; the rest is in part 2 below.
 - A `Missile.Weapon` without a `Projectile=`: Ares dereferences the null
   BulletType; VERA detonates it without one.
 - A zero-`Strength=` type: Ares' smoke and spark gates compare a NaN health
@@ -222,8 +221,9 @@ nothing consumes them:
 - `EVA.Lost` is consumed by the unit-lost cue (FootClass_Destroyed
   10049080, hook 0x4D98C0; buildings 10013F10, hook 0x44D760;
   [ares-warhead-residuals.md](ares-warhead-residuals.md)).
-- `NoSelfGuardArea` (10049710, hook 0x51E748): the healer infantry's
-  GuardArea over itself (0x51E710..0x51E748) is not ported.
+- `NoSelfGuardArea` is consumed by the healer infantry's GuardArea over
+  itself (10049710, hook 0x51E748;
+  [ares-techno-hooks.md](ares-techno-hooks.md)).
 - `RadialIndicatorRadius` of non-building technos (0x41BE80) and the
   `~~~` theater placeholder in `CameoPalette` (the cameo atlas is not
   built per theater).

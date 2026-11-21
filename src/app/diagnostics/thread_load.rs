@@ -21,7 +21,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::util::time::{Duration, Instant};
 
 /// The simulation thread's CPU time at the end of its last job, in
-/// nanoseconds.
+/// nanoseconds. Written by that thread, which holds no app state, and read
+/// by the overlay on the main thread: hence a process-wide atomic.
 static SIMULATION_THREAD_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Called by the simulation thread after each job.
@@ -29,6 +30,11 @@ pub(crate) fn note_simulation_thread() {
     if let Some(ns) = platform::thread_cpu_ns() {
         SIMULATION_THREAD_NS.store(ns, Ordering::Relaxed);
     }
+}
+
+/// The calling thread's CPU time so far, where the system reports it.
+pub(crate) fn calling_thread_cpu() -> Option<Duration> {
+    platform::thread_cpu_ns().map(Duration::from_nanos)
 }
 
 /// CPU time used so far, in nanoseconds.

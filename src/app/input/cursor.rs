@@ -292,6 +292,20 @@ fn find_cursor_feedback_kind(
             CursorFeedbackKind::SellMode(valid)
         });
     }
+    // DetermineAction's power arm (`0x00692815`, Ares `1005C790`): the
+    // Ares cursor table (10057F10) draws its TogglePower/NoTogglePower
+    // entries.
+    if matches!(pointer_mode, super::state::TacticalPointerMode::Power) {
+        let kind = CursorFeedbackKind::TogglePower(
+            super::power_mode::building_under_cursor(state).is_some(),
+        );
+        return Some(super::ares_cursor::tactical(
+            kind,
+            &super::ares_cursor::CursorOverrides::default(),
+            0,
+            state.rules(),
+        ));
+    }
     // No early return for an empty selection here. `242c79ad0` carried
     // `if selected.is_empty() { return None; }` (no comment, no native
     // backing), which made the no-selection arm below unreachable and showed
@@ -392,6 +406,10 @@ pub(crate) struct ActionQuery<'a> {
     pub(crate) selected: &'a [u64],
     pub(crate) modifier: super::context_order::OrderModifier,
     pub(crate) force_move_key: bool,
+    /// The force-fire key's own state, which Ares' Ivan rung reads
+    /// ([`super::context_order::ares_ivan_grinds`]); [`Self::modifier`]
+    /// drops it from a Ctrl+Shift chord the selection cannot attack-move.
+    pub(crate) force_fire_key: bool,
     pub(crate) order_mode: crate::app::types::OrderMode,
     pub(crate) planning: bool,
     /// The Cell What_Action's mouse-over argument
@@ -432,6 +450,7 @@ impl<'a> ActionQuery<'a> {
             selected,
             modifier,
             force_move_key,
+            force_fire_key: crate::app::input::dispatch::is_ctrl_held(state),
             order_mode: state.match_state.input.queued_order_mode,
             planning: state.match_state.input.planning.active(),
             mouse_over,
@@ -571,6 +590,23 @@ impl<'a> ActionQuery<'a> {
                 self.planning,
                 overrides,
             );
+            // Ares `100254B0` (hook `0x0051EB48`) answers at the head of the
+            // Ivan arm, the only row that answers IvanBomb or NoIvanBomb.
+            let kind = if matches!(
+                kind,
+                CursorFeedbackKind::IvanBomb | CursorFeedbackKind::NoIvanBomb
+            ) && let (Some(id), Some(rules)) = (best_id, self.rules)
+                && super::context_order::ares_ivan_grinds(
+                    sim,
+                    rules,
+                    id,
+                    hover.stable_id,
+                    self.force_fire_key,
+                ) {
+                CursorFeedbackKind::Grind
+            } else {
+                kind
+            };
             return Some(promote_attack_move_feedback(kind, attack_move));
         }
 
@@ -590,6 +626,18 @@ impl<'a> ActionQuery<'a> {
         {
             let kind = match action {
                 super::context_order::ObjectKeyAction::ToggleSelect => CursorFeedbackKind::Select,
+                // A healer's AttackSupport, the arrow, replaces the other key
+                // answers ([`super::context_order::healer_supports_over_terrain`]).
+                _ if super::context_order::healer_supports_over_terrain(
+                    sim,
+                    &sim.control_projection(),
+                    rules,
+                    id,
+                    terrain_id,
+                ) =>
+                {
+                    CursorFeedbackKind::Default
+                }
                 super::context_order::ObjectKeyAction::GuardArea => CursorFeedbackKind::GuardArea,
                 super::context_order::ObjectKeyAction::Move => {
                     key_move_feedback(sim, rules, id, terrain_id)
@@ -797,6 +845,7 @@ fn empty_cell_cursor(
     match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
+        MoveAction::EnterTunnel => return CursorFeedbackKind::EnterTunnel,
         MoveAction::Move | MoveAction::Harvest => {}
     }
     // The one resolved object's harvest rungs, not the whole selection's.
@@ -844,6 +893,7 @@ fn move_action_feedback(
         (MoveAction::None, _) => CursorFeedbackKind::Default,
         (MoveAction::NoMove, _) => CursorFeedbackKind::Invalid,
         (MoveAction::Harvest, _) => CursorFeedbackKind::Harvest,
+        (MoveAction::EnterTunnel, _) => CursorFeedbackKind::EnterTunnel,
         (MoveAction::Move, OrderMode::Move)
             if modifier == super::context_order::OrderModifier::AttackMove =>
         {
@@ -931,8 +981,19 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
-    // Ares hooks at the head of each class What_Action over an object: a
-    // Deactivated cursor owner answers GetDeactivatedAction alone.
+    // Ares hooks at the head of each class What_Action over an object: an
+    // EMP'd deployer answers NoDeploy over himself, and a Deactivated cursor
+    // owner answers GetDeactivatedAction alone.
+    if let (Some(actor), Some(rules)) = (best_id, rules)
+        && super::context_order::ares_emp_deployer_refuses_itself(
+            sim,
+            rules,
+            actor,
+            hover.stable_id,
+        )
+    {
+        return CursorFeedbackKind::NoDeploy;
+    }
     if let (Some(actor), Some(rules)) = (best_id, rules)
         && let Some(action) = super::context_order::ares_deactivated_action(
             sim,
@@ -1007,6 +1068,24 @@ pub(super) fn capability_cursor_for_hover(
         && sim.bomb_seen_by(hover.stable_id, actor.owner())
     {
         return CursorFeedbackKind::DisarmBomb;
+    }
+
+    // Infantry's healer self arm (`0x0051E748`) follows the Engineer's
+    // DisarmBomb and replaces Foot's Detonate and self answers. Over itself
+    // the lone selected object answers Self (`0x007000B9`) before Ctrl can
+    // force the Attack a healing Engineer refuses.
+    if best_id == Some(hover.stable_id)
+        && let Some(rules) = rules
+        && super::context_order::healer_guards_itself(
+            sim,
+            &control,
+            rules,
+            hover.stable_id,
+            selected != [hover.stable_id]
+                && super::context_order::ctrl_forces_attack_rung(modifier, key_action),
+        )
+    {
+        return CursorFeedbackKind::GuardArea;
     }
 
     if let Some(rules) = rules
@@ -1515,13 +1594,17 @@ fn no_selection_cursor(
     }
 }
 
-/// The display mapping for Unit's shared repair-object action. Original
-/// Display4AAE90 rows33/17/19 are saved in bunker_attack_action repair_rows.
+/// The display mapping for a healer's object action
+/// ([`super::context_order::healer_object_action`]). Unit's repair rows
+/// (Display4AAE90 rows33/17/19) are saved in bunker_attack_action
+/// repair_rows. An Infantryman's AttackSupport shows the arrow, and its Heal
+/// SetCursorFromAction's row 0x3C (`0x004AB45A`).
 ///
 /// With `ares` the healer arms (`1004E5A0` at `0x73FDBD`, `1004E2E0` at
 /// `0x51E710`) set InfantryHeal (0x5A) over an Organic or Infantry target and
 /// UnitRepair (0x5B) otherwise: a Unit's GRepair (0x1D) takes the override, an
 /// Infantryman's Heal (0x1B) shows it.
+#[allow(clippy::too_many_arguments)]
 fn unit_repair_feedback(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1533,55 +1616,56 @@ fn unit_repair_feedback(
     force_move_key: bool,
     overrides: &mut super::ares_cursor::CursorOverrides,
 ) -> Option<CursorFeedbackKind> {
+    use super::context_order::HealerAction;
+    use crate::sim::world::{InfantryHealAction, UnitRepairAction};
     if selected == [hover.stable_id] || hover.kind == HoverTargetKind::HiddenEnemy {
         return None;
     }
     let id = best_id?;
     let rules = rules?;
     let house = issuing_house?;
-    let keys = super::context_order::heal_arm_keys(
-        sim,
-        rules,
-        id,
-        hover.stable_id,
-        modifier,
-        force_move_key,
-    );
-    let heal_cursor = || {
-        let organic = sim.entities().get(hover.stable_id).is_some_and(|target| {
-            target.category() == crate::map::entities::EntityCategory::Infantry
-                || sim
-                    .interner()
-                    .object_type(target.type_ref(), rules)
-                    .is_some_and(|object| object.organic)
-        });
+    let heal_cursor = |organic: bool| {
         if organic {
             crate::rules::ares_mouse_cursor::index::INFANTRY_HEAL
         } else {
             crate::rules::ares_mouse_cursor::index::UNIT_REPAIR
         }
     };
-    if rules.ares()
-        && sim
-            .entities()
-            .get(id)
-            .is_some_and(|actor| actor.category() == crate::map::entities::EntityCategory::Infantry)
-    {
-        sim.ares_infantry_heal_action(id, hover.stable_id, house, keys, rules)?;
-        return u16::try_from(heal_cursor())
-            .ok()
-            .map(CursorFeedbackKind::AresAction);
-    }
     Some(
-        match sim.unit_repair_action(id, hover.stable_id, house, keys, rules)? {
-            crate::sim::world::UnitRepairAction::Repair => {
+        match super::context_order::healer_object_action(
+            sim,
+            rules,
+            id,
+            hover.stable_id,
+            house,
+            modifier,
+            force_move_key,
+        )? {
+            HealerAction::Unit(UnitRepairAction::Repair) => {
                 if rules.ares() {
-                    overrides.set_cursor(heal_cursor(), super::ares_cursor::action::GREPAIR);
+                    let organic = sim.entities().get(hover.stable_id).is_some_and(|target| {
+                        target.category() == crate::map::entities::EntityCategory::Infantry
+                            || sim
+                                .interner()
+                                .object_type(target.type_ref(), rules)
+                                .is_some_and(|object| object.organic)
+                    });
+                    overrides.set_cursor(heal_cursor(organic), super::ares_cursor::action::GREPAIR);
                 }
                 CursorFeedbackKind::RepairAction(true)
             }
-            crate::sim::world::UnitRepairAction::Select => CursorFeedbackKind::FriendlyUnit,
-            crate::sim::world::UnitRepairAction::Move => CursorFeedbackKind::Invalid,
+            HealerAction::Unit(UnitRepairAction::Select)
+            | HealerAction::Infantry(InfantryHealAction::Select) => {
+                CursorFeedbackKind::FriendlyUnit
+            }
+            HealerAction::Unit(UnitRepairAction::Move) => CursorFeedbackKind::Invalid,
+            HealerAction::Infantry(InfantryHealAction::AttackSupport) => {
+                CursorFeedbackKind::Default
+            }
+            HealerAction::Infantry(InfantryHealAction::Heal { organic }) if rules.ares() => {
+                CursorFeedbackKind::AresAction(u16::try_from(heal_cursor(organic)).ok()?)
+            }
+            HealerAction::Infantry(InfantryHealAction::Heal { .. }) => CursorFeedbackKind::Heal,
         },
     )
 }
@@ -1773,7 +1857,9 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
-        } else if entity.is_under_emp() {
+        } else if entity.is_immobilized(sim.session().binary_frame() as i32) {
+            // Firestorm 2.0's ranker `0x004E86F0` asks Is_Immobilized, which
+            // also ranks a webbed infantryman 1 (`0x004D5B10`).
             1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())
@@ -1821,7 +1907,7 @@ pub(crate) fn shrouded_cell_feedback(
     match kind {
         Kind::EnemyUnit | Kind::EnemyStructure | Kind::EnemyOutOfRange => Kind::Move,
         Kind::Invalid if lead_moves_to_shroud => Kind::Move,
-        Kind::Enter | Kind::Harvest | Kind::Demolish => Kind::Default,
+        Kind::Enter | Kind::EnterTunnel | Kind::Harvest | Kind::Demolish => Kind::Default,
         other => other,
     }
 }
@@ -1864,12 +1950,17 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         // The radar's own mini set travels in the payload: its action's row
         // ([`crate::app::input::radar::cursor`]), or the plain arrow mini.
         CursorFeedbackKind::Minimap(id) => Some(id),
-        CursorFeedbackKind::Enter | CursorFeedbackKind::Grind => Some(CursorId::Enter),
+        CursorFeedbackKind::Enter | CursorFeedbackKind::EnterTunnel | CursorFeedbackKind::Grind => {
+            Some(CursorId::Enter)
+        }
         CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
         // RESIDUAL (dormant, retail rules set `Carryall=` only on HIND):
         // `SetCursorFromAction @ 0x004AAE90` sends action 0x11 to row 0x3C
         // (`0x004AB45A`, frame 384); VERA draws row 0x36 (frame 329).
         CursorFeedbackKind::Tote => Some(CursorId::Tote),
+        // `SetCursorFromAction @ 0x004AAE90` sends Heal (0x1B) to row 0x3C
+        // (`0x004AB45A`), the row NoTogglePower draws.
+        CursorFeedbackKind::Heal => Some(CursorId::NoTogglePower),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {
             CursorId::Repair
@@ -1906,6 +1997,12 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         }),
         // Action 0xD, the SellUnit row.
         CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
+        // Actions 0x21/0x22: rows 0x37 and 0x3C (`0x004AB884` switch).
+        CursorFeedbackKind::TogglePower(valid) => Some(if valid {
+            CursorId::TogglePower
+        } else {
+            CursorId::NoTogglePower
+        }),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),
@@ -2178,8 +2275,8 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
 /// Action strings come from `[SWType] Action=` in rulesmd.ini. Cursor
 /// frame ranges are pre-loaded in `render/cursor_atlas.rs`.
 ///
-/// Returns `None` for `IonCannon` (TS-legacy, no YR SW uses it) and any
-/// unrecognized string. Caller should fall back to `CursorId::Default`.
+/// Returns `None` for any unrecognized string. Caller should fall back to
+/// `CursorId::Default`.
 pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
     match action {
         "Attack" => Some(CursorId::Attack),
@@ -2195,7 +2292,10 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
         "GeneticConverter" => Some(CursorId::GeneticMutator),
         "ForceShield" => Some(CursorId::ForceShield),
         "PsychicReveal" => Some(CursorId::PsychicReveal),
-        // IonCannon is TS-legacy — no YR superweapon uses this Action.
+        // VERA's Tiberian Sun Ion Cannon action (Firestorm 2.0 action 37).
+        // RESIDUAL: Firestorm's own ion cursor art is not in YR's mouse
+        // shapes, so it aims with the Attack cursor.
+        "IonCannon" => Some(CursorId::Attack),
         _ => None,
     }
 }

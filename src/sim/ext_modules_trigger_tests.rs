@@ -28,6 +28,11 @@ pub(super) fn scenario() -> Option<HeadlessScenario> {
 /// event with `clauses` (16 bytes each), then a `Module` action (key
 /// [`KEY`]) and a `SetVar` of local [`LOCAL`].
 fn trigger_def(clauses: &[[u8; 16]]) -> Vec<u8> {
+    trigger_def_setting(LOCAL as i32, clauses)
+}
+
+/// [`trigger_def`] whose `SetVar` (target `Subject`) writes 1 to `var`.
+fn trigger_def_setting(var: i32, clauses: &[[u8; 16]]) -> Vec<u8> {
     let i32s = |values: &[i32]| {
         values
             .iter()
@@ -40,10 +45,7 @@ fn trigger_def(clauses: &[[u8; 16]]) -> Vec<u8> {
     out.extend(0i64.to_le_bytes());
     out.extend(i32s(&[clauses.len() as i32, 0]));
     out.extend(clauses.concat());
-    for (kind, id, value) in [
-        (ACTION_MODULE, KEY, 0),
-        (ACTION_SET_VAR, LOCAL as i32, 1i64),
-    ] {
+    for (kind, id, value) in [(ACTION_MODULE, KEY, 0), (ACTION_SET_VAR, var, 1i64)] {
         out.extend(i32s(&[kind, 0, id, 0, 0, 0]));
         out.extend(value.to_le_bytes());
         out.extend([0; 72 - 24]);
@@ -64,14 +66,15 @@ fn health_below_30_percent() -> [u8; 16] {
 /// Creates the trigger in `on_scenario_start` and binds it to `target`
 /// (handle at 64, statuses at 72 and 76); `on_events` copies the first
 /// record it ever gets to 512 and counts records at 80. Its delivery area is
-/// eight records at 1024.
-fn module(def: &[u8], target: u64) -> Vec<u8> {
+/// eight records at 1024. `sections` adds custom sections in WAT.
+fn module(def: &[u8], target: u64, sections: &str) -> Vec<u8> {
     let bytes = |b: &[u8]| b.iter().map(|b| format!("\\{b:02x}")).collect::<String>();
     wat::parse_str(format!(
         r#"(module
   (import "vera:sim@1.0" "trigger_create" (func $create (param i32 i32 i32) (result i32)))
   (import "vera:sim@1.0" "trigger_bind" (func $bind (param i64 i64) (result i32)))
   (@custom "vera.delivery" "\01\00\04\00\00\80\03\00\00")
+  {sections}
   (memory (export "memory") 1)
   (data (i32.const 2048) "{def}")
   (func (export "on_scenario_start")
@@ -101,6 +104,11 @@ pub(super) fn sturdy_object(scene: &HeadlessScenario) -> u64 {
 /// A scene whose module bound `def` to [`sturdy_object`], after the frame
 /// that ran `on_scenario_start`.
 fn bound_scene(def: &[u8]) -> Option<(HeadlessScenario, u64)> {
+    bound_scene_with(def, "")
+}
+
+/// [`bound_scene`] for a module that also has `sections` (WAT).
+fn bound_scene_with(def: &[u8], sections: &str) -> Option<(HeadlessScenario, u64)> {
     let mut scene = scenario()?;
     let victim = sturdy_object(&scene);
     scene
@@ -109,7 +117,7 @@ fn bound_scene(def: &[u8]) -> Option<(HeadlessScenario, u64)> {
         .install_ext_module(
             &scene.runtime.resources.rules,
             ModuleSource::Map,
-            &module(def, victim),
+            &module(def, victim, sections),
         )
         .expect("module installs");
     scene.tick();
@@ -202,6 +210,41 @@ fn a_hit_fires_the_bound_trigger_and_on_events_gets_its_record() {
 }
 
 #[test]
+fn events_and_on_frame_share_the_module_budget() {
+    let line = "Frame work ".repeat(64);
+    let on_frame = format!(
+        r#"(import "vera:sim@1.0" "log" (func $log (param i32 i32)))
+  (data (i32.const 4096) "{line}")
+  (func (export "on_frame")
+    (call $log (i32.const 4096) (i32.const {len}))
+    (i32.store (i32.const 88) (i32.add (i32.load (i32.const 88)) (i32.const 1))))"#,
+        len = line.len(),
+    );
+    let Some((mut scene, victim)) = bound_scene_with(&trigger_def(&[]), &on_frame) else {
+        return;
+    };
+    let completed = |scene: &HeadlessScenario| {
+        i32::from_le_bytes(memory(scene)[88..92].try_into().expect("4 bytes"))
+    };
+    assert_eq!(completed(&scene), 1);
+
+    // The configured cap can pay for on_frame by itself. Once the damage
+    // callback spends from it, the metered log cannot finish.
+    let on_frame_cost = scene.sim().ext_modules().last_frame_ops()[0];
+    scene.runtime.simulation.ext_modules.slots[0].frame_budget = on_frame_cost + 1;
+    hit(&mut scene, victim, 10);
+    scene.tick();
+
+    assert_eq!(received(&scene), 1);
+    assert_eq!(
+        completed(&scene),
+        1,
+        "on_frame completed under the shared budget: {:?}",
+        scene.sim().ext_modules().status(),
+    );
+}
+
+#[test]
 fn a_filter_clause_holds_back_a_hit_it_rejects() {
     let Some((mut scene, victim)) = bound_scene(&trigger_def(&[health_below_30_percent()])) else {
         return;
@@ -279,9 +322,12 @@ fn a_trigger_removed_before_the_module_phase_delivers_nothing() {
     // What `trigger_remove` runs, from the module's own host.
     let runtime = &mut scene.runtime;
     let mut rng = crate::sim::rng::SimRng::new(0);
+    let mut effects = FrameEffects::empty();
     let mut host = Host {
         sim: &mut runtime.simulation,
         rules: &runtime.resources.rules,
+        overlay_registry: None,
+        frame_effects: &mut effects,
         rng: &mut rng,
         source: ModuleSource::Map,
         orders: &mut Vec::new(),
@@ -297,6 +343,106 @@ fn a_trigger_removed_before_the_module_phase_delivers_nothing() {
     scene.tick();
     assert_eq!(received(&scene), 0);
     assert!(scene.sim().trigger_runtime.module_triggers().is_empty());
+}
+
+#[test]
+fn trigger_creation_refuses_a_full_module_until_a_trigger_is_removed() {
+    use vera20k_wasm_ext::{Status, triggers::TriggerDef};
+
+    let Some(mut scene) = scenario() else { return };
+    let def = TriggerDef::parse(&trigger_def(&[])).expect("test trigger parses");
+    let runtime = &mut scene.runtime;
+    let mut rng = crate::sim::rng::SimRng::new(0);
+    let mut effects = FrameEffects::empty();
+    let mut orders = Vec::new();
+    let mut host = Host {
+        sim: &mut runtime.simulation,
+        rules: &runtime.resources.rules,
+        overlay_registry: None,
+        frame_effects: &mut effects,
+        rng: &mut rng,
+        source: ModuleSource::Map,
+        orders: &mut orders,
+        rules_ini: None,
+    };
+    let (first, status) = host.create_trigger(&def).expect("valid trigger");
+    assert_eq!(status, Status::Ok);
+    for _ in 1..256 {
+        assert_eq!(
+            host.create_trigger(&def).expect("valid trigger").1,
+            Status::Ok
+        );
+    }
+    assert_eq!(host.create_trigger(&def), Ok((0, Status::Refused)));
+    assert_eq!(host.remove_trigger(first), Ok(Status::Ok));
+    assert_eq!(
+        host.create_trigger(&def).expect("reclaimed slot").1,
+        Status::Ok
+    );
+}
+
+#[test]
+fn an_overfilled_event_queue_stops_its_module_without_growing() {
+    use crate::sim::trigger_runtime::MAX_QUEUED_RECORDS;
+
+    let Some((mut scene, victim)) = bound_scene(&trigger_def(&[])) else {
+        return;
+    };
+    let handle = i64::from_le_bytes(memory(&scene)[64..72].try_into().expect("8 bytes"));
+    let queue = scene
+        .runtime
+        .simulation
+        .trigger_runtime
+        .module_triggers_mut();
+    let record = EventRecord {
+        key: KEY,
+        trigger: handle,
+        subject: victim as i64,
+        ..EventRecord::empty(EVENT_TAKE_DAMAGE)
+    };
+    for _ in 0..MAX_QUEUED_RECORDS {
+        queue.enqueue(ModuleSource::Map, record);
+    }
+    assert_eq!(queue.queued(ModuleSource::Map), MAX_QUEUED_RECORDS);
+    queue.enqueue(ModuleSource::Map, record);
+    assert_eq!(queue.queued(ModuleSource::Map), MAX_QUEUED_RECORDS);
+
+    scene.tick();
+    assert_eq!(received(&scene), 0);
+    let reason = scene.sim().ext_modules().status().remove(0).1;
+    assert!(
+        reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("cannot keep up")),
+        "{reason:?}"
+    );
+}
+
+/// The RFC's own example on a declared object variable (ID 1000):
+/// `Where Var(Subject, Panicked) = 0` and `SetVar(Subject, Panicked, 1)`, so
+/// only the first hit on the object delivers a record.
+#[test]
+fn a_declared_variable_clause_and_set_var_let_one_hit_through() {
+    const PANICKED: i32 = 1000;
+    // vera.vars: format 1, one variable "Panicked", object scope, private, 0.
+    const VARS: &str =
+        r#"(@custom "vera.vars" "\01\01\00\00\00\08\00Panicked\02\00\00\00\00\00\00\00\00\00")"#;
+    let mut clause = [0u8; 16];
+    clause[0] = 3; // Var
+    clause[2] = 1; // VarTarget::Subject; op 0 is Eq, value 0
+    clause[4..8].copy_from_slice(&PANICKED.to_le_bytes());
+    let def = trigger_def_setting(PANICKED, &[clause]);
+    let Some((mut scene, victim)) = bound_scene_with(&def, VARS) else {
+        return;
+    };
+    hit(&mut scene, victim, 10);
+    scene.tick();
+    assert_eq!(received(&scene), 1);
+    let vars = &scene.sim().ext_modules.vars;
+    assert_eq!(vars.get(PANICKED, super::vars::Holder::Object(victim)), 1);
+    hit(&mut scene, victim, 10);
+    scene.tick();
+    assert_eq!(received(&scene), 1, "Panicked is 1 now");
 }
 
 /// Runs the SDK's trigger example when `VERA20K_TEST_TRIGGERS_WASM` names

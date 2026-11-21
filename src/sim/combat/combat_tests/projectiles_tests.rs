@@ -918,6 +918,7 @@ fn gsi_08_06_point_blank_shot_clamps_the_launch_speed_to_half_the_distance() {
         crate::sim::projectile::launch::fireat_launch_distance(
             spawn.origin,
             spawn.initial_target_position,
+            false,
         ),
     );
     assert!(

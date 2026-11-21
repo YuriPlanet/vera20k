@@ -780,6 +780,18 @@ impl MatchSession {
             })
     }
 
+    /// VERA: whether the network match in setup or started seats a house
+    /// the computer runs, for the AI INI its rules agreement compares
+    /// (`shell_network_setup::agreement::local`): a campaign room always,
+    /// else its launch says (`SkirmishLaunchSession::seats_computers`). Its
+    /// load answers alike (`LoadingStartup::ai_file`).
+    pub(crate) fn network_seats_computers(&self) -> bool {
+        self.campaign_room().is_some()
+            || self
+                .network_setup()
+                .is_none_or(SkirmishLaunchSession::seats_computers)
+    }
+
     pub(crate) fn network_setup(&self) -> Option<&SkirmishLaunchSession> {
         match &self.network.as_ref()?.phase {
             NetworkPhase::Lobby { .. } => None,
@@ -789,6 +801,20 @@ impl MatchSession {
             }
             NetworkPhase::CooperativeRound { launch, .. } => Some(launch),
         }
+    }
+
+    /// VERA: the Options switches a network match plays and its start
+    /// agreement digests. A co-op campaign plays the original game's; a room
+    /// plays its setup's `HostRules`: its host's, none in Quick Match
+    /// (`live_service` drops what its host sends), each player's own in a
+    /// launcher's room. None before a setup; Err for a host's retired rules.
+    pub(crate) fn network_personal_rules(
+        &self,
+    ) -> Option<Result<crate::rules::personal_rules::PersonalRules, String>> {
+        if self.campaign_room().is_some() {
+            return Some(Ok(Default::default()));
+        }
+        Some(self.network_setup()?.options.host_rules.personal_rules())
     }
 
     pub(crate) fn network_authored_start(

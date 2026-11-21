@@ -112,11 +112,8 @@ impl App {
         // A match's 0xCF ends with the game: its pump 0x00623120 stops the
         // loop once Main_Tick reports the game over (0x0062314E..0x00623157).
         crate::app::shell_wol::page::close_page_dialog(state);
-        state.match_state.match_presentation.pause_menu_interaction = Default::default();
-        state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.surrender_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy = Default::default();
-        state.match_state.match_presentation.restate = Default::default();
+        state.match_state.match_presentation.dialog_ui = Default::default();
+        state.match_state.match_presentation.diplomacy_page = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         state.match_state.match_presentation.saved_game_browser = None;
         state.match_state.network_wait = Default::default();
@@ -393,6 +390,13 @@ impl App {
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();
+        if !was_open && will_be_open {
+            // The skirmish shell's chrome atlas, dropped when the match
+            // started: the menu's pages draw with it
+            // (`native_in_game_shell_active`), so it is back before anything
+            // in this frame reads the open state.
+            Self::ensure_skirmish_shell_chrome(state);
+        }
         if was_open != will_be_open {
             let locked = crate::app::input::campaign_input::is_locked(state);
             let cursor = &mut state.match_state.input.cursor_visibility;
@@ -433,11 +437,10 @@ impl App {
             .match_presentation
             .radar_movies
             .set_active(movie_active);
-        state.match_state.match_presentation.pause_menu_interaction = Default::default();
-        state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.surrender_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy = Default::default();
-        state.match_state.match_presentation.restate = Default::default();
+        // The menus' dialogs go; the chrome under them (the sidebar's and
+        // the command bar's nodes) stays.
+        state.match_state.match_presentation.dialog_ui.close_all();
+        state.match_state.match_presentation.diplomacy_page = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         if will_be_open {
             // Deactivate683EB0/4AEAD0 tears down drag/capture on the way into
@@ -445,15 +448,12 @@ impl App {
             // repair/sell (handle_options_hotkey). A release that arrives
             // while the overlay owns the mouse never reaches the tactical
             // body, so anything still armed here would stay latched for the
-            // rest of the match: tactical capture freezes edge auto-scroll,
-            // an active minimap press swallows every cursor move, and a stale
-            // gadget sticky capture eats the next click.
+            // rest of the match: tactical capture freezes edge auto-scroll
+            // and an active minimap press swallows every cursor move. The
+            // chrome's capture went with `dialog_ui.close_all` above; its
+            // pushed looks go here.
             state.match_state.input.cancel_tactical_drag();
-            state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cancel_pointer_capture();
+            crate::app::input::chrome_input::cancel(state);
         }
         if next == InGameMenuState::Menu {
             state.match_state.match_presentation.pause_menu_has_saves =

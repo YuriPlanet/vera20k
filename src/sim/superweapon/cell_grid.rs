@@ -73,6 +73,29 @@ pub(super) fn cell_has_bridge_flag(sim: &Simulation, x: i16, y: i16) -> bool {
         != 0
 }
 
+/// Launch's structural-bridge adjustment, using the passed Z for the stock
+/// fallback. A fixed deck is a world Z, including for relocated ground Feet.
+pub(super) fn bridge_adjusted_z(sim: &Simulation, x: i16, y: i16, z: i32) -> i32 {
+    use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+    use crate::map::resolved_terrain::NativeCellQuery;
+    use crate::sim::movement::ground_pose::deck_surface_z;
+
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return if cell_has_bridge_flag(sim, x, y) {
+            z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+        } else {
+            z
+        };
+    };
+    let cells = NativeCellQuery::canonical(terrain);
+    let cell = cells.lookup((x, y));
+    if cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
+        deck_surface_z(&cells, cell, z)
+    } else {
+        z
+    }
+}
+
 /// Read an IC receiver's then-live link, including a callback that relayered
 /// or relocated it. Retain the selected footprint cell while the object remains
 /// on that list; after remove/re-add, its new membership owns the successor.

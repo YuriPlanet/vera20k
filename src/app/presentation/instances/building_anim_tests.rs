@@ -3,7 +3,7 @@
 //! is not a retail-pixel golden; depth_gpu_tests separately reads real GPU output.
 use super::*;
 use crate::app::presentation::render::draw_plan_lowering::{
-    lower_ground_object_instances, lower_object_instances,
+    OwnedPlannedObject, lower_ground_object_instances, lower_object_instances,
 };
 use crate::render::palette_light::PaletteLight;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
@@ -127,7 +127,7 @@ fn emit(
     building: u64,
     atlas: &SpriteAtlas,
     order: &NativeDisplayOrder,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     emit_with_material(
         sim,
         rules,
@@ -147,7 +147,7 @@ fn emit_with_material(
     order: &NativeDisplayOrder,
     palette: PaletteLight,
     material: DrawState,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     emit_admitted(sim, rules, building, atlas, order, palette, material, None)
 }
 
@@ -160,8 +160,8 @@ fn emit_admitted(
     palette: PaletteLight,
     material: DrawState,
     admission: Option<([f32; 2], [f32; 2])>,
-) -> Vec<PlannedObjectInstance> {
-    let mut out = Vec::new();
+) -> Vec<OwnedPlannedObject> {
+    let mut out = PlannedObjects::default();
     let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
     let building = frame.object(building).unwrap();
     // Every slot, or those a Display walk with this camera and viewport admits.
@@ -201,6 +201,7 @@ fn emit_admitted(
         0,
         2,
     );
+    let out = out.into_owned();
     out
 }
 
@@ -303,7 +304,7 @@ fn high_terrain_building_slots_keep_their_offsets_and_depth() {
 }
 
 fn assert_slot_replay(
-    planned: Vec<PlannedObjectInstance>,
+    planned: Vec<OwnedPlannedObject>,
     anim: u64,
     alpha: f32,
     material: DrawState,
@@ -321,7 +322,7 @@ fn assert_slot_replay(
     assert_eq!(piece.instance.alpha, alpha);
     assert_eq!(piece.instance.draw_state, material);
     assert_eq!(piece.instance.palette_light, palette);
-    let lowered = lower_object_instances(planned);
+    let lowered = lower_object_instances(planned.into());
     assert_eq!(lowered[layer].owners, [anim]);
     assert_eq!(lowered[layer].runs.len(), 1);
     assert_eq!(
@@ -505,7 +506,7 @@ fn rgba_slot_with_palette_metadata_keeps_compatibility_replay() {
     assert_eq!(piece.instance.palette_light, palette);
     assert_eq!(piece.instance.alpha, 0.5);
     assert_eq!(piece.instance.draw_state, inherited);
-    let lowered = lower_object_instances(planned);
+    let lowered = lower_object_instances(planned.into());
     assert_eq!(lowered[layer].owners, [anim]);
     assert_eq!(lowered[layer].runs.len(), 1);
     assert_eq!(lowered[layer].runs[0].packed_parent, None);
@@ -650,7 +651,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
         assert_eq!(planned.len(), 2);
         assert!(planned.iter().all(|entry| entry.building_pieces.is_none()));
         assert!(planned.iter().all(|entry| entry.parent.id != building));
-        planned.push(PlannedObjectInstance::object(
+        planned.push(OwnedPlannedObject::object(
             order.object_draw(unit, SpriteEncoding::Voxel).unwrap(),
             vec![ObjectPieceInstance {
                 target: ObjectTexture::UnitAtlasPage(0),

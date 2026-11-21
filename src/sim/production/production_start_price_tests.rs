@@ -274,7 +274,7 @@ fn finish_history(start_before_plants: bool) {
         &runtime.resources.rules,
         OWNER,
         ProductionPlacement::Building {
-            type_id: "GAREFN",
+            type_id: "GAREFN".into(),
             cell: (12, 13)
         },
         Some(runtime.resources.rules.overlay_registry()),

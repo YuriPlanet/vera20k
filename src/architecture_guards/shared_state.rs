@@ -83,11 +83,12 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "sim/movement/path_batch.rs",
         1,
         "detached: each batched search runs inside `detached`; outside it a task \
-         reads only its step counters",
+         reads only its step counters. The work the pass answers beside its \
+         searches is its caller's (`world/object_turn.rs`)",
     ),
     (
         "sim/parallel.rs",
-        5,
+        11,
         "the pool's entries themselves; what their tasks do is their callers' pin",
     ),
     (
@@ -128,16 +129,18 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "never looks a cell up: syncs the presentation copy's parts side by side",
     ),
     (
+        "sim/world/object_turn.rs",
+        1,
+        "detached: the live object pass's target scans, answered beside its path \
+         searches or by themselves. Each scan runs inside `detached_stamps`, one \
+         that stamped is dropped for its turn, and the due check before it reads \
+         the object (`techno_ai::scan_batch`)",
+    ),
+    (
         "sim/world/sim_construction.rs",
         3,
         "never looks a cell up: the presentation copy's syncs, fog copy, clone and \
          the old copy's drop; the copy's Dummy is then forked",
-    ),
-    (
-        "sim/world/techno_ai/scan_batch.rs",
-        1,
-        "detached: each target scan runs inside `detached_stamps` and one that \
-         stamped is dropped for its turn; the due check before it reads the object",
     ),
     (
         "sim/world/world_hash.rs",
@@ -308,8 +311,9 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
     (
         "sim/movement/foot_path.rs",
         3,
-        "one search's own-cell mark and last real cell, written by its `&self` \
-         passability gate",
+        "one search's own-cell mark and last real cell: A* and path finishing \
+         hold the entry's marker overlay by `&` across every class question, \
+         so the entry is shared, never lent `&mut`",
     ),
     (
         "sim/movement/path_batch.rs",
@@ -328,6 +332,12 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
         7,
         "the precheck memo path-batch workers share, whose answers are exact whatever \
          order fills it, and this thread's precheck scratch",
+    ),
+    (
+        "sim/ra2_all02_diagnostic.rs",
+        6,
+        "the RA2 Mode ALL02S trace's written-once flag and its last line, so it logs a \
+         change once; log output only, which no simulation state reads",
     ),
     (
         "sim/rng.rs",

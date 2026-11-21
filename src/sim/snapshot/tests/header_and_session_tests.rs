@@ -16,7 +16,7 @@ fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
     sim.install_session_admission(mode, None, policy);
     let map = sim.session.map_name().to_owned();
     sim.scenario_rng = serde_json::from_value(serde_json::json!({
-        "disabled": 0, "index_a": 0, "index_b": 0, "state": []
+        "disabled": 0, "index_a": 250, "index_b": 0, "state": vec![0u32; 250]
     }))
     .unwrap();
     let bytes = GameSnapshot::save(&sim, 1, 2, &map, 0);
@@ -24,6 +24,33 @@ fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
         GameSnapshot::load_validated(&bytes, 1, 2, &map),
         Err(SnapshotError::InvalidRandomCursor)
     ));
+}
+
+/// A save whose Scenario RNG table is short is refused while it is read,
+/// with the table's length in the message.
+#[test]
+fn snapshot_refuses_a_short_rng_table() {
+    let mut sim = Simulation::new();
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0xC0FF_EE11);
+    let map = sim.session.map_name().to_owned();
+    let bytes = GameSnapshot::save(&sim, 1, 2, &map, 0);
+    // The table's wire form is a length and then the words, as a Vec's.
+    let saved = save_codec::serialize(&sim.scenario_rng).unwrap();
+    let at = bytes
+        .windows(saved.len())
+        .position(|window| window == saved)
+        .expect("the Scenario RNG is saved");
+    let short = save_codec::serialize(&(0u8, 0i32, 0i32, vec![0u32; 3])).unwrap();
+    let mut damaged = bytes[..at].to_vec();
+    damaged.extend_from_slice(&short);
+    damaged.extend_from_slice(&bytes[at + saved.len()..]);
+    let error = GameSnapshot::load_validated(&damaged, 1, 2, &map)
+        .err()
+        .expect("a short table is refused");
+    assert!(
+        error.to_string().contains("holds 3 words, not 250"),
+        "{error}"
+    );
 }
 
 /// Prove snapshot round-trip preserves all authoritative state.

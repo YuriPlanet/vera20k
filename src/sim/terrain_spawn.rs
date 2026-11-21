@@ -1185,7 +1185,7 @@ mod tests {
         assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x2600, -15));
         assert!(sim.sound_events.iter().any(|event| matches!(event,
             SimSoundEvent::AnimationStarted { anim_id: id, sound_id, .. }
-                if *id == anim_id && sound_id == "EXPLOSION12"
+                if *id == anim_id && sound_id.name_in(&rules) == "EXPLOSION12"
         )));
         assert!(!sim.terrain_objects.get(doomed).unwrap().is_live());
         sim.scenario_rng = SimRng::new(0); // Native load resets this stream.

@@ -263,8 +263,11 @@ reporter holds the fastest rate its tick cost fits into four fifths of a second
 (legacy reports: nine tenths of what it ran). A fresh behind report (at most 3
 seconds old) from a player who cannot hold the current rate slows the clock to
 the fastest Game Speed rate that player holds, at least one row slower and at
-most two rows below the certificate's rate; a tick-cost reporter that holds the
-rate only draws slowly and catches up on its own. Under `VO1C` every active
+most two rows below the certificate's rate. When fresh behind reports span two
+seconds of running fewer frames than the clock, the relay also limits the rate
+to nine tenths of the measured frames per second. This measured capacity can
+hold back a raise for five minutes, unless the player's ticks become at least
+10% quicker. Under `VO1C` every active
 source must have reported, so a member that may not read markers never meets one;
 under `VO2C` silent sources are ignored, and a certificate whose pacing flag is
 off keeps its rate. Each change appends an authenticated rate marker after the
@@ -274,7 +277,17 @@ at least 5 seconds apart. After 30 seconds with no fresh behind or catching-up
 report, and while every tick-cost reporter holds the next faster rate, the clock
 tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
 up to 5 minutes. Pauses displace these times like the start. Status keeps the
-certificate's rate. In a federated room the coordinator decides from every
+certificate's rate. A `VO2C` with flags bit 2 (continuous pacing) instead lets
+the clock seal at any whole rate from the certificate's down to 10: a behind
+player slows it to its holdable rate, at least one frame and at most 25%
+slower per change; a player catching up for 10 seconds straight slows it 5%
+once the last change is 10 seconds old. After a third of the raise wait it goes
+half the way to the slowest raise ceiling, at least one frame and at most a
+tenth of the rate per step. The ceiling is a reporter's tick cost and 95% of
+what it ran in a 10-second backlog or in a second sustained shortfall within
+five minutes, unless its ticks got 10% quicker since.
+Its rate markers carry any rate from 10 to 90; each game checks the rate
+against its certificate. In a federated room the coordinator decides from every
 relay's reports (see below). The relay's
 per-minute journal line counts the slowdowns as `slowdowns`, the raises as
 `raises`, and the reports of a player catching up or behind, about a second of
@@ -336,10 +349,13 @@ every other when it last heard its players (link kind 4, Silence below). Link pa
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. Deploy and roll back every relay at once,
 so all run one version: relays of different versions can end the same startup
-differently. The digit in `VF1L` is the link version, bumped whenever the
-layout or meaning of an existing link kind changes (the FRAME header and its
-entries, a coordinator control batch, DATA, pace, checksum or silence reports),
-since a relay refuses a packet it cannot read: one refused FRAME stalls the
+differently. The digit in the link magic carries the link version and the
+marking together: this version sends `VF1L` unmarked and `VF2L` marked. The
+version is bumped whenever the layout or meaning of an existing link kind
+changes (the FRAME header and its entries, a coordinator control batch, DATA,
+pace, checksum or silence reports), and a bump moves both magics to digits no
+build has used (`VF3L` and `VF4L` next), so no two versions share a digit. A
+relay refuses a packet it cannot read: one refused FRAME stalls the
 merged stream, and refused reports leave desyncs and slow players unnoticed.
 Only a new kind whose loss changes no result needs none, as kind 4 did: an
 older relay only leaves that silence untold. The 32-byte link header and the
@@ -361,7 +377,11 @@ journals therefore advertise oldest sequence 1 throughout the match.
 
 A short outage never removes a player. Healthy players continue; the returning
 player can replay from its old cursor even after every short hop ticket expired.
-Any authenticated packet, keepalives included, keeps a source's place. A started
+Any authenticated packet, keepalives included, keeps a source's place. A game's
+keepalive is a PING every two seconds, answered with READY; an established hop
+that traded other datagrams both ways within those two seconds skips it, so a
+match's UPLINKs and pushes are its keepalive (a released game pings throughout).
+A started
 source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
 that hears nothing from its relay for that long releases its route, which ends
 the match). Before the start, a
@@ -435,9 +455,9 @@ datagram, accepted or junk, adds a pass.
 
 Explicit Leave is retried on the original socket until a terminal acknowledgement
 echoes that exact signed request. After a Leave, or once its ticket expired, a
-session takes only Leave, each answered again, for as long as a room can live
-plus 300 seconds; then it is released. Its tag still verifies, and an existing
-room checks its
+player's session takes only Leave, each answered again, for as long as a room can
+live plus 300 seconds; then it is released (a watcher's: [Watchers](#watchers)).
+Its tag still verifies, and an existing room checks its
 certified source and retained principal/generation. An already expired, absent
 room can acknowledge without recreating membership or storage. Other expired
 operations remain rejected. Menu cleanup retains this transport until the
@@ -466,7 +486,9 @@ the command allowance backpressures new batches while the clock and already
 accepted entries remain writable. A finished room keeps only the bytes it wrote
 through its replay grace. A room whose files could not all be created, or whose
 exact files could not all be removed, keeps its reservation while the relay
-retries the removal once a second.
+retries the removal once a second. Ending a room tries only that room's
+removal; the earlier failures wait for that timed retry, so a relay that ends
+many rooms does not repeat them on every end.
 
 Unexpected journal I/O failure, or a federated entry that no longer fits the
 journal, reports `StorageUnavailable` and preserves the files, rather than
@@ -528,16 +550,21 @@ federation roster) and spends the players' handshake budgets. The relay admits
 a watcher only to a match that started and whose whole stream is in its journal,
 and at most 256 watchers a match and 1,024 in all (`Full`). A CONFIRM with the
 same watcher and a later expiry renews the hop: a new session that keeps the old
-hop's agreement and budgets, and the old session goes at once. A watcher sends
-only PING, which READY answers, and CONTROL requests: Ready `[0][agreement32]`,
-the startup agreement, which must equal the players' (`AgreementMismatch`
-otherwise) and is answered with STATUS; Pull `[2][next varint]`, refused before
-an agreed Ready (`NotConfigured`), answered with STATUS and at most 4 PACKs (1,020
-records) from `next`; and Leave `[3]`, answered with LEAVE_ACK echoing its
-sequence, which frees the hop at once and writes nothing. Anything else, UPLINK,
-batches, DATA and Pause included, is refused. A watcher whose ticket expires,
-who is silent for 30 seconds, or whose match the relay no longer holds loses its
-hop.
+hop's agreement and budgets. A watcher sends only PING, which READY answers, and
+CONTROL requests: Ready `[0][agreement32]`, the startup agreement, which must equal
+the players' (`AgreementMismatch` otherwise) and is answered with STATUS; Pull
+`[2][next varint]`, refused before an agreed Ready (`NotConfigured`), answered
+with STATUS and at most 4 PACKs (1,020 records) from `next`; and Leave `[3]`,
+which ends the hop and writes nothing.
+Anything else, UPLINK, batches, DATA and Pause included, is refused. After a
+Leave, or once a renewal replaced it, a watcher's session takes only Leave for 62
+seconds, the client's minute of resends, then it is released. Each Leave, resends
+included, is answered with LEAVE_ACK echoing its sequence, as a player's is, and
+spends the watcher's own handshake budget. A watcher whose ticket expires, who
+is silent for 30 seconds, or whose match the relay no longer holds loses its hop
+without being told, and its session takes only Leave for 677 seconds: its game
+keeps a route that hears nothing for up to 615 seconds, and may start its minute
+of Leave resends until then.
 
 The delay holds in every reply. Once a second the room notes its stream's end
 (frame, next record, active sources), keeping 86,402 such marks (24 bytes each,

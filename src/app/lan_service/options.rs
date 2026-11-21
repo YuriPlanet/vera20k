@@ -139,7 +139,8 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
 
 /// The host's full options (`SetupKind::Options`), replaced whole on every
 /// revision. Only a game of the same build reads them: the join refuses any
-/// other (reason 8), and a guest checks `agreement` again before the rest.
+/// other (reason 8), and a guest refuses options that name another build as
+/// invalid (`admit_host_room`).
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExtendedOptions {
@@ -167,38 +168,14 @@ enum TaggedOptionsBody {
 
 #[derive(Debug, thiserror::Error)]
 enum OptionsRefusal {
-    #[error("LAN gameplay build mismatch")]
-    OtherBuild,
     #[error("invalid LAN options JSON: {0}")]
     Malformed(#[from] serde_json::Error),
     #[error("invalid LAN room speeds: applied {current_speed}, selected {game_speed}")]
     InvalidSpeed { current_speed: u32, game_speed: i32 },
 }
 
-impl OptionsRefusal {
-    fn message_key(&self) -> &'static str {
-        match self {
-            Self::OtherBuild => "VERA:LanHostBuildDiffers",
-            Self::Malformed(_) | Self::InvalidSpeed { .. } => "VERA:LanOptionsInvalid",
-        }
-    }
-}
-
 impl ExtendedOptions {
-    fn decode(bytes: &[u8], version: &str) -> std::result::Result<Self, OptionsRefusal> {
-        // Read the agreement alone so a different build is named regardless
-        // of its options body or which room fields its version carried.
-        #[derive(serde::Deserialize)]
-        struct Agreement {
-            agreement: MultiplayerAgreement,
-        }
-        if serde_json::from_slice::<Agreement>(bytes)?
-            .agreement
-            .version
-            != version
-        {
-            return Err(OptionsRefusal::OtherBuild);
-        }
+    fn decode(bytes: &[u8]) -> std::result::Result<Self, OptionsRefusal> {
         let options: Self = serde_json::from_slice(bytes)?;
         let selectable = crate::sim::game_options::is_selectable_game_speed;
         if !u8::try_from(options.current_speed).is_ok_and(selectable)
@@ -507,20 +484,9 @@ pub(super) fn receive_extended(
             {
                 return Ok(());
             }
-            let options = match ExtendedOptions::decode(
-                bytes,
-                &crate::app::shell_network_setup::agreement::version(),
-            ) {
-                Ok(options) => options,
-                Err(refusal) => {
-                    super::reject_setup_compatibility(
-                        state,
-                        &crate::i18n::tr(refusal.message_key()),
-                    );
-                    return Err(refusal.into());
-                }
-            };
-            let result = receive_host_options(state, scope, options, host);
+            let result = ExtendedOptions::decode(bytes)
+                .map_err(anyhow::Error::from)
+                .and_then(|options| receive_host_options(state, scope, options, host));
             if result.is_err() {
                 super::reject_setup_compatibility(
                     state,
@@ -602,6 +568,12 @@ fn admit_host_room(
     options: &ExtendedOptions,
     host: &(String, SocketAddrV4),
 ) -> Result<(Option<HostOptions>, Vec<SocketAddrV4>)> {
+    // The join admits only this build (reason 8, and the guest's own check
+    // of the host's proof), so options naming another are not this room's.
+    ensure!(
+        options.agreement.version == crate::app::shell_network_setup::agreement::version(),
+        "LAN options name another build"
+    );
     ensure!(
         crate::map::source::valid_source_sha256(&options.agreement.rules_digest),
         "invalid LAN rules agreement"
@@ -1056,15 +1028,11 @@ mod tests {
 
     fn sent(host: &MatchSession) -> ExtendedOptions {
         let envelope = projected_envelope(host);
-        ExtendedOptions::decode(
-            &serde_json::to_vec(&envelope).unwrap(),
-            &envelope.agreement.version,
-        )
-        .unwrap()
+        ExtendedOptions::decode(&serde_json::to_vec(&envelope).unwrap()).unwrap()
     }
 
     #[test]
-    fn campaign_envelope_keeps_two_speeds_and_refuses_mixed_build_before_body_decode() {
+    fn campaign_envelope_keeps_two_speeds_and_refuses_an_unknown_body() {
         let mut guest = fixture(false);
         let mut envelope = projected_envelope(&fixture(true));
         let campaign: CampaignRoom = serde_json::from_value(serde_json::json!({
@@ -1090,11 +1058,7 @@ mod tests {
         envelope.current_speed = 2;
         envelope.game_speed = 6;
         let mut bytes = serde_json::to_value(&envelope).unwrap();
-        let decoded = ExtendedOptions::decode(
-            &serde_json::to_vec(&bytes).unwrap(),
-            &envelope.agreement.version,
-        )
-        .unwrap();
+        let decoded = ExtendedOptions::decode(&serde_json::to_vec(&bytes).unwrap()).unwrap();
         let TaggedOptionsBody::Campaign { room, seed } = decoded.body.clone() else {
             panic!("lost campaign tag")
         };
@@ -1112,11 +1076,7 @@ mod tests {
         bytes["body"] = serde_json::json!({"kind": "future"});
         let incompatible = serde_json::to_vec(&bytes).unwrap();
         assert!(matches!(
-            ExtendedOptions::decode(&incompatible, "released-build"),
-            Err(OptionsRefusal::OtherBuild),
-        ));
-        assert!(matches!(
-            ExtendedOptions::decode(&incompatible, &envelope.agreement.version),
+            ExtendedOptions::decode(&incompatible),
             Err(OptionsRefusal::Malformed(_)),
         ));
     }
@@ -1152,10 +1112,13 @@ mod tests {
         );
         let guest = fixture(false);
         let modes = crate::skirmish_modes::stock_skirmish_modes();
-        for (incoming_mode, incoming_capacity, expected) in [
-            (i32::MAX, capacity, "unknown LAN game mode"),
-            (mode, 0, "host map capacity must be positive"),
+        let own = envelope.agreement.version.clone();
+        for (build, incoming_mode, incoming_capacity, expected) in [
+            (own.as_str(), i32::MAX, capacity, "unknown LAN game mode"),
+            (own.as_str(), mode, 0, "host map capacity must be positive"),
+            ("another", mode, capacity, "name another build"),
         ] {
+            envelope.agreement.version = build.to_owned();
             let TaggedOptionsBody::Stock { room, .. } = &mut envelope.body else {
                 panic!("stock test fixture")
             };
@@ -1213,8 +1176,7 @@ mod tests {
             game_speed: 1,
             ..Default::default()
         };
-        let version = &envelope.agreement.version;
-        let received = ExtendedOptions::decode(&payload, version).unwrap();
+        let received = ExtendedOptions::decode(&payload).unwrap();
         apply(&mut guest, &received);
         received.apply_current_speed(&mut effective);
         assert_eq!(effective.game_speed, 3);
@@ -1243,31 +1205,25 @@ mod tests {
     }
 
     #[test]
-    fn room_refusal_precedes_body_decode_and_stale_options_cannot_reapply() {
+    fn invalid_options_are_refused_and_stale_options_cannot_reapply() {
         let host = fixture(true);
         let envelope = projected_envelope(&host);
-        let version = &envelope.agreement.version;
+        // An earlier build's layout does not read as this one's.
         let legacy = serde_json::json!({
             "agreement": {"version": "older-build", "rules_digest": "0".repeat(64)},
             "room": {"current_speed": 3, "options": {"game_speed": 4}}
         });
-        let error = ExtendedOptions::decode(&serde_json::to_vec(&legacy).unwrap(), version)
-            .err()
-            .unwrap();
-        assert!(matches!(error, OptionsRefusal::OtherBuild));
-        assert_eq!(error.message_key(), "VERA:LanHostBuildDiffers");
         assert!(matches!(
-            ExtendedOptions::decode(&serde_json::to_vec(&envelope).unwrap(), "older-build"),
-            Err(OptionsRefusal::OtherBuild)
+            ExtendedOptions::decode(&serde_json::to_vec(&legacy).unwrap()),
+            Err(OptionsRefusal::Malformed(_))
         ));
 
         let mut invalid = serde_json::to_value(&envelope).unwrap();
         invalid["current_speed"] = 7.into();
-        let error = ExtendedOptions::decode(&serde_json::to_vec(&invalid).unwrap(), version)
-            .err()
-            .unwrap();
-        assert!(matches!(error, OptionsRefusal::InvalidSpeed { .. }));
-        assert_eq!(error.message_key(), "VERA:LanOptionsInvalid");
+        assert!(matches!(
+            ExtendedOptions::decode(&serde_json::to_vec(&invalid).unwrap()),
+            Err(OptionsRefusal::InvalidSpeed { .. })
+        ));
 
         let scope = crate::net::lan_messages::SessionScope {
             epoch: [1; 16],
@@ -1416,14 +1372,7 @@ mod tests {
             complete = receive.receive(part, 1).unwrap().or(complete);
         }
         let (_, bytes) = complete.unwrap();
-        apply(
-            &mut guest,
-            &ExtendedOptions::decode(
-                &bytes,
-                &crate::app::shell_network_setup::agreement::version(),
-            )
-            .unwrap(),
-        );
+        apply(&mut guest, &ExtendedOptions::decode(&bytes).unwrap());
         let names = projected_roster(&host).unwrap();
         guest
             .accept_network_roster(parsed_roster(&guest, &names).unwrap())

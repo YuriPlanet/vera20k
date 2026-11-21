@@ -224,6 +224,20 @@ fn a_decision_halves_the_damage_a_hit_deals() {
 }
 
 #[test]
+fn a_decision_cannot_spend_more_than_the_remaining_frame_budget() {
+    let Some((mut scene, victim)) = decided_scene(HALVE) else {
+        return;
+    };
+    scene.runtime.simulation.ext_modules.slots[0].frame_budget = 1;
+    let before = health(&scene, victim);
+    hit(&mut scene, victim, 10);
+
+    assert_eq!(health(&scene, victim), before - 10);
+    let reason = scene.sim().ext_modules().status().remove(0).1;
+    assert!(reason.is_some_and(|reason| reason.contains("on_decide") && reason.contains("budget")));
+}
+
+#[test]
 fn a_handler_that_leaves_handled_unset_keeps_the_native_damage() {
     let Some((mut scene, victim)) = decided_scene(IGNORE) else {
         return;
@@ -317,6 +331,47 @@ fn a_production_allowed_refusal_makes_can_build_refuse_the_type() {
     );
     assert_eq!(&record[88..92], &(type_id as i32).to_le_bytes(), "id");
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+}
+
+#[test]
+fn an_unhandled_production_decision_preserves_factory_admission() {
+    use crate::sim::production::{CanBuild, can_build};
+    let Some(mut scene) = scenario() else { return };
+    let (owner, type_id) = {
+        let (sim, rules) = (scene.sim(), &scene.runtime.resources.rules);
+        sim.houses
+            .order()
+            .iter()
+            .filter(|owner| sim.houses.get(owner).is_some_and(|h| !h.is_defeated()))
+            .find_map(|&owner| {
+                let object = rules.all_objects().find(|object| {
+                    can_build(sim, rules, owner, object, false, true) == CanBuild::No
+                        && can_build(sim, rules, owner, object, true, true) == CanBuild::Yes
+                })?;
+                Some((owner, rules.type_handle(&object.id)?.0))
+            })
+            .expect("a type whose sidebar and FindFactory checks differ")
+    };
+    let bound = super::type_ref(NAME_TECHNO_TYPE, type_id);
+    install_decider(&mut scene, EVENT_PRODUCTION_ALLOWED, IGNORE, bound);
+    scene.tick();
+
+    let record = memory(&scene);
+    assert_eq!(
+        &record[512..516],
+        &IGNORE.to_le_bytes(),
+        "handler was called"
+    );
+    let rules = &scene.runtime.resources.rules;
+    let object = super::techno_type(rules, type_id as i32).expect("the bound type");
+    assert_eq!(
+        can_build(scene.sim(), rules, owner, object, false, true),
+        CanBuild::No,
+    );
+    assert_eq!(
+        can_build(scene.sim(), rules, owner, object, true, true),
+        CanBuild::Yes,
+    );
 }
 
 /// `CommandAllowed`: the receiver refuses a Stop its bound unit's handler

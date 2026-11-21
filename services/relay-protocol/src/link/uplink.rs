@@ -4,7 +4,7 @@
 use super::codec::{FLAG_PACE, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, PaceSegment, Uplink};
 use std::collections::VecDeque;
 
-use super::{LinkState, OrderingGap};
+use super::{LinkState, OrderingGap, ack_interval};
 use crate::envelope::PACK_LIMIT;
 use crate::sequenced::ClientOrdering;
 use crate::{CONTROL, ClientSession, OrderPace, RelayError};
@@ -13,8 +13,6 @@ const UPLINK_HEARTBEAT_MS: u64 = 250;
 const COPY_SPACING_MS: u64 = 16;
 const CONGESTED_SEND_SPACING_MS: u64 = 33;
 const GAP_UPLINK_SPACING_MS: u64 = 16;
-const ACK_INTERVAL_GOOD_MS: u64 = 100;
-const ACK_INTERVAL_CONGESTED_MS: u64 = 200;
 /// A checksum sample waits this long for another UPLINK (spec §6.3).
 const CHECKSUM_SEND_MS: u64 = 100;
 const MAX_BATCHES: usize = super::codec::MAX_UPLINK_BATCHES;
@@ -108,14 +106,6 @@ fn since(at: Option<u64>, now_ms: u64) -> u64 {
     at.map_or(u64::MAX, |at| now_ms.saturating_sub(at))
 }
 
-fn ack_interval(schedule: &Schedule, state: LinkState) -> u64 {
-    match state {
-        LinkState::Lossy => u64::from(schedule.turn_ms),
-        LinkState::Congested => ACK_INTERVAL_CONGESTED_MS,
-        _ => ACK_INTERVAL_GOOD_MS,
-    }
-}
-
 /// The batches an UPLINK may carry, from `accepted_through + 1`
 /// (spec §6.2): their first ID and contents, at most four.
 /// `encode_uplink` keeps those that fit.
@@ -135,11 +125,9 @@ fn fitting_batches(ordering: &ClientOrdering) -> (u64, Vec<Vec<u8>>) {
 }
 
 /// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` (spec §7.7), with
-/// the §4.6 defaults srtt 100 and rttvar 50 before any sample.
+/// the §4.6 defaults before any sample.
 fn pull_grace(link: &super::ClientLink) -> u64 {
-    let (srtt, rttvar) = link.rtt.srtt.map_or((100, 50), |srtt| {
-        (u64::from(srtt), u64::from(link.rtt.rttvar))
-    });
+    let (srtt, rttvar) = link.rtt.rtt_or_default();
     (srtt + 4 * rttvar + u64::from(link.schedule.turn_ms)).clamp(PULL_GRACE_MIN, PULL_GRACE_MAX)
 }
 
@@ -209,7 +197,7 @@ impl ClientSession {
                     }
             })
             || (schedule.recv_next > schedule.acked_recv_next
-                && since_last >= ack_interval(schedule, state))
+                && since_last >= ack_interval(state, schedule.turn_ms))
             || schedule
                 .checksums
                 .as_ref()
@@ -539,7 +527,7 @@ impl ClientSession {
             consider(after(GAP_UPLINK_SPACING_MS).max(grace));
         }
         if schedule.recv_next > schedule.acked_recv_next {
-            consider(after(ack_interval(schedule, state)));
+            consider(after(ack_interval(state, schedule.turn_ms)));
         }
         if let Some((_, at)) = &schedule.checksums {
             consider(at + CHECKSUM_SEND_MS);

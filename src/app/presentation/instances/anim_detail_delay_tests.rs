@@ -5,6 +5,7 @@
 use super::*;
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
+use crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::anim_class::AnimWorldCoord;
@@ -18,14 +19,14 @@ fn render(
     atlas: &SpriteAtlas,
     detail: &RefCell<DetailState>,
     id: u64,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     let coord = sim.anim_absolute_coord(id).unwrap();
     let center = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let lighting = crate::map::lighting::CellLightGrid::new();
     let colors = Default::default();
     let hidden = Default::default();
     let before = (sim.state_hash(), sim.rng_state());
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim,
@@ -52,6 +53,7 @@ fn render(
         &NativeDisplayOrder::from_world(&sim, None),
         Default::default(),
     );
+    let parents = parents.into_owned();
     assert_eq!((sim.state_hash(), sim.rng_state()), before);
     parents
 }

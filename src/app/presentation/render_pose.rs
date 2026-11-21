@@ -81,8 +81,10 @@ impl RenderPose {
                 .map_or(0., |r| r.draw_pitch()),
             visual_lift: f32::from(entity.ion_blast_lift_pixels()),
             recoil: entity.voxel_recoil(),
-            slope: crate::sim::movement::slope_transition::state_for_entity(entity)
-                .map(|s| s.render_phase(frame.wrapping_sub(1))),
+            slope: crate::sim::movement::slope_transition::phase_for_entity(
+                entity,
+                frame.wrapping_sub(1),
+            ),
             turret: entity
                 .barrel_facing
                 .as_ref()

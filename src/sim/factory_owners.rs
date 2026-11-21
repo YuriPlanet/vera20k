@@ -65,8 +65,11 @@ impl Simulation {
         }
     }
 
-    ///100449D0 scans the base Type and all three installed upgrade pointers;
-    ///one Permanent flag grants the host's preserved Country to its current House.
+    /// `100449D0` scans the building's base Type and its three installed
+    /// upgrade pointers; one Permanent flag grants that building's preserved
+    /// Country to its current House. Grand_Opening (`100100B0`) passes the
+    /// building; the upgrade Put hook (`10014490`) passes the upgrade being
+    /// put, with no upgrades of its own, not the host.
     pub(crate) fn grant_factory_plans(&mut self, id: u64, rules: &RuleSet) {
         let Some(building) = self.substrate.entities.get(id) else {
             return;

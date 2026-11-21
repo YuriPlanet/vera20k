@@ -14,9 +14,9 @@ cargo install wasm-bindgen-cli --version 0.2.127 --locked
 python3 tools/wasm/build.py
 ```
 
-构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm` 将客户端库构建为 `cdylib`，再将绑定代码和不含游戏资源的宿主页面打包到 `target/wasm-dist/`。默认使用玩家下载的 `wasm` profile：按体积优化、fat LTO、单个 codegen unit、不含符号名，构建耗时是 `fast` 的数倍（2026-11-09 实测：单人版 Wasm 为 16.5 MB，brotli 压缩后 4.6 MB；`fast` 为 45.6 MB 和 10.3 MB）。修改代码时可加 `--profile fast`，也可加 `--profile release`。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。它还会先为主机构建 `src/bin/snapshot-layout.rs`：浏览器版引擎把存档布局 ID（`VERA20K_SNAPSHOT_LAYOUT`）编译进去，而不是在运行时追踪存档类型。桌面版的产物类型、默认 feature 和构建命令保持不变。
+构建工具使用 `--target wasm32-unknown-unknown --no-default-features --features wasm` 将客户端库构建为 `cdylib`，再将绑定代码、宿主页面、冰面地形和遭遇战地图打包到 `target/wasm-dist/`。默认使用玩家下载的 `wasm` profile：按体积优化、fat LTO、单个 codegen unit、不含符号名，构建耗时是 `fast` 的数倍（2026-11-09 实测：单人版 Wasm 为 16.5 MB，brotli 压缩后 4.6 MB；`fast` 为 45.6 MB 和 10.3 MB）。修改代码时可加 `--profile fast`，也可加 `--profile release`。工具会检查绑定 CLI 与 lockfile 的版本是否一致，并为引擎设置 8 MiB 的 Wasm 栈。它还会先为主机构建 `src/bin/snapshot-layout.rs`：浏览器版引擎把存档布局 ID（`VERA20K_SNAPSHOT_LAYOUT`）编译进去，而不是在运行时追踪存档类型。桌面版的产物类型、默认 feature 和构建命令保持不变。
 
-浏览器版引擎不内嵌任何界面字体。这些字体（Noto Sans、Noto Sans CJK 及 19 种文字的字体，约 30 MB）和 Unifont 的 CJK 字形表连同许可证复制到 `pkg/fonts/`。引擎加载后立即开始获取用于补画 GAME.FNT 缺字的 Noto Sans 和字形表，两者都到达后 `fonts_ready()` 才 resolve：调用 `start_game` 或 `start_spawn` 前需先 await 它，否则这两个函数会报错。其余字体在文字首次需要只有该字体才有的字符时（例如聊天里的泰文名字）才获取。托管该包的站点也必须提供这个目录。每个 URL 带有文件版本，浏览器在引擎更新后仍可沿用已缓存的字体。浏览器版不设置窗口图标。
+浏览器版引擎不内嵌任何界面字体。这些字体（Noto Sans、Noto Sans CJK 及 19 种文字的字体，约 30 MB）和 Unifont 的 CJK 字形表连同许可证复制到 `pkg/fonts/`。引擎加载后立即开始获取用于补画 GAME.FNT 缺字的 Noto Sans 和字形表，两者都到达后 `fonts_ready()` 才 resolve：调用 `start_game` 或 `start_spawn` 前需先 await 它，否则这两个函数会报错。其余字体在文字首次需要只有该字体才有的字符时（例如聊天里的泰文名字）才获取。托管该包的站点也必须提供这个目录。每个 URL 带有文件版本，浏览器在引擎更新后仍可沿用已缓存的字体。托管方还需在绑定代码旁提供 `pkg/Terrain/vera_ice.mix` 和 `pkg/Terrain/vera_ice_tiles.ini`。引擎会将它们读入虚拟目录 `/Terrain/`。探测带有 `VeraIce=yes` 的地图前也要等待 `fonts_ready()`。缺少这些文件时，其他地图仍可启动。浏览器版不设置窗口图标。
 
 可选联机版的构建命令：
 
@@ -43,7 +43,7 @@ python3 -m tools.cargo_run -- rustc -p vera20k --lib \
 python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 ```
 
-在支持 WebGPU 或 WebGL2 的浏览器中打开 `http://localhost:8000`。页面要求安全上下文，即 HTTPS 或 localhost。选择已解压的《尤里的复仇》零售资源目录，然后点击 Start。构建包不包含游戏资源。单机版不会上传资源；联机时可以通过现有地图传输协议分享所选地图，其他零售资源仍留在本地。点击 Start 时会准备音频，以满足浏览器自动播放策略。资源字节保存在内存中，因此较大的游戏安装目录需要较多浏览器内存。
+在支持 WebGPU 或 WebGL2 的浏览器中打开 `http://localhost:8000`。页面要求安全上下文，即 HTTPS 或 localhost。选择已解压的《尤里的复仇》零售资源目录，然后点击 Start。单机版只在本地读取玩家选择的文件。联机时可以通过现有地图传输协议分享所选地图，其他零售资源仍留在本地。点击 Start 时会准备音频，以满足浏览器自动播放策略。资源字节保存在内存中，因此较大的游戏安装目录需要较多浏览器内存。
 
 宿主页面通过当前 origin 的 IndexedDB 恢复设置和存档，并排队保存后续写入。页面会显示存储失败和待写入状态。引擎先完成内存写入，异步存储事务随后才会完成；关闭页面前应等待已保存状态。清除站点数据会删除这些副本。持久化回调只上报 `/saves/` 下的文件，也就是 `restore_user_file` 接受的范围。需要录像的宿主在启动前注册 `set_replay_callback((name, bytes) => ...)`，对局结束或局内读档时会收到关闭的录像段，引擎不保留副本。未注册时录像会被丢弃，自带页面就是如此。导入的零售资源不会持久化，每次访问都会重新读取。在支持 File System Access API 的浏览器（Chrome、Edge）中，启动页会在单独的 `vera20k-wasm-launcher` 数据库中保存所选文件夹的读取句柄，下次访问时可一键继续；其它浏览器需要再次选择文件夹。
 

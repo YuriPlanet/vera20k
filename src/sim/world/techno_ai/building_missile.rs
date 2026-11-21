@@ -412,7 +412,11 @@ fn emp_arc_pitch(
         cells.as_ref(),
     )?;
     let target = ProjectileCoord::new(to.x, to.y, to.z);
-    let range = crate::sim::projectile::launch::fireat_launch_distance(source, target);
+    let range = crate::sim::projectile::launch::fireat_launch_distance(
+        source,
+        target,
+        sim.session.map_exceeds_original_size(),
+    );
     let height = target.z.wrapping_sub(source.z);
     // 0x0070D590 with weapon 0: no WeaponType is a high arc; else Lobber=,
     // or a TarCom above the Location higher than its planar distance.
@@ -576,7 +580,7 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
         let pick = sim.main_rng.next_u32() % count as u32;
         if let Some(sound) = weapon.report_item(pick as usize) {
             sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                sound.to_owned(),
+                rules.sound_name(sound),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: flh.x,
                     y: flh.y,

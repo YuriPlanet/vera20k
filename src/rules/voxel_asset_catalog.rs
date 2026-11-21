@@ -115,6 +115,13 @@ enum Library {
 struct LibraryRead {
     present: bool,
     library: Option<Library>,
+    /// VERA: the game-folder file that supplied it, when no shipped archive
+    /// does (`retail_sources::FolderFiles`), and how it stands to the copy a
+    /// retail install reads: whether one of the two is there or reads and
+    /// the other not, and whether a VXL's first limb has other half sizes.
+    folder_file: Option<String>,
+    validity_differs: bool,
+    half_sizes_differ: bool,
 }
 
 fn part(
@@ -169,6 +176,12 @@ pub(crate) struct VoxelAssetCatalog {
     by_handle: Vec<bool>,
     models: BTreeMap<(ObjectCategory, String), LoadedVoxelModel>,
     voxel_anims: Vec<Option<VoxelPart>>,
+    /// VERA: the game-folder files that change which main models load or a
+    /// main VXL's half sizes: a library that is there or reads where the
+    /// retail copy does not (or the reverse), whatever part it is, as one
+    /// bad part unloads the whole model; and a main VXL of other half
+    /// sizes. Not hashed or compared.
+    folder_files: BTreeSet<String>,
 }
 impl PartialEq for VoxelAssetCatalog {
     fn eq(&self, other: &Self) -> bool {
@@ -211,6 +224,9 @@ impl VoxelAssetCatalog {
     }
     pub(crate) fn bind(rules: &RuleSet, assets: &AssetManager) -> Self {
         let mut libraries = BTreeMap::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(assets);
+        let half_sizes =
+            |vxl: &VxlFile| voxel_tilt_half_sizes(vxl).map(|sizes| sizes.map(f32::to_bits));
         let requests: BTreeSet<_> = rules.voxel_model_plan.requests().cloned().collect();
         for request in requests {
             let (vxl, hva) = crate::rules::art_data::voxel_asset_names(&request.image);
@@ -218,7 +234,8 @@ impl VoxelAssetCatalog {
                 LibraryKind::Vxl => vxl,
                 LibraryKind::Hva => hva,
             };
-            let bytes = assets.get_ref(&name);
+            let (bytes, folder_file) = folder.read(&name).unzip();
+            let folder_file = folder_file.flatten();
             let library = bytes.and_then(|bytes| match request.kind {
                 LibraryKind::Vxl => VxlFile::from_bytes(bytes)
                     .ok()
@@ -227,11 +244,38 @@ impl VoxelAssetCatalog {
                     .ok()
                     .map(|v| Library::Hva(Arc::new(v))),
             });
+            // Only a game-folder file is held against the retail copy.
+            let (validity_differs, half_sizes_differ) = if folder_file.is_some() {
+                let shipped = folder.shipped(&name);
+                let (shipped_valid, shipped_sizes) = match request.kind {
+                    LibraryKind::Vxl => {
+                        let vxl = shipped.and_then(|bytes| VxlFile::from_bytes(bytes).ok());
+                        (vxl.is_some(), vxl.as_ref().and_then(half_sizes))
+                    }
+                    LibraryKind::Hva => (
+                        shipped.is_some_and(|bytes| HvaFile::from_bytes(bytes).is_ok()),
+                        None,
+                    ),
+                };
+                let sizes = match &library {
+                    Some(Library::Vxl(vxl)) => half_sizes(vxl),
+                    _ => None,
+                };
+                (
+                    (bytes.is_some(), library.is_some()) != (shipped.is_some(), shipped_valid),
+                    sizes != shipped_sizes,
+                )
+            } else {
+                (false, false)
+            };
             libraries.insert(
                 request,
                 LibraryRead {
                     present: bytes.is_some(),
                     library,
+                    folder_file,
+                    validity_differs,
+                    half_sizes_differ,
                 },
             );
         }
@@ -275,16 +319,40 @@ impl VoxelAssetCatalog {
             .voxel_anim_types_iter()
             .map(|kind| part(kind.model_slots.main, &plan, &libraries))
             .collect();
+        // Only a type's main model reaches the simulation (`loaded`), and
+        // of its files only the VXL's half sizes.
+        let main_vxls: BTreeSet<&LibraryRequest> = rules
+            .all_objects()
+            .filter_map(|object| plan.library(object.voxel_model_slots.main.vxl))
+            .collect();
+        let folder_files = libraries
+            .iter()
+            .filter(|(request, read)| {
+                read.validity_differs || (read.half_sizes_differ && main_vxls.contains(request))
+            })
+            .filter_map(|(_, read)| read.folder_file.clone())
+            .collect();
         Self {
             bound: true,
             loaded,
             by_handle,
             models,
             voxel_anims,
+            folder_files,
         }
+    }
+    /// VERA: the game-folder files that change the types' main models.
+    pub(crate) fn folder_files(&self) -> impl Iterator<Item = &str> {
+        self.folder_files.iter().map(String::as_str)
     }
     pub(crate) fn is_bound(&self) -> bool {
         self.bound
+    }
+    /// VERA: which types' main models loaded and their first limb's half
+    /// sizes, without which image supplied each part: what
+    /// `RuleSet::file_inputs_hash` folds of this catalog.
+    pub(crate) fn fold_loaded(&self, state: &mut impl std::hash::Hasher) {
+        std::hash::Hash::hash(&self.loaded, state);
     }
     pub(crate) fn model(&self, category: ObjectCategory, name: &str) -> Option<&LoadedVoxelModel> {
         self.models.get(&(category, name.to_ascii_uppercase()))

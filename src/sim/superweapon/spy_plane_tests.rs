@@ -173,12 +173,12 @@ fn spy_planes(sim: &Simulation) -> Vec<u64> {
 
 /// The camera's sounds: `SpyPlaneCamera=` bound to its SOUNDMD entry, which
 /// retail spells `SpyPlaneSnapShot` (`VocClass::FindIndex` ignores case).
-fn camera_sounds(sim: &Simulation) -> usize {
+fn camera_sounds(rules: &RuleSet, sim: &Simulation) -> usize {
     sim.sound_events
         .iter()
         .filter(|event| {
             matches!(event, SimSoundEvent::VocAt { sound_id, .. }
-                if sound_id.eq_ignore_ascii_case("SpyPlaneSnapshot"))
+                if sound_id.name_in(rules).eq_ignore_ascii_case("SpyPlaneSnapshot"))
         })
         .count()
 }
@@ -607,7 +607,7 @@ fn spyplane_missions_match_native() {
         let sounds = events(row, "play_at")
             .filter(|event| int(&event[1]) >= 0)
             .count();
-        assert_eq!(camera_sounds(&sim), sounds, "{row}");
+        assert_eq!(camera_sounds(&rules, &sim), sounds, "{row}");
         let timer = plane.mission.dispatch_timer();
         assert_eq!(
             (timer.start_frame(), timer.delay()),
@@ -636,7 +636,7 @@ fn retail_spy_plane_camera_finishes_its_ground_edge_frames() {
     for _ in 0..3000 {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
-        if camera_sounds(&sim) == 0 {
+        if camera_sounds(&rules, &sim) == 0 {
             continue;
         }
         let source = sim.fog.source_sight(plane, americans).unwrap();
@@ -701,7 +701,7 @@ fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
         step(&mut sim, &rules);
         // Leave time for the next 16-frame camera before Logic's periodic
         // 120-frame edge sweep can repair the newly captured tank's border.
-        if camera_sounds(&sim) > 0 && sim.session.binary_frame() % 120 < 95 {
+        if camera_sounds(&rules, &sim) > 0 && sim.session.binary_frame() % 120 < 95 {
             let source = sim.fog.source_sight(plane, player).unwrap();
             assert_eq!(source.radius, 6);
             assert!(sim.fog.sight_admission(plane, player).is_none());
@@ -727,7 +727,7 @@ fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
     for _ in 0..20 {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
-        if camera_sounds(&sim) > 0 {
+        if camera_sounds(&rules, &sim) > 0 {
             assert!(sim.fog.sight_admission(plane, player).is_none());
             assert_eq!(
                 sim.fog.by_owner_mut_for_test()[&player]
@@ -794,7 +794,7 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
         sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
-        snapshots += camera_sounds(&sim);
+        snapshots += camera_sounds(&rules, &sim);
         let current = sim.substrate.entities.get(plane).map(|entity| {
             saw_body_counter_advance |= entity.body_frame_counter.get() != 0;
             entity.mission.current()

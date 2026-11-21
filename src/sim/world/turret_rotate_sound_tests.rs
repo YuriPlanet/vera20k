@@ -159,7 +159,7 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         .iter()
         .any(|event| {
             matches!(event, SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == turret_rotate_sound_owner(cannon) && sound_id == CUE)
+                    if *anim_id == turret_rotate_sound_owner(cannon) && sound_id.name_in(&rules) == CUE)
         })
     });
     assert!(started, "the real Attack aim starts the stock turret cue");
@@ -245,7 +245,7 @@ fn scene(type_name: &str) -> (Simulation, RuleSet, u64) {
 }
 
 /// The ordered handle effects this object's turret loop published.
-fn turret_events(sim: &Simulation, id: u64) -> Vec<String> {
+fn turret_events(rules: &RuleSet, sim: &Simulation, id: u64) -> Vec<String> {
     let owner = turret_rotate_sound_owner(id);
     sim.sound_events
         .iter()
@@ -255,7 +255,7 @@ fn turret_events(sim: &Simulation, id: u64) -> Vec<String> {
             }
             SimSoundEvent::AnimationStarted {
                 anim_id, sound_id, ..
-            } if *anim_id == owner => Some(format!("start {sound_id}")),
+            } if *anim_id == owner => Some(format!("start {}", sound_id.name_in(rules))),
             SimSoundEvent::ObjectSoundReleased { owner: held } if *held == owner => {
                 Some("release".to_string())
             }
@@ -302,7 +302,7 @@ fn aim(sim: &mut Simulation, id: u64, target: u16) {
 fn begin_rotation(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     tick(sim, rules);
     assert!(
-        turret_events(sim, id).is_empty(),
+        turret_events(&rules, sim, id).is_empty(),
         "an idle turret publishes nothing"
     );
     assert!(latch(sim, id), "the idle frame re-arms the latch");
@@ -363,7 +363,7 @@ fn the_latch_is_hashed_state_and_load_rebuilds_the_handle() {
         "Load must preserve the saved unarmed latch"
     );
     tick(&mut restored, &rules);
-    assert!(turret_events(&restored, id).is_empty());
+    assert!(turret_events(&rules, &restored, id).is_empty());
     assert!(!latch(&restored, id));
     while restored
         .substrate
@@ -374,15 +374,15 @@ fn the_latch_is_hashed_state_and_load_rebuilds_the_handle() {
         .is_rotating(restored.session.binary_frame())
     {
         tick(&mut restored, &rules);
-        assert!(turret_events(&restored, id).is_empty());
+        assert!(turret_events(&rules, &restored, id).is_empty());
     }
     tick(&mut restored, &rules);
-    assert_eq!(turret_events(&restored, id), ["release"]);
+    assert_eq!(turret_events(&rules, &restored, id), ["release"]);
     assert!(latch(&restored, id));
     aim(&mut restored, id, 0);
     tick(&mut restored, &rules);
     assert_eq!(
-        turret_events(&restored, id),
+        turret_events(&rules, &restored, id),
         vec!["stop".to_string(), format!("start {CUE}")]
     );
 }
@@ -557,7 +557,11 @@ fn turret_rotate_sound_matches_native_control_corpus() {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(turret_events(&sim, id), expected, "{history}: {visit}");
+            assert_eq!(
+                turret_events(&rules, &sim, id),
+                expected,
+                "{history}: {visit}"
+            );
             assert_eq!(latch(&sim, id), visit["latch"].as_u64().unwrap() != 0);
             let expected_boundaries = visit["calls"]
                 .as_array()
@@ -602,7 +606,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
         sim.sound_events.clear_for_test();
         sim.turret_rotate_sound_limbo(id, &mut FrameEffects::default(), &rules);
         assert_eq!(
-            turret_events(&sim, id),
+            turret_events(&rules, &sim, id),
             if prior { vec![] } else { vec!["release"] }
         );
         assert_eq!(
@@ -658,7 +662,7 @@ fn retail_grand_cannon_starts_and_releases_its_retail_cue() {
     begin_rotation(&mut sim, &rules, id);
     tick(&mut sim, &rules);
     assert_eq!(
-        turret_events(&sim, id),
+        turret_events(&rules, &sim, id),
         vec!["stop".to_string(), format!("start {CUE}")]
     );
     while sim
@@ -670,10 +674,10 @@ fn retail_grand_cannon_starts_and_releases_its_retail_cue() {
         .is_rotating(sim.session.binary_frame())
     {
         tick(&mut sim, &rules);
-        assert!(turret_events(&sim, id).is_empty());
+        assert!(turret_events(&rules, &sim, id).is_empty());
     }
     tick(&mut sim, &rules);
-    assert_eq!(turret_events(&sim, id), ["release"]);
+    assert_eq!(turret_events(&rules, &sim, id), ["release"]);
 }
 
 /// The issue's skirmish trigger with no test-side aiming at all: the French
@@ -747,7 +751,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
     let mut released = false;
     for _ in 0..300 {
         tick(&mut sim, &rules);
-        let events = turret_events(&sim, id);
+        let events = turret_events(&rules, &sim, id);
         if events.is_empty() {
             continue;
         }

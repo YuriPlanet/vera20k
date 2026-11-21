@@ -770,6 +770,44 @@ fn original_action_timer_wrap_sentinel_and_positive_remainder() {
 }
 
 #[test]
+fn move_line_ends_at_the_bridge_surface_over_a_depressed_lane() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+    use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, absolute_leptons_to_screen};
+
+    let (mut sim, _, _) = fixture(&serde_json::json!({"input": {
+        "source": [5248, 5248, 0], "target_cell": [21, 20], "camera": [-80, 555]
+    }}));
+    let anchor = (21, 19);
+    let mut terrain = test_grid(32, 32, |rx, ry| {
+        let mut cell = test_flat_cell(rx, ry);
+        if (rx, ry) == anchor {
+            cell.level = 2;
+        }
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new(anchor, 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    assert_eq!(terrain.corrected_high_bridge_deck_level((21, 20)), Some(6));
+    *sim.resolved_terrain_mut_for_test() = Some(terrain);
+    let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
+    let line =
+        action_line_endpoints(sim.entities().get(1).unwrap(), &sim, None, cells.as_ref()).unwrap();
+    assert_eq!(line.kind, SelectedLineKind::Move);
+    assert_eq!(
+        line.end,
+        absolute_leptons_to_screen(
+            21 * 256 + 128,
+            20 * 256 + 128,
+            6 * GROUND_LEVEL_HEIGHT_LEPTONS
+        )
+        .into(),
+    );
+}
+
+#[test]
 fn move_line_query_leaves_the_simulation_dummy_unchanged() {
     let (mut sim, state, view) = fixture(baseline_rows().next().unwrap());
     sim.entity_mut_for_test(1)

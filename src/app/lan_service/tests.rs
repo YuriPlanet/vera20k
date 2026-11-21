@@ -39,6 +39,55 @@ fn same_named_games_keep_each_host_endpoint() {
     assert_eq!(service.games.len(), 2);
 }
 
+#[test]
+fn full_discovery_tables_ignore_new_senders_and_refresh_listed_ones() {
+    // One port past the address cap on one address, then one port per address
+    // until one sender past the table cap: the last of each run is refused.
+    let senders = |cap: usize, per_address: usize| -> Vec<SocketAddrV4> {
+        let address = |index: usize| Ipv4Addr::from(0x0A00_0000 + u32::try_from(index).unwrap());
+        let ports = (0..=per_address)
+            .map(|port| SocketAddrV4::new(address(0), 1234 + u16::try_from(port).unwrap()));
+        let others =
+            (1..=cap - per_address + 1).map(|index| SocketAddrV4::new(address(index), 1234));
+        ports.chain(others).collect()
+    };
+    let mut service = service();
+    let games = senders(MAX_LAN_GAMES, MAX_LAN_GAMES_PER_ADDRESS);
+    for &sender in &games {
+        service.record_advertised_game(sender, "Host".into(), false, 10);
+    }
+    let players = senders(MAX_LAN_PARTICIPANTS, MAX_LAN_PARTICIPANTS_PER_ADDRESS);
+    let presence = LanMessage::presence("Guest", 0, 0).unwrap();
+    for &sender in &players {
+        service.record_observed_participant(sender, presence.clone(), 10);
+    }
+    assert_eq!(service.games.len(), MAX_LAN_GAMES);
+    assert_eq!(service.observed_participants.len(), MAX_LAN_PARTICIPANTS);
+    let refused_games = [games[MAX_LAN_GAMES_PER_ADDRESS], *games.last().unwrap()];
+    assert!(
+        refused_games
+            .iter()
+            .all(|&sender| service.game(endpoint_id(sender)).is_none())
+    );
+    let refused_players = [
+        players[MAX_LAN_PARTICIPANTS_PER_ADDRESS],
+        *players.last().unwrap(),
+    ];
+    assert!(
+        service
+            .observed_participants
+            .iter()
+            .all(|peer| !refused_players.contains(&peer.endpoint))
+    );
+
+    service.record_advertised_game(games[0], "Host".into(), true, 12);
+    let refreshed = service.game(endpoint_id(games[0])).unwrap();
+    assert!(refreshed.open);
+    assert_eq!(refreshed.last_seen, 12);
+    service.record_observed_participant(players[0], presence, 12);
+    assert_eq!(service.observed_participants[0].last_seen, 12);
+}
+
 /// The `0x549` handler broadcasts only for another row (`0x005DDCFF`);
 /// the discovery rebuild's clamp sends the game query alone (`0x005DB9FF`).
 #[test]
@@ -1505,6 +1554,7 @@ fn loading_survivor_connections_handoff_the_original_majority_certificate() {
         30,
         rate,
         sim.state_hash(),
+        0,
         "",
         "",
     )

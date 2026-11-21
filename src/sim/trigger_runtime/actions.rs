@@ -83,8 +83,7 @@ impl Simulation {
         let mut found = false;
         for powered_pass in [false, true] {
             let mut ordinal = 0;
-            while ordinal < self.substrate.entities.techno_registry_len() {
-                let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+            while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                 let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                     let powered = entity.category()
                         == crate::map::entities::EntityCategory::Structure
@@ -481,12 +480,7 @@ impl Simulation {
                 };
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.building_registry_len() {
-                    let id = self
-                        .substrate
-                        .entities
-                        .building_registry_at(ordinal)
-                        .unwrap();
+                while let Some(id) = self.substrate.entities.building_registry_at(ordinal) {
                     let light = self
                         .substrate
                         .entities
@@ -521,12 +515,7 @@ impl Simulation {
                 };
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.building_registry_len() {
-                    let id = self
-                        .substrate
-                        .entities
-                        .building_registry_at(ordinal)
-                        .unwrap();
+                while let Some(id) = self.substrate.entities.building_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.category() == crate::map::entities::EntityCategory::Structure
                             && entity.lifecycle.object_alive()
@@ -558,12 +547,7 @@ impl Simulation {
                 let online = action.kind == 62;
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.building_registry_len() {
-                    let id = self
-                        .substrate
-                        .entities
-                        .building_registry_at(ordinal)
-                        .unwrap();
+                while let Some(id) = self.substrate.entities.building_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.lifecycle.object_alive()
                             && entity.lifecycle.cell_marked()
@@ -603,7 +587,7 @@ impl Simulation {
                         self.substrate
                             .entities
                             .get_mut(id)
-                            .unwrap()
+                            .expect("the eligibility check read this entity just above")
                             .infantry
                             .as_mut()
                             .expect("Infantry constructor owns its runtime")
@@ -706,8 +690,7 @@ impl Simulation {
                 loop {
                     let mut visited_match = false;
                     let mut ordinal = 0;
-                    while ordinal < self.substrate.entities.techno_registry_len() {
-                        let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                    while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                         if refused.contains(&id) {
                             ordinal += 1;
                             continue;
@@ -832,8 +815,7 @@ impl Simulation {
                     return false;
                 };
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.techno_registry_len() {
-                    let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|e| {
                         e.category() == crate::map::entities::EntityCategory::Structure
                             && e.lifecycle.object_alive()
@@ -976,8 +958,7 @@ impl Simulation {
                 };
                 let mut found = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.techno_registry_len() {
-                    let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.lifecycle.object_alive()
                             && entity.lifecycle.cell_marked()
@@ -1534,7 +1515,7 @@ impl Simulation {
                                     {
                                         self.trigger_runtime.triggers[live]
                                             .as_mut()
-                                            .unwrap()
+                                            .expect("the scan read this live Trigger just above")
                                             .enabled = true;
                                         Self::reset_trigger_timers(
                                             &self.session,
@@ -1547,7 +1528,7 @@ impl Simulation {
                                 ACTION_DISABLE_TRIGGER => {
                                     self.trigger_runtime.triggers[live]
                                         .as_mut()
-                                        .unwrap()
+                                        .expect("the scan read this live Trigger just above")
                                         .enabled = false;
                                 }
                                 _ => unreachable!(),

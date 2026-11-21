@@ -10,6 +10,7 @@ use super::{
 use crate::app::AppState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
 use crate::app::shell_network_setup::campaign_room;
+use crate::app::shell_wol::WolVisit;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
 use crate::util::time::Instant;
@@ -87,7 +88,11 @@ pub(super) fn begin_start(
         StartDataMismatch("rules differ")
     );
     ensure!(
-        local_map_status(state, service) == 1,
+        local_map_status(
+            &state.match_state.session,
+            state.frontend.wol.as_ref(),
+            service
+        ) == 1,
         StartDataMismatch("local map differs")
     );
     let names = start
@@ -278,7 +283,12 @@ pub(super) fn poll_watch(state: &mut AppState, service: &mut LiveService) -> Res
         return Ok(());
     }
     ensure!(!service.maps.failed(), "the match's map did not arrive");
-    if local_map_status(state, service) != 1 {
+    if local_map_status(
+        &state.match_state.session,
+        state.frontend.wol.as_ref(),
+        service,
+    ) != 1
+    {
         return Ok(());
     }
     let watching = service.watching.as_mut().expect("checked watch");
@@ -312,7 +322,7 @@ pub(super) fn poll_watch(state: &mut AppState, service: &mut LiveService) -> Res
 /// any relay route close, and the lobby says why.
 pub(super) fn fail_watch(state: &mut AppState, service: &mut LiveService, key: &str) {
     cancel_watch_start(state, service);
-    super::lobby::watch_failed(state, key);
+    super::lobby::watch_failed(&mut state.frontend, &state.process_assets, key);
 }
 
 pub(super) fn cancel_watch_start(state: &mut AppState, service: &mut LiveService) {
@@ -503,7 +513,7 @@ pub(crate) fn begin_spawned_match(
     );
     // Keep this visit's own worker even on failure: no lobby worker may
     // take its place while the process exits.
-    put_service(state, service);
+    put_service(&mut state.frontend, service);
     admitted
 }
 
@@ -511,29 +521,26 @@ pub(crate) fn begin_spawned_match(
 /// the ordinary cleanup owner, so an unacknowledged `finish` still settles
 /// before notifying the host and stopping the event loop.
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-pub(crate) fn discard_spawned_visit(state: &mut AppState) {
-    if !crate::app::shell_wol::spawned_visit(state) {
+pub(crate) fn discard_spawned_visit(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if !crate::app::shell_wol::spawned_visit(frontend.wol.as_ref()) {
         return;
     }
-    let Some(mut visit) = state.frontend.wol.take() else {
+    let Some(mut visit) = frontend.wol.take() else {
         return;
     };
     if let Some(service) = visit.live_service.take() {
-        state
-            .frontend
-            .online_cleanup
-            .retire(service, Instant::now());
+        frontend.online_cleanup.retire(service, Instant::now());
     }
 }
 
-pub(super) fn spawned_visit_mut(state: &mut AppState) -> Option<&mut SpawnedVisit> {
-    state.frontend.wol.as_mut()?.spawned.as_mut()
+pub(super) fn spawned_visit_mut(wol: Option<&mut WolVisit>) -> Option<&mut SpawnedVisit> {
+    wol?.spawned.as_mut()
 }
 
 /// The external launch's match returned or failed: report it, then quit.
 /// False when this launch has no spawned online visit.
-pub(crate) fn end_spawned_match(state: &mut AppState) -> bool {
-    let Some(spawned) = spawned_visit_mut(state) else {
+pub(crate) fn end_spawned_match(wol: Option<&mut WolVisit>) -> bool {
+    let Some(spawned) = spawned_visit_mut(wol) else {
         return false;
     };
     spawned
@@ -548,7 +555,7 @@ pub(super) fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService)
     let result = crate::app::App::match_result(state)
         .unwrap_or(crate::app::cncnet::ExternalMatchResult::Quit);
     let opponents_left = state.frontend.external_progress.opponents_left;
-    let Some(spawned) = spawned_visit_mut(state) else {
+    let Some(spawned) = spawned_visit_mut(state.frontend.wol.as_mut()) else {
         return;
     };
     let Some(deadline) = spawned.exit_deadline.filter(|_| !spawned.quit) else {
@@ -588,7 +595,7 @@ fn enter_restored_start(
     }
     match start {
         Ok(()) => {
-            super::lobby::watch_admitted(state);
+            super::lobby::watch_admitted(&mut state.frontend, &mut state.match_state.session);
         }
         Err(error) => {
             log::warn!("Could not start the watched match: {error:#}");

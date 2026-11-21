@@ -64,6 +64,7 @@ mod hunter_seeker;
 #[cfg(all(test, tests_sim_superweapon))]
 mod hunter_seeker_tests;
 pub mod invulnerability;
+mod ion_cannon;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(all(test, any(tests_sim_superweapon, tests_sim_trigger)))]
@@ -104,8 +105,8 @@ mod view_admission_tests;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::houses::Houses;
-use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameChannel;
@@ -212,11 +213,8 @@ pub(super) fn spawn_cell_anim(
 /// MapClass lookup (`cell_grid`), as Launch reads the cell it looked up.
 fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
     let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), x, y);
-    let mut coords = [ground.x, ground.y, ground.z];
-    if cell_grid::cell_has_bridge_flag(sim, x as i16, y as i16) {
-        coords[2] = coords[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
-    coords
+    let z = cell_grid::bridge_adjusted_z(sim, x as i16, y as i16, ground.z);
+    [ground.x, ground.y, z]
 }
 
 /// `AnimClass::AnimClass @ 0x00421EA0` with the superweapons' row `(type,
@@ -226,19 +224,30 @@ fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
 /// Dominator's (`0x0053AEE5`, `0x0053B139`) and the Lightning Storm's clouds,
 /// bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`). An empty name
 /// or an art type that never bound constructs nothing.
-pub(super) fn spawn_super_anim(
+///
+/// A name is trimmed and looked up uppercased. An id whose text is already
+/// trimmed and not empty is that lookup's answer (the interner looks names
+/// up ignoring case), so it is taken as it is and nothing is interned for it.
+pub(super) fn spawn_super_anim<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    anim_name: &str,
+    anim_name: impl Into<InternKey<'k>>,
     [x, y, z]: [i32; 3],
 ) -> Option<crate::sim::anim_class::AnimId> {
-    let name = anim_name.trim();
+    let anim_name = anim_name.into();
+    let name = sim.interner.key_name(anim_name).trim();
     if name.is_empty() {
         return None;
     }
+    let type_id = match anim_name {
+        InternKey::Id(id) if name.len() == sim.interner.resolve(id).len() => id,
+        _ => {
+            let name = name.to_ascii_uppercase();
+            sim.interner.intern(&name)
+        }
+    };
     let world = crate::sim::anim_class::AnimWorldCoord { x, y, z };
     let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
-    let type_id = sim.interner.intern(&name.to_ascii_uppercase());
     let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
         delay: 0,
         loop_count: 1,
@@ -252,7 +261,10 @@ pub(super) fn spawn_super_anim(
     match sim.spawn_anim_at_world(rules, descriptor, world) {
         Ok(anim) => Some(anim),
         Err(error) => {
-            log::debug!("superweapon anim [{name}] did not construct: {error}");
+            log::debug!(
+                "superweapon anim [{}] did not construct: {error}",
+                sim.interner.key_name(anim_name).trim()
+            );
             None
         }
     }
@@ -1735,8 +1747,7 @@ pub struct SuperWeaponView {
     /// `0x0050B1D0`, `10039580`): when it grants the player's House a super
     /// it adds the cameo when `SW.ShowCameo` holds and skips it when
     /// `SW.AutoFire` does, else adds it (`0x10039617..0x1003965F`). Always
-    /// true without Ares; Mental Omega's Iron Guard is such a hidden
-    /// auto-fire super. Residual: Ares's spy-infiltration grant adds the
+    /// true without Ares. Residual: Ares's spy-infiltration grant adds the
     /// cameo without this test (`0x100123C7`); VERA hides the type on every
     /// grant path.
     pub ares_show_cameo: bool,
@@ -1864,6 +1875,7 @@ pub(crate) fn tick_house_superweapon_instances(
         let Some(type_id) = house_super(sim, owner, name) else {
             continue;
         };
+        // An exact-name hit in the rules' map for the order's own name.
         let sw = rules.super_weapon(name);
         let (fade, ready, drain_ended) = {
             let instance = sim
@@ -1932,12 +1944,12 @@ pub(crate) fn tick_house_superweapon_instances(
             }
         }
         if let Some([x, y, z]) = fade
-            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.clone())
+            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.as_deref())
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
             sim.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 audible_to: None,
                 rx,
                 ry,
@@ -2112,7 +2124,9 @@ pub(crate) fn shorten_ares_firestorm_drain(
 /// a House's set never changes after [`construct_house_supers`], and an
 /// interned name keeps its id, so asking as the walk goes answers as a copy
 /// of the order taken before it would, without building one per House per
-/// tick.
+/// tick. Each entry is one probe of the name, uppercased on the stack, with
+/// no allocation: the rules hold the order as names and the ids are the
+/// interner's, which gives a name its id only when it is first interned.
 fn house_super(sim: &Simulation, owner: InternedId, name: &str) -> Option<InternedId> {
     let id = sim.interner.get(name)?;
     sim.super_weapons
@@ -2419,19 +2433,19 @@ pub fn building_super_charges(
     let Some(object) = sim.object_type(building.type_ref(), rules) else {
         return Vec::new();
     };
+    let mut supers = type_super_weapons(object).peekable();
+    if supers.peek().is_none() {
+        return Vec::new();
+    }
     let Some(held) = sim.super_weapons.get(&building.owner()) else {
         return Vec::new();
     };
     let frame = sim.session.binary_frame() as i32;
-    let draws_all = match sim.session.current_house() {
-        None => true,
-        Some(house) => crate::map::houses::is_allied_with(
-            sim.house_alliances().as_map(),
-            sim.interner.resolve(house),
-            sim.interner.resolve(building.owner()),
-        ),
-    };
-    type_super_weapons(object)
+    let draws_all = sim.session.current_house().is_none_or(|house| {
+        sim.house_alliances()
+            .is_allied(&sim.interner, house, building.owner())
+    });
+    supers
         .filter_map(|name| {
             let id = sim.interner.get(name)?;
             let instance = held.get(&id)?;
@@ -2564,7 +2578,6 @@ fn finish_ares_launch(
         instance.record_ares_launch(frame);
     }
     let data = ares_launch_data_type(sim, rules, owner, typ);
-    let data_name = sim.interner.resolve(data).to_owned();
     let recheck = sim
         .super_weapons
         .get(&owner)
@@ -2572,7 +2585,7 @@ fn finish_ares_launch(
         .is_some_and(|instance| {
             instance.one_time
                 || rules
-                    .super_weapon_metadata(&data_name)
+                    .super_weapon_metadata(sim.interner.resolve(data))
                     .is_some_and(|metadata| {
                         !metadata
                             .availability()
@@ -2588,11 +2601,11 @@ fn finish_ares_launch(
     // 10032F91..10032FBB: neither a PostClick type nor an SW.AutoFire one
     // becomes the House's last Super (the type index of the data Super).
     let auto_fire = rules
-        .super_weapon_target_policy(&data_name)
+        .super_weapon_target_policy(sim.interner.resolve(data))
         .is_some_and(|policy| policy.auto_fire());
     if !flags.has(F::POST_CLICK)
         && !auto_fire
-        && let Some(index) = rules.super_weapon_index(&data_name)
+        && let Some(index) = rules.super_weapon_index(sim.interner.resolve(data))
         && let Some(house) = sim.houses.get_mut(&owner)
     {
         house.remember_ares_last_super(index as i32);

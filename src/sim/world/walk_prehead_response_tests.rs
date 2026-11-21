@@ -610,7 +610,7 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::VocCentered { sound_id } => {
-                    Some(sound_id.as_str())
+                    Some(sound_id.name_in(&rules))
                 }
                 _ => None,
             })

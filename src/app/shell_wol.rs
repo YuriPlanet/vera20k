@@ -19,6 +19,7 @@
 
 pub(crate) mod buddies;
 pub(crate) mod buddy;
+pub(crate) mod leaf;
 mod live_service;
 pub(crate) use live_service::lobby_get;
 pub(crate) mod lobby;
@@ -45,8 +46,12 @@ pub(crate) use live_service::{
     DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant,
     decode_external_watch_grant, end_spawned_match, relay_ticket_is_watch,
 };
-pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
-pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
+pub(crate) use live_service::{
+    local_choices_agreed, online_cleanup_pending, online_match_id, relay_pass_lapsed,
+};
+pub(crate) use login::{
+    account_form_layout, login_layout, status_key as login_status_key,
+};
 pub(crate) use service::{
     NET_STATUS_LOST, SERVER_STATUS_READY, WolApiStatus, WolHighScoreRecord, WolLadderRecord,
     WolLoginAccepted, WolMatch, WolProvider, WolServer, WolServerList, WolServiceEvent,
@@ -62,12 +67,16 @@ pub(crate) use test_service::{
 pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
     [
         service::poll_wait(state),
-        login::poll_scroll_repeat(state),
-        persona::poll_scroll_repeat(state),
-        my_info::poll_scroll_repeat(state),
+        {
+            let open = leaf_lists_open(&state.frontend);
+            leaf::poll(
+                &mut state.frontend.shell_controller,
+                &state.platform.window,
+                open,
+            )
+        },
         buddy::poll(state),
-        page::poll_scroll_repeat(state),
-        player_card::poll_scroll_repeat(state),
+        page::poll_scroll_repeat(&mut state.frontend, &state.platform.window),
         lobby::poll(state),
         quick_match::poll(state),
         live_service::poll(state),
@@ -78,16 +87,30 @@ pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
     .min()
 }
 
+/// The login, persona and My Information pages' scrollbar repeats run.
+fn leaf_lists_open(frontend: &FrontendState) -> bool {
+    matches!(
+        frontend.wol.as_ref().map(|visit| &visit.page),
+        Some(
+            WolPage::Login(_)
+                | WolPage::AutoLoginQuery
+                | WolPage::Locale(_)
+                | WolPage::AddBuddyQuery(_)
+                | WolPage::MyInformation(_)
+        )
+    ) || options::translate_popup(frontend).is_some()
+}
+
 /// `0x0077DED0`, called only at `WOL_Main` entry (`0x0077B307`): the
 /// nine `[WOnline]` values from VERA.INI, then `[MultiPlayer] ObserverMode`
 /// (`0x005EE190`). The profile holds what VERA.INI says, so the chat
 /// filter toggles of the last visit revert here.
-pub(crate) fn read_wol_settings(state: &mut AppState) {
-    state.frontend.wol_preferences = state.persistence.options_profile.wol_preferences;
-    state
-        .frontend
-        .multiplayer_shell_runtime
-        .reload_observer_mode();
+pub(crate) fn read_wol_settings(
+    frontend: &mut FrontendState,
+    options_profile: &RetailOptionsProfile,
+) {
+    frontend.wol_preferences = options_profile.wol_preferences;
+    frontend.multiplayer_shell_runtime.reload_observer_mode();
 }
 
 /// `0x0077E110`: at `WOL_Main` entry (`0x0077B31D`, whose music half runs
@@ -95,22 +118,25 @@ pub(crate) fn read_wol_settings(state: &mut AppState) {
 /// and after WOL Options closes. `0x005EE350(0)` re-applies the observer
 /// toggle to the open `0x116`/`0x113`/`0xBB`; at these points none is open
 /// (a returning `0x113` is rebuilt from the toggle), so it is not run.
-pub(crate) fn apply_wol_preferences(state: &mut AppState) {
-    send_wol_preferences(state);
+pub(crate) fn apply_wol_preferences(frontend: &mut FrontendState, audio: &mut AppAudioRuntime) {
+    send_wol_preferences(frontend);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
-    state.audio.apply_wol_lobby_music_rule(lobby_music, now_ms);
+    let lobby_music = frontend.wol_preferences.lobby_music != 0;
+    audio.apply_wol_lobby_music_rule(lobby_music, now_ms);
 }
 
 /// `0x0077E110`'s first half: with the WOLAPI object it sends the language
 /// filter (API+0x7C) and then find/page (API+0x68), whose results are
 /// ignored.
-fn send_wol_preferences(state: &mut AppState) {
-    let live = state.frontend.wol_preferences;
-    if state.frontend.wol.as_ref().is_some_and(|visit| visit.api) {
-        service::request(state, WolServiceRequest::SetLangFilter(live.lang_filter));
+fn send_wol_preferences(frontend: &mut FrontendState) {
+    let live = frontend.wol_preferences;
+    if frontend.wol.as_ref().is_some_and(|visit| visit.api) {
         service::request(
-            state,
+            frontend.wol.as_mut(),
+            WolServiceRequest::SetLangFilter(live.lang_filter),
+        );
+        service::request(
+            frontend.wol.as_mut(),
             WolServiceRequest::SetFindPage {
                 find: live.allow_find,
                 page: live.allow_page,
@@ -120,19 +146,22 @@ fn send_wol_preferences(state: &mut AppState) {
 }
 
 use super::{App, AppState};
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::ShellExitThen;
+use crate::app::frontend::state::FrontendState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_route::ShellRoute;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::layout::LaidOutControl;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::page::PageEvent;
 use crate::ui::wol_login::{WolCredential, WolLoginState};
 use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WOL_WELCOME_DIALOG, WolBoxButtons,
-    WolMessageBox, WolMode, WolWaitBox, WolWelcomeAction, WolWelcomeLayout, action_for_control,
+    WOL_WELCOME_DIALOG, WolMode, WolWaitBox, WolWelcomeAction, action_for_control,
 };
 
 /// The custom lobby `0x113`'s controller identity.
-pub(crate) const WOL_LOBBY_DIALOG: DialogId = DialogId(0x0113);
+pub(crate) const WOL_LOBBY_DIALOG: DialogResourceId = DialogResourceId(0x0113);
 
 /// What one WOL page is showing.
 #[derive(Debug, Clone)]
@@ -147,7 +176,7 @@ pub(crate) enum WolPage {
     Login(Box<WolLoginState>),
     /// A message box over the backdrop and what its close leads to.
     Message {
-        message: WolMessageBox,
+        message: crate::ui::shell::modal::ShellBox,
         then: WolBoxThen,
     },
     /// The custom lobby `0x113` (its runner belongs to the lobby chain).
@@ -156,7 +185,7 @@ pub(crate) enum WolPage {
     /// lobby.
     Options(Box<options::WolOptionsPage>),
     /// The auto-login query `0x112` after a dialog login.
-    AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
+    AutoLoginQuery,
     /// The locale page `0xFE` during the connect.
     Locale(Box<crate::ui::wol_persona::WolLocalePage>),
     /// My Information `0x114` (welcome mode 6).
@@ -200,8 +229,6 @@ pub(crate) struct WolVisit {
     /// and released only when the visit ends (`0x0077B532` -> `0x00786080`).
     api: bool,
     pub(crate) page: WolPage,
-    /// The status help the welcome's last hit test wrote.
-    pub(crate) status_help: Option<&'static str>,
     /// Server records of the last list (`0xB778D8` count, `0xF8` records)
     /// and the selected record `[0xB76468]` (-1 for none).
     servers: Vec<WolServer>,
@@ -209,9 +236,6 @@ pub(crate) struct WolVisit {
     awaiting: service::Awaiting,
     /// The login flow between its connect and its return.
     flow: Option<service::LoginFlow>,
-    /// `0x10E`'s persona heading and stats (`0x007989AA`), by control id;
-    /// empty without a nickname.
-    pub(crate) welcome_texts: Vec<(u16, String)>,
     provider: WolProvider,
     /// Full retail controls belong to explicit native UI captures only.
     legacy_ui: bool,
@@ -243,6 +267,9 @@ pub(crate) struct WolVisit {
     /// VERA: the lobby lets a room's players visit the public lobby, as
     /// its sign-in answered (docs/lobby-protocol.md "Visiting the lobby").
     lobby_visits: bool,
+    /// VERA: the lobby takes Multiplayer Campaign rooms: its sign-in offered
+    /// `campaign_rooms` and it has refused no campaign room's options since.
+    lobby_campaign_rooms: bool,
     /// `![0xB77DC0]`: connected to a server. A WOLAPI creation
     /// (`0x00786485`) and a failed login clear it, a connect sets it, and a
     /// lost connection outside a match clears it.
@@ -291,12 +318,10 @@ impl WolVisit {
             authenticated: false,
             api: false,
             page: WolPage::Welcome,
-            status_help: None,
             servers: Vec::new(),
             selected_server: 0,
             awaiting: service::Awaiting::Nothing,
             flow: None,
-            welcome_texts: Vec::new(),
             provider: WolProvider::Unavailable,
             legacy_ui: false,
             live_service: None,
@@ -311,6 +336,7 @@ impl WolVisit {
             problem_line: None,
             lobby_watches: None,
             lobby_visits: false,
+            lobby_campaign_rooms: false,
             connected: false,
             disconnected: false,
             relogin: None,
@@ -372,7 +398,7 @@ impl WolVisit {
         }
     }
 
-    pub(crate) fn message(&self) -> Option<&WolMessageBox> {
+    pub(crate) fn message(&self) -> Option<&crate::ui::shell::modal::ShellBox> {
         match &self.page {
             WolPage::Message { message, .. } => Some(message),
             WolPage::Lobby | WolPage::QuickMatch(_) => self.lobby.as_ref()?.message(),
@@ -408,15 +434,15 @@ impl WolVisit {
 }
 
 /// `[0xB77E30]`, the `/reply` target of every WOL chat edit.
-pub(crate) fn last_pager(state: &AppState) -> Option<&str> {
-    state.frontend.wol.as_ref()?.last_pager.as_deref()
+pub(crate) fn last_pager(wol: Option<&WolVisit>) -> Option<&str> {
+    wol?.last_pager.as_deref()
 }
 
 /// A WOL chat edit sent `line`: a locate (`0x0078A470`) keeps its name in
 /// `[0xB76E28]` for the find sink.
-pub(crate) fn chat_sent(state: &mut AppState, line: &crate::ui::wol_chat::WolChatLine) {
+pub(crate) fn chat_sent(wol: Option<&mut WolVisit>, line: &crate::ui::wol_chat::WolChatLine) {
     if let crate::ui::wol_chat::WolChatLine::Locate { name } = line
-        && let Some(visit) = state.frontend.wol.as_mut()
+        && let Some(visit) = wol
     {
         visit.locate_name = Some(String::from_utf16_lossy(name));
     }
@@ -424,52 +450,39 @@ pub(crate) fn chat_sent(state: &mut AppState, line: &crate::ui::wol_chat::WolCha
 
 /// The online visit is an external launch's relay match: its shell takes no
 /// input, and its end reports the result instead of re-entering the lobby.
-pub(crate) fn spawned_visit(state: &AppState) -> bool {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .is_some_and(|visit| visit.spawned.is_some())
+pub(crate) fn spawned_visit(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| visit.spawned.is_some())
 }
 
 /// `[0xB77DC1]`: a WOL match runs.
-pub(crate) fn in_match(state: &AppState) -> bool {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .is_some_and(|visit| visit.in_game)
+pub(crate) fn in_match(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| visit.in_game)
 }
 
 /// VERA: whether the online lobby lets players watch matches, as its list of
 /// them last answered (docs/lobby-protocol.md "Watching"); `None` before the
 /// first answer.
-pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .and_then(|visit| visit.lobby_watches)
+pub(crate) fn lobby_watches(wol: Option<&WolVisit>) -> Option<bool> {
+    wol.and_then(|visit| visit.lobby_watches)
+}
+
+/// VERA: whether the online lobby takes Multiplayer Campaign rooms.
+pub(crate) fn lobby_campaign_rooms(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| visit.lobby_campaign_rooms)
 }
 
 /// VERA: whether the online lobby lets a room's players visit the public
 /// lobby, as its sign-in answered; a lobby from before it does not.
-pub(crate) fn lobby_campaign_rooms(state: &AppState) -> bool {
-    state.frontend.wol.as_ref().and_then(|visit| visit.live_service.as_ref())
-        .is_some_and(|service| service.campaign_rooms)
-}
-
-pub(crate) fn lobby_visits(state: &AppState) -> bool {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .is_some_and(|visit| visit.lobby_visits)
+pub(crate) fn lobby_visits(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| visit.lobby_visits)
 }
 
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.
-pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::wol_shell::WolMessageBox {
-    service::message_box(state, key, false)
+pub(crate) fn message_box(
+    process_assets: &ProcessAssets,
+    key: &str,
+) -> crate::ui::shell::modal::ShellBox {
+    service::message_box(process_assets, process_assets.csf_text(key), false)
 }
 
 /// Start Game Now's abort (`0x00794D13..0x00794E64`): `0x130` closes,
@@ -500,8 +513,8 @@ fn logout(visit: &mut WolVisit) {
 }
 
 /// VERA: show `text` in the chat this online visit next lands in.
-pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
-    if let Some(visit) = state.frontend.wol.as_mut()
+pub(crate) fn hold_problem_line(wol: Option<&mut WolVisit>, text: String) {
+    if let Some(visit) = wol
         && visit.provider == WolProvider::Online
     {
         visit.problem_line = Some(text);
@@ -510,8 +523,8 @@ pub(crate) fn hold_problem_line(state: &mut AppState, text: String) {
 
 /// VERA: add `text` to the line waiting for the chat this online visit next
 /// lands in, or let it wait alone.
-pub(crate) fn add_problem_line(state: &mut AppState, text: String) {
-    if let Some(visit) = state.frontend.wol.as_mut()
+pub(crate) fn add_problem_line(wol: Option<&mut WolVisit>, text: String) {
+    if let Some(visit) = wol
         && visit.provider == WolProvider::Online
     {
         visit.problem_line = Some(match visit.problem_line.take() {
@@ -522,9 +535,9 @@ pub(crate) fn add_problem_line(state: &mut AppState, text: String) {
 }
 
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).
-pub(crate) fn match_started(state: &mut AppState) {
-    quick_match::match_starts(state);
-    if let Some(visit) = state.frontend.wol.as_mut() {
+pub(crate) fn match_started(frontend: &mut FrontendState) {
+    quick_match::match_starts(frontend);
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.in_game = true;
     }
 }
@@ -565,7 +578,7 @@ pub(super) fn reopen_lobby(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.mode = Some(WolMode::CustomMatch);
     }
-    apply_wol_preferences(state);
+    apply_wol_preferences(&mut state.frontend, &mut state.audio);
     lobby::open(state, false);
 }
 
@@ -592,16 +605,16 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
     ) {
         return;
     }
-    persona::enter_wol_main(state);
-    read_wol_settings(state);
+    persona::enter_wol_main(&mut state.frontend, state.platform.game_config.as_ref());
+    read_wol_settings(&mut state.frontend, &state.persistence.options_profile);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
     let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.saved_shuffle = saved_shuffle;
     }
-    send_wol_preferences(state);
-    apply_wol_preferences(state);
+    send_wol_preferences(&mut state.frontend);
+    apply_wol_preferences(&mut state.frontend, &mut state.audio);
     open_lobby(state, true);
 }
 
@@ -611,11 +624,10 @@ impl App {
     /// backdrop (`0x00798DE0`); the normal online visit signs in instead.
     pub(super) fn open_wol_welcome_page(state: &mut AppState) {
         crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+        Self::destroy_current_shell_dialog(state);
         // The message boxes paint from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
-        read_wol_settings(state);
+        read_wol_settings(&mut state.frontend, &state.persistence.options_profile);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
         let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
@@ -628,9 +640,9 @@ impl App {
         state.frontend.wol = Some(visit);
         // Persona I/O is selected by the new visit's provider, never a
         // previous visit (or the absence of one).
-        persona::enter_wol_main(state);
+        persona::enter_wol_main(&mut state.frontend, state.platform.game_config.as_ref());
         // The first mode-loop pass (0x0077B402) applies again.
-        apply_wol_preferences(state);
+        apply_wol_preferences(&mut state.frontend, &mut state.audio);
         state.frontend.shell_route = ShellRoute::Wol;
         Self::open_wol_home(state);
     }
@@ -647,134 +659,127 @@ impl App {
             return;
         }
         visit.page = WolPage::Welcome;
-        persona::fill_welcome(state);
-        Self::ensure_wol_welcome_art(state);
+        leaf::open_art(state, WOL_WELCOME_DIALOG);
         state
             .frontend
             .shell_controller
-            .reset_to(WOL_WELCOME_DIALOG, false);
-    }
-
-    /// `0x0072C7E0` loads the page's art (the background only at 800 wide).
-    pub(crate) fn ensure_wol_welcome_art(state: &mut AppState) -> bool {
-        if state.frontend.wol_welcome_art.is_some() {
-            return true;
-        }
-        let Some(assets) = state.process_assets.manager() else {
-            return false;
-        };
-        let icons: Vec<&str> = crate::ui::wol_shell::WOL_ICONS
-            .iter()
-            .map(|icon| icon.file)
-            .collect();
-        state.frontend.wol_welcome_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            assets,
-            crate::app::frontend::shell_layout::art_key_screen_width(state),
-            ("MultiplaySelection.shp", "MultiplaySelection.pal"),
-            &icons,
+            .reset_to(WOL_WELCOME_DIALOG);
+        let filled = persona::welcome_texts(
+            &state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
         );
-        state.frontend.wol_welcome_art.is_some()
+        Self::wol_welcome_sync(state, &filled);
     }
 
-    /// Any WOL page owns the shell's input and paint.
-    pub(super) fn wol_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.wol_visit()
-            && state.frontend.wol.is_some()
+    /// Builds `0x10E`'s widgets once (`filled`: the persona texts its init
+    /// writes, `0x007989AA`) and puts them on the layout; the root.
+    pub(crate) fn wol_welcome_sync(
+        state: &mut AppState,
+        filled: &[(u16, String)],
+    ) -> Option<vera20k_gui::NodeId> {
+        let layout = crate::app::frontend::shell_layout::wol_welcome_layout(state);
+        let spec = || crate::ui::wol_shell::spec(filled);
+        leaf::sync(
+            &mut state.frontend.shell_controller,
+            &state.renderer.bit_font,
+            WOL_WELCOME_DIALOG,
+            layout.page.scale,
+            spec,
+            |id| layout.rect_of(id),
+        )
     }
 
-    pub(crate) fn wol_welcome_layout(state: &AppState) -> WolWelcomeLayout {
-        crate::app::frontend::shell_layout::wol_welcome_layout(state)
+    /// `0x10E`'s persona texts as its statics show them, by control id.
+    pub(crate) fn wol_welcome_texts(controller: &DialogController) -> Vec<(u16, String)> {
+        let ids = [0x06EF, 0x06F4, 0x06F5, 0x06F0, 0x06F1, 0x0701, 0x0797];
+        ids.map(|id| (id, leaf::text(controller, WOL_WELCOME_DIALOG, id)))
+            .into()
     }
 
-    /// The page's buttons in hit-test (Z) order.
-    fn wol_button_feed(layout: &WolWelcomeLayout) -> Vec<LaidOutControl> {
-        layout
-            .buttons_in_z_order()
-            .into_iter()
-            .map(|button| LaidOutControl {
-                id: button.id,
-                rect: button.rect,
-            })
-            .collect()
+    /// The control the top dialog's pointer holds (`SetCapture`), by id.
+    pub(crate) fn wol_held(controller: &DialogController) -> Option<u16> {
+        let node = controller.pressed_node_in(controller.top_id()?)?;
+        controller
+            .gui()
+            .id_of(node)
+            .and_then(|id| u16::try_from(id).ok())
     }
 
-    /// The buttons of the box that owns input, if one does.
-    fn wol_box_feed(state: &AppState) -> Option<Vec<LaidOutControl>> {
-        let (width, height) = (
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
-        );
-        let visit = state.frontend.wol.as_ref()?;
-        if let Some(message) = visit.message() {
-            let scale = shell_layout::shell_scale_for_screen((width as u32, height as u32));
-            let layout = message.layout(width, height, scale);
-            return Some(match message.buttons {
-                WolBoxButtons::Ok(_) => vec![LaidOutControl {
-                    id: BOX_OK,
-                    rect: layout.ok,
-                }],
-                WolBoxButtons::YesNo { .. } => {
-                    vec![
-                        LaidOutControl {
-                            id: BOX_NO,
-                            rect: layout.cancel.expect("Yes/No has No"),
-                        },
-                        LaidOutControl {
-                            id: BOX_YES,
-                            rect: layout.ok,
-                        },
-                    ]
-                }
-            });
-        }
-        if visit.waiting() {
+    /// The pointer on the box over the page, else on the welcome. Owner-draw
+    /// buttons play GUIMainButtonSound on the press (`0x00613667..0x00613771`).
+    fn wol_box_or_welcome_pointer(state: &mut AppState, at: leaf::Pointer) {
+        let open = state.frontend.wol.as_ref().and_then(|visit| match visit.message() {
+            Some(message) => Some(Some(message.clone())),
             // A hidden wait box takes no pointer.
-            return Some(match visit.wait_box().filter(|wait| wait.shown) {
-                Some(_) => {
-                    let scale = shell_layout::shell_scale_for_screen((width as u32, height as u32));
-                    let layout = crate::ui::shell::modal::wait_box_layout_on(width, height, scale);
-                    vec![
-                        LaidOutControl {
-                            id: WAIT_DISCONNECT,
-                            rect: layout.disconnect,
-                        },
-                        LaidOutControl {
-                            id: WAIT_CHECK_STATUS,
-                            rect: layout.check_status,
-                        },
-                    ]
+            None if visit.waiting() => Some(
+                visit.wait_box().filter(|wait| wait.shown).map(|wait| wait.shell_box.clone()),
+            ),
+            None => None,
+        });
+        if let Some(open) = open {
+            let top = state.frontend.shell_controller.top_id();
+            if let Some(shell_box) = open.filter(|open| top == Some(open.dialog)) {
+                let parts = shell_layout::shell_box_parts(state, &shell_box);
+                let down = match at {
+                    leaf::Pointer::Move => None,
+                    leaf::Pointer::Down => Some(true),
+                    leaf::Pointer::Up => Some(false),
+                };
+                if let Some(answer) = Self::shell_box_pointer(state, &shell_box, &parts, down)
+                    .and_then(|id| shell_box.answer(id))
+                {
+                    service::box_command(state, answer);
                 }
-                None => Vec::new(),
-            });
+            }
+            return;
         }
-        None
+        if Self::wol_welcome_sync(state, &[]).is_none() {
+            return;
+        }
+        // The dialog's hit test writes the status help on a move
+        // (`0x00622CCB`); a pressed button holds the mouse, so none arrives
+        // until the next move after its release.
+        let held = state
+            .frontend
+            .shell_controller
+            .pressed_node_in(WOL_WELCOME_DIALOG);
+        let events = match at {
+            leaf::Pointer::Move if held.is_some() => {
+                state.frontend.shell_status_line.repaint();
+                Vec::new()
+            }
+            leaf::Pointer::Move => leaf::pointer(state, at),
+            _ => leaf::pointer_quiet(state, at),
+        };
+        for event in events {
+            let PageEvent::Activated(id) = event else {
+                continue;
+            };
+            match action_for_control(id) {
+                Some(WolWelcomeAction::MainMenu) => Self::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellSlideKind::WolWelcome,
+                    App::return_from_wol,
+                ),
+                Some(WolWelcomeAction::Mode(mode)) => Self::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellSlideKind::WolWelcome,
+                    move |state| App::commit_wol_action(state, mode),
+                ),
+                // No `Community` URL in the registry: nothing happens.
+                Some(WolWelcomeAction::Community) | None => {}
+            }
+        }
     }
 
-    fn wol_page_is_login(state: &AppState) -> bool {
-        state
-            .frontend
-            .wol
-            .as_ref()
-            .is_some_and(|visit| matches!(visit.page, WolPage::Login(_)))
+    pub(super) fn wol_page_is_lobby(wol: Option<&WolVisit>) -> bool {
+        matches!(wol.map(|visit| &visit.page), Some(WolPage::Lobby))
     }
 
-    fn wol_page_is_options(state: &AppState) -> bool {
-        state
-            .frontend
-            .wol
-            .as_ref()
-            .is_some_and(|visit| matches!(visit.page, WolPage::Options(_)))
-    }
-
-    pub(super) fn wol_page_is_lobby(state: &AppState) -> bool {
-        state
-            .frontend
-            .wol
-            .as_ref()
-            .is_some_and(|visit| matches!(visit.page, WolPage::Lobby))
+    /// A box or the wait box (shown or still hidden) owns the input.
+    pub(super) fn wol_box_owns_input(wol: Option<&WolVisit>) -> bool {
+        wol.is_some_and(|visit| visit.message().is_some() || visit.waiting())
     }
 
     /// Start Game Now's `0x130` over Quick Match's backdrop takes the input.
@@ -784,184 +789,56 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_move(state: &mut AppState) {
-        if Self::wol_quick_match_verify(state) {
-            crate::app::shell_network_setup::verify_cursor_moved(state);
-            return;
-        }
-        if page::open(state) {
-            page::cursor_moved(state);
-            return;
-        }
-        if Self::wol_page_is_options(state) {
-            options::cursor_moved(state);
-            return;
-        }
-        if persona::page_open(state) {
-            persona::cursor_moved(state);
-            return;
-        }
-        if my_info::page_open(state) {
-            my_info::cursor_moved(state);
-            return;
-        }
-        if buddy::page_open(state) {
-            buddy::cursor_moved(state);
-            return;
-        }
-        if quick_match::page_open(state) && Self::wol_box_feed(state).is_none() {
-            quick_match::cursor_moved(state);
-            return;
-        }
-        if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
-            lobby::cursor_moved(state);
-            return;
-        }
-        if Self::wol_page_is_login(state) {
-            login::cursor_moved(state);
-            return;
-        }
-        let (x, y) = state.match_state.input.cursor_px();
-        if let Some(feed) = Self::wol_box_feed(state) {
-            state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-            return;
-        }
-        let layout = Self::wol_welcome_layout(state);
-        let feed = Self::wol_button_feed(&layout);
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(WOL_WELCOME_DIALOG, false);
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        // The dialog's hit test writes the status help (`0x00622CCB`); a
-        // pressed button holds the mouse, so none arrives meanwhile.
-        if state.frontend.shell_controller.pressed().is_none()
-            && let Some(visit) = state.frontend.wol.as_mut()
-        {
-            visit.status_help = layout.status_help_key(x, y);
-        }
-        state.frontend.shell_status_line.repaint();
+        Self::wol_pointer(state, leaf::Pointer::Move);
     }
 
     pub(super) fn handle_wol_mouse_down(state: &mut AppState) {
-        if Self::wol_quick_match_verify(state) {
-            crate::app::shell_network_setup::verify_mouse(state, true);
-            return;
-        }
-        if page::open(state) {
-            page::mouse(state, true);
-            return;
-        }
-        if Self::wol_page_is_options(state) {
-            options::mouse(state, true);
-            return;
-        }
-        if persona::page_open(state) {
-            persona::mouse(state, true);
-            return;
-        }
-        if my_info::page_open(state) {
-            my_info::mouse(state, true);
-            return;
-        }
-        if buddy::page_open(state) {
-            buddy::mouse(state, true);
-            return;
-        }
-        if quick_match::page_open(state) && Self::wol_box_feed(state).is_none() {
-            quick_match::mouse(state, true);
-            return;
-        }
-        if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
-            lobby::mouse(state, true);
-            return;
-        }
-        if Self::wol_page_is_login(state) {
-            login::mouse(state, true);
-            return;
-        }
-        let (x, y) = state.match_state.input.cursor_px();
-        let feed = match Self::wol_box_feed(state) {
-            Some(feed) => feed,
-            None => {
-                state
-                    .frontend
-                    .shell_controller
-                    .ensure_active(WOL_WELCOME_DIALOG, false);
-                Self::wol_button_feed(&Self::wol_welcome_layout(state))
-            }
-        };
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // Owner-draw buttons play GUIMainButtonSound on the press
-        // (`0x00613667..0x00613771`).
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
+        Self::wol_pointer(state, leaf::Pointer::Down);
     }
 
     pub(super) fn handle_wol_mouse_up(state: &mut AppState) {
+        Self::wol_pointer(state, leaf::Pointer::Up);
+    }
+
+    /// The pointer on `0x130`, a page dialog, the page under it, or else on
+    /// a box or the welcome. Quick Match and the lobby take none under a box.
+    fn wol_pointer(state: &mut AppState, at: leaf::Pointer) {
         if Self::wol_quick_match_verify(state) {
-            crate::app::shell_network_setup::verify_mouse(state, false);
-            return;
+            let down = match at {
+                leaf::Pointer::Move => None,
+                at => Some(at == leaf::Pointer::Down),
+            };
+            return crate::app::shell_network_setup::verify_pointer(state, down);
         }
-        if page::open(state) {
-            page::mouse(state, false);
-            return;
-        }
-        if Self::wol_page_is_options(state) {
-            options::mouse(state, false);
-            return;
-        }
-        if persona::page_open(state) {
-            persona::mouse(state, false);
-            return;
-        }
-        if my_info::page_open(state) {
-            my_info::mouse(state, false);
-            return;
-        }
-        if buddy::page_open(state) {
-            buddy::mouse(state, false);
-            return;
-        }
-        if quick_match::page_open(state) && Self::wol_box_feed(state).is_none() {
-            quick_match::mouse(state, false);
-            return;
-        }
-        if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
-            lobby::mouse(state, false);
-            return;
-        }
-        if Self::wol_page_is_login(state) {
-            login::mouse(state, false);
-            return;
-        }
-        let (x, y) = state.match_state.input.cursor_px();
-        if let Some(feed) = Self::wol_box_feed(state) {
-            if let Some(control) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
-                service::box_command(state, control);
+        type Handlers = (fn(&mut AppState), fn(&mut AppState, bool));
+        let boxed = Self::wol_box_owns_input(state.frontend.wol.as_ref());
+        let shown = state.frontend.wol.as_ref().map(|visit| &visit.page);
+        let handlers: Option<Handlers> = match shown {
+            _ if page::open(state.frontend.wol.as_ref()) => Some((page::cursor_moved, page::mouse)),
+            Some(WolPage::Options(_)) => Some((options::cursor_moved, options::mouse)),
+            Some(WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_)) => {
+                Some((persona::cursor_moved, persona::mouse))
             }
-            return;
-        }
-        let feed = Self::wol_button_feed(&Self::wol_welcome_layout(state));
-        let Some(activated) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) else {
-            return;
+            Some(WolPage::MyInformation(_)) => Some((my_info::cursor_moved, my_info::mouse)),
+            Some(WolPage::Buddy(_)) => Some((buddy::cursor_moved, buddy::mouse)),
+            Some(WolPage::QuickMatch(_)) if !boxed => {
+                Some((quick_match::cursor_moved, quick_match::mouse))
+            }
+            Some(WolPage::Lobby) if !boxed => Some((lobby::cursor_moved, lobby::mouse)),
+            Some(WolPage::Login(_)) => Some((login::cursor_moved, login::mouse)),
+            _ => None,
         };
-        match action_for_control(activated) {
-            Some(WolWelcomeAction::MainMenu) => {
-                Self::leave_shell_dialog(state, ShellExitThen::WolBack)
-            }
-            Some(WolWelcomeAction::Mode(mode)) => {
-                Self::leave_shell_dialog(state, ShellExitThen::WolAction(mode));
-            }
-            // No `Community` URL in the registry: nothing happens.
-            Some(WolWelcomeAction::Community) | None => {}
+        match (handlers, at) {
+            (Some((moved, _)), leaf::Pointer::Move) => moved(state),
+            (Some((_, mouse)), at) => mouse(state, at == leaf::Pointer::Down),
+            (None, at) => Self::wol_box_or_welcome_pointer(state, at),
         }
     }
 
     /// VERA's Esc menu (`app::shell_menu`): the boxes, popups and player card
     /// over a page keep Esc.
     pub(super) fn wol_leaves_escape(state: &AppState) -> bool {
-        if Self::wol_quick_match_verify(state) || page::open(state) {
+        if Self::wol_quick_match_verify(state) || page::open(state.frontend.wol.as_ref()) {
             return false;
         }
         let Some(visit) = state.frontend.wol.as_ref() else {
@@ -969,35 +846,13 @@ impl App {
         };
         !visit.waiting()
             && match &visit.page {
-                WolPage::Login(login) => login.account.is_none(),
+                WolPage::Login(login) => !login.choosing_entry() && login.account.is_none(),
                 WolPage::Lobby => visit.lobby().is_some_and(|lobby| {
                     lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
                 }),
                 WolPage::Buddy(dialog) => dialog.ui.add.is_none(),
                 _ => true,
             }
-    }
-
-    /// Esc closes the login page's open name list or the Options page's open
-    /// translation list.
-    pub(super) fn close_wol_open_list(state: &mut AppState) -> bool {
-        if options::close_list(state) {
-            return true;
-        }
-        let Some(login) = state
-            .frontend
-            .wol
-            .as_mut()
-            .and_then(|visit| match &mut visit.page {
-                WolPage::Login(login) => Some(login),
-                _ => None,
-            })
-        else {
-            return false;
-        };
-        let open = login.popup.control.is_some();
-        login.popup.close();
-        open
     }
 
     /// Keys while a WOL page shows. `0x10E` ignores IDOK/IDCANCEL
@@ -1010,17 +865,21 @@ impl App {
         text: Option<&str>,
     ) {
         // 0x130 has no key handling.
-        if Self::wol_quick_match_verify(state) {
+        if !pressed || Self::wol_quick_match_verify(state) {
             return;
         }
-        if pressed && page::open(state) {
-            page::key_press(state, code, text);
-        } else if pressed && Self::wol_page_is_login(state) {
-            login::key_press(state, code, text);
-        } else if pressed && Self::wol_page_is_lobby(state) {
-            lobby::key_press(state, code, text);
-        } else if pressed && buddy::page_open(state) {
-            buddy::key_press(state, code, text);
+        type KeyPress = fn(&mut AppState, Option<winit::keyboard::KeyCode>, Option<&str>);
+        let shown = state.frontend.wol.as_ref().map(|visit| &visit.page);
+        let handler: Option<KeyPress> = match shown {
+            _ if page::open(state.frontend.wol.as_ref()) => Some(page::key_press),
+            Some(WolPage::Login(_)) => Some(login::key_press),
+            Some(WolPage::Lobby) => Some(lobby::key_press),
+            Some(WolPage::Buddy(_)) => Some(buddy::key_press),
+            Some(WolPage::Options(_)) => Some(options::key_press),
+            _ => None,
+        };
+        if let Some(key_press) = handler {
+            key_press(state, code, text);
         }
     }
 
@@ -1033,7 +892,6 @@ impl App {
         visit.mode = Some(mode);
         // 0x00798DB5: the welcome's Buddy List returns to mode 0.
         visit.return_mode = None;
-        visit.status_help = None;
         visit.page = WolPage::Backdrop { wait: None };
         // Mode 6 needs no login (0x0077B3AA): its driver 0x00799D30 only
         // ensures the WOLAPI object and waits for the server list.
@@ -1053,7 +911,6 @@ impl App {
         };
         visit.mode = None;
         visit.return_mode = None;
-        visit.status_help = None;
         visit.relogin = None;
         visit.flow = None;
         // 0x0077B4D3..0x0077B519: mode 0 needs no login category, so a
@@ -1062,12 +919,12 @@ impl App {
             logout(visit);
             visit.authenticated = false;
         }
+        page::close_stale(&mut state.frontend);
         // The mode-loop pass (0x0077B402) before the welcome runs.
-        apply_wol_preferences(state);
-        state.frontend.wol_login_art = None;
+        apply_wol_preferences(&mut state.frontend, &mut state.audio);
+        leaf::free_art(&mut state.frontend.wol_art, crate::ui::wol_login::DIALOG);
         state.frontend.shell_route = ShellRoute::Wol;
         Self::open_wol_home(state);
-        state.platform.window.request_redraw();
     }
 
     /// Main Menu's teardown has run (result 0), or `WOL_Main` returned -2
@@ -1086,32 +943,14 @@ impl App {
         if let Some(visit) = state.frontend.wol.take() {
             state.audio.leave_wol_lobby_music(visit.saved_shuffle);
         }
-        state.frontend.wol_welcome_art = None;
-        state.frontend.wol_login_art = None;
-        state.frontend.wol_lobby_art = None;
-        state.frontend.wol_options_art = None;
-        state.frontend.wol_sound_options_art = None;
-        state.frontend.wol_auto_login_art = None;
-        state.frontend.wol_my_info_art = None;
-        state.frontend.wol_buddy_art = None;
-        state.frontend.wol_quick_match_art = None;
+        page::close_stale(&mut state.frontend);
+        state.frontend.wol_art.clear();
         state.frontend.shell_route = ShellRoute::MainMenu;
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+        Self::destroy_current_shell_dialog(state);
         state
             .frontend
             .shell_controller
-            .reset_to(crate::ui::shell::descriptor::DialogId(0x00E2), false);
-    }
-
-    /// Status help of the welcome for its status line.
-    pub(crate) fn wol_status_key(state: &AppState) -> Option<&'static str> {
-        state
-            .frontend
-            .wol
-            .as_ref()
-            .filter(|visit| matches!(visit.page, WolPage::Welcome))
-            .and_then(|visit| visit.status_help)
+            .reset_to(crate::ui::shell::descriptor::DialogResourceId(0x00E2));
     }
 
     pub(super) fn commit_wol_login_close(state: &mut AppState, result: u16) {

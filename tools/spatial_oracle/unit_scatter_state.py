@@ -73,8 +73,8 @@ def make_fixture(case, *, uc=None):
     u.mem_write(ACTOR + 0x674, dwords(LOCO + 4))
     u.mem_write(ACTOR + 0xAC, dwords(case.get('mission', 5)))
     u.mem_write(ACTOR + 0xB4, dwords(case.get('queued', -1)))
-    # Train is absent in retail rules and in VERA's parsed ObjectType. It is
-    # fixed false here, not an asserted port of the unused IsTrain extension.
+    # This fixture supplies an ordinary retail unit. TechnoClass::CanScatter
+    # checks the type's IsTrain byte at 0x006F32B7 before drawing for scatter.
     u.mem_write(TYPE + 0xC94, b'\0')
     for i, name in enumerate(('deployed', 'deploying', 'undeploying')):
         u.mem_write(ACTOR + 0x6E0 + i, bytes([case.get(name, False)]))

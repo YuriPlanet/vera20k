@@ -36,6 +36,10 @@ struct TerrainShapeBinding {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TerrainAssetCatalog {
     bindings: BTreeMap<String, TerrainShapeBinding>,
+    /// VERA: the game-folder files whose resource-spawner shape has another
+    /// frame count than the copy a retail install reads
+    /// (`retail_sources::FolderFiles`); not hashed.
+    folder_files: std::collections::BTreeSet<String>,
 }
 
 impl Hash for TerrainAssetCatalog {
@@ -94,15 +98,21 @@ impl TerrainAssetCatalog {
         }
 
         let mut catalog = Self::default();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
         for terrain in terrain_types.values() {
             let Some(name) = canonical_type_id(&terrain.name) else {
                 continue;
             };
             let filename = terrain.shape_filename(theater_ext);
-            let count = asset_manager
-                .get_ref(&filename)
-                .and_then(|bytes| ShpFile::frame_count_from_bytes(bytes).ok());
             let spawner = terrain.spawns_tiberium && terrain.is_animated;
+            let frame_count = |bytes: &[u8]| ShpFile::frame_count_from_bytes(bytes).ok();
+            // Only a spawner's frame count reaches the simulation.
+            let bytes = if spawner {
+                folder.read_noting(&filename, frame_count, &mut catalog.folder_files)
+            } else {
+                asset_manager.get_ref(&filename)
+            };
+            let count = bytes.and_then(frame_count);
             if spawner && count.is_none() {
                 log::warn!(
                     "Terrain spawner [{name}] has no valid SHP {filename}; no validated midpoint is available"
@@ -120,6 +130,11 @@ impl TerrainAssetCatalog {
             );
         }
         catalog
+    }
+
+    /// VERA: the game-folder files that change a spawner's frame count.
+    pub(crate) fn folder_files(&self) -> impl Iterator<Item = &str> {
+        self.folder_files.iter().map(String::as_str)
     }
 
     /// Literal unsigned SHP count used by the retained per-ID Terrain timer.

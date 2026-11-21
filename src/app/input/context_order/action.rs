@@ -311,6 +311,23 @@ pub(super) fn attack_action_with(
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return action;
     };
+    // InfantryClass::What_Action_OnObject's healer arm replaces Foot's
+    // answer after the Engineer's refusal of an Attack (0x0051E6B4..0x0051E6D5,
+    // [`infantry_attack_action`]): GuardArea over itself (0x0051E748), whose
+    // click is `object_guard_command`, and AttackSupport over a Terrain
+    // object (0x0051E797), whose click guards the healer
+    // (`attack_support_command`). Its rows over a Techno are
+    // [`healer_object_action`]'s.
+    if !(kind.engineer && action == AttackAction::Attack)
+        && let TargetKind::Entity(target_id) = *target
+    {
+        if target_id == actor_id && sim.infantry_healer_guards_itself(control, actor_id, rules) {
+            return AttackAction::GuardArea;
+        }
+        if healer_supports_over_terrain(sim, control, rules, actor_id, target_id) {
+            return AttackAction::AttackSupport;
+        }
+    }
     let human = control.can_order(actor.owner());
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,
@@ -460,9 +477,9 @@ pub(super) fn attack_action_with(
                 rules,
             ) {
                 // Harvest is a Unit's Cell answer, never an object's.
-                crate::sim::world::MoveAction::None | crate::sim::world::MoveAction::Harvest => {
-                    AttackAction::None
-                }
+                crate::sim::world::MoveAction::None
+                | crate::sim::world::MoveAction::Harvest
+                | crate::sim::world::MoveAction::EnterTunnel => AttackAction::None,
                 crate::sim::world::MoveAction::Move => AttackAction::Move,
                 crate::sim::world::MoveAction::NoMove => AttackAction::NoMove,
             }
@@ -500,7 +517,10 @@ pub(super) fn attack_action_with(
     if actor.category() == EntityCategory::Structure {
         // Building447366..4473C7 /4476F3..447749 inspect GetWeapon(0),
         // irrespective of SelectWeapon. These are class post-processing of
-        // Attack, not a replacement range owner.
+        // Attack, not a replacement range owner. A Tiberian Sun limpet mine
+        // takes no attack order either: Firestorm 2.0 `BuildingClass::
+        // What_Action` tests `IsLimpetMine=` in the same list (object
+        // `0x0042ECC6`, cell `0x0042EF65`; `sim::limpet`).
         if action == AttackAction::Attack
             && let Some(weapon) = crate::sim::combat::combat_weapon::get_weapon(
                 actor,
@@ -514,6 +534,7 @@ pub(super) fn attack_action_with(
                 .weapon_projectile(weapon)
                 .is_some_and(|projectile| !projectile.ag)
                 || kind.emp_pulse_cannon
+                || kind.is_limpet_mine
                 || actor.mission.current().known()
                     == Some(crate::sim::mission::MissionType::Selling))
         {
@@ -644,9 +665,9 @@ fn base_action(
         action = match shrouded {
             crate::sim::world::MoveAction::Move => AttackAction::Move,
             crate::sim::world::MoveAction::NoMove => AttackAction::NoMove,
-            crate::sim::world::MoveAction::None | crate::sim::world::MoveAction::Harvest => {
-                AttackAction::None
-            }
+            crate::sim::world::MoveAction::None
+            | crate::sim::world::MoveAction::Harvest
+            | crate::sim::world::MoveAction::EnterTunnel => AttackAction::None,
         };
     }
     action
@@ -1000,69 +1021,118 @@ pub(super) struct AttackDispatch {
     pub(super) commands: Vec<Command>,
     pub(super) consumed: bool,
     pub(super) select_fallback: bool,
+    /// DetermineAction's object answered Select, so BandBox_LeftUp selects the
+    /// target and dispatches nothing (`0x004ABDD3`).
+    pub(super) selects: bool,
 }
 
 /// The keys a healer's object action reads ([`crate::sim::world::HealArmKeys`]):
-/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the admitted
-/// Ctrl+Alt GuardArea base action ([`object_key_action`]).
-pub(in crate::app::input) fn heal_arm_keys(
-    sim: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
-    actor: u64,
-    target: u64,
+/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the Foot answer
+/// the infantry tail keeps (`0x0051E776..0x0051E782`): Ctrl+Alt's admitted
+/// GuardArea or a Move, which Alt's key rung ([`object_key_action`]) or, in
+/// a campaign, Foot's shroud rung over a shrouded object gives
+/// (`shroud_moves`, [`base_action`]).
+fn heal_arm_keys(
+    key_action: Option<ObjectKeyAction>,
     modifier: OrderModifier,
     force_move_key: bool,
-) -> crate::sim::world::HealArmKeys {
-    heal_arm_keys_with(
-        sim,
-        &sim.control_projection(),
-        rules,
-        actor,
-        target,
-        modifier,
-        force_move_key,
-    )
-}
-
-pub(super) fn heal_arm_keys_with(
-    sim: &crate::sim::world::Simulation,
-    control: &ControlProjection<'_>,
-    rules: &crate::rules::ruleset::RuleSet,
-    actor: u64,
-    target: u64,
-    modifier: OrderModifier,
-    force_move_key: bool,
+    shroud_moves: bool,
 ) -> crate::sim::world::HealArmKeys {
     crate::sim::world::HealArmKeys {
         force_move: matches!(
             modifier,
             OrderModifier::ForceMove | OrderModifier::GuardArea
         ) || (modifier == OrderModifier::AttackMove && force_move_key),
-        guard_area: object_key_action_with(
-            sim,
-            control,
-            rules,
-            actor,
-            target,
-            Some(target),
-            modifier,
-            force_move_key,
-        ) == Some(ObjectKeyAction::GuardArea),
+        guard_area: key_action == Some(ObjectKeyAction::GuardArea),
+        moves: key_action == Some(ObjectKeyAction::Move) || shroud_moves,
     }
 }
 
-/// A healer's object action: a Unit's repair arm
-/// ([`crate::sim::world::Simulation::unit_repair_action`]) or, with `ares`,
-/// an Infantryman's Heal (`ares_infantry_heal_action`), which its
-/// ClickedAction (`0x0051F190`) sends as the same Attack.
+/// Ctrl forcing Techno What_Action_OnObject's attack rung (`0x0070021A`):
+/// Ctrl, or Ctrl+Alt whose key rungs refused (`0x00700191..0x00700217`).
+pub(in crate::app::input) fn ctrl_forces_attack_rung(
+    modifier: OrderModifier,
+    key_action: Option<ObjectKeyAction>,
+) -> bool {
+    key_action.is_none()
+        && matches!(
+            modifier,
+            OrderModifier::ForceFire | OrderModifier::GuardArea
+        )
+}
+
+/// Infantry What_Action's healer self arm (`0x0051E748`) as the cursor and the
+/// click ask it: [`attack_action`]'s GuardArea over the actor itself, with
+/// `forced` when Ctrl forces the attack rung ([`ctrl_forces_attack_rung`]),
+/// which a healing Engineer refuses first.
+pub(in crate::app::input) fn healer_guards_itself(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    forced: bool,
+) -> bool {
+    attack_action_with(
+        sim,
+        control,
+        rules,
+        actor,
+        &TargetKind::Entity(actor),
+        forced,
+        None,
+    ) == AttackAction::GuardArea
+}
+
+/// Infantry What_Action's healer arm over a Terrain object (`0x0051E797`):
+/// the object has no House, so the ally test (`0x004F9A90`) refuses it and a
+/// human player's healer answers AttackSupport. The arm comes after Foot's
+/// What_Action, so it replaces the key rungs' Move, NoMove or GuardArea
+/// too; only Shift's ToggleSelect returns before it (`0x0051E453`), and
+/// the Engineer's refusal (`0x0051E6B4`) tests only an Attack answer, which
+/// no key rung gives. The cursor and the click share it.
+pub(in crate::app::input) fn healer_supports_over_terrain(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    terrain: u64,
+) -> bool {
+    sim.terrain_objects().get(terrain).is_some()
+        && sim.entities().get(actor).is_some_and(|entity| {
+            sim.infantry_heal_action_with(
+                control,
+                actor,
+                terrain,
+                entity.owner(),
+                Default::default(),
+                rules,
+            ) == Some(crate::sim::world::InfantryHealAction::AttackSupport)
+        })
+}
+
+/// A healer's action over another Techno, which the cursor and the click
+/// share.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::app::input) enum HealerAction {
+    /// A Unit's repair arm ([`crate::sim::world::Simulation::unit_repair_action`]).
+    Unit(crate::sim::world::UnitRepairAction),
+    /// An Infantryman's heal arm
+    /// ([`crate::sim::world::Simulation::infantry_heal_action`]).
+    Infantry(crate::sim::world::InfantryHealAction),
+}
+
+/// A healer's object action: a Unit's repair arm or an Infantryman's heal
+/// arm, which InfantryClass::What_Action_OnObject reaches only after the
+/// rows before it ([`infantry_rows_precede_heal_arm`]).
 pub(in crate::app::input) fn healer_object_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     actor: u64,
     target: u64,
     issuing_house: InternedId,
-    keys: crate::sim::world::HealArmKeys,
-) -> Option<crate::sim::world::UnitRepairAction> {
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> Option<HealerAction> {
     healer_object_action_with(
         sim,
         &sim.control_projection(),
@@ -1070,10 +1140,12 @@ pub(in crate::app::input) fn healer_object_action(
         actor,
         target,
         issuing_house,
-        keys,
+        modifier,
+        force_move_key,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn healer_object_action_with(
     sim: &crate::sim::world::Simulation,
     control: &ControlProjection<'_>,
@@ -1081,17 +1153,98 @@ pub(super) fn healer_object_action_with(
     actor: u64,
     target: u64,
     issuing_house: InternedId,
-    keys: crate::sim::world::HealArmKeys,
-) -> Option<crate::sim::world::UnitRepairAction> {
-    if rules.ares()
-        && sim
-            .entities()
-            .get(actor)
-            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
-    {
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> Option<HealerAction> {
+    let key_action = object_key_action_with(
+        sim,
+        control,
+        rules,
+        actor,
+        target,
+        Some(target),
+        modifier,
+        force_move_key,
+    );
+    // Without a key answer Foot's is the base action, which the shroud rung
+    // makes Move or NoMove (`0x004DDED0`).
+    let shroud_moves = key_action.is_none()
+        && base_action(
+            sim,
+            control,
+            rules,
+            actor,
+            &TargetKind::Entity(target),
+            ctrl_forces_attack_rung(modifier, key_action),
+            None,
+        ) == AttackAction::Move;
+    let keys = heal_arm_keys(key_action, modifier, force_move_key, shroud_moves);
+    if sim.entities().get(actor)?.category() != EntityCategory::Infantry {
         return sim
-            .ares_infantry_heal_action_with(control, actor, target, issuing_house, keys, rules)
-            .map(|_| crate::sim::world::UnitRepairAction::Repair);
+            .unit_repair_action_with(control, actor, target, issuing_house, keys, rules)
+            .map(HealerAction::Unit);
     }
-    sim.unit_repair_action_with(control, actor, target, issuing_house, keys, rules)
+    // The arm answers nothing for an infantryman that does not heal, so ask
+    // it before the rows that precede it.
+    let action =
+        sim.infantry_heal_action_with(control, actor, target, issuing_house, keys, rules)?;
+    (!infantry_rows_precede_heal_arm(
+        sim,
+        control,
+        rules,
+        actor,
+        target,
+        modifier,
+        force_move_key,
+        ctrl_forces_attack_rung(modifier, key_action),
+    ))
+    .then_some(HealerAction::Infantry(action))
+}
+
+/// The rows InfantryClass::What_Action_OnObject answers over `target` before
+/// its healer arm: an Engineer's DisarmBomb (`0x0051E462..0x0051E49B`) and
+/// building rows (`0x0051E49E..0x0051E665`), the garrison rung
+/// (`0x0051E668..0x0051E6A5`) and the Engineer's refusal of an Attack base
+/// action (`0x0051E6B4..0x0051E6D5`), `forced` when Ctrl forces it.
+#[allow(clippy::too_many_arguments)]
+fn infantry_rows_precede_heal_arm(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
+    forced: bool,
+) -> bool {
+    let Some(entity) = sim.entities().get(actor) else {
+        return false;
+    };
+    let engineer = sim
+        .interner()
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.engineer);
+    (engineer
+        && (!super::disarm_bomb_engineers(sim, rules, &[actor], target, entity.owner()).is_empty()
+            || sim
+                .engineer_building_action_with(control, actor, target, rules)
+                .is_some()
+            || base_action(
+                sim,
+                control,
+                rules,
+                actor,
+                &TargetKind::Entity(target),
+                forced,
+                None,
+            ) == AttackAction::Attack))
+        || super::infantry_garrisons_with(
+            sim,
+            control,
+            rules,
+            actor,
+            target,
+            modifier,
+            force_move_key,
+        )
 }

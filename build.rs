@@ -1,5 +1,7 @@
 #[path = "src/app/shell_network_setup/network_build.rs"]
 mod network_build;
+#[path = "src/ice_build.rs"]
+mod ice_build;
 #[path = "src/util/sha256.rs"]
 mod sha256;
 #[path = "src/test_group_cfgs.rs"]
@@ -77,6 +79,11 @@ fn multiplayer_build_identity() {
                 .to_string_lossy(),
             &std::fs::read(&file).expect("read multiplayer build source"),
         );
+    }
+    // The MIX is binary; hash its raw identity instead of normalizing CRLF
+    // as the source walk does. The runtime checks these exact release bytes.
+    for (name, _, digest) in ice_build::identities(&root.join("Terrain")) {
+        network_build::add_source(&mut input, &format!("Terrain/{name}"), sha256::digest_hex(digest).as_bytes());
     }
     let variables = std::env::vars().map(|(name, _)| name);
     for feature in network_build::add_features(&mut input, variables) {

@@ -565,7 +565,7 @@ fn build_campaign_score_screen_model_from_sources(
 }
 
 fn resolve_campaign_score_label(state: &AppState, native_key: &str) -> String {
-    crate::app::frontend::shell_pass::resolve_csf(state, native_key).into_owned()
+    state.csf_text(native_key)
 }
 
 fn format_campaign_score_time(total_seconds: i32) -> String {
@@ -695,7 +695,7 @@ fn build_score_screen_model(
         snapshot.clone()
     };
     let raw_snapshot = &snapshot;
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let rows = resolve_score_rows(
         sim,
         raw_snapshot,
@@ -1537,7 +1537,7 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_recheck_pending();
+            .model.cameo_recheck_pending();
         // Native Strip AI6A8CF3 requests redraw throughout the authored
         // flash window, even with no input. Reuse the one projection owner
         // only in these windows; ordinary idle ticks do not enumerate cameos.
@@ -1550,7 +1550,7 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
+                    .model.cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
             });
         // StripDraw6A9540 asks each entry's availability and reads its
         // Factory while drawing, so the drawn state follows the simulation
@@ -1688,8 +1688,19 @@ fn after_simulation_pass(
     crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
     crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
     crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
-    // Per-frame gadget idle tick (G22 rows 2/3 drag-off/drag-back tracking).
-    crate::app::input::gadget_input::idle_tick(state);
+    // Every unlocked pass republishes the complete sidebar projection,
+    // including the retained House power pair the tooltip driver reads.
+    if state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .view()
+        .is_some()
+        && !crate::app::input::campaign_input::is_locked(state)
+    {
+        crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
+        crate::app::input::chrome_input::refresh_pointer(state);
+    }
     // The audio service is NOT gated on the simulation. gamemd's
     // `AudioSystem::Pump @ 0x00406F70` hangs off `Network_ServiceLoop @
     // 0x0048D080`, whose callers include `Main_Tick` itself (offline, the
@@ -2083,6 +2094,10 @@ fn advance_one_simulation_frame(
         drain_radar_terrain_marks(&mut state.match_state);
     }
     let hash_interval = play_hash_interval(state.match_state.live_network.is_some());
+    let slow_tick = crate::app::cncnet::SpawnSlowPc::of(state).tick;
+    // A spawn test switch counts a tick this thread runs itself apart from
+    // the service around it (`spawn_frame_cost`).
+    let inline_cost = crate::app::spawn_frame_cost::begin(state);
     // A lent tick publishes the frame the last read captured: until `lend`
     // below, this dispatch writes nothing a frame records.
     let parts = if threaded {
@@ -2125,11 +2140,15 @@ fn advance_one_simulation_frame(
     // Recorded whether or not a client is attached: the history ring
     // backfills a dashboard that connects mid-match.
     let advance_started = crate::util::time::Instant::now();
+    // A lent tick spends it on the simulation thread, inside its own cost.
+    if !threaded {
+        crate::app::cncnet::SpawnSlowPc::spend(slow_tick);
+    }
     let production_visits = state
         .match_state
         .match_presentation
         .sidebar_projection
-        .production_factory_visits(&rt.simulation);
+        .model.production_factory_visits(&rt.simulation);
     let mut finish = FrameFinish {
         native_frame,
         local_owner_for_fog,
@@ -2142,6 +2161,7 @@ fn advance_one_simulation_frame(
     if threaded {
         let job = move |rt: &mut crate::sim::runtime::SimRuntime| -> super::sim_host::SimJobResult {
             let started = crate::util::time::Instant::now();
+            crate::app::cncnet::SpawnSlowPc::spend(slow_tick);
             let logic_started_ms = super::frame_pacer::wall_clock_ms();
             let deferred = finish
                 .deferred
@@ -2209,12 +2229,10 @@ fn advance_one_simulation_frame(
         let active_tab = crate::app::persistence::commands::saved_active_tab(
             state.match_state.match_presentation.active_sidebar_tab,
         );
-        #[cfg(feature = "phobos")]
-        let sw_sidebar_expanded = state.match_state.match_presentation.sw_sidebar.expanded;
         let mut prepared = initial_save;
         let persistence = &mut state.persistence;
         let mut campaign_save = |sim: &crate::sim::world::Simulation,
-                                 sidebar: &mut crate::app::sidebar_projection::SidebarProjectionState,
+                                 sidebar: &mut crate::app::sidebar_projection::SidebarModel,
                                  elapsed_clock: &mut super::frame_pacer::ScenarioElapsedClock| {
             if let Some(Ok(prepared)) = prepared.as_mut() {
                 // Strip6A8F42 clears requests before MainTick55DBCD.
@@ -2226,11 +2244,6 @@ fn advance_one_simulation_frame(
                 let order = sidebar
                     .saved_order()
                     .map(|order| order.with_active_tab(active_tab));
-                #[cfg(feature = "phobos")]
-                let order = order.map(|mut order| {
-                    order.set_sw_sidebar_expanded(sw_sidebar_expanded);
-                    order
-                });
                 prepared.refresh_sidebar_order(order);
             }
             crate::app::persistence::commands::initial_campaign_save(
@@ -2303,7 +2316,7 @@ fn advance_one_simulation_frame(
             other_local_pause,
         )
         .with_sidebar(
-            &mut state.match_state.match_presentation.sidebar_projection,
+            &mut state.match_state.match_presentation.sidebar_projection.model,
             Some(&mut campaign_save),
         )
         .with_outcome_wait(&mut state.match_state.scenario_outcome)
@@ -2344,11 +2357,13 @@ fn advance_one_simulation_frame(
     // The thread's part of a handed-off frame counted its cost; the exchange
     // adds no second sample.
     let tick_cost = (resume != FrameResume::QueueHandoff).then(|| advance_started.elapsed());
+    crate::app::spawn_frame_cost::end_inline_tick(state, inline_cost);
     if let Some(tick_cost) = tick_cost {
         state
             .platform
             .frame_pacer
             .record_frame_cost(tick_cost, false);
+        crate::app::spawn_frame_cost::tick(state, tick_cost, false);
     }
     record_replay_frame(
         state.match_state.match_diagnostics.replay_log.as_mut(),
@@ -2456,6 +2471,7 @@ fn finish_threaded_output(
         .platform
         .frame_pacer
         .record_frame_cost(tick_cost, true);
+    crate::app::spawn_frame_cost::tick(state, tick_cost, true);
     let committed = finish_simulation_frame(state, finish, output, Some(tick_cost), mouse_scroll);
     // The draw left this tick's radar-terrain marks with it
     // (`App::drain_radar_terrain_marks`); they go to the minimap now.
@@ -2886,7 +2902,7 @@ fn finish_simulation_frame(
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .apply_lifecycle_output(&output, local_house, ares)
+                .model.apply_lifecycle_output(&output, local_house, ares)
             {
                 state
                     .match_state
@@ -3054,7 +3070,7 @@ fn finish_simulation_frame(
             .match_state
             .match_presentation
             .sidebar_projection
-            .asked_types(&[]);
+            .model.asked_types(&[]);
         state.match_state.sim_runtime.ask_sidebar_types(&asked);
         // Main_Tick runs PlanMgr_Process_Frame after the frame's events
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
@@ -3280,7 +3296,7 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             TriggerEffect::SelectSidebarTab { index } => {
                 refresh_sidebar = true;
                 let presentation = &mut state.match_state.match_presentation;
-                if let Some(tab) = presentation.sidebar_projection.selectable_tab(*index) {
+                if let Some(tab) = presentation.sidebar_projection.model.selectable_tab(*index) {
                     // Trigger6E4100 bypasses the player-input lock, retaining
                     // each strip's independent scroll state.
                     presentation.active_sidebar_tab = tab;
@@ -3298,7 +3314,7 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .flash_cameo(
+                        .model.flash_cameo(
                             *category,
                             *type_index,
                             *duration,
@@ -3419,6 +3435,7 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
         })
         .unwrap_or((1, 1, crate::rules::foundation::Foundation::default()));
     // Log at info level once per type_id change so it's visible in console.
+    // Process-wide, like the log it throttles.
     static LAST_LOG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let hash: u64 = type_id
         .as_bytes()

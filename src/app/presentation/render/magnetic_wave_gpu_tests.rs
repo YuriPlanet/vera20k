@@ -3,7 +3,7 @@
 //! supplied native state; producer/lift admission is tested by its sim owner.
 
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectBodyDraw, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectBodyDraw, OwnedPlannedObject, lower_object_instances,
 };
 use crate::app::presentation::render::merge_passes::draw_native_object_pass;
 use crate::render::batch::BatchRenderer;
@@ -449,7 +449,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                     .iter()
                     .zip(&ids)
                     .map(|(&wave, &id)| {
-                        let mut parent = PlannedObjectInstance::object(
+                        let mut parent = OwnedPlannedObject::object(
                             order.object_draw(id, SpriteEncoding::Plain).unwrap(),
                             Vec::new(),
                         );
@@ -458,7 +458,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                     })
                     .collect::<Vec<_>>();
                 parents.reverse();
-                let mut layers = lower_object_instances(parents);
+                let mut layers = lower_object_instances(parents.into());
                 let air = &mut layers[3];
                 for draws in &air.surface_draws {
                     air.line_batches.push(terrain.prepare_surface_lines(

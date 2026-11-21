@@ -6,6 +6,7 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::rng::SimRng;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::sha256::sha256_hex;
 use serde_json::Value;
 use std::collections::HashMap;

@@ -98,7 +98,7 @@ fn event_8_springs_on_the_first_logic_poll_and_plays_action_99_at_the_waypoint()
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 1 }]
-            if sound_id == "TestAmbient" && *coordinate == WAYPOINT_COORD
+            if sound_id.resolve(None) == Some("TestAmbient") && *coordinate == WAYPOINT_COORD
     ));
     // Repeat 0: the Tag is gone, so later polls play nothing.
     sim.sound_events.clear_for_test();
@@ -129,7 +129,7 @@ fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play(
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, sound_id, world: at }]
-            if *anim_id == custom_sound_owner(40) && sound_id == "TestAmbient" && *at == world
+            if *anim_id == custom_sound_owner(40) && sound_id.resolve(None) == Some("TestAmbient") && *at == world
     ));
     // PlayAt on each visit drives the handle; no 750D40 owner coordinate.
     assert_eq!(
@@ -208,7 +208,7 @@ fn action_99_takes_the_cell_terrain_without_a_building_and_its_uninit_detaches()
         sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, sound_id, world }]
             if *anim_id == custom_sound_owner(41)
-                && sound_id == "TestAmbient"
+                && sound_id.resolve(None) == Some("TestAmbient")
                 && (world.x, world.y, world.z) == (WAYPOINT_COORD.x, WAYPOINT_COORD.y, 0)
     ));
 
@@ -314,7 +314,7 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
         assert!(matches!(
             sim.sound_events.as_slice(),
             [SimSoundEvent::AnimationStarted { anim_id, sound_id, world: at }]
-                if *anim_id == ambient_sound_owner(50) && sound_id == "CowAmbient" && *at == world
+                if *anim_id == ambient_sound_owner(50) && sound_id.name_in(&rules) == "CowAmbient" && *at == world
         ));
     }
     // A type without AmbientSound plays nothing.
@@ -400,8 +400,8 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         assert!(matches!(events, [
             SimSoundEvent::AnimationStarted { anim_id: ambient, sound_id, world },
             SimSoundEvent::AnimationStarted { anim_id: custom, sound_id: custom_sound, .. },
-        ] if *ambient == ambient_sound_owner(id) && sound_id == "OreMineExtract"
-            && *custom == custom_sound_owner(id) && custom_sound == "CowAmbient"
+        ] if *ambient == ambient_sound_owner(id) && sound_id.name_in(&rules) == "OreMineExtract"
+            && *custom == custom_sound_owner(id) && custom_sound.name_in(&rules) == "CowAmbient"
             && (world.x, world.y, world.z) == (WAYPOINT_COORD.x, WAYPOINT_COORD.y, 0)));
     };
     starts(sim.sound_events.as_slice());
@@ -762,7 +762,7 @@ fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain(
             if sound.is_some() {
                 assert!(
                     matches!(sim.sound_events.as_slice(), [SimSoundEvent::VocAtCoord { sound_id, coordinate, flags:0 }]
-                    if sound_id=="TestAmbient" && [coordinate.x,coordinate.y,coordinate.z]==expected)
+                    if sound_id.resolve(None)==Some("TestAmbient") && [coordinate.x,coordinate.y,coordinate.z]==expected)
                 );
             } else {
                 assert!(
@@ -783,10 +783,10 @@ fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags(
             poll(&mut sim);
             match kind {
                 19 => assert!(
-                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocCentered {sound_id}] if sound_id=="CowAmbient")
+                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocCentered {sound_id}] if sound_id.resolve(None)==Some("CowAmbient"))
                 ),
                 98 => assert!(
-                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:0}] if sound_id=="CowAmbient" && *coordinate==WAYPOINT_COORD)
+                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:0}] if sound_id.resolve(None)==Some("CowAmbient") && *coordinate==WAYPOINT_COORD)
                 ),
                 99 => {
                     // Parameter11 leaves +44 at its constructor slot0;
@@ -801,7 +801,7 @@ fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags(
                         WAYPOINT_COORD
                     };
                     assert!(
-                        matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:1}] if sound_id=="CowAmbient" && *coordinate==expected)
+                        matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:1}] if sound_id.resolve(None)==Some("CowAmbient") && *coordinate==expected)
                     );
                 }
                 _ => unreachable!(),

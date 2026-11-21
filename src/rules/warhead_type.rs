@@ -310,6 +310,19 @@ pub struct WarheadType {
     /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
     /// mounted by no stock weapon.
     pub em_effect: bool,
+    /// Tiberian Sun's `LimpetFactor=` (docs/ts-limpets.md): the speed a
+    /// limpeted vehicle loses, in percent. Firestorm 2.0
+    /// `WarheadTypeClass::Read_INI @ 0x0066EE30` reads it on every pass
+    /// (`0x0066F15B..0x0066F19F`) through `INIClass::Get_Double @ 0x004DD970`
+    /// (gamemd's ReadDouble: `35%` is 0.35), defaulted to the current int,
+    /// and truncates it with `__ftol @ 0x006B2020` into WarheadType+0xCC; the
+    /// constructor zeroes it (`0x0066EBA4`). Any nonzero value turns a shot
+    /// into a limpet attach (`sim::limpet`), so `35%` truncates to 0 and
+    /// fires as an ordinary bullet.
+    pub limpet_factor: i32,
+    /// Tiberian Sun Firestorm's web keys (`docs/ts-webs.md`), projected from
+    /// the Rules passes. `None` is the constructor's: not `Webby=`.
+    pub web: Option<WarheadWeb>,
 
     // --- List fields ---
     /// `[VoxelAnims]` type names thrown on detonation.
@@ -411,6 +424,59 @@ pub struct WarheadType {
     /// `SplashList.*`, `CreateAnimsOnZeroDamage`, `Conventional.IgnoreUnits`).
     #[cfg(feature = "phobos")]
     pub phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules,
+}
+
+/// Tiberian Sun Firestorm's web keys of one warhead (`docs/ts-webs.md`).
+/// gamemd reads none of them; Firestorm 2.0 `WarheadTypeClass::Read_INI`
+/// `0x0066EE30` reads them through `INIClass::Get_Bool` `0x004DE0C0` and
+/// `Get_Int` `0x004DD0C0`, the same readers as gamemd's `ReadBool` and
+/// `ReadInt`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct WarheadWeb {
+    /// `Webby=` (WarheadType `+0xD5`): a detonation webs infantry instead of
+    /// doing area damage.
+    pub webby: bool,
+    /// `WebDuration=` (`+0xC0`), frames.
+    pub duration: i32,
+    /// `WebDurationVariation=` (`+0xC4`), frames either side of the duration.
+    pub duration_variation: i32,
+    /// `WebRadius=` (`+0xC8`), cells.
+    pub radius: i32,
+}
+
+impl WarheadWeb {
+    /// Constructor `0x0066EB10`: `Webby` false (`0x0066EBB6`), `WebDuration`
+    /// 300 (`0x0066EB86`), `WebDurationVariation` 25 (`0x0066EB90`) and
+    /// `WebRadius` 2 (`0x0066EB9A`).
+    pub const CONSTRUCTED: Self = Self {
+        webby: false,
+        duration: 300,
+        duration_variation: 25,
+        radius: 2,
+    };
+
+    /// One Rules pass of `Read_INI` `0x0066F0FE..0x0066F15B`: `Webby` with its
+    /// current value as default, then, only when the value it now holds is
+    /// true (`0x0066F10B`), the three numbers with theirs. `None` stands for
+    /// the constructor's values, so a game without webs keeps no state.
+    pub(crate) fn read_pass(current: Option<Self>, section: &IniSection) -> Option<Self> {
+        let mut web = current.unwrap_or(Self::CONSTRUCTED);
+        web.webby = section.read_bool("Webby", web.webby);
+        if web.webby {
+            web.duration = section.read_int("WebDuration", web.duration);
+            web.duration_variation =
+                section.read_int("WebDurationVariation", web.duration_variation);
+            web.radius = section.read_int("WebRadius", web.radius);
+        }
+        (web != Self::CONSTRUCTED).then_some(web)
+    }
+}
+
+impl WarheadType {
+    /// The web keys of a `Webby=` warhead.
+    pub fn webby(&self) -> Option<&WarheadWeb> {
+        self.web.as_ref().filter(|web| web.webby)
+    }
 }
 
 /// Phobos `AEAttachInfoTypeClass` as a warhead carries it: the AE lists a
@@ -720,6 +786,8 @@ impl WarheadType {
             bomb_disarm: section.read_bool("BombDisarm", false),
             nuke_maker: section.read_bool("NukeMaker", false),
             em_effect: false,
+            limpet_factor: X87Chop53::ftol_f64_low_masked(section.read_double("LimpetFactor", 0.0)),
+            web: None,
 
             // List fields
             debris_types: Vec::new(),

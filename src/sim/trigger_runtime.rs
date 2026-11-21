@@ -337,7 +337,10 @@ pub(crate) use module_events::{
     StockClass, StockInput, StockReading, stock_class, stock_poll_due, value_filters_actor_house,
     value_names_house,
 };
-pub(crate) use module_triggers::{DeferredFiring, ModuleTrigger, ModuleTriggers, TriggerScope};
+pub(crate) use module_triggers::{
+    DeferredFiring, MAX_BACKLOG_RECORDS, MAX_QUEUED_RECORDS, MAX_RECORDS_PER_FRAME, ModuleTrigger,
+    ModuleTriggers, TriggerScope,
+};
 
 #[cfg(test)]
 use definitions::event_classification;
@@ -793,7 +796,9 @@ impl TriggerRuntime {
         }
         if let Some(tag) = tag {
             self.cell_tags.insert(cell, tag);
-            let live = self.tags[tag].as_mut().unwrap();
+            let live = self.tags[tag]
+                .as_mut()
+                .expect("a Tag handed to a cell is a live Tag");
             live.refs = live.refs.wrapping_add(1);
             #[cfg(any(test, feature = "dev-overlays"))]
             self.trace_refs(tag);
@@ -814,7 +819,9 @@ impl TriggerRuntime {
         }
         if let Some(tag) = tag {
             self.attachments.insert(attachment, tag);
-            let live = self.tags[tag].as_mut().unwrap();
+            let live = self.tags[tag]
+                .as_mut()
+                .expect("a Tag handed to an attachment is a live Tag");
             if matches!(attachment, TagAttachment::Object(_)) {
                 live.refs = live.refs.wrapping_add(1);
                 #[cfg(any(test, feature = "dev-overlays"))]

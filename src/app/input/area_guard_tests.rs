@@ -301,12 +301,12 @@ fn area_guard_ingress_matches_native_order_current_cells_voices_and_rng() {
                         speaker_id,
                         sound_id,
                     } => {
-                        voices.queue(*speaker_id, sound_id);
+                        voices.queue(*speaker_id, sound_id.name_in(&f.rules));
                         let name = f.ids.iter().find(|(_, id)| **id == *speaker_id).unwrap().0;
-                        json!({"kind":"QueueVoice", "actor":name, "sound":sound_id})
+                        json!({"kind":"QueueVoice", "actor":name, "sound":sound_id.name_in(&f.rules)})
                     }
                     GameSoundEvent::UiSound { sound_id } => {
-                        json!({"kind":"GuardSound", "actor":null, "sound":sound_id})
+                        json!({"kind":"GuardSound", "actor":null, "sound":sound_id.name_in(&f.rules)})
                     }
                     other => panic!("unexpected Guard event {other:?}"),
                 })

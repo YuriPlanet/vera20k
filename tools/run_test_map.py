@@ -95,6 +95,28 @@ MAPS: tuple[TestMap, ...] = (
             "4",
         ),
     ),
+    TestMap(
+        "battle",
+        "tests/maps/battle.map",
+        "battle",
+        "The scale battle in small: the match shape with 60 units for the house "
+        "at each of its four starts, patrolling the fronts between them and "
+        "replaced as squads fall (tools.scale_battle).",
+        regenerate=(
+            "python",
+            "-m",
+            "tools.scale_map",
+            "tests/maps/battle.map",
+            "--size",
+            "80",
+            "--starts",
+            "4",
+            "--battle",
+            "60",
+        ),
+        # The floor sim-bench holds this small battle to.
+        extra=("--battle-units", "200"),
+    ),
 )
 
 BY_NAME = {entry.name: entry for entry in MAPS}
