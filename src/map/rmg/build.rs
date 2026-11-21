@@ -1700,7 +1700,7 @@ mod tests {
         assert_eq!(ore(&first), ore(&variant(1)));
     }
 
-    /// VERA extension: the exported `.yrm` text of a generated map parses
+    /// VERA extension: the exported text of a generated map parses
     /// back to the same cells, overlays, objects and starts.
     #[test]
     fn exported_map_text_reads_back_the_generated_map() {

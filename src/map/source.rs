@@ -7,6 +7,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::panic))]
 
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -18,6 +19,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::util::sha256::sha256_hex;
 
 const MAP_EXTENSIONS: [&str; 5] = ["mmx", "yro", "map", "mpr", "yrm"];
+pub(super) const CUSTOM_MAP_EXTENSIONS: &[&str] = &["map", "yrm", "mpr"];
 pub const MAX_TRANSFER_MAP_BYTES: usize = 8 * 1024 * 1024;
 mod cache;
 mod saved_path;
@@ -907,7 +909,7 @@ fn install_received_asset_with_limits(
 }
 
 /// The name a received or downloaded map is kept under in VERA's Maps folder: the
-/// last part of `host_file` with `.yrm` for its extension. Refused when that
+/// last part of `host_file` with `.map` for its extension. Refused when that
 /// would be hidden (a leading dot) or hold a character Windows forbids in file
 /// names; a name Windows reserves is no logical name ([`is_logical_name`]). A
 /// name that passes is one every platform can save.
@@ -925,7 +927,18 @@ pub fn kept_map_file_name(host_file: &str) -> Result<String> {
                 && !stem.contains(['<', '>', '"', '|', '?', '*'])
         })
         .ok_or_else(|| anyhow::anyhow!("received map has no file name"))?;
-    Ok(format!("{stem}.yrm"))
+    Ok(format!("{stem}.map"))
+}
+
+/// File types that can hold an ordinary custom map in VERA's Maps folder.
+pub fn is_custom_map_name(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            CUSTOM_MAP_EXTENSIONS
+                .iter()
+                .any(|known| ext.eq_ignore_ascii_case(known))
+        })
 }
 
 /// Whether `path` names a loose map file by its extension (`.yrm`, `.map`
@@ -948,47 +961,139 @@ pub struct KeptMap {
 
 /// The names a map is kept under, in the order [`keep_received_map`] tries
 /// them: `kept_name`, which [`kept_map_file_name`] gave, then
-/// `<stem>-<first 8 hex of its SHA-256>.yrm` for when another map holds the
+/// `<stem>-<first 8 hex of its SHA-256>.map` for when another map holds the
 /// first.
 pub fn kept_map_names(kept_name: &str, sha256: &str) -> [String; 2] {
-    let stem = kept_name.strip_suffix(".yrm").unwrap_or(kept_name);
+    let stem = kept_name.strip_suffix(".map").unwrap_or(kept_name);
     let prefix: String = sha256.chars().take(8).collect();
-    [kept_name.to_owned(), format!("{stem}-{prefix}.yrm")]
+    [kept_name.to_owned(), format!("{stem}-{prefix}.map")]
+}
+
+/// Snapshot of the folders a loose map lookup searches, highest priority first.
+/// Index by length so offering a whole online catalog only reads plausible matches.
+#[derive(Default)]
+pub struct KeptMapFiles {
+    names: HashSet<String>,
+    by_length: HashMap<u64, Vec<MapCopy>>,
+}
+
+struct MapCopy {
+    path: PathBuf,
+    digest: std::cell::OnceCell<Option<String>>,
+}
+
+impl KeptMapFiles {
+    pub fn scan(folders: &[&Path]) -> Self {
+        let mut files = Self::default();
+        for folder in folders {
+            let mut stems = Vec::new();
+            for path in
+                crate::util::case_insensitive_path::native_listing(folder).unwrap_or_default()
+            {
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if is_loose_map_name(&path)
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    stems.push(stem.to_lowercase());
+                }
+                if files.names.insert(name.to_lowercase())
+                    && is_custom_map_name(&path)
+                    && !name.contains('\\')
+                    && kept_map_file_name(name).is_ok()
+                    && let Ok(meta) = crate::util::file_system::metadata(&path)
+                    && meta.is_file()
+                {
+                    files
+                        .by_length
+                        .entry(meta.len())
+                        .or_default()
+                        .push(MapCopy {
+                            path,
+                            digest: std::cell::OnceCell::new(),
+                        });
+                }
+            }
+            // local_map_path_in tries exact names before appended extensions in
+            // each folder. A stem can therefore shadow a file in a lower folder.
+            files.names.extend(stems);
+        }
+        files
+    }
+
+    pub fn contains_name(&self, name: &str) -> bool {
+        self.names.contains(&name.to_lowercase())
+    }
+
+    /// Return the matching copy under its actual name and case.
+    pub fn existing(&self, length: usize, sha256: &str) -> Option<KeptMap> {
+        let copies = self.by_length.get(&(length as u64))?;
+        copies.iter().find_map(|copy| {
+            // Several catalog entries can share a length. Hash each candidate
+            // only once in this scan, when one of those entries needs it.
+            let digest = copy.digest.get_or_init(|| {
+                let input = read_loose_map_input_bounded(&copy.path, Some(length)).ok()?;
+                let (bytes, digest) = input.source.physical_identity()?;
+                (bytes == length).then(|| digest.to_owned())
+            });
+            if digest.as_deref() != Some(sha256) {
+                return None;
+            }
+            Some(KeptMap {
+                path: copy.path.clone(),
+                name: copy.path.file_name()?.to_str()?.to_owned(),
+            })
+        })
+    }
 }
 
 /// Keeps a map downloaded or received in a room in VERA's `maps_dir`, never
 /// the retail installation; Choose Map lists it from there, so the player can
 /// host it later. `host_file` is the host's logical map name and `bytes` the
-/// verified file. The map is kept under the first of [`kept_map_names`] that
-/// no other map holds in either folder, so a player's file is never
-/// replaced. A file that already holds these bytes under either name is the
-/// kept map.
+/// verified file. An existing copy with the same bytes is reused under
+/// its original name. A new copy takes the first free name from [`kept_map_names`].
 pub fn keep_received_map(
     maps_dir: &Path,
     ra2_dir: &Path,
     host_file: &str,
     bytes: &[u8],
 ) -> Result<KeptMap> {
+    keep_received_map_with_names(maps_dir, ra2_dir, host_file, bytes, |_| false)
+}
+
+/// Also reserve names that are already selectable without a loose file, such as
+/// a catalog entry in a MIX archive.
+pub fn keep_received_map_with_names(
+    maps_dir: &Path,
+    ra2_dir: &Path,
+    host_file: &str,
+    bytes: &[u8],
+    occupied: impl Fn(&str) -> bool,
+) -> Result<KeptMap> {
     let name = kept_map_file_name(host_file)?;
-    for name in kept_map_names(&name, &sha256_hex(bytes)) {
-        if let Some(path) = mod_dir()
-            .into_iter()
-            .chain([ra2_dir, maps_dir])
-            .find_map(|dir| held_file(dir, &name))
+    let digest = sha256_hex(bytes);
+    let folders: Vec<_> = mod_dir().into_iter().chain([ra2_dir, maps_dir]).collect();
+    // Serialize desktop writers across the lookup and save, even when two rooms
+    // send identical bytes with different names. The browser VFS runs synchronously.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    let lock = (|| -> Result<std::fs::File> {
+        crate::util::file_system::create_dir_all(maps_dir)?;
+        let file = cache::open_regular(&maps_dir.join(".keep-map.lock"), true, true)?;
+        file.lock()?;
+        Ok(file)
+    })();
+    let files = KeptMapFiles::scan(&folders);
+    if let Some(kept) = files.existing(bytes.len(), &digest) {
+        return Ok(kept);
+    }
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    let _lock = lock?;
+    for name in kept_map_names(&name, &digest) {
+        if !files.contains_name(&name)
+            && !occupied(&name)
+            && write_kept_map(maps_dir, &name, bytes)?
         {
-            let same = read_loose_map_input_bounded(&path, Some(MAX_TRANSFER_MAP_BYTES))
-                .is_ok_and(|input| input.bytes.as_ref() == bytes);
-            if same {
-                let name = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or(&name)
-                    .to_owned();
-                return Ok(KeptMap { path, name });
-            }
-            continue;
-        }
-        if write_kept_map(maps_dir, &name, bytes)? {
             return Ok(KeptMap {
                 path: maps_dir.join(&name),
                 name,
@@ -998,19 +1103,8 @@ pub fn keep_received_map(
     anyhow::bail!("other maps already hold the names {name} and its alternative")
 }
 
-/// The file in `dir` that `name` names on a file system that ignores case,
-/// as macOS and Windows do: compared with Unicode case folding, not ASCII only.
-fn held_file(dir: &Path, name: &str) -> Option<PathBuf> {
-    let name = name.to_lowercase();
-    crate::util::file_system::read_dir(dir)
-        .ok()?
-        .filter_map(Result::ok)
-        .find(|entry| entry.file_name().to_string_lossy().to_lowercase() == name)
-        .map(|entry| entry.path())
-}
-
 /// Writes a new `name` in `maps_dir`; false when the file system says that
-/// name is already taken by a spelling [`held_file`] did not match.
+/// name is already taken by a spelling the directory scan did not match.
 fn write_kept_map(maps_dir: &Path, name: &str, bytes: &[u8]) -> Result<bool> {
     crate::util::file_system::create_dir_all(maps_dir)?;
     match crate::util::file_system::write_new(maps_dir.join(name), bytes) {
@@ -1254,15 +1348,15 @@ mod tests {
         let maps = vera.path().join("Maps");
         let map = b"[Basic]\nName=Frozen Lakes\nGameMode=standard\n";
         let kept = keep_received_map(&maps, game.path(), "Custom/FrozenLakes.map", map).unwrap();
-        assert_eq!(kept.name, "FrozenLakes.yrm");
+        assert_eq!(kept.name, "FrozenLakes.map");
         assert!(
-            !game.path().join("FrozenLakes.yrm").exists(),
+            !game.path().join("FrozenLakes.map").exists(),
             "nothing goes into the game folder"
         );
         // Found by name after the game folder, as every map lookup does.
         assert_eq!(
-            local_map_path_in(None, game.path(), Some(&maps), "FrozenLakes.yrm").unwrap(),
-            maps.join("FrozenLakes.yrm")
+            local_map_path_in(None, game.path(), Some(&maps), "FrozenLakes.map").unwrap(),
+            maps.join("FrozenLakes.map")
         );
         let record =
             crate::map::scenario_sources::loose_map_record(&kept.path, kept.name.clone(), 0, None)
@@ -1270,26 +1364,65 @@ mod tests {
         assert_eq!(record.display_name, "Frozen Lakes");
         // The same map again, in another case, is the file already kept.
         let again = keep_received_map(&maps, game.path(), "frozenlakes.YRM", map).unwrap();
-        assert_eq!(again.path, maps.join("FrozenLakes.yrm"));
+        assert_eq!(again.path, maps.join("FrozenLakes.map"));
         // Another map holding the name, in either folder and in any case
         // (Unicode too), stays as it is; this one takes its SHA-256 suffix.
-        let suffix = &sha256_hex(map)[..8];
-        game.write("lakes.YRM", b"[Basic]\nName=Mine\n");
-        let kept = keep_received_map(&maps, game.path(), "Lakes.yrm", map).unwrap();
-        assert_eq!(kept.name, format!("Lakes-{suffix}.yrm"));
+        let lakes = b"[Basic]\nName=Lakes\n";
+        let suffix = &sha256_hex(lakes)[..8];
+        game.write("lakes.MAP", b"[Basic]\nName=Mine\n");
+        let kept = keep_received_map(&maps, game.path(), "Lakes.yrm", lakes).unwrap();
+        assert_eq!(kept.name, format!("Lakes-{suffix}.map"));
         assert_eq!(
-            std::fs::read(game.path().join("lakes.YRM")).unwrap(),
+            std::fs::read(game.path().join("lakes.MAP")).unwrap(),
             b"[Basic]\nName=Mine\n"
         );
-        std::fs::write(maps.join("\u{fc}ber.yrm"), b"[Basic]\nName=Mine too\n").unwrap();
-        let kept = keep_received_map(&maps, game.path(), "\u{dc}ber.map", map).unwrap();
-        assert_eq!(kept.name, format!("\u{dc}ber-{suffix}.yrm"));
+        let uber = b"[Basic]\nName=Uber\n";
+        let suffix = &sha256_hex(uber)[..8];
+        std::fs::write(maps.join("\u{fc}ber.map"), b"[Basic]\nName=Mine too\n").unwrap();
+        let kept = keep_received_map(&maps, game.path(), "\u{dc}ber.map", uber).unwrap();
+        assert_eq!(kept.name, format!("\u{dc}ber-{suffix}.map"));
         assert_eq!(
-            std::fs::read(maps.join("\u{fc}ber.yrm")).unwrap(),
+            std::fs::read(maps.join("\u{fc}ber.map")).unwrap(),
             b"[Basic]\nName=Mine too\n"
         );
         assert!(keep_received_map(&maps, game.path(), "../Escape.yrm", map).is_err());
         assert!(keep_received_map(&maps, game.path(), "What?.yrm", map).is_err());
+    }
+
+    #[test]
+    fn exports_and_downloads_reuse_identical_legacy_files_before_creating_a_map() {
+        let game = TestDirectory::new("old-map-game");
+        let maps = TestDirectory::new("old-map-copies");
+        let export = b"[Basic]\nName=Generated\n";
+        let legacy = format!("rmap42-{}.YRM", &sha256_hex(export)[..8]);
+        maps.write(&legacy, export);
+        let other = b"[Basic]\nName=Manually renamed\n";
+        maps.write("My favorite.MpR", other);
+        let kept = keep_received_map(maps.path(), game.path(), "rmap42", export).unwrap();
+        assert_eq!(kept.name, legacy);
+        let kept =
+            keep_received_map(maps.path(), game.path(), "Community/Arena.yrm", other).unwrap();
+        assert_eq!(kept.name, "My favorite.MpR");
+        assert!(!maps.path().join("Arena.map").exists());
+        assert!(!maps.path().join("rmap42.map").exists());
+    }
+
+    #[test]
+    fn simultaneous_downloads_under_different_names_keep_one_map() {
+        let game = TestDirectory::new("simultaneous-map-game");
+        let maps = TestDirectory::new("simultaneous-map-copies");
+        let start = std::sync::Barrier::new(2);
+        let save = |name| {
+            start.wait();
+            keep_received_map(maps.path(), game.path(), name, b"[Basic]\nName=Arena\n")
+                .unwrap()
+                .path
+        };
+        std::thread::scope(|scope| {
+            let first = scope.spawn(|| save("Arena.map"));
+            let second = save("Arena Edition.mpr");
+            assert_eq!(first.join().unwrap(), second);
+        });
     }
 
     #[test]

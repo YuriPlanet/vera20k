@@ -277,7 +277,10 @@ fn append_loose_map_records(
             log::warn!("Could not list {}: {error}", downloaded.display());
             Vec::new()
         });
-        files.extend(loose_files_with_extensions(paths, &["yrm", "map", "mpr"]));
+        files.extend(loose_files_with_extensions(
+            paths,
+            crate::map::source::CUSTOM_MAP_EXTENSIONS,
+        ));
     }
     let mut listed: HashSet<_> = records
         .iter()

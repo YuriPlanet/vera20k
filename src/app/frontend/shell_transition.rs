@@ -432,6 +432,15 @@ pub(crate) struct ShellExit {
     completed_at: Option<Instant>,
 }
 
+impl ShellExit {
+    /// Keep an accepted map bound to its local row during the closing slide.
+    pub(crate) fn remap_choose_map_selection(&mut self, remap: impl FnOnce(usize) -> usize) {
+        if let ShellExitThen::ChooseMapUse(selection) = &mut self.then {
+            selection.record_index = selection.record_index.map(remap);
+        }
+    }
+}
+
 /// After tearing `0x94` down, state 8 waits while the campaign voice still
 /// plays, at most this long (`0x0052E036..0x0052E089`, `0xBB8` ms).
 const CAMPAIGN_VOICE_WAIT: Duration = Duration::from_millis(3000);

@@ -475,12 +475,13 @@ room.
 
 `GET /v1/library/catalog` lists every library map:
 `{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
-the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `header`
+the map's `[Basic] Name=`, `file_name` its catalog filename, and `header`
 the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
 `[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
 `file_name` without case: one whose name would, or whose name has nothing left to save
-under, ends in `-<first 8 hex of its SHA-256>.yrm`. The game skips an entry whose
-`file_name` it would not save as it is: one not ending in `.yrm`, or with a path, a colon,
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The service supplies lowercase
+`.yrm` catalog filenames for older games. Current games accept `.map`, `.yrm` and
+`.mpr` in any case. They skip entries with an unsupported extension, a path, a colon,
 a control character, a leading dot, a trailing dot or space, another character Windows
 forbids, or a name Windows reserves. The catalog carries
 `ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
@@ -493,12 +494,13 @@ network; the service keeps no player, session or address with a map. The game re
 when the player goes online and keeps it for the run once it arrives; a failed read is
 tried once more in that visit, and again on the next. In an online room (not one that
 takes only official maps), Choose Map lists under its Online Maps row each map the
-player does not have, starred maps first: a file of its name in the game folder or
-VERA's `Maps` folder that holds its bytes means the player has it. Use Map on one asks
+player does not have, starred maps first. An existing custom map in the selected mod,
+game folder or VERA's `Maps` folder is identified by its length and SHA-256,
+including files the player renamed. Use Map on a missing map asks
 to download it, checks its length and SHA-256, and saves it in VERA's `Maps` folder,
-where it is an ordinary map in every game type's list. A map whose name another map
-already holds is saved as `<stem>-<first 8 hex of its SHA-256>.yrm`; no file is ever
-replaced.
+where it is an ordinary map in the applicable game types. The game saves a new
+file as `<stem>.map`, or `<stem>-<first 8 hex of its SHA-256>.map` when the name
+is taken. Identical files keep their existing name and extension.
 
 The match admission is retained independently of channel membership until
 finish/timeout. The original-style shell leaves its game room at the start and

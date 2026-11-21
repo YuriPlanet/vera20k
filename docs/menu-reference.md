@@ -53,7 +53,7 @@ Launch
     │   │           │     Tech Buildings, Derelicts, Damage, Civilians, Animals, Neutral Defenders
     │   │           ├─ Extras (3 pages): Share Code, Use a Code, Previous Map, My Preset【Maps/VeraPreset1..5.vpr】;
     │   │           │     Ore Fields, Towns, Base Room, Sea Access, Fair Derricks, Centre Gems, Roads, Mood, War Damage, Countryside, Landmark, Town Fences
-    │   │           ├─ Buttons: Surprise Me, Preview Map, Use Map, Save/Load/Delete Map, Export Map (.yrm),
+    │   │           ├─ Buttons: Surprise Me, Preview Map, Use Map, Save/Load/Delete Map, Export Map (.map),
     │   │           │         Fair Starts On/Off, Presets (1v1 Duel / 30-Player Brawl / City War / Islands / Team Battle / My Preset),
     │   │           │         Basic/Advanced/Extras switch, Cancel
     │   │           └─ Seed browser: list, description, Load/Save/Delete, Back【*.SED in the Maps folder】
