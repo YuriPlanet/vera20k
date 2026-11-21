@@ -141,7 +141,7 @@ fn dispatch(runtime: &mut crate::sim::runtime::SimRuntime, miner: u64) -> Option
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = runtime.simulation.entities().get(miner).unwrap();
@@ -170,6 +170,7 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
         sim.entities()
             .get(id)
             .unwrap()
+            .seldom
             .discovery
             .owned_by_current_house(),
         sim.entities().get(id).unwrap().owner() == current,
