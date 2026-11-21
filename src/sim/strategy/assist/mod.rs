@@ -734,8 +734,40 @@ impl Brain for AssistBrain {
                     );
                 }
             }
+            // Why the units that cannot be ordered cannot be: a limbo unit is
+            // alive, owned and undamaged, so the count alone says nothing about
+            // whether it is garrisoned, still inside its factory, or parked
+            // waiting for an exit cell. The mission is the one field the census
+            // already carries that separates those.
+            let mut limbo_missions: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
+            for unit in &self.census.units {
+                if unit.traits.combat && !unit.orderable {
+                    let mission = unit.mission.known().map_or_else(
+                        || format!("raw:{}", unit.mission.raw()),
+                        |mission| format!("{mission:?}"),
+                    );
+                    let kind = obs
+                        .object_type(rules, unit.type_id)
+                        .map_or_else(|| "?".to_string(), |ty| ty.id.as_str().to_string());
+                    *limbo_missions
+                        .entry(format!("{kind}/{mission}"))
+                        .or_default() += 1;
+                }
+            }
+            let mut limbo_missions: Vec<(usize, String)> = limbo_missions
+                .into_iter()
+                .map(|(mission, count)| (count, mission))
+                .collect();
+            limbo_missions
+                .sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+            let limbo_missions: Vec<String> = limbo_missions
+                .into_iter()
+                .take(3)
+                .map(|(count, mission)| format!("{mission}:{count}"))
+                .collect();
             log::info!(
-                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{}",
+                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{} limbo_missions=[{}]",
                 self.census.describe(),
                 unclaimed,
                 roster.join(","),
@@ -756,7 +788,8 @@ impl Brain for AssistBrain {
                 }),
                 budget.income.map_or(-1, |rate| rate),
                 seen,
-                self.census.enemies.len()
+                self.census.enemies.len(),
+                limbo_missions.join(",")
             );
         }
         expand::deploy_yard_maker(self, rules, obs, out);

@@ -88,6 +88,17 @@ const PUSHING: &[TrackedKind] = &[
 /// for nothing.
 const HOME_REACH_CELLS: i32 = 12;
 
+/// How many of the house's soldiers may be inside buildings at once.
+///
+/// A garrisoned rifleman is in limbo: `order_actor_admits` refuses it, and no
+/// step here brings it back out, so every unit sent in leaves the army for
+/// good. Measured on Death.mmx (America, seed 24301, 36000 ticks) the uncapped
+/// rule put 28-40 riflemen into `Mission::Capture` and out of the playfield,
+/// which is where the 56-unit gap between the old `fighters=99` and the 50
+/// units the brain could actually move came from. Retail's own base-defence
+/// teams hold a handful of structures; the rest of the army stays outside.
+const GARRISON_MAX: usize = 4;
+
 // Why there is no boarding step here. Wiring one — an idle rifleman climbing
 // into his own empty carrier, a correct Enter click (`Goal::Enter` and
 // `can_enter_transport` both answered as expected) — cost the reference match
@@ -705,9 +716,18 @@ pub(super) fn garrison(
     if billets.is_empty() {
         return;
     }
+    // The count is exact, not a guess from the census: a garrisoned unit is a
+    // passenger of the building it walked into (`Observation::inside_transport`),
+    // so a rifleman still in his factory's limbo is not mistaken for one.
+    let mut garrisoned = brain
+        .census
+        .units
+        .iter()
+        .filter(|unit| unit.traits.occupier && obs.inside_transport(unit.entity_id).is_some())
+        .count();
     let mut issued = 0;
     for unit in &brain.census.units {
-        if issued >= FORCE_ORDERS_PER_FRAME {
+        if issued >= FORCE_ORDERS_PER_FRAME || garrisoned >= GARRISON_MAX {
             break;
         }
         if !unit.traits.occupier
@@ -756,6 +776,7 @@ pub(super) fn garrison(
             },
         ) {
             issued += 1;
+            garrisoned += 1;
         }
     }
 }

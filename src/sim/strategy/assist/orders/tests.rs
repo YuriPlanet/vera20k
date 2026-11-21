@@ -676,6 +676,88 @@ fn riflemen_garrison_a_bunker_of_their_own() {
     );
 }
 
+/// A garrison is a handful of buildings, not the army. A rifleman that walks
+/// into a structure is in limbo, where `order_actor_admits` refuses it and no
+/// step here brings it back out, so an uncapped garrison is a slow leak: the
+/// Death.mmx run at seed 24301 put 28-40 riflemen into `Mission::Capture` and
+/// the army the brain could move fell from 99 to 50 while it believed it had
+/// 106. Four billets are worth holding; the rest of the infantry is worth more
+/// outside them.
+#[test]
+fn a_garrison_is_capped_so_the_army_keeps_its_riflemen() {
+    let Some((mut sim, rules)) = arena(0xA17) else {
+        return;
+    };
+    let owner = sim.interner.intern("Americans");
+    for step in 0..8 {
+        sim.spawn_object("E1", "Americans", 8 + step, 20, 64, &rules)
+            .expect("a GI");
+    }
+    let bunker = sim
+        .spawn_object("NABNKR", "Americans", 12, 12, 64, &rules)
+        .expect("a battle bunker");
+
+    let obs = Observation::new(&sim, owner);
+    let mut brain = AssistBrain::new(0xA17);
+    let mut out = Outbox::default();
+    brain.rebuild_census(&rules, &obs);
+    garrison(&mut brain, &rules, &obs, &mut out);
+
+    let sent: Vec<u64> = out
+        .orders
+        .iter()
+        .filter(|order| matches!(order.goal, Goal::Capture { target } if target == bunker))
+        .map(|order| order.actor)
+        .collect();
+    assert_eq!(
+        sent.len(),
+        GARRISON_MAX,
+        "only a handful garrison; the rest stay in the army: {:?}",
+        sent
+    );
+}
+
+/// A rifleman already inside counts against the cap. The count is taken from
+/// `Observation::inside_transport`, so a unit standing in a factory's limbo is
+/// not mistaken for one and cannot spend the allowance.
+#[test]
+fn riflemen_already_inside_count_against_the_garrison_cap() {
+    let Some((mut sim, rules)) = arena(0xA17) else {
+        return;
+    };
+    let owner = sim.interner.intern("Americans");
+    let bunker = sim
+        .spawn_object("NABNKR", "Americans", 12, 12, 64, &rules)
+        .expect("a battle bunker");
+    for step in 0..GARRISON_MAX {
+        let gi = sim
+            .spawn_object("E1", "Americans", 20 + step as u16, 20, 64, &rules)
+            .expect("a GI");
+        sim.substrate
+            .entities
+            .get_mut(gi)
+            .expect("the GI")
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                bunker, false,
+            ));
+    }
+    let outside = sim
+        .spawn_object("E1", "Americans", 30, 20, 64, &rules)
+        .expect("a GI still outside");
+
+    let obs = Observation::new(&sim, owner);
+    let mut brain = AssistBrain::new(0xA17);
+    let mut out = Outbox::default();
+    brain.rebuild_census(&rules, &obs);
+    garrison(&mut brain, &rules, &obs, &mut out);
+
+    assert!(
+        !out.orders.iter().any(|order| order.actor == outside),
+        "a full garrison takes no one else: {:?}",
+        out.orders
+    );
+}
+
 /// A charged power is fired at the enemy's Construction Yard. Native has
 /// this decision (`AI_TryFireSW`), but it is gated on the house not being
 /// human — and a brain-driven house is a human's, so without this step the
