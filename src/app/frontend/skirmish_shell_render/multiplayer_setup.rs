@@ -435,8 +435,8 @@ pub(crate) fn render_multiplayer_setup(
             }
         }
         // VERA's team bar under the roster, in its own box: the Teams count
-        // and the host's Room size (drawn with the room's trackbars), Team
-        // Starts, Team Colors and, online, Balance.
+        // and the host's Room size (drawn with the room's trackbars), and the
+        // host's two lists (drawn with the room's combos).
         if let Some(bar) = layout.team_bar.filter(|_| view.team_bar()) {
             push_rect_outline(
                 &mut controls,
@@ -445,8 +445,6 @@ pub(crate) fn render_multiplayer_setup(
                 ROSTER_BOX_RGB,
                 SHELL_CONTROL_DEPTH,
             );
-            // Its art at 78% size, its words at the roster's.
-            let small = layout.control_scale(BALANCE);
             for (id, rect, caption) in [
                 (TEAM_COUNT, layout.teams_label, "VERA:Teams"),
                 (ROOM_SIZE, layout.room_size_label, "VERA:RoomSize"),
@@ -461,41 +459,6 @@ pub(crate) fn render_multiplayer_setup(
                         ROSTER_TEXT_SCALE,
                     ));
                 }
-            }
-            for (id, rect, caption) in [
-                (TEAM_STARTS, layout.team_starts, "VERA:TeamStarts"),
-                (TEAM_COLORS, layout.team_colors, "VERA:TeamColors"),
-                (BALANCE, layout.balance, "VERA:Balance"),
-            ] {
-                let Some(rect) = rect else {
-                    continue;
-                };
-                let enabled = view.enabled(id);
-                let pressed = enabled && ui.buttons.is_pressed(id);
-                controls.extend(shell_paint::paint_modal_sprites(
-                    None,
-                    type3_button_frames(atlas),
-                    rect,
-                    &[ModalButton {
-                        rect,
-                        pressed,
-                        enabled,
-                    }],
-                    small,
-                    shell_paint::ModalDepths {
-                        background: SHELL_CONTROL_DEPTH,
-                        button: SHELL_CONTROL_DEPTH,
-                        text: SHELL_CONTROL_TEXT_DEPTH,
-                    },
-                ));
-                texts.push(sized(
-                    &crate::i18n::tr(caption),
-                    rect,
-                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                    super::text::button_label_color_for_disabled(!enabled),
-                    SHELL_CONTROL_TEXT_DEPTH,
-                    ROSTER_TEXT_SCALE,
-                ));
             }
         }
         // VERA's roster marks the local player's row with a dark band.
@@ -517,7 +480,8 @@ pub(crate) fn render_multiplayer_setup(
                 continue;
             };
             let selected = combo.selected.and_then(|index| combo.choices.get(index));
-            if layout.roster && !matches!(combo.id, CAMPAIGN_SERIES | CAMPAIGN_STAGE) {
+            let team_bar = matches!(combo.id, TEAM_MENU | SEAT_MENU);
+            if layout.roster && !team_bar && !matches!(combo.id, CAMPAIGN_SERIES | CAMPAIGN_STAGE) {
                 push_roster_cell(
                     &mut controls,
                     &mut texts,
@@ -530,6 +494,8 @@ pub(crate) fn render_multiplayer_setup(
                 );
                 continue;
             }
+            // The team bar's lists: their words at the roster's size.
+            let size = if team_bar { roster_size } else { 1.0 };
             paint_control(
                 &mut controls,
                 &atlas.control_chrome(),
@@ -551,12 +517,13 @@ pub(crate) fn render_multiplayer_setup(
                 if let Some((_, badge)) = player_badge(atlas, &view, &layout, combo.id) {
                     face.w = badge.x - face.x;
                 }
-                texts.push(text(
+                texts.push(sized(
                     &item.text,
                     face,
                     ShellAlign::V_CENTER,
                     super::text::combo_face_text_color(!view.enabled(combo.id)),
                     SHELL_CONTROL_TEXT_DEPTH,
+                    size,
                 ));
             }
         }
@@ -854,7 +821,11 @@ pub(crate) fn render_multiplayer_setup(
                             RectPx::new(rect.x + 3, rect.y, rect.w - 6, rect.h)
                         }),
                         ShellAlign::V_CENTER,
-                        label_rgb,
+                        if item.greyed {
+                            super::text::combo_face_text_color(true)
+                        } else {
+                            label_rgb
+                        },
                         SHELL_DROPDOWN_TEXT_DEPTH,
                         roster_size,
                     ));

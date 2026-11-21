@@ -1065,8 +1065,8 @@ stay as they are. The host's game moves each named player to that team, as their
 choice would, and publishes the options. A game that ignores the event leaves the teams
 to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
 teams, AI players, fewer than two players, or teams already as even as they can be.
-Anyone else typing `/balance` hears that only the host can. The host's Balance button
-sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+Anyone else typing `/balance` hears that only the host can. The host's Balance teams, in
+Quick Team Setup, sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
 the `balance` command 5 seconds after who plays or the Teams count last changed; the
 lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
 command from anyone but the host with 403 `forbidden`. Current games never send it.

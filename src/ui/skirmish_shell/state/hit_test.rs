@@ -81,6 +81,13 @@ pub fn hovered_shell_control(
             return Some(SkirmishHoverTarget::Trackbar(id));
         }
     }
+    for id in [SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu] {
+        if combo_rect(layout, state, id)
+            .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
+        {
+            return Some(SkirmishHoverTarget::ComboFace(id));
+        }
+    }
     for slot in 0..layout.shown_rows {
         let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
@@ -323,6 +330,8 @@ fn status_help_key_for_combo(id: SkirmishComboId) -> Option<&'static str> {
         SkirmishComboId::Color(_) => Some("STT:SkirmishComboColor"),
         SkirmishComboId::Start(_) => Some("STT:HostComboStart"),
         SkirmishComboId::Team(_) => Some("STT:HostComboTeam"),
+        SkirmishComboId::TeamMenu => Some("VERA:QuickTeamSetupHelp"),
+        SkirmishComboId::SeatMenu => Some("VERA:BulkSeatActionsHelp"),
     }
 }
 

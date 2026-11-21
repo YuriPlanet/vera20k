@@ -726,6 +726,7 @@ fn choice(value: i32, text: String) -> crate::ui::multiplayer_setup::SetupChoice
         value,
         text,
         swatch: None,
+        greyed: false,
     }
 }
 

@@ -105,6 +105,13 @@ pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> Str
             LaunchStartPosition::Position(idx) => (idx + 1).to_string(),
         },
         SkirmishComboItem::Team(team) => team_label(state, team),
+        SkirmishComboItem::TeamTool { tool, refusal } => {
+            crate::ui::team_tools::team_tool_text(tool, refusal)
+        }
+        SkirmishComboItem::TeamHeading => crate::ui::team_tools::presets_heading(),
+        SkirmishComboItem::SeatAction { action, .. } => {
+            crate::ui::team_tools::seat_action_text(action)
+        }
     }
 }
 
@@ -714,6 +721,27 @@ pub(super) fn build_shell_text_draws(
         combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(0))),
         scale,
     );
+    for (id, rect, key) in [
+        (
+            SkirmishComboId::TeamMenu,
+            layout.team_menu,
+            crate::ui::team_tools::TEAM_MENU_KEY,
+        ),
+        (
+            SkirmishComboId::SeatMenu,
+            layout.seat_menu,
+            crate::ui::team_tools::SEAT_MENU_KEY,
+        ),
+    ] {
+        push_combo_face_label_draw_with_color(
+            &mut shell_draws,
+            state,
+            &crate::i18n::tr(key),
+            rect,
+            combo_face_text_color(!combo_enabled(shell, maps, id)),
+            scale,
+        );
+    }
 
     for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
@@ -799,13 +827,19 @@ pub(super) fn build_dropdown_text_draws(
             }
             let rect = combo_dropdown_text_rect_for_current_renderer(content, idx, layout.scale);
             let fit_width = combo_dropdown_text_fit_width(content, layout.scale);
+            // A menu's greyed items and heading pick nothing.
+            let color = if item.pickable() {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                combo_face_text_color(true)
+            };
             fit_owner_draw_label(&state.renderer.bit_font, &label, fit_width, |label| {
                 push_text_draw(
                     &mut shell_draws,
                     state,
                     label,
                     rect,
-                    SHELL_LABEL_TEXT_RGB,
+                    color,
                     ShellAlign::V_CENTER,
                     SHELL_DROPDOWN_TEXT_DEPTH,
                     // The rows stretch, so their captions grow with them.

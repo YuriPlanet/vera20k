@@ -37,6 +37,8 @@ Launch
     │   │   ├─ Sliders: Game Speed (incl. 90 ticks/s and Unlimited), Credits (5000–10000, plus 30000 and 100000), Unit Count
     │   │   ├─ Checkboxes: Short Game, MCV Repacks, Crates Appear, Super Weapons, Build Off Ally
     │   │   │     【all of the above in [Skirmish]; the rows in SkirmishSetups.ini】
+    │   │   ├─ Quick Team Setup list: Team Starts, Team Colors, Balance teams, Players vs AI, AIs in 2/3/4 teams, Free-for-all;
+    │   │   │     Bulk Seat Actions list: Fill with AI (Easy/Normal/Hard/random), Open closed seats, Remove all AI (VERA)
     │   │   ├─ Map preview (click enlarges)
     │   │   ├─ Start Game / Back
     │   │   ├─ Game Options box: Superweapon Limit (Off, 2–20)【[VERA] SuperweaponLimit】, Terrain Deformation【[VERA] TerrainDeformation】, OK
@@ -76,7 +78,8 @@ Launch
     │   Game room (shared by LAN and online)
     │   ├─ Right-hand buttons: Start Game (host), Game Options, Choose Map (host), Lobby (online only), Back
     │   ├─ Each roster row: Player (Open/Closed/AI/Kick/Give Seat/Move to Spectators), Side, Color, Start, Team; host can drag rows between teams; Previous/Next page
-    │   ├─ Team bar (host): Teams, Room size, Team Starts, Team Colors, Balance (online only);
+    │   ├─ Team bar (host): Teams, Room size, Quick Team Setup list (Team Starts, Team Colors, Balance teams online,
+    │   │     the quick teams), Bulk Seat Actions list (Fill with AI, Close all, Open closed seats, Remove all AI);
     │   │     each group has a Join/Watch/Join Queue button, and the host also gets Add AI
     │   ├─ Co-op difficulty, chat; with a missing map: Download / Leave
     │   └─ Room Game Options popup: speed, credits, unit count, Superweapon Limit, the five retail checkboxes,
