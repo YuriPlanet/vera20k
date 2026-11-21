@@ -137,6 +137,19 @@ env-gated）量「所选的格子离最近一块矿多远」：seed 10 三座 `G
 离矿 10 / 8 / 9 格，seed 24301 落在 9–14 格。**两边一样远**，所以
 「把精炼厂建到矿边」这条路是死的，ore-aware 选址不要再试。
 
+### 把清点门槛从 8 抬到 12（试过，更差）
+
+`MOP_UP_OBJECTS`（`src/sim/strategy/assist/advance.rs`）同时管两件事：`mop_up()` 读
+基地 rings 里能看到的敌人机动量，`mopping_up` 读全局敌人对象数。抬到 12 的动机是
+seed 10 打到还剩 10 个敌人就不再清场（8 差两个）。
+
+结果（Death.mmx，america，normal，36000 帧）：seed 24301 从 won 35276 变成 timeout
+（enemy=15、army=83、lost 63:106）；seed 19 明显变强（army 66→92、own 126→150、
+lost 52:43→43:52）但仍 timeout（enemy=67）；seed 10 更差（enemy 10→34）。
+
+按基线判定已还原（复测 seed 24301 = won 35276，与基线一致）。两个判据本该是两个常量：
+「基地门口的机动量」和「全局还剩几个目标」不是一回事，下次要试只动 `mopping_up` 那个。
+
 ### 打不到的目标会让全军站在家里（已定位，未修）
 
 终局读数（seed 24301）：`push=push target=3844 at Some((62, 173))`、
