@@ -586,7 +586,7 @@ pub(super) fn advance(
             (sum / i64::try_from(fighters.len()).unwrap_or(1)) as i32
         };
         log::info!(
-            "push trace: tick={} fighters={} moving={} near={} spread={} fist=({},{}) target={:?} at {:?} enemies={}",
+            "push trace: tick={} fighters={} moving={} near={} spread={} fist=({},{}) target={:?} at {:?} hp={:?} enemies={}",
             tick,
             fighters.len(),
             moving,
@@ -596,6 +596,7 @@ pub(super) fn advance(
             cy,
             target_id,
             target_cell,
+            obs.health(target_id),
             brain.census.enemies.len(),
         );
     }
