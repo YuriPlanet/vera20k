@@ -478,6 +478,20 @@ impl crate::sim::world::Simulation {
         victim_id: u64,
         source: KillSource,
         callback: KillCallback,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        self.record_the_kill_by_warhead(victim_id, source, callback, -1, context);
+    }
+
+    /// [`Self::record_the_kill`] from a kill path that knows the lethal
+    /// warhead (its warhead ID, RFC 0001 appendix 8.1), which only the Wasm
+    /// module `Killed` record reads; −1 for none.
+    pub(crate) fn record_the_kill_by_warhead(
+        &mut self,
+        victim_id: u64,
+        source: KillSource,
+        callback: KillCallback,
+        lethal_warhead: i32,
         mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let rules = context.rules();
@@ -562,7 +576,7 @@ impl crate::sim::world::Simulation {
             self.update_ares_veterancy(recipient, false, false, rules, context.effects());
         }
         // Wasm module `Killed` (RFC 0001 appendix 4.3), after the kill is
-        // recorded. Its lethal warhead is not known here (`id` −1).
+        // recorded, with the lethal warhead the kill path named.
         if matches!(callback, KillCallback::Terminal)
             && self
                 .trigger_runtime
@@ -576,6 +590,7 @@ impl crate::sim::world::Simulation {
                 rules,
                 crate::sim::ext_modules::ModuleEvent {
                     other: killer,
+                    id: lethal_warhead,
                     at_subject: true,
                     ..crate::sim::ext_modules::ModuleEvent::new(
                         vera20k_wasm_ext::triggers::EVENT_KILLED,

@@ -19,7 +19,7 @@ const SEED: u32 = 0x1269;
 const KEY: i32 = 7;
 const LOCAL: u32 = 9;
 
-fn scenario() -> Option<HeadlessScenario> {
+pub(super) fn scenario() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(crate::headless_scenario::load(&retail, MAP, SEED).expect("retail scenario loads"))
 }
@@ -88,7 +88,7 @@ fn module(def: &[u8], target: u64) -> Vec<u8> {
 }
 
 /// The map's first object on the map with more than 100 Strength left.
-fn sturdy_object(scene: &HeadlessScenario) -> u64 {
+pub(super) fn sturdy_object(scene: &HeadlessScenario) -> u64 {
     scene
         .sim()
         .entities()
@@ -118,16 +118,16 @@ fn bound_scene(def: &[u8]) -> Option<(HeadlessScenario, u64)> {
     Some((scene, victim))
 }
 
-fn memory(scene: &HeadlessScenario) -> Vec<u8> {
+pub(super) fn memory(scene: &HeadlessScenario) -> Vec<u8> {
     scene.sim().ext_modules.slots[0].module.memory().to_vec()
 }
 
-fn received(scene: &HeadlessScenario) -> i32 {
+pub(super) fn received(scene: &HeadlessScenario) -> i32 {
     i32::from_le_bytes(memory(scene)[80..84].try_into().expect("4 bytes"))
 }
 
 /// One direct hit of `damage` with the `SA` warhead and no attacker.
-fn hit(scene: &mut HeadlessScenario, victim: u64, damage: i32) {
+pub(super) fn hit(scene: &mut HeadlessScenario, victim: u64, damage: i32) {
     let runtime = &mut scene.runtime;
     let rules = &runtime.resources.rules;
     let warhead = runtime.simulation.interner.intern("SA");

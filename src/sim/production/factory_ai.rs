@@ -190,6 +190,9 @@ fn exit_finished_object(
                 owner,
                 object,
             );
+            // Wasm module `Birth` (RFC 0001 appendix 4.3), the factory as
+            // producer.
+            sim.raise_module_birth(rules, effects, product, Some(building));
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
             sim.production

@@ -238,24 +238,38 @@ impl Simulation {
         input: TagEventInput,
         mut context: crate::sim::world::UninitContext<'_>,
     ) -> bool {
-        let Some(&tag) = self
+        let tag = self
             .trigger_runtime
             .attachments
             .get(&TagAttachment::Object(subject))
-        else {
-            return false;
-        };
-        let mut effects = Vec::new();
-        self.dispatch_live_tag_event(
-            tag,
-            input,
-            &mut effects,
-            context.rules(),
-            context.registry(),
-            context.effects(),
-        );
-        self.publish_trigger_effects(effects);
-        true
+            .copied();
+        if let Some(tag) = tag {
+            let mut effects = Vec::new();
+            self.dispatch_live_tag_event(
+                tag,
+                input,
+                &mut effects,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+            self.publish_trigger_effects(effects);
+        }
+        // Wasm module triggers on the same raise, after the object's Tag
+        // (RFC 0001 appendix 4.1): one flag check without them.
+        if self.trigger_runtime.module_listens(input.kind) {
+            let other = input
+                .source
+                .or(input.actor.filter(|actor| *actor != subject));
+            self.raise_module_stock_object_event(
+                context.rules(),
+                context.effects(),
+                input.kind,
+                subject,
+                other,
+            );
+        }
+        tag.is_some()
     }
 
     /// FootAI4DA7B0..4DA80C, after high-flight sight and before Process.
@@ -618,6 +632,11 @@ impl Simulation {
             self.trigger_runtime.map_cursor = self.trigger_runtime.map_cursor.wrapping_add(1);
         }
         self.publish_trigger_effects(effects);
+        // Wasm module triggers bound to a cell on the arrival cell's row or
+        // column (events 25 and 26, RFC 0001 appendix 4.1), after the map's.
+        if self.trigger_runtime.module_listens(25) || self.trigger_runtime.module_listens(26) {
+            self.raise_module_line_events(context.rules(), context.effects(), actor, cell);
+        }
         // Ordinary Fly ingress remains unproven.
     }
 
@@ -931,6 +950,15 @@ impl Simulation {
             values.remove(&(index as u32));
         }
         if previous != set {
+            // Wasm module `VariablePoll` timers reset as Tag timers do
+            // (RFC 0001 appendix 4.4); variable IDs 0..99 locals, 100..149
+            // globals.
+            if trigger_runtime.module_listens(vera20k_wasm_ext::triggers::EVENT_VARIABLE_POLL) {
+                let id = if global { 100 + index } else { index };
+                trigger_runtime
+                    .module
+                    .reset_variable_polls(id, session.binary_frame());
+            }
             trigger_runtime.dirty[0] = true;
             let events = if global { [27, 28] } else { [36, 37] };
             //689670/689910 -> Tag6E57F0/6E5820 ->7263A0/7263D0:

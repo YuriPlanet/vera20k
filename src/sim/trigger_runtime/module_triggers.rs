@@ -17,9 +17,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use vera20k_wasm_ext::EventRecord;
-use vera20k_wasm_ext::triggers::{ActionDef, EVENT_TIMER, EventDef, Repeat};
+use vera20k_wasm_ext::triggers::{ActionDef, EventDef, Repeat};
 
 use crate::sim::ext_modules::ModuleSource;
+
+/// What a trigger's events bind to (RFC 6a): every event of one trigger
+/// shares it, which `trigger_create` checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum TriggerScope {
+    /// House and logic events, `Timer`, superweapon launches and global
+    /// polls: no binding, one instance.
+    Global,
+    /// Object events: object, type and tag bindings. `weapon` when every
+    /// event also admits weapon and warhead bindings (appendix 4.3 "Object +
+    /// weapon").
+    Object { weapon: bool },
+    /// Events marked "cell binding" in appendix 4.1.
+    Cell,
+}
 
 /// One module trigger's definition and switches.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -38,14 +53,18 @@ pub(crate) struct ModuleTrigger {
     pub(crate) enabled: bool,
     /// The frame `trigger_create` ran, which `Timer` periods count from.
     pub(crate) created: u32,
+    /// The frame polling intervals count from: `created`, moved to the
+    /// frame of a write to a `VariablePoll` event's variable (appendix 4.4).
+    pub(crate) poll_start: u32,
+    pub(crate) scope: TriggerScope,
     pub(crate) events: Vec<EventDef>,
     pub(crate) actions: Vec<ActionDef>,
 }
 
 impl ModuleTrigger {
-    /// A trigger whose events need no binding (`Timer`).
+    /// A trigger whose events need no binding.
     pub(crate) fn is_global(&self) -> bool {
-        self.events.iter().all(|event| event.kind == EVENT_TIMER)
+        self.scope == TriggerScope::Global
     }
 
     pub(crate) fn admits_difficulty(&self, difficulty: i32) -> bool {
@@ -66,6 +85,19 @@ struct Instance {
     completed: u32,
     /// A one-time instance that fired.
     done: bool,
+    /// Polling events whose condition held at their last check, one bit per
+    /// event: they fire again only after a check finds it false (RFC 6a).
+    polled: u32,
+}
+
+/// A chained firing past the chain caps, fired with its original record at
+/// the start of the next module phase (RFC section 5, "Chains").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DeferredFiring {
+    pub(crate) trigger: u64,
+    pub(crate) holder: u64,
+    /// The record as raised; `key` and `house` are set when it fires.
+    pub(crate) record: EventRecord,
 }
 
 /// One module's records waiting for its `on_events`.
@@ -85,6 +117,12 @@ pub(crate) struct ModuleTriggers {
     objects: BTreeMap<u64, BTreeSet<u64>>,
     /// Bound TechnoType ID to its triggers.
     types: BTreeMap<u32, BTreeSet<u64>>,
+    /// Bound weapon or warhead type (name kind 1 or 2, ID) to its triggers.
+    weapons: BTreeMap<(i32, u32), BTreeSet<u64>>,
+    /// Bound cell (x, y) to its triggers.
+    cells: BTreeMap<(u16, u16), BTreeSet<u64>>,
+    /// Chained firings waiting for the next module phase, in raise order.
+    deferred: Vec<DeferredFiring>,
     /// (trigger, holder) where the state is not the default; holder 0 is a
     /// global trigger's one instance.
     instances: BTreeMap<(u64, u64), Instance>,
@@ -96,7 +134,9 @@ pub(crate) struct ModuleTriggers {
 
 impl ModuleTriggers {
     pub(crate) fn is_empty(&self) -> bool {
-        self.triggers.is_empty() && self.queues.values().all(|q| q.records.is_empty())
+        self.triggers.is_empty()
+            && self.deferred.is_empty()
+            && self.queues.values().all(|q| q.records.is_empty())
     }
 
     /// Whether any trigger has an event of `kind`. Event sites ask this
@@ -107,6 +147,16 @@ impl ModuleTriggers {
 
     pub(crate) fn has_type_bindings(&self) -> bool {
         !self.types.is_empty()
+    }
+
+    /// The event kinds of every trigger, sorted.
+    pub(crate) fn kinds(&self) -> &[i32] {
+        &self.kinds
+    }
+
+    /// Every trigger handle, in creation order.
+    pub(crate) fn handles(&self) -> Vec<u64> {
+        self.triggers.keys().copied().collect()
     }
 
     pub(crate) fn get(&self, handle: u64) -> Option<&ModuleTrigger> {
@@ -123,12 +173,21 @@ impl ModuleTriggers {
         if self.triggers.remove(&handle).is_none() {
             return false;
         }
-        for bound in self.objects.values_mut().chain(self.types.values_mut()) {
+        for bound in self
+            .objects
+            .values_mut()
+            .chain(self.types.values_mut())
+            .chain(self.weapons.values_mut())
+            .chain(self.cells.values_mut())
+        {
             bound.remove(&handle);
         }
         self.objects.retain(|_, bound| !bound.is_empty());
         self.types.retain(|_, bound| !bound.is_empty());
+        self.weapons.retain(|_, bound| !bound.is_empty());
+        self.cells.retain(|_, bound| !bound.is_empty());
         self.instances.retain(|(trigger, _), _| *trigger != handle);
+        self.deferred.retain(|firing| firing.trigger != handle);
         for queue in self.queues.values_mut() {
             queue.retain(|record| record.trigger != handle as i64);
         }
@@ -191,6 +250,139 @@ impl ModuleTriggers {
         removed
     }
 
+    /// Binds a weapon (name kind 1) or warhead (2) type.
+    pub(crate) fn bind_weapon(&mut self, handle: u64, kind: i32, id: u32) {
+        self.weapons.entry((kind, id)).or_default().insert(handle);
+    }
+
+    /// Removes one weapon or warhead binding; false when there was none.
+    pub(crate) fn unbind_weapon(&mut self, handle: u64, kind: i32, id: u32) -> bool {
+        let removed = self
+            .weapons
+            .get_mut(&(kind, id))
+            .is_some_and(|bound| bound.remove(&handle));
+        self.weapons.retain(|_, bound| !bound.is_empty());
+        removed
+    }
+
+    pub(crate) fn bind_cell(&mut self, handle: u64, cell: (u16, u16)) {
+        self.cells.entry(cell).or_default().insert(handle);
+    }
+
+    /// Removes one cell binding and its instance; false when there was none.
+    pub(crate) fn unbind_cell(&mut self, handle: u64, cell: (u16, u16)) -> bool {
+        let removed = self
+            .cells
+            .get_mut(&cell)
+            .is_some_and(|bound| bound.remove(&handle));
+        self.cells.retain(|_, bound| !bound.is_empty());
+        removed
+    }
+
+    /// The triggers with an event of `kind` bound to a cell `selects`
+    /// accepts, with the cell, in cell then creation order.
+    pub(crate) fn cell_bound(
+        &self,
+        kind: i32,
+        selects: impl Fn((u16, u16)) -> bool,
+    ) -> Vec<(u64, (u16, u16))> {
+        self.cells
+            .iter()
+            .filter(|(cell, _)| selects(**cell))
+            .flat_map(|(&cell, bound)| bound.iter().map(move |&handle| (handle, cell)))
+            .filter(|(handle, _)| self.has_event(*handle, kind))
+            .collect()
+    }
+
+    /// The objects bound to `handle` directly, in creation order.
+    pub(crate) fn bound_objects(&self, handle: u64) -> Vec<u64> {
+        self.objects
+            .iter()
+            .filter(|(_, bound)| bound.contains(&handle))
+            .map(|(&object, _)| object)
+            .collect()
+    }
+
+    /// The TechnoType IDs bound to `handle`.
+    pub(crate) fn bound_types(&self, handle: u64) -> BTreeSet<u32> {
+        self.types
+            .iter()
+            .filter(|(_, bound)| bound.contains(&handle))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// A polling event's check on one instance: answers whether its
+    /// condition just became true, and remembers what it found.
+    pub(crate) fn poll_edge(&mut self, handle: u64, holder: u64, bit: usize, holds: bool) -> bool {
+        let Some(mask) = 1u32.checked_shl(bit as u32) else {
+            return false;
+        };
+        let mut state = self
+            .instances
+            .get(&(handle, holder))
+            .copied()
+            .unwrap_or_default();
+        let rising = holds && state.polled & mask == 0;
+        if holds {
+            state.polled |= mask;
+        } else {
+            state.polled &= !mask;
+        }
+        self.store_instance(handle, holder, state);
+        rising
+    }
+
+    /// A write to variable `var`: the polling intervals of every trigger
+    /// with a `VariablePoll` of it count from `frame` (appendix 4.4).
+    pub(crate) fn reset_variable_polls(&mut self, var: i32, frame: u32) {
+        use vera20k_wasm_ext::triggers::EVENT_VARIABLE_POLL;
+        for trigger in self.triggers.values_mut() {
+            if trigger
+                .events
+                .iter()
+                .any(|event| event.kind == EVENT_VARIABLE_POLL && event.id == var)
+            {
+                trigger.poll_start = frame;
+            }
+        }
+    }
+
+    pub(crate) fn defer(&mut self, firing: DeferredFiring) {
+        self.deferred.push(firing);
+    }
+
+    /// The deferred firings of the triggers `source` made.
+    pub(crate) fn deferred_of(&self, source: ModuleSource) -> usize {
+        self.deferred
+            .iter()
+            .filter(|f| {
+                self.triggers
+                    .get(&f.trigger)
+                    .is_some_and(|t| t.source == source)
+            })
+            .count()
+    }
+
+    /// Takes every deferred firing, in raise order.
+    pub(crate) fn take_deferred(&mut self) -> Vec<DeferredFiring> {
+        std::mem::take(&mut self.deferred)
+    }
+
+    fn has_event(&self, handle: u64, kind: i32) -> bool {
+        self.triggers
+            .get(&handle)
+            .is_some_and(|t| t.events.iter().any(|e| e.kind == kind))
+    }
+
+    fn store_instance(&mut self, handle: u64, holder: u64, state: Instance) {
+        if state == Instance::default() {
+            self.instances.remove(&(handle, holder));
+        } else {
+            self.instances.insert((handle, holder), state);
+        }
+    }
+
     /// An object left the game: its bindings and instances go (RFC 7).
     pub(crate) fn forget_object(&mut self, object: u64) {
         if self.triggers.is_empty() {
@@ -200,23 +392,34 @@ impl ModuleTriggers {
         self.instances.retain(|(_, holder), _| *holder != object);
     }
 
-    /// The triggers with an event of `kind` bound to `subject` or to its
-    /// TechnoType, in creation order.
-    pub(crate) fn bound(&self, kind: i32, subject: u64, type_id: Option<u32>) -> Vec<u64> {
+    /// The triggers with an event of `kind` bound to `subject`, to its
+    /// TechnoType or to one of the weapon and warhead types in `weapons`
+    /// (name kind, ID), in creation order.
+    pub(crate) fn bound(
+        &self,
+        kind: i32,
+        subject: u64,
+        type_id: Option<u32>,
+        weapons: &[(i32, u32)],
+    ) -> Vec<u64> {
         let by_object = self.objects.get(&subject).into_iter().flatten();
         let by_type = type_id
             .and_then(|id| self.types.get(&id))
             .into_iter()
             .flatten();
-        let handles: BTreeSet<u64> = by_object.chain(by_type).copied().collect();
+        let by_weapon = weapons
+            .iter()
+            .filter_map(|key| self.weapons.get(key))
+            .flatten();
+        let handles: BTreeSet<u64> = by_object.chain(by_type).chain(by_weapon).copied().collect();
         handles
             .into_iter()
-            .filter(|handle| {
-                self.triggers
-                    .get(handle)
-                    .is_some_and(|t| t.events.iter().any(|e| e.kind == kind))
-            })
+            .filter(|handle| self.has_event(*handle, kind))
             .collect()
+    }
+
+    pub(crate) fn has_weapon_bindings(&self) -> bool {
+        !self.weapons.is_empty()
     }
 
     /// The global triggers with an event of `kind`, in creation order.
@@ -251,11 +454,7 @@ impl ModuleTriggers {
             state.completed = 0;
             state.done = one_time;
         }
-        if state == Instance::default() {
-            self.instances.remove(&(handle, holder));
-        } else {
-            self.instances.insert((handle, holder), state);
-        }
+        self.store_instance(handle, holder, state);
         fires
     }
 
@@ -320,6 +519,10 @@ impl ModuleTriggers {
             checksum.fold_value(handle as u32);
             checksum.fold_value(u32::from(trigger.enabled));
         }
+        for firing in &self.deferred {
+            checksum.fold_value(firing.trigger as u32);
+            checksum.fold_value(firing.record.kind as u32);
+        }
         for record in self.queues.values().flat_map(|q| &q.records) {
             checksum.fold_value(record.key as u32);
             checksum.fold_value(record.kind as u32);
@@ -332,9 +535,16 @@ impl ModuleTriggers {
     /// live trigger, and the derived kinds match the triggers.
     pub(crate) fn validate(&self) -> Result<(), String> {
         let known = |handle: &u64| self.triggers.contains_key(handle);
-        let bound = self.objects.values().chain(self.types.values()).flatten();
+        let bound = self
+            .objects
+            .values()
+            .chain(self.types.values())
+            .chain(self.weapons.values())
+            .chain(self.cells.values())
+            .flatten();
         if !bound.into_iter().all(known)
             || !self.instances.keys().all(|(handle, _)| known(handle))
+            || !self.deferred.iter().all(|f| known(&f.trigger))
             || !self
                 .queues
                 .values()

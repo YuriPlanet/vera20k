@@ -26,15 +26,110 @@
 
 use crate::{Cell, House, NO_HANDLE, Op, Prop, Ref, Result, Techno, Var, check, sys};
 
-/// Event kinds (appendix 4). New delivered events are numbered from 1000 in
-/// appendix 4.3 order; provisional (RFC open question 5).
+/// Event kinds (appendix 4). Stock events keep 0..61 (4.1); new delivered
+/// events are numbered from 1000 in appendix 4.3 order and the polling
+/// events of 4.4 follow them; provisional (RFC open question 5). The engine
+/// answers `has_kind(0, kind)` for the kinds it raises.
 pub struct Event;
 
 impl Event {
+    // Stock events (appendix 4.1). `value` names a house by array index.
+    pub const ENTERED_BY: i32 = 1;
+    pub const SPIED_BY: i32 = 2;
+    pub const THIEVED_BY: i32 = 3;
+    pub const DISCOVERED_BY_PLAYER: i32 = 4;
+    pub const HOUSE_DISCOVERED: i32 = 5;
+    pub const ATTACKED_BY_ANY_HOUSE: i32 = 6;
+    pub const DESTROYED_BY_ANY_HOUSE: i32 = 7;
+    pub const ANY_EVENT: i32 = 8;
+    pub const ALL_UNITS_DESTROYED: i32 = 9;
+    pub const ALL_BUILDINGS_DESTROYED: i32 = 10;
+    pub const ALL_DESTROYED: i32 = 11;
+    pub const CREDITS_EXCEED: i32 = 12;
+    pub const ELAPSED_TIME: i32 = 13;
+    pub const MISSION_TIMER_EXPIRED: i32 = 14;
+    pub const BUILDINGS_DESTROYED_COUNT: i32 = 15;
+    pub const UNITS_DESTROYED_COUNT: i32 = 16;
+    pub const NO_FACTORIES_LEFT: i32 = 17;
+    pub const CIVILIANS_EVACUATED: i32 = 18;
+    pub const BUILD_BUILDING_TYPE: i32 = 19;
+    pub const BUILD_UNIT_TYPE: i32 = 20;
+    pub const BUILD_INFANTRY_TYPE: i32 = 21;
+    pub const BUILD_AIRCRAFT_TYPE: i32 = 22;
+    pub const TEAM_LEAVES_MAP: i32 = 23;
+    pub const ZONE_ENTRY_BY: i32 = 24;
+    pub const CROSSES_HORIZONTAL_LINE: i32 = 25;
+    pub const CROSSES_VERTICAL_LINE: i32 = 26;
+    pub const GLOBAL_IS_SET: i32 = 27;
+    pub const GLOBAL_IS_CLEAR: i32 = 28;
+    pub const DESTROYED_BY_ANYTHING_NOT_INFILTRATE: i32 = 29;
+    pub const LOW_POWER: i32 = 30;
+    pub const BRIDGE_DESTROYED: i32 = 31;
+    pub const BUILDING_EXISTS: i32 = 32;
+    pub const SELECTED_BY_PLAYER: i32 = 33;
+    pub const COMES_NEAR_WAYPOINT: i32 = 34;
+    pub const ENEMY_IN_SPOTLIGHT: i32 = 35;
+    pub const LOCAL_IS_SET: i32 = 36;
+    pub const LOCAL_IS_CLEAR: i32 = 37;
+    pub const FIRST_DAMAGED_COMBAT: i32 = 38;
+    pub const HALF_HEALTH_COMBAT: i32 = 39;
+    pub const QUARTER_HEALTH_COMBAT: i32 = 40;
+    pub const FIRST_DAMAGED_ANY: i32 = 41;
+    pub const HALF_HEALTH_ANY: i32 = 42;
+    pub const QUARTER_HEALTH_ANY: i32 = 43;
+    pub const ATTACKED_BY_HOUSE: i32 = 44;
+    pub const AMBIENT_LIGHT_BELOW: i32 = 45;
+    pub const AMBIENT_LIGHT_ABOVE: i32 = 46;
+    pub const ELAPSED_SCENARIO_TIME: i32 = 47;
+    pub const DESTROYED_BY_ANYTHING: i32 = 48;
+    pub const PICKUP_CRATE: i32 = 49;
+    pub const PICKUP_CRATE_ANY: i32 = 50;
+    pub const RANDOM_DELAY: i32 = 51;
+    pub const CREDITS_BELOW: i32 = 52;
+    pub const SPY_AS_HOUSE: i32 = 53;
+    pub const SPY_AS_INFANTRY: i32 = 54;
+    pub const NAVAL_UNITS_DESTROYED: i32 = 55;
+    pub const LAND_UNITS_DESTROYED: i32 = 56;
+    pub const BUILDING_DOES_NOT_EXIST: i32 = 57;
+    pub const POWER_FULL: i32 = 58;
+    pub const ENTERED_OR_OVERFLOWN_BY: i32 = 59;
+    pub const TECH_TYPE_EXISTS: i32 = 60;
+    pub const TECH_TYPE_DOES_NOT_EXIST: i32 = 61;
+
+    // New delivered events (appendix 4.3).
     pub const TAKE_DAMAGE: i32 = 1000;
+    pub const HIT_BY_WARHEAD: i32 = 1001;
+    pub const ATTACKED_BY: i32 = 1002;
+    pub const FATAL_DAMAGE: i32 = 1003;
     pub const KILLED: i32 = 1004;
     pub const FIRE: i32 = 1005;
+    pub const SPAWN_FIRE: i32 = 1006;
+    pub const HIT_TARGET: i32 = 1007;
+    pub const TARGET_CHANGED: i32 = 1008;
+    pub const PROJECTILE_INCOMING: i32 = 1009;
+    pub const DETONATED: i32 = 1010;
+    pub const BIRTH: i32 = 1011;
+    pub const TRANSPORT_ENTERED: i32 = 1012;
+    pub const TRANSPORT_EXITED: i32 = 1013;
+    pub const PASSENGER_ADDED: i32 = 1014;
+    pub const PASSENGER_REMOVED: i32 = 1015;
+    pub const COMMANDED: i32 = 1016;
+    pub const CRUSHED: i32 = 1017;
+    pub const HOUSE_TRANSFER: i32 = 1018;
+    pub const HOUSE_TRANSFERRED: i32 = 1019;
+    pub const MODIFIER_START: i32 = 1020;
+    pub const MODIFIER_EXPIRE: i32 = 1021;
+    pub const MODIFIER_STACKS: i32 = 1022;
     pub const TIMER: i32 = 1023;
+    pub const SUPER_WEAPON_LAUNCHED: i32 = 1024;
+    pub const PRODUCTION_CANCELLED: i32 = 1025;
+
+    // New polling events (appendix 4.4).
+    pub const PROPERTY_POLL: i32 = 1026;
+    pub const HOUSE_POWER_POLL: i32 = 1027;
+    pub const MODIFIER_COUNT_POLL: i32 = 1028;
+    pub const DISTANCE_POLL: i32 = 1029;
+    pub const VARIABLE_POLL: i32 = 1030;
 }
 
 /// What a trigger action acts on (`ActionTarget`, appendix 5.1).
@@ -219,6 +314,50 @@ impl Trigger {
         trigger
     }
 
+    /// A trigger on `PropertyPoll` (appendix 3 `Trigger.onProperty`): fires
+    /// when `prop op value` becomes true, checked every `interval` frames.
+    pub fn on_property(prop: Prop, op: Op, value: i64, interval: i32) -> Self {
+        Self::on(Event::PROPERTY_POLL).poll(prop.0, op, value, interval)
+    }
+
+    /// A trigger on `VariablePoll`: fires when `var op value` becomes true,
+    /// checked every `interval` frames; a change of the variable restarts
+    /// the interval.
+    pub fn on_variable(var: Var, op: Op, value: i64, interval: i32) -> Self {
+        Self::on(Event::VARIABLE_POLL).poll(var.0, op, value, interval)
+    }
+
+    fn poll(mut self, id: i32, op: Op, value: i64, interval: i32) -> Self {
+        if let Some(index) = (self.header.event_count as usize).checked_sub(1) {
+            let def = &mut self.events[index].def;
+            def.id = id;
+            def.op = op as i32;
+            def.value = value;
+            def.interval = interval;
+        }
+        self
+    }
+
+    /// Sets the latest event's `value` argument (a stock event's house
+    /// index, credits, seconds, ...; appendix 4.1).
+    pub fn value(mut self, value: i64) -> Self {
+        match (self.header.event_count as usize).checked_sub(1) {
+            Some(index) => self.events[index].def.value = value,
+            None => self.overflow = true,
+        }
+        self
+    }
+
+    /// Sets the latest event's `id` argument (a TechnoType ID for stock
+    /// events 60 and 61).
+    pub fn id(mut self, id: i32) -> Self {
+        match (self.header.event_count as usize).checked_sub(1) {
+            Some(index) => self.events[index].def.id = id,
+            None => self.overflow = true,
+        }
+        self
+    }
+
     /// Adds another event; all must occur before the trigger fires.
     pub fn and(mut self, kind: i32) -> Self {
         match self.events.get_mut(self.header.event_count as usize) {
@@ -296,7 +435,8 @@ impl Trigger {
         self.clause(3, 0, var.0, op, value)
     }
 
-    /// Binds the trigger to `reference` (an object or a type) at
+    /// Binds the trigger to `reference` (an object, a type, a weapon or
+    /// warhead type for `Fire`, or a cell for stock events 25 and 26) at
     /// [`Trigger::done`].
     pub fn bind(mut self, reference: impl Ref) -> Self {
         match self.binds.get_mut(self.binds_len) {
@@ -477,6 +617,90 @@ view!(
     TimerEvent {
         /// The frame of the previous firing, or of the trigger's creation.
         last_frame: i64 = |r| r.value,
+    }
+);
+
+view!(
+    /// A stock event (appendix 4.1): subject, other object and house as the
+    /// event's row lists them.
+    StockEvent {
+        subject: Techno = |r| Techno(r.subject),
+        other: Techno = |r| Techno(r.other),
+        /// The house the event is about (`Hs`), else the trigger's.
+        house: House = |r| House(r.house),
+        /// The bound cell for stock events 25 and 26.
+        bound_cell: Cell = |r| Cell(r.holder),
+    }
+);
+
+view!(
+    /// `Birth` (appendix 4.3).
+    BirthEvent {
+        object: Techno = |r| Techno(r.subject),
+        /// The factory or yard; `NO_HANDLE` when unknown.
+        producer: Techno = |r| Techno(r.other),
+    }
+);
+
+view!(
+    /// `TransportEntered` (appendix 4.3), on the passenger.
+    TransportEnteredEvent {
+        passenger: Techno = |r| Techno(r.subject),
+        transport: Techno = |r| Techno(r.other),
+        /// The space the passenger occupies.
+        space: i64 = |r| r.value,
+        /// 1 for a garrison, 0 for a transport.
+        garrison: i64 = |r| r.value2,
+    }
+);
+
+view!(
+    /// `PassengerAdded` (appendix 4.3), on the transport.
+    PassengerAddedEvent {
+        transport: Techno = |r| Techno(r.subject),
+        passenger: Techno = |r| Techno(r.other),
+        space: i64 = |r| r.value,
+        garrison: i64 = |r| r.value2,
+    }
+);
+
+view!(
+    /// `HouseTransferred` (appendix 4.3).
+    HouseTransferredEvent {
+        object: Techno = |r| Techno(r.subject),
+        old_house: House = |r| House(r.house),
+        /// 1 for a mind control.
+        mind_control: i64 = |r| r.value,
+    }
+);
+
+view!(
+    /// `SuperWeaponLaunched` (appendix 4.3).
+    SuperWeaponLaunchedEvent {
+        /// Superweapon type ID.
+        super_weapon: i32 = |r| r.id,
+        house: House = |r| House(r.house),
+        target_cell: Cell = |r| Cell(r.cell),
+    }
+);
+
+view!(
+    /// `Killed` (appendix 4.3) with its lethal warhead.
+    KilledByWarheadEvent {
+        victim: Techno = |r| Techno(r.subject),
+        killer: Techno = |r| Techno(r.other),
+        /// Warhead ID, −1 when the kill had none.
+        warhead: i32 = |r| r.id,
+    }
+);
+
+view!(
+    /// `PropertyPoll` and `VariablePoll` (appendix 4.4).
+    PollEvent {
+        /// The polled object; `NO_HANDLE` for a global poll.
+        subject: Techno = |r| Techno(r.subject),
+        /// The reading that made the condition true.
+        reading: i64 = |r| r.value,
     }
 );
 

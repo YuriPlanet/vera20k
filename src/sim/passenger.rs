@@ -79,6 +79,8 @@ pub use departure::{
     DepartureRoute, depart_cargo_head, exit_cell_position, reveal_unloaded_passenger,
 };
 
+use vera20k_wasm_ext::triggers::{EVENT_PASSENGER_ADDED, EVENT_TRANSPORT_ENTERED};
+
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -566,6 +568,13 @@ impl Simulation {
                 carrier,
                 head,
             );
+        }
+        // Wasm module `TransportEntered` and `PassengerAdded` (RFC 0001
+        // appendix 4.3), after the entry completed.
+        if self.trigger_runtime.module_listens(EVENT_TRANSPORT_ENTERED)
+            || self.trigger_runtime.module_listens(EVENT_PASSENGER_ADDED)
+        {
+            self.raise_module_passengers_added(rules, context.effects(), carrier, head_first);
         }
         true
     }

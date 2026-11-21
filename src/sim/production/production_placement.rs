@@ -631,6 +631,8 @@ pub(crate) fn place_production_with_overlays(
         owner_id,
         object,
     );
+    // Wasm module `Birth` (RFC 0001 appendix 4.3), the yard as producer.
+    sim.raise_module_birth(rules, effects, new_sid, Some(yard));
     true
 }
 
