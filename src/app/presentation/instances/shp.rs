@@ -15,7 +15,7 @@ use super::helpers::{
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedBuildingPieceInstance,
-    PlannedObjectInstance,
+    PlannedObjects,
 };
 use crate::map::entities::EntityCategory;
 use crate::render::batch::{DepthAxis, SpriteInstance};
@@ -145,7 +145,7 @@ pub(crate) fn shp_inputs<'a>(
 #[cfg(test)]
 pub(crate) fn build_shp_instances_from_inputs(
     input: &ShpInputs<'_>,
-    ground_objects: &mut Vec<PlannedObjectInstance>,
+    ground_objects: &mut PlannedObjects,
     ground_order: &NativeDisplayOrder,
 ) {
     let mut visit = shp_visitor(input, ground_order);
@@ -171,8 +171,7 @@ pub(crate) fn build_shp_instances_from_inputs(
 pub(crate) fn shp_visitor<'a>(
     input: &'a ShpInputs<'a>,
     ground_order: &'a NativeDisplayOrder,
-) -> impl FnMut(&mut Vec<PlannedObjectInstance>, &crate::app::presentation::frame::ObjectRecord) + 'a
-{
+) -> impl FnMut(&mut PlannedObjects, &crate::app::presentation::frame::ObjectRecord) + 'a {
     let runtime = input.runtime;
     let sim = &runtime.simulation;
     let rules = Some(&runtime.resources.rules);
@@ -205,7 +204,14 @@ pub(crate) fn shp_visitor<'a>(
         crate::sim::intern::InternedId,
         Option<[i32; 4]>,
     > = Default::default();
-    move |ground_objects: &mut Vec<PlannedObjectInstance>,
+    // One object's pieces, built here before the object is planned; reused
+    // for every object of the draw. The copy into the plan stays: the pieces
+    // are pushed between the body, bib, door and turret decisions, which
+    // finish before the parent is planned, and draining a few pieces into
+    // the plan allocates nothing once these have grown.
+    let mut pieces = Vec::new();
+    let mut building_pieces = Vec::new();
+    move |ground_objects: &mut PlannedObjects,
           entity: &crate::app::presentation::frame::ObjectRecord| {
         let stable_id = entity.stable_id();
         // `0x00487950` on the local player's map: a sandbox view, or a viewer
@@ -779,7 +785,7 @@ pub(crate) fn shp_visitor<'a>(
             (ObjectTexture::ShpPage(entry.page as usize), instance)
         });
 
-        let mut building_pieces = Vec::new();
+        building_pieces.clear();
         if entity.category() == EntityCategory::Structure {
             if let Some((target, instance)) = body {
                 building_pieces.push(PlannedBuildingPieceInstance {
@@ -822,7 +828,8 @@ pub(crate) fn shp_visitor<'a>(
             let shadow = (entity.category() == EntityCategory::Infantry)
                 .then(|| infantry_air_shadow_piece(atlas, entity, cells.as_ref(), [sx, sy], depth))
                 .flatten();
-            let mut pieces: Vec<_> = shadow.into_iter().collect();
+            pieces.clear();
+            pieces.extend(shadow);
             pieces.push(ObjectPieceInstance {
                 target,
                 render_z: parent.policy.render_z,
@@ -909,7 +916,7 @@ pub(crate) fn shp_visitor<'a>(
                     });
                 }
             }
-            ground_objects.push(PlannedObjectInstance::object(parent, pieces));
+            ground_objects.object(parent, pieces.drain(..));
         }
 
         // Emit building animation overlays and bib — but NOT during build-up/down.
@@ -1022,7 +1029,7 @@ pub(crate) fn shp_visitor<'a>(
         }
 
         if entity.category() == EntityCategory::Structure {
-            ground_objects.push(PlannedObjectInstance::building(parent, building_pieces));
+            ground_objects.building(parent, building_pieces.drain(..));
         }
     }
 }
@@ -1663,7 +1670,7 @@ fn building_slot_window(
 pub(crate) fn build_building_anim_instances(
     state: &AppState,
     admission: super::helpers::TacticalAdmission,
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
     order: &NativeDisplayOrder,
 ) {
     let (Some(runtime), Some(atlas), Some(rules)) = (
@@ -1842,7 +1849,7 @@ fn every_slot_anim<'a>(
 }
 
 fn emit_building_anims(
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
     order: &NativeDisplayOrder,
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     art_reg: &crate::rules::art_data::ArtRegistry,
@@ -2029,8 +2036,7 @@ fn emit_building_anims(
         } else {
             (alpha, draw_state)
         };
-        objects.push(PlannedObjectInstance::object(
-            parent,
+        objects.object_with(parent, |pieces| {
             super::anim_draw::anim_draw_pieces(
                 atlas,
                 super::anim_draw::AnimDrawInput {
@@ -2067,8 +2073,9 @@ fn emit_building_anims(
                         ..Default::default()
                     },
                 },
-            ),
-        ));
+                pieces,
+            )
+        });
     }
 }
 
@@ -2130,7 +2137,7 @@ fn emit_unit_terrain_body(
     decision: crate::render::draw_state::DrawDecision,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     order: &NativeDisplayOrder,
-    output: &mut Vec<PlannedObjectInstance>,
+    output: &mut PlannedObjects,
 ) {
     use crate::render::terrain_draw::TerrainPiece;
     let draw_state = decision.state;
@@ -2187,8 +2194,7 @@ fn emit_unit_terrain_body(
         Some(cells),
         decision,
     );
-    let mut pieces = Vec::with_capacity(2);
-    for (piece, sprite, z_adjust, gradient, material) in [
+    let pieces = [
         (
             TerrainPiece::Body,
             body,
@@ -2208,12 +2214,11 @@ fn emit_unit_terrain_body(
             ZGradient::Flat,
             DrawState::default(),
         ),
-    ] {
-        let Some(sprite) = sprite else { continue };
-        if piece == TerrainPiece::Shadow && !shadow_admitted {
-            continue;
-        }
-        pieces.push(ObjectPieceInstance {
+    ]
+    .into_iter()
+    .filter_map(|(piece, sprite, z_adjust, gradient, material)| {
+        let sprite = sprite.filter(|_| piece != TerrainPiece::Shadow || shadow_admitted)?;
+        Some(ObjectPieceInstance {
             target: ObjectTexture::TerrainShp(piece),
             render_z: parent.policy.render_z,
             instance: SpriteInstance {
@@ -2235,9 +2240,9 @@ fn emit_unit_terrain_body(
                     | native_z::shp_frame_flag(sprite.extended),
                 ..Default::default()
             },
-        });
-    }
-    output.push(PlannedObjectInstance::object(parent, pieces));
+        })
+    });
+    output.object(parent, pieces);
 }
 
 pub(crate) fn resolve_object_shp_frame(

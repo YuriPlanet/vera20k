@@ -11,7 +11,7 @@ use super::helpers::{
 };
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+    NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
 use crate::map::entities::EntityCategory;
 use crate::map::lighting;
@@ -485,7 +485,7 @@ fn body_sort_depth(
 /// Atlas pages select textures only; they never replace native member order.
 pub(crate) fn build_unit_instances(
     state: &AppState,
-    objects: &mut Vec<PlannedObjectInstance>,
+    objects: &mut PlannedObjects,
     display_order: &NativeDisplayOrder,
 ) {
     let Some(sim) = state
@@ -515,11 +515,7 @@ pub(crate) fn unit_visitor<'a>(
     state: &'a AppState,
     display_order: &'a NativeDisplayOrder,
 ) -> Option<
-    impl FnMut(
-        &mut Vec<PlannedObjectInstance>,
-        &crate::app::presentation::frame::ObjectRecord,
-        EntityDrawBand,
-    ) + 'a,
+    impl FnMut(&mut PlannedObjects, &crate::app::presentation::frame::ObjectRecord, EntityDrawBand) + 'a,
 > {
     let (sim, atlas) = match (
         state
@@ -579,8 +575,15 @@ pub(crate) fn unit_visitor<'a>(
     > = Default::default();
     let mut models: crate::util::lookup_hash::LookupMap<smol_str::SmolStr, ModelFacts> =
         Default::default();
+    // One object's pieces and its cargo's, built here before the object is
+    // planned: the pieces' builders read the object's own pieces so far, and
+    // the cargo draws first though it is built after the body. That copy into
+    // the plan stays; reused for every unit of the draw, it allocates nothing
+    // once these have grown.
+    let mut pieces = Vec::new();
+    let mut cargo_pieces = Vec::new();
     Some(
-        move |objects: &mut Vec<PlannedObjectInstance>,
+        move |objects: &mut PlannedObjects,
               entity: &crate::app::presentation::frame::ObjectRecord,
               member_band: EntityDrawBand| {
             // One object's pieces: the visited member, or the cargo a Carryall
@@ -1113,7 +1116,8 @@ pub(crate) fn unit_visitor<'a>(
                     band,
                 })
             };
-            let mut pieces = Vec::new();
+            pieces.clear();
+            cargo_pieces.clear();
             let Some(drawn) = draw(entity, None, &mut pieces) else {
                 return;
             };
@@ -1122,18 +1126,16 @@ pub(crate) fn unit_visitor<'a>(
             // passenger (vt+0x114) at its body point before its own shadow
             // and body (`0x0041461D..0x00414653`).
             if let Some(cargo) = entity.drawn_cargo.and_then(|cargo| frame.object(cargo)) {
-                let mut cargo_pieces = Vec::new();
                 let carried = CarriedDraw {
                     point: drawn.body_point,
                     band: drawn.band,
                 };
-                if draw(cargo, Some(carried), &mut cargo_pieces).is_some() {
-                    cargo_pieces.append(&mut pieces);
-                    pieces = cargo_pieces;
+                if draw(cargo, Some(carried), &mut cargo_pieces).is_none() {
+                    cargo_pieces.clear();
                 }
             }
 
-            if !pieces.is_empty() {
+            if !(pieces.is_empty() && cargo_pieces.is_empty()) {
                 let parent = display_order.object_draw(
                     entity.stable_id(),
                     crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
@@ -1147,7 +1149,8 @@ pub(crate) fn unit_visitor<'a>(
                         render_pose.screen,
                         render_pose.body,
                     );
-                    let mut planned = PlannedObjectInstance::object(parent, pieces);
+                    let planned =
+                        objects.object(parent, cargo_pieces.drain(..).chain(pieces.drain(..)));
                     if let Some(rules) = state.rules() {
                         planned.tail_draws =
                             crate::app::presentation::target_lines::target_laser_draws(
@@ -1163,7 +1166,6 @@ pub(crate) fn unit_visitor<'a>(
                                 surface_view,
                             );
                     }
-                    objects.push(planned);
                 }
             }
         },
