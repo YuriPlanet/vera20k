@@ -3140,7 +3140,7 @@ impl WolCapture {
                 ensure!(
                     message.body == expected
                         && verify.names == [NICKNAME.to_owned(), SERVICE_GUEST.to_owned()]
-                        && verify.checked[..2] == [true, true],
+                        && verify.checked()[..2] == [true, true],
                     "the mismatch box over 0x130: {verify:?}"
                 );
                 self.event(frame, json!({"0x130": verify.names, "box": message.body}));
@@ -3836,11 +3836,8 @@ impl WolCapture {
                     "waves".encode_utf16().collect()
                 )]
                 && setup_chat_has(state, &format!("{NICKNAME} waves"))?
-                && state
-                    .frontend
-                    .multiplayer_setup
-                    .as_ref()
-                    .is_some_and(|ui| ui.chat.edit.units.is_empty()),
+                && state.frontend.multiplayer_setup.is_some()
+                && crate::app::input::multiplayer_setup::chat_text(state).is_empty(),
             "the emote was not sent or echoed: {requests:?}"
         );
         // C2 in the stack passes the language gate: with both display
@@ -3969,7 +3966,7 @@ impl WolCapture {
         )?;
         // Start Game Now (0x794BA0) keeps C2 up under its verify 0x130.
         let names = |state: &AppState| {
-            setup::verify(state).map(|verify| (verify.names.clone(), verify.checked.clone()))
+            setup::verify(state).map(|verify| (verify.names.clone(), verify.checked()))
         };
         ensure!(
             setup_requests(state).is_empty()

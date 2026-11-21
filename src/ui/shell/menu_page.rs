@@ -155,9 +155,14 @@ fn node_id(controller: &DialogController, node: Option<vera20k_gui::NodeId>) -> 
 }
 
 /// The status help of the control under the pointer in `dialog`'s live
-/// instance (enable-unfiltered).
+/// instance (enable-unfiltered). A trackbar holding the mouse keeps its own:
+/// no hit test runs until its release (`0x00622CCB`).
 pub fn hovered_help(controller: &DialogController, dialog: DialogId) -> Option<String> {
-    super::page::hovered_help(controller.gui(), controller.hovered_node_in(dialog))
+    let gui = controller.gui();
+    let held = controller
+        .pressed_node_in(dialog)
+        .filter(|node| gui.tree().kind(*node) == Ok(NodeKind::Trackbar));
+    super::page::hovered_help(gui, held.or(controller.hovered_node_in(dialog)))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -2,8 +2,8 @@
 //! five combos and Players slider, VERA's Advanced sliders and Extras rows,
 //! and every button. The widgets own the interaction (capture, the open
 //! list, the pushed look); the options stay the dialog's
-//! ([`RandomMapSetupModalState`]) and each sync shows them. Only VERA's
-//! Advanced scrollbar keeps its own press, as it pages the slider windows.
+//! ([`RandomMapSetupModalState`]) and each sync shows them. VERA's Advanced
+//! scrollbar, which pages the slider windows, is a `ScrollBar` widget.
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
@@ -12,10 +12,7 @@ use super::layout::{
     combo_face_rect, random_map_setup_dropdown_rect,
 };
 use super::page::{Pointer, slider_held};
-use super::state::{
-    DropdownScrollbarPart, RandomMapSetupModalState, SetupCombo,
-    status_help_key_for_random_map_setup,
-};
+use super::state::{RandomMapSetupModalState, SetupCombo, status_help_key_for_random_map_setup};
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
@@ -50,7 +47,8 @@ const CONTROLS: [(u16, C); 18] = [
 /// show, or an Extras row.
 const SLIDER: u16 = 0x7410;
 const EXTRAS: u16 = 0x7420;
-/// The Advanced scrollbar, a static here: it carries its status help.
+/// The Advanced scrollbar: a page a position, its thumb sized over the
+/// Advanced rows past the first page's.
 const SCROLLBAR: u16 = 0x7430;
 /// The option rows' labels: the six original rows', an Advanced slider's
 /// or an Extras row's.
@@ -59,6 +57,9 @@ const LABEL: u16 = 0x7440;
 pub const URBAN_CAPTION: u16 = 0x7450;
 /// The progress text `0x6C6`'s place.
 const PROGRESS: u16 = 0x7451;
+/// The preview static, which hovers with no help: a press on it enlarges
+/// the map (`preview_zoom`).
+const PREVIEW: u16 = 0x468;
 /// The right column's owner-draw type-1 buttons, which a slide's column
 /// art covers.
 const COLUMN: [u16; 9] = [
@@ -125,9 +126,14 @@ fn spec() -> NodeSpec {
         })
     };
     let text = |id: u16| NodeSpec::new(NodeKind::Text).id(id.into());
+    let scrollbar = NodeSpec::new(NodeKind::ScrollBar)
+        .id(SCROLLBAR.into())
+        .with(Prop::Max, Value::Int(AdvancedField::PAGE_COUNT as i32 - 1))
+        .with(Prop::RowCount, Value::Int(AdvancedField::ALL.len() as i32))
+        .with(Prop::VisibleRows, Value::Int(AdvancedField::PAGE_SIZE as i32));
     NodeSpec::new(NodeKind::Dialog)
         .children(fixed(0..4))
-        .child(text(SCROLLBAR))
+        .child(scrollbar)
         .children(rows(SLIDER, NodeKind::Trackbar, &DISABLED))
         .children(
             rows(EXTRAS, NodeKind::Button, &YELLOW)
@@ -137,6 +143,7 @@ fn spec() -> NodeSpec {
         .children(rows(LABEL, NodeKind::Text, &DISABLED))
         .child(text(URBAN_CAPTION))
         .child(text(PROGRESS))
+        .child(NodeSpec::new(NodeKind::Text).id(PREVIEW.into()).tooltip(""))
 }
 
 /// Widget `id`'s rect in the view on show; none while it does not show.
@@ -167,6 +174,7 @@ fn rect(
                 .then(|| checkbox_text_rect(layout.rect(5000), layout.scale));
         }
         PROGRESS => return Some(layout.rect(0x6C6)),
+        PREVIEW => return Some(layout.preview),
         _ => {}
     }
     let control = control_of(modal, id)?;
@@ -209,7 +217,7 @@ pub fn sync_page(
     modal: &RandomMapSetupModalState,
     layout: &RandomMapSetupLayout,
 ) -> Option<NodeId> {
-    controller.ensure_active(DIALOG, false);
+    controller.ensure_active(DIALOG);
     controller.set_scale(layout.scale);
     let root = controller.root_in(DIALOG)?;
     let gui = controller.gui_mut();
@@ -229,6 +237,10 @@ pub fn sync_page(
         let (range, pos) = match control {
             C::Players0x3eb => (modal.players_range, modal.options.num_players),
             C::Advanced(field) => (super::state::ADVANCED_RANGE, modal.advanced_value(field)),
+            C::AdvancedScrollbar => {
+                set(Prop::Pos, Value::Int(modal.advanced_page as i32));
+                continue;
+            }
             _ => {
                 if let Some(combo) = SetupCombo::from_control(control) {
                     let count = modal.combo_items(combo).len();
@@ -433,6 +445,9 @@ fn handle(
                 let changed = match control_of(modal, id) {
                     Some(C::Players0x3eb) => modal.change_num_players(value),
                     Some(C::Advanced(field)) => modal.change_advanced(field, value),
+                    Some(C::AdvancedScrollbar) => {
+                        modal.set_advanced_scroll(usize::try_from(value).unwrap_or(0))
+                    }
                     _ => false,
                 };
                 if changed {
@@ -448,7 +463,7 @@ fn handle(
 /// The pointer at `x`, `y` on the dialog: the cues it plays and the button
 /// it activated. VERA's Advanced scrollbar acts on press like the sliders:
 /// an arrow steps a page, the thumb or track takes the page under the
-/// pointer and holds the mouse until the release.
+/// pointer and holds the mouse until the release, each new page clicking.
 pub fn pointer(
     controller: &mut DialogController,
     modal: &mut RandomMapSetupModalState,
@@ -459,39 +474,6 @@ pub fn pointer(
 ) -> (Vec<PageCue>, Option<C>) {
     let mut sounds = Vec::new();
     if sync_page(controller, modal, layout).is_none() {
-        return (sounds, None);
-    }
-    let paged = match at {
-        Pointer::Down
-            if controller.gui().popup().is_none()
-                && modal.advanced
-                && modal.extras_page.is_none() =>
-        {
-            match AdvancedField::advanced_scrollbar_part_at(layout, modal.advanced_page, x, y) {
-                Some(DropdownScrollbarPart::UpArrow) => Some(modal.scroll_advanced(-1)),
-                Some(DropdownScrollbarPart::DownArrow) => Some(modal.scroll_advanced(1)),
-                Some(_) => {
-                    modal.advanced_scroll_hold = true;
-                    let page = AdvancedField::advanced_scrollbar_page_at_pointer(
-                        layout,
-                        modal.advanced_page,
-                        y,
-                    );
-                    Some(modal.set_advanced_scroll(page))
-                }
-                None => None,
-            }
-        }
-        Pointer::Move if modal.advanced_scroll_hold => {
-            let page =
-                AdvancedField::advanced_scrollbar_page_at_pointer(layout, modal.advanced_page, y);
-            Some(modal.set_advanced_scroll(page))
-        }
-        Pointer::Up if std::mem::take(&mut modal.advanced_scroll_hold) => Some(false),
-        _ => None,
-    };
-    if let Some(paged) = paged {
-        sounds.extend(paged.then_some(PageCue::ListClick));
         return (sounds, None);
     }
     let events = super::page::route(controller, at, x, y, false);
@@ -507,9 +489,13 @@ fn shown(controller: &DialogController) -> Option<&Gui> {
 /// Whether something holds the mouse: an open list (`ComboDropWin`
 /// `0x0060E0F1`), a slider since a press on it, or the Advanced scrollbar.
 /// The status line then keeps its text.
-pub fn holding(controller: &DialogController, modal: &RandomMapSetupModalState) -> bool {
-    modal.advanced_scroll_hold
-        || shown(controller).is_some_and(|gui| gui.popup().is_some() || slider_held(gui))
+pub fn holding(controller: &DialogController, _modal: &RandomMapSetupModalState) -> bool {
+    shown(controller).is_some_and(|gui| {
+        let scrollbar = gui
+            .pressed()
+            .is_some_and(|node| gui.tree().kind(node) == Ok(NodeKind::ScrollBar));
+        gui.popup().is_some() || slider_held(gui) || scrollbar
+    })
 }
 
 /// What the paint reads of the widgets: the combo whose list is open and

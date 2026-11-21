@@ -271,7 +271,7 @@ pub fn page_events(gui: &Gui, events: Vec<UiEvent>) -> Vec<PageEvent> {
                         out.push(PageEvent::Toggled(id, on));
                     }
                     (Ok(NodeKind::Combo), Value::Int(row)) => out.push(PageEvent::Picked(id, row)),
-                    (Ok(NodeKind::Trackbar), Value::Int(value)) => {
+                    (Ok(NodeKind::Trackbar | NodeKind::ScrollBar), Value::Int(value)) => {
                         out.push(PageEvent::Slid { id, value, final_ })
                     }
                     _ => {}
@@ -307,7 +307,7 @@ mod tests {
     fn a_checkbox_click_cues_before_it_reports_and_rects_follow_the_layout() {
         let mut gui = Gui::new(16);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
         ensure_built(&mut gui, root, || {
             NodeSpec::new(NodeKind::Dialog)
                 .child(

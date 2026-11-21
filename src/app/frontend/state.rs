@@ -131,6 +131,9 @@ pub(crate) struct FrontendState {
     /// The "import game files" dialog on the startup-failure card: what step it
     /// is on, and therefore which buttons the card shows.
     pub(crate) asset_import: crate::ui::asset_import::AssetImport,
+    /// The utility card's buttons as gui nodes: hover, press and the
+    /// Enter/Escape keys run there (`status_screen::CardUi`).
+    pub(crate) status_card: crate::app::frontend::status_screen::CardUi,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.

@@ -1213,6 +1213,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
 /// lobby (docs/lobby-protocol.md "Visiting the lobby"); [`show_room`] shows
 /// it again and [`abandon_for_wol_runner`] ends it.
 pub(crate) fn hide_room(state: &mut AppState) {
+    crate::app::input::multiplayer_setup::park_chat(state);
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.show_game_options(false);
@@ -1223,6 +1224,7 @@ pub(crate) fn hide_room(state: &mut AppState) {
 /// The hidden room is back on screen as it is now.
 pub(crate) fn show_room(state: &mut AppState) {
     show_dialog(state, dialog(state));
+    crate::app::input::multiplayer_setup::unpark_chat(state);
 }
 
 /// The setup's dialog on screen, newly installed or shown again.

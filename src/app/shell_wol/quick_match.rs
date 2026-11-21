@@ -31,7 +31,7 @@ use super::lobby;
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::{LanChatLine, LanListState};
+use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_lobby::{GAME_CHANNEL, MEMBER_OPERATOR, WolChannel};
 use crate::ui::wol_quick_match::*;
@@ -243,73 +243,38 @@ pub(crate) fn page_open(state: &AppState) -> bool {
 }
 
 /// `0x005E2820` on `0x117`'s `0x53F`: `f` gets the page and the adder,
-/// which wraps a row to the list's width and appends it (`0x005E29A0`),
-/// following the list widget's top.
+/// which wraps a row to the list's width and appends it (`0x005E29A0`);
+/// the list widget then keeps its view ([`vera20k_gui::Gui::log_rows`]).
 fn with_transcript(
     state: &mut AppState,
     f: impl FnOnce(&mut WolQuickMatchPage, &dyn Fn(&mut WolQuickMatchPage, LanChatLine)),
 ) {
     let layout = layout(state);
-    let scale = layout.page.scale;
-    let width = scale
-        .base_rect(
-            layout
-                .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
-                .unwrap_or_default(),
-        )
-        .w;
-    let visible = LanListState::default()
-        .geometry(
-            layout
-                .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
-                .unwrap_or_default(),
-            0,
-            scale,
-        )
-        .visible_rows;
+    let rect = layout
+        .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
+        .unwrap_or_default();
+    let width = layout.page.scale.base_rect(rect).w;
     let root = sync(state);
     let gui = state.frontend.shell_controller.gui_mut();
-    let top = std::cell::Cell::new(
-        root.and_then(|root| page::int(gui, root, TRANSCRIPT, Prop::Top))
-            .unwrap_or(0) as usize,
-    );
     let font = &state.renderer.bit_font;
     let Some(WolPage::QuickMatch(dialog)) =
         state.frontend.wol.as_mut().map(|visit| &mut visit.page)
     else {
         return;
     };
+    let dropped = std::cell::Cell::new(0);
     let add = |ui: &mut WolQuickMatchPage, line: LanChatLine| {
-        let mut list = LanListState {
-            top_index: top.get(),
-            ..LanListState::default()
-        };
-        crate::ui::lan_shell::append_list_message(
-            &mut ui.lines,
-            &mut list,
-            line,
-            width,
-            visible,
-            |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
-        );
-        top.set(list.top_index);
+        let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
+        let gone = crate::ui::lan_shell::append_wrapped(&mut ui.lines, line, width, measure);
+        dropped.set(dropped.get() + gone);
     };
     f(&mut dialog.ui, &add);
-    if let Some(root) = root {
-        page::set(
-            gui,
-            root,
-            TRANSCRIPT,
-            Prop::RowCount,
-            Value::Int(dialog.ui.lines.len() as i32),
-        );
-        page::set(
-            gui,
-            root,
-            TRANSCRIPT,
-            Prop::Top,
-            Value::Int(top.get() as i32),
-        );
+    if let Some(list) = root.and_then(|root| gui.find_id(root, TRANSCRIPT.into())) {
+        // A list built after its rows came starts at its first row.
+        if gui.get(list, Prop::Top).ok().flatten().is_none() {
+            let _ = gui.set(list, Prop::Top, Value::Int(0));
+        }
+        let _ = gui.log_rows(list, dialog.ui.lines.len(), dropped.get());
     }
 }
 
@@ -487,7 +452,7 @@ fn open_dialog(state: &mut AppState) {
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
     super::leaf::open_art(state, DIALOG);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    state.frontend.shell_controller.reset_to(DIALOG);
 }
 
 /// The runner loop's stage tests (`0x0079FF50..0x0079FFC5`): stage 2 joins

@@ -541,22 +541,28 @@ pub(crate) fn render_multiplayer_setup(
                 ));
             }
         }
-        push_new_edit(
-            &mut controls,
-            &mut texts,
-            atlas,
-            font,
-            &ui.chat.edit,
-            state
-                .platform
-                .ime
-                .composition(crate::app::input::ime::ImeTarget::SetupChat),
-            layout.chat,
-            ui.caret_visible(now),
-            label_rgb,
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale,
-        );
+        // The chat edit as its widget holds it: it keeps the room's focus,
+        // and its caret, under the room's boxes too.
+        if let Some(node) = controller.control(view.page().dialog, CHAT) {
+            let mut edit = crate::ui::shell::page::new_edit(controller.gui(), node);
+            edit.focused = controller.focused_control(view.page().dialog) == Some(CHAT);
+            push_new_edit(
+                &mut controls,
+                &mut texts,
+                atlas,
+                font,
+                &edit,
+                state
+                    .platform
+                    .ime
+                    .composition(crate::app::input::ime::ImeTarget::SetupChat),
+                layout.chat,
+                controller.caret_visible_in(view.page().dialog, node),
+                label_rgb,
+                SHELL_CONTROL_TEXT_DEPTH,
+                scale,
+            );
+        }
         let chat_rows = |_| {
             let line = |line: &crate::ui::lan_shell::LanChatLine| {
                 (String::from_utf16_lossy(&line.text), line.color)

@@ -1845,7 +1845,7 @@ impl LanCapture {
                         .context("BC chat")?
                         .chat;
                     ensure!(
-                        chat.edit.units.is_empty(),
+                        crate::app::input::multiplayer_setup::chat_text(state).is_empty(),
                         "chat Enter did not clear NewEdit"
                     );
                     ensure!(

@@ -257,7 +257,7 @@ mod tests {
             0,
         )
         .unwrap();
-        gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
         (gui, node)
     }
 

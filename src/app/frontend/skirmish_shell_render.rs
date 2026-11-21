@@ -216,8 +216,9 @@ fn build_skirmish_shell_instances(
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
-    // `0x102`'s widgets as the GUI paints them.
-    page: &[SpriteInstance],
+    // `0x102`'s widgets as the GUI paints them, and the computer rows'
+    // scrollbar arrow its List draws pushed.
+    (page, opponent_arrow): (&[SpriteInstance], Option<crate::ui::shell::list::ListScrollPart>),
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
     // Every page of the family starts with the right panel and the lower
@@ -320,7 +321,7 @@ fn build_skirmish_shell_instances(
     // The widgets, the name box among them, follow the parent background:
     // this batch has no depth test and paints in queue order.
     instances.extend_from_slice(page);
-    push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
+    push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps, opponent_arrow);
 
     if let Some(flag) = flag_name_for_country_choice(
         &shell.country_catalog,
@@ -634,7 +635,10 @@ fn render_skirmish_shell_with_atlas(
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
-            &page_paint.controls,
+            (
+                &page_paint.controls,
+                crate::ui::skirmish_shell::page::opponent_arrow(&state.frontend.shell_controller),
+            ),
         )
     };
     // Choose Map's, `0x105`'s or a browser's widgets over their art.

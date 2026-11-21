@@ -116,7 +116,7 @@ mod tests {
     fn main_menu() -> DialogController {
         let page = compute_layout(800, 600).page();
         let mut c = DialogController::default();
-        c.ensure_active(MAIN_MENU_DIALOG, false);
+        c.ensure_active(MAIN_MENU_DIALOG);
         menu_page::sync_nodes(
             &mut c,
             MAIN_MENU_DIALOG,
@@ -201,7 +201,7 @@ mod tests {
         c.on_input(InputEvent::PointerMove { x: 700, y: 210 });
         down(&mut c, 700, 210);
         // A message box over 0xE2 leaves 0xE2's own press and hover painted.
-        c.push(DialogId(0x0120), true);
+        c.push(DialogId(0x0120));
         assert_eq!(pressed_control(&c), single_player);
         assert_eq!(hovered_control(&c), single_player);
         // Destroying 0xE2 under the box clears them for the next instance.
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(hovered_control(&c), None);
         assert_eq!(c.top_id(), Some(DialogId(0x0120)));
         // Back from Single Player: 0x100's hover is never read as 0xE2's.
-        c.reset_to(DialogId(0x0100), false);
+        c.reset_to(DialogId(0x0100));
         c.on_input(InputEvent::PointerMove { x: 700, y: 210 });
         assert_eq!(hovered_control(&c), None);
     }

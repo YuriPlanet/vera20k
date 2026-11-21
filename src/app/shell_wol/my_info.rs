@@ -115,7 +115,7 @@ pub(super) fn open(state: &mut AppState) {
     };
     super::leaf::open_art(state, DIALOG);
     let _ = App::ensure_skirmish_shell_chrome(state);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    state.frontend.shell_controller.reset_to(DIALOG);
     let Some(root) = sync(state) else {
         return;
     };

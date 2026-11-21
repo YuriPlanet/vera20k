@@ -985,8 +985,12 @@ impl MoviesCapture {
                             .campaign
                             .as_ref()
                             .context("campaign page missing after press")?;
+                        let pressed = crate::ui::shell::menu_page::pressed_id(
+                            &state.frontend.shell_controller,
+                            crate::ui::campaign_shell::CAMPAIGN_DIALOG,
+                        );
                         ensure!(
-                            campaign.pressed() == Some(side),
+                            pressed == Some(side.emblem()),
                             "emblem press was not admitted"
                         );
                         self.route.push(json!({"dialog": 0x94, "frame": frame,
@@ -1058,12 +1062,12 @@ impl MoviesCapture {
                 let MoviesTarget::CampaignStart { side, .. } = self.target else {
                     bail!("emblem press without a campaign start target");
                 };
+                let pressed = crate::ui::shell::menu_page::pressed_id(
+                    &state.frontend.shell_controller,
+                    crate::ui::campaign_shell::CAMPAIGN_DIALOG,
+                );
                 ensure!(
-                    state
-                        .frontend
-                        .campaign
-                        .as_ref()
-                        .is_some_and(|page| page.pressed() == Some(side)),
+                    pressed == Some(side.emblem()),
                     "campaign emblem press changed before release"
                 );
                 App::handle_campaign_mouse_up(state);

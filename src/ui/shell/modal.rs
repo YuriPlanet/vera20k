@@ -13,6 +13,10 @@ pub mod control {
     pub const OK: u16 = 0x05AE;
     /// Win32 IDCANCEL.
     pub const CANCEL: u16 = 0x0002;
+    /// Win32 IDOK: no button carries it. IsDialogMessage sends it for Enter
+    /// and IDCANCEL for Escape; MessageBoxProc `0x005D36A0` answers both
+    /// with 1 (`0x005D370D`), so the box's hidden IDOK takes both keys.
+    pub const IDOK: u16 = 0x0001;
     pub const THIRD: u16 = 0x05AF;
 }
 
@@ -176,8 +180,11 @@ impl ShellBox {
         self
     }
 
-    /// The answer button `id` gives: its index.
+    /// The answer button `id` gives: its index; Enter and Escape's IDOK 1.
     pub fn answer(&self, id: u16) -> Option<usize> {
+        if id == control::IDOK {
+            return Some(1);
+        }
         self.buttons.iter().position(|b| b.id == id)
     }
 
@@ -204,9 +211,15 @@ impl ShellBox {
 
     /// Its buttons as nodes under its dialog root.
     pub fn nodes(&self) -> vera20k_gui::NodeSpec {
-        use vera20k_gui::{NodeKind, NodeSpec};
+        use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
         let button = |b: &BoxButton| NodeSpec::new(NodeKind::Button).id(i32::from(b.id));
-        NodeSpec::new(NodeKind::Dialog).children(self.buttons.iter().map(button))
+        let keys = NodeSpec::new(NodeKind::Button)
+            .id(i32::from(control::IDOK))
+            .with(Prop::Default, Value::Bool(true))
+            .with(Prop::Cancel, Value::Bool(true));
+        NodeSpec::new(NodeKind::Dialog)
+            .children(self.buttons.iter().map(button))
+            .child(keys)
     }
 
     /// Each button's enable, for its node.

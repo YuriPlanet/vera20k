@@ -4,6 +4,7 @@
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
+use crate::ui::shell::page::{self, PageEvent};
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -21,23 +22,50 @@ pub(crate) fn active(state: &AppState) -> bool {
     ) && state.frontend.coop_score_page.is_some()
 }
 
-pub(crate) fn update_geometry(state: &mut AppState) {
-    let layout = layout(state);
-    let (Some(chat_log), Some(chat)) = (layout.control_rect(CHAT_LOG), layout.control_rect(CHAT))
-    else {
-        return;
-    };
-    let Some(page) = state.frontend.coop_score_page.as_mut() else {
-        return;
-    };
-    let ui = &mut page.ui;
-    ui.chat
-        .list
-        .reconcile_geometry(chat_log, ui.chat.lines.len(), layout.page.scale);
-    ui.chat.edit.scroll_to_caret(
-        (layout.page.scale.base_rect(chat).w - 3).max(0) as u32,
-        |text| state.renderer.bit_font.text_width(text),
+/// BC6's page is the active dialog, its nodes on `layout`: the chat edit
+/// holds the focus throughout (BC6 never moves it), the transcript's list
+/// follows new lines, and NewEdit keeps the chat's caret in view.
+fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
+    let enabled = [CONTINUE, QUIT].map(|id| (id, enabled(state, id)));
+    let rows = state
+        .frontend
+        .coop_score_page
+        .as_ref()
+        .map_or(0, |page| page.ui.chat.lines.len());
+    let font = &state.renderer.bit_font;
+    let controller = &mut state.frontend.shell_controller;
+    controller.ensure_active(COOP_SCORE_DIALOG);
+    controller.set_scale_in(COOP_SCORE_DIALOG, layout.page.scale);
+    let rect_of = |id| layout.control_rect(id);
+    crate::ui::shell::menu_page::sync_nodes(
+        controller,
+        COOP_SCORE_DIALOG,
+        nodes,
+        rect_of,
+        &enabled,
     );
+    if controller.focused_control(COOP_SCORE_DIALOG).is_none() {
+        controller.focus_control(COOP_SCORE_DIALOG, Some(CHAT));
+    }
+    if let Some(log) = controller.control(COOP_SCORE_DIALOG, CHAT_LOG) {
+        let _ = controller.gui_mut().log_rows(log, rows, 0);
+    }
+    if let (Some(chat), Some(rect)) = (
+        controller.control(COOP_SCORE_DIALOG, CHAT),
+        layout.control_rect(CHAT),
+    ) {
+        let available = (layout.page.scale.base_rect(rect).w - 3).max(0) as u32;
+        page::scroll_edit(controller.gui_mut(), chat, available, |text| {
+            font.text_width(text)
+        });
+    }
+}
+
+pub(crate) fn update_geometry(state: &mut AppState) {
+    if active(state) {
+        let layout = layout(state);
+        sync(state, &layout);
+    }
 }
 
 /// Whether control `id` takes input now (`0x0046FB50`, `0x0046DE20`).
@@ -72,46 +100,39 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    let Some(page) = state.frontend.coop_score_page.as_mut() else {
+    if state.frontend.coop_score_page.is_none() {
         return;
-    };
+    }
+    let layout = layout(state);
+    sync(state, &layout);
     // The chat edit has the focus and takes every key; Enter submits.
-    let action = page.ui.chat.type_key(code, text).map(CoopScoreAction::Chat);
-    if let Some(action) = action {
+    let controller = &mut state.frontend.shell_controller;
+    let sent = crate::ui::lan_shell::chat_key(controller, COOP_SCORE_DIALOG, code, text);
+    if let Some(action) = sent.map(CoopScoreAction::Chat) {
         crate::app::cooperative_round::apply_action(state, action);
     }
 }
 
 /// One pointer message (`down`: `None` moves) on the page's nodes: hover
-/// writes the status help, and a press on an enabled Continue or Quit plays
-/// GUIMainButtonSound. Returns the activated button.
+/// writes the status help, a press on an enabled Continue or Quit plays
+/// GUIMainButtonSound, one on the chat edit keeps its focus and one on the
+/// log's scrollbar scrolls it (its rows take no click sound). Returns the
+/// activated button.
 fn pointer(state: &mut AppState, layout: &CoopScoreLayout, down: Option<bool>) -> Option<u16> {
-    let enabled = [CONTINUE, QUIT].map(|id| (id, enabled(state, id)));
-    let controller = &mut state.frontend.shell_controller;
-    controller.ensure_active(COOP_SCORE_DIALOG, false);
-    let rect_of = |id| layout.control_rect(id);
-    App::page_pointer(state, COOP_SCORE_DIALOG, nodes, rect_of, &enabled, down)
+    sync(state, layout);
+    let (x, y) = state.match_state.input.cursor_px();
+    let event = crate::app::input::dialog_page::event_at(x, y, down);
+    state.frontend.shell_controller.on_input(event);
+    let events = App::shell_page_events(state, false);
+    events.into_iter().rev().find_map(|event| match event {
+        PageEvent::Activated(id) => Some(id),
+        _ => None,
+    })
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
     let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some(chat_log) = layout.control_rect(CHAT_LOG) else {
-        return;
-    };
     pointer(state, &layout, None);
-    let Some(page) = state.frontend.coop_score_page.as_mut() else {
-        return;
-    };
-    let ui = &mut page.ui;
-    let geometry = ui
-        .chat
-        .list
-        .geometry(chat_log, ui.chat.lines.len(), layout.page.scale);
-    ui.chat
-        .list
-        .scroll
-        .pointer_moved(geometry, &mut ui.chat.list.top_index, x, y);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
@@ -124,8 +145,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     }
     let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y).filter(|id| enabled(state, *id));
+    let controller = &state.frontend.shell_controller;
+    let over = crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_DIALOG)
+        .filter(|id| enabled(state, *id));
     let action = match pointer(state, &layout, Some(pressed)) {
         Some(CONTINUE) => Some(CoopScoreAction::Continue),
         Some(QUIT) => Some(CoopScoreAction::Quit),
@@ -136,33 +158,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if over.is_none() {
         state.frontend.shell_controller.gui_mut().cancel_pointer();
     }
-    let ui = &mut state
-        .frontend
-        .coop_score_page
-        .as_mut()
-        .expect("checked above")
-        .ui;
-    match over.filter(|_| pressed) {
-        Some(CHAT) => ui.chat.edit.focused = true,
-        Some(CHAT_LOG) => {
-            let rect = layout.control_rect(CHAT_LOG).expect("chat list rect");
-            let geometry = ui
-                .chat
-                .list
-                .geometry(rect, ui.chat.lines.len(), layout.page.scale);
-            if let Some(part) = geometry.scroll_part_at(x, y) {
-                ui.chat.list.scroll.press(
-                    part,
-                    geometry,
-                    &mut ui.chat.list.top_index,
-                    y,
-                    Instant::now(),
-                );
-            }
-        }
-        _ if !pressed => ui.chat.list.scroll.cancel(),
-        _ => {}
-    }
     if let Some(action) = action {
         crate::app::cooperative_round::apply_action(state, action);
     }
@@ -170,22 +165,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 
 /// The chat list's scrollbar repeat timer.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let rect = layout.control_rect(CHAT_LOG)?;
-    let page = state.frontend.coop_score_page.as_mut()?;
-    let ui = &mut page.ui;
-    let geometry = ui
-        .chat
-        .list
-        .geometry(rect, ui.chat.lines.len(), layout.page.scale);
-    if ui
-        .chat
-        .list
-        .scroll
-        .poll(geometry, &mut ui.chat.list.top_index, x, y, Instant::now())
-    {
-        state.platform.window.request_redraw();
-    }
-    ui.chat.list.scroll.repeat_at()
+    let window = &state.platform.window;
+    state
+        .frontend
+        .shell_controller
+        .poll_then(|| window.request_redraw())
 }

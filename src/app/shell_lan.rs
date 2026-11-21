@@ -254,10 +254,7 @@ impl App {
         crate::util::lan_network::release();
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
-        state
-            .frontend
-            .shell_controller
-            .reset_to(DialogId(0xE2), false);
+        state.frontend.shell_controller.reset_to(DialogId(0xE2));
         state.frontend.shell_first_paint_slide = None;
     }
 
@@ -398,12 +395,20 @@ fn show_modal(state: &mut AppState, key: &'static str) {
 }
 
 /// A box's root with its buttons.
+/// OK takes Enter, and Escape when the box has no Cancel.
 fn box_spec(buttons: &[u16]) -> NodeSpec {
     let label = |id| if id == CANCEL { "GUI:Cancel" } else { "GUI:OK" };
+    let cancel = if buttons.contains(&CANCEL) {
+        CANCEL
+    } else {
+        OK
+    };
     let button = |id: &u16| {
         NodeSpec::new(NodeKind::Button)
             .id((*id).into())
             .label(label(*id))
+            .with(Prop::Default, Value::Bool(*id == OK))
+            .with(Prop::Cancel, Value::Bool(*id == cancel))
     };
     NodeSpec::new(NodeKind::Dialog).children(buttons.iter().map(button))
 }
@@ -413,7 +418,7 @@ fn box_spec(buttons: &[u16]) -> NodeSpec {
 fn push_box(state: &mut AppState, spec: NodeSpec) {
     let controller = &mut state.frontend.shell_controller;
     controller.gui_mut().cancel_pointer();
-    controller.push(MODAL, true);
+    controller.push(MODAL);
     if let Some(root) = controller.root_in(MODAL) {
         page::ensure_built(controller.gui_mut(), root, || spec);
     }
@@ -509,39 +514,42 @@ fn append_chat_to(
             1.0,
         )
     };
-    let chat = if setup {
-        state
-            .frontend
-            .multiplayer_setup
-            .as_mut()
-            .map(|ui| &mut ui.chat)
+    let width = crate::ui::lan_shell::chat_wrap_width(rect, scale, text);
+    let setup_page = setup.then(|| crate::app::shell_network_setup::dialog(state).page().dialog);
+    let font = &state.renderer.bit_font;
+    let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
+    let frontend = &mut state.frontend;
+    let controller = &mut frontend.shell_controller;
+    // The transcript and its log's list, which keeps the view.
+    let (chat, gui, list) = if let Some(page) = setup_page {
+        let list = controller.control(page, crate::ui::multiplayer_setup::CHAT_LOG);
+        let Some(ui) = frontend.multiplayer_setup.as_mut() else {
+            return;
+        };
+        // A room hidden behind the lobby keeps its log's view parked.
+        if list.is_none()
+            && let Some(parked) = ui.parked_chat.as_mut()
+        {
+            let metrics = ListMetrics::for_text(scale, text);
+            let visible = ShellListGeometry::new(rect, 0, 0, metrics).visible_rows;
+            let log = |rows, dropped| parked.log(rows, dropped, visible);
+            ui.chat.append_message(line, width, measure, log);
+            return;
+        }
+        (&mut ui.chat, controller.gui_mut(), list)
     } else if wol_lobby {
-        state
-            .frontend
-            .wol
-            .as_mut()
-            .and_then(|visit| visit.lobby_mut())
-            .map(|lobby| &mut lobby.ui.chat)
+        if let Some(lobby) = frontend.wol.as_mut().and_then(|visit| visit.lobby_mut()) {
+            lobby.ui.append_chat(line, width, measure);
+        }
+        return;
     } else {
-        state
-            .frontend
-            .lan
-            .as_mut()
-            .map(|runtime| &mut runtime.lobby.chat)
+        let list = controller.control(PAGE.dialog, CHAT_LOG);
+        let Some(runtime) = frontend.lan.as_mut() else {
+            return;
+        };
+        (&mut runtime.lobby.chat, controller.gui_mut(), list)
     };
-    if let Some(chat) = chat {
-        let visible = chat
-            .list
-            .geometry_for_text(rect, chat.lines.len(), scale, text)
-            .visible_rows;
-        let width = crate::ui::lan_shell::chat_wrap_width(rect, scale, text);
-        chat.append_message(line, width, visible, |units| {
-            state
-                .renderer
-                .bit_font
-                .text_width(&String::from_utf16_lossy(units)) as i32
-        });
-    }
+    chat.append_message(line, width, measure, log_to(gui, list));
 }
 
 /// Append the line `key` (a CSF or `VERA:` label, [`crate::i18n::label`]) to
@@ -937,16 +945,13 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && state.frontend.shell_route == ShellRoute::LanLobby
         && !shell_transition::blocks_shell_input(state);
+    let chat = state.frontend.shell_controller.focused_control(PAGE.dialog) == Some(CHAT);
     state
         .frontend
         .lan
         .as_ref()
         .filter(|runtime| {
-            routed
-                && runtime.modal.is_none()
-                && !runtime.creating
-                && runtime.lobby.enabled
-                && runtime.lobby.focused_control == CHAT
+            routed && runtime.modal.is_none() && !runtime.creating && runtime.lobby.enabled && chat
         })
         .map(|_| layout(state).rect(CHAT).unwrap_or_default())
 }
@@ -955,20 +960,16 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
     };
-    if runtime.creating {
-        match code {
-            Some(KeyCode::Enter | KeyCode::NumpadEnter) => close_create_box(state, true),
-            Some(KeyCode::Escape) => close_create_box(state, false),
-            _ => {}
-        }
-        return;
-    }
-    if runtime.modal.is_some() {
-        if matches!(
-            code,
-            Some(KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape)
-        ) {
-            acknowledge(state);
+    // The Create box and the notice take the keys through their buttons.
+    if runtime.creating || runtime.modal.is_some() {
+        if let Some(key) = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false))
+        {
+            sync_gui(state);
+            state
+                .frontend
+                .shell_controller
+                .on_input(vera20k_gui::InputEvent::Key(key));
+            handle_events(state);
         }
         return;
     }
@@ -976,20 +977,22 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if code == Some(KeyCode::Escape) {
         return;
     }
-    let actions = if let Some(edit) = LanEditKey::of(code) {
-        runtime.lobby.edit_key(edit).into_iter().collect()
-    } else {
-        runtime.lobby.insert_text(text.unwrap_or_default())
+    sync_gui(state);
+    let Some(runtime) = state.frontend.lan.as_mut() else {
+        return;
     };
+    let controller = &mut state.frontend.shell_controller;
+    let actions = crate::ui::lan_shell::key(controller, &mut runtime.lobby, code, text);
     for action in actions {
         dispatch(state, action);
     }
 }
 
-/// Builds BB's widgets once and puts them on the layout and on the lobby:
-/// the lists' rows, selections and tops (the chat log's top is its
-/// transcript's, which follows new lines), the observer box and whether the
-/// page takes input; and the box over it, if any, on its layout.
+/// Builds BB's widgets once (the name edit with the lobby's name, the chat
+/// edit focused) and puts them on the layout and on the lobby: the lists'
+/// rows, selections and tops (the chat log's follows new lines), the edits'
+/// view of their caret, the observer box and whether the page takes input;
+/// and the box over it, if any, on its layout.
 pub(crate) fn sync_gui(state: &mut AppState) {
     let layout = layout(state);
     let (width, height) = (state.render_width() as i32, state.render_height() as i32);
@@ -1005,34 +1008,34 @@ pub(crate) fn sync_gui(state: &mut AppState) {
     if controller.top_id() == Some(PAGE.dialog) {
         controller.set_scale(layout.page.scale);
     }
+    if page::ensure_built(controller.gui_mut(), root, spec) {
+        let name = runtime.lobby.notified_name.clone();
+        controller.set_text(PAGE.dialog, NAME, &name);
+        controller.focus_control(PAGE.dialog, Some(CHAT));
+    }
     let gui = controller.gui_mut();
-    page::ensure_built(gui, root, spec);
     page::sync_rects(gui, root, |id| layout.rect(id));
     let lobby = &mut runtime.lobby;
     let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
-    page::set(
-        gui,
-        root,
-        OBSERVER_TOGGLE,
-        Prop::Checked,
-        Value::Bool(observer),
-    );
+    // The observer image `0x75F` toggles like its box, anywhere on it.
+    for id in [OBSERVER_TOGGLE, OBSERVER_IMAGE] {
+        page::set(gui, root, id, Prop::Checked, Value::Bool(observer));
+    }
+    let image = layout.rect(OBSERVER_IMAGE).unwrap_or_default();
+    page::set(gui, root, OBSERVER_IMAGE, Prop::HitRect, Value::Rect(image));
     let metrics = ListMetrics::scaled(layout.page.scale);
+    if let Some(log) = gui.find_id(root, CHAT_LOG.into()) {
+        let _ = gui.log_rows(log, lobby.chat.lines.len(), 0);
+        page::set(gui, root, CHAT_LOG, Prop::Selected, Value::Int(-1));
+    }
     for (id, count, selected) in [
         (GAMES, lobby.game_count(), Some(lobby.selected_game)),
         (PLAYERS, lobby.players.len(), lobby.selected_player),
-        (CHAT_LOG, lobby.chat.lines.len(), None),
     ] {
         let rect = layout.rect(id).unwrap_or_default();
-        let top = match id {
-            CHAT_LOG => lobby.chat.list.top_index,
-            _ => page::int(gui, root, id, Prop::Top).unwrap_or(0).max(0) as usize,
-        };
+        let top = page::int(gui, root, id, Prop::Top).unwrap_or(0).max(0) as usize;
         // Discovery or a resized window may leave the top past the range.
         let top = top.min(ShellListGeometry::new(rect, count, 0, metrics).max_top);
-        if id == CHAT_LOG {
-            lobby.chat.list.top_index = top;
-        }
         let selected = selected.map_or(-1, |row| row as i32);
         for (prop, value) in [
             (Prop::RowCount, count as i32),
@@ -1042,12 +1045,12 @@ pub(crate) fn sync_gui(state: &mut AppState) {
             page::set(gui, root, id, prop, Value::Int(value));
         }
     }
-    for (edit, id) in [(&mut lobby.name, NAME), (&mut lobby.chat.edit, CHAT)] {
+    for id in [NAME, CHAT] {
         let rect = layout.rect(id).unwrap_or_default();
-        edit.scroll_to_caret(
-            (layout.page.scale.base_rect(rect).w - 3).max(0) as u32,
-            |text| font.text_width(text),
-        );
+        if let Some(edit) = gui.find_id(root, id.into()) {
+            let available = (layout.page.scale.base_rect(rect).w - 3).max(0) as u32;
+            page::scroll_edit(gui, edit, available, |text| font.text_width(text));
+        }
     }
     if let Some(boxed) = boxed {
         let create = crate::ui::shell::modal::lan_create_game_layout(width, height);
@@ -1103,33 +1106,14 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     sync_gui(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let observer_image = layout(state)
-        .rect(OBSERVER_IMAGE)
-        .is_some_and(|rect| rect.contains(x, y));
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
         controller.on_pointer_up(x, y);
         return handle_events(state);
     }
+    // A press on an edit focuses it; one on the observer box or image
+    // toggles it.
     controller.on_pointer_down(x, y);
-    let pressed = controller
-        .gui()
-        .hovered()
-        .and_then(|node| controller.gui().id_of(node))
-        .and_then(|id| u16::try_from(id).ok());
-    if on_top(state)
-        && let Some(runtime) = state.frontend.lan.as_mut()
-        && runtime.lobby.enabled
-    {
-        if let Some(id) = pressed {
-            runtime.lobby.focus(id);
-        }
-        // The observer image `0x75F` toggles like its box.
-        if observer_image {
-            lobby_command(state, OBSERVER_IMAGE);
-            App::play_page_cue(state, PageCue::Checkbox);
-        }
-    }
     handle_events(state);
 }
 
@@ -1165,7 +1149,8 @@ fn handle_events(state: &mut AppState) {
                 close_create_box(state, event == PageEvent::Activated(OK))
             }
             PageEvent::Activated(OK) => acknowledge(state),
-            PageEvent::Activated(id) | PageEvent::Toggled(id @ OBSERVER_TOGGLE, _) => {
+            PageEvent::Activated(id)
+            | PageEvent::Toggled(id @ (OBSERVER_TOGGLE | OBSERVER_IMAGE), _) => {
                 lobby_command(state, id)
             }
             // A second press in time joins the selected game.
@@ -1196,12 +1181,6 @@ fn handle_events(state: &mut AppState) {
                     .is_some_and(|runtime| runtime.lobby.select_player(row as usize))
                 {
                     App::play_page_cue(state, PageCue::ListClick);
-                }
-            }
-            PageEvent::Scrolled(CHAT_LOG) => {
-                let top = list_top(state, CHAT_LOG);
-                if let Some(runtime) = state.frontend.lan.as_mut() {
-                    runtime.lobby.chat.list.top_index = top;
                 }
             }
             _ => {}

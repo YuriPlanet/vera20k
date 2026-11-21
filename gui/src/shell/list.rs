@@ -264,6 +264,19 @@ impl ShellListGeometry {
     }
 }
 
+/// A transcript's top after its rows changed (the line adder `0x005E29A0`):
+/// of its `old` rows `dropped` left the front, and it now holds `rows`, of
+/// which `visible` show. A view that showed the last row (`top` none: never
+/// scrolled) follows to the new last row; any other keeps showing the same
+/// rows, its top up by `dropped`, within the scroll range.
+pub fn log_top(old: usize, top: Option<usize>, visible: usize, rows: usize, dropped: usize) -> usize {
+    let max_top = rows.saturating_sub(visible);
+    match top {
+        Some(top) if old.saturating_sub(top) > visible => top.saturating_sub(dropped).min(max_top),
+        _ => max_top,
+    }
+}
+
 /// The paint surface of the `0x744` list box window `list`: one pixel wider
 /// and taller, which reproduces the retail frames (a scrollbar only above 15
 /// rows, at `x + w - 20` and 20 wide, a 202 px thumb for 17 rows).

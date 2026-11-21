@@ -13,7 +13,7 @@
 //! `Open`, `Top` and, on a pick, `Selected`.
 
 use super::{Capture, Ctx, WidgetState, instant, ui_ms};
-use crate::gui::UiEvent;
+use crate::gui::{Key, UiEvent};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
 use crate::shell::combobox::{ComboPopup, combo_arrow_hit_rect, combo_face_rect};
 use crate::shell::geom::ShellScale;
@@ -244,8 +244,13 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
         return;
     }
     let pick = popup.row_at(x, y);
+    close_on(ctx, node, pick);
+}
+
+/// Closes the list with the close cue, then selects `pick`: CBN_SELCHANGE
+/// on every pick, the current row too.
+fn close_on(ctx: &mut Ctx<'_>, node: NodeId, pick: Option<usize>) {
     close(ctx, node);
-    // CBN_SELCHANGE on every pick, the current row too.
     if let Some(row) = pick {
         let value = Value::Int(row as i32);
         let _ = ctx.tree.set(node, Prop::Selected, value.clone());
@@ -255,6 +260,37 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
             final_: true,
         });
     }
+}
+
+/// A key on the open list, for a host whose list takes the keyboard (VERA's
+/// Keyboard page): Up and Down move the hot row (from the selection) within
+/// the rows, keeping it shown; Enter picks it and Escape closes, both with
+/// the close cue.
+pub(crate) fn key(ctx: &mut Ctx<'_>, node: NodeId, key: Key) {
+    let Some(popup) = open_popup(ctx, node) else {
+        *ctx.popup = None;
+        return;
+    };
+    let selected = ctx.tree.node(node).ok().and_then(selected);
+    let Some(st) = state_mut(ctx.tree, node) else {
+        return;
+    };
+    let step = match key {
+        Key::Up => -1,
+        Key::Down => 1,
+        Key::Enter => {
+            let pick = st.hot_row.or(selected);
+            return close_on(ctx, node, pick);
+        }
+        Key::Escape => return close(ctx, node),
+        _ => return,
+    };
+    let last = popup.total.saturating_sub(1);
+    let row = st.hot_row.or(selected).unwrap_or(0).saturating_add_signed(step).min(last);
+    st.hot_row = Some(row);
+    let before = st.top_index;
+    st.top_index = st.top_index.min(row).max((row + 1).saturating_sub(popup.visible_rows));
+    sync_top(ctx, node, before);
 }
 
 pub(crate) fn popup_move(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
@@ -311,7 +347,7 @@ pub(crate) fn popup_release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
 #[cfg(test)]
 mod tests {
     use crate::node::{NodeId, NodeKind, Prop, Value};
-    use crate::{DialogKind, Gui, InputEvent, MouseButton, Rect, UiEvent};
+    use crate::{DialogKind, Gui, InputEvent, Key, MouseButton, Rect, UiEvent};
 
     /// A 120x24 combo at (10, 20) with `rows` items, `cap` shown at once.
     fn page_with_combo(rows: usize, cap: i32) -> (Gui, NodeId) {
@@ -324,7 +360,7 @@ mod tests {
         g.set(c, Prop::Items, Value::Items(items)).unwrap();
         g.set(c, Prop::Selected, Value::Int(0)).unwrap();
         g.set(c, Prop::VisibleRows, Value::Int(cap)).unwrap();
-        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        g.push_dialog(root, DialogKind::Page).unwrap();
         (g, c)
     }
 
@@ -350,6 +386,31 @@ mod tests {
             .into_iter()
             .filter(|e| !matches!(e, UiEvent::Hovered { .. }))
             .collect()
+    }
+
+    #[test]
+    fn keys_move_the_hot_row_within_the_rows_and_enter_picks_it() {
+        let (mut g, c) = page_with_combo(3, 0);
+        assert!(!g.key_popup(Key::Down), "a closed list leaves the keys");
+        click(&mut g, 129, 25);
+        for _ in 0..3 {
+            assert!(g.key_popup(Key::Down));
+        }
+        assert_eq!(g.combo_drop_down(c).unwrap().hot_row, Some(2));
+        g.key_popup(Key::Up);
+        g.drain_events();
+        g.key_popup(Key::Enter);
+        assert_eq!(
+            g.drain_events(),
+            vec![
+                UiEvent::ComboClosed { node: c },
+                UiEvent::Changed { node: c, value: Value::Int(1), final_: true },
+            ]
+        );
+        click(&mut g, 129, 25);
+        g.key_popup(Key::Escape);
+        assert_eq!(g.drain_events(), vec![UiEvent::ComboClosed { node: c }]);
+        assert_eq!(g.get(c, Prop::Selected).unwrap(), Some(&Value::Int(1)));
     }
 
     #[test]

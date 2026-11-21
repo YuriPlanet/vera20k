@@ -222,17 +222,14 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 /// Three rows a wheel notch, as the other shell lists scroll. The open offer
 /// takes every wheel turn.
 pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
-    let (Some(node), Some((geometry, top, _))) = (sync(state), view(state)) else {
+    let Some(node) = sync(state) else {
         return false;
     };
-    let to = (top as i32 - (lines * 3.0) as i32).clamp(0, geometry.max_top as i32);
-    if to as usize != top {
-        let _ = state
-            .frontend
-            .shell_controller
-            .gui_mut()
-            .set(node, Prop::Top, Value::Int(to));
-    }
+    let controller = &mut state.frontend.shell_controller;
+    let gui = controller.gui_mut();
+    let _ = gui.set(node, Prop::WheelStep, Value::Int(1));
+    gui.wheel_list(node, (lines * 3.0) as i32);
+    gui.drain_events();
     true
 }
 

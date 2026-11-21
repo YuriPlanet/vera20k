@@ -300,15 +300,6 @@ pub(crate) enum WolLoginAction {
     Manage,
 }
 
-/// A key on the page: one the focused NewEdit edits with, or the dialog's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum WolEditKey {
-    Edit(Key),
-    Tab { reverse: bool },
-    Enter,
-    Escape,
-}
-
 /// One key or typed character into the top dialog's focused NewEdit; true
 /// when its text changed (EN_CHANGE).
 pub(crate) fn typed(ui: &mut DialogController, event: InputEvent) -> bool {
@@ -341,7 +332,12 @@ fn edit(id: u16, limit: usize) -> NodeSpec {
 /// its 18x18 icon and toggles on the press. VERA online's page has its
 /// sign-in form's fields and Remember password in their place.
 pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
-    let buttons = page::menu_buttons(policy.page_spec());
+    // Enter clicks Login, or VERA online's Play.
+    let buttons = page::menu_buttons(policy.page_spec()).map(|button| {
+        let enter = [LOGIN, PLAY].map(|id| (Prop::Id, Value::Int(id.into())));
+        let default = button.props.iter().any(|prop| enter.contains(prop));
+        button.with(Prop::Default, Value::Bool(default))
+    });
     let check = |id: u16, key| NodeSpec::new(NodeKind::Checkbox).id(id.into()).label(key);
     let text = |id: u16, align: ShellAlign| {
         NodeSpec::new(NodeKind::Text)
@@ -827,51 +823,35 @@ impl WolLoginState {
         }
     }
 
-    /// A key in the focused NewEdit. Enter sends `0x4DA` to the dialog, which
-    /// clicks Login when the combo text is nonempty and the password has
-    /// eight characters (`0x0079AD1E..`). Escape is consumed by the NewEdit:
-    /// the proc has no IDCANCEL case. VERA online: an open popup takes every
-    /// key, Escape being its Cancel; otherwise the sign-in form takes them,
-    /// Enter being Play's click and Tab moving between its fields.
-    pub(crate) fn edit_key(
-        &mut self,
-        cx: &mut LoginCx<'_>,
-        key: WolEditKey,
-    ) -> Option<WolLoginAction> {
-        if let Some(form) = self.account.as_mut() {
-            let action = match key {
-                WolEditKey::Escape => form.activate(cx.ui, FORM_CANCEL),
-                key => form.edit_key(cx.ui, key),
-            };
-            return self.form_action(cx, action);
-        }
-        if key == WolEditKey::Escape {
+    /// Enter or Escape: the top dialog's default or cancel button. Enter
+    /// sends `0x4DA` to the dialog, which clicks Login, enabled when the combo
+    /// text is nonempty and the password has eight characters
+    /// (`0x0079AD1E..`); Escape is consumed by the NewEdit, the proc having no
+    /// IDCANCEL case, and leaves an open nickname list open. VERA online: an
+    /// open popup's OK and Cancel take them; otherwise Enter is Play's click.
+    pub(crate) fn dialog_key(&mut self, cx: &mut LoginCx<'_>, key: Key) -> Option<WolLoginAction> {
+        if key == Key::Escape && self.account.is_none() {
             return None;
         }
-        if let Some(form) = self.form.as_mut() {
-            let action = form.edit_key(cx.ui, key);
-            return self.form_action(cx, action);
+        self.refresh(cx);
+        cx.ui.on_input(InputEvent::Key(key));
+        let raw = cx.ui.drain_events();
+        let events = page::page_events(cx.ui.gui(), raw);
+        self.handle(cx, events)
+    }
+
+    /// Any other key, for the focused NewEdit; Tab is GetNextDlgTabItem
+    /// (`0x00600C70`): the two edits are the only enabled WS_TABSTOP
+    /// children, and the online forms' fields theirs. An open popup takes
+    /// every key.
+    pub(crate) fn edit_key(&mut self, cx: &mut LoginCx<'_>, key: Key) {
+        if let Some(form) = self.account.as_mut() {
+            form.edit_key(cx.ui, key);
+        } else if let Some(form) = self.form.as_mut() {
+            form.edit_key(cx.ui, key);
+        } else {
+            cx.changed(InputEvent::Key(key));
         }
-        match key {
-            WolEditKey::Tab { .. } => {
-                // GetNextDlgTabItem (`0x00600C70`): the two edits are the
-                // only enabled WS_TABSTOP children.
-                let next = if cx.ui.focused_control(DIALOG) == Some(NICKNAME) {
-                    PASSWORD
-                } else {
-                    NICKNAME
-                };
-                cx.ui.focus_control(DIALOG, Some(next));
-            }
-            WolEditKey::Enter => {
-                cx.globals.password = cx.ui.text(DIALOG, PASSWORD);
-                let ok = login_ok(&cx.ui.text(DIALOG, NICKNAME), &cx.globals.password);
-                return ok.then_some(WolLoginAction::Close(LOGIN));
-            }
-            WolEditKey::Edit(key) => cx.changed(InputEvent::Key(key)),
-            WolEditKey::Escape => {}
-        }
-        None
     }
 }
 
@@ -978,7 +958,7 @@ mod tests {
     impl Page {
         fn new(globals: WolAccountGlobals, credentials: Vec<WolCredential>) -> Self {
             let mut ui = DialogController::default();
-            ui.push(DIALOG, true);
+            ui.push(DIALOG);
             Self {
                 ui,
                 globals,
@@ -1162,7 +1142,7 @@ mod tests {
             !page.on(FORGET, Prop::Enabled),
             "password EN_CHANGE disables Forget"
         );
-        assert_eq!(login.edit_key(&mut page.cx(), WolEditKey::Enter), None);
+        assert_eq!(login.dialog_key(&mut page.cx(), Key::Enter), None);
         login.insert_text(&mut page.cx(), "89");
         assert_eq!(page.globals.password, "12345678", "limit 8");
         assert!(page.on(LOGIN, Prop::Enabled) && page.on(REMEMBER, Prop::Enabled));
@@ -1173,12 +1153,12 @@ mod tests {
         page.click(&mut login, inside(remember));
         assert!(page.globals.remember && page.on(REMEMBER, Prop::Checked));
         assert_eq!(
-            login.edit_key(&mut page.cx(), WolEditKey::Enter),
+            login.dialog_key(&mut page.cx(), Key::Enter),
             Some(WolLoginAction::Close(LOGIN))
         );
         // Typing in the nickname again empties the password field.
         page.focus(NICKNAME);
-        login.edit_key(&mut page.cx(), WolEditKey::Edit(Key::Backspace));
+        login.edit_key(&mut page.cx(), Key::Backspace);
         assert!(page.units(PASSWORD) == 0 && page.globals.password.is_empty());
         assert!(!page.on(LOGIN, Prop::Enabled) && !page.on(REMEMBER, Prop::Enabled));
         assert!(
@@ -1304,7 +1284,7 @@ mod tests {
         // The form starts from the last username with its password focused;
         // the username takes a name's characters only.
         assert_eq!(login.online_name(&page.ui), "Boris");
-        login.edit_key(&mut page.cx(), WolEditKey::Tab { reverse: true });
+        login.edit_key(&mut page.cx(), Key::BackTab);
         login.insert_text(&mut page.cx(), " 2!");
         assert_eq!(login.online_name(&page.ui), "Boris2");
         for (button, kind) in [
@@ -1321,14 +1301,14 @@ mod tests {
             );
         }
         // Escape is the popup's Cancel.
-        assert_eq!(login.edit_key(&mut page.cx(), WolEditKey::Escape), None);
+        assert_eq!(login.dialog_key(&mut page.cx(), Key::Escape), None);
         assert!(login.account.is_none() && page.ui.top_id() == Some(DIALOG));
         // Without a username Play has nothing to sign in under.
         for _ in 0.."Boris2".len() {
-            login.edit_key(&mut page.cx(), WolEditKey::Edit(Key::Backspace));
+            login.edit_key(&mut page.cx(), Key::Backspace);
         }
         assert!(!login.button_enabled(&page.ui, PLAY));
-        assert_eq!(login.edit_key(&mut page.cx(), WolEditKey::Enter), None);
+        assert_eq!(login.dialog_key(&mut page.cx(), Key::Enter), None);
     }
 
     #[test]
@@ -1338,7 +1318,7 @@ mod tests {
         let mut page = Page::new(WolAccountGlobals::default(), Vec::new());
         let mut login = WolLoginState::open_online(&mut page.cx(), None, Some("Boris"));
         assert_eq!(login.online_name(&page.ui), "Boris");
-        assert_eq!(login.edit_key(&mut page.cx(), WolEditKey::Enter), close);
+        assert_eq!(login.dialog_key(&mut page.cx(), Key::Enter), close);
         assert_eq!(
             (
                 page.globals.nickname.as_str(),

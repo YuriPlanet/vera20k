@@ -1,6 +1,5 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
-use super::state::DropdownScrollbarPart;
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
     ScaledRects, ShellScale, child_window, dialog_origin, dlu_rect, right_panel_rects,
@@ -311,45 +310,6 @@ impl AdvancedField {
         let top = page.min(Self::PAGE_COUNT - 1);
         let thumb_y = scrollbar_thumb_y(bar, thumb_h, top, Self::PAGE_COUNT - 1, metrics);
         RectPx::new(bar.x, thumb_y, bar.w, thumb_h)
-    }
-
-    /// Which part of the Advanced scrollbar a point is over.
-    pub fn advanced_scrollbar_part_at(
-        layout: &RandomMapSetupLayout,
-        page: usize,
-        x: i32,
-        y: i32,
-    ) -> Option<DropdownScrollbarPart> {
-        let bar = Self::advanced_scrollbar_rect(layout);
-        if !bar.contains(x, y) {
-            return None;
-        }
-        let button_h = DropdownMetrics::scaled(layout.scale).button_h;
-        if y < bar.y + button_h {
-            return Some(DropdownScrollbarPart::UpArrow);
-        }
-        if y >= bar.y + bar.h - button_h {
-            return Some(DropdownScrollbarPart::DownArrow);
-        }
-        let thumb = Self::advanced_scrollbar_thumb(layout, page);
-        Some(if thumb.contains(x, y) {
-            DropdownScrollbarPart::Thumb
-        } else {
-            DropdownScrollbarPart::Track
-        })
-    }
-
-    /// Scroll offset a track press or thumb drag maps to.
-    pub fn advanced_scrollbar_page_at_pointer(
-        layout: &RandomMapSetupLayout,
-        page: usize,
-        y: i32,
-    ) -> usize {
-        let bar = Self::advanced_scrollbar_rect(layout);
-        let thumb = Self::advanced_scrollbar_thumb(layout, page);
-        use vera20k_gui::shell::list::{ListMetrics, scrollbar_top_at_pointer};
-        let metrics = ListMetrics::scaled(layout.scale);
-        scrollbar_top_at_pointer(bar, thumb.h, Self::PAGE_COUNT - 1, y, metrics)
     }
 
     /// The row label: the string table's own names where it has one.
@@ -1159,7 +1119,10 @@ mod tests {
     /// between the two seven-row windows, and the Extras view keeps its rows.
     #[test]
     fn advanced_scrollbar_sits_beside_the_sliders_and_maps_to_pages() {
-        use super::DropdownScrollbarPart;
+        use crate::ui::shell::page::PageCue;
+        use crate::ui::skirmish_shell::RandomMapSetupModalState as Modal;
+        use crate::ui::skirmish_shell::page::Pointer;
+        use crate::ui::skirmish_shell::random_map_page;
         let setup = compute_random_map_setup_layout(800, 600);
         let bar = AdvancedField::advanced_scrollbar_rect(&setup);
         let sliders = setup.advanced_control_rects;
@@ -1174,18 +1137,31 @@ mod tests {
             random_map_setup_control_at_view(&setup, px, py, true, false, false, 0),
             Some(RandomMapSetupControl::AdvancedScrollbar)
         );
-        assert_eq!(
-            AdvancedField::advanced_scrollbar_part_at(&setup, 0, px, bar.y + 2),
-            Some(DropdownScrollbarPart::UpArrow)
-        );
-        assert_eq!(
-            AdvancedField::advanced_scrollbar_part_at(&setup, 0, px, bar.y + bar.h - 2),
-            Some(DropdownScrollbarPart::DownArrow)
-        );
-        assert_eq!(
-            AdvancedField::advanced_scrollbar_page_at_pointer(&setup, 0, bar.y + bar.h - 2),
-            1
-        );
+        // Its widget: an arrow steps a page with a click, the track takes
+        // the page under the pointer and follows it until the release.
+        let options = crate::map::rmg::options::RmgOptions {
+            seed: 1,
+            ..Default::default()
+        };
+        let mut modal = Modal::open(options, None, false);
+        modal.toggle_advanced();
+        let mut controller = crate::ui::shell::controller::DialogController::default();
+        let mut at = |modal: &mut Modal, pointer, y| {
+            random_map_page::pointer(&mut controller, modal, &setup, pointer, px, y).0
+        };
+        let (down, up) = (bar.y + bar.h - 2, bar.y + 2);
+        assert_eq!(at(&mut modal, Pointer::Down, down), [PageCue::ListClick]);
+        at(&mut modal, Pointer::Up, down);
+        assert_eq!(modal.advanced_page, 1);
+        assert_eq!(at(&mut modal, Pointer::Down, up), [PageCue::ListClick]);
+        assert_eq!(modal.advanced_page, 0);
+        at(&mut modal, Pointer::Up, up);
+        assert_eq!(at(&mut modal, Pointer::Down, bottom.y + bottom.h / 2), [PageCue::ListClick]);
+        assert_eq!(at(&mut modal, Pointer::Move, top.y), [PageCue::ListClick]);
+        assert_eq!(modal.advanced_page, 0);
+        at(&mut modal, Pointer::Up, top.y);
+        assert!(at(&mut modal, Pointer::Move, bottom.y + bottom.h / 2).is_empty());
+        assert_eq!(modal.advanced_page, 0, "released");
     }
 
     #[test]

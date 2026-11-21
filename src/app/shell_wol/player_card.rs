@@ -14,7 +14,7 @@ use crate::app::web_link;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
-    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, WolCardAction, WolLobbyState,
+    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, CARD_ROWS, WolCardAction, WolLobbyState,
     WolPlayerCard, badge_name_key,
 };
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
@@ -103,8 +103,15 @@ pub(super) fn sync(state: &mut AppState) {
         .map(|(id, rect)| (id, rect, enabled(state, &name, id)))
         .collect();
     let value = country_value(state);
+    let layout = layout(state);
+    // Each shown row hovers from its caption to its value's end.
+    let rows: Vec<RectPx> = (layout.rows.iter().take(rows(state, &name).len()))
+        .map(|(caption, value)| {
+            RectPx::new(caption.x, value.y, value.x + value.w - caption.x, value.h)
+        })
+        .collect();
     if let Some(ui) = card_ui_mut(state) {
-        ui.sync_card(|id| {
+        ui.sync_card(layout.dialog, &rows, |id| {
             placed
                 .iter()
                 .find(|(known, ..)| *known == id)
@@ -226,19 +233,10 @@ pub(super) fn opened(state: &mut AppState, name: &str) {
     state.platform.window.request_redraw();
 }
 
-/// A press outside the box closes the card; the card's widgets take the
-/// rest, the open country list every press (ComboDropWin's capture), a
-/// button when released over itself (the modal's).
-pub(super) fn mouse(state: &mut AppState, pressed: bool) -> bool {
-    if card_ui(state).is_none_or(WolLobbyState::countries_open) {
-        return false;
-    }
-    let (x, y) = state.match_state.input.cursor_px();
-    if pressed && !layout(state).dialog.contains(x, y) {
-        close(state);
-        return true;
-    }
-    false
+/// A press outside the box closes the card (the card's widgets report it;
+/// the open country list takes every press first, ComboDropWin's capture).
+pub(super) fn dismissed(state: &mut AppState) {
+    close(state);
 }
 
 /// Card button `id` released.
@@ -271,22 +269,10 @@ fn act(state: &mut AppState, name: String, action: WolCardAction) {
     }
 }
 
-/// Escape closes the open country list, else the card, which keeps every
-/// key from the chat edit.
-pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>) -> bool {
-    let Some(open) = card_ui(state).map(WolLobbyState::countries_open) else {
-        return false;
-    };
-    if code == Some(KeyCode::Escape) {
-        if open {
-            if let Some(ui) = card_ui_mut(state) {
-                ui.close_countries();
-            }
-        } else {
-            close(state);
-        }
-    }
-    true
+/// The card keeps every key from the chat edit but Escape, which its
+/// widgets take: it closes the open country list, else Close (its Cancel).
+pub(super) fn key_press(state: &AppState, code: Option<KeyCode>) -> bool {
+    card_ui(state).is_some() && code != Some(KeyCode::Escape)
 }
 
 /// The hovered button's help while the card is open, else the help of the
@@ -302,17 +288,12 @@ pub(super) fn status_help(state: &AppState) -> Option<String> {
         Some(CARD_BUDDY) => "VERA:AddBuddyHelp",
         Some(CARD_PROFILE) => "VERA:FullProfileHelp",
         _ if open => return Some(String::new()),
-        _ => {
-            let (x, y) = state.match_state.input.cursor_px();
-            let help = layout(state)
-                .rows
-                .iter()
-                .zip(rows(state, &card.name))
-                .find(|((caption, value), _)| {
-                    (caption.x..value.x + value.w).contains(&x)
-                        && (value.y..value.y + value.h).contains(&y)
-                })
-                .and_then(|(_, row)| row.help);
+        // The row under the pointer gives its own help.
+        hovered => {
+            let row = hovered.and_then(|id| id.checked_sub(CARD_ROWS));
+            let help = row
+                .and_then(|row| rows(state, &card.name).into_iter().nth(usize::from(row)))
+                .and_then(|row| row.help);
             return Some(help.unwrap_or_default());
         }
     };

@@ -189,12 +189,14 @@ fn popup_spec(create: bool, room: Option<RoomLimits>) -> NodeSpec {
     };
     let static_text = crate::ui::wol_page::static_text;
     let edit = |id: u16, limit: i32| {
+        // Tab moves the focus; the caret keeps the chat edit's blink phase.
         NodeSpec::new(NodeKind::Edit)
             .id(id.into())
             .with(Prop::MaxLen, Value::Int(limit))
+            .with(Prop::KeepsBlink, Value::Bool(true))
     };
     let mut spec = NodeSpec::new(NodeKind::Dialog)
-        .child(button(POPUP_OK, "GUI:OK"))
+        .child(button(POPUP_OK, "GUI:OK").with(Prop::Default, Value::Bool(true)))
         .child(button(POPUP_CANCEL, "GUI:Cancel"))
         .child(edit(POPUP_PASSWORD, PASSWORD_LIMIT as i32).with(Prop::Password, Value::Bool(true)));
     if create {
@@ -297,8 +299,7 @@ impl WolLobbyState {
             return;
         };
         page::ensure_built(&mut self.gui, root, || popup_spec(create.is_some(), room));
-        let ok = self.gui.find_id(root, POPUP_OK.into());
-        let Ok(dialog) = self.gui.push_dialog(root, DialogKind::Modal, ok, None) else {
+        let Ok(dialog) = self.gui.push_dialog(root, DialogKind::Modal) else {
             return;
         };
         self.gui.set_dialog_scale(dialog, self.scale);

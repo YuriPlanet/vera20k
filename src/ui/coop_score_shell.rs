@@ -174,19 +174,6 @@ impl CoopScoreLayout {
     pub fn control_rect(&self, id: u16) -> Option<RectPx> {
         self.controls.get(id).or_else(|| self.page.button_rect(id))
     }
-
-    /// The topmost control under the pointer, for hover help and presses.
-    pub fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        self.page
-            .buttons
-            .iter()
-            .map(|button| button.id)
-            .chain(self.controls.iter().map(|(id, _)| id))
-            .find(|id| {
-                self.control_rect(*id)
-                    .is_some_and(|rect| rect.contains(x, y))
-            })
-    }
 }
 
 /// A control's status help (`STT:` key), from the template table.
@@ -212,28 +199,31 @@ pub enum CoopScoreAction {
 }
 
 /// The page's buttons and body controls as nodes in hit order, the buttons
-/// first: each hovers with its help, and only the buttons press.
+/// first: each hovers with its help. The buttons press, the chat edit
+/// `0x540` edits and its log `0x53F` scrolls; the rest only hover.
 pub fn nodes() -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
     let body = COOP_SCORE_CONTROLS.iter().map(|spec| spec.id);
-    COOP_SCORE_PAGE.nodes().children(
-        body.chain([PREVIEW, MODE_LABEL, MAP_LABEL])
-            .map(|id| menu_page::hover_target(id, help_key(id).unwrap_or_default())),
-    )
+    COOP_SCORE_PAGE
+        .nodes()
+        .children(body.chain([PREVIEW, MODE_LABEL, MAP_LABEL]).map(|id| {
+            let help = help_key(id).unwrap_or_default();
+            match id {
+                CHAT => NodeSpec::new(NodeKind::Edit).id(id.into()).tooltip(help),
+                CHAT_LOG => NodeSpec::new(NodeKind::List)
+                    .id(id.into())
+                    .tooltip(help)
+                    .with(Prop::RowCount, Value::Int(0)),
+                id => menu_page::hover_target(id, help),
+            }
+        }))
 }
 
-/// BC6's own interaction state: the chat and its focus (the buttons are
-/// nodes).
-#[derive(Debug, Clone)]
+/// BC6's own state: the chat transcript (the buttons, the chat edit and
+/// the log's scroll are nodes).
+#[derive(Debug, Clone, Default)]
 pub struct CoopScoreState {
     pub chat: LanChatState,
-}
-
-impl Default for CoopScoreState {
-    fn default() -> Self {
-        let mut chat = LanChatState::default();
-        chat.edit.focused = true;
-        Self { chat }
-    }
 }
 
 /// The texts the tail `0x0046EE17` writes once: this mission's rows

@@ -2,7 +2,6 @@
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
 use super::chrome::*;
-use super::controls::push_new_edit;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
@@ -167,36 +166,6 @@ pub(crate) fn render_lan_lobby(
                 SHELL_LABEL_TEXT_RGB,
             ));
         }
-        let chat_composition = state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::LanLobbyChat);
-        for (rect, edit, composition) in [
-            (
-                layout.rect(crate::ui::lan_shell::NAME).unwrap_or_default(),
-                &lobby.name,
-                None,
-            ),
-            (
-                layout.rect(crate::ui::lan_shell::CHAT).unwrap_or_default(),
-                &lobby.chat.edit,
-                chat_composition,
-            ),
-        ] {
-            push_new_edit(
-                &mut controls,
-                &mut texts,
-                atlas,
-                font,
-                edit,
-                composition,
-                rect,
-                lobby.enabled && lobby.caret_visible(now),
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-                scale,
-            );
-        }
         let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
         // The column's buttons (left to the slide while it runs), the lists
         // with their rows as their widgets hold them and the observer box.
@@ -240,7 +209,13 @@ pub(crate) fn render_lan_lobby(
             Some(state.csf_label(key, key))
         };
         let enabled_of = |_| Some(lobby.enabled);
+        // An edit's caret blinks while it has BB's focus, under the message
+        // box too.
+        let controller = &state.frontend.shell_controller;
+        let caret_of =
+            |node| lobby.enabled && controller.caret_visible_in(PAGE.dialog, node);
         let style = super::gui_paint::GuiStyle {
+            caret_of: Some(&caret_of),
             buttons: match sliding {
                 true => super::gui_paint::ButtonArt::Host,
                 false => super::gui_paint::ButtonArt::Panel,
@@ -252,7 +227,10 @@ pub(crate) fn render_lan_lobby(
             ..Default::default()
         };
         if let Some(root) = root {
-            let paint = super::gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
+            // The observer image paints as its art below, not as a box.
+            let skip = [crate::ui::lan_shell::OBSERVER_IMAGE];
+            let ids = super::gui_paint::child_ids_except(gui, root, &skip);
+            let paint = super::gui_paint::paint_gui_ids(state, gui, root, ids, scale, style);
             controls.extend(paint.controls);
             texts.extend(paint.texts);
         }

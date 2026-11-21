@@ -823,7 +823,7 @@ fn list_metrics(state: &AppState) -> (i32, usize) {
     let (width, height) = crate::app::frontend::skirmish_shell_render::in_game_shell_size(state);
     let rect = crate::ui::shell::connection::list_rect(width, height);
     let page = state.match_state.network_wait.page();
-    let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.list.top_index));
+    let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.top));
     let geometry = crate::ui::shell::list::ShellListGeometry::new(
         rect,
         count,
@@ -840,7 +840,7 @@ fn append_line(state: &mut AppState, text: &str) {
     if let Some(page) = state.match_state.network_wait.page_mut() {
         crate::ui::lan_shell::append_list_message(
             &mut page.lines,
-            &mut page.list,
+            &mut page.top,
             LanChatLine {
                 text: text.encode_utf16().collect(),
                 color: u32::MAX,

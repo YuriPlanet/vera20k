@@ -17,7 +17,7 @@ use vera20k_gui::{NodeKind, NodeSpec};
 use super::descriptor::DialogId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
-use crate::ui::lan_shell::{LanChatLine, LanListState};
+use crate::ui::lan_shell::LanChatLine;
 
 pub const DIALOG: DialogId = DialogId(0xEA);
 
@@ -251,7 +251,8 @@ pub(crate) struct ConnectionPage {
     pub(crate) countdown: Option<String>,
     /// List 0x651.
     pub(crate) lines: Vec<LanChatLine>,
-    pub(crate) list: LanListState,
+    /// List 0x651's first shown row.
+    pub(crate) top: usize,
     /// The wait's elapsed buckets at the last full repaint: the bars are
     /// drawn by WM_PAINT, which the wait posts on even countdown seconds.
     pub(crate) painted_elapsed: u64,
@@ -308,7 +309,7 @@ impl ConnectionPage {
             self.lines.remove(0);
         }
         let last = self.lines.len().saturating_sub(1);
-        self.list.top_index = last.min(self.lines.len().saturating_sub(visible_rows));
+        self.top = last.min(self.lines.len().saturating_sub(visible_rows));
     }
 }
 
@@ -532,6 +533,6 @@ mod tests {
         }
         assert_eq!(page.lines.len(), 50);
         assert_eq!(String::from_utf16_lossy(&page.lines[0].text), "1");
-        assert_eq!(page.list.top_index, 43);
+        assert_eq!(page.top, 43);
     }
 }

@@ -100,7 +100,7 @@ pub(crate) fn render_connection_shell(
                 SHELL_CONTROL_DEPTH - 0.00001,
             );
         }
-        let top = page.list.top_index;
+        let top = page.top;
         let geometry =
             ShellListGeometry::new(layout.list, page.lines.len(), top, ListMetrics::RETAIL);
         super::list::paint_list(

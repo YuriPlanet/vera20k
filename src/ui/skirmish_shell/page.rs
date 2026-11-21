@@ -70,6 +70,10 @@ const CONTROLS: [(u16, Target); 18] = [
 /// The name box: a dialog's Win32 edit, so a press that focuses it selects
 /// the name, and `EM_LIMITTEXT` caps its ANSI bytes.
 const PLAYER_NAME: u16 = 0x6A0;
+/// VERA's scrollbar beside the computer rows: a List over them that only
+/// scrolls (its rect is the scrollbar alone), a row an arrow step and a
+/// wheel notch ([`super::state::opponent_scroll_rows`]).
+pub const OPPONENT_SCROLL: u16 = 0x7104;
 /// The row slots' flag pictures (gamemd's `0x6DA..0x6E1`, then VERA's).
 const FLAG: u16 = 0x7300;
 /// The row slots' combos: `COMBO + kind * 0x20 + slot`, kind 0 the computer
@@ -147,6 +151,9 @@ fn spec() -> NodeSpec {
         let spec = match target {
             Target::Checkbox(_) => NodeSpec::new(NodeKind::Checkbox),
             Target::Trackbar(_) => NodeSpec::new(NodeKind::Trackbar),
+            Target::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
+                NodeSpec::new(NodeKind::Button).with(Prop::TabStop, Value::Bool(true))
+            }
             Target::OwnerDrawButton(_) => NodeSpec::new(NodeKind::Button),
             Target::PlayerName0x6a0 => NodeSpec::new(NodeKind::Edit)
                 .with(
@@ -165,7 +172,12 @@ fn spec() -> NodeSpec {
             .tooltip(status_help_key_for_hover(target).unwrap_or_default())
     });
     let headings = (0..8).map(|index| NodeSpec::new(NodeKind::Text).id((HEADINGS + index).into()));
+    // The scrollbar takes a press first, as it did over the page's controls.
+    let scroll = NodeSpec::new(NodeKind::List)
+        .id(OPPONENT_SCROLL.into())
+        .with(Prop::WheelStep, Value::Int(1));
     NodeSpec::new(NodeKind::Dialog)
+        .child(scroll)
         .children(combos)
         .children(controls)
         .children(headings)
@@ -187,6 +199,9 @@ fn rect(
     if let Some(slot) = flag_slot(id) {
         return layout.flags.get(slot).copied().filter(|_| slot_shows(slot));
     }
+    if id == OPPONENT_SCROLL {
+        return super::state::opponent_scroll_geometry(layout, state, maps).map(|g| g.outer);
+    }
     // The fixed controls and the headings stand in the layout's table.
     layout.statics.get(id)
 }
@@ -202,7 +217,7 @@ pub fn sync_page(
 ) -> Option<NodeId> {
     // VERA's Game Options box may sit over the page.
     if controller.root_in(DIALOG).is_none() {
-        controller.ensure_active(DIALOG, false);
+        controller.ensure_active(DIALOG);
     }
     controller.set_scale(layout.scale);
     let root = controller.root_in(DIALOG)?;
@@ -263,6 +278,14 @@ pub fn sync_page(
         ] {
             page::set(gui, root, node, prop, value);
         }
+    }
+    let (rows, shown) = super::state::opponent_scroll_rows(state, maps).unwrap_or_default();
+    for (prop, value) in [
+        (Prop::RowCount, rows),
+        (Prop::VisibleRows, shown),
+        (Prop::Top, state.first_opponent),
+    ] {
+        page::set(gui, root, OPPONENT_SCROLL, prop, Value::Int(value as i32));
     }
     let name = Value::Text(state.player_name.clone());
     page::set(gui, root, PLAYER_NAME, Prop::Text, name);
@@ -425,6 +448,25 @@ pub fn slider_held(gui: &Gui) -> bool {
         .is_some_and(|node| gui.tree().kind(node) == Ok(NodeKind::Trackbar))
 }
 
+/// Whether a slider or the computer rows' scrollbar holds the mouse until
+/// the release; the status line keeps its text meanwhile.
+pub fn pointer_held(gui: &Gui) -> bool {
+    slider_held(gui)
+        || gui
+            .pressed()
+            .is_some_and(|node| gui.tree().kind(node) == Ok(NodeKind::List))
+}
+
+/// The computer rows' scrollbar moved: the rows follow its top.
+fn take_scroll(controller: &DialogController, state: &mut SkirmishShellState, events: &[PageEvent]) {
+    if events.contains(&PageEvent::Scrolled(OPPONENT_SCROLL))
+        && let Some(root) = controller.root_in(DIALOG)
+        && let Some(top) = page::int(controller.gui(), root, OPPONENT_SCROLL, Prop::Top)
+    {
+        state.first_opponent = top.max(0) as usize;
+    }
+}
+
 /// One pointer message on the controller's top dialog of the Skirmish
 /// family, as its widgets' events. A release that frees a held control
 /// (`held`, or a slider) lets the dialog's hit test see the pointer where it
@@ -451,10 +493,9 @@ pub fn route(
     page::page_events(controller.gui(), raw)
 }
 
-/// The pointer at `x`, `y` on the page: VERA's scrollbar beside the
-/// computer rows takes a press no list holds and every move while it holds
-/// the mouse; the widgets take the rest. Returns the cues to play and the
-/// button the user activated.
+/// The pointer at `x`, `y` on the page's widgets, VERA's scrollbar beside
+/// the computer rows among them. Returns the cues to play and the button
+/// the user activated.
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(
     controller: &mut DialogController,
@@ -469,36 +510,73 @@ pub fn pointer(
     if sync_page(controller, state, layout, maps, labels).is_none() {
         return (Vec::new(), None);
     }
-    let scrolling = state.opponent_scroll.captured();
-    match at {
-        Pointer::Down
-            if controller.gui().popup().is_none()
-                && super::state::press_opponent_scrollbar(
-                    state,
-                    layout,
-                    maps,
-                    x,
-                    y,
-                    crate::util::time::Instant::now(),
-                ) =>
-        {
-            return (Vec::new(), None);
-        }
-        Pointer::Move if scrolling => {
-            super::state::move_opponent_scrollbar(state, layout, maps, x, y);
-            return (Vec::new(), None);
-        }
-        Pointer::Up => state.opponent_scroll.cancel(),
-        _ => {}
-    }
-    let events = route(controller, at, x, y, scrolling);
+    let held = pointer_held(controller.gui());
+    let events = route(controller, at, x, y, held);
+    take_scroll(controller, state, &events);
     handle(state, maps, events)
 }
 
-/// A key or typed text for the focused name box, which keeps its caret in
-/// view (`measure` the font's text widths); whether the name box has the
-/// focus. Tab moves the focus on: the page models no other stop, so the box
-/// loses it.
+/// A held scrollbar arrow's repeat on the computer rows; whether anything
+/// changed, and the next poll.
+pub fn poll(
+    controller: &mut DialogController,
+    state: &mut SkirmishShellState,
+) -> (bool, Option<crate::util::time::Instant>) {
+    let gui = controller.gui();
+    let held = controller.top_id() == Some(DIALOG)
+        && gui
+            .pressed()
+            .is_some_and(|node| gui.id_of(node) == Some(OPPONENT_SCROLL.into()));
+    if !held {
+        return (false, None);
+    }
+    let next = controller.poll();
+    let raw = controller.drain_events();
+    let events = page::page_events(controller.gui(), raw);
+    take_scroll(controller, state, &events);
+    (!events.is_empty(), next)
+}
+
+/// The wheel: a notch moves the computer rows one row, wheel up toward the
+/// first, wherever the pointer is. Not while a combo's list is open, which
+/// takes no wheel (no owner-draw combo, drop-down or scrollbar callback has
+/// a wheel handler), nor while the scrollbar holds the mouse. Returns
+/// whether the rows moved.
+pub fn wheel(
+    controller: &mut DialogController,
+    state: &mut SkirmishShellState,
+    layout: &SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    labels: &SkirmishLabels,
+    lines: f32,
+) -> bool {
+    if sync_page(controller, state, layout, maps, labels).is_none() {
+        return false;
+    }
+    let gui = controller.gui();
+    if gui.popup().is_some() || pointer_held(gui) {
+        return false;
+    }
+    let Some(node) = controller.control(DIALOG, OPPONENT_SCROLL) else {
+        return false;
+    };
+    let scrolled = controller.gui_mut().wheel_list(node, lines as i32);
+    let events = controller.gui_mut().drain_events();
+    let events = page::page_events(controller.gui(), events);
+    take_scroll(controller, state, &events);
+    scrolled
+}
+
+/// The computer rows' scrollbar arrow drawn pushed.
+pub fn opponent_arrow(controller: &DialogController) -> Option<crate::ui::shell::list::ListScrollPart> {
+    let node = controller.control(DIALOG, OPPONENT_SCROLL)?;
+    controller.gui().list_view(node)?.pressed
+}
+
+/// A key or typed text (none: a key the widgets do not read) for the
+/// focused name box, which keeps its caret in view (`measure` the font's
+/// text widths); whether the name box has the focus. Tab moves the focus to
+/// the next stop, which the page models as Back's, so the box loses it.
 pub fn key(
     controller: &mut DialogController,
     state: &mut SkirmishShellState,
@@ -510,7 +588,6 @@ pub fn key(
         return false;
     }
     let Some(event) = event else {
-        controller.focus_control(DIALOG, None);
         return true;
     };
     controller.on_input(event);

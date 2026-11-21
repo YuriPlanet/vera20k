@@ -7,7 +7,7 @@
 use crate::util::time::Instant;
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use crate::ui::lan_shell::{LanChatState, LanListState};
+use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::combobox::ComboPopup;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
@@ -848,6 +848,9 @@ pub(crate) struct MultiplayerSetupState {
     /// is scrolled to ([`RosterScroll`]).
     first_visible_row: usize,
     pub(crate) chat: LanChatState,
+    /// The chat's draft and view while the room hides behind the lobby
+    /// (its dialog is torn down), for when it shows again.
+    pub(crate) parked_chat: Option<crate::ui::lan_shell::ParkedChat>,
     pub(crate) notice: Option<crate::ui::shell::modal::ShellBox>,
     /// The row the open list belongs to. Joins, leaves, moves and paging
     /// put another row under its control, and a list whose row moved away
@@ -857,7 +860,6 @@ pub(crate) struct MultiplayerSetupState {
     pub(crate) row_drag: Option<RowDrag>,
     pub(crate) statics: SkirmishStatics,
     pub(crate) shown: bool,
-    focus_started: Instant,
     accept_flash_started: Option<Instant>,
     /// VERA's Game Options box is open over the room; it takes the room's
     /// input.
@@ -873,17 +875,13 @@ impl Default for MultiplayerSetupState {
     fn default() -> Self {
         Self {
             first_visible_row: 0,
-            chat: {
-                let mut chat = LanChatState::default();
-                chat.edit.focused = true;
-                chat
-            },
+            chat: LanChatState::default(),
+            parked_chat: None,
             notice: None,
             popup_row: None,
             row_drag: None,
             statics: SkirmishStatics::default(),
             shown: false,
-            focus_started: Instant::now(),
             accept_flash_started: None,
             game_options: false,
             map_offer: None,
@@ -971,6 +969,7 @@ impl MultiplayerSetupState {
     pub(crate) fn wheel(
         &mut self,
         gui: &mut Gui,
+        area: Option<NodeId>,
         view: &SetupView,
         layout: &MultiplayerSetupLayout,
         x: i32,
@@ -992,7 +991,9 @@ impl MultiplayerSetupState {
         if gui.wheel_popup(-step, x, y) {
             return true;
         }
-        if layout.roster_area.contains(x, y) {
+        // Over the roster (its area node `area`), its cells or the gaps
+        // between them.
+        if area.is_some_and(|area| gui.hit_at(area, x, y, false).is_some()) {
             let top = self.roster_top(roster.max_top);
             self.first_visible_row = top
                 .saturating_add_signed(-step as isize)
@@ -1028,12 +1029,6 @@ impl MultiplayerSetupState {
             return false;
         }
         crate::ui::shell::button::flash_phase(*self.accept_flash_started.get_or_insert(now), now)
-    }
-    pub(crate) fn caret_visible(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.focus_started).as_secs() % 2 == 0
-    }
-    pub(crate) fn focus_chat(&mut self) {
-        self.chat.edit.focused = true;
     }
     pub(crate) fn cancel_pointer(&mut self) {
         self.row_drag = None;
@@ -1554,14 +1549,10 @@ impl MultiplayerSetupLayout {
     pub(crate) fn chat_text_scale(&self) -> f32 {
         if self.roster { ROSTER_TEXT_SCALE } else { 1.0 }
     }
-    /// The chat log's list, its rows at the chat's text size.
-    pub(crate) fn chat_list(&self, list: &LanListState, count: usize) -> ShellListGeometry {
-        list.geometry_for_text(
-            self.chat_log,
-            count,
-            self.page.scale,
-            self.chat_text_scale(),
-        )
+    /// The chat log's rows showing at once, at the chat's text size.
+    pub(crate) fn chat_visible_rows(&self) -> usize {
+        let metrics = ListMetrics::for_text(self.page.scale, self.chat_text_scale());
+        ShellListGeometry::new(self.chat_log, 0, 0, metrics).visible_rows
     }
     /// VERA's roster's scroll geometry: its scrollbar shows when its
     /// entries do not all fit.
@@ -1582,6 +1573,9 @@ impl MultiplayerSetupLayout {
 /// VERA's roster's scrollbar: a list whose rows are the places it scrolls
 /// to ([`RosterScroll`]), hit only on its bar.
 pub(crate) const ROSTER_SCROLL: u16 = 0x7F17;
+/// VERA's roster's whole area, a static that only says the pointer is over
+/// the roster (the wheel scrolls it there), behind its cells.
+pub(crate) const ROSTER_AREA: u16 = 0x7F18;
 /// The boxes over VERA's room in the shell controller, which take the
 /// room's input while they are open.
 pub(crate) const GAME_OPTIONS_BOX: DialogId = DialogId(GAME_OPTIONS);
@@ -1639,10 +1633,15 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
         }))
         .children(option_spec(native(&CHECKBOXES), trackbars))
         .children(buttons.map(button))
-        .child(node(NodeKind::Text, CHAT).tooltip(&help))
+        .child(node(NodeKind::Edit, CHAT).tooltip(&help))
         .child(list(CHAT_LOG))
         .child(list(ROSTER_SCROLL))
         .children(option_captions(native(&OPTION_CAPTIONS)))
+        // The map preview `0x468`, a static that takes no press: VERA's
+        // enlarged preview opens from a press on it (`preview_zoom`). It
+        // shows only while it holds a picture.
+        .child(crate::ui::shell::menu_page::hover_target(MAP_PREVIEW, ""))
+        .child(node(NodeKind::Text, ROSTER_AREA).tooltip(""))
 }
 
 /// The option trackbars' captions, statics that take no pointer.
@@ -1683,7 +1682,13 @@ fn game_options_spec() -> NodeSpec {
     let superweapon_limit = crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_LABEL;
     NodeSpec::new(NodeKind::Dialog)
         .children(option_spec(checkboxes, trackbars))
-        .child(node(NodeKind::Button, GAME_OPTIONS_OK).label("GUI:OK"))
+        // VERA's box closes on Enter or Escape as on OK.
+        .child(
+            node(NodeKind::Button, GAME_OPTIONS_OK)
+                .label("GUI:OK")
+                .with(Prop::Default, Value::Bool(true))
+                .with(Prop::Cancel, Value::Bool(true)),
+        )
         .children(option_captions(OPTION_CAPTIONS.into_iter()))
         .child(
             node(NodeKind::Text, SUPERWEAPON_LIMIT_CAPTION)
@@ -1708,7 +1713,8 @@ fn map_offer_spec() -> NodeSpec {
 /// one, and VERA's roster's scrollbar.
 fn control_rect(view: &SetupView, layout: &MultiplayerSetupLayout, id: u16) -> Option<RectPx> {
     let shows = match id {
-        ROSTER_SCROLL => return layout.roster.then_some(layout.roster_area),
+        ROSTER_SCROLL | ROSTER_AREA => return layout.roster.then_some(layout.roster_area),
+        MAP_PREVIEW => return Some(layout.map_preview),
         TEAM_STARTS | TEAM_COLORS | BALANCE => view.team_bar(),
         PREVIOUS_ROWS | NEXT_ROWS => view.pages.len() > 1 && view.enabled(id),
         id if team_join_row(id).is_some() => view.header_button(id).is_some(),
@@ -1737,7 +1743,7 @@ pub(crate) fn sync(
         if !activate {
             return None;
         }
-        controller.ensure_active(page, false);
+        controller.ensure_active(page);
     }
     for (dialog, open) in [
         (GAME_OPTIONS_BOX, ui.game_options),
@@ -1745,7 +1751,7 @@ pub(crate) fn sync(
         (NOTICE_BOX, ui.notice.is_some()),
     ] {
         match (open, controller.root_in(dialog)) {
-            (true, None) => controller.push_modal(dialog, false),
+            (true, None) => controller.push_modal(dialog),
             (false, Some(_)) => controller.close(dialog),
             _ => {}
         }
@@ -1754,8 +1760,13 @@ pub(crate) fn sync(
     let room = view.dialog;
     let spec_page = move || page_spec(room);
     let notice = || {
+        // The native 5D3490 box's OK takes Enter and Escape.
         let ok = crate::ui::shell::modal::control::OK;
-        NodeSpec::new(NodeKind::Dialog).child(node(NodeKind::Button, ok))
+        NodeSpec::new(NodeKind::Dialog).child(
+            node(NodeKind::Button, ok)
+                .with(Prop::Default, Value::Bool(true))
+                .with(Prop::Cancel, Value::Bool(true)),
+        )
     };
     let roots: [(DialogId, &dyn Fn() -> NodeSpec); 4] = [
         (page, &spec_page),
@@ -1769,7 +1780,7 @@ pub(crate) fn sync(
         };
         controller.set_scale_in(dialog, scale);
         let gui = controller.gui_mut();
-        page_nodes::ensure_built(gui, root, spec);
+        let built = page_nodes::ensure_built(gui, root, spec);
         page_nodes::sync_rects(gui, root, |id| control_rect(view, layout, id));
         let nodes: Vec<(NodeId, u16)> = gui
             .tree()
@@ -1783,6 +1794,16 @@ pub(crate) fn sync(
             for (prop, value) in props(ui, view, layout, id) {
                 let _ = gui.set(node, prop, value);
             }
+            // The transcript's rows; its list keeps the view, following
+            // new lines at the bottom.
+            if dialog == page && id == CHAT_LOG {
+                let _ = gui.log_rows(node, ui.chat.lines.len(), 0);
+            }
+        }
+        // The chat edit holds the room's focus from the start, its caret
+        // blinking on from then.
+        if built && dialog == page {
+            controller.focus_control(page, Some(CHAT));
         }
     }
     let root = controller.root_in(page)?;
@@ -1868,9 +1889,8 @@ fn props(
         }
     } else if id == CHAT_LOG {
         let row_h = ListMetrics::for_text(scale, layout.chat_text_scale()).row_h;
+        // The rows and the top: `sync`'s log of the transcript.
         props.extend([
-            (Prop::RowCount, Value::Int(ui.chat.lines.len() as i32)),
-            (Prop::Top, Value::Int(ui.chat.list.top_index as i32)),
             (Prop::Selected, Value::Int(-1)),
             (Prop::RowHeight, Value::Int(row_h)),
         ]);
@@ -1886,6 +1906,16 @@ fn props(
             (Prop::HitRect, Value::Rect(bar.unwrap_or_default())),
         ]);
     }
+    // The map offer: Enter downloads unless it already does, Escape leaves;
+    // keys meant for the chat just before it opened answer neither.
+    if let Some(offer) = ui.map_offer.as_ref() {
+        let keys = offer.takes_keys(Instant::now());
+        match id {
+            MAP_OFFER_DOWNLOAD => props.push((Prop::Default, Value::Bool(keys && !offer.downloading))),
+            MAP_OFFER_LEAVE => props.push((Prop::Cancel, Value::Bool(keys))),
+            _ => {}
+        }
+    }
     props
 }
 
@@ -1900,18 +1930,9 @@ pub(crate) fn press(
     x: i32,
     y: i32,
 ) {
-    let page = view.page().dialog;
-    let gui = controller.gui();
-    let before = open_list(gui);
-    let target = controller
-        .root_in(page)
-        .filter(|_| before.is_none() && controller.top_id() == Some(page))
-        .and_then(|root| gui.hit_at(root, x, y, true));
-    let chat = target.and_then(|node| gui.id_of(node)) == Some(CHAT.into());
+    let before = open_list(controller.gui());
+    // A press on the chat edit keeps its focus, its blink running on.
     controller.on_pointer_down(x, y);
-    if chat {
-        ui.focus_chat();
-    }
     if before.is_none()
         && let Some((id, _)) = open_list(controller.gui())
         && let Some(combo) = view.combo(id)
@@ -1927,8 +1948,12 @@ pub(crate) fn press(
 /// The control of the top dialog `root` under the pointer: the one whose
 /// status help shows (a disabled one too, and under an open list), or with
 /// `press`, the one a press works.
+/// The map preview and the roster's area are no controls: they only tell
+/// the host where the pointer is.
 pub(crate) fn control_at(gui: &Gui, root: NodeId, x: i32, y: i32, press: bool) -> Option<u16> {
-    u16::try_from(gui.id_of(gui.hit_at(root, x, y, press)?)?).ok()
+    u16::try_from(gui.id_of(gui.hit_at(root, x, y, press)?)?)
+        .ok()
+        .filter(|id| !matches!(*id, MAP_PREVIEW | ROSTER_AREA))
 }
 
 /// The combo whose list is open over the room, and the list as the pointer
@@ -2300,9 +2325,13 @@ mod tests {
         // The wheel scrolls three places a notch, no further than the last.
         let mut ui = MultiplayerSetupState::default();
         let mut gui = Gui::new(8);
-        ui.wheel(&mut gui, &view, &layout, area.x, area.y, -1.0);
+        let roster = gui.create(NodeKind::Text, None).unwrap();
+        gui.set(roster, Prop::Rect, Value::Rect(area)).unwrap();
+        gui.set(roster, Prop::Tooltip, Value::Text(String::new())).unwrap();
+        let roster = Some(roster);
+        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -1.0);
         assert_eq!(ui.roster_top(scroll.max_top), 3);
-        ui.wheel(&mut gui, &view, &layout, area.x, area.y, -100.0);
+        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -100.0);
         assert_eq!(ui.roster_top(scroll.max_top), scroll.max_top);
         let mut ui = MultiplayerSetupState::default();
         // A room that fits shows no scrollbar.

@@ -81,11 +81,18 @@ impl NewEdit {
             .collect()
     }
 
+    /// Removes the unit before the caret; a surrogate pair goes whole, so
+    /// a character outside the BMP never leaves half of itself behind.
     pub fn backspace(&mut self) {
-        if self.caret > 0 {
-            self.caret -= 1;
-            self.units.remove(self.caret);
+        if self.caret == 0 {
+            return;
         }
+        let pair = self.caret >= 2
+            && (0xDC00..0xE000).contains(&self.units[self.caret - 1])
+            && (0xD800..0xDC00).contains(&self.units[self.caret - 2]);
+        let start = self.caret - if pair { 2 } else { 1 };
+        self.units.drain(start..self.caret);
+        self.caret = start;
     }
 
     pub fn delete(&mut self) {
@@ -189,5 +196,23 @@ mod tests {
         assert_eq!(view.caret, 4, "the caret sits at the composition cursor");
         assert_eq!(view.first_visible_unit, 1, "scrolled to keep it in view");
         assert_eq!(edit.display_text(), "abcd", "the edit keeps its own text");
+    }
+
+    #[test]
+    fn backspace_takes_a_surrogate_pair_whole_and_one_bmp_unit_otherwise() {
+        let mut edit = NewEdit::default();
+        for unit in "a\u{1F600}b地".encode_utf16() {
+            edit.insert_unit_filtered(unit, 0, false, &[]);
+        }
+        edit.backspace();
+        edit.backspace();
+        assert_eq!((edit.display_text().as_str(), edit.caret), ("a\u{1F600}", 3));
+        edit.backspace();
+        assert_eq!((edit.display_text().as_str(), edit.caret), ("a", 1));
+        // A lone low surrogate goes alone.
+        edit.units = vec![0x61, 0xDC00];
+        edit.caret = 2;
+        edit.backspace();
+        assert_eq!(edit.units, [0x61]);
     }
 }

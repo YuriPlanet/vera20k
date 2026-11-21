@@ -185,7 +185,7 @@ pub(crate) fn render_keyboard_shell(
         ControlPaint::Combo {
             rect: layout.category,
             swatch: None,
-            open: dialog.category_open,
+            open: dialog.category_open(),
             disabled: false,
         },
         layout.scale,
@@ -433,7 +433,7 @@ pub(crate) fn render_keyboard_shell(
         layout.scale.factor(),
     ));
     let mut overlay = ShellFrameOverlay::default();
-    if dialog.category_open {
+    if dialog.category_open() {
         let popup = layout.category_popup(dialog.categories.len());
         push_solid_rect(
             &mut overlay.controls,
@@ -450,7 +450,7 @@ pub(crate) fn render_keyboard_shell(
                 popup.w - 4,
                 row_h,
             );
-            if dialog.category_hovered.or(Some(dialog.category)) == Some(i) {
+            if dialog.category_hot_row().or(Some(dialog.category)) == Some(i) {
                 push_solid_rect(
                     &mut overlay.controls,
                     atlas,

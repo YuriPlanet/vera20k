@@ -706,7 +706,6 @@ mod tests {
                 mode: 1.into(),
                 record_index: Some(0),
             },
-            pressed: None,
             kind: crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi,
         });
         assert_eq!(skirmish_slide_target(&shell), None);

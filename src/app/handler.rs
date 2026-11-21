@@ -11,7 +11,7 @@ use super::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
     KeyEventExtModifierSupplement, MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
-    ShellKey, WindowEvent, WindowId,
+    WindowEvent, WindowId,
 };
 use crate::ui::pause_menu::InGameMenuState;
 use winit::event::{ElementState, KeyEvent};
@@ -97,22 +97,19 @@ impl App {
         }
         if state.frontend.shell_message_box.is_some() {
             // IsDialogMessage in the native modal pump5D4D50 admits Enter
-            // as IDOK1 and Escape as IDCANCEL2. MessageBoxProc5D36A0 maps
-            // both to result1; GameExitDefeat6860EA returns to the shell.
+            // as IDOK1 and Escape as IDCANCEL2, which the box's hidden IDOK
+            // answers; GameExitDefeat6860EA returns to the shell.
             // Keep retained launcher dialogs on their separate Escape path.
             // The native message pump forwards repeated WM_KEYDOWN too;
             // its IsDialogMessage path has no previous-key-state filter.
             if pressed
-                && let Some(key @ (ShellKey::Enter | ShellKey::Escape)) =
-                    Self::shell_key_for_code(code)
+                && let Some(key) = crate::ui::shell::controller::gui_key(code, false)
                 // Alt+Enter is WM_SYSKEYDOWN, not the IDOK-producing
                 // WM_KEYDOWN path. Winit combines them; retain the native
                 // distinction using the existing modifier owner.
-                && (key != ShellKey::Enter || !state.platform.live_modifiers.alt_key())
-                && !Self::route_shell_message_box_key(state, key)
+                && (key != vera20k_gui::Key::Enter || !state.platform.live_modifiers.alt_key())
             {
-                // Preserve the existing empty-controller-route fallback.
-                Self::resolve_shell_message_box(state, 1);
+                Self::route_shell_message_box_key(state, key);
             }
         } else if is_escape
             // `0xD5` ignores IDCANCEL=2. Preserve the same dialog instance
@@ -717,8 +714,7 @@ impl App {
             ScreenPage::NetworkSetup => {
                 if fresh_press
                     && let PhysicalKey::Code(code) = event.physical_key
-                    && !Self::shell_key_for_code(code)
-                        .is_some_and(|key| Self::route_validation_modal_key(state, key))
+                    && !Self::route_validation_modal_key(state, code)
                     && matches!(
                         code,
                         KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
@@ -817,8 +813,7 @@ impl App {
             || Self::handle_main_menu_typed_code_key(state, event)
             || (screen == ScreenPage::Skirmish
                 && fresh_press
-                && (Self::shell_key_for_code(code)
-                    .is_some_and(|key| Self::route_validation_modal_key(state, key))
+                && (Self::route_validation_modal_key(state, code)
                     || (enter_or_escape
                         && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape))))
         {
@@ -1792,9 +1787,7 @@ impl ApplicationHandler for App {
                     {
                         state.frontend.shell_controller.gui_mut().cancel_pointer();
                     }
-                    if let Some(campaign) = state.frontend.campaign.as_mut() {
-                        campaign.slider_release();
-                    }
+                    Self::release_campaign_slider(state);
                 }
                 Self::set_window_active(state, active);
             }

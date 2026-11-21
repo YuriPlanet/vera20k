@@ -941,7 +941,7 @@ fn show_wait(state: &mut AppState, key: &str) {
     state
         .frontend
         .shell_controller
-        .reset_to(crate::ui::wol_shell::WAIT_DIALOG, false);
+        .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
 }
 
 /// `0x00792BE0(0)`: only an open box takes the text.
@@ -957,7 +957,7 @@ fn close_wait(state: &mut AppState) {
         lobby.wait = None;
     }
     let dialog = runner_dialog(state);
-    state.frontend.shell_controller.reset_to(dialog, false);
+    state.frontend.shell_controller.reset_to(dialog);
 }
 
 fn show_box(state: &mut AppState, key: &str, yes_no: bool, then: BoxThen) {
@@ -981,7 +981,7 @@ fn put_box(state: &mut AppState, message: ShellBox, then: BoxThen) {
     };
     lobby.message = Some((message, then));
     lobby.ui.release_buttons();
-    state.frontend.shell_controller.reset_to(dialog, false);
+    state.frontend.shell_controller.reset_to(dialog);
 }
 
 /// The runner `0x00787770` entered after the login (`postmatch` false) or
@@ -1029,7 +1029,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     state
         .frontend
         .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+        .reset_to(super::WOL_LOBBY_DIALOG);
     let now = Instant::now();
     let returning = postmatch && visit.back_to_room;
     if !returning {
@@ -1453,7 +1453,7 @@ fn show_visit(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+        .reset_to(super::WOL_LOBBY_DIALOG);
     let join = selected_admits(state);
     if let Some(lobby) = lobby_mut(state) {
         lobby.shown = true;
@@ -2605,7 +2605,7 @@ fn create_ended(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+        .reset_to(super::WOL_LOBBY_DIALOG);
 }
 
 /// The Join button (`show` when the row differs from `[0x84A23C]`) and a
@@ -2743,7 +2743,7 @@ fn continue_join(state: &mut AppState, channel: WolChannel) {
         state
             .frontend
             .shell_controller
-            .reset_to(PASSWORD_DIALOG, false);
+            .reset_to(PASSWORD_DIALOG);
         sync(state);
         return;
     }
@@ -2818,7 +2818,7 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             state
                 .frontend
                 .shell_controller
-                .reset_to(super::WOL_LOBBY_DIALOG, false);
+                .reset_to(super::WOL_LOBBY_DIALOG);
             match channel {
                 // Spaces become '_' (0x00789AB6).
                 Some(channel) => {
@@ -2835,7 +2835,7 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             state
                 .frontend
                 .shell_controller
-                .reset_to(super::WOL_LOBBY_DIALOG, false);
+                .reset_to(super::WOL_LOBBY_DIALOG);
             join_failed_locally(state, true);
         }
     }
@@ -3001,7 +3001,7 @@ pub(super) fn begin_create(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(CREATE_DIALOG, false);
+        .reset_to(CREATE_DIALOG);
     // Its widgets on their layout before it paints.
     sync(state);
 }
@@ -3155,7 +3155,7 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
     };
     if let Some((_, then)) = lobby.message.take() {
         let dialog = runner_dialog(state);
-        state.frontend.shell_controller.reset_to(dialog, false);
+        state.frontend.shell_controller.reset_to(dialog);
         match then {
             BoxThen::QuickMatch(then) => super::quick_match::box_closed(state, then),
             BoxThen::JoinFailed { close } => join_failed_tail(state, close),
@@ -4339,6 +4339,7 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
             WolLobbyEffect::Card(name) => super::player_card::opened(state, &name),
             WolLobbyEffect::CardButton(id) => super::player_card::button(state, id),
             WolLobbyEffect::CardCountry(row) => super::player_card::country_picked(state, row),
+            WolLobbyEffect::CardDismissed => super::player_card::dismissed(state),
             WolLobbyEffect::Action(action) => dispatch(state, action),
         }
     }
@@ -4354,7 +4355,8 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         return;
     }
     // The edits take no vertical keys.
-    let (key, text) = match super::leaf::input_of(code, text) {
+    let shift = state.platform.live_modifiers.shift_key();
+    let (key, text) = match crate::ui::shell::controller::gui_input(code, shift, text) {
         Some(InputEvent::Key(Key::Up | Key::Down | Key::PageUp | Key::PageDown)) | None => {
             (None, None)
         }
@@ -4403,9 +4405,6 @@ pub(crate) fn password_layout(
 /// The pointer moved, pressed or released over the popup, else the open
 /// player card, else `0x113`'s children.
 fn pointer(state: &mut AppState, press: Option<bool>) {
-    if press.is_some_and(|pressed| super::player_card::mouse(state, pressed)) {
-        return;
-    }
     sync(state);
     let (x, y) = state.match_state.input.cursor_px();
     let Some(lobby) = lobby_mut(state) else {

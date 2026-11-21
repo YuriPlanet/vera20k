@@ -1758,7 +1758,9 @@ impl App {
     }
 
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
-        let preview = random_map_setup_layout(state).preview;
+        use crate::app::frontend::preview_zoom;
+        let preview =
+            preview_zoom::over_box(state, crate::ui::skirmish_shell::random_map_page::DIALOG);
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
@@ -1770,7 +1772,7 @@ impl App {
         let resting = modal.is_some_and(|modal| {
             !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
         });
-        if !(resting && crate::app::frontend::preview_zoom::press_on_box(state, preview)) {
+        if !(resting && preview_zoom::press_on_box(state, preview)) {
             Self::random_map_pointer(state, Pointer::Down);
         }
         true
@@ -1801,6 +1803,8 @@ impl App {
         let help = (controller.top_id() == Some(random_map_page::DIALOG))
             .then(|| crate::ui::shell::page::hovered_key(controller.gui()))
             .flatten()
+            // The preview static hovers with no help of its own.
+            .filter(|key| !key.is_empty())
             .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
         if let Some(setup) = random_map_dialog(state)

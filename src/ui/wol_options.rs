@@ -412,7 +412,7 @@ mod tests {
             let mut gui = Gui::new(64);
             let root = gui.create(NodeKind::Dialog, None).unwrap();
             let id = gui
-                .push_dialog(root, vera20k_gui::DialogKind::Page, None, None)
+                .push_dialog(root, vera20k_gui::DialogKind::Page)
                 .unwrap();
             gui.set_dialog_scale(id, layout.page.scale);
             page::ensure_built(&mut gui, root, || {

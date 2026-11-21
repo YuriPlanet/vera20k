@@ -266,10 +266,11 @@ fn game_cells(
 /// as the retail list's, so names line up whether or not a row has a badge.
 fn player_cells(ui: &WolLobbyState) -> Vec<CellRow> {
     let (v, label) = (ShellAlign::V_CENTER, SHELL_LABEL_TEXT_RGB);
+    let selected = ui.selected_players();
     (ui.player_rows.iter().enumerate())
         .map(|(index, player)| {
             let mut row = CellRow {
-                filled: ui.selected_players.contains(&index),
+                filled: selected.contains(&index),
                 ..CellRow::default()
             };
             if ui.is_modern() {

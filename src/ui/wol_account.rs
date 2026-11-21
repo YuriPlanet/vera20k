@@ -6,7 +6,7 @@
 //! use the online Create Game box's art, field column, checkbox rows and
 //! buttons.
 
-use vera20k_gui::{InputEvent, NodeKind, NodeSpec, Prop, Value};
+use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 
 use crate::i18n::tr_fill;
 use crate::render::shell_text::ShellAlign;
@@ -15,7 +15,7 @@ use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::shell::page;
-use crate::ui::wol_login::{DIALOG, WolEditKey, typed};
+use crate::ui::wol_login::{DIALOG, typed};
 
 pub(crate) const FORM_OK: u16 = 1;
 pub(crate) const FORM_CANCEL: u16 = 2;
@@ -336,7 +336,7 @@ impl WolAccountForm {
             if ui.top_id() == Some(POPUP) {
                 ui.pop();
             }
-            ui.push_modal(POPUP, true);
+            ui.push_modal(POPUP);
             // Painted in this order: the captions (right aligned), OK and
             // Cancel, the status line, the edits.
             let text = |id: u16, align: ShellAlign| {
@@ -348,7 +348,12 @@ impl WolAccountForm {
             let spec = NodeSpec::new(NodeKind::Dialog)
                 .children(captions.map(|id| text(id, ShellAlign::H_RIGHT)))
                 .children(
-                    [FORM_OK, FORM_CANCEL].map(|id| NodeSpec::new(NodeKind::Button).id(id.into())),
+                    [FORM_OK, FORM_CANCEL].map(|id| {
+                        NodeSpec::new(NodeKind::Button)
+                            .id(id.into())
+                            .with(Prop::Default, Value::Bool(id == FORM_OK))
+                            .with(Prop::Cancel, Value::Bool(id == FORM_CANCEL))
+                    }),
                 )
                 .child(text(FORM_STATUS, ShellAlign::NONE))
                 .children(
@@ -754,39 +759,20 @@ impl WolAccountForm {
         }
     }
 
-    /// Tab moves between the fields and Enter clicks OK.
-    pub(crate) fn edit_key(
-        &mut self,
-        ui: &mut DialogController,
-        key: WolEditKey,
-    ) -> Option<AccountFormAction> {
-        if key == WolEditKey::Enter {
-            return self.activate(ui, FORM_OK);
-        }
-        let (count, focused) = (self.fields.len(), self.focused(ui));
-        let kind = self.fields.get(focused)?.kind;
-        if let WolEditKey::Tab { reverse } = key {
-            self.focus(
-                ui,
-                if reverse {
-                    (focused + count - 1) % count
-                } else {
-                    (focused + 1) % count
-                },
-            );
-            return None;
-        }
+    /// A key for the focused field; Tab moves between the fields (Enter and
+    /// Escape are OK's and Cancel's, the dialog's default and cancel).
+    pub(crate) fn edit_key(&mut self, ui: &mut DialogController, key: Key) {
+        let Some(kind) = self.fields.get(self.focused(ui)).map(|field| field.kind) else {
+            return;
+        };
+        let tab = matches!(key, Key::Tab | Key::BackTab);
         // The placeholder is no text to edit: a typed password replaces it.
-        if self.remembered && kind == FieldKind::Password {
-            return None;
+        if self.remembered && kind == FieldKind::Password && !tab {
+            return;
         }
-        if let WolEditKey::Edit(key) = key
-            && typed(ui, InputEvent::Key(key))
-            && self.kind == FormKind::SignIn
-        {
+        if typed(ui, InputEvent::Key(key)) && self.kind == FormKind::SignIn {
             self.sync_remembered(ui);
         }
-        None
     }
 
     /// The lobby answered the form's request. Register's success turns the
@@ -848,7 +834,7 @@ mod tests {
     /// opens it.
     fn ui() -> DialogController {
         let mut ui = DialogController::default();
-        ui.push(DIALOG, true);
+        ui.push(DIALOG);
         build(&mut ui, LoginPolicy::Online);
         ui
     }
@@ -892,11 +878,11 @@ mod tests {
         );
         assert!(!form.ok_enabled(&ui), "the passwords differ");
         form.focus(&mut ui, 3);
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::Backspace));
+        form.edit_key(&mut ui, Key::Backspace);
         form.insert_text(&mut ui, "w");
         assert!(form.ok_enabled(&ui));
         form.focus(&mut ui, 1);
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::End));
+        form.edit_key(&mut ui, Key::End);
         form.insert_text(&mut ui, " ");
         assert!(form.ok_enabled(&ui), "a space never enters the email");
         ui.set_text(POPUP, WolAccountForm::field_id(2), "short");
@@ -952,7 +938,7 @@ mod tests {
         assert!(!form.ok_enabled(&ui), "no username yet");
         form.insert_text(&mut ui, "Tanya");
         assert_eq!(
-            form.edit_key(&mut ui, WolEditKey::Enter),
+            form.activate(&mut ui, FORM_OK),
             Some(AccountFormAction::Send(AccountRequest::Forgot {
                 name: "Tanya".into()
             }))
@@ -993,7 +979,7 @@ mod tests {
         );
         form.insert_text(&mut ui, "-pw");
         assert_eq!(
-            form.edit_key(&mut ui, WolEditKey::Enter),
+            form.activate(&mut ui, FORM_OK),
             Some(AccountFormAction::Send(AccountRequest::Delete {
                 name: "Tanya".into(),
                 password: "short-pw".into(),
@@ -1014,12 +1000,9 @@ mod tests {
         assert!(form.fields.is_empty() && form.ok_enabled(&ui));
         // No field takes the keys; OK closes.
         form.insert_text(&mut ui, "x");
+        form.edit_key(&mut ui, Key::Tab);
         assert_eq!(
-            form.edit_key(&mut ui, WolEditKey::Tab { reverse: false }),
-            None
-        );
-        assert_eq!(
-            form.edit_key(&mut ui, WolEditKey::Enter),
+            form.activate(&mut ui, FORM_OK),
             Some(AccountFormAction::Close)
         );
     }
@@ -1071,13 +1054,13 @@ mod tests {
         guest.activate(&mut ui, FORM_REMEMBER);
         assert_eq!(guest.remember(&ui), Some(true));
         assert_eq!(
-            guest.edit_key(&mut ui, WolEditKey::Enter),
+            guest.activate(&mut ui, FORM_OK),
             sign_in("Boris", "", false)
         );
         // Another username is another account: the placeholder goes.
         let mut form = WolAccountForm::sign_in(&mut ui, "Tanya", Some("Tanya"));
         form.focus(&mut ui, 0);
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::Backspace));
+        form.edit_key(&mut ui, Key::Backspace);
         assert!(!form.remembered && form.field_text(&ui, 1).is_empty());
         assert_eq!(
             form.activate(&mut ui, FORM_REMEMBER),
@@ -1099,17 +1082,17 @@ mod tests {
         let mut ui = ui();
         let mut form = WolAccountForm::sign_in(&mut ui, "Tanya", Some("Tanya"));
         // A slip of Backspace in the password leaves it standing.
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::Backspace));
+        form.edit_key(&mut ui, Key::Backspace);
         assert_eq!(form.clone().activate(&mut ui, FORM_OK), remembered);
         // A typed password replaces it; deleted again, it is back.
         form.insert_text(&mut ui, "x");
         assert!(!form.remembered && form.field_text(&ui, 1) == "x");
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::Backspace));
+        form.edit_key(&mut ui, Key::Backspace);
         assert_eq!(form.clone().activate(&mut ui, FORM_OK), remembered);
         // So with the username: another name is a guest's, the name typed
         // back the account's.
         form.focus(&mut ui, 0);
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::Backspace));
+        form.edit_key(&mut ui, Key::Backspace);
         assert!(!form.remembered && form.field_text(&ui, 1).is_empty());
         form.insert_text(&mut ui, "a");
         assert_eq!(form.clone().activate(&mut ui, FORM_OK), remembered);
@@ -1119,7 +1102,7 @@ mod tests {
             Some(AccountFormAction::ForgetSignIn)
         );
         form.focus(&mut ui, 0);
-        form.edit_key(&mut ui, WolEditKey::Edit(Key::Backspace));
+        form.edit_key(&mut ui, Key::Backspace);
         form.insert_text(&mut ui, "a");
         assert!(!form.remembered && form.field_text(&ui, 1).is_empty());
     }

@@ -110,7 +110,7 @@ pub fn sync(
     layout: &GameOptionsLayout,
 ) -> Option<NodeId> {
     if controller.top_id() != Some(DIALOG) {
-        controller.push(DIALOG, false);
+        controller.push(DIALOG);
     }
     controller.set_scale(layout.scale);
     let root = controller.root_in(DIALOG)?;

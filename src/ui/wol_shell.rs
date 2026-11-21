@@ -556,7 +556,7 @@ mod tests {
         use vera20k_gui::{DialogKind, Gui, InputEvent};
         let mut gui = Gui::new(64);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
         page::ensure_built(&mut gui, root, || spec(&[]));
         page::sync_rects(&mut gui, root, |id| layout.rect_of(id));
         gui.input(InputEvent::PointerMove { x, y }, 0);

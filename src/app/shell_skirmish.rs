@@ -131,17 +131,17 @@ impl App {
         )
     }
 
-    /// Apply committed input-method text to Choose Map through the modal's
-    /// search owner, matching the ordinary key path.
+    /// Apply committed input-method text to Choose Map's search line, as
+    /// the ordinary key path does; its control characters are dropped.
     pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
-        Self::edit_choose_map_search(state, |search| {
-            search.extend(text.chars().filter(|ch| !ch.is_control()));
-        })
+        let text = text.chars().filter(|ch| !ch.is_control()).collect();
+        Self::choose_map_search_input(state, vera20k_gui::InputEvent::Text(text))
     }
 
-    /// Edits the search line of a Choose Map that takes keys (see
-    /// [`Self::choose_map_search_ime_rect`]); false when none does.
-    fn edit_choose_map_search(state: &mut AppState, edit: impl FnOnce(&mut String)) -> bool {
+    /// Typed text or Backspace for the search line of a Choose Map that
+    /// takes keys (see [`Self::choose_map_search_ime_rect`]), through its
+    /// edit; false when none does.
+    fn choose_map_search_input(state: &mut AppState, event: vera20k_gui::InputEvent) -> bool {
         if Self::choose_map_search_ime_rect(state).is_none() {
             return false;
         }
@@ -150,21 +150,15 @@ impl App {
         let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
             return false;
         };
-        let mut text = modal.search.clone();
-        edit(&mut text);
-        let records = frontend.scenario_catalog.records();
-        modal.set_search(text, &frontend.skirmish_modes, records, &layout);
+        crate::ui::skirmish_shell::choose_map_page::search_input(
+            &mut frontend.shell_controller,
+            modal,
+            &layout,
+            (&frontend.skirmish_modes, frontend.scenario_catalog.records()),
+            event,
+        );
         state.platform.window.request_redraw();
         true
-    }
-
-    pub(super) fn shell_key_for_code(code: KeyCode) -> Option<ShellKey> {
-        match code {
-            KeyCode::Tab => Some(ShellKey::Tab),
-            KeyCode::Enter | KeyCode::NumpadEnter => Some(ShellKey::Enter),
-            KeyCode::Escape => Some(ShellKey::Escape),
-            _ => None,
-        }
     }
 
     /// The page selected another map: the random-map retention follows it
@@ -514,7 +508,7 @@ impl App {
         state
             .frontend
             .shell_controller
-            .ensure_active(VALIDATION_BOX, true);
+            .ensure_active(VALIDATION_BOX);
         state.platform.window.request_redraw();
     }
 
@@ -750,8 +744,9 @@ impl App {
         if chooser(state).is_none() {
             return false;
         }
-        let layout = choose_map_layout(state);
-        if !crate::app::frontend::preview_zoom::press_on_box(state, layout.preview) {
+        use crate::app::frontend::preview_zoom;
+        let over = preview_zoom::over_box(state, crate::ui::skirmish_shell::choose_map_page::DIALOG);
+        if !preview_zoom::press_on_box(state, over) {
             Self::choose_map_pointer(state, Pointer::Down);
         }
         true
@@ -810,24 +805,18 @@ impl App {
     /// returns the next wake deadline.
     pub(super) fn poll_skirmish_opponent_scroll(state: &mut AppState) -> Option<Instant> {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        if !crate::ui::skirmish_shell::opponent_scroll_held(&state.frontend.skirmish_shell_state)
-            || input_layer(state) != InputLayer::Screen(ScreenPage::Skirmish)
-        {
+        if input_layer(state) != InputLayer::Screen(ScreenPage::Skirmish) {
             return None;
         }
-        let layout = skirmish_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        if crate::ui::skirmish_shell::poll_opponent_scroll(
-            &mut state.frontend.skirmish_shell_state,
-            &layout,
-            state.frontend.scenario_catalog.shell_maps(),
-            x,
-            y,
-            Instant::now(),
-        ) {
+        let frontend = &mut state.frontend;
+        let (changed, next) = crate::ui::skirmish_shell::page::poll(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+        );
+        if changed {
             state.platform.window.request_redraw();
         }
-        crate::ui::skirmish_shell::opponent_scroll_deadline(&state.frontend.skirmish_shell_state)
+        next
     }
 
     pub(super) fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
@@ -895,7 +884,6 @@ impl App {
         if let Some(modal) = chooser(state) {
             modal.message_box = Some(crate::ui::skirmish_shell::ChooseMapPrompt {
                 selection,
-                pressed: None,
                 kind: ChooseMapPromptKind::EjectAi,
             });
         }
@@ -932,54 +920,78 @@ impl App {
         )
     }
 
-    /// The eject box's two buttons (the two-button message box `0x120`).
-    fn choose_map_prompt_button_at(
-        state: &AppState,
-        x: i32,
-        y: i32,
-    ) -> Option<crate::ui::skirmish_shell::ChooseMapPromptButton> {
-        use crate::ui::skirmish_shell::ChooseMapPromptButton::{Cancel, Ok};
+    /// Use Map's box (the two-button message box `0x120`) on the controller
+    /// over the chooser, built once and kept on its rects: OK greyed while a
+    /// download runs, Enter on [`ChooseMapPrompt::default_button`] and
+    /// Escape on Cancel. The box and its widgets' dialog; none while no box
+    /// shows.
+    fn sync_choose_map_prompt(
+        state: &mut AppState,
+    ) -> Option<(crate::ui::skirmish_shell::ChooseMapPrompt, crate::ui::shell::modal::ShellBox)>
+    {
+        use crate::ui::shell::modal::control::CANCEL;
+        use vera20k_gui::{Prop, Value};
+        let prompt = chooser(state)?.message_box?;
+        let shell_box = prompt.shell_box(String::new(), String::new(), String::new());
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
-        let layout = crate::ui::shell::modal::menu_message_box(2, w, h);
-        [Ok, Cancel]
-            .into_iter()
-            .zip(0..)
-            .find_map(|(button, i)| layout.button(i).contains(x, y).then_some(button))
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
+        let controller = &mut state.frontend.shell_controller;
+        if controller.top_id() != Some(shell_box.dialog) {
+            controller.close(shell_box.dialog);
+            controller.push_modal(shell_box.dialog);
+        }
+        crate::ui::shell::menu_page::sync_nodes(
+            controller,
+            shell_box.dialog,
+            || shell_box.nodes(),
+            |id| parts.rect_of(id),
+            &shell_box.enabled(),
+        );
+        for b in &shell_box.buttons {
+            let default = Value::Bool(b.id == prompt.default_button());
+            controller.set_prop(shell_box.dialog, b.id, Prop::Default, default);
+            let cancel = Value::Bool(b.id == CANCEL);
+            controller.set_prop(shell_box.dialog, b.id, Prop::Cancel, cancel);
+        }
+        Some((prompt, shell_box))
     }
 
-    /// A press while Use Map's box shows: its owner-draw buttons play the
-    /// press sound (`0x00612B70`). Download takes no press while it runs.
+    /// A pointer message (`down`; `None` moves) while Use Map's box shows:
+    /// its owner-draw buttons (`0x00612B70`) play GUIMainButtonSound on the
+    /// press and answer on the release over their own press. Download takes
+    /// no press while it runs. False when no box shows.
+    pub(super) fn choose_map_prompt_pointer(state: &mut AppState, down: Option<bool>) -> bool {
+        use crate::ui::shell::modal::control::OK;
+        let Some((prompt, shell_box)) = Self::sync_choose_map_prompt(state) else {
+            return false;
+        };
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
+        if let Some(id) = Self::shell_box_pointer(state, &shell_box, &parts, down) {
+            Self::answer_choose_map_prompt(state, prompt, id == OK);
+            Self::drop_choose_map_prompt(state, &shell_box);
+            // The dialog under the box sees the pointer where it let go.
+            Self::handle_skirmish_shell_mouse_move(state);
+        }
+        if down.is_some() {
+            state.platform.window.request_redraw();
+        }
+        true
+    }
+
+    /// Takes the answered box's widgets off the controller.
+    fn drop_choose_map_prompt(state: &mut AppState, shell_box: &crate::ui::shell::modal::ShellBox) {
+        if chooser(state).is_none_or(|modal| modal.message_box.is_none()) {
+            state.frontend.shell_controller.close(shell_box.dialog);
+        }
+    }
+
     pub(super) fn handle_choose_map_prompt_mouse_down(state: &mut AppState) -> bool {
-        let (x, y) = state.match_state.input.cursor_px();
-        let button = Self::choose_map_prompt_button_at(state, x, y);
-        let Some(prompt) = chooser(state).and_then(|modal| modal.message_box.as_mut()) else {
-            return false;
-        };
-        let button = button.filter(|button| prompt.button_enabled(*button));
-        prompt.pressed = button;
-        if button.is_some() {
-            Self::play_page_cue(state, PageCue::Button);
-        }
-        state.platform.window.request_redraw();
-        true
+        Self::choose_map_prompt_pointer(state, Some(true))
     }
 
-    /// A release while Use Map's box shows answers it with the button it
-    /// was pressed on.
     pub(super) fn handle_choose_map_prompt_mouse_up(state: &mut AppState) -> bool {
-        let (x, y) = state.match_state.input.cursor_px();
-        let released = Self::choose_map_prompt_button_at(state, x, y);
-        let Some(prompt) = chooser(state).and_then(|modal| modal.message_box.as_mut()) else {
-            return false;
-        };
-        let pressed = prompt.pressed.take();
-        let prompt = *prompt;
-        if pressed.is_some() && pressed == released {
-            let ok = pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok);
-            Self::answer_choose_map_prompt(state, prompt, ok);
-        }
-        state.platform.window.request_redraw();
-        true
+        Self::choose_map_prompt_pointer(state, Some(false))
     }
 
     /// Answers Use Map's box with OK (`ok`) or Cancel. OK goes on to Use
@@ -1031,7 +1043,8 @@ impl App {
             return false;
         }
         if event.physical_key == PhysicalKey::Code(KeyCode::Backspace) {
-            return Self::edit_choose_map_search(state, |search| _ = search.pop());
+            let backspace = vera20k_gui::InputEvent::Key(vera20k_gui::Key::Backspace);
+            return Self::choose_map_search_input(state, backspace);
         }
         let typed = event.text.as_deref().unwrap_or_default();
         typed.chars().any(|ch| !ch.is_control()) && Self::choose_map_search_text(state, typed)
@@ -1056,16 +1069,28 @@ impl App {
                 .is_none_or(|modal| !modal.generating)
     }
 
-    /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
-    /// download boxes take Enter as OK, as the room's missing-map offer
-    /// does: Download, or going on with a downloaded map. While the
-    /// download runs, Enter does nothing and Escape cancels.
+    /// Enter or Escape on Use Map's box, through its widgets: Enter its
+    /// default button ([`ChooseMapPrompt::default_button`]), Escape Cancel.
+    /// While the download runs, Enter does nothing and Escape cancels.
     pub(super) fn answer_choose_map_prompt_key(state: &mut AppState, enter: bool) -> bool {
-        let Some(prompt) = chooser(state).and_then(|modal| modal.message_box) else {
+        use crate::ui::shell::modal::control::OK;
+        use vera20k_gui::{InputEvent, Key};
+        let Some((prompt, shell_box)) = Self::sync_choose_map_prompt(state) else {
             return false;
         };
-        let ok = enter && prompt.kind != ChooseMapPromptKind::EjectAi;
-        Self::answer_choose_map_prompt(state, prompt, ok);
+        let key = if enter { Key::Enter } else { Key::Escape };
+        let controller = &mut state.frontend.shell_controller;
+        controller.on_input(InputEvent::Key(key));
+        let raw = controller.drain_events();
+        let events = crate::ui::shell::page::page_events(controller.gui(), raw);
+        let answer = events.into_iter().find_map(|event| match event {
+            crate::ui::shell::page::PageEvent::Activated(id) => Some(id),
+            _ => None,
+        });
+        if let Some(id) = answer {
+            Self::answer_choose_map_prompt(state, prompt, id == OK);
+            Self::drop_choose_map_prompt(state, &shell_box);
+        }
         state.platform.window.request_redraw();
         true
     }
@@ -1141,7 +1166,7 @@ impl App {
         use crate::ui::skirmish_shell::{SkirmishHoverTarget, page};
         let shell = &state.frontend.skirmish_shell_state;
         let gui = state.frontend.shell_controller.gui();
-        if page::slider_held(gui) {
+        if page::pointer_held(gui) {
             return;
         }
         let maps = state.frontend.scenario_catalog.shell_maps();
@@ -1213,21 +1238,8 @@ impl App {
         code: KeyCode,
         text: Option<&str>,
     ) -> bool {
-        use vera20k_gui::{InputEvent, Key};
-        let key = match code {
-            KeyCode::Backspace => Key::Backspace,
-            KeyCode::Delete => Key::Delete,
-            KeyCode::ArrowLeft => Key::Left,
-            KeyCode::ArrowRight => Key::Right,
-            KeyCode::Home => Key::Home,
-            KeyCode::End => Key::End,
-            _ => Key::Tab,
-        };
-        let event = match (code, key) {
-            (KeyCode::Tab, _) => None,
-            (_, Key::Tab) => Some(InputEvent::Text(text.unwrap_or_default().to_owned())),
-            (_, key) => Some(InputEvent::Key(key)),
-        };
+        let shift = state.platform.live_modifiers.shift_key();
+        let event = crate::ui::shell::controller::gui_input(Some(code), shift, text);
         let layout = skirmish_layout(state);
         let font = &state.renderer.bit_font;
         let frontend = &mut state.frontend;
@@ -1251,20 +1263,23 @@ impl App {
         }
     }
 
-    pub(super) fn route_validation_modal_key(state: &mut AppState, key: ShellKey) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_none()
-        {
+    /// A key while `0xCE` is up: Enter and Escape reach its hidden IDOK,
+    /// which closes it as OK does.
+    pub(super) fn route_validation_modal_key(state: &mut AppState, code: KeyCode) -> bool {
+        let Some(shell_box) = state.frontend.skirmish_shell_state.validation_modal.clone() else {
             return false;
-        }
+        };
+        let Some(key) = crate::ui::shell::controller::gui_key(code, false) else {
+            return false;
+        };
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::ShellScale::RETAIL);
         state
             .frontend
             .shell_controller
-            .ensure_active(VALIDATION_BOX, true);
-        if !state.frontend.shell_controller.on_key(key) {
+            .ensure_active(VALIDATION_BOX);
+        let event = vera20k_gui::InputEvent::Key(key);
+        if Self::shell_box_input(state, &shell_box, &parts, event).is_none() {
             return false;
         }
         Self::close_validation_modal_from_controller(state);
@@ -1285,7 +1300,7 @@ impl App {
         state
             .frontend
             .shell_controller
-            .ensure_active(shell_box.dialog, true);
+            .ensure_active(shell_box.dialog);
         if Self::shell_box_pointer(state, &shell_box, &parts, Some(down)) == Some(OK) {
             Self::close_validation_modal_from_controller(state);
         }
@@ -1409,8 +1424,12 @@ impl App {
             return;
         }
         Self::blur_player_name(state);
+        let over = crate::app::frontend::preview_zoom::over_box(
+            state,
+            crate::ui::skirmish_shell::page::DIALOG,
+        );
         if !Self::skirmish_list_open(state)
-            && crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview)
+            && crate::app::frontend::preview_zoom::press_on_box(state, over)
         {
             return;
         }
@@ -1427,9 +1446,7 @@ impl App {
         // A release after a trackbar or scrollbar press goes to that control,
         // which holds the mouse; freeing it lets the dialog's hit test run
         // again.
-        use crate::ui::skirmish_shell::{opponent_scroll_held, page::slider_held};
-        let held = slider_held(state.frontend.shell_controller.gui())
-            || opponent_scroll_held(&state.frontend.skirmish_shell_state);
+        let held = crate::ui::skirmish_shell::page::pointer_held(state.frontend.shell_controller.gui());
         Self::skirmish_page_pointer(state, Pointer::Up);
         if held {
             let (x, y) = state.match_state.input.cursor_px();
@@ -1438,7 +1455,9 @@ impl App {
     }
 
     pub(super) fn handle_skirmish_shell_mouse_move(state: &mut AppState) {
-        if Self::skirmish_page_covered(state, Pointer::Move) {
+        if Self::choose_map_prompt_pointer(state, None)
+            || Self::skirmish_page_covered(state, Pointer::Move)
+        {
             return;
         }
         // Under the validation box the page takes no move and the status
@@ -1466,12 +1485,16 @@ impl App {
         {
             return true;
         }
-        let list_open = Self::skirmish_list_open(state);
-        crate::ui::skirmish_shell::handle_option_mouse_wheel(
-            &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
+        let layout = skirmish_layout(state);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let frontend = &mut state.frontend;
+        crate::ui::skirmish_shell::page::wheel(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            &layout,
+            frontend.scenario_catalog.shell_maps(),
+            &labels,
             lines,
-            list_open,
         )
     }
 
@@ -1486,24 +1509,6 @@ impl App {
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
-
-    #[test]
-    fn shell_key_translation_matches_dialog_controller_route() {
-        assert_eq!(App::shell_key_for_code(KeyCode::Tab), Some(ShellKey::Tab));
-        assert_eq!(
-            App::shell_key_for_code(KeyCode::Enter),
-            Some(ShellKey::Enter)
-        );
-        assert_eq!(
-            App::shell_key_for_code(KeyCode::NumpadEnter),
-            Some(ShellKey::Enter)
-        );
-        assert_eq!(
-            App::shell_key_for_code(KeyCode::Escape),
-            Some(ShellKey::Escape)
-        );
-        assert_eq!(App::shell_key_for_code(KeyCode::Space), None);
-    }
 
     /// A loose map the chooser lists: the retail `.yrm` branch reads
     /// `[Basic] Name=` from the file itself.

@@ -226,12 +226,10 @@ pub(crate) fn push_choose_map_prompt(
     mut sprites: Option<&mut Vec<SpriteInstance>>,
     texts: Option<&mut Vec<ShellTextDraw>>,
 ) {
-    use crate::ui::shell::modal::control::{CANCEL, OK};
-    use crate::ui::skirmish_shell::{ChooseMapPromptButton as Button, ChooseMapPromptKind as Kind};
+    use crate::ui::skirmish_shell::ChooseMapPromptKind as Kind;
     let (body, ok) = super::text::choose_map_prompt_labels(state, prompt);
     let cancel = state.csf_label("GUI:Cancel", "Cancel");
-    let shell_box = ShellBox::message(body, ok, cancel, String::new())
-        .disabled(OK, !prompt.button_enabled(Button::Ok));
+    let shell_box = prompt.shell_box(body, ok, cancel);
     let atlas = state.frontend.skirmish_shell_chrome.as_ref();
     let background = atlas.and_then(|atlas| {
         match prompt.kind {
@@ -249,11 +247,9 @@ pub(crate) fn push_choose_map_prompt(
         let depth = BoxLook::skirmish(None).depths.button;
         super::modals::push_download_progress_bar(out, atlas, body, progress, depth);
     }
-    let pressed = |id| match id {
-        OK => prompt.pressed == Some(Button::Ok),
-        CANCEL => prompt.pressed == Some(Button::Cancel),
-        _ => false,
-    };
+    // Its widgets' captured button keeps its pushed look off the pointer too.
+    let held = crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, shell_box.dialog);
+    let pressed = |id| held == Some(id);
     let (texts, look) = (texts.map(|out| (out, true)), BoxLook::prompt(background));
     push_skirmish_box(
         state,

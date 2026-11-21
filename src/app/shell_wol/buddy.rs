@@ -71,10 +71,21 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
 fn present(state: &mut AppState) {
     let unknown = state.csf_text(UNKNOWN_STATS_KEY);
     sync(state);
+    let image = layout(state).rect_of(crate::ui::wol_buddy::OBSERVER_IMAGE);
     let frontend = &mut state.frontend;
     let Some(root) = frontend.shell_controller.root_in(DIALOG) else {
         return;
     };
+    // The observer image 0x75F toggles on a press anywhere on it.
+    let gui = frontend.shell_controller.gui_mut();
+    let hit = vera20k_gui::Value::Rect(image.unwrap_or_default());
+    crate::ui::shell::page::set(
+        gui,
+        root,
+        crate::ui::wol_buddy::OBSERVER_IMAGE,
+        vera20k_gui::Prop::HitRect,
+        hit,
+    );
     if let Some(WolPage::Buddy(dialog)) = frontend.wol.as_ref().map(|visit| &visit.page) {
         dialog
             .ui
@@ -107,7 +118,7 @@ pub(super) fn open_dialog(state: &mut AppState) {
     state.frontend.shell_route = ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
     super::leaf::open_art(state, DIALOG);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    state.frontend.shell_controller.reset_to(DIALOG);
     super::buddies::restart(state);
     present(state);
     state.platform.window.request_redraw();
@@ -406,7 +417,7 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
             // pointer: no hover, so no status help, while the box is up.
             let controller = &mut state.frontend.shell_controller;
             controller.drop_pointer_in(DIALOG);
-            controller.push(ADD_DIALOG, false);
+            controller.push(ADD_DIALOG);
             if sync_add(state).is_some() {
                 leaf::focus(state, ADD_DIALOG, Some(NAME));
             }
@@ -456,7 +467,7 @@ fn close_add(state: &mut AppState) {
     if controller.top_id() == Some(ADD_DIALOG) {
         controller.pop();
     }
-    controller.ensure_active(DIALOG, false);
+    controller.ensure_active(DIALOG);
 }
 
 /// Builds and places `0x115`'s widgets (the box's retail pixels); its
@@ -502,24 +513,11 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         }
         return;
     }
-    let (x, y) = state.match_state.input.cursor_px();
     if sync(state).is_none() {
         return;
     }
-    // The observer image 0x75F toggles on a press anywhere on it.
-    let image = pressed
-        && layout(state)
-            .rect_of(crate::ui::wol_buddy::OBSERVER_IMAGE)
-            .unwrap_or_default()
-            .contains(x, y);
+    present(state);
     let events = leaf::pointer(state, at);
-    if image {
-        App::play_page_cue(state, PageCue::Checkbox);
-        if let Some(action) = page_mut(state).and_then(|dialog| dialog.ui.activate(OBSERVER_IMAGE))
-        {
-            apply(state, action);
-        }
-    }
     for event in events {
         let Some(ui) = page_mut(state).map(|dialog| &mut dialog.ui) else {
             return;
@@ -569,7 +567,9 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let local = local_nickname(state);
     let names = state.frontend.wol_buddies.names().to_vec();
     let valid = |name: &str| super::buddies::valid_new_buddy(&names, name, &local);
-    let Some(event) = leaf::input_of(code, text).filter(|_| add_open(state)) else {
+    let shift = state.platform.live_modifiers.shift_key();
+    let event = crate::ui::shell::controller::gui_input(code, shift, text);
+    let Some(event) = event.filter(|_| add_open(state)) else {
         return;
     };
     if let Some(action) = WolAddBuddy::input(&mut state.frontend.shell_controller, event, &valid) {

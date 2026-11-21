@@ -707,6 +707,8 @@ pub(super) fn push_opponent_scrollbar_instances(
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
+    // The arrow its gui List draws pushed.
+    pressed: Option<crate::ui::shell::list::ListScrollPart>,
 ) {
     if let Some(geometry) = opponent_scroll_geometry(layout, shell, maps) {
         super::list::paint_list(
@@ -715,7 +717,7 @@ pub(super) fn push_opponent_scrollbar_instances(
             geometry,
             shell.first_opponent,
             None,
-            shell.opponent_scroll.pressed_part(),
+            pressed,
             false,
             layout.scale,
         );

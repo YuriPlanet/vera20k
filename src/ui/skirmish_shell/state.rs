@@ -25,10 +25,7 @@ pub use hit_test::{
     status_help_key_for_random_map_setup,
 };
 pub use launch::{launch_session, pack_launch_session_without_start_validation};
-pub use opponent_scroll::{
-    handle_option_mouse_wheel, move_opponent_scrollbar, opponent_scroll_deadline,
-    opponent_scroll_geometry, opponent_scroll_held, poll_opponent_scroll, press_opponent_scrollbar,
-};
+pub use opponent_scroll::{opponent_scroll_geometry, opponent_scroll_rows};
 
 pub use choose_map::{
     ChooseMapContext, ChooseMapModalState, ChooseMapPrompt, ChooseMapPromptAnswer,

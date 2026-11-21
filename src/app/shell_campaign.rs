@@ -6,14 +6,14 @@
 use crate::util::time::Instant;
 
 use super::{App, AppState};
-use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::{
-    CAMPAIGN_DIALOG, CampaignRelease, CampaignShellState, CampaignSide,
+    BACK_BUTTON, CAMPAIGN_DIALOG, CampaignShellState, CampaignSide, DIFFICULTY_SLIDER,
 };
-use crate::ui::shell::page::PageCue;
+use crate::ui::shell::menu_page;
+use crate::ui::shell::page::{PageCue, PageEvent};
 
 /// Owner id of the campaign voice handle `0x00A8F300`: a new voice stops the
 /// one before it (`0x00405D40` then `0x00750920`).
@@ -68,95 +68,132 @@ impl App {
         ready
     }
 
-    /// Whether Back holds the mouse since a press on it.
-    fn campaign_back_pressed(state: &AppState) -> bool {
-        crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
-            .is_some()
+    /// One pointer message (`down`: `None` moves) on `0x94`'s nodes: Back,
+    /// the emblems and the difficulty slider, on the page's scale with the
+    /// slider at the dialog's position. Returns their events after the cues.
+    fn campaign_pointer(state: &mut AppState, down: Option<bool>) -> Vec<PageEvent> {
+        let layout = shell_layout::campaign_layout(state);
+        let difficulty = state.frontend.campaign.as_ref().map(|c| c.difficulty());
+        let controller = &mut state.frontend.shell_controller;
+        controller.ensure_active(CAMPAIGN_DIALOG);
+        controller.set_scale(layout.scale);
+        crate::ui::shell::menu_page::sync_nodes(
+            controller,
+            CAMPAIGN_DIALOG,
+            crate::ui::campaign_shell::nodes,
+            |id| layout.control_rect(id),
+            &[],
+        );
+        if let (Some(root), Some(difficulty)) = (controller.root_in(CAMPAIGN_DIALOG), difficulty) {
+            let pos = vera20k_gui::Value::Int(difficulty);
+            let gui = controller.gui_mut();
+            crate::ui::shell::page::set(gui, root, DIFFICULTY_SLIDER, vera20k_gui::Prop::Pos, pos);
+        }
+        let (x, y) = state.match_state.input.cursor_px();
+        controller.on_input(crate::app::input::dialog_page::event_at(x, y, down));
+        if down.is_none() {
+            // Every hover message repaints the status line (0x00615EF7).
+            state.frontend.shell_status_line.repaint();
+        }
+        let mut rest = Vec::new();
+        for event in Self::shell_page_events(state, true) {
+            match event {
+                PageEvent::Slid { value, .. } => {
+                    let moved = (state.frontend.campaign.as_mut())
+                        .is_some_and(|campaign| campaign.set_difficulty(value));
+                    if moved {
+                        // 0x0061E6DD: mouse-driven position changes click.
+                        Self::play_page_cue(state, PageCue::ListClick);
+                    }
+                }
+                event => rest.push(event),
+            }
+        }
+        rest
     }
 
+    /// The control holding the mouse since a press on it.
+    fn campaign_captured(state: &AppState) -> Option<u16> {
+        menu_page::pressed_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
+    }
+
+    /// The emblem under the pointer.
+    fn campaign_emblem_hovered(state: &AppState) -> Option<CampaignSide> {
+        menu_page::hovered_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
+            .and_then(CampaignSide::from_emblem)
+    }
+
+    /// A move: the slider holding the mouse follows it, and no control sees
+    /// it then; with no press held, the dialog's own hit test (`0x0052ED60`)
+    /// animates the emblem under it.
     pub(super) fn handle_campaign_mouse_move(state: &mut AppState) {
-        let layout = shell_layout::campaign_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        // A slider holding the mouse since a press on it keeps the status
-        // line and Back's paint: the dialog's hit test (`0x00622CCB`) sees
-        // nothing until the release. The emblems and the slider hover as
-        // nodes for their status help.
-        let slider_held = (state.frontend.campaign.as_ref()).is_some_and(|c| c.slider_held());
-        if !slider_held {
-            Self::family_page_pointer(state, FamilyPage::Campaign, None);
-        }
-        let now = Instant::now();
-        // A slider or a pressed Back holding the mouse: the dialog sees no
-        // hit test (`0x0052ED60`) until the release.
-        let back_pressed = Self::campaign_back_pressed(state);
-        let mut slider_moved = false;
-        if let Some(campaign) = state.frontend.campaign.as_mut() {
-            if !slider_held && !back_pressed {
-                campaign.pointer_moved(layout.emblem_at(x, y), now);
+        Self::campaign_pointer(state, None);
+        if Self::campaign_captured(state).is_none() {
+            let under = Self::campaign_emblem_hovered(state);
+            if let Some(campaign) = state.frontend.campaign.as_mut() {
+                campaign.pointer_moved(under, Instant::now());
             }
-            slider_moved = campaign.slider_drag(x, layout.slider, layout.scale);
         }
-        if slider_moved {
-            // 0x0061E6DD: mouse-driven position changes click.
-            Self::play_page_cue(state, PageCue::ListClick);
-        }
-        // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.repaint();
     }
 
+    /// A press: an emblem captures it with GUIMainButtonSound (`0x0052EF52`),
+    /// the slider holds the mouse, Back takes its own.
     pub(super) fn handle_campaign_mouse_down(state: &mut AppState) {
-        let layout = shell_layout::campaign_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let emblem = layout.emblem_at(x, y);
-        let captured = (state.frontend.campaign.as_mut()).is_some_and(|c| c.pointer_down(emblem));
-        if captured {
-            // 0x0052EF52: GUIMainButtonSound (Rules +0x188).
-            Self::play_page_cue(state, PageCue::Button);
-            return;
-        }
-        if layout.slider.contains(x, y) {
-            let moved =
-                state.frontend.campaign.as_mut().is_some_and(|campaign| {
-                    campaign.slider_press(x, y, layout.slider, layout.scale)
-                });
-            if moved {
-                Self::play_page_cue(state, PageCue::ListClick);
-            }
-            return;
-        }
-        Self::handle_family_page_mouse(state, FamilyPage::Campaign, Some(true));
+        Self::campaign_pointer(state, Some(true));
     }
 
     pub(super) fn handle_campaign_mouse_up(state: &mut AppState) {
-        let layout = shell_layout::campaign_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let back_pressed = Self::campaign_back_pressed(state);
-        let Some(campaign) = state.frontend.campaign.as_mut() else {
-            return;
-        };
-        let emblem_capture = campaign.pressed().is_some();
-        let slider_held = campaign.slider_held();
-        campaign.slider_release();
-        if slider_held {
+        let captured = Self::campaign_captured(state);
+        let hovered = menu_page::hovered_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG);
+        let events = Self::campaign_pointer(state, Some(false));
+        if captured == Some(DIFFICULTY_SLIDER) {
             // The release frees the mouse; the pointer's next hit test finds
             // what lies under it.
             Self::handle_campaign_mouse_move(state);
             return;
         }
-        // The release reaches the dialog proc (`0x0052F1CF`) when an emblem
-        // press holds its capture, or over the background and the emblems
-        // (their statics do not take the mouse). Back and the slider are
-        // windows of their own and receive it themselves.
-        let over_child = layout.slider.contains(x, y)
-            || (layout.page.buttons.iter()).any(|button| button.rect.contains(x, y));
-        if emblem_capture || (!back_pressed && !over_child) {
-            let release = campaign.pointer_up(layout.emblem_at(x, y), Instant::now());
-            if let CampaignRelease::Selected(side) = release {
-                Self::select_campaign(state, side);
+        for event in events {
+            match event {
+                PageEvent::Activated(BACK_BUTTON) => {
+                    Self::leave_shell_dialog(
+                        state,
+                        ShellSlideKind::Campaign,
+                        App::commit_campaign_back,
+                    );
+                    return;
+                }
+                PageEvent::Activated(id) => {
+                    if let Some(side) = CampaignSide::from_emblem(id) {
+                        if let Some(campaign) = state.frontend.campaign.as_mut() {
+                            campaign.select();
+                        }
+                        Self::select_campaign(state, side);
+                        return;
+                    }
+                }
+                _ => {}
             }
-            return;
         }
-        Self::handle_family_page_mouse(state, FamilyPage::Campaign, Some(false));
+        // The release reaches the dialog proc (`0x0052F1CF`) when an emblem
+        // press holds its capture, or over the background and the emblems.
+        // Back and the slider are windows of their own and receive it
+        // themselves.
+        let emblem_capture = captured.and_then(CampaignSide::from_emblem).is_some();
+        let over_child = matches!(hovered, Some(BACK_BUTTON | DIFFICULTY_SLIDER));
+        if emblem_capture || (captured != Some(BACK_BUTTON) && !over_child) {
+            let under = hovered.and_then(CampaignSide::from_emblem);
+            if let Some(campaign) = state.frontend.campaign.as_mut() {
+                campaign.pointer_up(under, Instant::now());
+            }
+        }
+    }
+
+    /// A press is no longer held (the window lost the focus): the slider
+    /// lets go of the mouse (`0x0061E3AF`).
+    pub(crate) fn release_campaign_slider(state: &mut AppState) {
+        if Self::campaign_captured(state) == Some(DIFFICULTY_SLIDER) {
+            state.frontend.shell_controller.gui_mut().cancel_pointer();
+        }
     }
 
     /// Released on the pressed emblem: the proc stores the slider in

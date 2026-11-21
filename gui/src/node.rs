@@ -33,6 +33,9 @@ pub enum NodeKind {
     List,
     Trackbar,
     Edit,
+    /// A lone vertical scrollbar over rows its host lays out
+    /// ([`crate::widget::scrollbar`]).
+    ScrollBar,
 }
 
 impl NodeKind {
@@ -49,6 +52,7 @@ impl NodeKind {
                 | NodeKind::List
                 | NodeKind::Trackbar
                 | NodeKind::Edit
+                | NodeKind::ScrollBar
         )
     }
 }
@@ -156,6 +160,25 @@ pub enum Prop {
     /// List: a press still selects, but the selected row shows no fill
     /// (`LBS_NOSEL`, a chat transcript).
     NoSelectionFill,
+    /// List: `LBS_MULTIPLESEL`: a press toggles its row in `SelectedRows`
+    /// (and reports it as `ListSelected`); `Selected` stays as it is.
+    MultiSelect,
+    /// List with `MultiSelect`: the selected rows, each in decimal, in the
+    /// order they were selected.
+    SelectedRows,
+    /// Button: Enter activates it (the dialog's IDOK). It need not show: a
+    /// hidden one stands for a command no button carries.
+    Default,
+    /// Button: Escape activates it (the dialog's IDCANCEL); hidden as `Default`.
+    Cancel,
+    /// Whether Tab stops on the node (`WS_TABSTOP`); an `Edit` does unless
+    /// cleared, other kinds only when set.
+    TabStop,
+    /// Edit: Tab gives it the focus without restarting its caret blink.
+    KeepsBlink,
+    /// List: rows a wheel notch scrolls (3 unless set; VERA's Skirmish
+    /// computer rows take one).
+    WheelStep,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -195,10 +218,15 @@ impl Prop {
             | Prop::PressThrough
             | Prop::PopupHidden
             | Prop::NoSelectionFill
+            | Prop::MultiSelect
+            | Prop::Default
+            | Prop::Cancel
+            | Prop::TabStop
+            | Prop::KeepsBlink
             | Prop::SelectOnFocus
             | Prop::AllSelected
             | Prop::ByteOnly => ValueType::Bool,
-            Prop::Items | Prop::Swatches => ValueType::Items,
+            Prop::Items | Prop::Swatches | Prop::SelectedRows => ValueType::Items,
             Prop::Text
             | Prop::Label
             | Prop::Tooltip
@@ -224,13 +252,16 @@ impl Prop {
             | Prop::PopupBottom
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
-            | Prop::RowHeight => ValueType::Int,
+            | Prop::RowHeight
+            | Prop::WheelStep => ValueType::Int,
         }
     }
 
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
-            Prop::Toggled => kind == NodeKind::Button,
+            Prop::Toggled | Prop::Default | Prop::Cancel => kind == NodeKind::Button,
+            Prop::TabStop => kind.is_focusable(),
+            Prop::KeepsBlink => kind == NodeKind::Edit,
             Prop::Checked => kind == NodeKind::Checkbox,
             Prop::OpenAnywhere
             | Prop::PopupBottom
@@ -238,10 +269,13 @@ impl Prop {
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
             | Prop::PopupRect => kind == NodeKind::Combo,
-            Prop::NoSelectionFill => kind == NodeKind::List,
+            Prop::NoSelectionFill | Prop::WheelStep | Prop::MultiSelect | Prop::SelectedRows => {
+                kind == NodeKind::List
+            }
             Prop::RowHeight => matches!(kind, NodeKind::List | NodeKind::Combo),
             Prop::ScaleScreen => kind == NodeKind::Trackbar,
-            Prop::Min | Prop::Max | Prop::Step => kind == NodeKind::Trackbar,
+            Prop::Min | Prop::Step => kind == NodeKind::Trackbar,
+            Prop::Max => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }
     }

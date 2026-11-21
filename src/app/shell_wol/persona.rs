@@ -187,7 +187,7 @@ pub(super) fn open_locale_page(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(LOCALE_DIALOG, false);
+        .reset_to(LOCALE_DIALOG);
     // OK is created disabled (0x5800000B).
     if let Some(root) = sync(state) {
         let gui = state.frontend.shell_controller.gui_mut();
@@ -224,7 +224,7 @@ pub(super) fn open_auto_login_query(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(AUTO_LOGIN_DIALOG, false);
+        .reset_to(AUTO_LOGIN_DIALOG);
 }
 
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
@@ -257,7 +257,7 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
     state
         .frontend
         .shell_controller
-        .reset_to(ADD_BUDDY_DIALOG, false);
+        .reset_to(ADD_BUDDY_DIALOG);
     let question = add_buddy_text(state).unwrap_or_default();
     if let Some(root) = sync(state) {
         let gui = state.frontend.shell_controller.gui_mut();

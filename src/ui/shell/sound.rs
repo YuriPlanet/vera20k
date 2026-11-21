@@ -135,7 +135,7 @@ impl SoundState {
             node.id(control.id().into()).tooltip(control.help().0)
         });
         let mut ui = DialogController::default();
-        ui.reset_to(DIALOG, false);
+        ui.reset_to(DIALOG);
         if let Some(root) = ui.root_in(DIALOG) {
             super::page::ensure_built(ui.gui_mut(), root, || {
                 NodeSpec::new(NodeKind::Dialog).children(controls)
@@ -529,7 +529,7 @@ mod tests {
         let layout = ShellSoundLayout::new(800, 600, geom::ShellScale::RETAIL);
         let mut gui = Gui::new(16);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
         page::ensure_built(&mut gui, root, || shell_sound_spec([5, 5, 5], false));
         page::sync_rects(&mut gui, root, |id| layout.rect(id));
         let r = layout.sliders[1];

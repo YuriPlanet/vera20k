@@ -40,7 +40,7 @@ impl App {
         dialog: crate::ui::shell::descriptor::DialogId,
     ) {
         state.frontend.shell_route = route;
-        state.frontend.shell_controller.reset_to(dialog, false);
+        state.frontend.shell_controller.reset_to(dialog);
     }
 
     /// State 4: create Movies & Credits `0x101`.
@@ -84,7 +84,7 @@ impl App {
         let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
         let retained = state.frontend.movie_list_selection;
         let controller = &mut state.frontend.shell_controller;
-        controller.ensure_active(MOVIE_LIST_DIALOG, false);
+        controller.ensure_active(MOVIE_LIST_DIALOG);
         controller.set_scale(layout.page.scale);
         if let Some(rows) = state.frontend.movie_list.as_ref() {
             let list = (rows.len(), retained_movie_row(rows, retained), 0);

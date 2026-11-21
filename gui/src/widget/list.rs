@@ -12,8 +12,9 @@ use super::{Capture, Ctx, WidgetState, instant, ui_ms};
 use crate::Rect;
 use crate::gui::{UiEvent, UiMs};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
+use crate::shell::geom::ShellScale;
 use crate::shell::list::{
-    ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry, is_double_click,
+    ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry, is_double_click, log_top,
 };
 use crate::time::{Duration, Instant};
 
@@ -133,6 +134,52 @@ fn with_list<R>(
     Some(result)
 }
 
+/// The list's geometry on its rect at `scale`, as `with_list` loads it.
+pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<ShellListGeometry> {
+    let rect = tree.screen_rect(node).ok()?;
+    let n = tree.node(node).ok()?;
+    let mut metrics = ListMetrics::scaled(scale);
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
+        metrics.row_h = (*row_h).max(1);
+    }
+    let state = ListState {
+        rows: row_count(n),
+        top: n.int_prop(Prop::Top, 0).max(0) as usize,
+        visible_rows: match n.props.get(&Prop::VisibleRows) {
+            Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
+            _ => None,
+        },
+        ..ListState::default()
+    };
+    Some(state.geometry(rect, metrics))
+}
+
+/// A transcript's new row count (the shell's line adder `0x005E29A0`):
+/// `dropped` rows left its front and the rest were appended or rewrapped. A
+/// view that showed the last row, or one never scrolled (no `Top` yet),
+/// follows to the new last row; any other keeps its rows in place, its top
+/// up by `dropped`. The top stays within the scroll range; no event (the
+/// host moved it, not the user).
+pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: usize, dropped: usize) {
+    let Ok(rect) = tree.screen_rect(node) else { return };
+    let Ok(n) = tree.node_mut(node) else { return };
+    let mut metrics = ListMetrics::scaled(scale);
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
+        metrics.row_h = (*row_h).max(1);
+    }
+    let visible = match n.props.get(&Prop::VisibleRows) {
+        Some(Value::Int(v)) => usize::try_from(*v).unwrap_or(0),
+        _ => ShellListGeometry::new(rect, 0, 0, metrics).visible_rows,
+    };
+    let top = match n.props.get(&Prop::Top) {
+        Some(Value::Int(top)) => Some(usize::try_from(*top).unwrap_or(0)),
+        _ => None,
+    };
+    let top = log_top(row_count(n), top, visible, rows, dropped);
+    n.props.insert(Prop::RowCount, Value::Int(i32::try_from(rows).unwrap_or(i32::MAX)));
+    n.props.insert(Prop::Top, Value::Int(top as i32));
+}
+
 /// Drops the list's scrollbar hold.
 pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
     if let Ok(n) = tree.node_mut(node)
@@ -155,7 +202,9 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
     let now = instant(ctx.now);
     let (ms, w, h) = ctx.double_click;
     let limits = (Duration::from_millis(ms), w, h);
-    with_list(ctx, node, |s, rect, metrics, events| {
+    let multi = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::MultiSelect, false));
+    let mut toggled = None;
+    let capture = with_list(ctx, node, |s, rect, metrics, events| {
         s.pointer = (x, y);
         // The scrollbar child (0x0061C690) captures its own presses and
         // plays no sound: arrow step, track jump or thumb capture.
@@ -176,12 +225,38 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         // 0x0061A948: a press selects the row under it (the host plays
         // GenericClick); presses below the last row are ignored.
         if let Some(row) = geometry.row_at(s.rows, s.top, x, y) {
-            s.selected = Some(row);
+            match multi {
+                true => toggled = Some(row),
+                false => s.selected = Some(row),
+            }
             events.push(UiEvent::ListSelected { node, row: row as u32 });
         }
         Capture::No
     })
-    .unwrap_or(Capture::No)
+    .unwrap_or(Capture::No);
+    // LBS_MULTIPLESEL: the press toggles its row's selection.
+    if let Some(row) = toggled
+        && let Ok(n) = ctx.tree.node_mut(node)
+    {
+        let mut rows = selected_rows(n);
+        match rows.iter().position(|known| *known == row) {
+            Some(at) => {
+                rows.remove(at);
+            }
+            None => rows.push(row),
+        }
+        let rows = rows.iter().map(usize::to_string).collect();
+        n.props.insert(Prop::SelectedRows, Value::Items(rows));
+    }
+    capture
+}
+
+/// A `MultiSelect` list's selected rows, in the order they were selected.
+pub(crate) fn selected_rows(n: &Node) -> Vec<usize> {
+    match n.props.get(&Prop::SelectedRows) {
+        Some(Value::Items(rows)) => rows.iter().filter_map(|row| row.parse().ok()).collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// A move while the scrollbar holds the pointer: the thumb follows it.
@@ -199,11 +274,12 @@ pub(crate) fn release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
 }
 
 /// The wheel over the list; true when it scrolled. Three rows a notch, as
-/// the Mods and Keyboard pages scroll.
+/// the Mods and Keyboard pages scroll, or the node's `WheelStep`.
 pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
+    let step = ctx.tree.node(node).map_or(3, |n| n.int_prop(Prop::WheelStep, 3));
     with_list(ctx, node, |s, rect, metrics, _| {
         let max_top = s.geometry(rect, metrics).max_top as i64;
-        let top = (s.top as i64 - i64::from(lines) * 3).clamp(0, max_top) as usize;
+        let top = (s.top as i64 - i64::from(lines) * i64::from(step)).clamp(0, max_top) as usize;
         let scrolled = top != s.top;
         s.top = top;
         scrolled
@@ -245,7 +321,7 @@ mod tests {
             Prop::Items
         };
         g.set(list, prop, rows).unwrap();
-        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        g.push_dialog(root, DialogKind::Page).unwrap();
         (g, list)
     }
 
@@ -338,6 +414,50 @@ mod tests {
         g.input(InputEvent::PointerDown { x, y, button: MouseButton::Left }, 700);
         g.cancel_pointer();
         assert_eq!((g.poll(1300), g.list_view(list).unwrap().pressed), (None, None));
+    }
+
+    /// A transcript never scrolled shows its end and follows new rows; one
+    /// scrolled up keeps its rows while the front drops (`0x005E29A0`).
+    #[test]
+    fn a_log_at_its_end_follows_new_rows_and_a_scrolled_one_keeps_its_rows() {
+        let (mut g, list) = list_page(Value::Int(0));
+        g.log_rows(list, 20, 0).unwrap();
+        assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(7)));
+        g.log_rows(list, 21, 0).unwrap();
+        assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(8)));
+        g.set(list, Prop::Top, Value::Int(5)).unwrap();
+        g.log_rows(list, 21, 2).unwrap();
+        assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(3)));
+        assert_eq!(g.get(list, Prop::RowCount).unwrap(), Some(&Value::Int(21)));
+    }
+
+    #[test]
+    fn a_page_wheel_steps_its_list_by_its_wheel_step_off_the_list_too() {
+        let (mut g, list) = list_page(Value::Items(vec![String::new(); 60]));
+        g.set(list, Prop::WheelStep, Value::Int(1)).unwrap();
+        g.input(InputEvent::PointerMove { x: 900, y: 900 }, 0);
+        g.drain_events();
+        assert!(g.wheel_list(list, -2));
+        assert_eq!(g.drain_events(), vec![UiEvent::Scrolled { node: list, top: 2 }]);
+        assert!(g.wheel_list(list, 5));
+        assert!(!g.wheel_list(list, 1), "already at the top");
+        g.set(list, Prop::Visible, Value::Bool(false)).unwrap();
+        assert!(!g.wheel_list(list, -1), "a hidden list takes no wheel");
+    }
+
+    /// `LBS_MULTIPLESEL`: each press toggles its row and reports it; the
+    /// single selection stays unset.
+    #[test]
+    fn a_multi_select_press_toggles_its_row() {
+        let (mut g, list) = list_page(Value::Int(3));
+        g.set(list, Prop::MultiSelect, Value::Bool(true)).unwrap();
+        let (row0, row1) = (20 + 5, 20 + 19 + 5);
+        assert_eq!(click(&mut g, 50, row1, 0), vec![UiEvent::ListSelected { node: list, row: 1 }]);
+        click(&mut g, 50, row0, 1000);
+        assert_eq!(g.selected_rows(list), [1, 0]);
+        click(&mut g, 50, row1, 2000);
+        assert_eq!(g.selected_rows(list), [0]);
+        assert_eq!(g.get(list, Prop::Selected).unwrap(), None);
     }
 
     #[test]

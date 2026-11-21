@@ -353,8 +353,6 @@ pub struct RandomMapSetupModalState {
     /// them. While set they replace the map-type-derived values that every
     /// Generate re-rolls, after the re-roll's draws.
     pub advanced_values: Option<[i32; 13]>,
-    /// VERA extension: the Advanced scrollbar's thumb or track is held.
-    pub advanced_scroll_hold: bool,
     /// VERA extension: which page of the Advanced sliders is on show. The
     /// dialog has seven rows; VERA's three sliders are scrolled into view.
     pub advanced_page: usize,
@@ -461,7 +459,6 @@ impl RandomMapSetupModalState {
             statics: DialogStatics::default(),
             advanced: false,
             advanced_values: None,
-            advanced_scroll_hold: false,
             advanced_page: 0,
             exported: false,
             preset: None,
@@ -704,7 +701,6 @@ impl RandomMapSetupModalState {
         self.options = options;
         self.normalize_options();
         self.advanced_values = None;
-        self.advanced_scroll_hold = false;
         self.preset = None;
     }
 
@@ -800,7 +796,6 @@ impl RandomMapSetupModalState {
             }
         }
         self.extras_note = None;
-        self.advanced_scroll_hold = false;
     }
 
     /// Scroll the Advanced sliders by arrow-button steps, clamped to the
@@ -862,7 +857,6 @@ impl RandomMapSetupModalState {
     /// Begin the synchronous generate block: every control goes inert.
     pub fn begin_generate(&mut self) {
         self.generating = true;
-        self.advanced_scroll_hold = false;
     }
 
     /// Release a failed worker without presenting an old/partial map as a
@@ -1154,12 +1148,8 @@ mod tests {
             !dialog.set_advanced_scroll(99),
             "no change at the last page"
         );
-        dialog.advanced_scroll_hold = true;
         dialog.toggle_advanced();
-        assert_eq!(
-            (dialog.advanced_page, dialog.advanced_scroll_hold),
-            (0, false)
-        );
+        assert_eq!(dialog.advanced_page, 0);
     }
 
     /// A row past the view's last.

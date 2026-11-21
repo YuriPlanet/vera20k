@@ -98,8 +98,12 @@ fn handle_option_mouse_wheel(
     maps: &[MapMenuEntry],
     lines: f32,
 ) -> bool {
-    let open = PAGE.with_borrow(|(controller, ..)| controller.gui().popup().is_some());
-    super::handle_option_mouse_wheel(shell, maps, lines, open)
+    PAGE.with_borrow_mut(|(controller, seen, _)| {
+        let layout = seen
+            .as_ref()
+            .map_or_else(|| compute_layout(800, 600), |(layout, _)| layout.clone());
+        page::wheel(controller, shell, &layout, maps, &Default::default(), lines)
+    })
 }
 
 fn seen_layout() -> super::super::SkirmishShellLayout {
@@ -800,7 +804,6 @@ fn a_downloaded_map_waits_for_ok_before_use_map_goes_on() {
             mode: 1.into(),
             record_index: Some(0),
         },
-        pressed: None,
         kind,
     };
     // VERA: the box says the map is saved and stays. OK, clicked or Enter,

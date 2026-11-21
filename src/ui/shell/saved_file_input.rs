@@ -170,34 +170,12 @@ pub fn key<I: Clone + PartialEq>(
     code: Option<KeyCode>,
     text: Option<&str>,
 ) -> Vec<BrowserInputResult<I>> {
-    if browser.prompt.is_some() {
-        // 5D4DDB IsDialogMessageA / 5D370D maps initial-focus IDOK and
-        // IDCANCEL to result 1 (negative for confirms). Consume the key.
-        let answer = matches!(
-            code,
-            Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
-        );
-        return answer
-            .then_some(BrowserInputResult::PromptAnswer(false))
-            .into_iter()
-            .collect();
-    }
+    // A prompt's No takes Enter and Escape and the box every other key.
     // Enter in the edit acts; the base browser ignores IDCANCEL, so Escape
-    // does not close it, and control characters type nothing.
-    let key = match code {
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(Key::Enter),
-        Some(KeyCode::Backspace) => Some(Key::Backspace),
-        Some(KeyCode::Delete) => Some(Key::Delete),
-        Some(KeyCode::ArrowLeft) => Some(Key::Left),
-        Some(KeyCode::ArrowRight) => Some(Key::Right),
-        Some(KeyCode::Home) => Some(Key::Home),
-        Some(KeyCode::End) => Some(Key::End),
-        _ => None,
-    };
-    let event = match (key, text) {
-        (Some(key), _) => InputEvent::Key(key),
-        (None, Some(text)) => InputEvent::Text(text.to_owned()),
-        (None, None) => return Vec::new(),
+    // does not close it, and control characters (Tab too) type nothing.
+    let event = super::controller::gui_input(code, false, text);
+    let Some(event) = event.filter(|e| !matches!(e, InputEvent::Key(Key::Tab | Key::BackTab))) else {
+        return Vec::new();
     };
     browser.ui.on_input(event);
     take_events(browser, false)

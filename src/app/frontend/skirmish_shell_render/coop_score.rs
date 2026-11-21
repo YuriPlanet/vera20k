@@ -23,7 +23,6 @@ use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::campaign_score_shell::campaign_score_background_rect;
 use crate::ui::coop_score_shell::*;
 use crate::ui::shell::geom::RectPx;
-use crate::util::time::Instant;
 
 pub(crate) fn render_coop_score(
     state: &mut AppState,
@@ -41,7 +40,6 @@ pub(crate) fn render_coop_score(
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
     let fills = crate::app::frontend::shell_layout::fills_window(state);
-    let now = Instant::now();
     let (can_continue, map_index) = {
         let model = &state.frontend.coop_score_page.as_ref().expect("view").model;
         (model.can_continue, model.map_index)
@@ -262,15 +260,22 @@ pub(crate) fn render_coop_score(
     let chat_rect = scale.derive_rect(chat_rect, |rect| {
         RectPx::new(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
     });
-    let edit = &ui.chat.edit;
-    let caret = edit.focused && (now.elapsed().as_millis() / 500) % 2 == 0;
+    // The edit and the log as their widgets hold them. The caret shows
+    // steadily while the edit has BC6's focus.
+    let gui = controller.gui();
+    let edit_node = controller.control(COOP_SCORE_PAGE.dialog, CHAT);
+    let mut edit = edit_node.map_or_else(Default::default, |node| {
+        crate::ui::shell::page::new_edit(gui, node)
+    });
+    edit.focused = controller.focused_control(COOP_SCORE_PAGE.dialog) == Some(CHAT);
+    let caret = edit.focused;
     let (yellow, depth) = (SHELL_LABEL_TEXT_RGB, SHELL_CONTROL_TEXT_DEPTH);
     push_new_edit(
         &mut controls,
         &mut texts,
         atlas,
         font,
-        edit,
+        &edit,
         None,
         chat_rect,
         caret,
@@ -278,18 +283,24 @@ pub(crate) fn render_coop_score(
         depth,
         scale,
     );
-    let chat = ui
-        .chat
-        .list
-        .geometry(chat_log_rect, ui.chat.lines.len(), scale);
-    let list = &ui.chat.list;
-    let look = (None, list.top_index, list.scroll.pressed_part());
-    list_view_controls(&mut controls, atlas, chat, look, scale);
+    let log = controller
+        .control(COOP_SCORE_PAGE.dialog, CHAT_LOG)
+        .and_then(|node| gui.list_view(node));
+    let top = log.map_or(0, |log| log.top);
+    let pressed = log.and_then(|log| log.pressed);
+    let metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
+    let chat = crate::ui::shell::list::ShellListGeometry::new(
+        chat_log_rect,
+        ui.chat.lines.len(),
+        top,
+        metrics,
+    );
+    list_view_controls(&mut controls, atlas, chat, (None, top, pressed), scale);
     for (visible, line) in ui
         .chat
         .lines
         .iter()
-        .skip(ui.chat.list.top_index)
+        .skip(top)
         .take(chat.visible_rows)
         .enumerate()
     {

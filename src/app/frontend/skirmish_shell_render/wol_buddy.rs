@@ -54,7 +54,10 @@ pub(crate) fn paint_wol_buddy_children(
     let gui = controller.gui();
     let root = controller.root_in(DIALOG);
     if let Some(root) = root {
-        let widgets = super::gui_paint::paint_gui_children(state, gui, root, scale);
+        // The observer image paints as its art below, not as a box.
+        let ids = super::gui_paint::child_ids_except(gui, root, &[OBSERVER_IMAGE]);
+        let style = super::gui_paint::GuiStyle::default();
+        let widgets = super::gui_paint::paint_gui_ids(state, gui, root, ids, scale, style);
         paint.controls.extend(widgets.controls);
         paint.texts.extend(widgets.texts);
     }

@@ -41,7 +41,7 @@ pub(crate) fn route(
     sync: impl FnOnce(&mut Gui, NodeId),
     event: InputEvent,
 ) -> Vec<PageEvent> {
-    ui.ensure_active(dialog, false);
+    ui.ensure_active(dialog);
     crate::ui::shell::menu_page::sync_nodes(ui, dialog, nodes, rect_of, &[]);
     if let Some(root) = ui.root_in(dialog) {
         sync(ui.gui_mut(), root);

@@ -848,12 +848,16 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
 /// C2/C9 0x3ED (`0x791110`): the edit is cleared first; outside a channel
 /// `TXT_NOT_IN_CHAN`, an empty line `TXT_ENTER_MESSAGE`, else an action.
 pub(super) fn emote(state: &mut AppState) {
-    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+    if state.frontend.multiplayer_setup.is_none() {
         return;
-    };
-    let text = wol_chat::trim_line_end(&ui.chat.edit.units).to_vec();
-    ui.chat.edit.set_units_limited([], 0);
-    ui.focus_chat();
+    }
+    let units: Vec<u16> = crate::app::input::multiplayer_setup::chat_text(state)
+        .encode_utf16()
+        .collect();
+    let text = wol_chat::trim_line_end(&units).to_vec();
+    let page = super::dialog(state).page().dialog;
+    let chat = crate::ui::multiplayer_setup::CHAT;
+    state.frontend.shell_controller.set_text(page, chat, "");
     if text.is_empty() {
         message(state, "TXT_ENTER_MESSAGE", &[]);
         return;

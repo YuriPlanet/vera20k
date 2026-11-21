@@ -219,7 +219,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
     state
         .frontend
         .shell_controller
-        .reset_to(crate::ui::coop_score_shell::COOP_SCORE_DIALOG, false);
+        .reset_to(crate::ui::coop_score_shell::COOP_SCORE_DIALOG);
 }
 
 /// The tail `0x0046EE17`'s texts: rows sorted by score (`0x0046DC90`), the
@@ -820,18 +820,17 @@ fn append_line(state: &mut AppState, text: String, color: u32) {
     let Some(page) = state.frontend.coop_score_page.as_mut() else {
         return;
     };
-    let chat = &mut page.ui.chat;
-    let visible = chat
-        .list
-        .geometry(rect, chat.lines.len(), scale)
-        .visible_rows;
-    chat.append_message(
+    let controller = &mut state.frontend.shell_controller;
+    let dialog = crate::ui::coop_score_shell::COOP_SCORE_DIALOG;
+    let list = controller.control(dialog, crate::ui::coop_score_shell::CHAT_LOG);
+    // The log's list keeps the view, following new lines at the bottom.
+    page.ui.chat.append_message(
         LanChatLine {
             text: text.encode_utf16().collect(),
             color,
         },
         scale.base_rect(rect).w,
-        visible,
         |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
+        crate::ui::lan_shell::log_to(controller.gui_mut(), list),
     );
 }

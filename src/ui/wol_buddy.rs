@@ -366,7 +366,7 @@ impl WolAddBuddy {
     ) -> Option<WolBuddyAction> {
         match event {
             InputEvent::Key(Key::Enter) => return Self::activate(c, ADD),
-            InputEvent::Key(Key::Escape | Key::Tab) => {}
+            InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab) => {}
             event => page::edit_input(c, event, |c| {
                 let enabled = Value::Bool(valid(&Self::text(c)));
                 c.set_prop(ADD_DIALOG, ADD, Prop::Enabled, enabled);
@@ -445,7 +445,9 @@ impl WolBuddyPage {
         for id in [JOIN, PAGE_BUTTON, REMOVE, REFRESH] {
             set(id, Prop::Enabled, Value::Bool(self.enabled(id)));
         }
-        set(OBSERVER_TOGGLE, Prop::Checked, Value::Bool(self.observer));
+        for id in [OBSERVER_TOGGLE, OBSERVER_IMAGE] {
+            set(id, Prop::Checked, Value::Bool(self.observer));
+        }
         for id in std::iter::once(HEADING).chain(STATS) {
             let text = match &self.texts {
                 Some(texts) => texts
@@ -576,8 +578,8 @@ impl WolBuddyLayout {
 /// page's to paint), the list (its rows too), the observer box (toggled on
 /// its icon's press), the captions (the column headers left-aligned, the
 /// statistics' labels SS_RIGHT), the heading and the statistics with their
-/// status help. The observer image `0x75F` has no help and takes its press
-/// beside the widgets.
+/// status help. The observer image `0x75F` (no help) is a box toggled
+/// anywhere on it, which the page paints as its image.
 pub(crate) fn spec() -> NodeSpec {
     let align = |a: ShellAlign| Value::Int(i32::from(a.0));
     let help = |kind: NodeKind, id: u16| {
@@ -604,6 +606,7 @@ pub(crate) fn spec() -> NodeSpec {
         .children(page::menu_buttons(&PAGE))
         .child(help(NodeKind::Button, REFRESH))
         .child(observer)
+        .child(NodeSpec::new(NodeKind::Checkbox).id(OBSERVER_IMAGE.into()))
         .child(
             help(NodeKind::List, LIST)
                 .with(Prop::RowCount, Value::Int(0)),
@@ -825,7 +828,7 @@ mod tests {
     fn add_buddy_enables_by_validity_and_always_closes() {
         let valid = |name: &str| name != "Tester" && !name.contains(',');
         let mut c = DialogController::default();
-        c.push(ADD_DIALOG, false);
+        c.push(ADD_DIALOG);
         let root = c.root_in(ADD_DIALOG).unwrap();
         page::ensure_built(c.gui_mut(), root, add_spec);
         c.focus_control(ADD_DIALOG, Some(NAME));

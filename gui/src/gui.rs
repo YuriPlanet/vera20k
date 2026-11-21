@@ -27,6 +27,8 @@ pub enum Key {
     Enter,
     Escape,
     Tab,
+    /// Shift+Tab.
+    BackTab,
     Up,
     Down,
     Left,
@@ -77,6 +79,13 @@ pub enum UiEvent {
     TextChanged { node: NodeId, text: String },
     Submitted { node: NodeId, text: String },
     Cancelled { node: NodeId },
+    /// A left press in a `Modal` dialog with a `Rect` on its root, outside
+    /// it: a box that closes on a click elsewhere (VERA's player card)
+    /// hears it. The press reaches nothing under the box.
+    PressedOutside { dialog: DialogId },
+    /// Tab moved the focus off `from` (none: nothing had it); `to` is the
+    /// edit that took it, or none when the next stop is not an edit.
+    FocusMoved { from: Option<NodeId>, to: Option<NodeId> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,8 +120,6 @@ struct Dialog {
     id: DialogId,
     root: NodeId,
     kind: DialogKind,
-    default_button: Option<NodeId>,
-    cancel_button: Option<NodeId>,
     pointer: Pointer,
     /// Maps the dialog's device rects back to the authored 800x600 numbers
     /// the native widget arithmetic runs on.
@@ -208,23 +215,15 @@ impl Gui {
     }
 
     /// Pushes a dialog whose root is an existing `Dialog` node, with clean
-    /// pointer state.
-    pub fn push_dialog(
-        &mut self,
-        root: NodeId,
-        kind: DialogKind,
-        default_button: Option<NodeId>,
-        cancel_button: Option<NodeId>,
-    ) -> Result<DialogId, Refused> {
+    /// pointer state. Its buttons marked `Default` and `Cancel` take Enter
+    /// and Escape.
+    pub fn push_dialog(&mut self, root: NodeId, kind: DialogKind) -> Result<DialogId, Refused> {
         if self.tree.kind(root)? != NodeKind::Dialog {
             return Err(Refused::WrongKind);
         }
-        for b in [default_button, cancel_button].into_iter().flatten() {
-            self.tree.kind(b)?;
-        }
         let id = DialogId(self.next_dialog);
         self.next_dialog += 1;
-        self.dialogs.push(Dialog { id, root, kind, default_button, cancel_button, pointer: Pointer::default(), scale: ShellScale::RETAIL });
+        self.dialogs.push(Dialog { id, root, kind, pointer: Pointer::default(), scale: ShellScale::RETAIL });
         Ok(id)
     }
 
@@ -356,6 +355,11 @@ impl Gui {
                     self.with_ctx(now, |ctx| widget::combo::popup_release(ctx, popup, x, y));
                     return InputResult { consumed: true };
                 }
+                // Escape closes the list (no cue) and goes no further.
+                InputEvent::Key(Key::Escape) => {
+                    self.close_popup();
+                    return InputResult { consumed: true };
+                }
                 _ => {}
             }
         }
@@ -378,6 +382,12 @@ impl Gui {
                         Ok(NodeKind::Edit) => {
                             self.with_ctx(now, |ctx| widget::edit::drag(ctx, held, x, y));
                         }
+                        Ok(NodeKind::ScrollBar) => {
+                            // It holds the pointer: the hover stays as the
+                            // press left it until the release.
+                            self.with_ctx(now, |ctx| widget::scrollbar::drag(ctx, held, y));
+                            return InputResult { consumed: true };
+                        }
                         _ => {}
                     }
                 }
@@ -386,6 +396,12 @@ impl Gui {
                 InputResult { consumed: over.is_some() || modal }
             }
             InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
+                if let (true, Ok(Some(Value::Rect(r)))) = (modal, self.tree.get(root, Prop::Rect))
+                    && !r.contains(x, y)
+                {
+                    let dialog = self.dialogs.last().map(|d| d.id).expect("a top dialog");
+                    self.events.push(UiEvent::PressedOutside { dialog });
+                }
                 let over = self.hit_at(root, x, y, true);
                 let enabled = over.filter(|n| self.tree.effective(*n, Prop::Enabled));
                 self.top_mut().pointer.pressed = None;
@@ -423,7 +439,7 @@ impl Gui {
                         return InputResult { consumed: true };
                     }
                 }
-                self.key(key)
+                self.key(key, now)
             }
             InputEvent::Text(text) => match self.top_pointer().focus {
                 Some(f) => {
@@ -539,6 +555,19 @@ impl Gui {
         Ok(())
     }
 
+    /// The wheel for List `node` of the top dialog wherever the pointer is,
+    /// for a page whose one list takes every notch (VERA's Skirmish computer
+    /// rows); true when it scrolled (`Scrolled`). A hidden list takes none.
+    pub fn wheel_list(&mut self, node: NodeId, lines: i32) -> bool {
+        if self.tree.kind(node) != Ok(NodeKind::List)
+            || self.dialogs.is_empty()
+            || !self.tree.effective(node, Prop::Visible)
+        {
+            return false;
+        }
+        self.with_ctx(0, |ctx| widget::list::wheel(ctx, node, lines))
+    }
+
     /// The wheel for the top dialog's open drop-down, for a host whose lists
     /// take it (VERA's roster): `rows` on when the pointer at `x`, `y` is
     /// over the list. True when a list is open, which then owns the wheel.
@@ -547,6 +576,16 @@ impl Gui {
         if self.combo_drop_down(node).is_some_and(|d| d.popup.rect.contains(x, y)) {
             self.with_ctx(0, |ctx| widget::combo::wheel(ctx, node, rows, x, y));
         }
+        true
+    }
+
+    /// A key for the top dialog's open drop-down, for a host whose lists
+    /// take the keyboard (VERA's Keyboard page): Up/Down move its hot row,
+    /// Enter picks it, Escape closes. True when a list is open, which then
+    /// owns the keys.
+    pub fn key_popup(&mut self, key: Key) -> bool {
+        let Some(node) = self.popup().filter(|n| !self.popup_hidden(*n)) else { return false };
+        self.with_ctx(0, |ctx| widget::combo::key(ctx, node, key));
         true
     }
 
@@ -564,9 +603,56 @@ impl Gui {
         widget::combo::drop_down(&self.tree, node, d.scale)
     }
 
+    /// A `MultiSelect` List's selected rows, in the order they were selected.
+    pub fn selected_rows(&self, node: NodeId) -> Vec<usize> {
+        self.tree.node(node).map_or_else(|_| Vec::new(), widget::list::selected_rows)
+    }
+
+    /// Selects `rows` of the `MultiSelect` List `node` (the host refilled it).
+    pub fn set_selected_rows(&mut self, node: NodeId, rows: &[usize]) -> Result<(), Refused> {
+        let rows = rows.iter().map(usize::to_string).collect();
+        self.tree.set(node, Prop::SelectedRows, Value::Items(rows))
+    }
+
     /// What the host paints of List `node`.
     pub fn list_view(&self, node: NodeId) -> Option<widget::list::ListView> {
         widget::list::view(&self.tree, node)
+    }
+
+    /// List `node` as a transcript (a chat log) now holds `rows` rows, of
+    /// which `dropped` left its front: a view at its end, or never
+    /// scrolled, follows the new last row, any other keeps showing the same
+    /// rows. The list owns the top; the host only reports the rows.
+    pub fn log_rows(&mut self, node: NodeId, rows: usize, dropped: usize) -> Result<(), Refused> {
+        if self.tree.kind(node)? != NodeKind::List {
+            return Err(Refused::WrongKind);
+        }
+        let scale = self.scale_of(node)?;
+        widget::list::log_rows(&mut self.tree, node, scale, rows, dropped);
+        Ok(())
+    }
+
+    /// List `node` as it shows and hits now: its rows, top and scrollbar on
+    /// its rect, at its dialog's scale (the row under a point, its range).
+    pub fn list_geometry(&self, node: NodeId) -> Option<crate::shell::list::ShellListGeometry> {
+        let scale = self.scale_of(node).ok()?;
+        widget::list::geometry(&self.tree, node, scale)
+    }
+
+    /// The row of List `node` under `(x, y)`, as a press there would find
+    /// it, whether or not the list takes presses now.
+    pub fn list_row_at(&self, node: NodeId, x: i32, y: i32) -> Option<usize> {
+        let view = self.list_view(node)?;
+        self.list_geometry(node)?.row_at(view.rows, view.top, x, y)
+    }
+
+    /// The scale of the dialog `node` lies in, on top or not.
+    fn scale_of(&self, node: NodeId) -> Result<ShellScale, Refused> {
+        let mut root = node;
+        while let Some(parent) = self.tree.parent(root)? {
+            root = parent;
+        }
+        Ok(self.dialogs.iter().find(|d| d.root == root).map_or(ShellScale::RETAIL, |d| d.scale))
     }
 
     fn with_ctx<R>(&mut self, now: UiMs, f: impl FnOnce(&mut Ctx<'_>) -> R) -> R {
@@ -594,6 +680,7 @@ impl Gui {
             NodeKind::List => Some(self.with_ctx(now, |ctx| widget::list::press(ctx, node, x, y))),
             NodeKind::Combo => Some(self.with_ctx(now, |ctx| widget::combo::press(ctx, node, x, y))),
             NodeKind::Edit => Some(self.with_ctx(now, |ctx| widget::edit::press(ctx, node, x, y))),
+            NodeKind::ScrollBar => Some(self.with_ctx(now, |ctx| widget::scrollbar::press(ctx, node, x, y))),
             _ => None,
         };
         if let Some(capture) = delegated {
@@ -650,6 +737,7 @@ impl Gui {
             NodeKind::List => self.with_ctx(now, |ctx| widget::list::release(ctx, node, x, y)),
             NodeKind::Combo => self.with_ctx(now, |ctx| widget::combo::release(ctx, node, x, y)),
             NodeKind::Edit => self.with_ctx(now, |ctx| widget::edit::release(ctx, node, x, y)),
+            NodeKind::ScrollBar => self.with_ctx(now, |ctx| widget::scrollbar::release(ctx, node)),
             NodeKind::Trackbar => {
                 let value = Value::Int(n.int_prop(Prop::Pos, 0));
                 self.events.push(UiEvent::Changed { node, value, final_: true });
@@ -693,14 +781,24 @@ impl Gui {
         self.dialogs.last_mut().expect("callers check for a top dialog")
     }
 
-    fn key(&mut self, key: Key) -> InputResult {
+    fn key(&mut self, key: Key, now: UiMs) -> InputResult {
         let Some(top) = self.dialogs.last() else { return InputResult::default() };
-        let target = match key {
-            Key::Enter => top.default_button,
-            Key::Escape => top.cancel_button,
-            _ => None,
+        let (root, modal) = (top.root, top.kind == DialogKind::Modal);
+        let marked = match key {
+            Key::Enter => Prop::Default,
+            Key::Escape => Prop::Cancel,
+            Key::Tab | Key::BackTab => {
+                return InputResult { consumed: self.tab(root, key == Key::BackTab, now) || modal };
+            }
+            _ => return InputResult { consumed: modal },
         };
-        let modal = top.kind == DialogKind::Modal;
+        let mut target = None;
+        self.walk(root, &mut |id, kind| {
+            let on = matches!(self.tree.get(id, marked), Ok(Some(Value::Bool(true))));
+            if target.is_none() && kind == NodeKind::Button && on {
+                target = Some(id);
+            }
+        });
         match target {
             Some(n) if self.tree.effective(n, Prop::Enabled) => {
                 self.activate(n);
@@ -708,6 +806,48 @@ impl Gui {
             }
             _ => InputResult { consumed: modal },
         }
+    }
+
+    /// Tab from the focused edit to the next tab stop of the dialog in tree
+    /// order (`back`: the previous), wrapping, among the shown and enabled
+    /// ones (GetNextDlgTabItem). A stop that is no edit takes the focus off
+    /// the edits. Without a focus, Tab either way gives it to the first stop.
+    /// An edit with `KeepsBlink` takes the focus without restarting its caret
+    /// blink.
+    fn tab(&mut self, root: NodeId, back: bool, now: UiMs) -> bool {
+        let from = self.top_pointer().focus;
+        let mut stops = Vec::new();
+        self.walk(root, &mut |id, kind| {
+            let stop = match self.tree.get(id, Prop::TabStop) {
+                Ok(Some(Value::Bool(on))) => *on,
+                _ => kind == NodeKind::Edit,
+            };
+            if stop && kind.is_focusable() && self.tree.effective(id, Prop::Visible) && self.tree.effective(id, Prop::Enabled)
+            {
+                stops.push(id);
+            }
+        });
+        let next = match from {
+            None => match stops.first() {
+                Some(first) => *first,
+                None => return false,
+            },
+            Some(from) => {
+                let Some(at) = stops.iter().position(|n| *n == from) else { return false };
+                stops[if back { (at + stops.len() - 1) % stops.len() } else { (at + 1) % stops.len() }]
+            }
+        };
+        if Some(next) != from {
+            let to = (self.tree.kind(next) == Ok(NodeKind::Edit)).then_some(next);
+            if to.is_some_and(|n| matches!(self.tree.get(n, Prop::KeepsBlink), Ok(Some(Value::Bool(true))))) {
+                self.top_mut().pointer.focus = to;
+            } else {
+                let top = self.top_mut().id;
+                let _ = self.focus_edit_in(top, to, now);
+            }
+            self.events.push(UiEvent::FocusMoved { from, to });
+        }
+        true
     }
 
     fn activate(&mut self, node: NodeId) {
@@ -785,7 +925,7 @@ mod tests {
         let b = g.create(NodeKind::Button, Some(root)).unwrap();
         g.set(a, Prop::Rect, Value::Rect(Rect::new(0, 0, 10, 10))).unwrap();
         g.set(b, Prop::Rect, Value::Rect(Rect::new(10, 0, 10, 10))).unwrap();
-        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        g.push_dialog(root, DialogKind::Page).unwrap();
         (g, a, b)
     }
 
@@ -848,7 +988,8 @@ mod tests {
         let m = g.create(NodeKind::Dialog, None).unwrap();
         let ok = g.create(NodeKind::Button, Some(m)).unwrap();
         g.set(ok, Prop::Rect, Value::Rect(Rect::new(100, 100, 10, 10))).unwrap();
-        let id = g.push_dialog(m, DialogKind::Modal, Some(ok), Some(ok)).unwrap();
+        g.set(ok, Prop::Default, Value::Bool(true)).unwrap();
+        let id = g.push_dialog(m, DialogKind::Modal).unwrap();
         down(&mut g, 5);
         up(&mut g, 5);
         assert!(activations(&mut g).is_empty(), "page button under a modal");
@@ -884,7 +1025,7 @@ mod tests {
         // 200 px wide, 20 tall: track 1..=138, plaque the last 50 px.
         g.set(bar, Prop::Rect, Value::Rect(Rect::new(0, 0, 200, 20))).unwrap();
         g.set(bar, Prop::Max, Value::Int(10)).unwrap();
-        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        g.push_dialog(root, DialogKind::Page).unwrap();
         let at = |g: &mut Gui, e: InputEvent| {
             g.input(e, 0);
         };
@@ -965,7 +1106,9 @@ mod tests {
         let ok = g.create(NodeKind::Button, Some(root)).unwrap();
         let cancel = g.create(NodeKind::Button, Some(root)).unwrap();
         g.set(edit, Prop::Rect, Value::Rect(Rect::new(0, 0, 100, 10))).unwrap();
-        g.push_dialog(root, DialogKind::Page, Some(ok), Some(cancel)).unwrap();
+        g.set(ok, Prop::Default, Value::Bool(true)).unwrap();
+        g.set(cancel, Prop::Cancel, Value::Bool(true)).unwrap();
+        g.push_dialog(root, DialogKind::Page).unwrap();
         (g, edit, ok, cancel)
     }
 
@@ -979,6 +1122,23 @@ mod tests {
             _ => -1,
         };
         (text, caret)
+    }
+
+    /// A modal box with a `Rect` hears a press outside it; one inside, or a
+    /// box without a rect, does not.
+    #[test]
+    fn a_press_outside_a_modal_box_is_reported() {
+        let mut g = Gui::new(8);
+        let root = g.create(NodeKind::Dialog, None).unwrap();
+        let dialog = g.push_dialog(root, DialogKind::Modal).unwrap();
+        let down = |x, y| InputEvent::PointerDown { x, y, button: MouseButton::Left };
+        g.input(down(5, 5), 0);
+        assert_eq!(g.drain_events(), vec![]);
+        g.set(root, Prop::Rect, Value::Rect(Rect::new(10, 10, 100, 50))).unwrap();
+        g.input(down(20, 20), 0);
+        assert_eq!(g.drain_events(), vec![]);
+        g.input(down(5, 5), 0);
+        assert_eq!(g.drain_events(), vec![UiEvent::PressedOutside { dialog }]);
     }
 
     #[test]
@@ -1060,5 +1220,61 @@ mod tests {
                 UiEvent::Activated { node: cancel },
             ]
         );
+    }
+    #[test]
+    fn hidden_default_and_cancel_buttons_take_enter_and_escape_unless_disabled() {
+        let (mut g, _, ok, cancel) = page_with_edit();
+        g.set(ok, Prop::Visible, Value::Bool(false)).unwrap();
+        g.set(cancel, Prop::Enabled, Value::Bool(false)).unwrap();
+        assert!(g.input(InputEvent::Key(Key::Enter), 0).consumed, "a hidden IDOK still answers");
+        assert!(!g.input(InputEvent::Key(Key::Escape), 0).consumed);
+        assert_eq!(g.drain_events(), [UiEvent::Activated { node: ok }]);
+    }
+
+    #[test]
+    fn tab_walks_the_shown_enabled_stops_in_tree_order_and_a_button_stop_blurs() {
+        let (mut g, a, ok, _) = page_with_edit();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let hidden = g.create(NodeKind::Edit, Some(root)).unwrap();
+        let b = g.create(NodeKind::Edit, Some(root)).unwrap();
+        g.set(hidden, Prop::Visible, Value::Bool(false)).unwrap();
+        g.input(InputEvent::Key(Key::BackTab), 0);
+        assert_eq!(g.focus(), Some(a), "without a focus, the first stop either way");
+        g.input(InputEvent::Key(Key::Tab), 0);
+        assert_eq!(g.focus(), Some(b));
+        g.input(InputEvent::Key(Key::Tab), 0);
+        assert_eq!(g.focus(), Some(a), "wraps past the hidden edit");
+        g.input(InputEvent::Key(Key::BackTab), 0);
+        assert_eq!(g.focus(), Some(b));
+        g.set(ok, Prop::TabStop, Value::Bool(true)).unwrap();
+        g.focus_edit(Some(a), 0).unwrap();
+        g.drain_events();
+        assert!(g.input(InputEvent::Key(Key::Tab), 0).consumed);
+        assert_eq!(g.focus(), None, "the button stop takes the focus off the edits");
+        assert_eq!(g.drain_events(), [UiEvent::FocusMoved { from: Some(a), to: None }]);
+    }
+    #[test]
+    fn escape_closes_an_open_list_before_it_reaches_the_cancel_button() {
+        let (mut g, _, _, cancel) = page_with_edit();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let combo = g.create(NodeKind::Combo, Some(root)).unwrap();
+        g.set(combo, Prop::Items, Value::Items(vec!["a".into()])).unwrap();
+        g.open_popup(combo, 0).unwrap();
+        assert!(g.input(InputEvent::Key(Key::Escape), 0).consumed);
+        assert_eq!((g.popup(), g.drain_events()), (None, vec![]));
+        g.input(InputEvent::Key(Key::Escape), 0);
+        assert_eq!(g.drain_events(), [UiEvent::Activated { node: cancel }]);
+    }
+
+    #[test]
+    fn a_keeps_blink_edit_takes_tab_focus_in_its_old_blink_phase() {
+        let (mut g, a, _, _) = page_with_edit();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let b = g.create(NodeKind::Edit, Some(root)).unwrap();
+        g.set(b, Prop::KeepsBlink, Value::Bool(true)).unwrap();
+        g.focus_edit(Some(a), 1500).unwrap();
+        g.input(InputEvent::Key(Key::Tab), 1500);
+        assert_eq!(g.focus(), Some(b));
+        assert!(!g.caret_visible(b, 1500), "a restart would show the caret now");
     }
 }

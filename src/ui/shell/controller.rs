@@ -6,31 +6,55 @@
 //! control; a disabled control still hovers, so it keeps driving its
 //! tooltip).
 
-use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, Prop, UiEvent, Value};
+use vera20k_gui::{Gui, InputEvent, Key, MouseButton, NodeId, NodeKind, Prop, UiEvent, Value};
+use winit::keyboard::KeyCode;
 
 use super::descriptor::DialogId;
 use crate::util::time::{Duration, Instant};
 
-/// Keyboard key the controller routes (contract C3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellKey {
-    Tab,
-    Enter,
-    Escape,
+/// The shell's one keyboard adapter: the GUI key a physical key gives
+/// (`shift` turns Tab into Shift+Tab), none for a key the widgets do not
+/// read.
+pub fn gui_key(code: KeyCode, shift: bool) -> Option<Key> {
+    Some(match code {
+        KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Tab if shift => Key::BackTab,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::ArrowLeft => Key::Left,
+        KeyCode::ArrowRight => Key::Right,
+        KeyCode::ArrowUp => Key::Up,
+        KeyCode::ArrowDown => Key::Down,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        _ => return None,
+    })
+}
+
+/// [`gui_key`], else the text the key typed, as one GUI input.
+pub fn gui_input(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Option<InputEvent> {
+    match (code.and_then(|code| gui_key(code, shift)), text) {
+        (Some(key), _) => Some(InputEvent::Key(key)),
+        (None, Some(text)) if !text.is_empty() => Some(InputEvent::Text(text.to_owned())),
+        _ => None,
+    }
 }
 
 struct Instance {
     id: DialogId,
     dialog: vera20k_gui::DialogId,
-    accepts_keys: bool,
     /// A box over whatever screen is up (the WOL page dialogs): it stays on
     /// top, with its widgets, through the screen's pushes, pops and resets,
     /// until its owner [`DialogController::close`]s it.
     overlay: bool,
 }
 
-/// LIFO dialog stack. The keyboard route is the stack's key-accepting
-/// dialogs in registration order.
+/// LIFO dialog stack. Keys go to the top dialog's widgets through
+/// [`Self::on_input`]: its `Default`/`Cancel` buttons take Enter and Escape.
 pub struct DialogController {
     gui: Gui,
     stack: Vec<Instance>,
@@ -56,29 +80,29 @@ impl std::fmt::Debug for DialogController {
 }
 
 impl DialogController {
-    pub fn push(&mut self, id: DialogId, accepts_keys: bool) {
-        self.push_kind(id, accepts_keys, vera20k_gui::DialogKind::Page, false);
+    pub fn push(&mut self, id: DialogId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Page, false);
     }
 
     /// [`Self::push`] as a modal: it blocks every dialog beneath it.
-    pub fn push_modal(&mut self, id: DialogId, accepts_keys: bool) {
-        self.push_kind(id, accepts_keys, vera20k_gui::DialogKind::Modal, false);
+    pub fn push_modal(&mut self, id: DialogId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Modal, false);
     }
 
     /// [`Self::push`] as an overlay: it stays on top until [`Self::close`].
     pub fn push_overlay(&mut self, id: DialogId) {
-        self.push_kind(id, false, vera20k_gui::DialogKind::Page, true);
+        self.push_kind(id, vera20k_gui::DialogKind::Page, true);
     }
 
     /// A dialog goes under the overlays, an overlay on top.
-    fn push_kind(&mut self, id: DialogId, accepts_keys: bool, kind: vera20k_gui::DialogKind, overlay: bool) {
+    fn push_kind(&mut self, id: DialogId, kind: vera20k_gui::DialogKind, overlay: bool) {
         let root = self.gui.create(NodeKind::Dialog, None).expect("the shell stack stays far below the node budget");
-        let dialog = self.gui.push_dialog(root, kind, None, None).expect("a fresh Dialog node");
+        let dialog = self.gui.push_dialog(root, kind).expect("a fresh Dialog node");
         let at = match overlay {
             true => self.stack.len(),
             false => self.stack.iter().position(|i| i.overlay).unwrap_or(self.stack.len()),
         };
-        self.stack.insert(at, Instance { id, dialog, accepts_keys, overlay });
+        self.stack.insert(at, Instance { id, dialog, overlay });
         for inst in &self.stack[at + 1..] {
             let _ = self.gui.raise_dialog(inst.dialog);
         }
@@ -126,6 +150,13 @@ impl DialogController {
     pub fn caret_visible(&self, node: NodeId) -> bool {
         let from = self.stack.iter().rposition(|i| !i.overlay).unwrap_or(0);
         self.stack[from..].iter().any(|i| self.gui.caret_visible_in(i.dialog, node, self.now()))
+    }
+
+    /// [`Self::caret_visible`] for `dialog`'s own focus, under a box too
+    /// (BB keeps painting its edits' caret under its message box).
+    pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId) -> bool {
+        self.instance(dialog)
+            .is_some_and(|inst| self.gui.caret_visible_in(inst.dialog, node, self.now()))
     }
 
     /// Control `id` under the topmost live instance of `dialog`.
@@ -248,17 +279,17 @@ impl DialogController {
     }
 
     /// Clear the stack and make `id` the sole active dialog (a shell transition).
-    pub fn reset_to(&mut self, id: DialogId, accepts_keys: bool) {
+    pub fn reset_to(&mut self, id: DialogId) {
         while self.pop().is_some() {}
         self.pending.clear();
-        self.push(id, accepts_keys);
+        self.push(id);
     }
 
     /// Make `id` the active dialog, resetting only when it is not already on top,
     /// so an in-progress press survives across the gesture.
-    pub fn ensure_active(&mut self, id: DialogId, accepts_keys: bool) {
+    pub fn ensure_active(&mut self, id: DialogId) {
         if self.top_id() != Some(id) {
-            self.reset_to(id, accepts_keys);
+            self.reset_to(id);
         }
     }
 
@@ -319,11 +350,6 @@ impl DialogController {
         }
     }
 
-    /// Route a key; true when a key-accepting dialog consumed Enter/Escape.
-    pub fn on_key(&mut self, key: ShellKey) -> bool {
-        matches!(key, ShellKey::Enter | ShellKey::Escape) && self.stack.iter().any(|i| i.accepts_keys)
-    }
-
     fn now(&self) -> u64 {
         Instant::now().saturating_duration_since(self.epoch).as_millis() as u64
     }
@@ -337,37 +363,30 @@ mod tests {
     const B: DialogId = DialogId(0x0100);
 
     #[test]
-    fn key_route_is_pruned_on_pop() {
+    fn keys_reach_the_top_dialogs_cancel_button_through_the_one_adapter() {
         let mut c = DialogController::default();
-        c.push(A, true);
-        c.push(B, true);
+        c.ensure_active(A);
+        let back = c.gui.create(NodeKind::Button, c.root_in(A)).unwrap();
+        c.gui.set(back, Prop::Cancel, Value::Bool(true)).unwrap();
+        c.push(B);
+        let escape = gui_input(Some(KeyCode::Escape), false, Some("\u{1b}")).unwrap();
+        assert!(!c.on_input(escape.clone()), "the box over it has no Cancel");
         c.pop();
-        assert!(c.on_key(ShellKey::Escape));
-        c.pop();
-        assert!(!c.on_key(ShellKey::Escape));
-    }
-
-    #[test]
-    fn key_route_consumes_modal_enter_and_escape_only() {
-        let mut c = DialogController::default();
-        assert!(!c.on_key(ShellKey::Enter));
-        c.ensure_active(A, false);
-        assert!(!c.on_key(ShellKey::Enter));
-        c.ensure_active(B, true);
-        assert!(c.on_key(ShellKey::Enter));
-        assert!(c.on_key(ShellKey::Escape));
-        assert!(!c.on_key(ShellKey::Tab));
+        assert!(c.on_input(escape));
+        assert_eq!(c.drain_events(), [UiEvent::Activated { node: back }]);
+        assert_eq!(gui_key(KeyCode::Tab, true), Some(Key::BackTab));
+        assert_eq!(gui_input(Some(KeyCode::KeyA), false, Some("a")), Some(InputEvent::Text("a".into())));
     }
 
     #[test]
     fn an_overlay_stays_on_top_with_its_widgets_through_resets() {
         let page = DialogId(0x00CF);
         let mut c = DialogController::default();
-        c.ensure_active(A, false);
+        c.ensure_active(A);
         c.push_overlay(page);
         let edit = c.gui.create(NodeKind::Edit, c.root_in(page)).unwrap();
-        c.ensure_active(B, false);
-        c.push(A, false);
+        c.ensure_active(B);
+        c.push(A);
         // The screen's own queries see its box, as when the page lived
         // beside the stack; the GUI routes the input to the page.
         assert_eq!((c.top_id(), c.overlay_id()), (Some(A), Some(page)));
@@ -382,26 +401,24 @@ mod tests {
     fn push_over_base_pops_back_to_it() {
         let modal = DialogId(0x0120);
         let mut c = DialogController::default();
-        c.ensure_active(A, false);
-        c.push(modal, true);
+        c.ensure_active(A);
+        c.push(modal);
         assert_eq!(c.top_id(), Some(modal));
-        assert!(c.on_key(ShellKey::Escape), "accepts_keys registers the route");
         assert_eq!(c.pop(), Some(modal));
         assert_eq!(c.top_id(), Some(A), "LIFO pop restores the shell beneath");
-        assert!(!c.on_key(ShellKey::Escape), "route pruned on pop");
     }
 
     #[test]
     fn ensure_active_resets_only_on_dialog_change() {
         let mut c = DialogController::default();
-        c.ensure_active(A, false);
+        c.ensure_active(A);
         let button = c.gui.create(NodeKind::Button, c.root_in(A)).unwrap();
         let _ = c.gui.set(button, Prop::Rect, Value::Rect(vera20k_gui::Rect::new(0, 0, 10, 10)));
         c.on_pointer_down(5, 5);
         assert_eq!(c.pressed_node_in(A), Some(button));
-        c.ensure_active(A, false); // same dialog -> no reset
+        c.ensure_active(A); // same dialog -> no reset
         assert_eq!(c.pressed_node_in(A), Some(button), "the press survives the gesture");
-        c.ensure_active(B, false); // changed -> reset
+        c.ensure_active(B); // changed -> reset
         assert_eq!(c.pressed_node_in(B), None);
     }
 }

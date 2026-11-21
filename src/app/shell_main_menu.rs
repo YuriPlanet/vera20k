@@ -338,7 +338,7 @@ impl App {
         }
         state.frontend.score_page = Some(ScorePage::open(model, &texts, Instant::now()));
         state.frontend.screen = GameScreen::MissionResult { title, detail };
-        (state.frontend.shell_controller).reset_to(crate::ui::score_shell::SCORE_DIALOG, false);
+        (state.frontend.shell_controller).reset_to(crate::ui::score_shell::SCORE_DIALOG);
     }
 
     /// Open retail Campaign StandaloneScore dialog `0x103` from the app-owned
@@ -370,10 +370,7 @@ impl App {
         state.frontend.campaign_score_page = Some(page);
         state.frontend.shell_first_paint_slide = None;
         state.frontend.screen = GameScreen::MissionResult { title, detail };
-        state.frontend.shell_controller.reset_to(
-            crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG,
-            false,
-        );
+        state.frontend.shell_controller.reset_to(crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG);
         // gamemd StandaloneScore dialog proc6C8FF0, WM_INIT6C9357..6C936C:
         // the theme starts here, after Victory685928's Win movie has returned.
         if let Some(assets) = state.process_assets.manager() {
@@ -420,7 +417,7 @@ impl App {
             title: String::new(),
             detail: String::new(),
         };
-        (state.frontend.shell_controller).reset_to(CAMPAIGN_END_DIALOG, false);
+        (state.frontend.shell_controller).reset_to(CAMPAIGN_END_DIALOG);
     }
 
     /// Continue and VERA's result paging. Only Continue has help. Everywhere
@@ -470,7 +467,7 @@ impl App {
             || CampaignScoreLayout::compute(Default::default(), width, height, 0),
             |page| page.layout(width, height, fills_window),
         );
-        (state.frontend.shell_controller).ensure_active(dialog.id(), false);
+        (state.frontend.shell_controller).ensure_active(dialog.id());
         let rect_of = |id| layout.control_rect(id);
         let nodes = || dialog.nodes();
         if Self::page_pointer(state, dialog.id(), nodes, rect_of, &[], down)
@@ -586,10 +583,7 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         state.frontend.shell_route = ShellRoute::SinglePlayer;
         // A new 0x100 instance starts with no press or hover.
-        state.frontend.shell_controller.reset_to(
-            crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog,
-            false,
-        );
+        state.frontend.shell_controller.reset_to(crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog);
         Self::refresh_single_player_load_state(state);
     }
 
@@ -627,7 +621,7 @@ impl App {
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         state.frontend.shell_route = ShellRoute::Skirmish;
         // A fresh `0x102`: its widgets build on the first sync.
-        (state.frontend.shell_controller).reset_to(crate::ui::skirmish_shell::page::DIALOG, false);
+        (state.frontend.shell_controller).reset_to(crate::ui::skirmish_shell::page::DIALOG);
         // A new 0x102 creates its kind-1 statics hidden (0x0060A5B0).
         state.frontend.skirmish_shell_state.statics.reset();
         // Native constructs 0x102 fresh on every visit, and
@@ -979,17 +973,12 @@ impl App {
         down: Option<bool>,
     ) -> Option<u16> {
         let layout = page.layout(state);
-        let campaign = (page == FamilyPage::Campaign).then(|| shell_layout::campaign_layout(state));
-        let rect_of = |id| match &campaign {
-            Some(campaign) => campaign.control_rect(id),
-            None => layout.button_rect(id),
-        };
         let enabled = page.enabled(state);
         Self::screen_page_pointer(
             state,
             page.dialog(),
             || page.nodes(),
-            rect_of,
+            |id| layout.button_rect(id),
             enabled.as_slice(),
             down,
         )
@@ -1007,7 +996,7 @@ impl App {
         enabled: &[(u16, bool)],
         down: Option<bool>,
     ) -> Option<u16> {
-        state.frontend.shell_controller.ensure_active(dialog, false);
+        state.frontend.shell_controller.ensure_active(dialog);
         let activated = Self::page_pointer(state, dialog, nodes, rect_of, enabled, down);
         if down.is_none() {
             state.frontend.shell_status_line.repaint();
@@ -1029,9 +1018,23 @@ impl App {
         down: Option<bool>,
     ) -> Option<u16> {
         let (x, y) = state.match_state.input.cursor_px();
+        let event = crate::app::input::dialog_page::event_at(x, y, down);
+        Self::page_input(state, dialog, nodes, rect_of, enabled, event)
+    }
+
+    /// [`Self::page_pointer`] for any input: a key reaches the dialog's
+    /// `Default`/`Cancel` buttons.
+    pub(crate) fn page_input(
+        state: &mut AppState,
+        dialog: crate::ui::shell::descriptor::DialogId,
+        nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
+        rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
+        enabled: &[(u16, bool)],
+        event: vera20k_gui::InputEvent,
+    ) -> Option<u16> {
         let controller = &mut state.frontend.shell_controller;
         crate::ui::shell::menu_page::sync_nodes(controller, dialog, nodes, rect_of, enabled);
-        controller.on_input(crate::app::input::dialog_page::event_at(x, y, down));
+        controller.on_input(event);
         let events = Self::shell_page_events(state, true);
         events.into_iter().rev().find_map(|event| match event {
             crate::ui::shell::page::PageEvent::Activated(id) => Some(id),
@@ -1117,15 +1120,8 @@ impl App {
                     );
                 }
             }
-            FamilyPage::Campaign => {
-                if id == crate::ui::campaign_shell::BACK_BUTTON {
-                    Self::leave_shell_dialog(
-                        state,
-                        ShellSlideKind::Campaign,
-                        App::commit_campaign_back,
-                    );
-                }
-            }
+            // `0x94` routes its pointer itself (`shell_campaign`).
+            FamilyPage::Campaign => {}
         }
     }
 
@@ -1172,16 +1168,23 @@ impl App {
         parts: &crate::ui::shell::modal::BoxParts,
         down: Option<bool>,
     ) -> Option<u16> {
+        let (x, y) = state.match_state.input.cursor_px();
+        let event = crate::app::input::dialog_page::event_at(x, y, down);
+        Self::shell_box_input(state, shell_box, parts, event)
+    }
+
+    /// [`Self::shell_box_pointer`] for any input: Enter and Escape reach
+    /// the box's hidden IDOK ([`crate::ui::shell::modal::ShellBox::nodes`]).
+    pub(crate) fn shell_box_input(
+        state: &mut AppState,
+        shell_box: &crate::ui::shell::modal::ShellBox,
+        parts: &crate::ui::shell::modal::BoxParts,
+        event: vera20k_gui::InputEvent,
+    ) -> Option<u16> {
         let nodes = || shell_box.nodes();
         let rect_of = |id| parts.rect_of(id);
-        Self::page_pointer(
-            state,
-            shell_box.dialog,
-            nodes,
-            rect_of,
-            &shell_box.enabled(),
-            down,
-        )
+        let enabled = shell_box.enabled();
+        Self::page_input(state, shell_box.dialog, nodes, rect_of, &enabled, event)
     }
 
     /// The box's answer (the button's index: callback `0x005D36A0` writes 0
@@ -1550,7 +1553,7 @@ impl App {
         };
         let dialog = message_box.shell_box.dialog;
         if state.frontend.shell_controller.top_id() != Some(dialog) {
-            state.frontend.shell_controller.push_modal(dialog, true);
+            state.frontend.shell_controller.push_modal(dialog);
         }
     }
 
@@ -1578,17 +1581,25 @@ impl App {
         }
     }
 
-    pub(super) fn route_shell_message_box_key(state: &mut AppState, key: ShellKey) -> bool {
-        if state.frontend.shell_message_box.is_none() {
-            return false;
+    /// A key on the open box, raised over the page under it: Enter and
+    /// Escape answer through its hidden IDOK.
+    pub(super) fn route_shell_message_box_key(state: &mut AppState, key: vera20k_gui::Key) {
+        let Some(shell_box) = state
+            .frontend
+            .shell_message_box
+            .as_ref()
+            .map(|b| b.shell_box.clone())
+        else {
+            return;
+        };
+        Self::raise_shell_message_box(state);
+        let parts = shell_layout::shell_box_parts(state, &shell_box);
+        let event = vera20k_gui::InputEvent::Key(key);
+        if let Some(answer) = Self::shell_box_input(state, &shell_box, &parts, event)
+            .and_then(|id| shell_box.answer(id))
+        {
+            Self::resolve_shell_message_box(state, answer);
         }
-        if !state.frontend.shell_controller.on_key(key) {
-            return false;
-        }
-        // Native MessageBoxProc5D36A0 maps IDOK1 (Enter with no default
-        // pushbutton) and IDCANCEL2 (Escape) to result1, the negative answer.
-        Self::resolve_shell_message_box(state, 1);
-        true
     }
 
     pub(super) fn invalidate_main_menu_movie_if_base_changed(state: &mut AppState) {

@@ -1030,7 +1030,7 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
     state
         .frontend
         .shell_controller
-        .push(crate::ui::shell::descriptor::DialogId(0xCE), true);
+        .push(crate::ui::shell::descriptor::DialogId(0xCE));
 }
 
 fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {

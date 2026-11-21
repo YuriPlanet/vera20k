@@ -7,7 +7,6 @@ use crate::skirmish_launch::{
     SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
-use crate::ui::shell::list::ListScrollInteraction;
 
 use super::super::SkirmishStatics;
 use super::super::layout::shown_player_rows;
@@ -169,8 +168,6 @@ pub struct SkirmishShellState {
     /// page shows. A map with more than eight starts scrolls its computer
     /// rows under the player's own row; 0 on a retail map.
     pub(crate) first_opponent: usize,
-    /// VERA: the capture and arrow repeat of the scrollbar beside those rows.
-    pub(crate) opponent_scroll: ListScrollInteraction,
     pub selected_mode_allies_allowed: bool,
     pub selected_mode_must_ally: bool,
     pub choose_map_modal: Option<ChooseMapModalState>,
@@ -268,7 +265,6 @@ impl Default for SkirmishShellState {
             mcv_redeploy: options.mcv_redeploy,
             opponents: default_opponents(LaunchCountry::Russia),
             first_opponent: 0,
-            opponent_scroll: ListScrollInteraction::default(),
             selected_mode_allies_allowed: true,
             selected_mode_must_ally: false,
             choose_map_modal: None,
@@ -381,7 +377,6 @@ pub(super) fn last_first_opponent(rows: usize) -> usize {
 fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) {
     let capacity = admitted_player_rows(capacity);
     state.first_opponent = state.first_opponent.min(last_first_opponent(capacity));
-    state.opponent_scroll.cancel();
     let visible_opponents = capacity.saturating_sub(1);
     let team_default = inactive_ai_team_default(state);
     for opponent in state.opponents.iter_mut().skip(visible_opponents) {

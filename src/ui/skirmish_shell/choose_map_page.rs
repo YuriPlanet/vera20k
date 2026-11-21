@@ -35,6 +35,10 @@ const HEADINGS: [(u16, &str, &str); 3] = [
     (0x7131, "GUI:GameType", "Game Type"),
     (0x7132, "GUI:GameMap", "Game Map"),
 ];
+/// VERA: the search line over the map list, an edit that keeps the focus.
+/// Typing anywhere on the chooser fills it and no press reaches it, so it
+/// has no rect; the host paints it from [`ChooseMapModalState::search`].
+const MAP_SEARCH: u16 = 0x7121;
 /// VERA: the selected map's author under the preview.
 const AUTHOR: u16 = super::CHOOSE_MAP_AUTHOR;
 const BUTTONS: [(u16, ChooseMapModalButton); 4] = [
@@ -99,6 +103,7 @@ fn spec() -> NodeSpec {
         // Top-aligned like `0x102`'s game type there, so a long name keeps
         // its first line.
         .child(text(AUTHOR, align(ShellAlign::H_CENTER)))
+        .child(NodeSpec::new(NodeKind::Edit).id(MAP_SEARCH.into()))
 }
 
 /// Puts the chooser's dialog on top of the controller (dropping whatever a
@@ -112,7 +117,7 @@ pub fn sync_page(
         controller.pop();
     }
     if controller.top_id() != Some(DIALOG) {
-        controller.push(DIALOG, false);
+        controller.push(DIALOG);
     }
     controller.set_scale(layout.scale);
     let root = controller.root_in(DIALOG)?;
@@ -121,8 +126,16 @@ pub fn sync_page(
     page::sync_rects(gui, root, |id| match id {
         MODE_LIST => Some(surface(layout.mode_list)),
         MAP_LIST => Some(surface(layout.map_list)),
+        MAP_SEARCH => None,
         _ => layout.rects.get(id),
     });
+    // The search as the chooser keeps it, the caret after it.
+    let search = Value::Text(modal.search.clone());
+    if page::get(gui, root, MAP_SEARCH, Prop::Text) != Some(&search) {
+        let end = Value::Int(modal.search.chars().count() as i32);
+        page::set(gui, root, MAP_SEARCH, Prop::Text, search);
+        page::set(gui, root, MAP_SEARCH, Prop::Caret, end);
+    }
     let selected = |row: Option<usize>| Value::Int(row.map_or(-1, |row| row as i32));
     for (id, window, rows, top, chosen) in [
         (
@@ -154,7 +167,31 @@ pub fn sync_page(
             Value::Bool(modal.button_enabled(button)),
         );
     }
+    let search = gui.find_id(root, MAP_SEARCH.into());
+    if search.is_some() && gui.focus() != search {
+        controller.focus_edit(search);
+    }
     Some(root)
+}
+
+/// VERA: typed text or Backspace for the search line; every list then shows
+/// only maps whose name holds the search ([`ChooseMapModalState::set_search`],
+/// which keeps its first [`super::SEARCH_MAX_CHARS`] characters).
+pub fn search_input(
+    controller: &mut DialogController,
+    modal: &mut ChooseMapModalState,
+    layout: &ChooseMapModalLayout,
+    (modes, records): (&[SkirmishGameMode], &[SkirmishScenarioRecord]),
+    event: vera20k_gui::InputEvent,
+) {
+    if sync_page(controller, modal, layout).is_none() {
+        return;
+    }
+    controller.on_input(event);
+    controller.drain_events();
+    let text = controller.text(DIALOG, MAP_SEARCH);
+    modal.set_search(text, modes, records, layout);
+    controller.set_text(DIALOG, MAP_SEARCH, &modal.search);
 }
 
 /// Puts the chooser's words on its widgets, each string key and fallback
@@ -303,18 +340,20 @@ pub fn hover_target(
     x: i32,
     y: i32,
 ) -> Option<ChooseMapHoverTarget> {
-    let id = u16::try_from(gui.id_of(gui.hovered()?)?).ok()?;
+    let node = gui.hovered()?;
+    let id = u16::try_from(gui.id_of(node)?).ok()?;
     Some(match id {
         STATUS_HELP => ChooseMapHoverTarget::StatusHelp0x695,
         PREVIEW => ChooseMapHoverTarget::Preview0x468,
         MAP_LIST => ChooseMapHoverTarget::MapList0x553,
         MODE_LIST => {
-            let rows = modal.mode_rows();
-            match modal
-                .mode_geometry(layout)
-                .row_at(rows.len(), modal.mode_top_index, x, y)
-            {
-                Some(row) => ChooseMapHoverTarget::ModeListRow0x6eb { mode: rows[row] },
+            // The game-type row the list has under the pointer.
+            let view = gui.list_view(node)?;
+            let rect = gui.tree().screen_rect(node).ok()?;
+            let metrics = crate::ui::shell::list::ListMetrics::scaled(layout.scale);
+            let row = view.geometry(rect, metrics).row_at(view.rows, view.top, x, y);
+            match row.and_then(|row| modal.mode_rows().get(row)) {
+                Some(mode) => ChooseMapHoverTarget::ModeListRow0x6eb { mode: *mode },
                 None => ChooseMapHoverTarget::ModeList0x6eb,
             }
         }

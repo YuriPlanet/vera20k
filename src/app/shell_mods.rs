@@ -113,7 +113,7 @@ impl App {
             (rows.len(), selected, top)
         });
         let controller = &mut state.frontend.shell_controller;
-        controller.ensure_active(mods_shell::DIALOG, false);
+        controller.ensure_active(mods_shell::DIALOG);
         controller.set_scale(layout.page.scale);
         if let Some(list) = in_use {
             family_list_node(controller, mods_shell::DIALOG, layout.list, list);
@@ -122,12 +122,17 @@ impl App {
     }
 
     /// The wheel moves the list three rows a notch, as on the Keyboard page,
-    /// wherever the pointer is.
+    /// wherever the pointer is: the list takes the rows a turn makes.
     pub(super) fn handle_mods_wheel(state: &mut AppState, lines: f32) {
-        let selected = Self::mods_selected(state);
-        Self::update_mods_list(state, selected, |top, (_, last)| {
-            (top as i32 - (lines * 3.0) as i32).clamp(0, last as i32) as usize
-        });
+        Self::mods_sync(state);
+        let controller = &mut state.frontend.shell_controller;
+        let Some(node) = find_family_list(controller, mods_shell::DIALOG) else {
+            return;
+        };
+        let gui = controller.gui_mut();
+        let _ = gui.set(node, vera20k_gui::Prop::WheelStep, vera20k_gui::Value::Int(1));
+        gui.wheel_list(node, (lines * 3.0) as i32);
+        gui.drain_events();
     }
 
     /// One pointer message (`down`: `None` moves), as in the movie list; the

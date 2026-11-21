@@ -1147,7 +1147,7 @@ pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
         message,
         then: WolBoxThen::Welcome,
     };
-    state.frontend.shell_controller.reset_to(dialog, false);
+    state.frontend.shell_controller.reset_to(dialog);
     state.platform.window.request_redraw();
     true
 }
@@ -1179,14 +1179,14 @@ fn apply(state: &mut AppState, step: WolStep) {
             state
                 .frontend
                 .shell_controller
-                .reset_to(crate::ui::wol_shell::WAIT_DIALOG, false);
+                .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
             let message = message_box(state, state.csf_text(key), yes_no);
             let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };
-            state.frontend.shell_controller.reset_to(dialog, false);
+            state.frontend.shell_controller.reset_to(dialog);
         }
         WolStep::Leave(result) => {
             // -1 (the patch download) takes PrepareSession's 0x0052E817
@@ -1581,7 +1581,7 @@ mod tests {
         let mut visit = visit();
         let mut globals = WolAccountGlobals::default();
         let mut ui = crate::ui::shell::controller::DialogController::default();
-        ui.push(crate::ui::wol_login::DIALOG, true);
+        ui.push(crate::ui::wol_login::DIALOG);
         let cx = &mut LoginCx {
             ui: &mut ui,
             globals: &mut globals,
@@ -1596,7 +1596,7 @@ mod tests {
             (4, true),
             "Play and the three account buttons"
         );
-        ui.reset_to(crate::ui::wol_login::DIALOG, true);
+        ui.reset_to(crate::ui::wol_login::DIALOG);
         let cx = &mut LoginCx {
             ui: &mut ui,
             globals: &mut globals,

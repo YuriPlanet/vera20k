@@ -9,6 +9,7 @@
 pub(crate) mod combo;
 pub(crate) mod edit;
 pub(crate) mod list;
+pub(crate) mod scrollbar;
 
 use std::sync::OnceLock;
 
@@ -70,5 +71,5 @@ pub(crate) enum Capture {
 
 /// Keys the widgets read; `Gui` routes them to the focused node.
 pub(crate) fn is_edit_key(key: Key) -> bool {
-    !matches!(key, Key::Tab)
+    !matches!(key, Key::Tab | Key::BackTab)
 }

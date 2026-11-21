@@ -208,6 +208,7 @@ pub(crate) fn paint_wol_verify(
             SCALE,
         );
     }
+    let checked = verify.checked();
     for node in verify.visible_nodes(layout) {
         let name = &verify.names[node];
         let rect = verify.node_rect(layout, node).expect("visible verify node");
@@ -216,7 +217,7 @@ pub(crate) fn paint_wol_verify(
             &chrome,
             super::controls::ControlPaint::Checkbox {
                 rect,
-                checked: verify.checked[node],
+                checked: checked[node],
             },
             SCALE,
         );

@@ -371,9 +371,13 @@ impl WolPageDialog {
             // 0x4DA: BM_CLICK on 0x5C2, which a disabled button ignores.
             InputEvent::Key(Key::Enter) => return self.activate(c, SEND, last),
             // 0x4DB (0x0078D93A..0x0078D9FB): 0x00600C70 moves the focus to
-            // the other tab stop; from the name it locates again.
-            InputEvent::Key(Key::Tab) => {
-                actions = self.focus_to(c, Some(if control == NAME { TEXT } else { NAME }), last);
+            // the other tab stop (the widgets' Tab); from the name it locates
+            // again.
+            InputEvent::Key(key @ (Key::Tab | Key::BackTab)) => {
+                c.on_input(InputEvent::Key(key));
+                c.drain_events();
+                let to = c.focused_control(PAGE_DIALOG);
+                actions = self.focus_moved(c, Some(control), to, last);
                 if control == NAME {
                     self.locate(c, NAME_LIMIT + 1, &mut actions);
                     *last = TEXT;
@@ -520,7 +524,7 @@ impl WolPageReceived {
                     .then(|| self.activate(c, SEND))
                     .flatten()
             }
-            InputEvent::Key(Key::Escape | Key::Tab) => None,
+            InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab) => None,
             event => {
                 // EN_CHANGE (0x300): Send follows the text.
                 page::edit_input(c, event, |c| {
@@ -569,7 +573,7 @@ mod tests {
     /// A dialog's widgets built in a fresh shell stack.
     fn controller(dialog: DialogId, spec: fn() -> NodeSpec) -> DialogController {
         let mut c = DialogController::default();
-        c.push(dialog, false);
+        c.push(dialog);
         let root = c.root_in(dialog).unwrap();
         page::ensure_built(c.gui_mut(), root, spec);
         c

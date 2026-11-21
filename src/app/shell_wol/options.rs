@@ -71,7 +71,7 @@ pub(crate) fn commit_open(state: &mut AppState) {
     }
     visit.page = WolPage::Options(Box::new(WolOptionsPage { shown, sound: None }));
     super::leaf::open_art(state, crate::ui::wol_options::DIALOG);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    state.frontend.shell_controller.reset_to(DIALOG);
     sync_gui(state);
 }
 
@@ -97,7 +97,7 @@ pub(crate) fn commit_close(
     state
         .frontend
         .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+        .reset_to(super::WOL_LOBBY_DIALOG);
     if let Some((staged, translate)) = staged {
         state.frontend.wol_preferences = staged;
         let profile = &mut state.persistence.options_profile;
@@ -135,7 +135,7 @@ pub(crate) fn commit_open_sound(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(SHELL_SOUND_PAGE.dialog, false);
+        .reset_to(SHELL_SOUND_PAGE.dialog);
     sync_gui(state);
 }
 
@@ -146,7 +146,7 @@ pub(crate) fn commit_sound_back(state: &mut AppState) {
     if let Some(page) = page_mut(state) {
         page.sound = None;
     }
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    state.frontend.shell_controller.reset_to(DIALOG);
     sync_gui(state);
 }
 

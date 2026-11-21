@@ -38,11 +38,23 @@ fn available(state: &AppState) -> bool {
     state.frontend.skirmish_preview_texture.is_some()
 }
 
-/// Enlarge the preview when a press lands on `preview_box` while it shows a
-/// picture. True when it did, as the press is then the preview's.
-pub(crate) fn press_on_box(state: &mut AppState, preview_box: RectPx) -> bool {
+/// Whether the pointer is on `dialog`'s preview static `0x468`, as its
+/// widgets hit-test it.
+pub(crate) fn over_box(state: &AppState, dialog: crate::ui::shell::descriptor::DialogId) -> bool {
     let (x, y) = state.match_state.input.cursor_px();
-    if !preview_box.contains(x, y) || !available(state) {
+    let controller = &state.frontend.shell_controller;
+    let gui = controller.gui();
+    let node = controller
+        .root_in(dialog)
+        .and_then(|root| gui.hit_at(root, x, y, true));
+    node.and_then(|node| gui.id_of(node)) == Some(0x468)
+}
+
+/// Enlarge the preview when a press lands on the box (`over`) while it
+/// shows a picture. True when it did, as the press is then the preview's.
+pub(crate) fn press_on_box(state: &mut AppState, over: bool) -> bool {
+    let (x, y) = state.match_state.input.cursor_px();
+    if !over || !available(state) {
         return false;
     }
     state.frontend.preview_zoom = Some(PreviewZoom {

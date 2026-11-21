@@ -3,14 +3,14 @@
 //! result. The shared shell controller owns button capture and keyboard routing.
 
 use crate::app::input::dialog_page;
-use crate::app::{App, AppState};
+use crate::app::AppState;
 use crate::sim::world::NetworkInterruption;
-use crate::ui::shell::controller::{DialogController, ShellKey};
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{control, message_box_parts};
 use crate::ui::shell::page::PageEvent;
-use vera20k_gui::{InputEvent, NodeKind, NodeSpec};
+use vera20k_gui::{InputEvent, NodeKind, NodeSpec, Prop, Value};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
@@ -138,23 +138,23 @@ pub(crate) struct NetworkFailureModal {
 }
 
 impl NetworkFailureModal {
-    fn key(&mut self, controller: &mut DialogController, key: ShellKey) {
-        // ShellMessageBox5D3490 ignores the returned result at64CD11: Enter
-        // and Escape both finish its single-button CE dialog.
-        self.acknowledged |= controller.on_key(key);
-    }
-
-    /// One pointer message on the box: OK acknowledges once released over
-    /// its own press.
-    fn pointer(
+    /// One input on the box: OK acknowledges once released over its own
+    /// press. ShellMessageBox5D3490 ignores the returned result at64CD11:
+    /// Enter and Escape both finish its single-button CE dialog, so OK is
+    /// its default and cancel button.
+    fn input(
         &mut self,
         controller: &mut DialogController,
         event: InputEvent,
         ok: RectPx,
     ) -> Vec<PageEvent> {
         let nodes = || {
-            NodeSpec::new(NodeKind::Dialog)
-                .child(NodeSpec::new(NodeKind::Button).id(control::OK.into()))
+            NodeSpec::new(NodeKind::Dialog).child(
+                NodeSpec::new(NodeKind::Button)
+                    .id(control::OK.into())
+                    .with(Prop::Default, Value::Bool(true))
+                    .with(Prop::Cancel, Value::Bool(true)),
+            )
         };
         let rect = |id| (id == control::OK).then_some(ok);
         let events =
@@ -202,7 +202,7 @@ pub(crate) fn show(state: &mut AppState) {
             .in_game_gadgets
             .cancel_pointer_capture();
     }
-    state.frontend.shell_controller.ensure_active(DIALOG, true);
+    state.frontend.shell_controller.ensure_active(DIALOG);
     state.platform.window.request_redraw();
 }
 
@@ -240,29 +240,27 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
         if !event.state.is_pressed() {
             state.match_state.input.keys_held.remove(&code);
         } else if !event.repeat
-            && let Some(key) = App::shell_key_for_code(code)
+            && let Some(key) = crate::ui::shell::controller::gui_key(code, false)
         {
-            state
-                .match_state
-                .network_failure
-                .as_mut()
-                .expect("shown modal")
-                .key(&mut state.frontend.shell_controller, key);
+            route(state, InputEvent::Key(key));
         }
     }
 }
 
 fn pointer(state: &mut AppState, down: Option<bool>) {
     show(state);
-    let ok = ok_rect(state.render_width() as i32, state.render_height() as i32);
     let (x, y) = state.match_state.input.cursor_px();
-    let event = dialog_page::event_at(x, y, down);
+    route(state, dialog_page::event_at(x, y, down));
+}
+
+fn route(state: &mut AppState, event: InputEvent) {
+    let ok = ok_rect(state.render_width() as i32, state.render_height() as i32);
     let events = state
         .match_state
         .network_failure
         .as_mut()
         .expect("shown modal")
-        .pointer(&mut state.frontend.shell_controller, event, ok);
+        .input(&mut state.frontend.shell_controller, event, ok);
     // The box's owner-draw OK plays GUIMainButtonSound (0x0061376B).
     dialog_page::play_cues(state, events);
 }
@@ -286,12 +284,12 @@ mod tests {
     #[test]
     fn checksum_stop_requires_the_shared_press_and_release_capture() {
         let mut controller = DialogController::default();
-        controller.ensure_active(DIALOG, true);
+        controller.ensure_active(DIALOG);
         let mut modal = NetworkFailureModal::default();
         let rect = ok_rect(800, 600);
         let (x, y) = (rect.x + 1, rect.y + 1);
         let mut send = |modal: &mut NetworkFailureModal, x, y, down| {
-            modal.pointer(&mut controller, dialog_page::event_at(x, y, down), rect);
+            modal.input(&mut controller, dialog_page::event_at(x, y, down), rect);
         };
         send(&mut modal, x, y, None);
         send(&mut modal, x, y, Some(false));
@@ -307,13 +305,15 @@ mod tests {
 
     #[test]
     fn checksum_message_uses_the_shared_single_button_key_results() {
-        for key in [ShellKey::Enter, ShellKey::Escape] {
+        use vera20k_gui::Key;
+        for key in [Key::Enter, Key::Escape] {
             let mut controller = DialogController::default();
-            controller.ensure_active(DIALOG, true);
+            controller.ensure_active(DIALOG);
             let mut modal = NetworkFailureModal::default();
-            modal.key(&mut controller, ShellKey::Tab);
+            let ok = ok_rect(800, 600);
+            modal.input(&mut controller, InputEvent::Key(Key::Tab), ok);
             assert!(!modal.acknowledged);
-            modal.key(&mut controller, key);
+            modal.input(&mut controller, InputEvent::Key(key), ok);
             assert!(modal.acknowledged);
         }
     }

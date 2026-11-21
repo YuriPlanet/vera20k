@@ -102,7 +102,7 @@ mod tests {
 
     fn single_player(load_enabled: bool) -> DialogController {
         let mut c = DialogController::default();
-        c.ensure_active(DIALOG, false);
+        c.ensure_active(DIALOG);
         sync(&mut c, load_enabled);
         c
     }

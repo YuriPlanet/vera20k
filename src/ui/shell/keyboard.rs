@@ -108,9 +108,9 @@ impl KeyboardControl {
     }
 }
 
-/// A3's children with their status help. The category face and the
-/// capture field are statics to the pointer: A3 opens its own list and
-/// takes the keys itself. Every press on a command row selects it.
+/// A3's children with their status help. The capture field is a static to
+/// the pointer: A3 takes the keys itself. A press anywhere on the category
+/// face opens its list. Every press on a command row selects it.
 fn spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog).children(CONTROLS.map(|(control, id, help)| {
         let node = match control {
@@ -118,6 +118,9 @@ fn spec() -> NodeSpec {
             KeyboardControl::Commands => {
                 NodeSpec::new(NodeKind::List).with(Prop::RowCount, Value::Int(0))
             }
+            KeyboardControl::Category => NodeSpec::new(NodeKind::Combo)
+                .with(Prop::RowCount, Value::Int(0))
+                .with(Prop::OpenAnywhere, Value::Bool(true)),
             _ => NodeSpec::new(NodeKind::Text),
         };
         node.id(id.into()).tooltip(help)
@@ -143,10 +146,11 @@ pub struct KeyboardState {
     /// 464 clears63B independently of the retained capture field.
     pub current_owner_visible: bool,
     pub error: Option<&'static str>,
+    /// The capture field takes the keys. A static, not a gui `Edit`: it
+    /// shows the hotkey it captured, not typed text.
     pub capture_focused: bool,
-    pub category_open: bool,
-    pub category_hovered: Option<usize>,
-    /// The controls; the command list holds its selection and top.
+    /// The controls; the command list holds its selection and top, the
+    /// category combo its open list and hot row.
     pub ui: DialogController,
 }
 impl KeyboardState {
@@ -181,19 +185,26 @@ impl KeyboardState {
             current_owner_visible: false,
             error: None,
             capture_focused: false,
-            category_open: false,
-            category_hovered: None,
             ui: DialogController::default(),
         };
-        result.ui.reset_to(KEYBOARD_PAGE.dialog, false);
+        result.ui.reset_to(KEYBOARD_PAGE.dialog);
         if let Some(root) = result.root() {
-            super::page::ensure_built(result.ui.gui_mut(), root, spec);
+            let gui = result.ui.gui_mut();
+            super::page::ensure_built(gui, root, spec);
+            let count = Value::Int(result.categories.len() as i32);
+            super::page::set(
+                gui,
+                root,
+                KeyboardControl::Category.id(),
+                Prop::RowCount,
+                count,
+            );
         }
         result.select_category(0);
         result
     }
     pub fn select_category(&mut self, category: usize) {
-        self.category_open = false;
+        self.ui.gui_mut().close_popup();
         // 5FB500..5FB514 compares the retained category index before reset.
         if category == self.category && !self.rows.is_empty() {
             return;
@@ -225,8 +236,28 @@ impl KeyboardState {
             let _ = gui.set(node, Prop::Selected, Value::Int(-1));
             let _ = gui.set(node, Prop::Top, Value::Int(0));
         }
+        if let Some(node) = self.category_node() {
+            let gui = self.ui.gui_mut();
+            let _ = gui.set(node, Prop::Selected, Value::Int(category as i32));
+            gui.close_popup();
+        }
         self.current_owner_visible = false;
-        self.category_open = false;
+    }
+    fn category_node(&self) -> Option<NodeId> {
+        self.ui
+            .gui()
+            .find_id(self.root()?, KeyboardControl::Category.id().into())
+    }
+    /// The category list is open.
+    pub fn category_open(&self) -> bool {
+        self.category_node()
+            .is_some_and(|node| self.ui.gui().combo_drop_down(node).is_some())
+    }
+    /// The open category list's lit row: the one under the pointer, or the
+    /// selection until the pointer reaches a row.
+    pub fn category_hot_row(&self) -> Option<usize> {
+        let node = self.category_node()?;
+        self.ui.gui().combo_drop_down(node)?.hot_row
     }
     fn root(&self) -> Option<NodeId> {
         self.ui.root_in(KEYBOARD_PAGE.dialog)
@@ -280,8 +311,9 @@ impl KeyboardState {
         self.capture_focused = true;
     }
     pub fn reset_interaction(&mut self) {
-        self.ui.gui_mut().cancel_pointer();
-        self.category_open = false;
+        let gui = self.ui.gui_mut();
+        gui.cancel_pointer();
+        gui.close_popup();
     }
 }
 
@@ -424,17 +456,11 @@ impl KeyboardLayout {
             )
         })
     }
-    pub fn category_row_at(self, count: usize, x: i32, y: i32) -> Option<usize> {
+    /// The rows inside the popup's two-pixel frame: the category combo's
+    /// `PopupRect`, so its rows hit where they paint.
+    pub fn category_rows(self, count: usize) -> RectPx {
         let popup = self.category_popup(count);
-        let inner = RectPx::new(popup.x + 2, popup.y + 2, popup.w - 4, popup.h - 4);
-        inner
-            .contains(x, y)
-            .then(|| {
-                ((y - inner.y)
-                    / crate::ui::skirmish_shell::DropdownMetrics::scaled(self.scale).row_h)
-                    as usize
-            })
-            .filter(|i| *i < count)
+        RectPx::new(popup.x + 2, popup.y + 2, popup.w - 4, popup.h - 4)
     }
 }
 
@@ -521,19 +547,41 @@ mod tests {
                 row_h,
                 "layout rows and paint pitch agree"
             );
-            let count = 4;
+            let rows = (0..4)
+                .map(|i| KeyboardCommandRow {
+                    command_index: i,
+                    name: format!("Command {i}"),
+                    category: format!("Category {i}"),
+                    description: String::new(),
+                })
+                .collect();
+            let mut state = KeyboardState::new(KeyboardParent::Launcher, rows, Vec::new());
+            let count = state.categories.len();
             let popup = layout.category_popup(count);
             assert_eq!(popup.x, layout.category.x);
             assert_eq!(popup.w, layout.category.w);
+            state.ui.set_scale(layout.scale);
+            let root = state.root().unwrap();
+            let gui = state.ui.gui_mut();
+            super::super::page::sync_rects(gui, root, |id| layout.rect(id));
+            let rows = Value::Rect(layout.category_rows(count));
+            super::super::page::set(
+                gui,
+                root,
+                KeyboardControl::Category.id(),
+                Prop::PopupRect,
+                rows,
+            );
             for i in 0..count {
+                let face = layout.category;
+                state.ui.on_pointer_move(face.x + 2, face.y + 2);
+                state.ui.on_pointer_down(face.x + 2, face.y + 2);
+                assert!(state.category_open());
                 let y = popup.y + 2 + i as i32 * row_h + row_h / 2;
-                assert_eq!(
-                    layout.category_row_at(count, popup.x + row_h, y),
-                    Some(i),
-                    "row {i} of a {}x{} page",
-                    layout.category.w,
-                    layout.category.h
-                );
+                state.ui.on_pointer_move(popup.x + row_h, y);
+                assert_eq!(state.category_hot_row(), Some(i), "row {i} of {face:?}");
+                state.ui.on_pointer_down(popup.x + row_h, y);
+                assert!(!state.category_open());
             }
         }
     }
@@ -625,11 +673,10 @@ mod tests {
         state.captured = 81;
         state.error = Some("Error:CannotMap");
         state.current_owner_visible = true;
-        state.category_open = true;
         state.select_category(0);
         assert_eq!(state.captured, 81);
         assert_eq!(state.selected(), Some(0));
-        assert!(!state.category_open);
+        assert!(!state.category_open());
         state.reset_categories();
         assert!(state.selected().is_none());
         assert_eq!(state.captured, 81);

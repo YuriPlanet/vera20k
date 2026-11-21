@@ -288,9 +288,16 @@ impl<I> SavedSeedBrowserState<I> {
         self.ui.drop_pointer_in(BROWSER_DIALOG);
         self.ui.focus_control(BROWSER_DIALOG, None);
         self.ui.close(PROMPT_DIALOG);
-        self.ui.push_modal(PROMPT_DIALOG, false);
+        self.ui.push_modal(PROMPT_DIALOG);
         if let Some(root) = self.ui.root_in(PROMPT_DIALOG) {
-            let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
+            // 5D4DDB IsDialogMessageA / 5D370D: Enter's IDOK and Escape's
+            // IDCANCEL both answer 1, the negative No (hidden or not).
+            let button = |id: u16| {
+                NodeSpec::new(NodeKind::Button)
+                    .id(id.into())
+                    .with(Prop::Default, Value::Bool(id == NO))
+                    .with(Prop::Cancel, Value::Bool(id == NO))
+            };
             page::ensure_built(self.ui.gui_mut(), root, || {
                 NodeSpec::new(NodeKind::Dialog).children([YES, NO].map(button))
             });
@@ -361,7 +368,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
             .unwrap_or(0)
             .min(rows.len().saturating_sub(visible_rows));
         let mut ui = DialogController::default();
-        ui.push(BROWSER_DIALOG, false);
+        ui.push(BROWSER_DIALOG);
         if let Some(root) = ui.root_in(BROWSER_DIALOG) {
             page::ensure_built(ui.gui_mut(), root, || spec(mode));
         }

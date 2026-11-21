@@ -7,6 +7,7 @@
 //! the scrollbar captures and repeats, and no key or wheel case exists
 //! (`0x00618D40..0x0061C600`). This state keeps what the lists show.
 
+use crate::ui::shell::modal::ShellBox;
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
     upsert_random_map_sentinel,
@@ -94,15 +95,37 @@ pub enum ChooseMapPromptAnswer {
     Wait,
 }
 
-/// Use Map's two-button box over the chooser.
+/// Use Map's two-button box over the chooser. Its buttons are the shared
+/// box's widgets ([`Self::shell_box`]), which keep the press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChooseMapPrompt {
     pub selection: ChooseMapSelection,
-    pub pressed: Option<ChooseMapPromptButton>,
     pub kind: ChooseMapPromptKind,
 }
 
 impl ChooseMapPrompt {
+    /// The box as it paints and takes the pointer: the two-button message
+    /// box `0x120` with `body` over OK (`ok`'s caption) and Cancel, OK
+    /// greyed while a download runs.
+    pub fn shell_box(&self, body: String, ok: String, cancel: String) -> ShellBox {
+        use crate::ui::shell::modal::control::{CANCEL, OK};
+        ShellBox::new(crate::ui::shell::descriptor::DialogId(0x120), body)
+            .button(OK, ok)
+            .button(CANCEL, cancel)
+            .disabled(OK, !self.button_enabled(ChooseMapPromptButton::Ok))
+    }
+
+    /// The button Enter answers with: Cancel on the eject question
+    /// (`0x005D370D`); VERA's boxes take it as OK, as the room's
+    /// missing-map offer does (a running download's greyed OK takes none).
+    pub fn default_button(&self) -> u16 {
+        use crate::ui::shell::modal::control::{CANCEL, OK};
+        match self.kind {
+            ChooseMapPromptKind::EjectAi => CANCEL,
+            _ => OK,
+        }
+    }
+
     /// Whether a button takes presses: Download waits while one runs.
     pub fn button_enabled(&self, button: ChooseMapPromptButton) -> bool {
         button == ChooseMapPromptButton::Cancel || self.kind != ChooseMapPromptKind::Downloading
@@ -542,20 +565,6 @@ impl ChooseMapModalState {
         }
     }
 
-    /// VERA: append committed text from the chooser's keyboard or input
-    /// method, ignoring control characters before rebuilding the list.
-    pub fn append_search_text(
-        &mut self,
-        text: &str,
-        modes: &[SkirmishGameMode],
-        records: &[SkirmishScenarioRecord],
-        layout: &ChooseMapModalLayout,
-    ) {
-        let mut search = self.search.clone();
-        search.extend(text.chars().filter(|ch| !ch.is_control()));
-        self.set_search(search, modes, records, layout);
-    }
-
     /// VERA: star or unstar the highlighted map. Returns its
     /// [`favorite_key`] and whether it is now starred.
     pub fn toggle_favorite(
@@ -767,7 +776,6 @@ impl ChooseMapModalState {
                 mode: self.selected_mode,
                 record_index: None,
             },
-            pressed: None,
             kind: ChooseMapPromptKind::RandomMapFailed,
         });
     }
@@ -1266,7 +1274,7 @@ mod tests {
     }
 
     #[test]
-    fn committed_unicode_search_text_appends_and_filters_map_names() {
+    fn the_search_edit_takes_typed_text_and_backspace_and_filters_map_names() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
         let all = vec![record("雪地遭遇战"), record("沙漠遭遇战")];
@@ -1278,12 +1286,24 @@ mod tests {
             &all,
             &layout,
         );
-        modal.set_search("雪".into(), &modes, &all, &layout);
-
-        modal.append_search_text("\u{0001}地", &modes, &all, &layout);
-
+        let mut input = |modal: &mut ChooseMapModalState, event| {
+            UI.with_borrow_mut(|ui| {
+                choose_map_page::search_input(ui, modal, &layout, (&modes, &all), event)
+            })
+        };
+        use vera20k_gui::{InputEvent, Key};
+        input(&mut modal, InputEvent::Text("雪".into()));
+        input(&mut modal, InputEvent::Text("地".into()));
         assert_eq!(modal.search, "雪地");
         assert_eq!(modal.filtered_record_indices, [0]);
+        input(&mut modal, InputEvent::Key(Key::Backspace));
+        assert_eq!(modal.search, "雪");
+        // The search keeps its first 32 characters; Backspace then takes the
+        // 32nd.
+        input(&mut modal, InputEvent::Text("x".repeat(40)));
+        assert_eq!(modal.search.chars().count(), SEARCH_MAX_CHARS);
+        input(&mut modal, InputEvent::Key(Key::Backspace));
+        assert_eq!(modal.search.chars().count(), SEARCH_MAX_CHARS - 1);
     }
 
     #[test]

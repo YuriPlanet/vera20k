@@ -656,7 +656,7 @@ impl App {
         state
             .frontend
             .shell_controller
-            .reset_to(WOL_WELCOME_DIALOG, false);
+            .reset_to(WOL_WELCOME_DIALOG);
         let filled = persona::welcome_texts(state);
         Self::wol_welcome_sync(state, &filled);
     }
@@ -944,7 +944,7 @@ impl App {
         state
             .frontend
             .shell_controller
-            .reset_to(crate::ui::shell::descriptor::DialogId(0x00E2), false);
+            .reset_to(crate::ui::shell::descriptor::DialogId(0x00E2));
     }
 
     pub(super) fn commit_wol_login_close(state: &mut AppState, result: u16) {

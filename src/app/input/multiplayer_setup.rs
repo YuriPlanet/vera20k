@@ -58,41 +58,94 @@ pub(crate) fn layout_of(state: &AppState, view: &SetupView) -> MultiplayerSetupL
 
 pub(crate) fn update_geometry(state: &mut AppState) {
     let layout = page_layout(state);
+    let page = crate::app::shell_network_setup::dialog(state).page().dialog;
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
     // VERA's room's chat column changes width with the window: its rows
-    // wrap again to fit it.
-    let visible = layout
-        .chat_list(&ui.chat.list, ui.chat.lines.len())
-        .visible_rows;
-    ui.chat.rewrap(
-        crate::ui::lan_shell::chat_wrap_width(
-            layout.chat_log,
-            layout.page.scale,
-            layout.chat_text_scale(),
-        ),
-        visible,
-        |units| {
-            state
-                .renderer
-                .bit_font
-                .text_width(&String::from_utf16_lossy(units)) as i32
-        },
-    );
-    ui.chat.list.reconcile_geometry_for_text(
+    // wrap again to fit it; the log's list keeps its view.
+    let font = &state.renderer.bit_font;
+    let width = crate::ui::lan_shell::chat_wrap_width(
         layout.chat_log,
-        ui.chat.lines.len(),
         layout.page.scale,
         layout.chat_text_scale(),
     );
-    ui.chat.edit.scroll_to_caret(
-        (layout.page.scale.base_rect(layout.chat).w - 3).max(0) as u32,
-        |text| state.renderer.bit_font.text_width(text),
-    );
+    let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
+    let controller = &mut state.frontend.shell_controller;
+    if ui.chat.rewrap(width, measure) {
+        let rows = ui.chat.lines.len();
+        match (controller.control(page, CHAT_LOG), &mut ui.parked_chat) {
+            (Some(log), _) => {
+                let _ = controller.gui_mut().log_rows(log, rows, 0);
+            }
+            (None, Some(parked)) => parked.log(rows, 0, layout.chat_visible_rows()),
+            (None, None) => {}
+        }
+    }
+    // NewEdit keeps the chat's caret in view.
+    if let Some(chat) = controller.control(page, CHAT) {
+        let available = (layout.page.scale.base_rect(layout.chat).w - 3).max(0) as u32;
+        let measure = |text: &str| font.text_width(text);
+        crate::ui::shell::page::scroll_edit(controller.gui_mut(), chat, available, measure);
+    }
     // The widgets on screen follow the session between inputs too: a list
     // whose row moved away closes before it paints, a box opens.
     synced(state, false);
+}
+
+/// The room hides behind the lobby and its dialog goes: its chat draft and
+/// log view park on the room's state ([`unpark_chat`]).
+pub(crate) fn park_chat(state: &mut AppState) {
+    let page = crate::app::shell_network_setup::dialog(state).page().dialog;
+    let controller = &state.frontend.shell_controller;
+    let (Some(edit), Some(log)) = (
+        controller.control(page, CHAT),
+        controller.control(page, CHAT_LOG),
+    ) else {
+        return;
+    };
+    let gui = controller.gui();
+    let view = gui.list_view(log);
+    let parked = crate::ui::lan_shell::ParkedChat {
+        edit: crate::ui::shell::page::new_edit(gui, edit),
+        top: view.map_or(0, |view| view.top),
+        rows: view.map_or(0, |view| view.rows),
+    };
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+        ui.parked_chat = Some(parked);
+    }
+}
+
+/// The room shows again: its rebuilt chat edit and log take the parked
+/// draft and view back, as the room left them.
+pub(crate) fn unpark_chat(state: &mut AppState) {
+    let Some(parked) = state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .and_then(|ui| ui.parked_chat.take())
+    else {
+        return;
+    };
+    let Some((view, _)) = synced(state, true) else {
+        return;
+    };
+    let page = view.page().dialog;
+    let controller = &mut state.frontend.shell_controller;
+    if let Some(edit) = controller.control(page, CHAT) {
+        crate::ui::shell::page::store_edit(controller.gui_mut(), edit, &parked.edit);
+    }
+    if let Some(log) = controller.control(page, CHAT_LOG) {
+        let gui = controller.gui_mut();
+        let _ = gui.set(log, vera20k_gui::Prop::RowCount, vera20k_gui::Value::Int(parked.rows as i32));
+        let _ = gui.set(log, vera20k_gui::Prop::Top, vera20k_gui::Value::Int(parked.top as i32));
+    }
+}
+
+/// The room's chat edit `0x540`'s text, as its widget holds it.
+pub(crate) fn chat_text(state: &AppState) -> String {
+    let page = crate::app::shell_network_setup::dialog(state).page().dialog;
+    state.frontend.shell_controller.text(page, CHAT)
 }
 
 /// Whether the room's map thumbnail shows a picture with nothing over it: no
@@ -177,44 +230,37 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         crate::app::shell_wol::page::key_press(state, code, text);
         return;
     }
-    // The native 5D3490 message box owns all input while its CE runs; its
-    // OK takes Enter and Escape.
-    if notice_active(state) {
-        use crate::ui::shell::controller::ShellKey;
-        if let Some(ShellKey::Enter | ShellKey::Escape) = code.and_then(App::shell_key_for_code) {
-            crate::app::shell_network_setup::acknowledge_notice(state);
+    // The native 5D3490 message box owns all input while its CE runs, and
+    // VERA's boxes (Game Options, the map offer) take the keys before the
+    // chat: their Default/Cancel buttons answer Enter and Escape.
+    let boxed = notice_active(state)
+        || state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| ui.game_options || ui.map_offer.is_some());
+    if boxed {
+        let key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false));
+        if let Some(key) = key
+            && let Some((view, _)) = synced(state, true)
+        {
+            state
+                .frontend
+                .shell_controller
+                .on_input(vera20k_gui::InputEvent::Key(key));
+            handle_events(state, &view);
         }
         return;
     }
-    if crate::app::shell_network_setup::view(state).is_none() {
-        return;
-    }
-    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+    let Some((view, _)) = synced(state, true) else {
         return;
     };
     // NewEdit consumes all keyboard input while chat has focus. Escape is
     // inert there; a free Escape opens VERA's Esc menu before it gets here.
-    // Enter appends CRLF before shared5EDD00/5DE360 submission. VERA's boxes
-    // (Game Options, Teams) take the keys first and close on Escape or Enter.
-    let action = if let Some(offer) = &ui.map_offer {
-        match code {
-            // Keys meant for the chat just before it opened do not answer it.
-            _ if !offer.takes_keys(Instant::now()) => None,
-            Some(KeyCode::Enter | KeyCode::NumpadEnter) if !offer.downloading => {
-                Some(SetupAction::MapOffer { download: true })
-            }
-            Some(KeyCode::Escape) => Some(SetupAction::MapOffer { download: false }),
-            _ => None,
-        }
-    } else if ui.game_options {
-        matches!(
-            code,
-            Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
-        )
-        .then_some(SetupAction::GameOptions(false))
-    } else {
-        ui.chat.type_key(code, text).map(SetupAction::Chat)
-    };
+    // Enter appends CRLF before shared5EDD00/5DE360 submission.
+    let controller = &mut state.frontend.shell_controller;
+    let chat = crate::ui::lan_shell::chat_key(controller, view.page().dialog, code, text);
+    let action = chat.map(SetupAction::Chat);
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);
     }
@@ -233,6 +279,11 @@ fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, Multiplaye
         &layout,
         activate,
     )?;
+    // The preview box `0x468` is there only while it shows a picture.
+    let shows = preview_box_shows(state, &view);
+    let page = view.page().dialog;
+    let controller = &mut state.frontend.shell_controller;
+    controller.set_prop(page, MAP_PREVIEW, vera20k_gui::Prop::Visible, vera20k_gui::Value::Bool(shows));
     Some((view, layout))
 }
 
@@ -269,9 +320,10 @@ fn pointer_target(state: &AppState, view: &SetupView, help: bool) -> Option<u16>
     let (x, y) = state.match_state.input.cursor_px();
     let controller = &state.frontend.shell_controller;
     let root = controller.root_in(controller.top_id()?)?;
+    let at = |press| control_at(controller.gui(), root, x, y, press);
     match help {
-        true => control_at(controller.gui(), root, x, y, false),
-        false => control_at(controller.gui(), root, x, y, true).filter(|id| view.enabled(*id)),
+        true => at(false),
+        false => at(true).filter(|id| view.enabled(*id)),
     }
 }
 
@@ -319,12 +371,6 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
                 state.frontend.shell_controller.gui_mut().close_popup();
                 if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
                     ui.scroll_roster_to(top);
-                }
-            }
-            PageEvent::Scrolled(CHAT_LOG) => {
-                let top = top(state, CHAT_LOG);
-                if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                    ui.chat.list.top_index = top;
                 }
             }
             event => {
@@ -426,9 +472,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     };
     let (x, y) = state.match_state.input.cursor_px();
     if pressed {
+        let over_preview = crate::app::frontend::preview_zoom::over_box(state, view.page().dialog);
         if pointer_target(state, &view, false).is_none()
             && preview_box_shows(state, &view)
-            && crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview)
+            && crate::app::frontend::preview_zoom::press_on_box(state, over_preview)
         {
             return;
         }
@@ -501,8 +548,9 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return false;
     };
-    let gui = state.frontend.shell_controller.gui_mut();
-    let taken = ui.wheel(gui, &view, &layout, x, y, lines);
+    let controller = &mut state.frontend.shell_controller;
+    let area = controller.control(view.page().dialog, ROSTER_AREA);
+    let taken = ui.wheel(controller.gui_mut(), area, &view, &layout, x, y, lines);
     handle_events(state, &view);
     taken
 }

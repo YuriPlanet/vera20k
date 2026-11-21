@@ -12,6 +12,7 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 use super::WolLobbyState;
 use crate::ui::shell::combobox::ComboPopup;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::modal::PLAYER_CARD_ROWS;
 use crate::ui::shell::page;
 use crate::ui::wol_persona::LocaleRow;
 
@@ -25,6 +26,10 @@ pub(crate) const CARD_CLOSE: u16 = 0x7FF5;
 pub(crate) const CARD_COUNTRY: u16 = 0x7FF6;
 /// The country list's combo, on the Country row's value.
 pub(crate) const CARD_COUNTRIES: u16 = 0x7FF7;
+
+/// The card's rows, which give their help under the pointer: statics from
+/// here on, one per row of the card's layout.
+pub(crate) const CARD_ROWS: u16 = 0x7FE0;
 
 /// The country list's visible rows, which end a little below the card.
 pub(crate) const CARD_COUNTRY_ROWS: usize = 7;
@@ -73,14 +78,25 @@ pub(super) fn card_spec() -> NodeSpec {
         CARD_PROFILE,
         CARD_CLOSE,
     ]
-    .map(|id| NodeSpec::new(NodeKind::Button).id(id.into()));
+    .map(|id| {
+        NodeSpec::new(NodeKind::Button)
+            .id(id.into())
+            .with(Prop::Cancel, Value::Bool(id == CARD_CLOSE))
+    });
     let countries = NodeSpec::new(NodeKind::Combo)
         .id(CARD_COUNTRIES.into())
         .with(Prop::VisibleRows, Value::Int(CARD_COUNTRY_ROWS as i32))
         .with(Prop::Enabled, Value::Bool(false));
+    // Hover only: the host paints them and gives their help.
+    let rows = (0..PLAYER_CARD_ROWS as u16).map(|row| {
+        NodeSpec::new(NodeKind::Text)
+            .id((CARD_ROWS + row).into())
+            .tooltip("")
+    });
     NodeSpec::new(NodeKind::Dialog)
         .children(buttons)
         .child(countries)
+        .children(rows)
 }
 
 impl WolLobbyState {
@@ -134,24 +150,24 @@ impl WolLobbyState {
         let _ = self.gui.set(node, Prop::PopupRect, Value::Rect(popup.rect));
     }
 
-    /// Closes the open country list without a cue.
-    pub(crate) fn close_countries(&mut self) {
-        if self.countries_open() {
-            self.gui.close_popup();
-        }
-    }
-
     /// The locale of the country list's row `row`.
     pub(crate) fn country_locale(&self, row: usize) -> Option<i32> {
         Some(self.card.as_ref()?.countries.get(row)?.locale)
     }
 
-    /// Puts the card's buttons on their rects (`None`: hidden) and sets
-    /// which take a press.
-    pub(crate) fn sync_card(&mut self, place: impl Fn(u16) -> Option<(RectPx, bool)>) {
+    /// Puts the card on `dialog` (a press outside it closes the card), its
+    /// rows on `rows` and its buttons on their rects (`None`: hidden), and
+    /// sets which take a press.
+    pub(crate) fn sync_card(
+        &mut self,
+        dialog: RectPx,
+        rows: &[RectPx],
+        place: impl Fn(u16) -> Option<(RectPx, bool)>,
+    ) {
         let Some((_, root)) = self.card_dialog else {
             return;
         };
+        let _ = self.gui.set(root, Prop::Rect, Value::Rect(dialog));
         let buttons = [
             CARD_MESSAGE,
             CARD_COUNTRY,
@@ -162,6 +178,9 @@ impl WolLobbyState {
         page::sync_rects(&mut self.gui, root, |id| match id {
             // The combo keeps its list where it opened.
             CARD_COUNTRIES => Some(RectPx::default()),
+            id if (CARD_ROWS..CARD_ROWS + PLAYER_CARD_ROWS as u16).contains(&id) => {
+                rows.get(usize::from(id - CARD_ROWS)).copied()
+            }
             id => place(id).map(|(rect, _)| rect),
         });
         for id in buttons {

@@ -592,7 +592,7 @@ mod tests {
         let layout = crate::ui::single_player_shell::compute_layout(800, 600);
         let dialog = SINGLE_PLAYER_PAGE.dialog;
         let mut c = crate::ui::shell::controller::DialogController::default();
-        c.ensure_active(dialog, false);
+        c.ensure_active(dialog);
         let rect_of = |id| layout.button_rect(id);
         menu_page::sync_nodes(
             &mut c,

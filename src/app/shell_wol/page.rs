@@ -11,12 +11,11 @@ use winit::keyboard::KeyCode;
 use super::leaf::{self, Pointer};
 use super::service::WolServiceRequest;
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::{LanChatLine, LanListState, append_list_message};
+use crate::ui::lan_shell::{LanChatLine, append_wrapped};
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::modal::{
     WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_layout_in,
     wol_page_received_layout, wol_page_received_layout_in,
@@ -269,22 +268,17 @@ fn append_line(state: &mut AppState, dialog: DialogId, line: LanChatLine) -> boo
     let Some(lines) = frontend.wol.as_mut().and_then(|visit| lines(visit, dialog)) else {
         return false;
     };
-    let c = &mut frontend.shell_controller;
-    let top = match c.prop(dialog, id, Prop::Top) {
-        Some(Value::Int(top)) => (*top).max(0) as usize,
-        _ => 0,
-    };
-    let mut list = LanListState {
-        top_index: top,
-        ..Default::default()
-    };
-    let metrics = ListMetrics::scaled(ShellScale::RETAIL);
-    let visible = ShellListGeometry::new(rect, lines.len(), top, metrics).visible_rows;
-    append_list_message(lines, &mut list, line, rect.w, visible, |units| {
+    let dropped = append_wrapped(lines, line, rect.w, |units| {
         font.text_width(&String::from_utf16_lossy(units)) as i32
     });
-    c.set_prop(dialog, id, Prop::RowCount, Value::Int(lines.len() as i32));
-    c.set_prop(dialog, id, Prop::Top, Value::Int(list.top_index as i32));
+    let c = &mut frontend.shell_controller;
+    if let Some(list) = c.control(dialog, id) {
+        // A list placed after its rows came starts at its first row.
+        if c.prop(dialog, id, Prop::Top).is_none() {
+            c.set_prop(dialog, id, Prop::Top, Value::Int(0));
+        }
+        let _ = c.gui_mut().log_rows(list, lines.len(), dropped);
+    }
     true
 }
 
@@ -573,7 +567,9 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    let (Some(dialog), Some(event)) = (top(state), leaf::input_of(code, text)) else {
+    let shift = state.platform.live_modifiers.shift_key();
+    let event = crate::ui::shell::controller::gui_input(code, shift, text);
+    let (Some(dialog), Some(event)) = (top(state), event) else {
         return;
     };
     if sync(state, dialog).is_none() {

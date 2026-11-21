@@ -81,7 +81,7 @@ mod tests {
     fn picker() -> (Gui, NodeId) {
         let mut gui = Gui::new(8);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        gui.push_dialog(root, DialogKind::Modal, None, None)
+        gui.push_dialog(root, DialogKind::Modal)
             .unwrap();
         page::ensure_built(&mut gui, root, || {
             NodeSpec::new(NodeKind::Dialog).children(widgets(RoomLimits::default(), 1, 2))

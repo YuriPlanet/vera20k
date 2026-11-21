@@ -189,34 +189,6 @@ pub(super) fn focus(state: &mut AppState, dialog: DialogId, id: Option<u16>) {
     state.frontend.shell_controller.focus_control(dialog, id);
 }
 
-/// A key or typed text as the widgets take it.
-pub(super) fn input_of(
-    code: Option<winit::keyboard::KeyCode>,
-    text: Option<&str>,
-) -> Option<vera20k_gui::InputEvent> {
-    use vera20k_gui::{InputEvent, Key};
-    use winit::keyboard::KeyCode;
-    Some(match code {
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => InputEvent::Key(Key::Enter),
-        Some(KeyCode::Escape) => InputEvent::Key(Key::Escape),
-        Some(KeyCode::Tab) => InputEvent::Key(Key::Tab),
-        Some(KeyCode::Backspace) => InputEvent::Key(Key::Backspace),
-        Some(KeyCode::Delete) => InputEvent::Key(Key::Delete),
-        Some(KeyCode::ArrowLeft) => InputEvent::Key(Key::Left),
-        Some(KeyCode::ArrowRight) => InputEvent::Key(Key::Right),
-        Some(KeyCode::ArrowUp) => InputEvent::Key(Key::Up),
-        Some(KeyCode::ArrowDown) => InputEvent::Key(Key::Down),
-        Some(KeyCode::Home) => InputEvent::Key(Key::Home),
-        Some(KeyCode::End) => InputEvent::Key(Key::End),
-        Some(KeyCode::PageUp) => InputEvent::Key(Key::PageUp),
-        Some(KeyCode::PageDown) => InputEvent::Key(Key::PageDown),
-        _ => match text {
-            Some(text) if !text.is_empty() => InputEvent::Text(text.to_owned()),
-            _ => return None,
-        },
-    })
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Pointer {
     Move,

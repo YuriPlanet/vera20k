@@ -51,7 +51,7 @@ pub(super) fn open(state: &mut AppState) {
     let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
-    frontend.shell_controller.reset_to(DIALOG, true);
+    frontend.shell_controller.reset_to(DIALOG);
     let ui = &mut frontend.shell_controller;
     let cx = &mut LoginCx {
         ui,
@@ -221,22 +221,17 @@ pub(super) fn commit_close(state: &mut AppState, result: u16) {
 }
 
 pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    let reverse = state.platform.live_modifiers.shift_key();
-    let edit = |key| Some(WolEditKey::Edit(key));
-    let key = match code {
-        Some(KeyCode::Backspace) => edit(Key::Backspace),
-        Some(KeyCode::Delete) => edit(Key::Delete),
-        Some(KeyCode::ArrowLeft) => edit(Key::Left),
-        Some(KeyCode::ArrowRight) => edit(Key::Right),
-        Some(KeyCode::Home) => edit(Key::Home),
-        Some(KeyCode::End) => edit(Key::End),
-        Some(KeyCode::Tab) => Some(WolEditKey::Tab { reverse }),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(WolEditKey::Enter),
-        Some(KeyCode::Escape) => Some(WolEditKey::Escape),
-        _ => None,
-    };
+    let shift = state.platform.live_modifiers.shift_key();
+    let key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, shift));
+    if matches!(key, Some(Key::Enter | Key::Escape)) {
+        sync(state);
+    }
     let action = with_login(state, |login, cx| match key {
-        Some(key) => login.edit_key(cx, key),
+        Some(key @ (Key::Enter | Key::Escape)) => login.dialog_key(cx, key),
+        Some(key) => {
+            login.edit_key(cx, key);
+            None
+        }
         None => {
             login.insert_text(cx, text.unwrap_or_default());
             None

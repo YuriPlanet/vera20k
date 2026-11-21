@@ -520,7 +520,6 @@ fn set_prompt(state: &mut AppState, selection: ChooseMapSelection, kind: ChooseM
     {
         modal.message_box = Some(ChooseMapPrompt {
             selection,
-            pressed: None,
             kind,
         });
     }

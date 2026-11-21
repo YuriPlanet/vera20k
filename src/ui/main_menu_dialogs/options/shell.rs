@@ -66,6 +66,8 @@ pub(super) struct ShellGui {
     built: Vec<(Control, NodeId)>,
     /// Status help last written by a dialog hit test (`0x00622CCB`).
     status_help: Option<String>,
+    /// The tree's UI clock starts here.
+    epoch: crate::util::time::Instant,
 }
 
 impl Default for ShellGui {
@@ -73,13 +75,14 @@ impl Default for ShellGui {
         let mut gui = Gui::new(256);
         let root = gui.create(NodeKind::Dialog, None).expect("an empty tree");
         let panel = gui.create(NodeKind::Panel, Some(root)).expect("budget");
-        gui.push_dialog(root, DialogKind::Page, None, None)
+        gui.push_dialog(root, DialogKind::Page)
             .expect("a Dialog root");
         Self {
             gui,
             panel,
             built: Vec::new(),
             status_help: None,
+            epoch: crate::util::time::Instant::now(),
         }
     }
 }
@@ -94,6 +97,12 @@ impl std::fmt::Debug for ShellGui {
 }
 
 impl ShellGui {
+    /// One input for the tree, on its clock.
+    fn input(&mut self, event: InputEvent) {
+        let now = crate::util::time::Instant::now().saturating_duration_since(self.epoch);
+        self.gui.input(event, now.as_millis() as u64);
+    }
+
     fn node(&self, control: Control) -> Option<NodeId> {
         self.built
             .iter()
@@ -1089,7 +1098,7 @@ impl OptionsDialogState {
     /// mouse or a list is open.
     fn shell_pointer_moved(&mut self, x: i32, y: i32) {
         let held = self.shell.gui.pressed().is_some() || self.shell_list_open();
-        self.shell.gui.input(InputEvent::PointerMove { x, y }, 0);
+        self.shell.input(InputEvent::PointerMove { x, y });
         if !held {
             self.shell.status_help = page::hovered_help(&self.shell.gui, self.shell.gui.hovered());
         }
@@ -1106,7 +1115,7 @@ impl OptionsDialogState {
         if self.shell_list_open() {
             // ComboDropWin 0x0060E4E9..0x0060E500 plays Rules+0x1A8
             // (GUIComboCloseSound) before selection or outside dismissal.
-            self.shell.gui.input(down, 0);
+            self.shell.input(down);
             self.shell_events(layout);
             self.shell.status_help = None;
             return;
@@ -1115,7 +1124,7 @@ impl OptionsDialogState {
             return;
         }
         self.shell_pointer_moved(x, y);
-        self.shell.gui.input(down, 0);
+        self.shell.input(down);
         self.shell_events(layout);
     }
 
@@ -1135,11 +1144,11 @@ impl OptionsDialogState {
         // A slider lets go before the hit test runs again; a button's release
         // still sees its own capture.
         if self.shell.held_slider().is_some() {
-            self.shell.gui.input(up, 0);
+            self.shell.input(up);
             self.shell_pointer_moved(x, y);
         } else {
             self.shell_pointer_moved(x, y);
-            self.shell.gui.input(up, 0);
+            self.shell.input(up);
         }
         self.shell_events(layout);
     }

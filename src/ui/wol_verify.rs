@@ -12,9 +12,9 @@ use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::shell::modal::WolVerifyLayout;
 use crate::ui::shell::page::{self, PageEvent};
-use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_shell::BOX_OK;
 use crate::util::time::Instant;
 use std::ops::Range;
@@ -42,8 +42,6 @@ pub struct WolVerifyDialog {
     pub names: Vec<String>,
     /// `0xB75F54[i]`: node `i` answered.
     connected: Vec<bool>,
-    /// The boxes' own check state.
-    pub checked: Vec<bool>,
     /// `0xD0` with `TXT_SCENARIOS_DO_NOT_MATCH` over the dialog
     /// (`0x00794D28..0x00794D57`).
     pub mismatch: Option<ShellBox>,
@@ -58,24 +56,24 @@ impl WolVerifyDialog {
         names.truncate(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT);
         let count = names.len();
         let mut ui = DialogController::default();
-        ui.push(DIALOG, false);
-        let boxes = (0..count).map(|node| {
-            NodeSpec::new(NodeKind::Checkbox)
-                .id(i32::from(node_box(node)))
-        });
+        ui.push(DIALOG);
+        let boxes =
+            (0..count).map(|node| NodeSpec::new(NodeKind::Checkbox).id(i32::from(node_box(node))));
         let list = NodeSpec::new(NodeKind::List)
             .id(i32::from(LIST))
             .with(Prop::RowCount, Value::Int(count as i32));
         let ok = NodeSpec::new(NodeKind::Button).id(i32::from(BOX_OK));
         // The first node under the pointer takes it: the boxes over the list.
-        let spec = NodeSpec::new(NodeKind::Dialog).children(boxes).child(ok).child(list);
+        let spec = NodeSpec::new(NodeKind::Dialog)
+            .children(boxes)
+            .child(ok)
+            .child(list);
         if let Some(root) = ui.root_in(DIALOG) {
             page::ensure_built(ui.gui_mut(), root, || spec);
         }
         Self {
             names,
             connected: vec![false; count],
-            checked: vec![false; count],
             mismatch: None,
             ui,
             opened: Instant::now(),
@@ -103,10 +101,23 @@ impl WolVerifyDialog {
         }
         let first = layout.boxes[0];
         let last = layout.boxes[BOXES.len() - 1];
-        let outer = RectPx::new(first.x - 1, first.y - 1, first.w + 2, last.y + last.h - first.y + 2);
-        let metrics = ListMetrics { row_h: first.h, ..ListMetrics::RETAIL };
+        let outer = RectPx::new(
+            first.x - 1,
+            first.y - 1,
+            first.w + 2,
+            last.y + last.h - first.y + 2,
+        );
+        let metrics = ListMetrics {
+            row_h: first.h,
+            ..ListMetrics::RETAIL
+        };
         let top = self.list().map_or(0, |view| view.top);
-        Some(ShellListGeometry::new(outer, self.names.len(), top, metrics))
+        Some(ShellListGeometry::new(
+            outer,
+            self.names.len(),
+            top,
+            metrics,
+        ))
     }
 
     pub fn visible_nodes(&self, layout: &WolVerifyLayout) -> Range<usize> {
@@ -138,28 +149,33 @@ impl WolVerifyDialog {
     pub fn ok_pressed(&self) -> bool {
         let gui = self.ui.gui();
         let root = self.ui.root_in(DIALOG);
-        root.and_then(|root| page::held_in(gui, root)).is_some_and(|node| gui.id_of(node) == Some(i32::from(BOX_OK)))
+        root.and_then(|root| page::held_in(gui, root))
+            .is_some_and(|node| gui.id_of(node) == Some(i32::from(BOX_OK)))
     }
 
     /// Puts the widgets on `layout`: the box's OK on `ok` while the
     /// mismatch box is up, else the visible boxes and the list.
     fn sync(&mut self, layout: &WolVerifyLayout, ok: RectPx) {
-        let Some(root) = self.ui.root_in(DIALOG) else { return };
+        let Some(root) = self.ui.root_in(DIALOG) else {
+            return;
+        };
         let row_h = Value::Int(layout.boxes[0].h);
         page::set(self.ui.gui_mut(), root, LIST, Prop::RowHeight, row_h);
         let boxed = self.mismatch.is_some();
         let list = self.list_geometry(layout).map(|geometry| geometry.outer);
-        let boxes: Vec<_> = (0..self.names.len()).map(|node| self.node_rect(layout, node)).collect();
+        let boxes: Vec<_> = (0..self.names.len())
+            .map(|node| self.node_rect(layout, node))
+            .collect();
         let gui = self.ui.gui_mut();
         page::sync_rects(gui, root, |id| match id {
             BOX_OK => boxed.then_some(ok),
             _ if boxed => None,
             LIST => list,
-            id => boxes.get(usize::from(id.wrapping_sub(node_box(0)))).copied().flatten(),
+            id => boxes
+                .get(usize::from(id.wrapping_sub(node_box(0))))
+                .copied()
+                .flatten(),
         });
-        for (node, checked) in self.checked.iter().enumerate() {
-            page::set(gui, root, node_box(node), Prop::Checked, Value::Bool(*checked));
-        }
     }
 
     /// One pointer message at (`x`, `y`) (`down`: `None` moves): the cues
@@ -197,13 +213,25 @@ impl WolVerifyDialog {
         (!self.ui.drain_events().is_empty(), next)
     }
 
+    /// The boxes' check state, as their widgets hold it.
+    pub fn checked(&self) -> Vec<bool> {
+        (0..self.names.len())
+            .map(|node| self.ui.flag(DIALOG, node_box(node), Prop::Checked, false))
+            .collect()
+    }
+
+    fn set_checked(&mut self, node: usize, on: bool) {
+        self.ui
+            .set_prop(DIALOG, node_box(node), Prop::Checked, Value::Bool(on));
+    }
+
     /// `0xB75F54[node] = 1` and `BM_SETCHECK(1)`: node 0 when the verify
     /// starts with connection pairs (`0x00794809..0x00794849`), a peer when
     /// its reply arrives (`0x00794568..0x007945B5`).
     pub fn connect(&mut self, node: usize) {
         if node < self.names.len() {
             self.connected[node] = true;
-            self.checked[node] = true;
+            self.set_checked(node, true);
         }
     }
 
@@ -213,7 +241,7 @@ impl WolVerifyDialog {
     /// every peer box reads bytes nothing sets, so it ends unchecked.
     pub fn click(&mut self, node: usize) {
         if node < self.names.len() {
-            self.checked[node] = node == 0 && self.connected[0];
+            self.set_checked(node, node == 0 && self.connected[0]);
         }
     }
 }
@@ -234,18 +262,18 @@ mod tests {
     #[test]
     fn clicks_hold_node_zero_and_clear_peers() {
         let mut dialog = WolVerifyDialog::open(vec!["Tester".into(), "Natasha".into()]);
-        assert_eq!(dialog.checked, vec![false; 2]);
+        assert_eq!(dialog.checked(), vec![false; 2]);
         dialog.click(0);
-        assert!(!dialog.checked[0], "node 0 follows its unset byte");
+        assert!(!dialog.checked()[0], "node 0 follows its unset byte");
         dialog.connect(0);
         dialog.connect(1);
-        assert!(dialog.checked[0] && dialog.checked[1]);
+        assert!(dialog.checked()[0] && dialog.checked()[1]);
         dialog.click(0);
         dialog.click(1);
-        assert!(dialog.checked[0], "node 0 is held at its connected byte");
-        assert!(!dialog.checked[1], "a peer box reads an unrelated byte");
+        assert!(dialog.checked()[0], "node 0 is held at its connected byte");
+        assert!(!dialog.checked()[1], "a peer box reads an unrelated byte");
         dialog.connect(5);
-        assert_eq!(dialog.checked.get(5), None, "no state past the nodes");
+        assert_eq!(dialog.checked().get(5), None, "no state past the nodes");
     }
     #[test]
     fn thirty_connected_nodes_survive_scroll_and_clicks_use_logical_identity() {
@@ -262,17 +290,26 @@ mod tests {
         let geometry = dialog.list_geometry(&layout).unwrap();
         let bar = geometry.scrollbar.unwrap();
         // The ordinary scrollbar track, then its release.
-        click(&mut dialog, (bar.x + 2, bar.y + bar.h - geometry.metrics.arrow_h - 2));
+        click(
+            &mut dialog,
+            (bar.x + 2, bar.y + bar.h - geometry.metrics.arrow_h - 2),
+        );
         let visible = dialog.visible_nodes(&layout);
         assert!(visible.start > 0 && visible.contains(&29));
-        assert!(dialog.checked[29]);
+        assert!(dialog.checked()[29]);
         let first = visible.start;
         dialog.connect(first);
         let rect = dialog.node_rect(&layout, first).unwrap();
         let events = click(&mut dialog, (rect.x + 1, rect.y + 1));
-        assert!(events.is_empty(), "the release does nothing more: {events:?}");
-        assert!(!dialog.checked[first], "scrolled first row is a remote peer, not node zero");
-        assert!(dialog.checked[0]);
+        assert!(
+            events.is_empty(),
+            "the release does nothing more: {events:?}"
+        );
+        assert!(
+            !dialog.checked()[first],
+            "scrolled first row is a remote peer, not node zero"
+        );
+        assert!(dialog.checked()[0]);
         // A held arrow repeats after 500 ms, the shared scrollbar's.
         let up = (bar.x + 2, bar.y + 2);
         dialog.pointer(&layout, ok, up, Some(true));
