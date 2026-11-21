@@ -367,6 +367,7 @@ impl GpuContext {
                 } else {
                     wgpu::Backends::GL
                 },
+                flags: instance_flags(),
                 ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
             })
         };
@@ -628,7 +629,21 @@ impl GpuContext {
         // swapchain skip/recovery.
         // https://docs.rs/wgpu-hal/30.0.1/src/wgpu_hal/metal/surface.rs.html#347-371
         let capture_target = hidden_capture.then(|| CaptureTarget::new(&device, &config));
+        // The timer builds a compute pipeline, and an old driver's shader
+        // compiler can fail on one: an Intel Iris Pro's Metal compiler did
+        // on wgpu's indirect-call check ([`instance_flags`]). wgpu reports
+        // that as an internal error, which would end the game; it goes untimed.
+        let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+        let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let timer = super::gpu_timer::GpuTimer::new(&device, &queue);
+        let (validation, internal) = (validation.pop(), internal.pop());
+        let timer = match validation.await.or(internal.await) {
+            None => timer,
+            Some(error) => {
+                log::warn!("GPU timer unavailable, frames go untimed: {error}");
+                super::gpu_timer::GpuTimer::default()
+            }
+        };
 
         log::info!(
             "GPU initialized: {}x{}, format={:?}",
@@ -1163,8 +1178,21 @@ fn instance_with(
     let mut descriptor =
         wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display.clone()));
     descriptor.backends = backends;
+    descriptor.flags = instance_flags();
     descriptor.backend_options.dx12.shader_compiler = compiler;
     wgpu::Instance::new(descriptor)
+}
+
+/// wgpu's flags for the build without its indirect-call check. That check
+/// guards `draw_indirect` and `dispatch_workgroups_indirect`, which VERA never
+/// calls, yet wgpu builds its compute pipeline with every device, and a
+/// device whose pipeline fails is refused: an Intel Iris Pro's Metal compiler
+/// failed on it ("Compiler encountered an internal error"), and the game
+/// could not start. `WGPU_VALIDATION_INDIRECT_CALL=1` turns it back on.
+fn instance_flags() -> wgpu::InstanceFlags {
+    wgpu::InstanceFlags::from_build_config()
+        .difference(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL)
+        .with_env()
 }
 
 /// Whether `dxcompiler.dll` sits beside the game, where wgpu's
@@ -1440,6 +1468,13 @@ mod tests {
             wgpu::Backends::DX12
         ));
         assert!(!retry_dx12_with_fxc(Some(Cpu), wgpu::Backends::VULKAN));
+    }
+
+    /// wgpu's indirect-call check stays off: its compute pipeline, built
+    /// with every device, kept an Intel Iris Pro Mac from starting.
+    #[test]
+    fn the_game_asks_wgpu_for_no_indirect_call_check() {
+        assert!(!super::instance_flags().contains(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL));
     }
 
     /// An Intel card found through Vulkan is asked for through DirectX 12

@@ -374,6 +374,7 @@ pub(crate) struct Contact {
 /// A Structure's `sim::building_art` answers for its own type.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StructureArt {
+    pub(crate) invisible_in_game: bool,
     /// `building_image` without and with a Buildup.
     pub(crate) image: [crate::sim::building_art::BuildingImage; 2],
     /// `current_body_frame` at its type's tech level.
@@ -397,6 +398,7 @@ impl StructureArt {
             .gate
             .then(|| art.map_or(9, |entry| entry.building_gate_stages));
         Some(Self {
+            invisible_in_game: object.invisible_in_game,
             image: [
                 building_art::building_image(entity, false),
                 building_art::building_image(entity, true),
