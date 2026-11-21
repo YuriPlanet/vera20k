@@ -160,6 +160,36 @@ fn names(lobby: &WolLobby) -> Vec<&str> {
     lobby.members.iter().map(|m| m.name.as_str()).collect()
 }
 
+#[test]
+fn only_the_public_watch_list_reports_its_outage_and_recovery() {
+    use WatchListRefresh::*;
+    let new = |runner| new_runner(runner, false, false, Instant::now(), true);
+    let mut lobby = new(Runner::Lobby);
+    // The dialog is hidden while a room covers it.
+    assert!(!lobby.shown);
+    assert_eq!(
+        lobby.watch_refresh_notice(Failed),
+        Some("VERA:WatchListStale")
+    );
+    assert_eq!(lobby.watch_refresh_notice(Failed), None);
+    assert_eq!(
+        lobby.watch_refresh_notice(Listed),
+        Some("VERA:WatchListUpdated")
+    );
+    assert_eq!(lobby.watch_refresh_notice(Listed), None);
+    assert_eq!(
+        lobby.watch_refresh_notice(Failed),
+        Some("VERA:WatchListStale")
+    );
+    assert_eq!(lobby.watch_refresh_notice(Unsupported), None);
+    assert_eq!(lobby.watch_refresh_notice(Listed), None);
+    assert_eq!(new(Runner::QuickMatch).watch_refresh_notice(Failed), None);
+    assert_eq!(
+        new(Runner::Lobby).watch_refresh_notice(Failed),
+        Some("VERA:WatchListStale")
+    );
+}
+
 /// VERA lists the games again five seconds on, so a new game shows up
 /// soon; the lobbies keep native `SetTimer(1, 53000)`.
 #[test]
