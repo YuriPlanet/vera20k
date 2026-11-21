@@ -2193,8 +2193,7 @@ fn scan_cell_for_target(
         });
     // The cross-check walks the list again and so writes `state`'s memos and
     // counters a second time: debug builds with the live-read check only.
-    #[cfg(debug_assertions)]
-    if crate::sim::touch_log::live_read_check_enabled() {
+    if cfg!(debug_assertions) && crate::sim::touch_log::live_read_check_enabled() {
         let full = walk_cell_list(ctx, state, rx, ry, layer);
         assert!(
             offered == full,

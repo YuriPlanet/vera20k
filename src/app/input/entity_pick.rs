@@ -283,14 +283,18 @@ fn hover_object_in_frame(
                     })
                     .map(|member| &member.id),
             );
-            debug_assert_eq!(
-                picked,
-                pick(
+            // The cross-check picks again over every drawn object: debug
+            // builds only.
+            if cfg!(debug_assertions) {
+                let unfiltered = pick(
                     &mut crate::app::presentation::instances::display_draw_ids(sim, source.rules())
-                        .iter()
-                ),
-                "the pick's pre-filter passed by the object at {world_x}, {world_y}"
-            );
+                        .iter(),
+                );
+                assert_eq!(
+                    picked, unfiltered,
+                    "the pick's pre-filter passed by the object at {world_x}, {world_y}"
+                );
+            }
             picked
         }
         None => pick(
