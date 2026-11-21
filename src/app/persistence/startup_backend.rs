@@ -2,7 +2,8 @@
 //! driver that loses the device before startup finishes fails every start
 //! the same way: a GeForce GTX 950M's Vulkan driver, too old to name its
 //! version, did one second after GPU init on every VERA version. Where a
-//! driver offers Vulkan and DirectX 12, wgpu takes Vulkan (`GpuContext::new`).
+//! driver offers Vulkan and DirectX 12, wgpu takes Vulkan (`GpuContext::new`),
+//! except for an Intel card, which `choose_adapter` asks DirectX 12 for first.
 //! So a start that dies of a lost device records the API it was on, beside
 //! VERA.INI, and the next start asks for the other API alone; the box that
 //! closes the game says so (`system_dialog::graphics_lost_message`). A start
