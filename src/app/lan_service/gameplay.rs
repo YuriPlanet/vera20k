@@ -40,6 +40,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
     let multiplayer = super::shell_network_setup::agreement::local(state)?;
+    super::shell_network_setup::agreement::log_rules_parts(state);
     let sim = &state
         .match_state
         .sim_runtime

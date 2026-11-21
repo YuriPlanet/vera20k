@@ -35,7 +35,7 @@ impl App {
             })
             .unwrap_or(fallback);
         let mut report = if state.frontend.external_launch {
-            Self::external_launch_report(Some(state), None)
+            Self::external_launch_report(Some(state), None, None)
         } else {
             let mut report = ExternalLaunchReport::new(Some(result), None, None);
             report.network_quality = state.match_state.network_quality.report();
@@ -88,7 +88,7 @@ impl App {
             ));
             return true;
         }
-        let report = Self::external_launch_report(Some(state), None);
+        let report = Self::external_launch_report(Some(state), None, None);
         crate::web::spawn_finished(&report.json());
         event_loop.exit();
         true
@@ -116,7 +116,7 @@ impl App {
             // A direct window/error exit may bypass external-launch cleanup.
             // Deliver any retained report before the terminal notification.
             if state.frontend.external_launch {
-                let report = Self::external_launch_report(Some(state), error.as_deref());
+                let report = Self::external_launch_report(Some(state), error.as_deref(), None);
                 crate::web::spawn_finished(&report.json());
             }
             state.audio.stop_theme();

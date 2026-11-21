@@ -18,6 +18,9 @@ pub(crate) struct FrontendState {
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
+    /// The external launch's `ExpectedRulesDigest` refused it: this game's
+    /// rules parts, which the launch report names.
+    pub(crate) external_rules_mismatch: Option<crate::app::rules_parts::RulesParts>,
     /// The external launch's or online lobby match's local result, first
     /// decided wins (docs/spawn.md); see `App::record_match_result`.
     pub(crate) match_result: Option<crate::app::cncnet::ExternalMatchResult>,

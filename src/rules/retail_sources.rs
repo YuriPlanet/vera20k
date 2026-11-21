@@ -372,7 +372,7 @@ const SHIPPED_LOCAL: &str = "localmd.mix";
 
 /// Whether a source (`AssetResolutionRef::source_archive`, an archive's name)
 /// is a shipped archive or nested in one. A loose file never is.
-pub(crate) fn shipped_source(source: &str) -> bool {
+pub fn shipped_source(source: &str) -> bool {
     !source.starts_with("loose:")
         && SHIPPED_ARCHIVES
             .iter()
@@ -381,7 +381,7 @@ pub(crate) fn shipped_source(source: &str) -> bool {
 
 /// The game-folder file a source comes from: a loose file's name, else the
 /// archive's outermost name (`expandmd99.mix`).
-pub(crate) fn game_folder_file(source: &str) -> String {
+pub fn game_folder_file(source: &str) -> String {
     match source.strip_prefix("loose:") {
         Some(path) => std::path::Path::new(path).file_name().map_or_else(
             || path.to_owned(),
@@ -420,20 +420,75 @@ pub(crate) fn shipped_nested_archive(assets: &AssetManager, name: &str) -> Optio
 /// (`IniFile::multiplayer_digest`) are unchanged, and so is a name nothing
 /// supplies.
 pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec<String> {
-    let mut local = None;
+    let shipped = ShippedInis::new(assets);
     let mut files = Vec::new();
-    for name in names.iter().map(|name| name.trim()) {
-        let Some(used) = (!name.is_empty())
-            .then(|| assets.resolve_ref(name))
-            .flatten()
-        else {
+    for name in names {
+        let Some(used) = shipped.used(name) else {
             continue;
         };
-        if shipped_source(used.source_archive) {
+        if used.shipped == ShippedCopy::Same {
             continue;
         }
-        let local = local.get_or_insert_with(|| {
-            assets
+        let file = game_folder_file(used.source);
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    files
+}
+
+/// VERA: the copies of INIs the game reads held against the ones a retail
+/// install ships, as [`files_changing_shipped_inis`] compares them.
+pub struct ShippedInis<'a> {
+    assets: &'a AssetManager,
+    /// `ra2md.mix`'s own `localmd.mix`, opened by the first comparison that
+    /// needs it.
+    local: std::cell::OnceCell<Option<MixArchive>>,
+}
+
+/// One INI as the game reads it ([`ShippedInis::used`]).
+pub struct UsedIni<'a> {
+    /// Where it comes from (`AssetResolutionRef::source_archive`).
+    pub source: &'a str,
+    pub bytes: &'a [u8],
+    pub shipped: ShippedCopy<'a>,
+}
+
+/// How an INI the game reads stands to the copy a retail install ships.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShippedCopy<'a> {
+    /// The shipped copy, or one with the same entries.
+    Same,
+    /// Another copy: the shipped one's bytes, `None` when retail ships no
+    /// such file.
+    Changed(Option<&'a [u8]>),
+}
+
+impl<'a> ShippedInis<'a> {
+    pub fn new(assets: &'a AssetManager) -> Self {
+        Self {
+            assets,
+            local: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// The copy of `name` the game reads and how it stands to the shipped
+    /// one; `None` when nothing supplies `name`.
+    pub fn used(&self, name: &str) -> Option<UsedIni<'_>> {
+        let name = name.trim();
+        let used = (!name.is_empty())
+            .then(|| self.assets.resolve_ref(name))
+            .flatten()?;
+        let mut found = UsedIni {
+            source: used.source_archive,
+            bytes: used.bytes,
+            shipped: ShippedCopy::Same,
+        };
+        if shipped_source(used.source_archive) {
+            return Some(found);
+        }
+        let local = self.local.get_or_init(|| {
+            self.assets
                 .archive_with_source(SHIPPED_MASTER)
                 .and_then(|(_, master)| {
                     master
@@ -445,20 +500,16 @@ pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec
         let shipped = SHIPPED_ARCHIVES
             .iter()
             .find_map(|archive| {
-                assets
+                self.assets
                     .archive_with_source(archive)
                     .and_then(|(_, archive)| archive.get_by_name(name))
             })
             .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)));
-        if shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
-            continue;
+        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+            found.shipped = ShippedCopy::Changed(shipped);
         }
-        let file = game_folder_file(used.source_archive);
-        if !files.contains(&file) {
-            files.push(file);
-        }
+        Some(found)
     }
-    files
 }
 
 fn same_entries(shipped: &[u8], used: &[u8]) -> bool {

@@ -827,6 +827,33 @@ impl IniFile {
         bytes
     }
 
+    /// VERA: the names of the sections whose entries differ between this
+    /// file and `other`, added and removed ones too, in byte order. Entries
+    /// compare as [`Self::multiplayer_digest`] reads them: every physical
+    /// entry in order, a section's repeated headers as one.
+    pub fn differing_sections(&self, other: &IniFile) -> Vec<String> {
+        use std::collections::BTreeMap;
+        fn entries(ini: &IniFile) -> BTreeMap<&str, Vec<(&str, &str)>> {
+            let mut sections: BTreeMap<&str, Vec<_>> = BTreeMap::new();
+            for section in &ini.sections {
+                sections
+                    .entry(section.name.as_str())
+                    .or_default()
+                    .extend(section.physical_entries());
+            }
+            sections
+        }
+        let (mine, theirs) = (entries(self), entries(other));
+        let mut names: Vec<&str> = mine.keys().chain(theirs.keys()).copied().collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+            .into_iter()
+            .filter(|name| mine.get(name) != theirs.get(name))
+            .map(str::to_owned)
+            .collect()
+    }
+
     /// `CCINIClass::GetCRC` (`0x00476D80`): `CRCEngine` (`0x004A1DE0`) over
     /// the SHA-1 digest (`0x0069E9E0`) of the INI's `SaveToPipe` bytes.
     pub fn native_crc(&self) -> u32 {

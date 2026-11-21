@@ -827,6 +827,7 @@ impl App {
                     startup_audio.load_audio_indices,
                 )
                 .with_resources(resources)
+                .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
                 .with_personal_rules(personal_rules)
                 .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
@@ -1264,6 +1265,7 @@ impl App {
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
+                external_rules_mismatch: None,
                 match_result: None,
                 match_result_at: None,
                 match_winners: None,
