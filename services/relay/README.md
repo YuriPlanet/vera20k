@@ -263,8 +263,11 @@ reporter holds the fastest rate its tick cost fits into four fifths of a second
 (legacy reports: nine tenths of what it ran). A fresh behind report (at most 3
 seconds old) from a player who cannot hold the current rate slows the clock to
 the fastest Game Speed rate that player holds, at least one row slower and at
-most two rows below the certificate's rate; a tick-cost reporter that holds the
-rate only draws slowly and catches up on its own. Under `VO1C` every active
+most two rows below the certificate's rate. When fresh behind reports span two
+seconds of running fewer frames than the clock, the relay also limits the rate
+to nine tenths of the measured frames per second. This measured capacity can
+hold back a raise for five minutes, unless the player's ticks become at least
+10% quicker. Under `VO1C` every active
 source must have reported, so a member that may not read markers never meets one;
 under `VO2C` silent sources are ignored, and a certificate whose pacing flag is
 off keeps its rate. Each change appends an authenticated rate marker after the

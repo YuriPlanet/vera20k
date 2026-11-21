@@ -304,6 +304,47 @@ fn a_vo2c_room_slows_only_for_a_simulation_that_cannot_hold_the_rate() {
     );
 }
 
+#[test]
+fn pace_history_a_transient_dip_does_not_block_recovery() {
+    use OrderPace::*;
+    let (mut server, mut first, mut second) =
+        paced_room_with(&SecretKey::new([73; 32]), CertificatePacing::On);
+    tick_report(&mut server, &mut second, Behind, 25, Some(30_000), 1000);
+    server.advance_clock(1000, unix(1000));
+    assert_eq!(ordering(&server).pace.rate, 20);
+    tick_report(&mut server, &mut first, Behind, 15, Some(8_000), 30_000);
+    tick_report(&mut server, &mut first, KeepingUp, 20, Some(8_000), 31_100);
+    server.advance_clock(31_100, unix(31_100));
+    assert_eq!(
+        ordering(&server).pace.rate,
+        30,
+        "one dip cannot hold the slower clock"
+    );
+}
+
+#[test]
+fn pace_history_needs_fresh_running_samples_and_releases_at_ten_percent() {
+    use OrderPace::*;
+    let (mut server, _, mut client) =
+        paced_room_with(&SecretKey::new([73; 32]), CertificatePacing::On);
+    for (at, fps) in [(1000, 35), (5000, 35), (6000, 0), (8000, 35)] {
+        tick_report(&mut server, &mut client, Behind, fps, Some(8_000), at);
+        server.advance_clock(at, unix(at));
+        assert_eq!(ordering(&server).pace.rate, 45, "no sustained run at {at}");
+    }
+    tick_report(&mut server, &mut client, Behind, 35, Some(8_000), 10_000);
+    server.advance_clock(10_000, unix(10_000));
+    assert_eq!(ordering(&server).pace.rate, 30);
+    // Keep a fresh report on the clock before its first raise is due.
+    tick_report(&mut server, &mut client, KeepingUp, 30, Some(7_201), 39_000);
+    tick_report(&mut server, &mut client, KeepingUp, 30, Some(7_201), 41_000);
+    server.advance_clock(41_000, unix(41_000));
+    assert_eq!(ordering(&server).pace.rate, 30);
+    tick_report(&mut server, &mut client, KeepingUp, 30, Some(7_200), 42_000);
+    server.advance_clock(42_000, unix(42_000));
+    assert_eq!(ordering(&server).pace.rate, 45);
+}
+
 /// The extra preset keeps the same fifteen-turn cadence and may slow
 /// only within the two rows below its certified ceiling.
 #[test]
@@ -3543,3 +3584,5 @@ fn failed_archive_creation_and_removal_release_their_slot() {
     server.advance_clock(1000, unix(1000));
     assert!(!room.exists());
 }
+
+mod pace_replay;
