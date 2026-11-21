@@ -849,12 +849,16 @@ impl WaveStore {
     /// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50): the cells
     /// the previous update recorded, for the damage it runs before updating.
     /// A wave without an owner damages nothing (DamageArea's +0x1D4 test).
-    pub(crate) fn ares_damage_request(&self, id: u64) -> Option<WaveDamageRequest> {
-        let wave = self.get(id)?;
+    ///
+    /// The request takes the wave's cell list; [`Self::return_damage_cells`]
+    /// puts it back once the damage is committed.
+    pub(crate) fn ares_damage_request(&mut self, id: u64) -> Option<WaveDamageRequest> {
+        let firer_id = self.get(id)?.owner_id?;
+        let wave = self.get_mut(id)?;
         Some(WaveDamageRequest {
             wave_id: id,
-            firer_id: wave.owner_id?,
-            recorded_cells: wave.recorded_cells.clone(),
+            firer_id,
+            recorded_cells: std::mem::take(&mut wave.recorded_cells),
             // DamageArea75F3C6 reads B4.Z, here still the previous update's.
             wave_z: wave.source.z,
             ares_weapon: wave.ares_weapon,
@@ -873,7 +877,7 @@ impl WaveStore {
             wave.owner_id.map(|firer_id| WaveDamageRequest {
                 wave_id: id,
                 firer_id,
-                recorded_cells: wave.recorded_cells.clone(),
+                recorded_cells: std::mem::take(&mut wave.recorded_cells),
                 // DamageArea75F3C6 reads B4.Z, not the C0+50 endpoint.
                 wave_z: wave.source.z,
                 ares_weapon: None,
@@ -882,6 +886,18 @@ impl WaveStore {
             None
         };
         Some((request, result))
+    }
+
+    /// Give a damage request's cells back to its wave. The request holds the
+    /// list while its commit runs receivers that take `&mut Simulation`;
+    /// nothing in that commit reads or rebuilds the wave's own list (only the
+    /// wave's update does, and that runs after), so lending it out changes no
+    /// answer. A wave removed meanwhile drops the list with its body.
+    pub(crate) fn return_damage_cells(&mut self, request: WaveDamageRequest) {
+        if let Some(wave) = self.waves.get_mut(&request.wave_id) {
+            debug_assert!(wave.recorded_cells.is_empty(), "a lent list was rebuilt");
+            wave.recorded_cells = request.recorded_cells;
+        }
     }
 }
 
