@@ -703,10 +703,20 @@ impl Brain for AssistBrain {
                     // belongs. Logging those buried the real cases — measured on
                     // Death.mmx seed 24301, 85 lines of which 76 were parked
                     // retreats reporting `intent=None`.
+                    //
+                    // Nor is every intent a walk. `Guard` and `Deploy` say where the
+                    // unit is, not where it is going: a guard has no destination by
+                    // definition. The same run still spent 26 of its 48 remaining
+                    // lines on guards before this second filter.
                     .filter(|unit| {
                         self.tracked
                             .live_intent(obs.tick(), unit.entity_id)
-                            .is_some()
+                            .is_some_and(|(kind, _)| {
+                                !matches!(
+                                    kind,
+                                    tracked::TrackedKind::Guard | tracked::TrackedKind::Deploy
+                                )
+                            })
                     })
                     .filter(|unit| {
                         obs.destination(unit.entity_id).is_none()
