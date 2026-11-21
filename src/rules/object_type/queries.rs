@@ -1368,11 +1368,17 @@ impl ObjectType {
             &self.chrono_in_sound,
             &self.chrono_out_sound,
             &self.mind_cleared_sound,
+            &self.aux_sound1,
+            &self.aux_sound2,
         ];
         let overrides = self
             .promotion_sounds
             .iter()
             .chain(&self.cloak_sounds)
+            .flatten();
+        let airstrike_voices = [false, true]
+            .into_iter()
+            .filter_map(|abort| self.techno_combat().presentation().airstrike_voice(abort))
             .flatten();
         lists
             .into_iter()
@@ -1386,6 +1392,7 @@ impl ObjectType {
                     .chain(overrides)
                     .filter_map(|name| name.as_deref()),
             )
+            .chain(airstrike_voices)
             .chain(
                 self.sequence_sounds
                     .iter()

@@ -90,3 +90,24 @@ fn a_rebuilt_table_refuses_an_old_id() {
         Some("GIDie")
     );
 }
+
+/// The aircraft aux sounds retail emitters name (takeoff, landing, rocket
+/// launch) are held, so they travel as ids too.
+#[test]
+fn retail_aux_sounds_are_held() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut checked = 0;
+    for name in rules
+        .object_list
+        .iter()
+        .flat_map(|object| [&object.aux_sound1, &object.aux_sound2])
+        .flatten()
+    {
+        assert!(rules.sound_names().holds(name), "{name} is held");
+        checked += 1;
+    }
+    assert!(checked > 0, "retail AuxSound1/AuxSound2");
+}

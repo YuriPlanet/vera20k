@@ -7,6 +7,11 @@
 //! its own fields, never grows while a game runs, and is neither saved nor
 //! hashed. A name it does not hold still travels by name
 //! ([`SoundName::Unlisted`]), so what plays never depends on the table.
+//!
+//! Residual: terrain `AmbientSound` is bound after the last rebuild
+//! (`bind_terrain_type_sound_references`) and is not walked, so a terrain
+//! type's ambient sound travels Unlisted: it plays the same and allocates per
+//! emission. No retail terrain type sets one.
 
 use super::RuleSet;
 use crate::util::lookup_hash::LookupMap;
