@@ -393,6 +393,13 @@ impl App {
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();
+        if !was_open && will_be_open {
+            // The skirmish shell's chrome atlas, dropped when the match
+            // started: the menu's pages draw with it
+            // (`native_in_game_shell_active`), so it is back before anything
+            // in this frame reads the open state.
+            Self::ensure_skirmish_shell_chrome(state);
+        }
         if was_open != will_be_open {
             let locked = crate::app::input::campaign_input::is_locked(state);
             let cursor = &mut state.match_state.input.cursor_visibility;
