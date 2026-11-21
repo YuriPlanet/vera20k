@@ -1351,6 +1351,9 @@ impl NativeRulesProcessOwner {
         };
         self.bind_type_audio_references(&mut rules, &processed);
         debug_assert_eq!(rules.source_ini_hash(), processed.content_hash());
+        // An owned copy, once per scenario load: the registry keeps
+        // `processed` for the save and for map TerrainType allocation, and the
+        // loader keeps this INI as the scenario's rules for its own readers.
         let processed_ini = processed.ini().clone();
         let (post_reset_events, post_reset_super_count) = processed.take_constructor_events();
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));

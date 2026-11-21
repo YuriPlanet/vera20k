@@ -29,9 +29,14 @@ impl RulesPassProcessor {
             if family == RulesTypeFamily::Infantry && !ares_way {
                 self.family_mut(family)[index].infantry_damage_sparks = false;
             }
-            if let Some((native_stored_id, raw, effective)) =
-                self.begin_rules_member_read(family, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(family, index, pass) {
+                // Owned copies of the member's id and body as this pass left
+                // them: the reads below take the processor mutably, and a
+                // Building's InvisibleInGame derivation writes the body before
+                // its later reads, which keep the body without it.
+                let member = &self.families[&family][index];
+                let native_stored_id = member.native_stored_id.clone();
+                let effective = member.body.clone();
                 self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 self.process_techno_base(family, index, &raw);
                 // Ares TechnoTypeClass_LoadFromINI_EarlyReader10041DC0
