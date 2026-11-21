@@ -47,8 +47,10 @@
 //!   before the cell is checked: a cell at the origin is no cell, and the
 //!   choice fails (`0x00507A34..0x00507A47`).
 //! - The site search does not run (`0x005077FB..0x0050780E`); the wall node
-//!   at the cell leaves the plan (`0x00507AA4..0x00507B51`), with the branch
-//!   that hands the defense to the node after the chosen one.
+//!   at the cell leaves the plan (`0x00507AA4..0x00507B51`), but only when
+//!   the defense is handed to the node after the chosen one
+//!   (`0x00507A7D..0x00507A9E`). Native scans the nodes from the last one
+//!   down for that node (`0x00507AC3..0x00507AFA`).
 //!
 //! The grids, the threat shares (`+0x1609C..+0x160A4`, which only this call
 //! writes before reading) and the grid pointer (`+0x16060`, cleared on every
@@ -57,10 +59,13 @@
 //! Evidence: instruction reading, and native execution
 //! (`tools/ai_base_defense_oracle.py`, compared in `ai_base_defense_tests.rs`)
 //! of the spread, the key, the threat shares with their draws, 57 whole
-//! choices with the draws and the site search call, and 8 whole choices with
-//! the defense-cell vector supplied.
+//! choices with the draws and the site search call, and 13 whole choices with
+//! the defense-cell vector supplied, over the node shapes the choice writes.
 //!
 //! RESIDUALS:
+//! - Native reads the looked-up wall type's index (`+0xDF8`) without a null
+//!   check (`0x00507AE8`); VERA removes no node when the house has no
+//!   buildable concrete wall type.
 //! - Native reads VERA defines, none reachable with retail rules: a quadrant
 //!   total of 999999 or more in all four quadrants leaves the weakest at -1,
 //!   whose sums are read from the stack (VERA reads 0; with supplied cells
@@ -73,12 +78,15 @@
 //!   WallTower's successor is read past the node count (VERA writes nothing
 //!   there, nor is anything past the count ever read). A negative grid size
 //!   fails the allocation natively (VERA: an empty grid).
-//! - The defense-cell vector has no producer in VERA: native fills it only
-//!   from a loaded base, and VERA loads no base save, so the supplied-cell
-//!   path stays dormant in a fresh game as it does in native. Trigger: a
-//!   loaded base carrying the cells; effect: the AI takes a supplied cell
-//!   instead of searching a site; frequency: none today; downstream risk:
-//!   the path is unexercised in play.
+//! - The defense-cell vector (`HouseClass+0x5738`) has no producer in VERA.
+//!   Native passes it when `+0x5748` is positive
+//!   (`0x004FE61D..0x004FE62F`) and fills it only from a loaded base
+//!   (`BaseClass::Load @ 0x0042EE30`, `0x0042EFFC..0x0042F038`);
+//!   ScanBasePerimeter 5082C0 appends wall/gate plan nodes, not cells to
+//!   either vector, so a fresh game leaves it empty as it does in native.
+//!   Trigger: loading positive defense cells; effect: the AI takes a
+//!   supplied cell instead of searching a site; frequency: none today;
+//!   downstream risk: the path is unexercised in play.
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
@@ -648,18 +656,17 @@ pub(crate) fn choose_next_production(
     };
     // The supplied-cell path drops the wall node at the cell
     // (`0x00507AA4..0x00507B51`): the first `[AI] ConcreteWalls=` type the
-    // house may own.
+    // house may own (`HouseClass__FirstBuildableFromArray @ 0x005051E0`,
+    // `base_plan_generation::house_concrete_wall_type`).
     let wall_type = pick.supplied_cell.and_then(|_| {
         let house = sim.houses.get(&owner)?;
         let country = sim.interner.resolve(house.house_type_id());
-        crate::sim::ai_buildable::first_buildable_from_array(
+        crate::sim::base_plan_generation::house_concrete_wall_type(
             rules,
-            &rules.concrete_wall_types,
             country,
             house.side_index(),
             sim.session.game_options().super_weapons,
         )
-        .and_then(|ty| rules.building_type_index(&ty.id))
     });
     if let Some(house) = sim.houses.get_mut(&owner) {
         return place_choice(house.base_plan_mut(), index, &pick, site, wall_type);
@@ -671,8 +678,9 @@ pub(crate) fn choose_next_production(
 /// defense and the cell. A supplied cell leaves the vector
 /// (`0x005079B4..0x005079CC`) before the cell is checked; a cell at the
 /// origin is no cell, and the choice fails (`0x00507A34..0x00507A47`). The
-/// wall node at the cell leaves the plan (`0x00507AA4..0x00507B51`) with
-/// the branch that hands the defense to the node after the chosen one.
+/// wall node at the cell leaves the plan (`0x00507AA4..0x00507B51`) only
+/// with the branch that hands the defense to the node after the chosen one
+/// (`0x00507A7D..0x00507A9E`).
 pub(crate) fn place_choice(
     plan: &mut crate::sim::base_plan::BasePlanState,
     index: usize,

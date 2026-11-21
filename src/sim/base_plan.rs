@@ -76,9 +76,13 @@ impl BasePlanState {
         }
     }
 
-    /// The supplied-cell path's cleanup (`0x00507AB6..0x00507B51`): the last
-    /// node whose cell words equal `packed_cell` and whose type is
+    /// The supplied-cell path's cleanup (`0x00507AB6..0x00507B51`): the node
+    /// whose cell words equal `packed_cell` and whose type is
     /// `type_or_control` leaves the plan.
+    ///
+    /// Native scans the nodes from the last one down
+    /// (`0x00507AC3..0x00507AFA`) and stops at the first match, so the last
+    /// matching node is the one that leaves.
     pub(crate) fn remove_node_at_cell(&mut self, packed_cell: u32, type_or_control: i32) {
         if let Some(index) = self.nodes.iter().rposition(|node| {
             node.type_or_control == type_or_control && node.packed_cell == packed_cell

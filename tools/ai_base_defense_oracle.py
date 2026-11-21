@@ -415,7 +415,7 @@ def read_nodes(emu):
 def choose_row(label, generator, *, side=0, tech=10, difficulty=1, center=(30, 30),
                rect=(22, 23, 17, 15), buildings=(), enemy=-1, values=(0, 0, 0),
                fudge=(5, 25, 80), nodes=((-1, 0, 0),), index=0, wall_tower='WALLT',
-               site=(33, 27), policy='random', defense_cells=()):
+               site=(33, 27), policy='random', defense_cells=(), wall_type=None):
     emu = Emu()
     install_types(emu, wall_tower)
     install_house(emu, side=side, tech=tech, difficulty=difficulty, center=center, rect=rect,
@@ -457,7 +457,8 @@ def choose_row(label, generator, *, side=0, tech=10, difficulty=1, center=(30, 3
                 site=list(site), result=result & 0xFF, events=events, cell=chosen,
                 defense_cells=[list(cell) for cell in defense_cells],
                 cells_after=read_defense_cells(emu),
-                nodes_after=after, grid_after=emu.read32(HOUSE + 0x16060))
+                nodes_after=after, grid_after=emu.read32(HOUSE + 0x16060),
+                **({'wall_type': wall_type} if wall_type is not None else {}))
 
 
 def choose():
@@ -533,7 +534,9 @@ def choose():
 
 def supplied():
     """Whole choices with the base plan's defense-cell vector supplied
-    (`HouseClass+0x5738`): the weakest quadrant's least covered cell."""
+    (`HouseClass+0x5738`): the weakest quadrant's least covered cell, and
+    the node shapes the choice writes (the wall node at that cell, the
+    handover to the node after the chosen one)."""
     generator = random.Random(0x506EF0 ^ 0x5738)
     rows = []
     base = [('YARD', (30, 30)), ('POWR', (26, 27)), ('TECH', (34, 33))]
@@ -554,9 +557,29 @@ def supplied():
                            defense_cells=[(30, 30)]))
     rows.append(choose_row('supplied, the wall node at the cell goes', generator,
                            buildings=base, nodes=((t['CWAL'], 38, 30), (-1, 0, 0)),
-                           index=0, defense_cells=[(38, 30)]))
+                           index=0, defense_cells=[(38, 30)], wall_type=t['CWAL']))
     rows.append(choose_row('supplied, the cell at the origin fails', generator,
                            buildings=base, defense_cells=[(0, 0)]))
+    # The wall node leaves the plan only when the defense is handed to the
+    # node after the chosen one (0x00507A7D..0x00507A9E), and the scan for
+    # it runs from the last node down (0x00507AC3..0x00507AFA). These rows
+    # pin the other node shapes.
+    rows.append(choose_row('supplied, the wall node stays without a handover', generator,
+                           buildings=base, nodes=((t['CWAL'], 38, 30), (7, 0, 0)),
+                           index=0, defense_cells=[(38, 30)], wall_type=t['CWAL']))
+    rows.append(choose_row('supplied, a placeholder at the index takes the cell', generator,
+                           buildings=base, nodes=((-1, 0, 0), (t['CWAL'], 38, 30)),
+                           index=0, defense_cells=[(38, 30)], wall_type=t['CWAL']))
+    rows.append(choose_row('supplied, two wall nodes', generator,
+                           buildings=base, nodes=((t['CWAL'], 38, 30), (t['CWAL'], 38, 31)),
+                           index=0, defense_cells=[(38, 30)], wall_type=t['CWAL']))
+    rows.append(choose_row('supplied, a placeholder at the index and after it', generator,
+                           buildings=base, nodes=((-1, 0, 0), (-1, 0, 0)),
+                           index=0, defense_cells=[(38, 30)], wall_type=t['CWAL']))
+    rows.append(choose_row('supplied, the wall node at the cell goes, the index after it',
+                           generator, buildings=base,
+                           nodes=((7, 0, 0), (t['CWAL'], 38, 30), (-1, 0, 0)),
+                           index=1, defense_cells=[(38, 30)], wall_type=t['CWAL']))
     return rows
 
 
@@ -613,7 +636,8 @@ if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
         scope=('computer base defense choice: coverage spread, defense site key, enemy '
                'threat ratios and draws, whole AI_ChooseNextProduction runs without and '
-               'with the base plan\'s defense-cell vector, and whole FindBaseBuildingSite '
+               'with the base plan\'s defense-cell vector and the node shapes it writes, '
+               'and whole FindBaseBuildingSite '
                'searches with the defense key on synthetic 64x64 maps'),
         assumptions=['fresh emulator per case; fixture House/Rules/Type layouts from live disassembly',
                      'x87 control word 0x0E7F (53-bit chop), the process word ftol callers assume',

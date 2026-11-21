@@ -436,15 +436,21 @@ fn supplied_cells_match_native() {
         let mut plan = crate::sim::base_plan::BasePlanState::default();
         plan.set_nodes_for_test(nodes);
         plan.set_defense_cells_for_test(defense_cells);
-        let wall_type =
-            crate::sim::ai_buildable::first_buildable_from_array(
-                &rules,
-                &rules.concrete_wall_types,
-                "C3",
-                int(&row["side"]) as i32,
-                true,
-            )
-            .and_then(|ty| rules.building_type_index(&ty.id));
+        // The wall type is the production lookup's answer, checked against
+        // the type index native compared the node against.
+        let wall_type = crate::sim::base_plan_generation::house_concrete_wall_type(
+            &rules,
+            "C3",
+            int(&row["side"]) as i32,
+            true,
+        );
+        if let Some(expected) = row.get("wall_type").and_then(Value::as_i64) {
+            assert_eq!(
+                i64::from(wall_type.unwrap_or(-1)),
+                expected,
+                "{label}: the wall type native used"
+            );
+        }
         match pick {
             None => assert_eq!(int(&row["result"]), 0, "{label}"),
             Some(pick) => {
@@ -483,7 +489,7 @@ fn supplied_cells_match_native() {
         );
     }
     assert!(
-        choices.len() >= 8 && placed >= 6,
+        choices.len() >= 13 && placed >= 12,
         "{} choices, {placed} placed",
         choices.len()
     );
