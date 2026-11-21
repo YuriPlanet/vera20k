@@ -685,6 +685,27 @@ push 这一帧发出 0 个命令。`obs.is_deployed` 覆盖步兵的 Doing 27..3
 下一轮的靶子：给 deployed 的单位一个条件——在推进方向上、且 fist 需要兵力时，用 toggle 收起（`Goal::Deploy` 是切换命令）
 让它跟上；在家里则保持展开。这一条正对用户 m02257 第 3 条。
 
+### 把展开的步兵收起来（否决）
+
+上一节量到 4242 尾段 26/63 是 deployed，于是试：掉队的 deployed 单位用 `Goal::Deploy` 站起来跟进
+（`Goal::Deploy` 映射 `Command::DeployMcv`，src/sim/deploy.rs:84 接受 Structure 与 Infantry，
+所以同一事件对步兵是 toggle，站起来的正是它）。
+
+六局（target/autoplay-results/deploy-pickup.jsonl）全 timeout，两个参照胜局全丢：
+
+| seed | 基线（14cdef80d） | 收起 deployed 后 |
+|---|---|---|
+| 24301 | won 27425 enemy=2 | **timeout** own=155 enemy=8 |
+| 19 | timeout own=162 enemy=13 | timeout own=156 enemy=**50** |
+| 10 | won 33824 enemy=2 | **timeout** own=145 enemy=8 |
+| 7 | timeout own=137 enemy=37 | timeout own=131 enemy=45 |
+| 4242 | timeout enemy=1 | timeout own=152 enemy=1（没变） |
+| 31337 | timeout own=157 enemy=48 | timeout own=124 enemy=**77** |
+
+结论：展开的步兵在它所在的位置上干的是正经活（对空/对地/区域防御），把它们赶起来跟进，
+等于把已经形成的防御拆掉去换机动性，19 和 31337 的敌方存量因此涨到 50 和 77。
+**deployed 不能碰**这条要记住。
+
 ## 5. 结构（改代码前必读）
 
 ```
