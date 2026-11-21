@@ -368,26 +368,35 @@ impl AppState {
     }
 }
 
+/// [`AppState::rules`] from the two parts of the state it reads, for a caller
+/// that holds another part mutably (the sound player).
+pub(crate) fn active_rules<'a>(
+    frontend: &'a crate::app::frontend::state::FrontendState,
+    match_state: &'a crate::app::match_runtime::state::MatchState,
+) -> Option<&'a crate::rules::ruleset::RuleSet> {
+    let route = frontend.shell_route;
+    if frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && (matches!(route, ShellRoute::Wol | ShellRoute::WolLobby)
+            || route == ShellRoute::LanLobby
+            || route == ShellRoute::NetworkSetup)
+    {
+        // Network choices must agree before loading. Keep the old world's
+        // Rules with its objects, but don't offer its map's colors or Types
+        // in the next room. PrepareSession refreshed startup's Countries.
+        return frontend.frontend_rules.as_ref();
+    }
+    match_state
+        .sim_runtime
+        .runtime()
+        .map(|rt| &rt.resources.rules)
+        .or(frontend.frontend_rules.as_ref())
+}
+
 impl AppState {
     /// The active rules: runtime-bound during a match, startup-shell rules
     /// otherwise. Matches the old field's Option shape at every consumer.
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
-        let route = self.frontend.shell_route;
-        if self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && (matches!(route, ShellRoute::Wol | ShellRoute::WolLobby)
-                || route == ShellRoute::LanLobby
-                || route == ShellRoute::NetworkSetup)
-        {
-            // Network choices must agree before loading. Keep the old world's
-            // Rules with its objects, but don't offer its map's colors or Types
-            // in the next room. PrepareSession refreshed startup's Countries.
-            return self.frontend.frontend_rules.as_ref();
-        }
-        self.match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.resources.rules)
-            .or(self.frontend.frontend_rules.as_ref())
+        active_rules(&self.frontend, &self.match_state)
     }
 
     /// The colours a lobby lists under the loaded rules; YR's eight before

@@ -166,11 +166,7 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
             .map(|row| (Some(row), false))
     };
     let Some((row, observer)) = place.filter(|_| !pending) else {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.player_joined_sound())
-            .map(str::to_owned);
-        App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        App::play_shell_rules_sound(state, |rules| rules.general.player_joined_sound());
         queue(
             state,
             NetworkSetupRequest::Kick {
@@ -550,11 +546,7 @@ pub(crate) fn local_left(state: &mut AppState) {
 
 /// `0x750920(Rules+0x6BC)` while in a channel (`[0xB76B10]` != 0).
 pub(crate) fn play_player_left(state: &mut AppState) {
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.player_left_sound())
-        .map(str::to_owned);
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    App::play_shell_rules_sound(state, |rules| rules.general.player_left_sound());
 }
 
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.
