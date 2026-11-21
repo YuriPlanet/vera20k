@@ -400,20 +400,35 @@ fn invalid_sidebar_payload_preserves_outgoing_projection_and_running_world() {
     wrong_kind[0][0] = SavedCameoId::SuperWeapon(types[0]);
     let mut over_capacity = std::array::from_fn(|_| Vec::new());
     over_capacity[0] = vec![SavedCameoId::Object(types[0]); 77];
-    let invalid = [
+    // An id past the save's name table is refused by the snapshot's saved-id
+    // walk before the sidebar order is read; the others by the order itself.
+    let unknown_ids = [
         SavedSidebarOrder::new(InternedId::from_index(u32::MAX), valid.strips().clone()),
+        SavedSidebarOrder::new(owner, unknown),
+    ];
+    let invalid = [
         SavedSidebarOrder::new(owner, duplicate),
         SavedSidebarOrder::new(owner, wrong_strip),
-        SavedSidebarOrder::new(owner, unknown),
         SavedSidebarOrder::new(owner, wrong_kind),
         SavedSidebarOrder::new(owner, over_capacity),
         SavedSidebarOrder::new(owner, valid.strips().clone()).with_active_tab(4),
     ];
-    for order in invalid {
-        assert!(matches!(
-            prepare(&save(&sim, &rules, Some(&order)), &sim, &rules),
-            Err(PreparedLoadError::SidebarOrder(_))
-        ));
+    let refusals = unknown_ids.iter().map(|order| (order, true));
+    for (order, unknown_id) in refusals.chain(invalid.iter().map(|order| (order, false))) {
+        let result = prepare(&save(&sim, &rules, Some(order)), &sim, &rules);
+        if unknown_id {
+            assert!(
+                matches!(
+                    result,
+                    Err(PreparedLoadError::Restore(
+                        SnapshotRestoreError::UnknownSavedId(_)
+                    ))
+                ),
+                "an id the save's name table lacks is refused as a damaged save"
+            );
+        } else {
+            assert!(matches!(result, Err(PreparedLoadError::SidebarOrder(_))));
+        }
         assert_eq!(outgoing.saved_order(), before);
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.rng_state(), rng);
