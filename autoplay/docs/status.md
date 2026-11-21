@@ -98,6 +98,26 @@ fighters=87  moving=60  near=12  spread≈17000(约 130 格)  fist=(146,143)  ta
 
 下一件事的方向：先在家集结点集结够了再走（staging），而不是一造出来就上路。
 
+### 在家集齐一个波次再走（测过，三局全 timeout，已回退）
+
+上sera 量的那条「流」——造出来就上路，一路上拖一条 120 格的尾巴——最直接的疗法是
+攒够 `WAVE` 个人再一起走。实现：`advance.rs` 的 push 循环开头数一遍「在家（离 base_cell
+24 格内）且没有 destination/attack_target」的 fighter，不足 8 个就把还家里的兵全部跳过。
+
+| seed | 现行 | 波次门（WAVE=8） |
+|---|---|---|
+| 24301 | **won 31957** own=121 enemy=1 army=56 | timeout own=149 enemy=60 army=81 lost=49:77 |
+| 19 | timeout own=162 enemy=13 army=93 | timeout own=153 enemy=69 army=83 |
+| 10 | **won 33912** own=162 enemy=2 army=86 | timeout own=171 enemy=36 army=99 lost=44:102 |
+
+三局全 timeout。有意思的是 seed 10 的军队反而最大（99）、交换比最好（44:102），
+但还是输了——兵在家里等齐的时候，前线一直在被拆。已回退，复测逐字节复原
+（won 31957 / timeout enemy=13 / won 33912）。
+
+结论：对手不会等你集结。「 wait 满再走」和「1.2 倍优势才出门」是同一件事，
+之前 `PUSH_ARMY = 20` 已经试过一档，同样输。要赢，得让**单个波次到达时足够重**，
+而不是让全军等齐。
+
 ### 掉队的兵补一道命令（这条留下来了）
 
 `advance.rs` 的 push 循环原来对 `mission == Move` 无条件 `continue`。到达之后任务号不会
