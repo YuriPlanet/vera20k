@@ -1,6 +1,6 @@
 //! VERA: the online login page's forms (docs/lobby-protocol.md "Accounts"):
-//! the page's own sign-in form, a username with an optional password, and
-//! its popups: Create Account and the mailed code that confirms it, Forgot
+//! the nickname-only guest form, account sign-in, and the account popups:
+//! Create Account and the mailed code that confirms it, Forgot
 //! Password's username and then its code and new password, and Delete
 //! Account's username or email and password. gamemd has no such dialog; the popups
 //! use the online Create Game box's art, field column, checkbox rows and
@@ -155,9 +155,8 @@ impl FieldKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FormKind {
-    /// The page's sign-in: a username alone for a guest, or an account's
-    /// username and password, or this computer's remembered sign-in, and
-    /// Remember password.
+    Guest,
+    /// An account password or this computer's remembered sign-in.
     SignIn,
     Register,
     Verify,
@@ -355,6 +354,16 @@ impl WolAccountForm {
         }
     }
 
+    pub(crate) fn guest(nickname: &str) -> Self {
+        let mut form = Self::with_fields(
+            FormKind::Guest,
+            vec![AccountField::new(FieldKind::Name, "GUI:Nickname")],
+            StatusText::new("VERA:GuestNicknamePrompt"),
+        );
+        form.prefill_name(nickname);
+        form
+    }
+
     /// The sign-in form, its username prefilled. While the username is
     /// `remembered`, the account this computer signs in to without its
     /// password, and no password is typed, the password field holds the
@@ -366,7 +375,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Name, "VERA:Username"),
                 AccountField::new(FieldKind::Password, "VERA:Password"),
             ],
-            StatusText::new("VERA:SignInPrompt"),
+            StatusText::new("VERA:AccountSignInPrompt"),
         );
         form.remember = Some(false);
         form.remembered_name = remembered.map(str::to_owned);
@@ -398,6 +407,9 @@ impl WolAccountForm {
     }
 
     pub(crate) fn forget_deleted_sign_in(&mut self, name: &str) {
+        if self.kind != FormKind::SignIn {
+            return;
+        }
         self.remembered_name
             .take_if(|known| known.eq_ignore_ascii_case(name));
         if self.text(FieldKind::Name).eq_ignore_ascii_case(name) {
@@ -409,7 +421,7 @@ impl WolAccountForm {
         StatusText::new(if self.remembered {
             "VERA:SignInRemembered"
         } else {
-            "VERA:SignInPrompt"
+            "VERA:AccountSignInPrompt"
         })
     }
 
@@ -591,36 +603,39 @@ impl WolAccountForm {
                         password,
                     })
             }
-            FormKind::SignIn | FormKind::Deleted => None,
+            FormKind::Guest | FormKind::SignIn | FormKind::Deleted => None,
         }
     }
 
-    /// The sign-in, when its fields are right. An empty password enters as
-    /// a guest, whom no computer remembers; a typed one must be an account
-    /// password.
+    /// Guest entry and account sign-in share the session request. Only the
+    /// guest form may submit an empty password without a remembered sign-in.
     fn sign_in_action(&self) -> Option<AccountFormAction> {
-        if self.kind != FormKind::SignIn {
+        let name = self.text(FieldKind::Name);
+        if !valid_name(&name) {
             return None;
         }
-        let name = self.text(FieldKind::Name);
-        let password = if self.remembered {
-            String::new()
-        } else {
-            self.text(FieldKind::Password)
-        };
-        let guest = !self.remembered && password.is_empty();
-        (valid_name(&name) && (self.remembered || guest || valid_password(&password))).then(|| {
-            AccountFormAction::SignIn {
-                sign_in: AccountSignIn { name, password },
-                remember: !guest && self.remember == Some(true),
+        let password = match self.kind {
+            FormKind::Guest => String::new(),
+            FormKind::SignIn if self.remembered => String::new(),
+            FormKind::SignIn => {
+                let password = self.text(FieldKind::Password);
+                if !valid_password(&password) {
+                    return None;
+                }
+                password
             }
+            _ => return None,
+        };
+        Some(AccountFormAction::SignIn {
+            sign_in: AccountSignIn { name, password },
+            remember: self.remember == Some(true),
         })
     }
 
     pub(crate) fn ok_enabled(&self) -> bool {
         match self.kind {
             FormKind::Deleted => true,
-            FormKind::SignIn => self.sign_in_action().is_some(),
+            FormKind::Guest | FormKind::SignIn => self.sign_in_action().is_some(),
             _ => !self.busy && self.request().is_some(),
         }
     }
@@ -687,7 +702,9 @@ impl WolAccountForm {
     pub(crate) fn activate(&mut self, control: u16) -> Option<AccountFormAction> {
         match control {
             FORM_OK if self.kind == FormKind::Deleted => Some(AccountFormAction::Close),
-            FORM_OK if self.kind == FormKind::SignIn => self.sign_in_action(),
+            FORM_OK if matches!(self.kind, FormKind::Guest | FormKind::SignIn) => {
+                self.sign_in_action()
+            }
             FORM_OK => {
                 let request = self.request().filter(|_| !self.busy)?;
                 match &request {
@@ -812,7 +829,7 @@ impl WolAccountForm {
                 }
                 None
             }
-            FormKind::SignIn | FormKind::Deleted => None,
+            FormKind::Guest | FormKind::SignIn | FormKind::Deleted => None,
         }
     }
 }
@@ -1010,18 +1027,16 @@ mod tests {
             Some(AccountFormAction::ForgetSignIn)
         );
         assert!(!form.remembered && form.fields[1].text().is_empty());
-        // Without a password the name enters as a guest; a password too
-        // short for an account is refused.
-        assert_eq!(form.clone().activate(FORM_OK), sign_in("tanya", "", false));
+        assert_eq!(form.clone().activate(FORM_OK), None);
+        assert!(!form.ok_enabled(), "account sign-in requires its password");
         form.insert_text("s3cret");
         assert!(!form.ok_enabled(), "six characters are no account password");
         form.insert_text("-pw");
         assert_eq!(form.activate(FORM_OK), sign_in("tanya", "s3cret-pw", false));
-        // No computer remembers a guest, whatever the box says.
-        let mut guest = WolAccountForm::sign_in("", None);
+        let mut guest = WolAccountForm::guest("");
+        assert!(!guest.ok_enabled());
+        assert_eq!((guest.fields.len(), guest.remember), (1, None));
         guest.insert_text("Boris");
-        guest.activate(FORM_REMEMBER);
-        assert_eq!(guest.remember, Some(true));
         assert_eq!(
             guest.edit_key(WolEditKey::Enter),
             sign_in("Boris", "", false)
@@ -1057,8 +1072,7 @@ mod tests {
         assert!(!form.remembered && form.fields[1].text() == "x");
         form.edit_key(WolEditKey::Backspace);
         assert_eq!(form.clone().activate(FORM_OK), remembered);
-        // So with the username: another name is a guest's, the name typed
-        // back the account's.
+        // Editing the username drops the placeholder until its name returns.
         form.focus(0);
         form.edit_key(WolEditKey::Backspace);
         assert!(!form.remembered && form.fields[1].text().is_empty());

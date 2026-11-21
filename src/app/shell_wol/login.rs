@@ -17,16 +17,12 @@ use winit::keyboard::KeyCode;
 
 pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
     let (width, height) = shell_layout::shell_screen_size(state);
-    let policy = if state
+    let policy = state
         .frontend
         .wol
         .as_ref()
-        .is_some_and(|visit| visit.provider == super::WolProvider::Online)
-    {
-        LoginPolicy::Online
-    } else {
-        LoginPolicy::Legacy
-    };
+        .and_then(WolVisit::login)
+        .map_or(LoginPolicy::Legacy, |login| login.policy);
     if shell_layout::fills_window(state) {
         WolLoginLayout::responsive(width as i32, height as i32, policy)
     } else {
@@ -66,7 +62,7 @@ pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayo
 /// The nickname combo's drop list. ComboDrop's internals are untraced: the
 /// list fills the template height below the face.
 pub(crate) fn combo_popup(login: &WolLoginState, layout: &WolLoginLayout) -> Option<ComboPopup> {
-    if login.policy == LoginPolicy::Online || login.popup.control.is_none() {
+    if login.policy != LoginPolicy::Legacy || login.popup.control.is_none() {
         return None;
     }
     let base = layout.page.scale.base_rect(layout.nickname_combo);
@@ -289,8 +285,20 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         state.platform.window.request_redraw();
         return;
     }
-    // The NewEdits consume Escape; the proc has no IDCANCEL case.
     if escape {
+        // The original WOL NewEdits consume Escape. Online entry treats it as Back.
+        if let Some(action) = with_login(state, |login, globals, _| {
+            if login.policy == LoginPolicy::Legacy {
+                None
+            } else {
+                login.activate(BACK, globals)
+            }
+        })
+        .flatten()
+        {
+            dispatch(state, action);
+        }
+        state.platform.window.request_redraw();
         return;
     }
     let action = with_login(state, |login, globals, credentials| match key {
@@ -318,6 +326,9 @@ pub(super) fn cursor_moved(state: &mut AppState) {
             return;
         }
         login.buttons.hovered = layout.control_at(x, y);
+        if let Some(id @ (PLAY_AS_GUEST | SIGN_IN_AND_PLAY)) = login.buttons.hovered {
+            login.focused_control = id;
+        }
         if let Some(popup) = combo_popup(login, &layout) {
             login.popup.pointer_moved(popup, x, y);
         }

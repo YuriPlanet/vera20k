@@ -40,34 +40,29 @@ pub(super) fn settings_dir(state: &AppState) -> Option<&std::path::Path> {
         .map(|config| config.paths.settings_dir())
 }
 
-/// How this sign-in proves its name: the typed password, else, while
-/// Remember password stays ticked, the sign-in this computer remembers for
-/// the name, else nothing (a guest). The remembered name's password sign-in
-/// forgets the old sign-in here and at the lobby; another name's sign-in
-/// leaves it.
+/// Guest entry sends no credential. Account entry sends the typed password
+/// or the remembered token for this name. If that token disappeared since
+/// the dialog opened, the account must enter its password.
 pub(super) fn sign_in_credential(
     settings: Option<&std::path::Path>,
     service: &LiveService,
     nickname: &str,
     password: String,
     remember: bool,
-) -> http::Credential {
+) -> Option<http::Credential> {
+    if password.is_empty() && !remember {
+        return Some(http::Credential::Guest);
+    }
     let remembered = settings
         .and_then(|dir| account::load(dir, &service.lobby))
         .filter(|remembered| remembered.name.eq_ignore_ascii_case(nickname));
-    if let Some(remembered) = remembered {
-        if password.is_empty() && remember {
-            return http::Credential::Remembered(remembered.sign_in_token);
-        }
-        if !password.is_empty() {
-            forget_sign_in(settings, service);
-        }
-    }
     if password.is_empty() {
-        http::Credential::Guest
-    } else {
-        http::Credential::Password { password, remember }
+        return remembered.map(|entry| http::Credential::Remembered(entry.sign_in_token));
     }
+    if remembered.is_some() {
+        forget_sign_in(settings, service);
+    }
+    Some(http::Credential::Password { password, remember })
 }
 
 /// Drop this computer's remembered sign-in, here and at the lobby.

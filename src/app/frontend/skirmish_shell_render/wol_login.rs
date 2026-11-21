@@ -23,8 +23,8 @@ use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::list_frame_lines;
 use crate::ui::shell::modal::WolAccountFormLayout;
-use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
-use crate::ui::wol_login::{WolLoginLayout, WolLoginState};
+use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, FormKind, WolAccountForm};
+use crate::ui::wol_login::{PLAY_AS_GUEST, SIGN_IN_AND_PLAY, WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
 /// VERA online's status line and counts, beside the shell's yellow captions.
@@ -76,12 +76,69 @@ pub(crate) fn paint_wol_login_children(
         )
     };
     let label = |key: &str| csf_label(state, key);
+    if let Some(choice) = layout.entry_choice() {
+        let dialog = choice.dialog;
+        // Fit the complete original mode-2 message-box picture, including
+        // its frame. Stock modal paint instead crops at the client edges.
+        if let Some(background) = atlas.mode_two_dialog_background(None) {
+            super::chrome::push_entry_fitted(
+                &mut paint.popup,
+                background,
+                dialog,
+                scale,
+                POPUP_DEPTHS.background,
+            );
+        } else {
+            push_info_panel(&mut paint.popup, atlas, dialog);
+        }
+        let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        for (key, rect, rgb) in [
+            ("VERA:OnlineTitle", choice.heading, SHELL_LABEL_TEXT_RGB),
+            ("VERA:EntryChoicePrompt", choice.prompt, ONLINE_TEXT_RGB),
+        ] {
+            paint
+                .popup_texts
+                .push(text(&label(key), rect, centre, rgb, POPUP_DEPTHS.text));
+        }
+        for (id, key, rect) in [
+            (PLAY_AS_GUEST, "VERA:PlayAsGuest", choice.guest),
+            (SIGN_IN_AND_PLAY, "VERA:SignInAndPlay", choice.account),
+        ] {
+            let pressed = login.buttons.is_pressed(id);
+            let mut frames = super::type3_button_frames(atlas);
+            if login.buttons.hovered.unwrap_or(login.focused_control) == id {
+                frames.up = atlas.modal_button_mnbttn_frame2.or(frames.up);
+            }
+            if let Some(face) = frames.select(pressed, true) {
+                super::chrome::push_entry(&mut paint.popup, face, rect, POPUP_DEPTHS.button);
+            }
+            let caption = scale.derive_rect(rect, |r| {
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(r, pressed)
+            });
+            let value = label(key);
+            let face_width = (scale.base_rect(caption).w - 12).max(1) as u32;
+            let fit = font.fit_line(&value, face_width);
+            paint.popup_texts.push(font.fitted(fit, |_| {
+                text(
+                    &value,
+                    caption,
+                    centre,
+                    SHELL_LABEL_TEXT_RGB,
+                    POPUP_DEPTHS.text,
+                )
+            }));
+        }
+        return paint;
+    }
     if let (Some(online), Some(form)) = (layout.online, login.form.as_ref()) {
-        // VERA online: the welcome, the sign-in form and the counts, straight
-        // over the art.
+        // The chosen route, its fields and the lobby activity over the login art.
         let centred = ShellAlign::H_CENTER;
         paint.texts.push(text(
-            &label("VERA:OnlineWelcome"),
+            &label(if form.kind == FormKind::Guest {
+                "VERA:PlayAsGuest"
+            } else {
+                "VERA:SignInAndPlay"
+            }),
             online.heading,
             centred,
             SHELL_LABEL_TEXT_RGB,

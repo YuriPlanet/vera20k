@@ -600,6 +600,38 @@ pub fn wol_create_game_layout_on(
     }
 }
 
+/// VERA Online's first choice. Its compact picture keeps the original
+/// message-box proportions. The two MNBTTN controls share a wider face
+/// for translated captions; both paint and pointer input use these rects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WolEntryChoiceLayout {
+    pub dialog: RectPx,
+    pub heading: RectPx,
+    pub prompt: RectPx,
+    pub guest: RectPx,
+    pub account: RectPx,
+}
+
+pub(crate) fn wol_entry_choice_layout_on(
+    area: RectPx,
+    scale: geom::ShellScale,
+) -> WolEntryChoiceLayout {
+    let width = 352;
+    let dialog = centered_modal_dialog_in(area, width, width * MESSAGE_BOX_H / MESSAGE_BOX_W);
+    let child = |x, y, w, h| scale.scale_rect(RectPx::new(dialog.x + x, dialog.y + y, w, h));
+    let button = geom::child_window(0, 0, 99, 15);
+    let gap = 12;
+    let left = (dialog.w - 2 * button.w - gap) / 2;
+    let top = dialog.h / 2 + 27;
+    WolEntryChoiceLayout {
+        dialog: scale.scale_rect(dialog),
+        heading: child(16, dialog.h / 2 - 58, dialog.w - 32, 24),
+        prompt: child(16, dialog.h / 2 - 31, dialog.w - 32, 36),
+        guest: child(left, top, button.w, button.h),
+        account: child(left + button.w + gap, top, button.w, button.h),
+    }
+}
+
 /// VERA online's account popups (Create Account, its mailed code, Forgot
 /// Password) on the online Create Game box: one caption and edit per field,
 /// OK and Cancel, and a two-line status inside the frame.

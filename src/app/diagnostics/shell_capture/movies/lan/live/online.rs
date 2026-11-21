@@ -596,10 +596,14 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                // The page's form starts from the last username: replace it.
+                let chooser = crate::app::shell_wol::login_layout(state)
+                    .entry_choice()
+                    .context("online entry chooser")?;
+                click(state, chooser.guest);
+                // The guest form can start with the last nickname: replace it.
                 let username = crate::app::shell_wol::login_layout(state)
                     .online
-                    .context("the online sign-in form")?
+                    .context("the online guest form")?
                     .fields[0]
                     .1;
                 click(state, username);
@@ -618,7 +622,7 @@ impl LiveRoundFlow {
                     "the online username did not enable Play"
                 );
                 App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
-                self.record(frame, "Username submitted through Play");
+                self.record(frame, "Guest nickname submitted through Join Lobby");
                 self.phase = RoundPhase::Lobby;
             }
             RoundPhase::Lobby if lobby_ready(state, rendered) => {
@@ -1291,13 +1295,26 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                let rect = crate::app::shell_wol::login_layout(state)
+                let layout = crate::app::shell_wol::login_layout(state);
+                let rect = layout
                     .page
                     .button_rect(crate::ui::wol_login::BACK)
                     .context("WOL sign-in Back button")?;
                 click(state, rect);
-                self.record(frame, "WOL sign-in Back clicked through ordinary input");
-                self.phase = RoundPhase::MainReturn;
+                if layout.entry_choice().is_some() {
+                    self.record(
+                        frame,
+                        "Online entry chooser Back clicked through ordinary input",
+                    );
+                    self.phase = RoundPhase::MainReturn;
+                } else {
+                    ensure!(
+                        crate::app::shell_wol::login_layout(state)
+                            .entry_choice()
+                            .is_some(),
+                        "Back did not return to the online entry chooser"
+                    );
+                }
             }
             RoundPhase::MainReturn
                 if rendered == PresentedShell::MainMenu

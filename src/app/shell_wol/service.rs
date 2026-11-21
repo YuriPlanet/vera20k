@@ -1622,12 +1622,12 @@ mod tests {
             None,
         )));
         let modern = visit.login().unwrap().policy.page_spec();
-        assert_eq!(modern, LoginPolicy::Online.page_spec());
+        assert_eq!(modern, LoginPolicy::ChooseEntry.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
         assert_eq!(
             (column.top_buttons, column.bottom_button),
-            (4, true),
-            "Play and the three account buttons"
+            (0, true),
+            "the chooser has its two actions in the popup and Back on the rail"
         );
         visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
         let native = visit.login().unwrap().policy.page_spec();
