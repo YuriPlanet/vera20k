@@ -945,8 +945,10 @@ immediately requests a session under a temporary name such as `Guest04219`, with
 credentials. If the lobby says the name is in use or registered, the game tries up to
 three more names. It keeps the last account username for the next sign-in. The account
 path takes a username and password or the remembered sign-in for that username.
-The page shows players online and the last 24 hours' games (`GET /v1/stats`, read
-each time the page opens), leaving out a count of none. The account path also offers registration, recovery and deletion.
+The welcome dialog shows the current online player count from `GET /v1/stats` on
+entry and refreshes it once a minute while the chooser is open. It shows zero for an
+empty lobby and a dash while the count is unavailable. The account form also shows the last 24 hours'
+games, omits zero counts, and offers registration, recovery and deletion.
 Create Account asks for the name, email and password,
 then the mailed code, and signs in. Forgot Password asks for the name and mails its
 code, then asks for it and a new password, and signs in. Delete Account accepts the

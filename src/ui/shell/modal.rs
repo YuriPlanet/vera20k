@@ -608,7 +608,7 @@ pub(crate) struct WolEntryChoiceLayout {
     pub dialog: RectPx,
     pub info: RectPx,
     pub heading: RectPx,
-    pub prompt: RectPx,
+    pub players_online: RectPx,
     pub guest: RectPx,
     pub account: RectPx,
 }
@@ -625,12 +625,12 @@ pub(crate) fn wol_entry_choice_layout_on(
     let top = dialog.h - 22 - button.h;
     let info_x = dialog.w / 2;
     let info_w = dialog.w - info_x - 22;
-    let info_y = 76;
+    let info_y = 96;
     WolEntryChoiceLayout {
         dialog: scale.scale_rect(dialog),
-        info: child(info_x, info_y, info_w, 112),
+        info: child(info_x, info_y, info_w, 72),
         heading: child(info_x + 10, info_y + 10, info_w - 20, 24),
-        prompt: child(info_x + 10, info_y + 36, info_w - 20, 66),
+        players_online: child(info_x + 10, info_y + 38, info_w - 20, 24),
         guest: child(left, top, button.w, button.h),
         account: child(left + button.w + gap, top, button.w, button.h),
     }

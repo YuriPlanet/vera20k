@@ -98,17 +98,28 @@ pub(crate) fn paint_wol_login_children(
         }
         push_info_panel(&mut paint.popup, atlas, choice.info);
         let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-        for (key, rect) in [
-            ("VERA:OnlineTitle", choice.heading),
-            ("VERA:EntryChoicePrompt", choice.prompt),
+        let count = state
+            .frontend
+            .login_info
+            .players_online()
+            .map_or_else(|| "—".to_owned(), |count| count.to_string());
+        for (value, rect) in [
+            (label("VERA:OnlineWelcome"), choice.heading),
+            (
+                crate::i18n::fill(&label("VERA:PlayersOnline"), &[("count", &count)]),
+                choice.players_online,
+            ),
         ] {
-            paint.popup_texts.push(text(
-                &label(key),
-                rect,
-                centre,
-                SHELL_LABEL_TEXT_RGB,
-                POPUP_DEPTHS.text,
-            ));
+            let fit = font.fit_line(&value, scale.base_rect(rect).w.max(1) as u32);
+            paint.popup_texts.push(font.fitted(fit, |_| {
+                text(
+                    &value,
+                    rect,
+                    centre,
+                    SHELL_LABEL_TEXT_RGB,
+                    POPUP_DEPTHS.text,
+                )
+            }));
         }
         for (id, key, rect) in [
             (PLAY_AS_GUEST, "VERA:PlayAsGuest", choice.guest),

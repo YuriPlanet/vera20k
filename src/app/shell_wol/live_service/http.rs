@@ -1577,6 +1577,9 @@ mod stream;
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
 pub(super) use browser::{RequestOwner, start as start_browser};
 
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub(in crate::app::shell_wol) use browser::browser_stats;
+
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;

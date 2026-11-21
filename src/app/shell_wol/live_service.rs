@@ -48,6 +48,8 @@ use crate::ui::wol_account::{AccountRequest, AccountSuccess};
 use crate::ui::wol_chat::WolChatLine;
 use events::apply_event;
 pub(crate) use events::{decode_external_watch_grant, relay_ticket_is_watch};
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub(super) use http::browser_stats;
 #[cfg(test)]
 use match_start::bind_relay_roster;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
