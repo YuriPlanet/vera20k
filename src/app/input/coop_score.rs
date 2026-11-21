@@ -54,7 +54,9 @@ fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
         controller.control(COOP_SCORE_DIALOG, CHAT),
         layout.control_rect(CHAT),
     ) {
-        let _ = controller.gui_mut().keep_caret_in_view(chat, &|text| font.text_width(text));
+        let _ = controller
+            .gui_mut()
+            .keep_caret_in_view(chat, &|text| font.text_width(text));
     }
 }
 

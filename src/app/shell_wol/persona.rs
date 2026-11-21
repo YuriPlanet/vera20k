@@ -13,9 +13,9 @@ use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use vera20k_gui::{NodeId, Prop, Value};
 
 /// Native diagnostics use the file next to VERA.INI; modern online visits
@@ -184,10 +184,7 @@ pub(super) fn open_locale_page(state: &mut AppState) {
     };
     visit.page = WolPage::Locale(Box::default());
     visit.requests.push(WolServiceRequest::LocaleCount);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(LOCALE_DIALOG);
+    state.frontend.shell_controller.reset_to(LOCALE_DIALOG);
     // OK is created disabled (0x5800000B).
     if let Some(root) = sync(state) {
         let gui = state.frontend.shell_controller.gui_mut();
@@ -219,12 +216,9 @@ pub(super) fn open_auto_login_query(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    visit.page = WolPage::AutoLoginQuery(Box::default());
+    visit.page = WolPage::AutoLoginQuery;
     super::leaf::open_art(state, AUTO_LOGIN_DIALOG);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(AUTO_LOGIN_DIALOG);
+    state.frontend.shell_controller.reset_to(AUTO_LOGIN_DIALOG);
 }
 
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
@@ -254,10 +248,7 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(ADD_BUDDY_DIALOG);
+    state.frontend.shell_controller.reset_to(ADD_BUDDY_DIALOG);
     let question = add_buddy_text(state).unwrap_or_default();
     if let Some(root) = sync(state) {
         let gui = state.frontend.shell_controller.gui_mut();
@@ -301,7 +292,7 @@ pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
 /// The open page's dialog.
 pub(crate) fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogResourceId> {
     match state.frontend.wol.as_ref()?.page {
-        WolPage::AutoLoginQuery(_) => Some(AUTO_LOGIN_DIALOG),
+        WolPage::AutoLoginQuery => Some(AUTO_LOGIN_DIALOG),
         WolPage::Locale(_) => Some(LOCALE_DIALOG),
         WolPage::AddBuddyQuery(_) => Some(ADD_BUDDY_DIALOG),
         _ => None,
@@ -360,7 +351,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(true));
                     None
                 }
-                (PageEvent::Activated(id), Some(WolPage::AutoLoginQuery(_))) => {
+                (PageEvent::Activated(id), Some(WolPage::AutoLoginQuery)) => {
                     WolAutoLoginQuery::activate(id, page::checked(gui, root, DO_NOT_ASK)).map(
                         |answer| -> (ShellSlideKind, ShellExitThen) {
                             (

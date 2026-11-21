@@ -72,7 +72,7 @@ use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::skirmish_launch::LaunchCountry;
 #[cfg(test)]
-use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, SkirmishComboId};
+use crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
 use crate::ui::skirmish_shell::{
     ChooseMapModalLayout, RandomMapSetupLayout, RectPx,
     SkirmishShellAction, SkirmishShellLayout, SkirmishShellState, player_row_visible,
@@ -918,7 +918,6 @@ fn paint_map_dialog_statics(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
-    use crate::ui::shell::geom::ShellScale;
     use crate::ui::skirmish_shell::compute_layout;
 
     #[test]

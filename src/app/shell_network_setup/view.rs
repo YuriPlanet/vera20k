@@ -10,10 +10,10 @@ use crate::app::shell_wol::lobby::player_badge;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
-use vera20k_gui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
     self, SkirmishComboItem, SkirmishCountryChoice, SkirmishTrackbarId,
 };
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 fn label(state: &AppState, key: &str) -> String {
     state.csf_label(key, key)
@@ -216,7 +216,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // Its scrollbar node keeps the place (none before the room's dialog
         // is built), shown within the places the roster has now.
         let controller = &state.frontend.shell_controller;
-        let top = match controller.prop(dialog.page().dialog, ROSTER_SCROLL, vera20k_gui::Prop::Top) {
+        let top = match controller.prop(dialog.page().dialog, ROSTER_SCROLL, vera20k_gui::Prop::Top)
+        {
             Some(vera20k_gui::Value::Int(top)) => usize::try_from(*top).unwrap_or(0),
             _ => 0,
         };

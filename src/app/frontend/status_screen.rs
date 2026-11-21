@@ -239,7 +239,9 @@ impl CardUi {
             let _ = self.gui.set(node, Prop::Rect, Value::Rect(*rect));
             // The card acts on a left release over a button alone: a press
             // dragged onto it, or one held since before the card showed.
-            let _ = self.gui.set(node, Prop::ReleaseActivates, Value::Bool(true));
+            let _ = self
+                .gui
+                .set(node, Prop::ReleaseActivates, Value::Bool(true));
             nodes.push(node);
         }
         let cancel = buttons

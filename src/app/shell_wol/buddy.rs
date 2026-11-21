@@ -17,7 +17,6 @@ use super::leaf::{self, Pointer};
 use super::service;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
-use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_buddy::*;
 use crate::ui::wol_shell::WolMode;

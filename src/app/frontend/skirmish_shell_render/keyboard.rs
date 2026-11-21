@@ -18,11 +18,11 @@ use crate::render::{
     shell_paint,
     shell_text::{self, ShellAlign, ShellTextDraw},
 };
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardControl, KeyboardParent};
+use crate::util::time::Instant;
 use vera20k_gui::shell::list::ListMetrics;
 use vera20k_gui::shell::list::ShellListGeometry;
-use crate::util::time::Instant;
 
 pub(crate) fn render_keyboard_shell(
     state: &mut AppState,

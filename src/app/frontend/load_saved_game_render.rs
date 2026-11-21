@@ -15,6 +15,7 @@ use crate::app::frontend::skirmish_shell_render::gui_paint::ButtonArt;
 use crate::app::frontend::skirmish_shell_render::{paint_saved_browser, push_saved_browser_box};
 use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
 use crate::ui::skirmish_shell::saved_seed_browser::BROWSER_DIALOG;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// Paint `0xB7`. Returns `false` when the shell chrome is missing.
 pub(crate) fn render_load_saved_game_page(
@@ -44,6 +45,17 @@ pub(crate) fn render_load_saved_game_page(
     let ui = &browser.ui;
     frame.buttons = ui.root_in(BROWSER_DIALOG).map(|root| (ui.gui(), root));
     frame.backdrop = true;
+    if !leaving {
+        let geometry = ShellListGeometry::new(
+            layout.browser.list,
+            browser.entries.len(),
+            browser.top(),
+            ListMetrics::scaled(layout.browser.scale),
+        );
+        frame
+            .list_boxes
+            .push((layout.list_window, geometry.scrollbar));
+    }
     // The list and its rows, blank while the teardown slide runs, then the box.
     let mut over = paint_saved_browser(state, &layout.browser, browser, ButtonArt::Host, !leaving);
     push_saved_browser_box(

@@ -548,7 +548,7 @@ pub(crate) fn paint_top_panel(
 /// The slide engine's top-panel draws of one tick (`0x006071E0`) in draw
 /// order, later on top: each shape `entry` resolves, stretched with the
 /// panel and placed by [`panel_art_origin`], from `depth` forward.
-pub fn push_panel_art(
+pub(crate) fn push_panel_art(
     out: &mut Vec<SpriteInstance>,
     panel: RightPanelRects,
     art: &[PanelArt],
@@ -594,7 +594,7 @@ pub(crate) fn paint_slide_column(
 /// Each slide draw's SDBTNANM `frames` entry in the cell its native canvas
 /// occupies on its tile row, scaled like the button authored there, from
 /// `depth` forward.
-pub fn push_column_frames(
+pub(crate) fn push_column_frames(
     out: &mut Vec<SpriteInstance>,
     panel: RightPanelRects,
     frames: &[Option<ChromeAtlasEntry>],
@@ -609,6 +609,26 @@ pub fn push_column_frames(
         let cell = panel.row_cell(draw.row as i32, w, h);
         push_entry(out, entry, cell, depth - index as f32 * 1e-7);
     }
+}
+
+/// A family page's column button: SDBTNANM `frame` fitted to its cell
+/// (`rect`), right-anchored and vertically centred, so a stretched cell
+/// stretches the art with it; at the authored 156x42 cell it is the native
+/// top-left draw. `None` when the atlas lacks the frame.
+pub fn column_button(
+    atlas: &MainMenuShellChromeAtlas,
+    rect: RectPx,
+    frame: usize,
+    depth: f32,
+) -> Option<SpriteInstance> {
+    let entry = (*atlas.button_wave_frames.get(frame)?)?;
+    use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
+    let sx = rect.w as f32 / SDBTNANM_CELL_W_NARROW as f32;
+    let sy = rect.h as f32 / SDBTNANM_CELL_H as f32;
+    let [w, h] = [entry.pixel_size[0] * sx, entry.pixel_size[1] * sy];
+    let x = rect.x as f32 + (rect.w as f32 - w);
+    let y = rect.y as f32 + (rect.h as f32 - h) * 0.5;
+    Some(entry_sprite(entry, x, y, [w, h], depth))
 }
 
 /// `RightPanel__Draw` (`0x0072E450`) with its overlay flag clear, as the empty
@@ -897,10 +917,6 @@ fn modal_button_centered_position(
 mod tests {
     use super::*;
     use crate::ui::shell::geom::RIGHT_PANEL_WIDTH;
-    use std::time::Duration;
-
-    const FIT_PANEL_W: f32 = 168.0;
-    const FIT_TILE_H: f32 = 42.0;
 
     fn fake_entry(w: f32, h: f32) -> MainMenuShellChromeEntry {
         MainMenuShellChromeEntry {

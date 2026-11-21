@@ -113,7 +113,9 @@ fn spec() -> NodeSpec {
         CONTROLS[range].iter().map(|(id, control)| {
             let spec = |kind| NodeSpec::new(kind).id((*id).into());
             match control {
-                C::Players0x3eb => spec(NodeKind::Trackbar).with(Prop::DisabledColor, YELLOW),
+                C::Players0x3eb => spec(NodeKind::Trackbar)
+                    .with(Prop::DisabledColor, YELLOW)
+                    .with(Prop::RehoverOnRelease, Value::Bool(true)),
                 control if SetupCombo::from_control(*control).is_some() => {
                     spec(NodeKind::Combo).with(Prop::DisabledColor, YELLOW)
                 }
@@ -134,7 +136,10 @@ fn spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
         .children(fixed(0..4))
         .child(scrollbar)
-        .children(rows(SLIDER, NodeKind::Trackbar, &DISABLED))
+        .children(
+            rows(SLIDER, NodeKind::Trackbar, &DISABLED)
+                .map(|row| row.with(Prop::RehoverOnRelease, Value::Bool(true))),
+        )
         .children(
             rows(EXTRAS, NodeKind::Button, &YELLOW)
                 .map(|row| row.with(Prop::Align, centred.clone())),
@@ -482,7 +487,7 @@ pub fn pointer(
     if sync_page(controller, modal, layout).is_none() {
         return (sounds, None);
     }
-    let events = super::page::route(controller, at, x, y, false);
+    let events = super::page::route(controller, at, x, y);
     let activated = handle(modal, events, &mut sounds);
     (sounds, activated)
 }

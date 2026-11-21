@@ -52,7 +52,7 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
         Some(WolPage::Lobby) => PresentedShell::WolLobby,
         Some(WolPage::Options(page)) if page.sound.is_some() => PresentedShell::WolSoundOptions,
         Some(WolPage::Options(_)) => PresentedShell::WolOptions,
-        Some(WolPage::AutoLoginQuery(_)) => PresentedShell::WolAutoLoginQuery,
+        Some(WolPage::AutoLoginQuery) => PresentedShell::WolAutoLoginQuery,
         Some(WolPage::Locale(_)) => PresentedShell::WolLocale,
         Some(WolPage::MyInformation(_)) => PresentedShell::WolMyInformation,
         Some(WolPage::Buddy(_)) => PresentedShell::WolBuddyList,
@@ -160,7 +160,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         WolPage::Lobby => wol_lobby::DIALOG,
         WolPage::Options(page) if page.sound.is_some() => SOUND_DIALOG,
         WolPage::Options(_) => wol_options::DIALOG,
-        WolPage::AutoLoginQuery(_) | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
+        WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
             persona::dialog(state)?
         }
         WolPage::MyInformation(_) => wol_my_info::DIALOG,

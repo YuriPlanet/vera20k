@@ -171,9 +171,10 @@ impl SetupComboInput {
                 let geometry = popup.scroll_geometry();
                 let bar = geometry.scrollbar.context("setup popup scrollbar")?;
                 let down = index >= popup.first + popup.visible_rows;
-                let (x, y) =
-                    vera20k_gui::shell::list::scrollbar_arrow_origins(bar, geometry.metrics.arrow_h)
-                        [usize::from(down)];
+                let (x, y) = vera20k_gui::shell::list::scrollbar_arrow_origins(
+                    bar,
+                    geometry.metrics.arrow_h,
+                )[usize::from(down)];
                 setup_click(
                     state,
                     RectPx::new(x, y, bar.w - 2, geometry.metrics.arrow_h),

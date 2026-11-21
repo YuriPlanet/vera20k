@@ -11,11 +11,11 @@ use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
 use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, LIST};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// Each row's description, date and time in the template's columns (the
 /// `0x4A8` stops 2, 255 and 315; `0x00559A07`'s x200 marker is refused by

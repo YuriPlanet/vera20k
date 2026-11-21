@@ -181,7 +181,10 @@ pub(crate) enum LanSelectionChange {
 /// (the dialog's) make none.
 fn edit_inputs(code: Option<winit::keyboard::KeyCode>, text: Option<&str>) -> Vec<InputEvent> {
     let inputs = crate::ui::shell::controller::gui_inputs(code, false, text);
-    inputs.into_iter().filter(|e| !matches!(e, InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab))).collect()
+    inputs
+        .into_iter()
+        .filter(|e| !matches!(e, InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab)))
+        .collect()
 }
 
 /// The chat edit `0x540`'s EN_CHANGE: `0x005EDD00`'s length cap

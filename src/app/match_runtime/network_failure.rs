@@ -2,8 +2,8 @@
 //! Simulation owns the suspended frame; this owner keeps only its local input
 //! result. The shared shell controller owns button capture and keyboard routing.
 
-use crate::app::input::dialog_page;
 use crate::app::AppState;
+use crate::app::input::dialog_page;
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;

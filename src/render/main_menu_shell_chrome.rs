@@ -53,6 +53,10 @@ pub struct MainMenuShellChromeAtlas {
     /// MNSCRNL.SHP frame 0 — parent background for all non-640 widths.
     /// Painted through SHELL.PAL.
     pub parent_background_large_mnscrnl: Option<MainMenuShellChromeEntry>,
+    /// MNSCRNS / MNSCRNL one RGB565 unit darker ([`blend_black_rgb565`] at
+    /// alpha 0): what a family list (`0x00619230`) shows inside its frame.
+    pub parent_background_640_mnscrns_list: Option<MainMenuShellChromeEntry>,
+    pub parent_background_large_mnscrnl_list: Option<MainMenuShellChromeEntry>,
     /// Static `0x71C` SDWRNANM frames in order (SHELL2 palette); empty when
     /// the SHP is missing.
     pub warning_monitor_frames: Vec<MainMenuShellChromeEntry>,
@@ -136,6 +140,18 @@ pub fn build_main_menu_shell_chrome_atlas(
         ] {
             art.shp(name, pal, 0..1, &name.to_ascii_lowercase(), Need::Optional);
         }
+        let darkened: Vec<ChromePiece> = art
+            .pieces
+            .iter()
+            .filter_map(|piece| {
+                let name = piece.label.strip_suffix("#0")?;
+                let list = format!("{name}:list#0");
+                matches!(name, "mnscrns.shp" | "mnscrnl.shp").then(|| blended_black(piece, list, 0))
+            })
+            .collect();
+        for piece in darkened {
+            art.push(piece);
+        }
     } else {
         log::warn!("Missing SHELL.PAL; skipping main-menu right-panel chrome SHPs");
     }
@@ -168,6 +184,8 @@ pub fn build_main_menu_shell_chrome_atlas(
         lower_side_large_lwscrnl: first("lwscrnl.shp"),
         parent_background_640_mnscrns: first("mnscrns.shp"),
         parent_background_large_mnscrnl: first("mnscrnl.shp"),
+        parent_background_640_mnscrns_list: first("mnscrns.shp:list"),
+        parent_background_large_mnscrnl_list: first("mnscrnl.shp:list"),
         warning_monitor_frames: labels.run("sdwrnanm.shp:monitor"),
     })
 }

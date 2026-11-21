@@ -67,7 +67,6 @@ pub(crate) fn widgets(limits: RoomLimits, players: u16, spectators: u16) -> [Nod
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::shell::geom::ShellScale;
     use crate::ui::shell::page;
     use vera20k_gui::{DialogKind, Gui, InputEvent, MouseButton, NodeId};
 
@@ -81,8 +80,7 @@ mod tests {
     fn picker() -> (Gui, NodeId) {
         let mut gui = Gui::new(8);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        gui.push_dialog(root, DialogKind::Modal)
-            .unwrap();
+        gui.push_dialog(root, DialogKind::Modal).unwrap();
         page::ensure_built(&mut gui, root, || {
             NodeSpec::new(NodeKind::Dialog).children(widgets(RoomLimits::default(), 1, 2))
         });
@@ -138,7 +136,8 @@ mod tests {
         assert_eq!(limits(&gui, root).players, 2);
         release(&mut gui, 320, 110);
         // The thumb drags as far as thirty.
-        let thumb = LAYOUT.players.x + PLAYERS.thumb_left_in(2, LAYOUT.players, crate::ui::shell::geom::RETAIL_SCALE);
+        let thumb = LAYOUT.players.x
+            + PLAYERS.thumb_left_in(2, LAYOUT.players, crate::ui::shell::geom::RETAIL_SCALE);
         press(&mut gui, thumb + 6, 110);
         drag(&mut gui, 400);
         assert_eq!(limits(&gui, root).players, 30);

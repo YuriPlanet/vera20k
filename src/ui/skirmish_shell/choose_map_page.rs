@@ -312,7 +312,7 @@ pub fn pointer(
     if sync_page(controller, modal, layout).is_none() {
         return ChooserInput::default();
     }
-    let events = super::page::route(controller, at, x, y, false);
+    let events = super::page::route(controller, at, x, y);
     take_events(controller, events, modal, layout, lists, last_mode_row)
 }
 

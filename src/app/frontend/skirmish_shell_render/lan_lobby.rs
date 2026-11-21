@@ -13,7 +13,7 @@ use crate::render::shell_paint;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::RectPx;
 use crate::util::time::Instant;
 
 /// Whether box button `id` shows pushed (612B70).
@@ -212,8 +212,7 @@ pub(crate) fn render_lan_lobby(
         // An edit's caret blinks while it has BB's focus, under the message
         // box too.
         let controller = &state.frontend.shell_controller;
-        let caret_of =
-            |node| lobby.enabled && controller.caret_visible_in(PAGE.dialog, node);
+        let caret_of = |node| lobby.enabled && controller.caret_visible_in(PAGE.dialog, node);
         let style = super::gui_paint::GuiStyle {
             caret_of: Some(&caret_of),
             buttons: match sliding {

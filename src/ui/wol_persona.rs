@@ -200,11 +200,7 @@ pub(crate) fn spec(dialog: DialogResourceId) -> NodeSpec {
             Prop::Align,
             align(ShellAlign::H_CENTER | ShellAlign::V_CENTER),
         );
-        (
-            text,
-            checkbox
-                .id(DO_NOT_ASK.into()),
-        )
+        (text, checkbox.id(DO_NOT_ASK.into()))
     };
     let control = match tooltip_key(dialog, control_id(dialog)) {
         Some(key) => control.tooltip(key),
@@ -254,7 +250,12 @@ impl WolPersonaLayout {
         }
     }
 
-    pub(crate) fn new(dialog: DialogResourceId, width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn new(
+        dialog: DialogResourceId,
+        width: i32,
+        height: i32,
+        scale: ShellScale,
+    ) -> Self {
         let section = format!("{:#X}", dialog.0);
         let (page, rects) =
             layout_data::menu_page(Self::spec(dialog), &section, scale, width, height);

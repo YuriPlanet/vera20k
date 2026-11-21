@@ -263,6 +263,56 @@ pub(crate) fn shell_parent_background_instances(
     out
 }
 
+/// A family list box `window` (`0x00619230`) over that parent background:
+/// inside its inner frame ring the background one RGB565 unit darker
+/// (translucency 0), and, when the list has a scrollbar `bar`, the
+/// background undarkened inside the bar. Both come from the same texels
+/// [`shell_parent_background_instances`] draws there.
+pub(crate) fn push_family_list_backing(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &MainMenuShellChromeAtlas,
+    (screen_w, screen_h): (i32, i32),
+    scale: crate::ui::shell::geom::ShellScale,
+    window: RectPx,
+    bar: Option<RectPx>,
+) {
+    let (plain, dark) = match scale.is_unscaled() && screen_w == 640 {
+        true => (
+            atlas.parent_background_640_mnscrns,
+            atlas.parent_background_640_mnscrns_list,
+        ),
+        false => (
+            atlas.parent_background_large_mnscrnl,
+            atlas.parent_background_large_mnscrnl_list,
+        ),
+    };
+    // In front of the background (the pass depth-tests), the bar over the
+    // interior, both behind the panel art.
+    let back = shell_paint::PARENT_BACKGROUND_DEPTH;
+    let mut push =
+        |entry: Option<crate::render::main_menu_shell_chrome::MainMenuShellChromeEntry>,
+         rect: RectPx,
+         depth: f32| {
+            let Some(entry) = entry else {
+                return;
+            };
+            if scale.is_unscaled() {
+                let origin = crate::ui::shell::geom::dialog_origin(screen_w, screen_h);
+                shell_paint::push_entry_crop(out, entry, origin, rect, depth);
+            } else {
+                let (w, h) = entry.native_size();
+                let area = scale.scale_rect(RectPx::new(0, 0, w, h));
+                shell_paint::push_entry_window_crop(out, entry, area, rect, depth);
+            }
+        };
+    let interior = RectPx::new(window.x + 1, window.y + 1, window.w - 1, window.h - 1);
+    push(dark, interior, back - 0.00001);
+    if let Some(bar) = bar {
+        let track = vera20k_gui::shell::list::scrollbar_interior(bar);
+        push(plain, track, back - 0.00002);
+    }
+}
+
 /// The RA2TS movie filling `rect`, once its session is loaded.
 pub(crate) fn movie_draw(state: &AppState, rect: RectPx) -> Option<TexturedDraw<'_>> {
     let movie = state.frontend.main_menu_movie.as_ref()?;

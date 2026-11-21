@@ -114,6 +114,8 @@ pub(crate) fn render_mods_page(
             paint_family_list(state, dialog, layout.list, scale)
     {
         frame.over.controls.extend(sprites);
+        frame.list_boxes.push((layout.list, geometry.scrollbar));
+        frame.list_boxes.push((layout.details, None));
         if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
             let details = &mut frame.over.controls;
             crate::app::frontend::skirmish_shell_render::paint_list_frame(

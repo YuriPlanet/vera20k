@@ -586,7 +586,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         ShellRoute::Wol => match wol_page? {
             WolPage::Welcome => ShellSlideKind::WolWelcome,
             WolPage::Login(_) => ShellSlideKind::WolLogin,
-            WolPage::AutoLoginQuery(_) => ShellSlideKind::WolAutoLoginQuery,
+            WolPage::AutoLoginQuery => ShellSlideKind::WolAutoLoginQuery,
             WolPage::Locale(_) => ShellSlideKind::WolLocale,
             WolPage::MyInformation(_) => ShellSlideKind::WolMyInformation,
             WolPage::Buddy(_) => ShellSlideKind::WolBuddyList,
@@ -640,7 +640,10 @@ mod tests {
 
     #[test]
     fn campaign_score_owns_dialog_0x103() {
-        assert_eq!(ShellSlideKind::CampaignScore.dialog_id(), DialogResourceId(0x0103));
+        assert_eq!(
+            ShellSlideKind::CampaignScore.dialog_id(),
+            DialogResourceId(0x0103)
+        );
         assert!(crate::ui::shell::slide::slide_spec_for(DialogResourceId(0x0103)).is_some());
     }
 

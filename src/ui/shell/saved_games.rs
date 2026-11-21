@@ -4,7 +4,7 @@
 //! evidence dated 2026-09-12 for callers, text keys and active paint policy.
 
 use super::descriptor::DialogResourceId;
-use super::geom::{self, RectPx, ShellScale};
+use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 use super::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{SavedSeedLayout, SavedSeedMode};

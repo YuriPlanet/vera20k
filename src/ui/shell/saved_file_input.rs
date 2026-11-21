@@ -151,7 +151,8 @@ pub fn key<I: Clone + PartialEq>(
     // Enter in the edit acts; the base browser ignores IDCANCEL, so Escape
     // does not close it, and control characters (Tab too) type nothing.
     let event = super::controller::gui_input(code, false, text);
-    let Some(event) = event.filter(|e| !matches!(e, InputEvent::Key(Key::Tab | Key::BackTab))) else {
+    let Some(event) = event.filter(|e| !matches!(e, InputEvent::Key(Key::Tab | Key::BackTab)))
+    else {
         return Vec::new();
     };
     browser.ui.on_input(event);
@@ -178,9 +179,9 @@ pub fn update<I: Clone + PartialEq>(
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
     use crate::ui::skirmish_shell::{SavedSeedBrowserRow, SavedSeedPrompt, SavedSeedPromptPurpose};
     use std::path::PathBuf;
+    use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
     fn fixture(
         mode: SavedSeedMode,

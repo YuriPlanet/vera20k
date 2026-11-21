@@ -392,6 +392,7 @@ pub(crate) fn render_multiplayer_setup(
                 }
             }
             let style = GuiStyle {
+                buttons: super::gui_paint::ButtonArt::ModalCentred,
                 text_factor: Some(scale.factor() * ROSTER_TEXT_SCALE),
                 ..room_style
             };
@@ -702,7 +703,6 @@ pub(crate) fn render_multiplayer_setup(
         // VERA asks a guest before downloading a map it does not have, then
         // shows the download, on the art of VERA's other online-service boxes.
         if let Some(offer) = ui.map_offer.as_ref() {
-            use crate::ui::shell::geom::ShellScale;
             let boxed = &layout.map_offer;
             let progress = offer
                 .downloading

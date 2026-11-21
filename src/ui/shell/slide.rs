@@ -644,7 +644,11 @@ mod tests {
         // Message boxes are not in 0x0060C540's list; the in-game Options
         // dialog 0xBBB is, but has no slide here yet.
         for id in [0x0120u16, 0x00CE, 0x0BBB] {
-            assert_eq!(slide_spec_for(DialogResourceId(id)), None, "{id:#06x} must not slide");
+            assert_eq!(
+                slide_spec_for(DialogResourceId(id)),
+                None,
+                "{id:#06x} must not slide"
+            );
         }
     }
 }

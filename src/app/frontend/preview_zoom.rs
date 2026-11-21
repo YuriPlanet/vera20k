@@ -49,7 +49,10 @@ fn available(state: &AppState) -> bool {
 
 /// Whether the pointer is on `dialog`'s preview static `0x468`, as its
 /// widgets hit-test it.
-pub(crate) fn over_box(state: &AppState, dialog: crate::ui::shell::descriptor::DialogResourceId) -> bool {
+pub(crate) fn over_box(
+    state: &AppState,
+    dialog: crate::ui::shell::descriptor::DialogResourceId,
+) -> bool {
     let (x, y) = state.match_state.input.cursor_px();
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
@@ -75,7 +78,8 @@ pub(crate) fn press_on_box(state: &mut AppState, over: bool) -> bool {
     controller.close(DIALOG);
     controller.push_modal_overlay(DIALOG);
     if let Some(root) = controller.root_in(DIALOG) {
-        let everywhere = vera20k_gui::Rect::new(i32::MIN / 4, i32::MIN / 4, i32::MAX / 2, i32::MAX / 2);
+        let everywhere =
+            vera20k_gui::Rect::new(i32::MIN / 4, i32::MIN / 4, i32::MAX / 2, i32::MAX / 2);
         let briefing = NodeSpec::new(NodeKind::Text)
             .id(BRIEFING.into())
             .tooltip("")
@@ -183,7 +187,9 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) -> bool {
     let key = match event.physical_key {
         _ if !event.state.is_pressed() || event.repeat => None,
         PhysicalKey::Code(KeyCode::Escape) => Some(Key::Escape),
-        PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space) => Some(Key::Enter),
+        PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space) => {
+            Some(Key::Enter)
+        }
         _ => None,
     };
     input(state, key.map(InputEvent::Key))

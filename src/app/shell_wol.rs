@@ -83,7 +83,7 @@ fn leaf_lists_open(state: &AppState) -> bool {
         state.frontend.wol.as_ref().map(|visit| &visit.page),
         Some(
             WolPage::Login(_)
-                | WolPage::AutoLoginQuery(_)
+                | WolPage::AutoLoginQuery
                 | WolPage::Locale(_)
                 | WolPage::AddBuddyQuery(_)
                 | WolPage::MyInformation(_)
@@ -167,7 +167,7 @@ pub(crate) enum WolPage {
     /// lobby.
     Options(Box<options::WolOptionsPage>),
     /// The auto-login query `0x112` after a dialog login.
-    AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
+    AutoLoginQuery,
     /// The locale page `0xFE` during the connect.
     Locale(Box<crate::ui::wol_persona::WolLocalePage>),
     /// My Information `0x114` (welcome mode 6).
@@ -805,7 +805,7 @@ impl App {
         let handlers: Option<Handlers> = match shown {
             _ if page::open(state) => Some((page::cursor_moved, page::mouse)),
             Some(WolPage::Options(_)) => Some((options::cursor_moved, options::mouse)),
-            Some(WolPage::AutoLoginQuery(_) | WolPage::Locale(_) | WolPage::AddBuddyQuery(_)) => {
+            Some(WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_)) => {
                 Some((persona::cursor_moved, persona::mouse))
             }
             Some(WolPage::MyInformation(_)) => Some((my_info::cursor_moved, my_info::mouse)),

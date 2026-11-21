@@ -6,9 +6,9 @@ use crate::app::AppState;
 use crate::app::input::dialog_page;
 use crate::app::input::sound::DIALOG;
 use crate::render::{shell_paint, shell_text::ShellAlign};
-use crate::ui::shell::geom::{RectPx, ShellScale};
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::sound::{SoundButton, SoundControl, SoundLayout, SoundSlider};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 pub(crate) fn render_sound_shell(
     state: &mut AppState,
@@ -54,7 +54,12 @@ pub(crate) fn render_sound_shell(
                 plaque: true,
                 disabled: false,
             };
-            paint_control(controls, &chrome, trackbar, crate::ui::shell::geom::RETAIL_SCALE);
+            paint_control(
+                controls,
+                &chrome,
+                trackbar,
+                crate::ui::shell::geom::RETAIL_SCALE,
+            );
         }
         let profile = &state.persistence.options_profile;
         for (rect, checked) in [

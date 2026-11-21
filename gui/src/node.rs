@@ -194,6 +194,10 @@ pub enum Prop {
     /// Button: a left release over it activates it whatever the press did,
     /// off it or none (buttons that act on the release alone).
     ReleaseActivates,
+    /// A press it took ends with the hover hit-tested again at the release
+    /// point (events as a move there), not left until the next move: a
+    /// trackbar or list that held the pointer.
+    RehoverOnRelease,
     /// List: rows a wheel notch scrolls (3 unless set).
     WheelStep,
     /// Combo: while its list is open, the wheel anywhere picks the row next
@@ -263,6 +267,7 @@ impl Prop {
             | Prop::KeepsBlink
             | Prop::FocusOnPress
             | Prop::ReleaseActivates
+            | Prop::RehoverOnRelease
             | Prop::BlurOnPress
             | Prop::Multiline
             | Prop::WheelPicks

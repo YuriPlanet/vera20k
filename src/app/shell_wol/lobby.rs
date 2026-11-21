@@ -2740,10 +2740,7 @@ fn continue_join(state: &mut AppState, channel: WolChannel) {
             lobby.ui.open_password();
             lobby.joining = Some(channel);
         }
-        state
-            .frontend
-            .shell_controller
-            .reset_to(PASSWORD_DIALOG);
+        state.frontend.shell_controller.reset_to(PASSWORD_DIALOG);
         sync(state);
         return;
     }
@@ -2998,10 +2995,7 @@ pub(super) fn begin_create(state: &mut AppState) {
         .is_modern()
         .then_some((room, name.as_str(), ranked, watching));
     lobby.ui.open_create(width, limit, squad, observer, room);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(CREATE_DIALOG);
+    state.frontend.shell_controller.reset_to(CREATE_DIALOG);
     // Its widgets on their layout before it paints.
     sync(state);
 }
@@ -3167,9 +3161,7 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
                         .set_commands(true, lobby.ui.selected_game().is_some(), false);
                 }
             }
-            BoxThen::Resolution { channel } => {
-                answer_resolution(state, channel, answer == 0)
-            }
+            BoxThen::Resolution { channel } => answer_resolution(state, channel, answer == 0),
             BoxThen::Close => close_runner(state),
             BoxThen::Kicked => {
                 // The next lobby pick moves on, then 0x00785740.
@@ -4395,9 +4387,7 @@ pub(crate) fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCre
     )
 }
 
-pub(crate) fn password_layout(
-    state: &AppState,
-) -> crate::ui::shell::modal::WolPageLayout {
+pub(crate) fn password_layout(state: &AppState) -> crate::ui::shell::modal::WolPageLayout {
     let (width, height) = popup_screen(state);
     crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(state))
 }

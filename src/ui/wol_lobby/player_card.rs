@@ -10,11 +10,11 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::WolLobbyState;
-use vera20k_gui::shell::combobox::ComboPopup;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::PLAYER_CARD_ROWS;
 use crate::ui::shell::page;
 use crate::ui::wol_persona::LocaleRow;
+use vera20k_gui::shell::combobox::ComboPopup;
 
 /// The card's buttons, in VERA's own control range, on a modal dialog in
 /// the lobby's widget tree.

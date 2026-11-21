@@ -24,7 +24,7 @@ use crate::render::shell_surface_present::ShellSurfacePresenter;
 use crate::render::shell_ui_style_assets::{
     ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
 };
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
+use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
 
 use super::shell_layout::window_takes_fitted_shell;
 

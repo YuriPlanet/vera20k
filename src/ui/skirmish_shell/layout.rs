@@ -861,8 +861,8 @@ mod tests {
         random_map_setup_control_at_view(layout, x, y, false, false, ares, 0)
     }
     use super::{
-        ChooseMapModalButton, RectPx, SavedSeedMode, ShellScale, checkbox_icon_rect,
-        checkbox_text_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect, combo_text_rect,
+        ChooseMapModalButton, RectPx, SavedSeedMode, checkbox_icon_rect, checkbox_text_rect,
+        combo_arrow_rect, combo_face_rect, combo_swatch_rect, combo_text_rect,
         compute_choose_map_modal_layout, compute_layout, compute_random_map_setup_layout,
         compute_saved_seed_layout, dlu_rect,
     };

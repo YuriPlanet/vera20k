@@ -11,12 +11,12 @@ use super::{WolPage, apply_wol_preferences};
 use crate::app::frontend::shell_layout;
 use crate::app::{App, AppState};
 use crate::ui::chat_translation::ChatTranslation;
-use vera20k_gui::shell::combobox::ComboPopup;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::shell::sound::{self, SHELL_SOUND_PAGE, ShellSoundLayout};
 use crate::ui::wol_options::{
     self, DIALOG, TRANSLATE, TRANSLATE_OFF_KEY, WolOptionsAction, WolOptionsLayout, WolPreferences,
 };
+use vera20k_gui::shell::combobox::ComboPopup;
 use vera20k_gui::{Gui, NodeId};
 
 /// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`. Their

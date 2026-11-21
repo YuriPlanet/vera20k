@@ -92,7 +92,11 @@ impl App {
             (false, _) => {
                 let last = gui.list_geometry(node).map_or(0, |list| list.max_top);
                 if current > last {
-                    let _ = gui.set(node, vera20k_gui::Prop::Top, vera20k_gui::Value::Int(last as i32));
+                    let _ = gui.set(
+                        node,
+                        vera20k_gui::Prop::Top,
+                        vera20k_gui::Value::Int(last as i32),
+                    );
                 }
             }
         }
@@ -133,7 +137,11 @@ impl App {
         };
         let now = controller.now();
         let gui = controller.gui_mut();
-        let _ = gui.set(node, vera20k_gui::Prop::WheelStep, vera20k_gui::Value::Int(1));
+        let _ = gui.set(
+            node,
+            vera20k_gui::Prop::WheelStep,
+            vera20k_gui::Value::Int(1),
+        );
         gui.wheel_list(node, (lines * 3.0) as i32, now);
         gui.drain_events();
     }

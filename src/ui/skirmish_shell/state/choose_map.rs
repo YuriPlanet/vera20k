@@ -7,14 +7,14 @@
 //! the scrollbar captures and repeats, and no key or wheel case exists
 //! (`0x00618D40..0x0061C600`). This state keeps what the lists show.
 
-use crate::ui::shell::modal::ShellBox;
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
     upsert_random_map_sentinel,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::shell::static_reveal::DialogStatics;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
 
@@ -1286,7 +1286,7 @@ mod tests {
             &all,
             &layout,
         );
-        let mut input = |modal: &mut ChooseMapModalState, event| {
+        let input = |modal: &mut ChooseMapModalState, event| {
             UI.with_borrow_mut(|ui| {
                 choose_map_page::search_input(ui, modal, &layout, (&modes, &all), event)
             })

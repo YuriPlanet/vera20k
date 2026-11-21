@@ -14,8 +14,8 @@ use crate::app::web_link;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
-    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, CARD_ROWS, WolCardAction, WolLobbyState,
-    WolPlayerCard, badge_name_key,
+    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, CARD_ROWS, WolCardAction,
+    WolLobbyState, WolPlayerCard, badge_name_key,
 };
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
 

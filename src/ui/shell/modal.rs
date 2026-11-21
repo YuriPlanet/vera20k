@@ -673,7 +673,10 @@ mod tests {
     fn count_rule_picks_the_template_and_answers_by_button() {
         let s = |t: &str| t.to_owned();
         let notice = ShellBox::message(s("b"), s("OK"), s(""), s(""));
-        assert_eq!((notice.dialog, notice.buttons.len()), (DialogResourceId(0xCE), 1));
+        assert_eq!(
+            (notice.dialog, notice.buttons.len()),
+            (DialogResourceId(0xCE), 1)
+        );
         let quit = ShellBox::message(s("b"), s("OK"), s("Cancel"), s(""));
         assert_eq!(
             (quit.dialog, quit.answer(control::CANCEL)),

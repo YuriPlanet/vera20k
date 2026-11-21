@@ -8,8 +8,8 @@
 
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
-use vera20k_gui::shell::list::ROW_HEIGHT;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use vera20k_gui::shell::list::ROW_HEIGHT;
 
 /// Not a retail dialog: their ids stop near `0xBC7`.
 pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x7E02);

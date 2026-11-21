@@ -15,7 +15,8 @@ use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::{
-    Ra2tsDialogOwner, shell_parent_background_instances, shell_reveal_path_a,
+    Ra2tsDialogOwner, push_family_list_backing, shell_parent_background_instances,
+    shell_reveal_path_a,
 };
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{
@@ -419,6 +420,9 @@ pub(crate) struct FamilyFrame<'a> {
     /// The family parent background ([`shell_parent_background_instances`])
     /// goes under everything.
     pub(crate) backdrop: bool,
+    /// Family list boxes over that background, each its window and, when it
+    /// shows one, its scrollbar ([`push_family_list_backing`]).
+    pub(crate) list_boxes: Vec<(RectPx, Option<RectPx>)>,
     /// The page's own art under the right panel, in draw order.
     pub(crate) under: Vec<TexturedDraw<'a>>,
     /// Other art over the panel, under the buttons (a score page's own).
@@ -449,6 +453,7 @@ impl<'a> FamilyFrame<'a> {
             ids: layout.buttons.iter().map(|button| button.id).collect(),
             style: GuiStyle::default(),
             backdrop: false,
+            list_boxes: Vec::new(),
             under: Vec::new(),
             over_panel_art: Vec::new(),
             labels: Vec::new(),
@@ -501,6 +506,7 @@ pub(crate) fn encode_family_page(
         ids,
         style,
         backdrop,
+        list_boxes,
         under,
         over_panel_art,
         mut labels,
@@ -513,6 +519,15 @@ pub(crate) fn encode_family_page(
         draws.push(TexturedDraw {
             texture: &chrome.texture,
             instances: shell_parent_background_instances(chrome, screen.w, screen.h, scale),
+        });
+        let mut backings = Vec::new();
+        for (window, bar) in list_boxes {
+            let size = (screen.w, screen.h);
+            push_family_list_backing(&mut backings, chrome, size, scale, window, bar);
+        }
+        draws.push(TexturedDraw {
+            texture: &chrome.texture,
+            instances: backings,
         });
     }
     draws.extend(under);
@@ -533,7 +548,7 @@ pub(crate) fn encode_family_page(
         }
         (None, Some((gui, root))) => {
             let style = GuiStyle {
-                buttons: ButtonArt::Panel,
+                buttons: ButtonArt::Column,
                 ..style
             };
             paint_gui_ids(state, gui, root, ids, scale, style)
@@ -559,6 +574,10 @@ pub(crate) fn encode_family_page(
         instances: panel_sprites,
     });
     draws.extend(over_panel_art);
+    draws.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: widgets.column,
+    });
     draws.push(TexturedDraw {
         texture: &atlas.texture,
         instances: widgets.controls,

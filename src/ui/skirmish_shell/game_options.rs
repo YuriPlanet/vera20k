@@ -127,6 +127,7 @@ pub fn sync(
         let controls = CONTROLS.map(|control| {
             let spec = match control {
                 GameOptionsControl::SuperweaponLimit => NodeSpec::new(NodeKind::Trackbar)
+                    .with(Prop::RehoverOnRelease, Value::Bool(true))
                     .with(Prop::Min, Value::Int(SUPERWEAPON_LIMIT_RANGE.min))
                     .with(Prop::Max, Value::Int(SUPERWEAPON_LIMIT_RANGE.max))
                     .with(Prop::Step, Value::Int(SUPERWEAPON_LIMIT_RANGE.step)),
@@ -201,7 +202,7 @@ pub fn pointer(
     if sync(controller, open, layout).is_none() {
         return (cues, close);
     }
-    for event in super::page::route(controller, at, x, y, false) {
+    for event in super::page::route(controller, at, x, y) {
         match event {
             PageEvent::Cue(cue) => cues.push(cue),
             PageEvent::Toggled(2, on) => open.rules.terrain_deformation = on,

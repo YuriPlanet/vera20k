@@ -47,8 +47,8 @@ impl App {
                 state.frontend.wol.as_ref().map(|visit| &visit.page),
                 Some(super::shell_wol::WolPage::MyInformation(_))
             );
-        let escape = gui_input(Some(KeyCode::Escape), false, event.text.as_deref())
-            .filter(|_| !my_info);
+        let escape =
+            gui_input(Some(KeyCode::Escape), false, event.text.as_deref()).filter(|_| !my_info);
         let controller = &mut state.frontend.shell_controller;
         if escape.is_some_and(|escape| controller.on_input(escape)) {
             return true;

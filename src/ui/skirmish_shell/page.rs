@@ -150,7 +150,9 @@ fn spec() -> NodeSpec {
     let controls = CONTROLS.into_iter().chain(flags).map(|(id, target)| {
         let spec = match target {
             Target::Checkbox(_) => NodeSpec::new(NodeKind::Checkbox),
-            Target::Trackbar(_) => NodeSpec::new(NodeKind::Trackbar),
+            Target::Trackbar(_) => {
+                NodeSpec::new(NodeKind::Trackbar).with(Prop::RehoverOnRelease, Value::Bool(true))
+            }
             Target::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
                 NodeSpec::new(NodeKind::Button).with(Prop::TabStop, Value::Bool(true))
             }
@@ -177,7 +179,8 @@ fn spec() -> NodeSpec {
     // The scrollbar takes a press first, as it did over the page's controls.
     let scroll = NodeSpec::new(NodeKind::List)
         .id(OPPONENT_SCROLL.into())
-        .with(Prop::WheelStep, Value::Int(1));
+        .with(Prop::WheelStep, Value::Int(1))
+        .with(Prop::RehoverOnRelease, Value::Bool(true));
     NodeSpec::new(NodeKind::Dialog)
         .child(scroll)
         .children(combos)
@@ -470,26 +473,14 @@ fn take_scroll(controller: &DialogController, state: &mut SkirmishShellState, ev
 }
 
 /// One pointer message on the controller's top dialog of the Skirmish
-/// family, as its widgets' events. A release that frees a held control
-/// (`held`, or a slider) lets the dialog's hit test see the pointer where it
-/// let go.
-pub fn route(
-    controller: &mut DialogController,
-    at: Pointer,
-    x: i32,
-    y: i32,
-    held: bool,
-) -> Vec<PageEvent> {
+/// family, as its widgets' events. A release that frees a held slider or
+/// the computer rows (`RehoverOnRelease`) lets the dialog's hit test see the
+/// pointer where it let go.
+pub fn route(controller: &mut DialogController, at: Pointer, x: i32, y: i32) -> Vec<PageEvent> {
     match at {
         Pointer::Down => controller.on_pointer_down(x, y),
         Pointer::Move => controller.on_pointer_move(x, y),
-        Pointer::Up => {
-            let held = held || slider_held(controller.gui());
-            controller.on_pointer_up(x, y);
-            if held {
-                controller.on_pointer_move(x, y);
-            }
-        }
+        Pointer::Up => controller.on_pointer_up(x, y),
     }
     let raw = controller.drain_events();
     page::page_events(controller.gui(), raw)
@@ -512,8 +503,7 @@ pub fn pointer(
     if sync_page(controller, state, layout, maps, labels).is_none() {
         return (Vec::new(), None);
     }
-    let held = pointer_held(controller.gui());
-    let events = route(controller, at, x, y, held);
+    let events = route(controller, at, x, y);
     take_scroll(controller, state, &events);
     handle(state, maps, events)
 }

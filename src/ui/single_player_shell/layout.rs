@@ -11,11 +11,25 @@ pub const SINGLE_PLAYER_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogResourceId(0x0100),
     title_key: "GUI:SinglePlayerMenu",
     stacked: &[
-        MenuPageButtonSpec::new(0x0688, 122, "GUI:NewCampaign", "STT:SingleButtonNewCampaign").returning(8),
-        MenuPageButtonSpec::new(0x0689, 149, "GUI:LoadSavedGame", "STT:SingleButtonLoadSavedGame").returning(9),
-        MenuPageButtonSpec::new(0x0579, 176, "GUI:Skirmish", "STT:SingleButtonSkirmish").returning(0x0B),
+        MenuPageButtonSpec::new(
+            0x0688,
+            122,
+            "GUI:NewCampaign",
+            "STT:SingleButtonNewCampaign",
+        )
+        .returning(8),
+        MenuPageButtonSpec::new(
+            0x0689,
+            149,
+            "GUI:LoadSavedGame",
+            "STT:SingleButtonLoadSavedGame",
+        )
+        .returning(9),
+        MenuPageButtonSpec::new(0x0579, 176, "GUI:Skirmish", "STT:SingleButtonSkirmish")
+            .returning(0x0B),
     ],
-    back: MenuPageButtonSpec::new(0x0686, 346, "GUI:MainMenu", "STT:SingleButtonBack").returning(0x12),
+    back: MenuPageButtonSpec::new(0x0686, 346, "GUI:MainMenu", "STT:SingleButtonBack")
+        .returning(0x12),
 };
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> MenuPageLayout {

@@ -8,17 +8,17 @@ use crate::util::time::Instant;
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::lan_shell::LanChatState;
-use vera20k_gui::shell::combobox::ComboPopup;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
 use crate::ui::shell::layout::Placer;
 use crate::ui::shell::layout_data;
-use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self as page_nodes, PageEvent};
-use vera20k_gui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::SkirmishStatics;
+use vera20k_gui::shell::combobox::ComboPopup;
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
 /// The most rows and headers VERA's roster ([`SetupDialog::modern`]) shows
@@ -1873,7 +1873,9 @@ fn props(
     if let Some(offer) = ui.map_offer.as_ref() {
         let keys = offer.takes_keys(Instant::now());
         match id {
-            MAP_OFFER_DOWNLOAD => props.push((Prop::Default, Value::Bool(keys && !offer.downloading))),
+            MAP_OFFER_DOWNLOAD => {
+                props.push((Prop::Default, Value::Bool(keys && !offer.downloading)))
+            }
             MAP_OFFER_LEAVE => props.push((Prop::Cancel, Value::Bool(keys))),
             _ => {}
         }
@@ -2310,10 +2312,12 @@ mod tests {
         let ui = MultiplayerSetupState::default();
         let mut gui = Gui::new(8);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        gui.push_dialog(root, vera20k_gui::DialogKind::Page).unwrap();
+        gui.push_dialog(root, vera20k_gui::DialogKind::Page)
+            .unwrap();
         let roster = gui.create(NodeKind::Text, Some(root)).unwrap();
         gui.set(roster, Prop::Rect, Value::Rect(area)).unwrap();
-        gui.set(roster, Prop::Tooltip, Value::Text(String::new())).unwrap();
+        gui.set(roster, Prop::Tooltip, Value::Text(String::new()))
+            .unwrap();
         let bar_node = gui.create(NodeKind::List, Some(root)).unwrap();
         gui.set(bar_node, Prop::Rect, Value::Rect(area)).unwrap();
         for (prop, value) in props(&ui, &view, &layout, ROSTER_SCROLL) {
@@ -2321,9 +2325,29 @@ mod tests {
         }
         let (roster, scroll_node) = (Some(roster), Some(bar_node));
         let top = |gui: &Gui| gui.list_view(bar_node).unwrap().top;
-        ui.wheel(&mut gui, roster, scroll_node, &view, &layout, area.x, area.y, -1.0, 0);
+        ui.wheel(
+            &mut gui,
+            roster,
+            scroll_node,
+            &view,
+            &layout,
+            area.x,
+            area.y,
+            -1.0,
+            0,
+        );
         assert_eq!(top(&gui), 3);
-        ui.wheel(&mut gui, roster, scroll_node, &view, &layout, area.x, area.y, -100.0, 0);
+        ui.wheel(
+            &mut gui,
+            roster,
+            scroll_node,
+            &view,
+            &layout,
+            area.x,
+            area.y,
+            -100.0,
+            0,
+        );
         assert_eq!(top(&gui), scroll.max_top);
         let mut ui = MultiplayerSetupState::default();
         // A room that fits shows no scrollbar.

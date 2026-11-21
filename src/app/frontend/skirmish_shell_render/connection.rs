@@ -14,7 +14,7 @@ use crate::render::{shell_paint, shell_text::ShellAlign};
 use crate::ui::shell::connection::{
     BAR_OUTLINE_RGB, CONNECTION_ROWS, ConnectionControl, bar_paint, connection_layout,
 };
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::RectPx;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 fn rgb(unit: [u8; 3]) -> [f32; 3] {

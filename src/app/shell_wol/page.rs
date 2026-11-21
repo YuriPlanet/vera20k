@@ -15,7 +15,7 @@ use crate::ui::lan_shell::{LanChatLine, append_wrapped};
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{
     WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_layout_in,
     wol_page_received_layout, wol_page_received_layout_in,
@@ -78,7 +78,10 @@ fn top(state: &AppState) -> Option<DialogResourceId> {
 }
 
 /// `dialog`'s widgets, where they sit and its transcript's id.
-fn widgets(state: &AppState, dialog: DialogResourceId) -> (fn() -> vera20k_gui::NodeSpec, Rects, u16) {
+fn widgets(
+    state: &AppState,
+    dialog: DialogResourceId,
+) -> (fn() -> vera20k_gui::NodeSpec, Rects, u16) {
     if dialog == PAGE_DIALOG {
         let layout = page_layout(state);
         (
@@ -113,7 +116,13 @@ fn lines(visit: &mut super::WolVisit, dialog: DialogResourceId) -> Option<&mut V
 /// gives its list the rows; the root.
 fn sync(state: &mut AppState, dialog: DialogResourceId) -> Option<NodeId> {
     let (spec, rect_of, list) = widgets(state, dialog);
-    let root = leaf::place(state, dialog, crate::ui::shell::geom::RETAIL_SCALE, spec, rect_of)?;
+    let root = leaf::place(
+        state,
+        dialog,
+        crate::ui::shell::geom::RETAIL_SCALE,
+        spec,
+        rect_of,
+    )?;
     let frontend = &mut state.frontend;
     let rows = frontend
         .wol
@@ -427,7 +436,13 @@ fn locate(state: &mut AppState, name: String) {
 
 /// API+0xF8 with the record and text, and `u"[%hs] %s"` (`0x0084B94C`)
 /// with the login nickname `[0xB73E40]`, the echo, into `dialog`'s list.
-fn send_page(state: &mut AppState, dialog: DialogResourceId, name: &str, text: Vec<u16>, color: u32) {
+fn send_page(
+    state: &mut AppState,
+    dialog: DialogResourceId,
+    name: &str,
+    text: Vec<u16>,
+    color: u32,
+) {
     let mut echo: Vec<u16> = format!("[{}] ", state.frontend.wol_account.nickname)
         .encode_utf16()
         .collect();

@@ -19,8 +19,7 @@ pub(crate) use player_card::*;
 pub(crate) use popups::*;
 
 use vera20k_gui::{
-    DialogId as GuiDialog, DialogKind, Gui, InputEvent, ListView, NodeId, NodeKind, NodeSpec, Prop,
-    Value,
+    DialogId as GuiDialog, DialogKind, Gui, InputEvent, NodeId, NodeKind, NodeSpec, Prop, Value,
 };
 
 use crate::render::shell_text::ShellAlign;
@@ -851,11 +850,6 @@ impl WolLobbyState {
             self.list_top(id),
             ListMetrics::scaled(scale),
         )
-    }
-
-    pub(crate) fn list_view(&self, list: u16) -> Option<ListView> {
-        self.gui
-            .list_view(self.gui.find_id(self.page_root(), list.into())?)
     }
 
     pub(crate) fn selected_row(&self, list: u16) -> Option<usize> {

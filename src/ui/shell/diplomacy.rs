@@ -14,10 +14,10 @@
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use crate::ui::shell::checkbox::CheckboxFace;
 use super::descriptor::DialogResourceId;
 use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};
+use crate::ui::shell::checkbox::CheckboxFace;
 
 pub const DIALOG: DialogResourceId = DialogResourceId(0x73);
 

@@ -154,7 +154,10 @@ impl App {
             &mut frontend.shell_controller,
             modal,
             &layout,
-            (&frontend.skirmish_modes, frontend.scenario_catalog.records()),
+            (
+                &frontend.skirmish_modes,
+                frontend.scenario_catalog.records(),
+            ),
             event,
         );
         state.platform.window.request_redraw();
@@ -762,7 +765,8 @@ impl App {
             return false;
         }
         use crate::app::frontend::preview_zoom;
-        let over = preview_zoom::over_box(state, crate::ui::skirmish_shell::choose_map_page::DIALOG);
+        let over =
+            preview_zoom::over_box(state, crate::ui::skirmish_shell::choose_map_page::DIALOG);
         if !preview_zoom::press_on_box(state, over) {
             Self::choose_map_pointer(state, Pointer::Down);
         }
@@ -944,8 +948,10 @@ impl App {
     /// shows.
     fn sync_choose_map_prompt(
         state: &mut AppState,
-    ) -> Option<(crate::ui::skirmish_shell::ChooseMapPrompt, crate::ui::shell::modal::ShellBox)>
-    {
+    ) -> Option<(
+        crate::ui::skirmish_shell::ChooseMapPrompt,
+        crate::ui::shell::modal::ShellBox,
+    )> {
         use crate::ui::shell::modal::control::CANCEL;
         use vera20k_gui::{Prop, Value};
         let prompt = chooser(state)?.message_box?;
@@ -1457,7 +1463,8 @@ impl App {
         // A release after a trackbar or scrollbar press goes to that control,
         // which holds the mouse; freeing it lets the dialog's hit test run
         // again.
-        let held = crate::ui::skirmish_shell::page::pointer_held(state.frontend.shell_controller.gui());
+        let held =
+            crate::ui::skirmish_shell::page::pointer_held(state.frontend.shell_controller.gui());
         Self::skirmish_page_pointer(state, Pointer::Up);
         if held {
             let (x, y) = state.match_state.input.cursor_px();
@@ -1519,6 +1526,7 @@ impl App {
 
 #[cfg(all(test, tests_app))]
 mod tests {
+    #[cfg(feature = "verax")]
     use super::*;
 
     /// A loose map the chooser lists: the retail `.yrm` branch reads

@@ -21,8 +21,8 @@ use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSp
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 use crate::ui::wol_account::{
-    AccountFormAction, AccountRequest, AccountSignIn, FORM_OK, FORM_REMEMBER,
-    FieldKind, POPUP, WolAccountForm, valid_name,
+    AccountFormAction, AccountRequest, AccountSignIn, FORM_OK, FORM_REMEMBER, FieldKind, POPUP,
+    WolAccountForm, valid_name,
 };
 
 pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x010F);
@@ -1031,7 +1031,12 @@ mod tests {
 
     #[test]
     fn layout_matches_the_executed_800x600_relayout() {
-        let layout = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Legacy,
+        );
         let buttons: Vec<(u16, RectPx)> = layout
             .page
             .buttons
@@ -1067,7 +1072,12 @@ mod tests {
             "monitor 0x71C"
         );
         // 640x480: the right column moves left by 160, the left side stays.
-        let small = WolLoginLayout::new(640, 480, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy);
+        let small = WolLoginLayout::new(
+            640,
+            480,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Legacy,
+        );
         assert_eq!(
             small.page.button_rect(BACK),
             Some(RectPx::new(484, 409, 156, 42))
@@ -1152,9 +1162,14 @@ mod tests {
         assert_eq!(page.globals.password, "12345678", "limit 8");
         assert!(page.on(LOGIN, Prop::Enabled) && page.on(REMEMBER, Prop::Enabled));
         assert!(page.globals.changed);
-        let remember = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy)
-            .rect_of(REMEMBER)
-            .unwrap();
+        let remember = WolLoginLayout::new(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Legacy,
+        )
+        .rect_of(REMEMBER)
+        .unwrap();
         page.click(&mut login, inside(remember));
         assert!(page.globals.remember && page.on(REMEMBER, Prop::Checked));
         assert_eq!(
@@ -1268,7 +1283,12 @@ mod tests {
         page.focus(PASSWORD);
         login.insert_text(&mut page.cx(), "secret12");
         let ui = &page.ui;
-        let painted = |id| ui.gui().edit_state(ui.control(DIALOG, id).unwrap()).unwrap().painted_text();
+        let painted = |id| {
+            ui.gui()
+                .edit_state(ui.control(DIALOG, id).unwrap())
+                .unwrap()
+                .painted_text()
+        };
         assert_eq!(painted(PASSWORD), "********");
         assert_eq!(painted(NICKNAME), "");
     }
@@ -1356,9 +1376,14 @@ mod tests {
         assert!(page.globals.remember);
         // Unticking Remember password, on its box only, forgets it at once.
         let mut login = WolLoginState::open_online(&mut page.cx(), Some("Tanya"), None);
-        let remember = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online)
-            .rect_of(FORM_REMEMBER)
-            .unwrap();
+        let remember = WolLoginLayout::new(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Online,
+        )
+        .rect_of(FORM_REMEMBER)
+        .unwrap();
         let caption = (remember.x + 30, remember.y + 5);
         assert_eq!(page.click(&mut login, caption), None);
         assert!(
@@ -1371,9 +1396,14 @@ mod tests {
         );
         assert!(!page.on(FORM_REMEMBER, Prop::Checked) && login.remembered.is_none());
         // A press on a field gives it the keys.
-        let name_field = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online)
-            .rect_of(WolAccountForm::field_id(0))
-            .unwrap();
+        let name_field = WolLoginLayout::new(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Online,
+        )
+        .rect_of(WolAccountForm::field_id(0))
+        .unwrap();
         page.click(&mut login, inside(name_field));
         login.insert_text(&mut page.cx(), "2");
         assert_eq!(login.online_name(&page.ui), "Tanya2");
@@ -1429,8 +1459,18 @@ mod tests {
 
     #[test]
     fn online_page_offers_play_the_sign_in_form_and_the_account_buttons() {
-        let layout = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online);
-        let native = WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Online,
+        );
+        let native = WolLoginLayout::new(
+            800,
+            600,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            LoginPolicy::Legacy,
+        );
         assert_eq!(
             layout
                 .page
@@ -1528,7 +1568,12 @@ mod tests {
     fn account_popups_centre_on_the_page_left_of_the_button_column() {
         use crate::ui::shell::modal::wol_account_form_layout_on;
         for layout in [
-            WolLoginLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, LoginPolicy::Online),
+            WolLoginLayout::new(
+                800,
+                600,
+                crate::ui::shell::geom::RETAIL_SCALE,
+                LoginPolicy::Online,
+            ),
             WolLoginLayout::new(
                 1920,
                 1080,

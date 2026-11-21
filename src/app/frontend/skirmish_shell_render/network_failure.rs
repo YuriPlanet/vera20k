@@ -6,7 +6,6 @@ use super::in_game_shell::{
 };
 use crate::app::AppState;
 use crate::app::match_runtime::network_failure::{labels, vera_body};
-use crate::ui::shell::geom::ShellScale;
 
 pub(crate) fn render_network_failure(
     state: &mut AppState,
@@ -39,13 +38,26 @@ pub(crate) fn render_network_failure(
         super::modals::push_message_box_backdrop_instances(
             &mut art,
             atlas,
-            &crate::ui::skirmish_shell::compute_layout_on(crate::ui::shell::geom::RETAIL_SCALE, width, height),
+            &crate::ui::skirmish_shell::compute_layout_on(
+                crate::ui::shell::geom::RETAIL_SCALE,
+                width,
+                height,
+            ),
         );
     }
-    let look = super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
+    let look =
+        super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
     let size = (width as i32, height as i32);
     let (controls_out, texts_out) = (Some(&mut controls), Some((&mut texts, false)));
-    super::shell_box::push_skirmish_box(state, size, &shell_box, pressed, look, controls_out, texts_out);
+    super::shell_box::push_skirmish_box(
+        state,
+        size,
+        &shell_box,
+        pressed,
+        look,
+        controls_out,
+        texts_out,
+    );
     render_shell_frame(
         state,
         encoder,

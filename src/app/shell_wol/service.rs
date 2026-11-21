@@ -14,11 +14,11 @@ use crate::util::time::{Duration, Instant};
 use super::{WolBoxThen, WolPage, WolVisit};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember};
 use crate::ui::wol_login::WolCredential;
 use crate::ui::wol_shell::{WolMode, WolWaitBox};
-use crate::ui::shell::modal::ShellBox;
 
 /// Which WOLAPI stands behind the visit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1120,7 +1120,11 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
 
 pub(super) fn wait_box(state: &AppState, key: &str) -> WolWaitBox {
     let text = |key| state.csf_text(key);
-    WolWaitBox::new(text(key), text("GUI:Disconnect"), text("GUI:WOLCheckStatus"))
+    WolWaitBox::new(
+        text(key),
+        text("GUI:Disconnect"),
+        text("GUI:WOLCheckStatus"),
+    )
 }
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).

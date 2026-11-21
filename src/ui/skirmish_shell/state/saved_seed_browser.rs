@@ -231,7 +231,9 @@ impl<I> SavedSeedBrowserState<I> {
     /// The description edit as NewEdit paints it: the first shown unit is
     /// its `Top`, the focus the browser's own.
     pub fn edit(&self) -> NewEdit {
-        let edit = self.node(EDIT).and_then(|node| self.ui.gui().edit_state(node));
+        let edit = self
+            .node(EDIT)
+            .and_then(|node| self.ui.gui().edit_state(node));
         NewEdit {
             focused: self.prompt.is_none() && self.ui.focused_control(BROWSER_DIALOG) == Some(EDIT),
             password: false,

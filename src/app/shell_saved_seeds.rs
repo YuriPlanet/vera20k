@@ -8,11 +8,11 @@ use super::shell_random_map::{
 use super::*;
 use crate::app::frontend::shell_layout;
 use crate::map::rmg::{SeedDescription, saved_seeds};
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::skirmish_shell::{
     SavedSeedLayout, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 use crate::util::native_file_name::{self, NativeFileName};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 

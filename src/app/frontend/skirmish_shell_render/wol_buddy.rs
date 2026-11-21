@@ -15,8 +15,8 @@ use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::shell::geom::RectPx;
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_buddy::*;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 pub(crate) fn paint_wol_buddy_children(
     state: &AppState,

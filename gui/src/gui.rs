@@ -513,6 +513,13 @@ impl Gui {
                 if let Some(n) = over.filter(|n| Some(*n) != held && self.release_activates(*n)) {
                     self.activate(n);
                 }
+                // A `RehoverOnRelease` node let go: the hover follows the
+                // pointer at once, as a move there would.
+                let rehover = |n: &crate::node::Node| n.bool_prop(Prop::RehoverOnRelease, false);
+                if held.is_some_and(|n| self.tree.node(n).is_ok_and(rehover)) {
+                    let over = self.hit(root, x, y);
+                    self.set_hover(over);
+                }
                 InputResult { consumed: held.is_some() || over.is_some() || modal }
             }
             InputEvent::PointerDown { .. } | InputEvent::PointerUp { .. } => {
@@ -1253,6 +1260,19 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_rehover_on_release_node_lets_the_hover_follow_its_release() {
+        let (mut g, a, b) = page_with_two_buttons();
+        let release_at_b = |g: &mut Gui| {
+            down(g, 5);
+            g.input(InputEvent::PointerUp { x: 15, y: 5, button: MouseButton::Left }, 0);
+            g.hovered()
+        };
+        assert_eq!(release_at_b(&mut g), Some(a), "the hover waits for a move");
+        g.set(a, Prop::RehoverOnRelease, Value::Bool(true)).unwrap();
+        assert_eq!(release_at_b(&mut g), Some(b));
     }
 
     #[test]

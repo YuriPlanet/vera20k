@@ -209,8 +209,7 @@ pub(crate) fn start_marker_picture(
         }
     };
     put(&art.rgba, art.width, sprite.0 - left, sprite.1 - top, None);
-    let tint =
-        super::SHELL_LABEL_TEXT_RGB.map(|channel| (channel * 255.0).round() as u8);
+    let tint = super::SHELL_LABEL_TEXT_RGB.map(|channel| (channel * 255.0).round() as u8);
     let mut x = text.0 - left;
     for glyph in glyphs {
         put(&glyph.rgba, glyph.width, x, text.1 - top, Some(tint));

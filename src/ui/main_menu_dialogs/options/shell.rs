@@ -1059,6 +1059,8 @@ impl OptionsDialogState {
                         .with(Prop::Selected, Value::Int(list.shown.unwrap_or(0) as i32))
                         .with(Prop::Text, Value::Text(list.face))
                         .with(Prop::Items, Value::Items(list.rows))
+                        // The face's text 3 px in, clear of the arrow.
+                        .with(Prop::TextInset, Value::Rect(RectPx::new(3, 0, 20, 0)))
                         .with(Prop::OpenAnywhere, Value::Bool(true));
                     match esc_menu {
                         // Keep the list in the control column and lift it just

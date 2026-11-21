@@ -20,7 +20,7 @@ use crate::render::shell_paint::{
 };
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{BoxButton, BoxParts, ShellBox};
 
 /// How a box sits in its host's paint: its art, its layers' depths (the

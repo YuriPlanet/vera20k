@@ -53,7 +53,9 @@ impl App {
         // message box over the page takes it first.
         use crate::ui::skirmish_shell::saved_seed_browser::{BACK, BROWSER_DIALOG};
         let cancel = vera20k_gui::Value::Bool(true);
-        browser.ui.set_prop(BROWSER_DIALOG, BACK, vera20k_gui::Prop::Cancel, cancel);
+        browser
+            .ui
+            .set_prop(BROWSER_DIALOG, BACK, vera20k_gui::Prop::Cancel, cancel);
         Self::blur_player_name(state);
         state.frontend.skirmish_shell_state.setups_browser = Some(browser);
     }

@@ -347,14 +347,12 @@ impl WolAccountForm {
             let captions = (0..fields.len() as u16).map(|index| FIRST_CAPTION + index);
             let spec = NodeSpec::new(NodeKind::Dialog)
                 .children(captions.map(|id| text(id, ShellAlign::H_RIGHT)))
-                .children(
-                    [FORM_OK, FORM_CANCEL].map(|id| {
-                        NodeSpec::new(NodeKind::Button)
-                            .id(id.into())
-                            .with(Prop::Default, Value::Bool(id == FORM_OK))
-                            .with(Prop::Cancel, Value::Bool(id == FORM_CANCEL))
-                    }),
-                )
+                .children([FORM_OK, FORM_CANCEL].map(|id| {
+                    NodeSpec::new(NodeKind::Button)
+                        .id(id.into())
+                        .with(Prop::Default, Value::Bool(id == FORM_OK))
+                        .with(Prop::Cancel, Value::Bool(id == FORM_CANCEL))
+                }))
                 .child(text(FORM_STATUS, ShellAlign::NONE))
                 .children(
                     fields

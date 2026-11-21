@@ -14,7 +14,6 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::stock_skirmish_modes;
 use crate::ui::shell::page::PageCue;
-use vera20k_gui::shell::trackbar::THUMB_W;
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::page;
 use crate::ui::skirmish_shell::{
@@ -22,6 +21,7 @@ use crate::ui::skirmish_shell::{
     COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
     compute_layout_for_rows,
 };
+use vera20k_gui::shell::trackbar::THUMB_W;
 
 // The page's widgets driven as the app drives them ([`page::pointer`]): one
 // shell controller per test thread, with the layout and maps of the last
@@ -621,9 +621,7 @@ fn player_name_press_selects_it_and_typing_replaces_it_within_nineteen_bytes() {
     handle_option_mouse_up(&mut shell);
     let typed = |shell: &mut SkirmishShellState, event| {
         PAGE.with_borrow_mut(|(controller, _, _)| {
-            page::key(controller, shell, Some(event), |t| {
-                t.len() as u32 * 6
-            })
+            page::key(controller, shell, Some(event), |t| t.len() as u32 * 6)
         })
     };
     assert!(typed(

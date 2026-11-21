@@ -267,10 +267,22 @@ impl WolMyInfoPage {
                     .map(|row| row as i32 + 1)
             })
             .flatten();
-        page::set(gui, root, NICKNAME, Prop::Selected, Value::Int(found.unwrap_or(0)));
+        page::set(
+            gui,
+            root,
+            NICKNAME,
+            Prop::Selected,
+            Value::Int(found.unwrap_or(0)),
+        );
         page.refresh(gui, root, persona, texts);
         let stored = page.slot(gui, root) != -1;
-        set_flag(gui, root, &[FORGET, PLAY_BUDDY, AUTO_LOGIN], Prop::Enabled, stored);
+        set_flag(
+            gui,
+            root,
+            &[FORGET, PLAY_BUDDY, AUTO_LOGIN],
+            Prop::Enabled,
+            stored,
+        );
         set_flag(gui, root, &[AUTO_LOGIN], Prop::Checked, auto_login_names_it);
         page
     }
@@ -281,7 +293,13 @@ impl WolMyInfoPage {
             return;
         };
         let items = |f: fn(&MyInfoRow) -> String| Value::Items(rows.iter().map(f).collect());
-        page::set(gui, root, control, Prop::Items, items(|row| row.text.clone()));
+        page::set(
+            gui,
+            root,
+            control,
+            Prop::Items,
+            items(|row| row.text.clone()),
+        );
         let swatches = items(|row| row.swatch.map(|s| s.to_string()).unwrap_or_default());
         page::set(gui, root, control, Prop::Swatches, swatches);
     }
@@ -305,14 +323,20 @@ impl WolMyInfoPage {
         persona: &MyInfoPersona,
         texts: Vec<(u16, String)>,
     ) {
-        let server = (self.combos[1].iter())
-            .position(|row| row.text.eq_ignore_ascii_case(&persona.server));
+        let server =
+            (self.combos[1].iter()).position(|row| row.text.eq_ignore_ascii_case(&persona.server));
         let server = Value::Int(server.map_or(-1, |row| row as i32));
         page::set(gui, root, SERVER, Prop::Selected, server);
         self.select_data(gui, root, LOCALE, persona.locale);
         self.select_data(gui, root, COUNTRY, persona.country);
         self.select_data(gui, root, COLOR, persona.color);
-        set_flag(gui, root, &[MATCH_SAME_RES], Prop::Checked, persona.match_by_res);
+        set_flag(
+            gui,
+            root,
+            &[MATCH_SAME_RES],
+            Prop::Checked,
+            persona.match_by_res,
+        );
         self.texts = texts;
         for id in [HEADING, UPDATE].into_iter().chain(STATS) {
             let text = self.texts.iter().find(|(control, _)| *control == id);
@@ -749,7 +773,10 @@ mod tests {
             .collect();
         assert_eq!(names, ["Default", "tester"]);
         assert_eq!(p.page.slot(&p.gui, p.root), -1);
-        assert_eq!(p.enabled(&[FORGET, AUTO_LOGIN, PLAY_BUDDY]), [false, false, true]);
+        assert_eq!(
+            p.enabled(&[FORGET, AUTO_LOGIN, PLAY_BUDDY]),
+            [false, false, true]
+        );
         assert!(!p.flag(AUTO_LOGIN, Prop::Checked));
     }
 

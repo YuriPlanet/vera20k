@@ -20,9 +20,9 @@ use crate::ui::movies_credits_shell::{
 };
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::ShellScale;
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// The family page `dialog`'s list as its `List` node shows it, with its
 /// geometry in window `list`.
@@ -109,10 +109,12 @@ pub(crate) fn render_movie_list(
         FamilyFrame::new("Movie List Shell", page, panel, title).on(state, dialog, &tree);
     frame.backdrop = true;
     if !leaving {
+        let mut bar = None;
         if let Some(list) = state.frontend.movie_list.as_ref()
             && let Some((sprites, geometry, view)) =
                 paint_family_list(state, dialog, layout.list, page.scale)
         {
+            bar = geometry.scrollbar;
             frame.over.controls.extend(sprites);
             for (visible, movie) in list
                 .iter()
@@ -130,6 +132,7 @@ pub(crate) fn render_movie_list(
                 });
             }
         }
+        frame.list_boxes.push((layout.list, bar));
         frame.labels.push(PaintLabel {
             text: state.csf_text(MOVIE_LIST_PROMPT_KEY).into(),
             rect: layout.prompt,

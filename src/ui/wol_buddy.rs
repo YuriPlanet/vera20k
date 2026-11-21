@@ -600,17 +600,13 @@ pub(crate) fn spec() -> NodeSpec {
             .label(key)
             .with(Prop::Align, align(a))
     });
-    let observer =
-        help(NodeKind::Checkbox, OBSERVER_TOGGLE);
+    let observer = help(NodeKind::Checkbox, OBSERVER_TOGGLE);
     NodeSpec::new(NodeKind::Dialog)
         .children(page::menu_buttons(&PAGE))
         .child(help(NodeKind::Button, REFRESH))
         .child(observer)
         .child(NodeSpec::new(NodeKind::Checkbox).id(OBSERVER_IMAGE.into()))
-        .child(
-            help(NodeKind::List, LIST)
-                .with(Prop::RowCount, Value::Int(0)),
-        )
+        .child(help(NodeKind::List, LIST).with(Prop::RowCount, Value::Int(0)))
         .children(labels)
         .child(help(NodeKind::Text, HEADING).with(Prop::Align, align(ShellAlign::H_CENTER)))
         .children(

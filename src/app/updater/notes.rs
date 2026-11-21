@@ -11,9 +11,9 @@ use crate::app::state::AppState;
 use crate::render::bit_font::BitFont;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
-use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::modal::{BoxParts, control, menu_area, message_box_parts};
 use crate::util::time::Instant;
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
 /// The label of the list's first row.

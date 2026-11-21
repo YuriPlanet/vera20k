@@ -11,13 +11,13 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
-use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::modal::ShellBox;
 use crate::ui::shell::modal::WolVerifyLayout;
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_shell::BOX_OK;
 use crate::util::time::Instant;
 use std::ops::Range;
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 
 /// VERA's room shows `0x130` only once the connection check has taken this
 /// long, so a quick check does not flash a box before the loading screen.
@@ -280,7 +280,7 @@ mod tests {
         let mut dialog = WolVerifyDialog::open((0..30).map(|n| format!("Player{n}")).collect());
         let layout = crate::ui::shell::modal::wol_verify_layout(800, 600);
         let ok = RectPx::default();
-        let mut click = |dialog: &mut WolVerifyDialog, at| {
+        let click = |dialog: &mut WolVerifyDialog, at| {
             dialog.pointer(&layout, ok, at, Some(true));
             dialog.pointer(&layout, ok, at, Some(false))
         };

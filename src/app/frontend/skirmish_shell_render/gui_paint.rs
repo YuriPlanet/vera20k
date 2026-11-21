@@ -36,6 +36,8 @@ use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
 #[derive(Default)]
 pub(crate) struct GuiPaint {
     pub(crate) controls: Vec<SpriteInstance>,
+    /// [`ButtonArt::Column`] buttons, on the main-menu chrome.
+    pub(crate) column: Vec<SpriteInstance>,
     /// [`CellRow`] pictures, on the style's page art.
     pub(crate) icons: Vec<SpriteInstance>,
     pub(crate) texts: Vec<ShellTextDraw>,
@@ -75,9 +77,16 @@ pub(crate) enum ButtonArt {
     /// while `Toggled` (record `+0xC5`), with the type-1 caption, or one in
     /// their rect in their own `Align`.
     Panel,
+    /// [`Self::Panel`] on a family page's column: the SDBTNANM art on the
+    /// main-menu chrome ([`GuiPaint::column`]), fitted right-anchored to the
+    /// cell, and the type-1 caption inset in the window rect.
+    Column,
     /// Owner-draw type-3 buttons (MNBTTN), pushed under the pointer, with
     /// their caption centred.
     Modal,
+    /// [`Self::Modal`]'s art with its caption centred on the whole rect,
+    /// pressed or not (VERA's team bar).
+    ModalCentred,
     /// A framed plate with its caption in its `Align` (VERA's Extras rows).
     Plate,
     /// The caption alone, in its `Align` (`0x113`'s text sort buttons, whose
@@ -335,6 +344,7 @@ impl GuiPaint {
     /// Appends `other`'s draws after this one's.
     pub(crate) fn extend(&mut self, other: GuiPaint) {
         self.controls.extend(other.controls);
+        self.column.extend(other.column);
         self.icons.extend(other.icons);
         self.texts.extend(other.texts);
         self.popup.extend(other.popup);
@@ -406,7 +416,7 @@ pub(crate) fn paint_gui_with(
                     .and_then(|(art_of, id)| art_of(id))
                     .unwrap_or(style.buttons);
                 let pressed = match art {
-                    ButtonArt::Modal => held,
+                    ButtonArt::Modal | ButtonArt::ModalCentred => held,
                     _ => captured,
                 } == Some(node);
                 match art {
@@ -423,7 +433,19 @@ pub(crate) fn paint_gui_with(
                         !enabled,
                         SHELL_CONTROL_DEPTH,
                     ),
-                    ButtonArt::Modal => {
+                    ButtonArt::Column => {
+                        let visual = vera20k_gui::shell::button::ButtonVisual {
+                            pressed,
+                            highlighted: flag(gui, node, Prop::Toggled, false),
+                        };
+                        let frame =
+                            super::chrome::right_panel_button_sdbtnanm_frame_index(visual, !enabled);
+                        let chrome = state.frontend.main_menu_shell_chrome.as_ref();
+                        paint.column.extend(chrome.and_then(|chrome| {
+                            shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
+                        }));
+                    }
+                    ButtonArt::Modal | ButtonArt::ModalCentred => {
                         let button = ModalButton {
                             rect,
                             pressed,
@@ -477,7 +499,16 @@ pub(crate) fn paint_gui_with(
                         ),
                         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     ),
+                    (ButtonArt::ModalCentred, _) => {
+                        (rect, ShellAlign::H_CENTER | ShellAlign::V_CENTER)
+                    }
                     (_, Some(_)) => (rect, align),
+                    (ButtonArt::Column, None) => (
+                        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                            rect, pressed,
+                        ),
+                        ShellAlign::BUTTON_CAPTION,
+                    ),
                     (_, None) => (
                         button_label_rect_px(rect, pressed, scale),
                         ShellAlign::BUTTON_CAPTION,
@@ -840,8 +871,10 @@ fn paint_combo(
             Some(combo_face_text_color(true)),
         );
         if let Some(face) = face.filter(|_| caption) {
-            // Cut to gamemd's arrow reserve (`0x00617250`), squeezed first.
-            let at = combo_face_text_draw_rect(rect, scale);
+            // Cut to gamemd's arrow reserve (`0x00617250`), squeezed first;
+            // drawn in the face less its `TextInset` when it has one.
+            let at = inset(gui, node, rect, scale)
+                .unwrap_or_else(|| combo_face_text_draw_rect(rect, scale));
             fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
                 paint.texts.push(text(
                     state,

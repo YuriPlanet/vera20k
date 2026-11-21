@@ -378,7 +378,12 @@ impl KeyboardLayout {
     /// chrome where every other scaled family page puts it. Identity at the
     /// base size. The in-game frame keeps its own layout, so it takes `new`.
     pub fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, None, crate::ui::shell::geom::shell_scale(width, height))
+        Self::build(
+            width,
+            height,
+            None,
+            crate::ui::shell::geom::shell_scale(width, height),
+        )
     }
 
     fn build(

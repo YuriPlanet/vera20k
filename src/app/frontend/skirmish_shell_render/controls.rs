@@ -12,12 +12,12 @@ use crate::render::skirmish_shell_chrome::{
 };
 use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::ShellScale;
-use vera20k_gui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
     DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
     checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
     opponent_scroll_geometry,
 };
+use vera20k_gui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 
 use super::chrome::{
     push_entry, push_entry_grown, push_entry_top_clipped, push_entry_wrapped_centered,
@@ -738,8 +738,7 @@ mod tests {
         use crate::ui::skirmish_shell::page::{self, Pointer};
         use crate::ui::skirmish_shell::{
             SkirmishComboId, combo_arrow_hit_rect, combo_dropdown_row_rect, combo_rect,
-            compute_layout, selected_combo_item,
-            selected_combo_item_index,
+            compute_layout, selected_combo_item, selected_combo_item_index,
         };
 
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -760,7 +759,7 @@ mod tests {
                 shell.refresh_country_catalog(&rules);
                 let mut ui = DialogController::default();
                 let labels = Default::default();
-                let mut at = |shell: &mut SkirmishShellState, ui: &mut DialogController, p, (x, y)| {
+                let at = |shell: &mut SkirmishShellState, ui: &mut DialogController, p, (x, y)| {
                     page::pointer(ui, shell, &layout, &[], &labels, p, x, y);
                 };
                 // The painted highlight: the hot row on the list's grid.
@@ -774,25 +773,41 @@ mod tests {
                 at(&mut shell, &mut ui, Pointer::Down, (arrow.x, arrow.y));
                 let open = page::open_combo(ui.gui(), &shell).unwrap();
                 assert_eq!(open.id, id);
-                let content = ui.gui().combo_drop_down(ui.gui().popup().unwrap()).unwrap().popup.content();
+                let content = ui
+                    .gui()
+                    .combo_drop_down(ui.gui().popup().unwrap())
+                    .unwrap()
+                    .popup
+                    .content();
 
                 // Move through two rows, including a row other than the saved
                 // choice. The renderer must follow each move immediately.
                 for index in [0, 1] {
                     let row = combo_dropdown_row_rect(content, layout.scale, index);
                     at(&mut shell, &mut ui, Pointer::Move, (row.x + 1, row.y + 1));
-                    assert_eq!(hot(&ui), Some(row), "{id:?}, row {index}, scale {:?}", layout.scale);
+                    assert_eq!(
+                        hot(&ui),
+                        Some(row),
+                        "{id:?}, row {index}, scale {:?}",
+                        layout.scale
+                    );
                     assert_eq!(selected_combo_item(&shell, id), selected);
                 }
 
                 // Leaving the popup retains its last hot row. Dismissing it
                 // must discard the preview when the control opens again.
                 at(&mut shell, &mut ui, Pointer::Move, (-1, -1));
-                assert_eq!(hot(&ui), Some(combo_dropdown_row_rect(content, layout.scale, 1)));
+                assert_eq!(
+                    hot(&ui),
+                    Some(combo_dropdown_row_rect(content, layout.scale, 1))
+                );
                 at(&mut shell, &mut ui, Pointer::Down, (-1, -1));
                 at(&mut shell, &mut ui, Pointer::Down, (arrow.x, arrow.y));
                 let saved_index = selected_combo_item_index(&shell, &[], id).unwrap();
-                assert_eq!(hot(&ui), Some(combo_dropdown_row_rect(content, layout.scale, saved_index)));
+                assert_eq!(
+                    hot(&ui),
+                    Some(combo_dropdown_row_rect(content, layout.scale, saved_index))
+                );
             }
         }
     }
@@ -1074,12 +1089,16 @@ mod tests {
             // 640x480 fits Options to the window, so its rects map back first.
             for category in crate::ui::main_menu_dialogs::options::Category::ALL {
                 let layout = LauncherOptionsLayout::new(width as i32, height as i32, category);
-                windows.extend(layout.settings().filter_map(|(setting, rect)| match setting {
-                    crate::ui::main_menu_dialogs::options::Setting::Slider(id) => {
-                        Some((id.plaque_reserve() > 0, layout.scale.base_rect(rect)))
-                    }
-                    _ => None,
-                }));
+                windows.extend(
+                    layout
+                        .settings()
+                        .filter_map(|(setting, rect)| match setting {
+                            crate::ui::main_menu_dialogs::options::Setting::Slider(id) => {
+                                Some((id.plaque_reserve() > 0, layout.scale.base_rect(rect)))
+                            }
+                            _ => None,
+                        }),
+                );
             }
             windows.extend(
                 crate::ui::shell::sound::ShellSoundLayout::new(
@@ -1087,8 +1106,8 @@ mod tests {
                     height as i32,
                     crate::ui::shell::geom::RETAIL_SCALE,
                 )
-                    .sliders
-                    .map(|rect| (true, rect)),
+                .sliders
+                .map(|rect| (true, rect)),
             );
             // The online pause menu's Internet Game Controls.
             let shell =
@@ -1668,13 +1687,18 @@ pub(super) fn list_view_controls(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     geometry: vera20k_gui::shell::list::ShellListGeometry,
-    (selected, top, pressed): (Option<usize>, usize, Option<vera20k_gui::shell::list::ListScrollPart>),
+    (selected, top, pressed): (
+        Option<usize>,
+        usize,
+        Option<vera20k_gui::shell::list::ListScrollPart>,
+    ),
     scale: ShellScale,
 ) {
     // Frame lines and scrollbar geometry are shared with all native lists.
     // Their backing remains the composed parent. Its one-RGB565-unit darkening
     // is a small presentation residual until the common atlas carries it.
-    for (line, tone) in vera20k_gui::shell::list::list_frame_lines(scale.base_rect(geometry.outer)) {
+    for (line, tone) in vera20k_gui::shell::list::list_frame_lines(scale.base_rect(geometry.outer))
+    {
         push_solid_rect(
             out,
             atlas,

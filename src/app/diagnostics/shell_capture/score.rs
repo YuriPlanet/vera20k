@@ -639,7 +639,12 @@ fn campaign_score_layout(state: &AppState) -> CampaignScoreLayout {
 
 pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
     let layout = campaign_score_layout(state);
-    let button = layout.page.buttons.first().map(|button| button.rect).unwrap_or_default();
+    let button = layout
+        .page
+        .buttons
+        .first()
+        .map(|button| button.rect)
+        .unwrap_or_default();
     state.match_state.input.cursor_x = (button.x + button.w / 2) as f32;
     state.match_state.input.cursor_y = (button.y + button.h / 2) as f32;
     App::handle_campaign_score_mouse(state, None);

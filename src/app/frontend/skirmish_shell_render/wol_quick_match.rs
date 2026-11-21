@@ -10,10 +10,10 @@ use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::shell::geom::RectPx;
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_quick_match::{
     CAPTION, DIALOG, MATCH_STATUS_KEY, TRANSCRIPT, WolQuickMatchLayout, WolQuickMatchPage,
 };
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 pub(crate) fn paint_wol_quick_match_children(
     state: &AppState,

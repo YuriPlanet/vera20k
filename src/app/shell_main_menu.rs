@@ -370,7 +370,10 @@ impl App {
         state.frontend.campaign_score_page = Some(page);
         state.frontend.shell_first_paint_slide = None;
         state.frontend.screen = GameScreen::MissionResult { title, detail };
-        state.frontend.shell_controller.reset_to(crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG);
+        state
+            .frontend
+            .shell_controller
+            .reset_to(crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG);
         // gamemd StandaloneScore dialog proc6C8FF0, WM_INIT6C9357..6C936C:
         // the theme starts here, after Victory685928's Win movie has returned.
         if let Some(assets) = state.process_assets.manager() {
@@ -583,7 +586,10 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         state.frontend.shell_route = ShellRoute::SinglePlayer;
         // A new 0x100 instance starts with no press or hover.
-        state.frontend.shell_controller.reset_to(crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog);
+        state
+            .frontend
+            .shell_controller
+            .reset_to(crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog);
         Self::refresh_single_player_load_state(state);
     }
 

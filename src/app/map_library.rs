@@ -518,10 +518,7 @@ fn set_prompt(state: &mut AppState, selection: ChooseMapSelection, kind: ChooseM
         .choose_map_modal
         .as_mut()
     {
-        modal.message_box = Some(ChooseMapPrompt {
-            selection,
-            kind,
-        });
+        modal.message_box = Some(ChooseMapPrompt { selection, kind });
     }
     state.platform.window.request_redraw();
 }

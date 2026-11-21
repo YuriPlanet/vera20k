@@ -8,12 +8,12 @@ use super::launcher_options;
 use crate::app::AppState;
 use crate::assets::csf_file::CsfFile;
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::pause_menu::{
     InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate,
 };
-use vera20k_gui::shell::trackbar::value_text_rect;
 use crate::ui::sidebar::SidebarTheme;
+use vera20k_gui::shell::trackbar::value_text_rect;
 
 /// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
 /// Disabled buttons retain their SHP frame;612F5F changes their text color only.
@@ -182,16 +182,22 @@ pub(crate) fn render_pause_menu_shell(
                 let index = slider as usize;
                 let rect = internet.sliders[index];
                 let value = pause.positions[index];
-                let thumb_left = slider
-                    .range()
-                    .thumb_left_in(value, rect, crate::ui::shell::geom::RETAIL_SCALE);
+                let thumb_left =
+                    slider
+                        .range()
+                        .thumb_left_in(value, rect, crate::ui::shell::geom::RETAIL_SCALE);
                 let trackbar = ControlPaint::Trackbar {
                     rect,
                     thumb_left,
                     plaque: true,
                     disabled: false,
                 };
-                paint_control(&mut paint.controls, &chrome, trackbar, crate::ui::shell::geom::RETAIL_SCALE);
+                paint_control(
+                    &mut paint.controls,
+                    &chrome,
+                    trackbar,
+                    crate::ui::shell::geom::RETAIL_SCALE,
+                );
                 let at = value_text_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
                 paint.text(
                     &value.to_string(),

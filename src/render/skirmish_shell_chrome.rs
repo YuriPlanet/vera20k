@@ -999,7 +999,6 @@ mod tests {
     use crate::render::chrome_atlas::{
         load_palette as load_named_palette, pcx_piece, shp_file_piece,
     };
-    use crate::ui::shell::geom::ShellScale;
     use std::collections::HashMap;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -84,7 +84,9 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     }
     // NewEdit keeps the chat's caret in view.
     if let Some(chat) = controller.control(page, CHAT) {
-        let _ = controller.gui_mut().keep_caret_in_view(chat, &|text| font.text_width(text));
+        let _ = controller
+            .gui_mut()
+            .keep_caret_in_view(chat, &|text| font.text_width(text));
     }
     // The widgets on screen follow the session between inputs too: a list
     // whose row moved away closes before it paints, a box opens.
@@ -148,8 +150,16 @@ pub(crate) fn unpark_chat(state: &mut AppState) {
     }
     if let Some(log) = controller.control(page, CHAT_LOG) {
         let gui = controller.gui_mut();
-        let _ = gui.set(log, vera20k_gui::Prop::RowCount, vera20k_gui::Value::Int(parked.rows as i32));
-        let _ = gui.set(log, vera20k_gui::Prop::Top, vera20k_gui::Value::Int(parked.top as i32));
+        let _ = gui.set(
+            log,
+            vera20k_gui::Prop::RowCount,
+            vera20k_gui::Value::Int(parked.rows as i32),
+        );
+        let _ = gui.set(
+            log,
+            vera20k_gui::Prop::Top,
+            vera20k_gui::Value::Int(parked.top as i32),
+        );
     }
 }
 
@@ -294,7 +304,12 @@ fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, Multiplaye
     let shows = preview_box_shows(state, &view);
     let page = view.page().dialog;
     let controller = &mut state.frontend.shell_controller;
-    controller.set_prop(page, MAP_PREVIEW, vera20k_gui::Prop::Visible, vera20k_gui::Value::Bool(shows));
+    controller.set_prop(
+        page,
+        MAP_PREVIEW,
+        vera20k_gui::Prop::Visible,
+        vera20k_gui::Value::Bool(shows),
+    );
     Some((view, layout))
 }
 
@@ -381,9 +396,9 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
             PageEvent::Dropped(cell, Some(target)) => {
                 let row = view.combo(cell).map(|combo| combo.row);
                 let header = usize::try_from(i32::from(target) - i32::from(GROUP_BOX)).ok();
-                let group = row.zip(header).and_then(|(row, header)| {
-                    Some((row, view.drop_group(row, header)?))
-                });
+                let group = row
+                    .zip(header)
+                    .and_then(|(row, header)| Some((row, view.drop_group(row, header)?)));
                 if let Some((row, group)) = group {
                     App::play_page_cue(state, PageCue::Button);
                     crate::app::shell_network_setup::apply_action(
@@ -550,7 +565,17 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     let area = controller.control(view.page().dialog, ROSTER_AREA);
     let scroll = controller.control(view.page().dialog, ROSTER_SCROLL);
     let now = controller.now();
-    let taken = ui.wheel(controller.gui_mut(), area, scroll, &view, &layout, x, y, lines, now);
+    let taken = ui.wheel(
+        controller.gui_mut(),
+        area,
+        scroll,
+        &view,
+        &layout,
+        x,
+        y,
+        lines,
+        now,
+    );
     handle_events(state, &view);
     taken
 }
