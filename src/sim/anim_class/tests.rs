@@ -1560,6 +1560,38 @@ fn runtime_anim_retains_native_identity_and_spends_it_before_asset_failure() {
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
+/// A local anim skips its constructor stream exactly when the constructor
+/// would neither draw nor return a draw.
+#[test]
+fn only_random_rate_bouncer_and_meteor_constructors_draw() {
+    let rules = runtime_rules(
+        "[FLASH]\nEnd=2\n[RATED]\nRandomRate=50,150\nEnd=2\n\
+         [BOUNCY]\nBouncer=yes\nEnd=2\n[ROCK]\nIsMeteor=yes\nEnd=2\n",
+        &[("FLASH", 2), ("RATED", 2), ("BOUNCY", 2), ("ROCK", 2)],
+    );
+    let coord = AnimWorldCoord {
+        x: 128,
+        y: 128,
+        z: 20,
+    };
+    for (name, draws) in [
+        ("FLASH", false),
+        ("RATED", true),
+        ("BOUNCY", true),
+        ("ROCK", true),
+    ] {
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        assert_eq!(super::spawn::constructor_draws(config), draws, "{name}");
+        let mut rng = crate::sim::rng::SimRng::new(7);
+        let before = rng.logical_state();
+        let taken = anim_constructor_draws(config, coord, &mut rng).unwrap();
+        // Equal RandomRate bounds return a rate without a draw, so only the
+        // skipped side must leave the stream as it was.
+        assert!(draws || rng.logical_state() == before, "{name}");
+        assert_eq!(taken != AnimConstructorDraws::default(), draws, "{name}");
+    }
+}
+
 #[test]
 fn preconsumed_anim_constructor_retains_identity_without_redrawing_or_reassigning() {
     let rules = runtime_rules(
