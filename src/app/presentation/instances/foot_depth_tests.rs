@@ -292,7 +292,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     runtime.simulation.entities_mut_for_test().insert(factory);
     let evaluate =
         |rt: &SimRuntime, e: &GameEntity| unit_bridge_split_in_runtime(Some(rt), e, true);
-    tank.radio_contacts.insert(17);
+    tank.seldom.radio_contacts.insert(17);
     assert!(!evaluate(&runtime, &tank));
     tank.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(3, 3)));

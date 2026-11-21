@@ -262,7 +262,6 @@ fn balance_owed(
     sim.production
         .factories()
         .holders_insertion_ordered()
-        .into_iter()
         .map(|(_, factory)| factory)
         .filter(|factory| factory.owner() == owner)
         .find(|factory| {
@@ -300,7 +299,7 @@ pub(crate) fn manage_build_queue(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     #[cfg(any(test, feature = "test-support"))]
     MANAGE_CALLS.with(|calls| calls.set(calls.get().map(|count| count + 1)));
@@ -390,7 +389,7 @@ fn sell_node(
     index: usize,
     sale: &mut Sale,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let node = sim.houses[&owner].base_plan().nodes()[index];
     let building =
@@ -452,7 +451,7 @@ fn restart_production(
     rebuild: Rebuild<'_>,
     slot_zero: Option<BasePlanNode>,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     crate::sim::production::abandon_house_factories(sim, rules, owner, effects);
     let Some(house) = sim.houses.get_mut(&owner) else {

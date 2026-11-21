@@ -71,7 +71,7 @@ fn animated_tiberium_checks_live_cell_identity_after_delay_without_cutting_the_v
     );
     let visit = |sim: &mut Simulation, frame| {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, Some(&overlays), FrameEffects::default())
+        sim.visit_anim(id, &rules, Some(&overlays), &mut FrameEffects::default())
             .unwrap();
     };
     visit(&mut sim, 0);
@@ -168,7 +168,7 @@ fn inactive_tiberium_anim_lands_before_retirement_without_an_ordinary_trailer() 
     let marker = spawn(&mut sim, "MARK");
     let visit = |sim: &mut Simulation, id, frame| {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, Some(&overlays), FrameEffects::default())
+        sim.visit_anim(id, &rules, Some(&overlays), &mut FrameEffects::default())
             .unwrap();
     };
     visit(&mut sim, chunk, 1001);

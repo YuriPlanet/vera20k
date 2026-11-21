@@ -270,7 +270,6 @@ impl PreparedSidebarOrder {
 impl SidebarProjectionState {
     /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
     /// while the frame `inputs` came from and the owner hold.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn cameo_candidates(
         &mut self,
         sim: &Simulation,
@@ -317,6 +316,12 @@ impl SidebarProjectionState {
     /// Changes whenever the retained view does.
     pub(crate) fn view_revision(&self) -> u64 {
         self.view_revision
+    }
+
+    /// The retained view while it is still the one at `revision`, so a reader
+    /// that noted the revision can find that view again without a copy.
+    pub(crate) fn view_at(&self, revision: u64) -> Option<&SidebarView> {
+        self.view().filter(|_| self.view_revision == revision)
     }
 
     /// Whether the retained view was built from `inputs` and the strips and
@@ -1497,22 +1502,25 @@ pub(crate) fn prepare_saved_order(
     let Some(saved) = saved else {
         return Ok(None);
     };
-    #[cfg(feature = "phobos")]
-    let sw_sidebar_expanded = saved.sw_sidebar_expanded();
-    let (flash_deadlines, redraw_until) = {
-        let (deadlines, redraw_until) = saved.flash();
-        (deadlines.clone(), redraw_until)
-    };
-    let request_states = saved.requests().clone();
-    let saved_factory_links = saved.factory_links().clone();
+    let crate::sim::snapshot::SavedSidebarOrderParts {
+        owner,
+        strips: saved_strips,
+        flash_deadlines,
+        redraw_until,
+        request_states,
+        factory_links: saved_factory_links,
+        prediction_categories: saved_categories,
+        active_tab,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_expanded,
+    } = saved.into_parts();
     let active_tab = *SidebarTab::all()
-        .get(usize::from(saved.active_tab()))
+        .get(usize::from(active_tab))
         .ok_or("saved sidebar has an invalid active tab")?;
-    let prediction_categories: HashSet<_> = saved.prediction_categories().iter().copied().collect();
-    if prediction_categories.len() != saved.prediction_categories().len() {
+    let prediction_categories: HashSet<_> = saved_categories.iter().copied().collect();
+    if prediction_categories.len() != saved_categories.len() {
         return Err("saved sidebar has duplicate prediction categories".into());
     }
-    let (owner, saved_strips) = saved.into_parts();
     if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }

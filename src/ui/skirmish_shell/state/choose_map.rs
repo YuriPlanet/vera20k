@@ -8,6 +8,7 @@
 
 use crate::util::time::{Duration, Instant};
 
+use crate::map::rmg::saved_seeds::SavedSeed;
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
     upsert_random_map_sentinel,
@@ -169,9 +170,12 @@ pub const ONLINE_MAPS_ROW: i32 = i32::MIN;
 /// before Online Maps. It lists the maps the player starred.
 pub const FAVORITES_ROW: i32 = i32::MIN + 1;
 
+/// The folder of seeds saved from Create Random Map.
+pub const RANDOM_MAPS_ROW: i32 = i32::MIN + 2;
+
 /// Whether `mode_id` is a row VERA fills itself, not a game type.
 fn is_own_row(mode_id: i32) -> bool {
-    mode_id == ONLINE_MAPS_ROW || mode_id == FAVORITES_ROW
+    matches!(mode_id, ONLINE_MAPS_ROW | FAVORITES_ROW | RANDOM_MAPS_ROW)
 }
 
 /// VERA: what a star is kept under: an online map's SHA-256, any other
@@ -205,6 +209,11 @@ pub struct ChooseMapModalState {
     /// [`ChooseMapContext::official_only`].
     official_only: bool,
     pub filtered_record_indices: Vec<usize>,
+    /// A saved seed becomes a playable scenario only after generation.
+    saved_seeds: Vec<SavedSeed>,
+    filtered_seed_indices: Vec<usize>,
+    /// The last listed game type that allowed random maps.
+    random_maps_mode: Option<SkirmishModeSelection>,
     /// Favorites and Online Maps only: the game type each row's map is
     /// played with, the first listed one that admits it.
     row_modes: Vec<SkirmishModeSelection>,
@@ -338,6 +347,9 @@ impl ChooseMapModalState {
             random_maps_allowed: false,
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
+            saved_seeds: Vec::new(),
+            filtered_seed_indices: Vec::new(),
+            random_maps_mode: None,
             row_modes: Vec::new(),
             search: String::new(),
             favorites: Default::default(),
@@ -381,6 +393,96 @@ impl ChooseMapModalState {
             self.mode_rows.push(FAVORITES_ROW.into());
         }
         self.favorites = favorites;
+    }
+
+    pub fn add_random_maps_row(&mut self, modes: &[SkirmishGameMode]) {
+        let Some(mode) = self.random_maps_game_mode(modes) else {
+            return;
+        };
+        self.random_maps_mode = Some(mode);
+        if !self.mode_rows.contains(&RANDOM_MAPS_ROW.into()) {
+            self.mode_rows.push(RANDOM_MAPS_ROW.into());
+        }
+    }
+
+    /// Refresh the open folder by file identity so two saves with the same
+    /// description remain distinct.
+    pub fn set_saved_seeds(&mut self, mut seeds: Vec<SavedSeed>, layout: &ChooseMapModalLayout) {
+        let selected = self
+            .selected_saved_seed()
+            .map(|seed| seed.file_name.clone());
+        seeds.retain(SavedSeed::is_valid);
+        seeds.sort_by_key(|seed| std::cmp::Reverse(seed.last_write_time));
+        self.saved_seeds = seeds;
+        self.filter_saved_seeds();
+        self.highlighted_filtered_index = selected
+            .and_then(|file| {
+                self.filtered_seed_indices
+                    .iter()
+                    .position(|&idx| self.saved_seeds[idx].file_name == file)
+            })
+            .or_else(|| (!self.filtered_seed_indices.is_empty()).then_some(0));
+        self.scroll_map_selection_to_top(layout);
+    }
+
+    pub fn random_maps_selected(&self) -> bool {
+        self.selected_mode.id == RANDOM_MAPS_ROW
+    }
+
+    /// Play a saved seed with the selected game type, the last eligible one,
+    /// or the first listed type that allows the generator.
+    pub fn random_maps_game_mode(
+        &self,
+        modes: &[SkirmishGameMode],
+    ) -> Option<SkirmishModeSelection> {
+        std::iter::once(self.selected_mode)
+            .chain(self.random_maps_mode)
+            .chain(self.mode_rows.iter().copied())
+            .find(|row| {
+                self.mode_rows.contains(row)
+                    && !is_own_row(row.id)
+                    && row
+                        .resolve(modes)
+                        .is_some_and(|mode| mode.random_maps_allowed)
+            })
+    }
+
+    pub fn selected_saved_seed(&self) -> Option<&SavedSeed> {
+        self.saved_seed_at(self.highlighted_filtered_index?)
+    }
+
+    pub fn saved_seed_at(&self, row: usize) -> Option<&SavedSeed> {
+        self.saved_seeds.get(*self.filtered_seed_indices.get(row)?)
+    }
+
+    fn filter_saved_seeds(&mut self) {
+        let search = self.search.to_lowercase();
+        self.filtered_seed_indices = self
+            .saved_seeds
+            .iter()
+            .enumerate()
+            .filter(|(_, seed)| {
+                search.is_empty()
+                    || seed
+                        .description
+                        .display_text()
+                        .to_lowercase()
+                        .contains(&search)
+            })
+            .map(|(index, _)| index)
+            .collect();
+    }
+
+    fn map_row_indices(&self) -> &[usize] {
+        if self.random_maps_selected() {
+            &self.filtered_seed_indices
+        } else {
+            &self.filtered_record_indices
+        }
+    }
+
+    pub fn map_row_count(&self) -> usize {
+        self.map_row_indices().len()
     }
 
     /// VERA: list the Online Maps row last. A room that takes only official
@@ -442,7 +544,7 @@ impl ChooseMapModalState {
     pub fn map_geometry(&self, layout: &ChooseMapModalLayout) -> ShellListGeometry {
         ShellListGeometry::new(
             list_surface(layout.map_list),
-            self.filtered_record_indices.len(),
+            self.map_row_count(),
             self.map_top_index,
             ListMetrics::scaled(layout.scale),
         )
@@ -472,6 +574,14 @@ impl ChooseMapModalState {
     fn build_map_rows(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
         self.row_labels = None;
         self.row_modes.clear();
+        self.filtered_seed_indices.clear();
+        if self.random_maps_selected() {
+            self.filtered_record_indices.clear();
+            self.filter_saved_seeds();
+            self.random_maps_allowed = self.random_maps_game_mode(modes).is_some();
+            self.map_scroll.cancel();
+            return;
+        }
         if is_own_row(self.selected_mode.id) {
             // Each map is played with the first listed game type that takes
             // it, Cooperative aside: it plays campaigns, not maps. One no
@@ -541,7 +651,9 @@ impl ChooseMapModalState {
         layout: &ChooseMapModalLayout,
     ) -> bool {
         let mode = mode.into();
-        if !is_own_row(mode.id) && mode.resolve(modes).is_none() {
+        if (is_own_row(mode.id) && !self.mode_rows.contains(&mode))
+            || (!is_own_row(mode.id) && mode.resolve(modes).is_none())
+        {
             return false;
         }
         self.reselect_name = self
@@ -550,6 +662,7 @@ impl ChooseMapModalState {
             .map(|record| record.display_name.clone())
             .unwrap_or_default();
         self.selected_mode = mode;
+        self.random_maps_mode = self.random_maps_game_mode(modes);
         self.build_map_list(modes, records);
         self.reselect(records, layout);
         true
@@ -563,7 +676,7 @@ impl ChooseMapModalState {
                 .is_some_and(|record| &record.display_name == name)
         });
         self.highlighted_filtered_index =
-            matched.or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+            matched.or_else(|| (self.map_row_count() > 0).then_some(0));
         self.scroll_map_selection_to_top(layout);
     }
 
@@ -632,15 +745,13 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) {
-        let highlighted = self.selected_record_index();
+        let highlighted = self
+            .highlighted_filtered_index
+            .and_then(|i| self.map_row_indices().get(i).copied());
         self.build_map_list(modes, records);
         self.highlighted_filtered_index = highlighted
-            .and_then(|record| {
-                self.filtered_record_indices
-                    .iter()
-                    .position(|row| *row == record)
-            })
-            .or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+            .and_then(|index| self.map_row_indices().iter().position(|row| *row == index))
+            .or_else(|| (self.map_row_count() > 0).then_some(0));
         // The highlighted map stays in view.
         let geometry = self.map_geometry(layout);
         let mut top = self.map_top_index;
@@ -767,8 +878,12 @@ impl ChooseMapModalState {
             let mode = self.mode_rows[row];
             let changes_catalog_entry = self.selected_mode != mode
                 && (self.selected_mode.catalog_index.is_some() || mode.catalog_index.is_some());
-            self.selected_mode = mode;
-            if *last_mode_row == Some(row) && !is_own_row(mode.id) && !changes_catalog_entry {
+            if *last_mode_row == Some(row)
+                && !is_own_row(self.selected_mode.id)
+                && !is_own_row(mode.id)
+                && !changes_catalog_entry
+            {
+                self.selected_mode = mode;
                 return ChooseMapListPress::RowClicked { rebuilt: false };
             }
             *last_mode_row = Some(row);
@@ -776,7 +891,7 @@ impl ChooseMapModalState {
             return ChooseMapListPress::RowClicked { rebuilt: true };
         }
         if map_geometry.outer.contains(x, y) {
-            let count = self.filtered_record_indices.len();
+            let count = self.map_row_count();
             let Some(row) = map_geometry.row_at(count, self.map_top_index, x, y) else {
                 return ChooseMapListPress::Consumed;
             };
@@ -854,6 +969,9 @@ impl ChooseMapModalState {
     pub fn button_enabled(&self, button: ChooseMapModalButton) -> bool {
         match button {
             ChooseMapModalButton::CreateRandomMap0x583 => self.random_map_button_enabled(),
+            ChooseMapModalButton::UseMap0x6c5 if self.random_maps_selected() => {
+                self.selected_saved_seed().is_some()
+            }
             ChooseMapModalButton::Favorite => {
                 self.row_labels.is_none()
                     && self
@@ -944,6 +1062,9 @@ impl ChooseMapModalState {
             return None;
         }
 
+        if self.random_maps_selected() {
+            self.selected_mode = self.random_maps_game_mode(modes)?;
+        }
         let record_index = upsert_random_map_sentinel(records, display_name, player_capacity);
         self.build_map_list(modes, records);
         self.highlighted_filtered_index = self
@@ -1248,6 +1369,46 @@ mod tests {
         assert!(!modal.button_enabled(ChooseMapModalButton::Favorite));
         modal.highlighted_filtered_index = Some(0);
         assert!(modal.button_enabled(ChooseMapModalButton::Favorite));
+    }
+
+    #[test]
+    fn saved_random_maps_filter_by_name_and_reopen_in_a_playable_mode() {
+        use crate::map::rmg::saved_seeds::SavedSeedFile;
+
+        let modes = stock_skirmish_modes();
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let mut records = vec![record("Ordinary map")];
+        let mut modal = ChooseMapModalState::open(
+            ChooseMapContext::Skirmish,
+            2,
+            Some(0),
+            &modes,
+            &records,
+            &layout,
+        );
+        let seed = |name: &str, description: &str, time| SavedSeed {
+            file_name: SavedSeedFile::in_random_maps(name.into()),
+            description: description.into(),
+            last_write_time: time,
+        };
+        let older = seed("SAVE0001.SED", "Snow pass", 3);
+        let newer = seed("SAVE0002.SED", "Twin peaks", 5);
+        modal.add_random_maps_row(&modes);
+        assert!(modal.select_mode(RANDOM_MAPS_ROW, &modes, &records, &layout));
+        modal.set_saved_seeds(vec![older.clone(), newer.clone()], &layout);
+        assert_eq!(modal.selected_saved_seed(), Some(&newer));
+        assert_eq!(modal.selected_record_index(), None);
+        assert_eq!(modal.favorite_button(&records), None);
+        let use_map = ChooseMapModalButton::UseMap0x6c5;
+        modal.set_search("missing".into(), &modes, &records, &layout);
+        assert!(!modal.button_enabled(use_map));
+        modal.set_search("SNOW".into(), &modes, &records, &layout);
+        assert_eq!(modal.selected_saved_seed(), Some(&older));
+        assert!(modal.button_enabled(use_map));
+
+        let saved = modal.create_random_map(&mut records, &modes, "Snow pass", 4, &layout);
+        assert_eq!(modal.selected_mode.id, 2, "keep Free For All");
+        assert_eq!(modal.accept_selection().unwrap().record_index, saved);
     }
 
     #[test]

@@ -59,9 +59,17 @@ impl LiveTiming {
             frame,
             max_ahead,
             frames_per_second,
-            frame_send_rate: NonZeroU8::new(if frames_per_second > 30 { 10 } else { 5 }).unwrap(),
+            frame_send_rate: send_rate(i32::from(frames_per_second)),
         })
     }
+}
+
+/// The FrameSendRate both timing proposals pair with a frame rate: 10 above
+/// 30 frames a second, else 5.
+fn send_rate(frames_per_second: i32) -> NonZeroU8 {
+    const FAST: NonZeroU8 = NonZeroU8::new(10).unwrap();
+    const SLOW: NonZeroU8 = NonZeroU8::new(5).unwrap();
+    if frames_per_second > 30 { FAST } else { SLOW }
 }
 
 fn scaled_response(response: u32, latency_fudge: i32) -> u32 {
@@ -114,7 +122,7 @@ pub(super) fn adaptive_timing(
     }
     .min(speed_budget.max(1));
     let rate = if mode == LiveCommandMode::Wol {
-        NonZeroU8::new(if fps > 30 { 10 } else { 5 }).unwrap()
+        send_rate(fps)
     } else {
         current_rate
     };

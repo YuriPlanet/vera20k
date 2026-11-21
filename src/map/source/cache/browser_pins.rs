@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 #[derive(Default)]
 struct Pins(BTreeMap<PathBuf, Weak<PathBuf>>);
@@ -29,17 +29,21 @@ impl Pins {
     }
 }
 
-fn pins() -> &'static Mutex<Pins> {
+/// The pins. They are weak leases that any pin may prune, so a panic while
+/// they are locked leaves nothing to repair: a poisoned lock is used as it is.
+fn pins() -> MutexGuard<'static, Pins> {
     static PINS: OnceLock<Mutex<Pins>> = OnceLock::new();
     PINS.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
 }
 
 pub(super) fn pin(path: &Path) -> Arc<PathBuf> {
-    pins().lock().expect("browser cache pins").pin(path)
+    pins().pin(path)
 }
 
 pub(super) fn is_pinned(path: &Path) -> bool {
-    pins().lock().expect("browser cache pins").is_pinned(path)
+    pins().is_pinned(path)
 }
 
 #[cfg(all(test, tests_map))]

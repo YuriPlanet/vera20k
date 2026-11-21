@@ -117,27 +117,56 @@ pub struct SimRng {
     disabled: u8,
     index_a: i32,
     index_b: i32,
-    state: Vec<u32>,
+    /// Held inline, so a copy (a local anim's constructor stream, a scan's
+    /// disguise roll) is a memcpy and not a heap allocation. Saved, traced
+    /// and hashed as the `Vec<u32>` it once was: a length, then the words.
+    #[serde(with = "table")]
+    state: [u32; RNG_TABLE_LEN],
 }
 
-/// Owner of process Main886B88. The frontend and retained playback
-/// capabilities address the app's cell; a scenario's simulation draws its own
-/// cell, seeded from the app's at install, so the simulation thread and the
-/// app share no RNG (docs/sim-thread.md). Main remains outside Scenario saves
-/// and the deterministic world hash.
-#[derive(Debug)]
+/// The RNG table's wire form: a sequence, as a `Vec<u32>` writes and reads
+/// it, so saves made while the table was a `Vec` load unchanged. A table of
+/// another length is refused when it is read.
+mod table {
+    use super::RNG_TABLE_LEN;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(
+        words: &[u32; RNG_TABLE_LEN],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(words)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[u32; RNG_TABLE_LEN], D::Error> {
+        let words = Vec::<u32>::deserialize(deserializer)?;
+        // The save-layout tracer reads one made-up word.
+        if crate::util::save_codec::layout::describing() {
+            return Ok([0; RNG_TABLE_LEN]);
+        }
+        words.try_into().map_err(|words: Vec<u32>| {
+            serde::de::Error::custom(format!(
+                "the random number table holds {} words, not {RNG_TABLE_LEN}",
+                words.len()
+            ))
+        })
+    }
+}
+
+/// Owner of the app's process Main886B88 cell. It sits behind a lock because
+/// two threads draw it: the frontend and presentation on the main thread, and
+/// the audio output thread, which draws playlist picks on refill through a
+/// retained [`MainRngDraws`]. A scenario's simulation owns its Main as a plain
+/// [`SimRng`] drawn through `&mut`, seeded from this cell at install
+/// ([`crate::sim::world::Simulation::install_fresh_process_main`]), so the
+/// simulation thread and the app share no RNG (docs/sim-thread.md). Main
+/// remains outside Scenario saves and the deterministic world hash. A clone
+/// shares this one cell.
+#[derive(Debug, Clone)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
-}
-
-/// A copy shares the one process cell, as every Main owner does: the
-/// presentation frame of a world draws the same cursor as the world.
-impl Clone for MainRng {
-    fn clone(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
 }
 
 impl MainRng {
@@ -152,52 +181,14 @@ impl MainRng {
         }
     }
 
-    /// Bind another owner slot at a process/scenario handoff. The native
-    /// object stays in place, including draws made while a load is prepared.
-    pub(super) fn shared_owner(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
-
-    /// A cell of its own at this cursor, sharing nothing with this one: the
-    /// presentation copy of the world's (docs/sim-thread.md), and the
-    /// simulation's own cell at a scenario install
-    /// ([`crate::sim::world::Simulation::install_fresh_process_main`]).
-    pub(crate) fn detached_copy(&self) -> Self {
-        self.staged_copy()
-    }
-
-    /// Stage a transactional saved-load candidate. Draws made while the load
-    /// is prepared advance this copy; `install_from` moves it into the process
-    /// cell on commit, and a rejected load drops it with the cell untouched.
-    pub(super) fn staged_copy(&self) -> Self {
-        self.state.lock().expect("Main RNG poisoned").clone().into()
-    }
-
-    /// Move the finished bootstrap cursor into the retained process cell.
-    /// The app must synchronously cancel outgoing playback before this seam;
-    /// the staged bootstrap must have relinquished its terrain draw handles.
-    pub(super) fn install_from(&self, staged: Self) {
-        if Arc::ptr_eq(&self.state, &staged.state) {
-            return;
-        }
-        let state = Arc::try_unwrap(staged.state)
-            .expect("fresh Main bootstrap has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned");
-        *self.state.lock().expect("Main RNG poisoned") = state;
+    /// Move a finished bootstrap or loaded cursor into the process cell. The
+    /// app must synchronously cancel outgoing playback before this seam.
+    pub(super) fn install(&self, cursor: SimRng) {
+        *self.state.lock().expect("Main RNG poisoned") = cursor;
     }
 
     pub fn next_u32(&self) -> u32 {
         self.state.lock().expect("Main RNG poisoned").next_u32()
-    }
-
-    pub(crate) fn next_range_i32_inclusive(&self, low: i32, high: i32) -> i32 {
-        self.state
-            .lock()
-            .expect("Main RNG poisoned")
-            .next_range_i32_inclusive(low, high)
     }
 
     /// Observe one coherent boundary while callback draws can run elsewhere.
@@ -209,7 +200,7 @@ impl MainRng {
     }
 
     /// A detached, draw-free cursor checkpoint. It never grants another live
-    /// owner of the process cell; replay construction may retain this value.
+    /// owner of the process cell.
     pub fn checkpoint(&self) -> SimRng {
         self.state.lock().expect("Main RNG poisoned").clone()
     }
@@ -222,25 +213,6 @@ impl MainRng {
     pub fn native_state_hex(&self) -> String {
         self.logical_state().native_state_hex()
     }
-
-    /// An explicitly detached test reference, never a live draw capability.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn snapshot_for_test(&self) -> SimRng {
-        self.checkpoint()
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn into_rng_for_test(self) -> SimRng {
-        Arc::try_unwrap(self.state)
-            .expect("test Main has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned")
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn index_b(&self) -> i32 {
-        self.logical_state().index_b
-    }
 }
 
 impl From<SimRng> for MainRng {
@@ -251,30 +223,9 @@ impl From<SimRng> for MainRng {
     }
 }
 
-// Native fixture adapters only. The live Simulation field is serde-skipped:
-// saves never serialize or replace process Main886B88.
-#[cfg(any(test, feature = "test-support"))]
-impl serde::Serialize for MainRng {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(&*self.state.lock().expect("Main RNG poisoned"), serializer)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl<'de> serde::Deserialize<'de> for MainRng {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        <SimRng as serde::Deserialize>::deserialize(deserializer).map(Self::from)
-    }
-}
-
-/// Retained process Main draws. Clone shares the owner's cell; it cannot
-/// seed, replace, borrow simulation state or expose an independent cursor.
+/// Retained draws on the app's process Main cell, for the main thread and
+/// the audio output thread. Clone shares the owner's cell; it cannot seed,
+/// replace, borrow simulation state or expose an independent cursor.
 #[derive(Clone)]
 pub struct MainRngDraws {
     state: Arc<Mutex<SimRng>>,
@@ -332,9 +283,9 @@ impl SimRngLogicalState {
 
 impl SimRng {
     /// Reject malformed external cursor checkpoints before any indexed draw.
+    /// The table's length was checked when it was read.
     pub fn valid_checkpoint(&self) -> bool {
-        self.state.len() == RNG_TABLE_LEN
-            && (0..RNG_TABLE_LEN as i32).contains(&self.index_a)
+        (0..RNG_TABLE_LEN as i32).contains(&self.index_a)
             && (0..RNG_TABLE_LEN as i32).contains(&self.index_b)
     }
 
@@ -344,7 +295,7 @@ impl SimRng {
             disabled: 0,
             index_a: 0,
             index_b: native_random::LAG as i32,
-            state: Vec::from(native_random::seeded_words(seed as u32)),
+            state: native_random::seeded_words(seed as u32),
         }
     }
 
@@ -358,7 +309,7 @@ impl SimRng {
             disabled,
             index_a: i32::try_from(index_a).expect("MapGen cursor A fits native i32"),
             index_b: i32::try_from(index_b).expect("MapGen cursor B fits native i32"),
-            state: Vec::from(words),
+            state: words,
         }
     }
 
@@ -430,7 +381,7 @@ impl SimRng {
             disabled: bytes[0],
             index_a: word(4) as i32,
             index_b: word(8) as i32,
-            state: (12..0x3f4).step_by(4).map(word).collect(),
+            state: std::array::from_fn(|i| word(12 + i * 4)),
         }
     }
 
@@ -440,7 +391,7 @@ impl SimRng {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_next_draws_for_test(draws: &[u32]) -> Self {
         assert!(draws.len() <= 125, "the lagged words must stay zero");
-        let mut state = vec![0; RNG_TABLE_LEN];
+        let mut state = [0; RNG_TABLE_LEN];
         state[..draws.len()].copy_from_slice(draws);
         Self {
             disabled: 0,
@@ -452,13 +403,11 @@ impl SimRng {
 
     /// Copy every logical field into immutable boundary evidence.
     pub fn logical_state(&self) -> SimRngLogicalState {
-        let mut words = [0; RNG_TABLE_LEN];
-        words.copy_from_slice(&self.state);
         SimRngLogicalState {
             disabled: self.disabled,
             index_a: self.index_a,
             index_b: self.index_b,
-            words,
+            words: self.state,
         }
     }
 
@@ -481,6 +430,8 @@ impl SimRng {
     }
 
     /// Hash the complete RNG state for deterministic replay/desync checks.
+    /// An array hashes as its slice, the length and then the words, as the
+    /// `Vec` the table once was did.
     pub fn hash_state(&self, hasher: &mut impl Hasher) {
         self.disabled.hash(hasher);
         self.index_a.hash(hasher);
@@ -761,7 +712,7 @@ mod tests {
                 disabled: bytes[0],
                 index_a: word(4) as i32,
                 index_b: word(8) as i32,
-                state: (0..250).map(|i| word(12 + i * 4)).collect(),
+                state: std::array::from_fn(|i| word(12 + i * 4)),
             }
         }
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1042,5 +993,65 @@ mod tests {
             ranged.native_state_hex(),
             "same cursor advance"
         );
+    }
+
+    /// The table as it was saved while it was a `Vec<u32>`, under the same
+    /// serde names, so its bytes, traced layout and hash are the old ones.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[serde(rename = "SimRng")]
+    struct VecTableRng {
+        disabled: u8,
+        index_a: i32,
+        index_b: i32,
+        state: Vec<u32>,
+    }
+
+    #[test]
+    fn the_inline_table_keeps_the_vec_bytes_layout_and_hash() {
+        use crate::util::save_codec;
+        use std::hash::Hasher;
+
+        let mut rng = SimRng::new(0x5EED);
+        for _ in 0..77 {
+            rng.next_u32();
+        }
+        let old = VecTableRng {
+            disabled: rng.disabled,
+            index_a: rng.index_a,
+            index_b: rng.index_b,
+            state: rng.state.to_vec(),
+        };
+        let old_bytes = save_codec::serialize(&old).unwrap();
+        assert_eq!(save_codec::serialize(&rng).unwrap(), old_bytes);
+        let loaded: SimRng = save_codec::deserialize(&old_bytes).unwrap();
+        assert_eq!(loaded.logical_state(), rng.logical_state());
+        assert_eq!(
+            save_codec::layout::describe::<SimRng>().unwrap(),
+            save_codec::layout::describe::<VecTableRng>().unwrap()
+        );
+
+        let mut new_hash = std::collections::hash_map::DefaultHasher::new();
+        rng.hash_state(&mut new_hash);
+        let mut old_hash = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&old.disabled, &mut old_hash);
+        std::hash::Hash::hash(&old.index_a, &mut old_hash);
+        std::hash::Hash::hash(&old.index_b, &mut old_hash);
+        std::hash::Hash::hash(&old.state, &mut old_hash);
+        assert_eq!(new_hash.finish(), old_hash.finish());
+    }
+
+    #[test]
+    fn a_table_of_another_length_is_refused_when_read() {
+        let short = VecTableRng {
+            disabled: 0,
+            index_a: 0,
+            index_b: 0,
+            state: vec![1; 249],
+        };
+        let bytes = crate::util::save_codec::serialize(&short).unwrap();
+        let error = crate::util::save_codec::deserialize::<SimRng>(&bytes)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("holds 249 words, not 250"), "{error}");
     }
 }

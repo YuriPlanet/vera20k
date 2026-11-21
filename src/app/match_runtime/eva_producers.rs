@@ -844,7 +844,7 @@ mod tests {
             for _ in 0..8 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("settled retail base frame");
                 assert!(
                     frame
@@ -875,7 +875,7 @@ mod tests {
             for _ in 0..1024 {
                 let due = runtime.simulation.take_due_commands();
                 let mut frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("ordinary retail Temporal attack frame");
                 attack_dispatched |= frame
                     .take_admitted_commands()
@@ -963,7 +963,7 @@ mod tests {
             for _ in 0..4 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("held first-head frame");
                 assert!(
                     frame
@@ -991,7 +991,7 @@ mod tests {
             for _ in 0..128 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("ordinary Stop/release frame");
                 assert!(
                     frame

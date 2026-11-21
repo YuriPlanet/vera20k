@@ -112,7 +112,7 @@ pub(crate) fn launch(
     target_ry: u16,
     sw_type: InternedId,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -194,7 +194,7 @@ pub(crate) fn at_waypoint(
     rules: &RuleSet,
     waypoint: i32,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(cell) = sim.session.waypoint_cell(waypoint) else {
         return false;
@@ -273,7 +273,7 @@ pub(crate) fn curtain_object(
     category: EntityCategory,
     house: Option<InternedId>,
     duration: i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     match category {
         EntityCategory::Infantry => {
@@ -366,7 +366,7 @@ fn foot_iron_curtain(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     duration: i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(organic) = sim
         .substrate
@@ -502,7 +502,7 @@ fn receive_strength_as_c4(
     warhead: Option<&str>,
     house: Option<InternedId>,
     ignore_defenses: bool,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let warhead = warhead.unwrap_or(&rules.bridge_warheads.c4_name);
     let Some(event) = super::strength_receiver_event(

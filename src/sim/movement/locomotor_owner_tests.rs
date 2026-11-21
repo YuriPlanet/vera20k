@@ -129,6 +129,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, 2);
     }
@@ -137,7 +138,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
         crate::sim::components::NavTargetRef::cell(12, 8),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -187,7 +188,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
                 DriveCoord::cell(9, 8, 731),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         }
 
@@ -211,7 +212,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
             entity.navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::cell(12, 8))
         );
-        assert!(entity.setter_force_reassign.is_raised());
+        assert!(entity.seldom.setter_force_reassign.is_raised());
         assert_eq!(
             entity.mission.current(),
             crate::sim::mission::MissionId::NONE
@@ -265,7 +266,7 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
         DriveCoord::cell(9, 8, 731),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let before = owned_state(entity);
@@ -394,7 +395,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
             &rules,
             1,
             (12, 8),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let entity = sim.substrate.entities.get(1).unwrap();

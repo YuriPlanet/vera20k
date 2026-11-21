@@ -39,6 +39,27 @@ fn fresh_load_copies_a_base_into_a_separate_section_of_the_childs_name() {
 }
 
 #[test]
+fn base_copies_stop_at_the_copy_budget() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    // A 40 KB base and 200 one-line children: about 8 MB of copies from
+    // 43 KB of text, past the 64-fold budget of 2.75 MB.
+    let mut text = String::from("[Big]\n");
+    for key in 0..100 {
+        text.push_str(&format!("K{key}={}\n", "v".repeat(400)));
+    }
+    for child in 0..200 {
+        text.push_str(&format!("[C{child}]:[Big]\n"));
+    }
+    let ini = IniFile::from_str(&text);
+    assert_eq!(
+        ini.section("C0").map(|c| c.physical_entries().count()),
+        Some(100)
+    );
+    // Children past the budget copy nothing, so they hold no section.
+    assert!(ini.section("C199").is_none());
+}
+
+#[test]
 fn merge_load_inherits_from_the_including_file_and_continues_its_counter() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = IniFile::from_str("[Base]\nStrength=100\nSpeed=5\n[BuildingTypes]\n+=GAPOWR\n");
@@ -114,7 +135,8 @@ fn mod_rules_allocate_plus_registries_inherit_across_includes_and_take_later_key
         b"[VehicleTypes]\n+=TANK2\n[TANK2]:[MTNK]\nSight=9\n",
     );
     dir.write("artmd.ini", b"[MTNK]\nVoxel=yes\n");
-    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
+    let assets =
+        crate::assets::asset_manager::AssetManager::from_loose_root_with_ares_for_test(dir.path());
     let (_, _, mut owner) = load_startup_rules(&assets, Default::default(), Default::default())
         .unwrap()
         .into_parts();

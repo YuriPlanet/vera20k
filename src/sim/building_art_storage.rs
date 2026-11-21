@@ -128,7 +128,7 @@ impl Simulation {
         self.substrate
             .entities
             .get_mut(id)
-            .unwrap()
+            .expect("storage_view found the building just above")
             .building_art
             .storage
             .refinery_tier = tier;
@@ -158,27 +158,38 @@ impl Simulation {
             if frame == 0 {
                 self.clear_building_anim_slot(id, 10);
             } else {
-                if self.entities().get(id).unwrap().building_art.anim_slots[10].is_none() {
+                let slot_anim = |sim: &Self| {
+                    sim.entities()
+                        .get(id)
+                        .expect("building checked live at the top of this update")
+                        .building_art
+                        .anim_slots[10]
+                };
+                if slot_anim(self).is_none() {
                     self.allocate_storage_slot(id, 10, rules);
                 }
-                let anim = self.entities().get(id).unwrap().building_art.anim_slots[10]
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "native SiloDamage null Anim write450D81: building={id} frame={}",
-                            self.session.binary_frame()
-                        )
-                    });
-                self.substrate
-                    .anims
-                    .get_mut(anim)
-                    .expect("retained SiloDamage Anim exists")
-                    .jump_to_frame(frame);
+                // 450D7B..450D81 stores the frame through Anims[10] without a
+                // null test, so an ART with no slot-10 anim (or no damaged
+                // variant once damaged) faults gamemd. VERA writes no frame
+                // instead, as the slot-9 store 45127B..451286 in this same
+                // function does for its null Anim; the silo shows no fill
+                // anim and the next update retries the allocation, as native
+                // re-enters 451890 while the slot stays null.
+                if let Some(anim) = slot_anim(self) {
+                    self.substrate
+                        .anims
+                        .get_mut(anim)
+                        .expect("retained SiloDamage Anim exists")
+                        .jump_to_frame(frame);
+                }
             }
         }
         if !refinery {
             return;
         }
-        let storage = self.storage_view(id).unwrap();
+        let storage = self
+            .storage_view(id)
+            .expect("building checked live at the top of this update");
         let tier = storage.tier(capacity);
         if tier == storage.refinery_tier {
             return;
@@ -187,11 +198,14 @@ impl Simulation {
             self.clear_building_anim_slot(id, slot);
         }
         //450E12 re-reads storage after the synchronous old Anim destructor.
-        let tier = self.storage_view(id).unwrap().tier(capacity);
+        let tier = self
+            .storage_view(id)
+            .expect("building checked live at the top of this update")
+            .tier(capacity);
         self.substrate
             .entities
             .get_mut(id)
-            .unwrap()
+            .expect("building checked live at the top of this update")
             .building_art
             .storage
             .refinery_tier = tier;
@@ -222,6 +236,45 @@ mod tests {
         rules.install_art_data(registry);
         rules
     }
+    #[test]
+    fn silo_without_slot_10_anim_skips_the_frame_write() {
+        let ini = IniFile::from_str(
+            "[BuildingTypes]\n0=B\n[B]\nStrength=100\nStorage=100\n[Animations]\n0=N\n",
+        );
+        let art = IniFile::from_str("[B]\nSiloDamage=yes\nActiveAnim=N\n[N]\nRate=300\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        let mut registry = ArtRegistry::from_ini(&art);
+        registry.bind_anim_frame_count_for_test("N", 100);
+        rules.install_art_data(registry);
+        let mut sim = Simulation::new();
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default_of_category(
+            id,
+            "B",
+            "A",
+            2,
+            2,
+            crate::map::entities::EntityCategory::Structure,
+        );
+        entity.set_type_ref_for_test(sim.interner.intern("B"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(100);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.building_art.storage = BuildingStorage {
+            amounts: [NativeF32Bits::from_bits(50.0f32.to_bits()); 4],
+            refinery_tier: 0,
+        };
+        sim.substrate.entities.insert(entity);
+        for _ in 0..2 {
+            sim.update_building_storage_anims(id, &rules);
+        }
+        assert_eq!(
+            sim.entities().get(id).unwrap().building_art.anim_slots[10],
+            None
+        );
+        assert_eq!(sim.substrate.anims.iter().count(), 0);
+    }
+
     #[test]
     fn original_1176_storage_rows_drive_real_initial_and_update_slots() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -288,7 +341,7 @@ mod tests {
                         true,
                         rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 } else {
                     sim.update_building_storage_anims(id, rules);

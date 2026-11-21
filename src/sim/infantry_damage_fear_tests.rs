@@ -51,7 +51,7 @@ fn receive_hit(
                 arg6: false,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let after = sim.substrate.entities.get(actor).unwrap().health.current();
     assert!(
@@ -101,7 +101,7 @@ fn sourced_fraidycat_damage_precedes_fearless_and_reaches_normal_escape() {
             67,
             TickLane::Ordinary,
             false,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         if position_world_xy(&sim.substrate.entities.get(actor).unwrap().position) != origin {

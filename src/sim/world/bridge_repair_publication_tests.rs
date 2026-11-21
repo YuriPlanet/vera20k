@@ -295,7 +295,7 @@ fn walk_boundary_relinks_current_xyz_and_leaves_the_raw_bit_on_the_head() {
         crossing,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let e = sim.substrate.entities.get(id).unwrap();
     assert_eq!(ground_pose::position_world_coord(&e.position), crossing);
@@ -488,7 +488,7 @@ pub(in crate::sim::world) fn ready_engineer(
         head,
         rules,
         Some(registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.substrate
         .entities
@@ -615,7 +615,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -642,7 +642,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
         DriveCoord::cell(16, 15, 0),
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("hut evacuation finishes within the completion callback");
     let e = sim.substrate.entities.get(waiting).unwrap();
@@ -701,7 +701,7 @@ fn hut_repair_scatters_a_jumpjet_occupant_through_its_air_destination_owner() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -732,7 +732,7 @@ fn hut_repair_scatters_a_jumpjet_occupant_through_its_air_destination_owner() {
         DriveCoord::cell(16, 15, 0),
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("a Jumpjet hut occupant scatters without stopping the frame");
     assert!(
@@ -802,7 +802,11 @@ fn repair_pointer_expiry_uses_descending_infantry_registry_and_preserves_paid_he
         .unwrap()
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::Object { id: hut }));
-    sim.expire_infantry_bridge_hut_targets(hut, &rules, crate::sim::world::FrameEffects::default());
+    sim.expire_infantry_bridge_hut_targets(
+        hut,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(sim.scenario_rng.state(), expected.state());
     for id in [a, b, c] {
         let e = sim.substrate.entities.get(id).unwrap();
@@ -844,7 +848,7 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
             sim.fog.increment_sensor_at(owner, 16, 15);
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.removal_facts.set_occupier_for_test(exception == 1);
+        e.seldom.removal_facts.set_occupier_for_test(exception == 1);
         if exception == 2 {
             e.navigation
                 .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 16, ry: 15 }));
@@ -855,7 +859,7 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
         sim.expire_infantry_bridge_hut_targets(
             hut,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let e = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
@@ -1049,7 +1053,7 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             head,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
         let e = sim.substrate.entities.get(id).unwrap();
@@ -1132,7 +1136,7 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
             &[],
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect_err("missing receiver must fail the actual runtime frame");
     assert_eq!(error.entity_id, engineer);
@@ -1207,7 +1211,7 @@ fn hut_queries_pending_uninit_and_active_tube_exit_before_other_gates() {
             hut,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -1282,7 +1286,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             drop(grid);
             let mut expected_runtime =
@@ -1327,7 +1331,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 rocketeer,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             assert_eq!(
@@ -1574,7 +1578,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         id,
         Some(crate::sim::components::NavTargetRef::cell(20, 15)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("the Unit setter takes the cell");
     let before = sim
@@ -1594,7 +1598,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         &Command::Stop { entity_id: id },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let state = sim
         .substrate
@@ -1664,7 +1668,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
             id,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let e = sim.substrate.entities.get(id).unwrap();
         let state = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();

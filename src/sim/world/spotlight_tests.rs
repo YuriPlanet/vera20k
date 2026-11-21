@@ -7,6 +7,10 @@ fn rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str("[General]\nSpotlightMovementRadius=2000\nSpotlightLocationRadius=1000\nSpotlightSpeed=.015\nSpotlightAcceleration=.0025\nSpotlightAngle=.5\n[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\n[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n")).unwrap()
 }
 
+/// An infinite `SpotlightSpeed=` (and `1e38`, whose fourfold step overflows
+/// the binary32 spill to the largest float) sweeps the angle where the
+/// masked `ftol` of the trig table index is the integer indefinite, entry 0:
+/// a zero rotation, so the beam stays on its endpoint.
 #[test]
 fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
     for speed in ["1e99", "1e38"] {
@@ -289,7 +293,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
         init(&mut sim, &map);
         sim.attach_object_trigger_tag(first, Some("TAG"));
         sim.attach_object_trigger_tag(second, Some("OTHER"));
-        sim.advance_triggers(&rules, None, super::super::FrameEffects::default());
+        sim.advance_triggers(&rules, None, &mut super::super::FrameEffects::default());
         assert_eq!(sim.substrate.spotlights.get(a).unwrap().mode, mode);
         assert_eq!(sim.substrate.spotlights.get(b).unwrap().mode, 1);
     }
@@ -356,7 +360,7 @@ fn spotlight_event35_uses_child_ground_lists_mode_gate_and_synchronous_tag_actio
         sim.object_ai_visit_one(
             id,
             Some(&rules),
-            super::super::techno_ai::ObjectAiCtx::default(),
+            &mut super::super::techno_ai::ObjectAiCtx::default(),
         );
         assert_eq!(
             sim.trigger_local_is_set_for_test(0),
@@ -577,4 +581,38 @@ fn ares_spotlighted_technos_get_their_light_at_unlimbo() {
         );
     }
     assert_eq!(sim.substrate.spotlights.objects.len(), 2);
+}
+
+/// `SpotlightAcceleration=1e999` reads as infinity. The first sweep step
+/// raises the rate to it (`0x004364AD`); the next carries the angle to
+/// infinity, past half the arc, and lowers the rate to `inf - inf`, a NaN
+/// that the `TEST AH,0x1` compare at `0x00436484` treats as below zero: the
+/// rate resets and the sweep turns back.
+#[test]
+fn an_infinite_spotlight_acceleration_sweeps_as_the_masked_fpu_does() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nSpotlightAcceleration=1e999\n",
+    ))
+    .unwrap();
+    let mut light = Spotlight {
+        stable_id: 1,
+        native_id: 1,
+        coord: [0; 3],
+        pivot: [0; 3],
+        endpoint: [0; 3],
+        angle: NativeF64Bits::POSITIVE_ZERO,
+        rate: NativeF64Bits::POSITIVE_ZERO,
+        increasing: true,
+        mode: 1,
+        target: None,
+        parent: None,
+        alive: true,
+        in_logic_vector: false,
+    };
+    advance_angle(&mut light, rules.general.spotlight);
+    assert_eq!(light.rate.bits(), f64::INFINITY.to_bits());
+    advance_angle(&mut light, rules.general.spotlight);
+    assert_eq!(light.angle.bits(), f64::INFINITY.to_bits());
+    assert_eq!(light.rate, NativeF64Bits::POSITIVE_ZERO);
+    assert!(!light.increasing);
 }

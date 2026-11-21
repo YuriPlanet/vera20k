@@ -335,6 +335,14 @@ pub struct AssetManager {
     /// Precomputed first-match lookup across all archives.
     lookup_index: HashMap<i32, AssetLocation>,
     /// `LoadFileFromMIX`'s process-lifetime, normalized-CRC first-winner cache.
+    ///
+    /// Filled through `&self` because its readers (the Rules effect and alpha
+    /// image catalogs, the shell, sidebar, cursor and loading-screen chrome)
+    /// are handed the manager by `&` beside their other reads of it. A lock,
+    /// not a `RefCell`, because the manager must stay `Sync`: the test
+    /// fixture (`rules::retail_ini_fixture::retail_assets`) keeps one opened
+    /// install for every test thread and copies it from there. In the game
+    /// one thread at a time asks, so the lock is never contended.
     mix_file_cache: Mutex<HashMap<i32, MixFileLoad>>,
     /// Case-insensitive, non-recursive view of the retail executable directory.
     /// Payloads are owned snapshots at first lookup (including failed reads).
@@ -356,7 +364,7 @@ pub struct AssetManager {
     /// had been copied on top of the installation directory: a file here
     /// takes the place of the installation's file of the same name. `None`
     /// is the original game.
-    mod_dir: Option<PathBuf>,
+    mod_dir: Option<crate::util::mod_package::ModFolder>,
     client_install: Option<Arc<ClientInstall>>,
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
@@ -502,11 +510,12 @@ pub fn holds_master_archives(dir: &Path) -> bool {
 /// A conventional launcher folder can describe itself with its existing
 /// client catalog and a complete numbered archive family.
 pub fn mod_resources(
-    dir: &Path,
+    dir: &crate::util::mod_package::ModFolder,
     definition: &ModDefinition,
     base: &IniRootConfig,
 ) -> Result<ResourceConfig, String> {
     let mut resources = definition.resources(base);
+    resources.mod_folder = Some(dir.clone());
     if definition.declares_loading() {
         return Ok(resources);
     }
@@ -531,19 +540,22 @@ pub fn mod_resources(
 }
 
 impl AssetManager {
-    pub fn with_client_install(mut self, client: Option<Arc<ClientInstall>>) -> Self {
-        self.client_install = client;
-        self
-    }
-
     pub fn client_install(&self) -> Option<&ClientInstall> {
         self.client_install.as_deref()
     }
 
+    /// Keep the selected package's files and catalog for the manager's lifetime.
+    pub fn with_mod_sources(mut self, config: &ResourceConfig) -> Self {
+        if let Some(folder) = &config.mod_folder {
+            self.mod_dir = Some(folder.clone());
+        }
+        self.client_install = config.client_install.clone();
+        self
+    }
+
     /// Bind the same resolved mod inputs in startup, probes and asset tools.
     pub fn with_resource_config(self, config: &ResourceConfig) -> Result<Self, AssetError> {
-        self.with_client_install(config.client_install.clone())
-            .with_ini_roots(&config.ini)
+        self.with_mod_sources(config).with_ini_roots(&config.ini)
     }
 
     /// Consume a newly assembled provider, then freeze one root choice before
@@ -584,6 +596,16 @@ impl AssetManager {
         self.mod_dir.is_some()
     }
 
+    /// VERA: whether `file`, a file in the game folder by name (a loose file
+    /// or an archive, `retail_sources::game_folder_file`), is read from the
+    /// selected mod's folder rather than the installation's.
+    pub fn from_mod_folder(&self, file: &str) -> bool {
+        self.mod_dir.as_deref().is_some_and(|dir| {
+            self.loose_asset(file)
+                .is_some_and(|asset| asset.path.starts_with(dir))
+        })
+    }
+
     /// The selected overlay for this provider, including asset tools that do
     /// not install the desktop process's global mod choice.
     pub fn mod_dir(&self) -> Option<&Path> {
@@ -617,6 +639,17 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// Make this the game the launch plays: its [`Self::ships_ares`] answer
+    /// becomes the launch's (`util::ares_launch`), which a thread outside
+    /// every reading scope loads its INIs by, as Ares.dll patches a whole
+    /// launch. A launch's entry point calls it once the game's archives are
+    /// open (the game, the probe and random-map commands, the asset tool),
+    /// and so does the rebuild of the game's manager; a manager opened for a
+    /// test or a read-only INI probe stays out of it.
+    pub fn open_for_play(&self) {
+        crate::util::ares_launch::open_for_play(self.ships_ares());
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -648,7 +681,8 @@ impl AssetManager {
             active_theater_archives: Vec::new(),
             active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
-            mod_dir: mod_dir.map(Path::to_path_buf),
+            mod_dir: mod_dir
+                .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
         })
@@ -684,24 +718,22 @@ impl AssetManager {
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
     ) -> Result<Self, AssetError> {
-        let manager = Self::open_startup_archives(
+        Self::open_startup_archives(
             ra2_dir,
             mod_dir,
             media_mode,
             Default::default(),
             &ArchiveNames::default(),
             StartupArchivePolicy::OptionalWarnings,
-        )?;
-        // The launch's `ares.mix` answer, as below; the Ares setting is left
-        // to the launch that chose one (`with_mod_and_ares`).
-        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
-        Ok(manager)
+        )
     }
 
     /// VERA: [`AssetManager::with_mod`] under the player's Ares setting
     /// (`util::ares_launch::AresSetting`), which can make the game an Ares
     /// game, or not, whatever its mod ships. `archive_names` selects names
     /// for the existing native archive slots without changing their order.
+    /// Opening a manager does not make it the launch's game: a launch says so
+    /// with [`Self::open_for_play`].
     pub fn with_mod_and_ares(
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
@@ -717,11 +749,6 @@ impl AssetManager {
             archive_names,
             StartupArchivePolicy::OptionalWarnings,
         )?;
-        // This is the game the launch plays: its `ares.mix` answer is the
-        // launch's (`util::ares_launch`), which a thread with no reading scope
-        // loads its INIs by.
-        crate::util::ares_launch::set_setting(ares_setting);
-        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
         if ares_setting == crate::util::ares_launch::AresSetting::On && !manager.ares_mix_mounted()
         {
             log::warn!(
@@ -2757,6 +2784,10 @@ mod tests {
         let on = open(None, AresSetting::On);
         assert!(on.ships_ares());
         assert_eq!(on.get_ref("ares.txt"), Some(&b"installed Ares"[..]));
+        // Opening an Ares game is not playing it: the launch's answer, which a
+        // thread outside every reading scope reads by, waits for a launch to
+        // publish its game (`open_for_play`).
+        assert!(!crate::util::ares_launch::game_ships_ares());
         let off = open(Some(mod_dir.path()), AresSetting::Off);
         assert!(!off.ships_ares() && !off.ares_mix_mounted());
         assert_eq!(off.get_ref("ares.txt"), None);

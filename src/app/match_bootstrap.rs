@@ -89,6 +89,7 @@ pub struct PreparedMatchStartup {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedNetworkStartup {
     launch: SkirmishLaunchSession,
+    authored_campaign: Option<PreparedCampaignStart>,
     /// Physical local bytes, independent of the logical map name folded into
     /// shared scenario state. Cache paths differ legitimately across machines.
     local_map_source: Option<crate::map::source::LoadedMapSource>,
@@ -105,6 +106,20 @@ pub struct PreparedNetworkStartup {
     carry_over: Option<CampaignCarryOver>,
 }
 
+/// The verified map and admitted rules for a network campaign. The source
+/// and path belong to this client and never enter the replay blueprint.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedCampaignStart {
+    pub(crate) authored: crate::sim::scenario_bootstrap::AuthoredCampaignStart,
+    /// The exact map House for each admitted command source, in source order.
+    pub(crate) primary_houses: Vec<String>,
+    pub(crate) map_source: crate::map::source::LoadedMapSource,
+    pub(crate) map_effective_digest: String,
+    pub(crate) map_name: String,
+    pub(crate) local_source: Option<i8>,
+    pub(crate) game_speed: i32,
+}
+
 impl PreparedNetworkStartup {
     pub(crate) fn new(
         launch: SkirmishLaunchSession,
@@ -118,6 +133,7 @@ impl PreparedNetworkStartup {
             crate::sim::native_identity::network_native_id_prefix(mode, launch.humans.len());
         Self {
             launch,
+            authored_campaign: None,
             local_map_source: None,
             local_map_effective_digest: None,
             local_random_map_preview: None,
@@ -138,6 +154,17 @@ impl PreparedNetworkStartup {
     pub(crate) fn with_carry_over(mut self, record: CampaignCarryOver) -> Self {
         self.carry_over = Some(record);
         self
+    }
+
+    pub(crate) fn with_campaign(mut self, start: PreparedCampaignStart) -> Self {
+        self.authored_campaign = Some(start);
+        // Map House and Super constructors spend the prefix during the load.
+        self.native_id_prefix = None;
+        self
+    }
+
+    pub(crate) fn authored_campaign(&self) -> Option<&PreparedCampaignStart> {
+        self.authored_campaign.as_ref()
     }
 
     pub(crate) fn with_local_map_source(
@@ -161,10 +188,14 @@ impl PreparedNetworkStartup {
         self.local_random_map_preview.as_ref()
     }
     pub(crate) fn effective_map_digest(&self) -> Option<&str> {
-        self.local_map_effective_digest.as_deref()
+        self.authored_campaign()
+            .map(|start| start.map_effective_digest.as_str())
+            .or(self.local_map_effective_digest.as_deref())
     }
     pub(crate) fn local_map_source(&self) -> Option<&crate::map::source::LoadedMapSource> {
-        self.local_map_source.as_ref()
+        self.authored_campaign()
+            .map(|start| &start.map_source)
+            .or(self.local_map_source.as_ref())
     }
 
     pub(crate) fn carry_over(&self) -> Option<&CampaignCarryOver> {
@@ -529,6 +560,16 @@ pub enum LoadingStartup {
         game_mode: ScenarioGameMode,
         native_id_prefix: u32,
     },
+    AuthoredCampaignReplay {
+        start: Box<crate::sim::scenario_bootstrap::AuthoredCampaignStart>,
+        logical_map: String,
+        local_map: String,
+        map_sha256: String,
+        seed: MatchSeed,
+        game_mode: ScenarioGameMode,
+        game_speed: i32,
+        native_id_prefix: u32,
+    },
     Campaign(PreparedCampaignStartup),
     Accepted(PreparedMatchStartup),
     UnverifiedLegacy {
@@ -559,6 +600,39 @@ impl MatchSpec {
 }
 
 impl LoadingStartup {
+    pub(crate) fn authored_campaign(
+        &self,
+    ) -> Option<crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'_>> {
+        let (start, local_source) = match self {
+            Self::Network(network) => {
+                let start = network.authored_campaign()?;
+                (&start.authored, start.local_source)
+            }
+            Self::AuthoredCampaignReplay { start, .. } => (start.as_ref(), Some(0)),
+            _ => return None,
+        };
+        Some(crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+            start,
+            mode: self.session_mode(),
+            local_source,
+        })
+    }
+
+    pub(crate) fn authored_campaign_speed(&self) -> Option<i32> {
+        match self {
+            Self::Network(startup) => startup.authored_campaign().map(|start| start.game_speed),
+            Self::AuthoredCampaignReplay { game_speed, .. } => Some(*game_speed),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_replay(&self) -> bool {
+        matches!(
+            self,
+            Self::Replay { .. } | Self::AuthoredCampaignReplay { .. }
+        )
+    }
+
     pub(crate) fn match_spec(&self) -> MatchSpec {
         let mut spec =
             self.match_spec_for_construction(self.session_mode().bootstrap_rule_profile());
@@ -575,9 +649,16 @@ impl LoadingStartup {
     pub(crate) fn match_spec_for_construction(&self, profile: BootstrapRuleProfile) -> MatchSpec {
         let class = self.launch_session().map(|launch| launch.mode.class);
         let mode = self.session_mode();
+        if let Some(authored) = self.authored_campaign() {
+            return MatchSpec {
+                topology: mode.execution_topology(),
+                rules: authored.start.rule_policy(),
+            };
+        }
         let rule_override = match self {
             Self::Replay { launch, .. } => launch.rule_policy_override(),
             Self::Network(_)
+            | Self::AuthoredCampaignReplay { .. }
             | Self::Campaign(_)
             | Self::Accepted(_)
             | Self::UnverifiedLegacy { .. }
@@ -596,7 +677,9 @@ impl LoadingStartup {
     pub(crate) fn match_seed(&self) -> Option<u32> {
         match self {
             Self::Network(startup) => Some(startup.seed.value),
-            Self::Replay { seed, .. } | Self::UnverifiedLegacy { seed, .. } => Some(seed.value),
+            Self::Replay { seed, .. }
+            | Self::AuthoredCampaignReplay { seed, .. }
+            | Self::UnverifiedLegacy { seed, .. } => Some(seed.value),
             Self::Campaign(startup) => Some(startup.seed.value),
             Self::Accepted(startup) => Some(startup.seed.value),
             Self::Generic { .. } => None,
@@ -614,6 +697,9 @@ impl LoadingStartup {
     }
 
     pub(crate) fn physical_map_file(&self) -> &str {
+        if let Self::AuthoredCampaignReplay { local_map, .. } = self {
+            return local_map;
+        }
         if let Self::Network(startup) = self
             && let Some(crate::map::source::LoadedMapSource::Loose { path, .. }) =
                 startup.local_map_source()
@@ -627,10 +713,15 @@ impl LoadingStartup {
     pub fn selected_map_file(&self) -> &str {
         match self {
             Self::Network(startup) => startup
-                .launch
-                .selected_map_file
-                .as_deref()
-                .expect("accepted network map"),
+                .authored_campaign()
+                .map(|start| start.map_name.as_str())
+                .unwrap_or_else(|| {
+                    startup
+                        .launch
+                        .selected_map_file
+                        .as_deref()
+                        .expect("accepted network map")
+                }),
             Self::Campaign(startup) => startup.selected_map_file(),
             Self::Accepted(startup) => startup.session.selected_map_file(),
             Self::Replay { launch, .. } => launch
@@ -638,6 +729,7 @@ impl LoadingStartup {
                 .selected_map_file
                 .as_deref()
                 .expect("validated replay map"),
+            Self::AuthoredCampaignReplay { logical_map, .. } => logical_map,
             Self::UnverifiedLegacy { session, .. } => {
                 session.selected_map_file.as_deref().unwrap_or("auto")
             }
@@ -647,8 +739,11 @@ impl LoadingStartup {
 
     pub fn launch_session(&self) -> Option<&SkirmishLaunchSession> {
         match self {
-            Self::Network(startup) => Some(startup.launch_session()),
-            Self::Campaign(_) => None,
+            Self::Network(startup) => startup
+                .authored_campaign()
+                .is_none()
+                .then(|| startup.launch_session()),
+            Self::Campaign(_) | Self::AuthoredCampaignReplay { .. } => None,
             Self::Accepted(startup) => Some(startup.session.launch_session()),
             Self::Replay { launch, .. } => Some(launch.session()),
             Self::UnverifiedLegacy { session, .. } => Some(session),
@@ -662,6 +757,7 @@ impl LoadingStartup {
             Self::Network(_)
             | Self::Campaign(_)
             | Self::Replay { .. }
+            | Self::AuthoredCampaignReplay { .. }
             | Self::UnverifiedLegacy { .. }
             | Self::Generic { .. } => None,
         }
@@ -682,7 +778,9 @@ impl LoadingStartup {
         use crate::app::match_runtime::session::SessionMode;
         match self {
             Self::Network(startup) => startup.mode(),
-            Self::Replay { game_mode, .. } => *game_mode,
+            Self::Replay { game_mode, .. } | Self::AuthoredCampaignReplay { game_mode, .. } => {
+                *game_mode
+            }
             Self::Campaign(_) => SessionMode::Campaign,
             Self::Accepted(_) | Self::UnverifiedLegacy { .. } | Self::Generic { .. } => {
                 SessionMode::Skirmish
@@ -697,6 +795,7 @@ impl LoadingStartup {
             Self::Campaign(startup) => startup.seed.value,
             Self::Accepted(startup) => startup.seed.value,
             Self::Replay { seed, .. } => seed.value,
+            Self::AuthoredCampaignReplay { seed, .. } => seed.value,
             Self::UnverifiedLegacy { seed, .. } => seed.value,
             Self::Generic { .. } => unverified_fallback(),
         }
@@ -1583,7 +1682,7 @@ mod tests {
         let startup = prepared(7);
         let mut simulation = Simulation::with_seed(7);
         simulation.scenario_rng_mut_for_test().next_u32();
-        simulation.main_rng().next_u32();
+        simulation.main_rng_mut_for_test().next_u32();
         simulation.mapgen_rng_mut_for_test().next_u32();
         let expected = simulation.rng_state();
         let receipt = RustL0Observation {

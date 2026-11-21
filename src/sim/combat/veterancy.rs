@@ -50,7 +50,7 @@ pub const LEVEL_UNSAMPLED: i8 = -1;
 
 /// An object's veterancy, owned by this module: the running `VeterancyClass`
 /// float and the rank last sampled from it.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Veterancy {
     /// The `VeterancyClass` float on `TechnoClass` (`+0x150`), fed by
     /// `Record_The_Kill @ 0x00702D40` through `VeterancyClass::Add @
@@ -703,7 +703,7 @@ pub fn ares_self_heal_amount(
     repair_rate_minutes: f64,
 ) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X;
-    let combat = entity.ares.ares_self_heal_combat;
+    let combat = entity.seldom.ares.ares_self_heal_combat;
     if combat.start_frame() != crate::sim::timer::PAUSED_START_FRAME && combat.remaining(frame) > 0
     {
         return 0;

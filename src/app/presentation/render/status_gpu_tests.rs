@@ -2,7 +2,7 @@
 //! producer, retail resources and production replay. Location, HP, selection,
 //! hover and surface planes are consumer inputs, not lifecycle parity claims.
 use super::draw_plan_lowering::{
-    NativeDisplayOrder, PlannedObjectInstance, lower_ground_object_instances,
+    NativeDisplayOrder, OwnedPlannedObject, lower_ground_object_instances,
 };
 use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::ui_overlays::{StatusViewport, techno_extras_for_parent};
@@ -66,8 +66,11 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.discovery.set_owned_by_current_house_for_test(true);
-    entity.selection.set_selected_for_test(true);
+    entity
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
     sim.entities_mut_for_test().insert(entity);
     sim.resubmit_entity_display_for_test(1);
     let entity = sim.entities().get(1).unwrap();
@@ -122,7 +125,7 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         assert_eq!(status.fills.len(), visible_pips);
         let display = NativeDisplayOrder::new(&[1]);
         let draw = display.object_draw(1, SpriteEncoding::Plain).unwrap();
-        let mut parent = PlannedObjectInstance::object(draw, vec![]);
+        let mut parent = OwnedPlannedObject::object(draw, vec![]);
         parent.status = Some(status);
         let mut layer = lower_ground_object_instances(vec![parent]);
         super::object_extras::defer_health_to_frame(&mut layer, cam.camera_pos, zoom);
@@ -306,13 +309,16 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             0,
             0,
             &retail.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let entity = sim.entity_mut_for_test(id).unwrap();
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.discovery.set_owned_by_current_house_for_test(true);
-    entity.selection.set_selected_for_test(true);
+    entity
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
     // The held constructor binds the shield but deliberately skips Unlimbo's
     // Display submission. Establish that drawing prior for this consumer test.
     sim.resubmit_entity_display_for_test(id);
@@ -365,7 +371,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             ..Default::default()
         },
     ] {
-        let mut parent = PlannedObjectInstance::object(
+        let mut parent = OwnedPlannedObject::object(
             display.object_draw(id, SpriteEncoding::Plain).unwrap(),
             vec![],
         );
@@ -451,13 +457,16 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
                 0,
                 0,
                 &retail.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = sim.entity_mut_for_test(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.discovery.set_owned_by_current_house_for_test(true);
-        entity.selection.set_selected_for_test(true);
+        entity
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         entity.install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(3)));
         sim.resubmit_entity_display_for_test(id);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
@@ -538,10 +547,10 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(selected);
+        entity.seldom.selection.set_selected_for_test(selected);
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, None, None);
-        entity.disguise = Some(disguise);
+        entity.seldom.disguise = Some(disguise);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
         sim.fog_mut_for_test().reveal_all_for_owner(player);
         sim.entities_mut_for_test().insert(entity);
@@ -710,8 +719,11 @@ fn native_self_heal_draw_fault_order() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(true);
-        entity.discovery.set_owned_by_current_house_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
+        entity
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
         sim.fog_mut_for_test().reveal_all_for_owner(owner);
         sim.entities_mut_for_test().insert(entity);
@@ -991,6 +1003,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     false,
                 );
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(object.foundation.clone().into());
                 entity.position.put_location(DriveCoord {
@@ -1003,6 +1016,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     .lifecycle
                     .set_cell_marked_for_test(actor["marked"].as_bool().unwrap());
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
                 sim.entities_mut_for_test().insert(entity);
@@ -1426,6 +1440,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     false,
                 );
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(object.foundation.clone().into());
                 entity.position.put_location(DriveCoord {
@@ -1438,9 +1453,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     crate::sim::arena_fixture::install_status_repair(&mut entity, repairing);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
-                entity.discovery.set_owned_by_current_house_for_test(
+                entity.seldom.discovery.set_owned_by_current_house_for_test(
                     actor["owned_by_current_house"].as_bool().unwrap_or(true),
                 );
                 if let Some(state) = actor["cloak_state"].as_i64() {
@@ -1463,7 +1479,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .unwrap_or(false)
                             .then_some(owner),
                     );
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 let cell = ((xyz[0] / 256) as u16, (xyz[1] / 256) as u16);
                 if let Some(bits) = input["cell_bits"].as_u64() {
@@ -1804,7 +1820,11 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                 }
                 if actor["sinking"].as_bool().unwrap_or(false) {
-                    sim.begin_ship_sinking(id, rules, crate::sim::world::FrameEffects::default());
+                    sim.begin_ship_sinking(
+                        id,
+                        rules,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    );
                 }
                 let mut strip = techno_extras_for_parent(
                     &sim,
@@ -2065,9 +2085,9 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 let draw = display.object_draw(id, SpriteEncoding::Plain).unwrap();
                 let mut parent = if actor_category == EntityCategory::Structure {
-                    PlannedObjectInstance::building(draw, vec![])
+                    OwnedPlannedObject::building(draw, vec![])
                 } else {
-                    PlannedObjectInstance::object(draw, vec![])
+                    OwnedPlannedObject::object(draw, vec![])
                 };
                 parent.status = Some(strip);
                 if wrench_composed && actor["selected"] == true {

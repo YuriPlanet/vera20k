@@ -399,8 +399,8 @@ pub(crate) fn set_favorite(state: &mut AppState, key: String, starred: bool) {
         .iter()
         .map(|key| format!("{key}\n"))
         .collect();
-    if let Err(error) = std::fs::create_dir_all(path.parent().unwrap_or(&path))
-        .and_then(|()| std::fs::write(&path, text))
+    if let Err(error) = crate::util::file_system::create_dir_all(path.parent().unwrap_or(&path))
+        .and_then(|()| crate::util::file_system::write(&path, text))
     {
         log::warn!("Could not save the map favorites: {error}");
     }

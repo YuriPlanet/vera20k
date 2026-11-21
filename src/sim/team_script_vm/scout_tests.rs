@@ -45,7 +45,7 @@ fn recruited_scout_keeps_its_selected_shrouded_cell_after_reload_then_finishes()
     let rules = &scene.runtime.resources.rules;
     let sim = &mut scene.runtime.simulation;
     let before = sim.scenario_rng.logical_state();
-    sim.team_step_script(team, rules, None, FrameEffects::default());
+    sim.team_step_script(team, rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(target)
@@ -99,7 +99,7 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
         true,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.scenario_rng.logical_state(),
@@ -143,7 +143,7 @@ fn script_22_refuses_the_other_mode_even_with_offline_topology() {
         true,
         &scene.runtime.resources.rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.team_script_vm.team(team).unwrap().refusal().is_some());
     assert_eq!(sim.scenario_rng.logical_state(), before);

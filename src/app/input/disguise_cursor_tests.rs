@@ -28,6 +28,7 @@ fn scene(patch: &str) -> Option<(RuleSet, OverlayTypeRegistry, Simulation, u64, 
         sim.entities()
             .get(mirage)
             .unwrap()
+            .seldom
             .disguise
             .as_ref()
             .unwrap()
@@ -42,6 +43,7 @@ fn scene(patch: &str) -> Option<(RuleSet, OverlayTypeRegistry, Simulation, u64, 
     }
     sim.entity_mut_for_test(actor)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     Some((rules, overlays, sim, actor, mirage))
@@ -100,6 +102,7 @@ fn cursor(
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -148,12 +151,13 @@ fn attack_cursor_disguise_rule_and_firing_blink_reach_click_admission() {
         },
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let timer = sim
         .entities()
         .get(mirage)
         .unwrap()
+        .seldom
         .disguise
         .as_ref()
         .unwrap()
@@ -201,6 +205,7 @@ fn attack_cursor_disguise_keeps_permanent_and_terrain_weapon_exceptions() {
     let frame = sim.session().binary_frame();
     sim.entity_mut_for_test(mirage)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()

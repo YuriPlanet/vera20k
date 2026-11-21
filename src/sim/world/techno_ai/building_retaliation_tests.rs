@@ -236,7 +236,7 @@ fn the_block_matches_the_original() {
             true,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let after = sim.substrate.entities.get(building).unwrap();
@@ -371,13 +371,15 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usi
     let house = sim.substrate.entities.get(source).unwrap().owner();
     let warhead = sim.interner.intern("AP");
     let event = EntityDamageEvent::area(building, 10, 0, source, Some(house), warhead);
-    let (_, pings) = commit_entities(
+    let mut pings = Vec::new();
+    commit_entities(
         sim,
         &mut ReceiverRun::default(),
         &[event],
         None,
         rules,
         None,
+        &mut pings,
     );
     assert!(pings.is_empty(), "building warnings are already submitted");
     sim.sound_events
@@ -396,13 +398,15 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
     let house = sim.substrate.entities.get(source).unwrap().owner();
     let warhead = sim.interner.intern("AP");
     let event = EntityDamageEvent::area(building, 10, 0, source, Some(house), warhead);
-    let (_, pings) = commit_entities(
+    let mut pings = Vec::new();
+    commit_entities(
         &mut sim,
         &mut ReceiverRun::default(),
         &[event],
         None,
         &rules,
         None,
+        &mut pings,
     );
     assert!(pings.is_empty(), "building warning is already submitted");
     assert_eq!(
@@ -436,7 +440,7 @@ fn a_computer_defence_drops_its_out_of_range_target_when_hit_by_it() {
     let entity = sim.substrate.entities.get(building).unwrap();
     assert!(entity.attack_target.target().is_none());
     assert_eq!(
-        entity.suspended_attack_target.target(),
+        entity.seldom.suspended_attack_target.target(),
         Some(TargetKind::Entity(source)),
         "the Override archived it"
     );

@@ -660,16 +660,40 @@ Where the join could not tell, since one of the games names no build, `VersionMi
 with both agreement `version` strings goes to the room once when a member's `ready` or
 `map_status` names another one than the host's, since such a room cannot start.
 A member on the host's build whose `rules_digest` differs from the host's makes the room
-hear one line naming them (`LobbyRulesMismatch`, which has only `name`). Rules are judged
-once every member has sent `ready` or `map_status` and everyone on the host's build has
-reported `map_status` 1, as `start` compares them: before it, a generated map's game
-names the rules without the map's. When every other player on the host's build shares
-one `rules_digest`, two or more of them, and the host's differs from it, the line names
-the host instead (`LobbyHostRulesMismatch`, also only `name`); otherwise each player
-whose rules differ is named, so with one other player, that player. A player is named
-again only after they stopped being named (their rules matched, or the line moved
-between the host and the others) or after they left the room and joined it again.
-Games without a key show its English `text`.
+hear one line naming them (`LobbyRulesMismatch`, which has only `name`). As the CnCNet
+client compares a joining player's files with the host's at once, such a member is named
+as soon as they and the host have sent `ready` or `map_status` for the room's settings,
+which every game does when the settings reach it. With a generated map (`random_map`)
+both must also have reported `map_status` 1: before it, its game names the rules without
+the map's. Until every member has answered, the lobby only adds such lines, and none
+while the host is named: one who has not answered may agree with either side. Once all
+have, as `start` compares them: when every other player on the host's build shares one
+`rules_digest`, two or more of them, and the host's differs from it, the line names the
+host instead (`LobbyHostRulesMismatch`, also only `name`); otherwise each player whose
+rules differ is named, so with one other player, that player. So the first player to
+differ is named until the rest show that the host's rules are the odd ones. A player is
+named again only after they stopped being named (their rules matched, or the line moved
+between the host and the others) or after they left the room and joined it again, not
+when a change of settings has every game send its agreement again.
+
+Where both games named what they change from the original game at sign-in
+(`Vera-Changes`, below), the line instead says what differs. It opens with
+`LobbyRulesDifferFromHost` or `LobbyHostRulesDifferFromOthers` (only `name`), compared
+with the host or, when the host is named, with the first other player, whose rules every
+other player shares. Then `LobbyOnlyHas` (`name`, `changes`) names what only the named
+player has, and `LobbyOnlyHostHas` or `LobbyOnlyOthersHave` (`changes`) what only the
+other side has. When neither side has anything the other lacks, `LobbyBothHave` or
+`LobbyAllHave` (`name`, `changes`) names what both have in copies that differ, or
+`LobbyNoChangesNamed` says VERA names no change in either, so their installed game files
+differ. `LobbySameRulesToStart` closes the line. `changes` is an `and` list of
+`LobbyChangeMod` (`name`, the mod's title), `LobbyChangeIniRoots`, `LobbyChangeAresOn`,
+`LobbyChangeAresOff` and `LobbyChangeFiles` (`count` and `files`, a `unit` list of up to
+six file names, then `LobbyMoreFiles` with the `count` left). A mod or Ares setting
+differs when the other side has another or none; file names compare ignoring case, and
+when the other side changes no files, every file of the named side's `count` differs.
+Games without a key show its English `text`. VERA shows these lines, and the version and
+build lines above, in red, as the CnCNet client shows its modified-files warning; a game
+before it shows them as the lobby's other lines.
 
 Each `join` of the public channel gives the joining session one `chat` line from the
 notice sender after its `joined`. The line says how many players are online: in the
@@ -695,6 +719,14 @@ not know.
   maintenance message come in that language when the operator wrote it: the translation
   for that tag, else for its language alone (`zh`), else for another region of that
   language, else the operator's `text`, which a missing or malformed tag gets.
+- `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
+  which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
+  true` (config.toml names other INI files), `ares` (`on` or `off`, the player's Ares
+  setting when not Auto) and `files` with `count` (up to 32 names of the game-folder files
+  that change the rules the network compares, of `count`), each left out when unchanged:
+  `{}` for the original game. Texts are 1–64 bytes of well-formed UTF-16 without control
+  or format characters (such as bidi overrides), `count` at most 65535 and the header at
+  most 8192 characters; the lobby ignores a malformed one whole.
 - `Vera-Quick-Match: 1` ([Quick Match](#quick-match)), `Vera-Host-Handover: 1` (host
   handover), `Vera-Watch-AI: 1` ([Watching](#watching)) and `Vera-Relay-Federation: 1`
   (a RelayGrant's `federation`): what it can do. A browser game sends every header but
@@ -704,6 +736,28 @@ Two games compare their builds when both name one, else their versions. They are
 another version when both name what they compare and it differs: they could never start
 a match together, so neither sees the other's game room or match to watch. Quick Match
 pairs only games whose compared values are equal, where two that name nothing are equal.
+
+## Room list summaries
+
+The public game-room list (`kind=41`) and each listed watchable match can
+also carry `room_summary: {map?, teams?, forming?, observers?, computers?}`.
+The lobby derives a room's figures from the host's published options and
+current membership. A running match uses its frozen options. The fields are
+display-only. A client never sends them on create or advertise.
+
+`map` names the map. `teams` lists occupied seats per team in team-number
+order, counting playing humans and AI. For example, `[0,4,0,4]` means four
+on team 2 and four on team 4. An empty array means a known free-for-all.
+`forming:true` means an open room is still being set up. If it also carries
+partial team counts, the list says “Teams forming” and the details below the list show
+the occupied seats. Missing team data leaves the layout unknown, including
+setups where opposing team assignments share a starting House. `observers`
+counts seated human spectators and
+`computers` counts AI. Remote watchers remain in the existing `watchers`
+field. Older clients ignore the extra summary; on an older lobby or rollback
+a new client uses the original map and occupancy information it has.
+A watch list without a summary can still supply seated spectator and AI
+counts on the match itself. Those counts establish no team assignments.
 
 ## Visiting the lobby
 
@@ -732,7 +786,7 @@ watcher is no part of the match: it has no source, sends nothing into it, and th
 players' games never learn it is there (relay README, "Watchers").
 
 `GET /v1/matches` returns
-`{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
+`{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds,room_summary?}]}`:
 the matches the caller may watch. These are matches in play between two or more humans,
 at least one of them playing (a watcher's game follows a player), or, to a caller that
 signed in with `Vera-Watch-AI: 1`, where only AI play while every human watches (a
@@ -1011,8 +1065,8 @@ stay as they are. The host's game moves each named player to that team, as their
 choice would, and publishes the options. A game that ignores the event leaves the teams
 to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
 teams, AI players, fewer than two players, or teams already as even as they can be.
-Anyone else typing `/balance` hears that only the host can. The host's Balance button
-sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+Anyone else typing `/balance` hears that only the host can. The host's Balance teams, in
+Quick Team Setup, sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
 the `balance` command 5 seconds after who plays or the Teams count last changed; the
 lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
 command from anyone but the host with 403 `forbidden`. Current games never send it.

@@ -85,19 +85,21 @@ impl DebugEventLog {
 
 impl crate::sim::game_entity::GameEntity {
     pub fn debug_log(&self) -> Option<&DebugEventLog> {
-        self.debug_log.as_ref()
+        self.seldom.debug_log.as_ref()
     }
 
     pub(crate) fn set_debug_logging(&mut self, enabled: bool) {
         if enabled {
-            self.debug_log.get_or_insert_with(DebugEventLog::default);
+            self.seldom
+                .debug_log
+                .get_or_insert_with(DebugEventLog::default);
         } else {
-            self.debug_log = None;
+            self.seldom.debug_log = None;
         }
     }
 
     pub(crate) fn push_debug_event(&mut self, tick: u32, event: impl FnOnce() -> DebugEventKind) {
-        if let Some(log) = self.debug_log.as_mut() {
+        if let Some(log) = self.seldom.debug_log.as_mut() {
             log.push(tick, event());
         }
     }
@@ -120,7 +122,7 @@ pub(crate) struct DebugObservation {
 
 impl DebugObservation {
     pub(crate) fn capture(entity: &crate::sim::game_entity::GameEntity) -> Option<Self> {
-        entity.debug_log.as_ref()?;
+        entity.seldom.debug_log.as_ref()?;
         Some(Self {
             mission: entity.mission.effective().raw(),
             handler: entity.mission.handler_state(),

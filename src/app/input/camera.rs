@@ -1885,6 +1885,46 @@ pub(crate) fn cursor_over_battlefield(state: &AppState) -> bool {
     viewport_contains(tactical_viewport_px(state), state.cursor_position())
 }
 
+/// The battlefield point the player is pointing at now, in world pixels.
+pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> {
+    let pointer = state.match_state.input.pointer_in_window()?;
+    // A tap supplies window coordinates even when the hardware mouse is outside.
+    if !(state.platform.pointer_in_client || touch_owns_pointer(&state.match_state.input))
+        || !cursor_over_battlefield(state)
+    {
+        return None;
+    }
+    if let Some(zoom) = state.tactical_zoom() {
+        let (width, height) = zoom.frame_size();
+        if !state.platform.pointer_held
+            && !viewport_contains((zoom.origin.0, zoom.origin.1, width, height), pointer)
+        {
+            return None;
+        }
+    }
+    let (x, y) = state.cursor_position();
+    // A floating sidebar (including its radar) can cover the tactical rectangle.
+    if viewport_contains(state.sidebar_frame().column(), (x, y)) {
+        return None;
+    }
+    let (px, py) = state.match_state.input.cursor_px();
+    if state
+        .match_state
+        .match_presentation
+        .in_game_gadgets
+        .control_at(px, py)
+    {
+        return None;
+    }
+    #[cfg(feature = "phobos")]
+    if crate::app::presentation::sw_sidebar::hit_test(state, x, y).is_some() {
+        return None;
+    }
+    Some(crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state, x, y,
+    ))
+}
+
 /// Whether the frame-pixel point lies inside the battlefield's rectangle.
 fn viewport_contains((left, top, width, height): (u32, u32, u32, u32), (x, y): (f32, f32)) -> bool {
     let (x, y) = (x - left as f32, y - top as f32);
@@ -2262,7 +2302,9 @@ pub(crate) fn update_follow_camera(
         .and_then(|sim| {
             sim.entities()
                 .get(id)
-                .filter(|entity| entity.lifecycle.object_alive() && entity.selection.is_selected())
+                .filter(|entity| {
+                    entity.lifecycle.object_alive() && entity.seldom.selection.is_selected()
+                })
                 .map(|entity| entity_lepton_coord(sim, entity))
         });
     let Some((x, y, z)) = coord else {

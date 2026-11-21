@@ -105,6 +105,13 @@ pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> Str
             LaunchStartPosition::Position(idx) => (idx + 1).to_string(),
         },
         SkirmishComboItem::Team(team) => team_label(state, team),
+        SkirmishComboItem::TeamTool { tool, refusal } => {
+            crate::ui::team_tools::team_tool_text(tool, refusal)
+        }
+        SkirmishComboItem::TeamHeading => crate::ui::team_tools::presets_heading(),
+        SkirmishComboItem::SeatAction { action, .. } => {
+            crate::ui::team_tools::seat_action_text(action)
+        }
     }
 }
 
@@ -264,7 +271,6 @@ pub(super) const fn validation_modal_body_text_align() -> ShellAlign {
 /// the authored numbers and the glyphs are emitted at `scale` x, so a stretched
 /// page keeps gamemd's text metrics instead of re-wrapping a resized rect.
 /// `1.0` is the retail path, byte-for-byte.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn push_text_draw(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
@@ -715,6 +721,27 @@ pub(super) fn build_shell_text_draws(
         combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(0))),
         scale,
     );
+    for (id, rect, key) in [
+        (
+            SkirmishComboId::TeamMenu,
+            layout.team_menu,
+            crate::ui::team_tools::TEAM_MENU_KEY,
+        ),
+        (
+            SkirmishComboId::SeatMenu,
+            layout.seat_menu,
+            crate::ui::team_tools::SEAT_MENU_KEY,
+        ),
+    ] {
+        push_combo_face_label_draw_with_color(
+            &mut shell_draws,
+            state,
+            &crate::i18n::tr(key),
+            rect,
+            combo_face_text_color(!combo_enabled(shell, maps, id)),
+            scale,
+        );
+    }
 
     for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
@@ -800,13 +827,19 @@ pub(super) fn build_dropdown_text_draws(
             }
             let rect = combo_dropdown_text_rect_for_current_renderer(content, idx, layout.scale);
             let fit_width = combo_dropdown_text_fit_width(content, layout.scale);
+            // A menu's greyed items and heading pick nothing.
+            let color = if item.pickable() {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                combo_face_text_color(true)
+            };
             fit_owner_draw_label(&state.renderer.bit_font, &label, fit_width, |label| {
                 push_text_draw(
                     &mut shell_draws,
                     state,
                     label,
                     rect,
-                    SHELL_LABEL_TEXT_RGB,
+                    color,
                     ShellAlign::V_CENTER,
                     SHELL_DROPDOWN_TEXT_DEPTH,
                     // The rows stretch, so their captions grow with them.
@@ -1428,6 +1461,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if chosen.id == crate::ui::skirmish_shell::RANDOM_MAPS_ROW {
+            tr("VERA:RandomMaps")
         } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
             tr("VERA:Favorites")
         } else {
@@ -1454,21 +1489,20 @@ pub(super) fn push_choose_map_modal_text_draws(
         );
     }
     let geometry = modal.map_geometry(layout);
-    for (visible, (index, record_idx)) in modal
-        .filtered_record_indices
-        .iter()
-        .enumerate()
+    for (visible, index) in (0..modal.map_row_count())
         .skip(modal.map_top_index)
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let label = match &modal.row_labels {
-            Some(labels) => labels.get(index).cloned(),
-            None => state
-                .frontend
-                .scenario_catalog
-                .records()
-                .get(*record_idx)
+        let label = if let Some(seed) = modal.saved_seed_at(index) {
+            Some(seed.description.display_text())
+        } else if let Some(labels) = &modal.row_labels {
+            labels.get(index).cloned()
+        } else {
+            modal
+                .filtered_record_indices
+                .get(index)
+                .and_then(|&record| state.frontend.scenario_catalog.records().get(record))
                 .map(|record| {
                     // Starred maps carry a star, except under Favorites,
                     // where every map is one.
@@ -1477,7 +1511,7 @@ pub(super) fn push_choose_map_modal_text_draws(
                     } else {
                         record.display_name.clone()
                     }
-                }),
+                })
         };
         let Some(label) = label else {
             continue;
@@ -1501,8 +1535,10 @@ pub(super) fn push_choose_map_modal_text_draws(
     }
     // VERA: an empty Online Maps or Favorites list says why, wrapped down
     // the list.
-    let empty = if !modal.filtered_record_indices.is_empty() {
+    let empty = if modal.map_row_count() > 0 {
         None
+    } else if modal.random_maps_selected() && modal.search.is_empty() {
+        Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
         Some(crate::app::map_library::empty_online_maps_text(state))
     } else if modal.favorites_selected() && modal.search.is_empty() {

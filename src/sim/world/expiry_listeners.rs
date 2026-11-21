@@ -65,11 +65,6 @@ fn named(names: &mut Vec<u64>, held: impl IntoIterator<Item = Option<u64>>) -> b
     false
 }
 
-thread_local! {
-    /// A thread's scratch for the ids a re-read listener names.
-    static NAMES: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ExpiryListeners {
     entities: StoreIndex,
@@ -308,11 +303,11 @@ impl StoreIndex {
     /// answers `None` for a removed one, and record what changed.
     fn reread(&mut self, ids: Vec<u64>, read: impl Fn(u64, &mut Vec<u64>) -> Option<bool>) {
         let index = &*self;
-        let changes: Vec<_> = NAMES.with_borrow_mut(|names| {
-            ids.iter()
-                .map(|&id| index.change(id, names, |names| read(id, names)))
-                .collect()
-        });
+        let mut names = Vec::new();
+        let changes: Vec<_> = ids
+            .iter()
+            .map(|&id| index.change(id, &mut names, |names| read(id, names)))
+            .collect();
         self.record(ids, changes);
     }
 
@@ -327,8 +322,9 @@ impl StoreIndex {
             return self.reread(ids, read);
         }
         let index = &*self;
-        let changes = crate::sim::parallel::map(&ids, |&id| {
-            NAMES.with_borrow_mut(|names| index.change(id, names, |names| read(id, names)))
+        // Each worker names into its own scratch.
+        let changes = crate::sim::parallel::map_with(&ids, Vec::new(), |names, &id| {
+            index.change(id, names, |names| read(id, names))
         });
         self.record(ids, changes);
     }

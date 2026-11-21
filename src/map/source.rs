@@ -3,6 +3,9 @@
 //! Owns source selection and the identity of the exact bytes consumed by the
 //! parser. Frontend discovery and tools use the same resolution path.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::panic))]
+
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -146,7 +149,7 @@ pub fn is_logical_name(name: &str) -> bool {
 }
 
 /// Whether Windows reads `part` as a device in whatever folder it is, as it
-/// does up to Windows 10: `CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9` and
+/// does up to Windows 10: `CON`, `CONIN$`, `CONOUT$`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9` and
 /// `LPT0`-`LPT9` (also with a superscript 1-3), with any extension. Opening
 /// such a name reads or writes the device, not a file
 /// (Microsoft, "Naming Files, Paths, and Namespaces").
@@ -158,13 +161,15 @@ fn is_windows_device_name(part: &str) -> bool {
         .trim_end()
         .to_ascii_uppercase();
     let mut rest = device.chars().skip(3);
-    matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ((device.starts_with("COM") || device.starts_with("LPT"))
-            && matches!(
-                rest.next(),
-                Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
-            )
-            && rest.next().is_none())
+    matches!(
+        device.as_str(),
+        "CON" | "CONIN$" | "CONOUT$" | "PRN" | "AUX" | "NUL"
+    ) || ((device.starts_with("COM") || device.starts_with("LPT"))
+        && matches!(
+            rest.next(),
+            Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
+        )
+        && rest.next().is_none())
 }
 
 /// A multiplayer map name is a VFS-relative logical identity, never a peer's
@@ -364,7 +369,7 @@ fn existing_map_file(path: PathBuf) -> Option<PathBuf> {
 }
 
 /// Where the random-map dialog's files live: `RandMap.Sed`, its `RandMap.img`
-/// preview and the saved seeds. VERA: gamemd keeps them in its own folder
+/// preview and the Random Maps subfolder for saved seeds. gamemd keeps them in its own folder
 /// (`RandomMapSetupDialog__Run` 0x00595BC0 writes `RandMap.img`, its accepted
 /// caller 0x005E8590 `RandMap.Sed`); VERA never writes the game folder, so
 /// they are in its Maps folder. Without that folder (tests and tools), `root`.
@@ -376,6 +381,34 @@ pub fn random_map_dir(root: &Path) -> &Path {
 /// VERA's downloaded maps. A seed is only looked for in [`random_map_dir`].
 pub fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
     local_map_path_in(mod_dir(), ra2_dir, downloaded_maps_dir(), map_name)
+}
+
+/// Locate an installed authored scenario by its recorded bytes. A mod can
+/// shadow a name without shadowing the manifest that supplied its recording.
+pub fn matching_loose_map_path(
+    ra2_dir: &Path,
+    selected_mod: Option<&Path>,
+    logical_name: &str,
+    expected_sha256: &str,
+) -> Option<PathBuf> {
+    if !is_logical_name(logical_name) || !valid_source_sha256(expected_sha256) {
+        return None;
+    }
+    game_folders_in(ra2_dir, selected_mod)
+        .into_iter()
+        .rev()
+        .filter_map(|root| existing_map_file(root.join(logical_name)))
+        .find(|path| {
+            read_loose_map_input_bounded(path, Some(MAX_TRANSFER_MAP_BYTES))
+                .ok()
+                .and_then(|input| {
+                    input
+                        .source
+                        .physical_identity()
+                        .map(|(_, digest)| digest == expected_sha256)
+                })
+                .unwrap_or(false)
+        })
 }
 
 fn local_map_path_in(
@@ -861,7 +894,7 @@ fn install_received_asset_with_limits(
     }
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     if !already_cached {
-        write_staged(cache.directory(), &bytes, |stage| {
+        crate::util::file_system::write_staged(cache.directory(), &bytes, |stage| {
             std::fs::rename(stage, &path)
         })?;
     }
@@ -872,43 +905,6 @@ fn install_received_asset_with_limits(
         source_sha256: digest.to_owned(),
     };
     Ok(LoadedTransferAsset { source, content })
-}
-
-/// Writes `bytes` to a new hidden file in `dir`, syncs it, and hands its path
-/// to `publish` to move it into place. The staged file is removed when the
-/// write or `publish` fails, so no partial file is published or left behind.
-#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-fn write_staged(
-    dir: &Path,
-    bytes: &[u8],
-    publish: impl FnOnce(&Path) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
-    let (stage, mut file) = loop {
-        let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
-        let stage = dir.join(format!(".map-{}-{id}.tmp", std::process::id()));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&stage)
-        {
-            Ok(file) => break (stage, file),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
-        }
-    };
-    let result = (|| -> std::io::Result<()> {
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        publish(&stage)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&stage);
-    }
-    result
 }
 
 /// The name a received or downloaded map is kept under in VERA's Maps folder: the
@@ -1018,32 +1014,11 @@ fn held_file(dir: &Path, name: &str) -> Option<PathBuf> {
 /// name is already taken by a spelling [`held_file`] did not match.
 fn write_kept_map(maps_dir: &Path, name: &str, bytes: &[u8]) -> Result<bool> {
     crate::util::file_system::create_dir_all(maps_dir)?;
-    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-    {
-        crate::util::file_system::write_new(maps_dir.join(name), bytes)?;
-        Ok(true)
-    }
-    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-    {
-        // The bytes are staged beside the name first, so Choose Map never
-        // reads half a file. Claiming the name then lets the file system
-        // refuse a spelling it treats as the same, and the staged file
-        // replaces only that claim.
-        let target = maps_dir.join(name);
-        let written = write_staged(maps_dir, bytes, |stage| {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&target)?;
-            std::fs::rename(stage, &target).inspect_err(|_| {
-                let _ = std::fs::remove_file(&target);
-            })
-        });
-        match written {
-            Ok(()) => Ok(true),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
-            Err(error) => Err(error.into()),
-        }
+    match crate::util::file_system::write_new(maps_dir.join(name), bytes) {
+        Ok(()) => Ok(true),
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -1204,6 +1179,24 @@ pub mod test_support {
 #[cfg(all(test, tests_map))]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[test]
+    fn replay_finds_recorded_bytes_behind_a_mods_same_named_map() {
+        let retail = TestDirectory::new("retail-recorded-scenario");
+        let selected_mod = TestDirectory::new("mod-same-named-scenario");
+        retail.write("opening.map", b"recorded retail scenario");
+        selected_mod.write("opening.map", b"conflicting mod scenario");
+        let digest = crate::util::sha256::sha256_hex(b"recorded retail scenario");
+        assert_eq!(
+            super::matching_loose_map_path(
+                retail.path(),
+                Some(selected_mod.path()),
+                "opening.map",
+                &digest
+            ),
+            Some(retail.path().join("opening.map")),
+        );
+    }
 
     #[cfg(unix)]
     #[test]

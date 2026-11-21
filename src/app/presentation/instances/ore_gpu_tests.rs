@@ -736,7 +736,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
         dispatched += due.len();
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         sale_seen |= output.sound_events.iter().any(|event| {
@@ -866,7 +866,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
 
     let output = scene
         .runtime
-        .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     assert!(output.tick.frame_committed);
     entries.remove_cells(&output.overlay_removals);
@@ -1081,7 +1081,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
                 commands,
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         // Same presentation index owner and application order as sim_tick.

@@ -173,7 +173,7 @@ impl Fixture {
         let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
         for frame in 100..110 {
             sim.session.set_binary_frame_for_test(frame);
-            sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+            sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
             if sim.team_script_vm.teams[&team].current_action(&sim.team_script_vm) == 5 {
                 break;
             }
@@ -186,12 +186,12 @@ impl Fixture {
                 DriveCoord { x, y: 2688, z: 0 },
                 &rules,
                 Some(&overlays),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         }
         sim.session
             .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+        sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
         // Calc_Center6EAEE0 uses Foot4DBFD0's converted native speed, then asks
         // the actual closest member's CanEnter before retaining the mean cell.
         Some(Self {

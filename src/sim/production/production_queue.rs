@@ -121,7 +121,7 @@ pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -
 pub fn publish_production_changes(
     sim: &mut Simulation,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(owner) = sim.control_projection().local_command_house() else {
         return;
@@ -186,7 +186,7 @@ pub fn publish_production_changes_for_tests(
     publish_production_changes(
         sim,
         rules,
-        FrameEffects::default().with_production_strip(&visits, &|_| {}),
+        &mut FrameEffects::default().with_production_strip(&visits),
     );
     sim.session.set_current_house_for_test(previous);
 }
@@ -210,7 +210,7 @@ pub fn dispatch_production_changes_for_tests(sim: &mut Simulation, rules: &RuleS
         &due,
         rules,
         sim.session.tick().saturating_add(1),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     spawned
 }
@@ -227,7 +227,7 @@ pub(in crate::sim) fn exit_produced_object(
     stable_id: u64,
     exit_cell: (i16, i16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::{self, BuildingExit};
     use crate::sim::ai_unit_choice::UnitChoiceKind;
@@ -285,7 +285,7 @@ pub(in crate::sim) fn exit_produced_object(
             .substrate
             .entities
             .get(producer_id)
-            .is_some_and(|producer| producer.radio_contacts.first_free().is_none())
+            .is_some_and(|producer| producer.seldom.radio_contacts.first_free().is_none())
     {
         return BuildingExit::TryLater;
     }
@@ -407,7 +407,7 @@ fn exit_naval(
     stable_id: u64,
     speed_type: crate::rules::locomotor_type::SpeedType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     // 444175/65AE30 scans every actual radio slot. This request precedes
@@ -416,7 +416,7 @@ fn exit_naval(
         .substrate
         .entities
         .get(producer_id)
-        .is_some_and(|producer| producer.radio_contacts.is_empty())
+        .is_some_and(|producer| producer.seldom.radio_contacts.is_empty())
     {
         let _ = sim.mission_queue_exact(
             producer_id,
@@ -490,7 +490,7 @@ fn exit_land(
     producer_id: u64,
     stable_id: u64,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     let Some(producer) = sim.substrate.entities.get(producer_id) else {
@@ -634,8 +634,8 @@ fn exit_land(
         )?;
         // The native successful suffix44459F..4445C9 re-marks around the
         // second coordinate write. Use the shared Mark/SetLocation owners.
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
-        sim.unmark_entity_remove(spawned, context);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        sim.unmark_entity_remove(spawned, context.reborrow());
         crate::sim::movement::ground_pose::foot_set_location(
             &mut sim.substrate.entities,
             spawned,
@@ -685,7 +685,7 @@ fn exit_at_dock(
     exit_cell: (i16, i16),
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     if arm == ExitArm::Infantry {
@@ -777,7 +777,7 @@ fn kick_out_ares_clones(
     producer_id: u64,
     product_id: u64,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::rules::object_type::{FactoryType, ObjectCategory};
     let Some(producer) = sim.substrate.entities.get(producer_id) else {
@@ -815,9 +815,10 @@ fn kick_out_ares_clones(
     let sources: Vec<u64> = sim
         .houses
         .get(&owner)
-        .map(|house| house.base_projection().buildings().to_vec())
+        .map(|house| house.base_projection().buildings())
         .unwrap_or_default()
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|&id| {
             sim.substrate
                 .entities
@@ -839,7 +840,6 @@ fn kick_out_ares_clones(
                 })
         })
         .collect();
-    let owner_name = sim.interner.resolve(owner).to_owned();
     for source in sources {
         let admitted = sim.substrate.entities.get(source).is_some_and(|building| {
             !building.lifecycle.in_limbo()
@@ -850,14 +850,7 @@ fn kick_out_ares_clones(
             continue;
         }
         let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
-            clone_type,
-            &owner_name,
-            0,
-            0,
-            0,
-            0,
-            rules,
-            effects,
+            clone_type, owner, 0, 0, 0, 0, rules, effects,
         ) else {
             continue;
         };
@@ -895,7 +888,7 @@ fn exit_cloning_vat_copies(
     producer_id: u64,
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(producer) = sim.substrate.entities.get(producer_id) else {
         return;
@@ -911,6 +904,9 @@ fn exit_cloning_vat_copies(
     if !clones {
         return;
     }
+    // A copy of the House's Building vector: each clone's constructor and
+    // exit run through the whole simulation, whose callbacks (a Unlimbo's
+    // triggers among them) can add or remove buildings while it is walked.
     let vat_ids = sim
         .houses
         .get(&owner)
@@ -928,12 +924,11 @@ fn exit_cloning_vat_copies(
         if !is_cloning_vat {
             continue;
         }
-        let vat_owner_name = sim.interner.resolve(vat_owner).to_owned();
         // Create_Object takes only the vat's House (`0x00444A24..0x00444A2B`);
         // the new object waits in limbo for the vat's exit to place it.
         let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
             product_type,
-            &vat_owner_name,
+            vat_owner,
             0,
             0,
             0,
@@ -972,7 +967,7 @@ fn infantry_exit_tail(
     dock: (u16, u16),
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let nav = sim
         .substrate
@@ -1044,7 +1039,7 @@ fn infantry_exit_post(
     producer_id: u64,
     spawned: u64,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(producer) = ExitProducer::of(sim, rules, producer_id) else {
         return;
@@ -1136,7 +1131,7 @@ fn generic_exit_tail(
     producer_id: u64,
     spawned: u64,
     dock: (u16, u16),
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::mission::{MissionId, MissionType, authority::LiveReadyInputProvider};
     let _ = sim.mission_queue_exact(
@@ -1188,7 +1183,7 @@ fn exit_aircraft(
     stable_id: u64,
     airport_bound: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     use crate::sim::radio::{self, RadioMessage, RadioPayload};
@@ -1196,7 +1191,7 @@ fn exit_aircraft(
         .substrate
         .entities
         .get(producer_id)
-        .is_some_and(|producer| producer.radio_contacts.has_free_or(stable_id));
+        .is_some_and(|producer| producer.seldom.radio_contacts.has_free_or(stable_id));
     if !linkable {
         return BuildingExit::Failed;
     }
@@ -1279,7 +1274,7 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
     // (category, stamp, type_id, state, progress); progress feeds only the
     // test-support view field.
     let mut items: Vec<(ProductionCategory, u64, InternedId, BuildQueueState, u16)> = Vec::new();
-    for f in sim.production.factories().iter_insertion_ordered() {
+    for (_, f) in sim.production.factories().holders_insertion_ordered() {
         if f.owner() != owner_id {
             continue;
         }

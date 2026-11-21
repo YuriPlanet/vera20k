@@ -507,7 +507,7 @@ pub(crate) mod tests {
             id,
             Some(crate::sim::components::NavTargetRef::cell(20, 15)),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the Unit setter takes the cell");
 

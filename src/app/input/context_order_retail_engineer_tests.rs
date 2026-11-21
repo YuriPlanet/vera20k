@@ -70,6 +70,7 @@ fn building_orders_for_hover(
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(repairable));
     assert_eq!(
@@ -108,7 +109,7 @@ fn advance_retail_frame(runtime: &mut crate::sim::runtime::SimRuntime) -> Vec<Si
             &due,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
         .sound_events
@@ -338,7 +339,7 @@ fn retail_camov02_alias_binds_damaged_art_and_engineer_repair_restores_normal() 
     for _ in 0..600 {
         let sounds = advance_retail_frame(runtime);
         repaired_sound += sounds.iter().filter(|event| {
-            matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "BuildingRepaired")
+            matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&runtime.resources.rules) == "BuildingRepaired")
         }).count();
         if let Some(entity) = runtime.simulation.entities().get(engineer) {
             walked |= crate::sim::movement::ground_pose::position_world_xy(&entity.position)
@@ -431,7 +432,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         false,
         rules,
         Some(runtime.resources.rules.overlay_registry()),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let plant_entity = runtime.simulation.entity_mut_for_test(plant).unwrap();
     plant_entity
@@ -489,11 +490,11 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
                 &due,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         for event in output.sound_events {
-            if matches!(event, SimSoundEvent::VocAt { ref sound_id, .. } if sound_id == "BuildingRepaired")
+            if matches!(event, SimSoundEvent::VocAt { ref sound_id, .. } if sound_id.name_in(&runtime.resources.rules) == "BuildingRepaired")
             {
                 repaired_sound += 1;
             }
@@ -529,7 +530,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
             &[],
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let plant_entity = runtime.simulation.entities().get(plant).unwrap();

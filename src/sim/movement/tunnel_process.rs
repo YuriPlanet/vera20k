@@ -100,7 +100,7 @@ impl Simulation {
         coord: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.foot_set_location_marked(id, coord, rules, registry, effects);
     }
@@ -146,7 +146,7 @@ impl Simulation {
         if let Some(sound) = sound {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                    sound,
+                    rules.sound_name(&sound),
                     entity,
                     self.resolved_terrain.as_ref(),
                 ));
@@ -220,7 +220,7 @@ impl Simulation {
         to: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(actor) = self.substrate.entities.get(id) else {
@@ -269,7 +269,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(runtime) = self.tunnel_runtime_mut(id) else {
             return;
@@ -378,7 +378,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> TunnelProcessOutcome {
         let mut outcome = TunnelProcessOutcome::default();
         let Some(state) = self
@@ -538,7 +538,7 @@ impl Simulation {
         coord_z: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(location) = self.tunnel_location(id) else {
             return;
@@ -567,7 +567,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(location) = self.tunnel_location(id) else {
             return;
@@ -655,7 +655,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(location) = self.tunnel_location(id) else {
             return;

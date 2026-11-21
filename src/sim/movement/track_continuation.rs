@@ -37,7 +37,7 @@ impl Simulation {
         id: u64,
         family: TrackFamily,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);

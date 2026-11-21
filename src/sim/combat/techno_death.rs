@@ -138,7 +138,7 @@ impl crate::sim::world::Simulation {
                 rules,
             )
         {
-            self.publish_trigger_effects(vec![
+            self.publish_trigger_effects([
                 crate::sim::trigger_runtime::TriggerEffect::RecentEventCell {
                     cell: ((coord.x / 256) as i16, (coord.y / 256) as i16),
                 },
@@ -191,12 +191,12 @@ pub(crate) fn death_arm_explodes(
 /// (`Rules+0xFDC`) at `ftol(Strength * 0.5)` (`0x0070D6FE..0x0070D71F`). No
 /// weapon fires nothing. The function has no `Explodes=` gate: the death arm
 /// gates it ([`death_arm_explodes`]); a crash impact calls it bare.
-pub(super) fn fire_death_weapon_payload(
-    rules: &RuleSet,
+pub(super) fn fire_death_weapon_payload<'r>(
+    rules: &'r RuleSet,
     obj: &ObjectType,
-    current_weapon: Option<&WeaponType>,
+    current_weapon: Option<&'r WeaponType>,
     interner: &mut StringInterner,
-) -> Option<(i32, InternedId, InternedId)> {
+) -> Option<DeathWeaponPayload<'r>> {
     let chosen = obj
         .death_weapon
         .as_deref()
@@ -205,22 +205,37 @@ pub(super) fn fire_death_weapon_payload(
     if let Some(weapon) = chosen {
         let damage =
             death_weapon_ftol_product_i32_f32(weapon.damage, obj.death_weapon_damage_modifier)?;
-        let warhead_ref = interner.intern(weapon.warhead.as_ref()?);
+        let warhead = interner.intern(weapon.warhead.as_ref()?);
         let weapon_ref = interner.intern(&weapon.id);
-        return Some((damage, warhead_ref, weapon_ref));
+        return Some(DeathWeaponPayload {
+            damage,
+            warhead,
+            weapon_ref,
+            weapon,
+        });
     }
     let fallback = rules
         .combat_damage
         .death_weapon
         .as_deref()
         .and_then(|weapon_id| rules.weapon(weapon_id))?;
-    let warhead_ref = interner.intern(fallback.warhead.as_ref()?);
+    let warhead = interner.intern(fallback.warhead.as_ref()?);
     let weapon_ref = interner.intern(&fallback.id);
-    Some((
-        death_weapon_half_strength(obj.strength)?,
-        warhead_ref,
+    Some(DeathWeaponPayload {
+        damage: death_weapon_half_strength(obj.strength)?,
+        warhead,
         weapon_ref,
-    ))
+        weapon: fallback,
+    })
+}
+
+/// [`fire_death_weapon_payload`]'s weapon: its damage, its warhead's and its
+/// own interned ids, and the type itself.
+pub(super) struct DeathWeaponPayload<'r> {
+    pub(super) damage: i32,
+    pub(super) warhead: InternedId,
+    pub(super) weapon_ref: InternedId,
+    pub(super) weapon: &'r WeaponType,
 }
 
 /// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` with no extra damage: a real
@@ -241,9 +256,12 @@ pub(crate) fn death_weapon_detonation(
         combat_weapon::current_weapon(entity, object, &substrate.entities, rules, interner);
     let impact =
         crate::sim::movement::ground_pose::object_get_coords(entity, resolved_terrain.as_ref());
-    let (damage, warhead, weapon) =
-        fire_death_weapon_payload(rules, object, current_weapon, interner)?;
-    let kind = rules.weapon(interner.resolve(weapon))?;
+    let DeathWeaponPayload {
+        damage,
+        warhead,
+        weapon_ref,
+        weapon,
+    } = fire_death_weapon_payload(rules, object, current_weapon, interner)?;
     Some(ProjectileDetonation {
         projectile_id: id,
         source_id: id,
@@ -252,10 +270,10 @@ pub(crate) fn death_weapon_detonation(
         payload: ProjectilePayload::new(
             damage,
             warhead,
-            kind.projectile.as_deref().map(|id| interner.intern(id)),
-            kind.bright,
+            weapon.projectile.as_deref().map(|id| interner.intern(id)),
+            weapon.bright,
         )
-        .with_installed_weapon(Some(weapon)),
+        .with_installed_weapon(Some(weapon_ref)),
         reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
     })
 }
@@ -319,15 +337,7 @@ pub(super) fn throw_debris_for_death(
     if object_type.max_debris <= 0 {
         return;
     }
-    let debris_types: Vec<_> = object_type
-        .debris_types
-        .iter()
-        .map(|name| {
-            rules
-                .voxel_anim_type_id_by_name(name)
-                .map(|id| (id, rules.voxel_anim_type(id)))
-        })
-        .collect();
+    let debris_types = rules.object_debris_types(object_type);
     let data = DebrisTypeData {
         max_debris: object_type.max_debris,
         min_debris: object_type.min_debris,
@@ -410,14 +420,13 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
     fn construct_voxel(
         &mut self,
         type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId,
-        voxel_type: &crate::rules::voxel_anim_type::VoxelAnimType,
         owner_house: Option<InternedId>,
         origin: glam::IVec3,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let admit_inline = world_receiver::callbacks_enabled(self.world);
         self.world.emit_debris_voxel(
             type_id,
-            voxel_type,
+            self.rules.voxel_anim_type(type_id),
             owner_house,
             origin,
             admit_inline,
@@ -429,14 +438,14 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
 
 /// Shared list selection in Techno's death block and Infantry's Eaten arm
 /// (5197E5/51984D): one Main draw even for a singleton, none for an empty list.
-pub(crate) fn select_death_sound(
-    choices: &[String],
-    main_rng: &crate::sim::rng::MainRng,
-) -> Option<String> {
+pub(crate) fn select_death_sound<'a>(
+    choices: &'a [String],
+    main_rng: &mut crate::sim::rng::SimRng,
+) -> Option<&'a str> {
     if choices.is_empty() {
         None
     } else {
-        Some(choices[(main_rng.next_u32() % choices.len() as u32) as usize].clone())
+        Some(&choices[(main_rng.next_u32() % choices.len() as u32) as usize])
     }
 }
 

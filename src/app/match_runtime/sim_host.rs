@@ -96,7 +96,8 @@ pub(crate) struct SimHost {
     /// instead of copying the world whole.
     spare: Option<crate::sim::world::Simulation>,
     /// Time spent capturing frames and bringing the world copy up to date,
-    /// and how many of each, since the last report.
+    /// and how many of each, since the last report. A diagnostic counter in a
+    /// `Cell`: the draws that capture frames hold the host through `&`.
     snapshot_costs: std::cell::Cell<SnapshotCosts>,
     /// What the last lent job cost this thread: copying the frame when the
     /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, then the
@@ -529,7 +530,8 @@ impl SimHost {
 /// in `kept`, which the draws beside a lent tick read (docs/sim-thread.md).
 /// Each one is also asked before a tick leaves
 /// (`cursor::answer_kept_questions`), so a kept answer is one tick old at
-/// most even when every frame is lent.
+/// most even when every frame is lent. `kept` is a cell because the draws
+/// that ask hold the app state through `&`.
 pub(crate) fn home_answer<T: Clone>(
     host: &SimHost,
     kept: &std::cell::RefCell<T>,

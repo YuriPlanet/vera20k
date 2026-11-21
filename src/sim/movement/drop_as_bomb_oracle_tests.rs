@@ -76,7 +76,7 @@ mod tests {
                 .set_in_limbo_for_test(int(input, "limbo", 0) != 0);
             entity.health.set_for_test(int(input, "health", 100));
             sim.substrate.entities.insert(entity);
-            sim.object_ai_fall(1, &rules, None, FrameEffects::default())
+            sim.object_ai_fall(1, &rules, None, &mut FrameEffects::default())
                 .expect("production object falling AI");
             let entity = sim
                 .substrate

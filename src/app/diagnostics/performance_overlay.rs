@@ -16,7 +16,7 @@
 mod panel;
 
 use crate::util::time::Instant;
-use std::sync::Mutex;
+use std::cell::RefCell;
 
 use crate::render::batch::{
     BatchRenderer, BatchTexture, CameraUniform, InstanceBufferPool, SpriteInstance,
@@ -41,20 +41,29 @@ const ELLIPSIS: &str = "...";
 
 pub(crate) struct PerformanceOverlay {
     visible: bool,
+    /// The frame owner keeps the GPU timer running while it probes the first
+    /// match frames of a GPU that draws from the system's memory
+    /// (`presentation::render::FramePassLog`), panel or no panel.
+    startup_probe: bool,
     /// Whether the panel also draws its Threads and Ticks rows.
     thread_rows: bool,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
-    frame: Mutex<OverlayFrame>,
+    /// Stepped through `&self` because the frame's last pass encodes the
+    /// panel beside `match_panel(state)`, which reads the whole app state, and
+    /// the startup splash lends it beside the other renderer parts. Main
+    /// thread only.
+    frame: RefCell<OverlayFrame>,
 }
 
 struct OverlayFrame {
     timer: FrameTimer,
     pool: InstanceBufferPool,
     size: [u32; 2],
-    depth: wgpu::TextureView,
+    /// The panel's depth attachment, made when it first shows (`draw`).
+    depth: Option<wgpu::TextureView>,
     logged_first_frame: bool,
     simulation_rate: SimulationRate,
     stats: PanelStats,
@@ -197,15 +206,16 @@ impl PerformanceOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
+            startup_probe: false,
             thread_rows: false,
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
             camera_group,
-            frame: Mutex::new(OverlayFrame {
+            frame: RefCell::new(OverlayFrame {
                 timer: FrameTimer::new(),
                 pool: InstanceBufferPool::new(),
                 size: [gpu.config.width, gpu.config.height],
-                depth: gpu.create_depth_texture(),
+                depth: None,
                 logged_first_frame: false,
                 simulation_rate: SimulationRate::default(),
                 stats: PanelStats::default(),
@@ -217,18 +227,14 @@ impl PerformanceOverlay {
     /// Count a presented frame's Logic frames. `held` zeroes the rate.
     fn observe_simulation_frame(&self, binary_frame: u32, now_ms: u32, held: bool) {
         self.frame
-            .lock()
-            .expect("performance overlay frame lock")
+            .borrow_mut()
             .simulation_rate
             .observe(binary_frame, now_ms, held);
     }
 
     /// Forget the rate: a match ended or a new one is loading.
     pub(crate) fn clear_simulation_rate(&self) {
-        self.frame
-            .lock()
-            .expect("performance overlay frame lock")
-            .simulation_rate = SimulationRate::default();
+        self.frame.borrow_mut().simulation_rate = SimulationRate::default();
     }
 
     /// One finished in-game render's phase spans, for the Most CPU row.
@@ -237,12 +243,13 @@ impl PerformanceOverlay {
         phases: crate::app::presentation::render::RenderPhases,
     ) {
         if self.visible {
-            self.frame
-                .lock()
-                .expect("performance overlay frame lock")
-                .stats
-                .record_render(phases);
+            self.frame.borrow_mut().stats.record_render(phases);
         }
+    }
+
+    /// Keep the GPU timer running for the frame owner's startup probe.
+    pub(crate) fn set_startup_probe(&mut self, on: bool) {
+        self.startup_probe = on;
     }
 
     pub(crate) fn is_visible(&self) -> bool {
@@ -251,13 +258,7 @@ impl PerformanceOverlay {
 
     /// Whether the shown panel has new figures for the next draw.
     pub(crate) fn readings_due(&self, now: Instant) -> bool {
-        self.visible
-            && self
-                .frame
-                .lock()
-                .expect("performance overlay frame lock")
-                .stats
-                .due(now)
+        self.visible && self.frame.borrow_mut().stats.due(now)
     }
 
     /// The Options page's Performance Stats box.
@@ -286,10 +287,7 @@ impl PerformanceOverlay {
         if !self.visible {
             return 0;
         }
-        self.frame
-            .lock()
-            .expect("performance overlay frame lock")
-            .message_top
+        self.frame.borrow_mut().message_top
     }
 
     /// Call exactly once after all content has reached the acquired window
@@ -306,11 +304,12 @@ impl PerformanceOverlay {
         font: &BitFont,
         in_match: Option<MatchPanel<'_>>,
     ) {
-        let mut frame = self.frame.lock().expect("performance overlay frame lock");
+        let mut frame = self.frame.borrow_mut();
         let now = Instant::now();
         // Keep measuring while hidden, so the first shown frame has a rate.
         frame.timer.sample(now);
-        gpu.timer.set_active(self.visible || cfg!(feature = "perf"));
+        gpu.timer
+            .set_active(self.visible || self.startup_probe || cfg!(feature = "perf"));
         if !self.visible {
             frame.stats = PanelStats::default();
             frame.message_top = 0;
@@ -372,7 +371,6 @@ impl PerformanceOverlay {
 
     /// Upload `instances` and draw each `(texture, start, count)` range of
     /// them in order over the window surface.
-    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         gpu: &GpuContext,
@@ -386,9 +384,14 @@ impl PerformanceOverlay {
     ) {
         let size = [destination.width(), destination.height()];
         if frame.size != size {
-            frame.depth = gpu.create_depth_texture();
+            frame.depth = None;
             frame.size = size;
         }
+        // The passthrough pipeline carries a depth state, so its pass needs
+        // the attachment; a panel nobody shows holds none.
+        let depth = frame
+            .depth
+            .get_or_insert_with(|| gpu.create_depth_texture());
         let camera = CameraUniform {
             screen_size: [size[0] as f32, size[1] as f32],
             camera_pos: [0.0; 2],
@@ -415,7 +418,7 @@ impl PerformanceOverlay {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &frame.depth,
+                view: depth,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Discard,

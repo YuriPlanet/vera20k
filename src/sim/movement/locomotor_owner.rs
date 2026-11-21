@@ -141,7 +141,7 @@ fn end_piggyback(entity: &mut GameEntity) -> PiggybackEnd {
     };
     let lift_ended = kind == LocomotorKind::Jumpjet && entity.lift.end();
     if matches!(kind, LocomotorKind::Jumpjet | LocomotorKind::Teleport) {
-        entity.drop_credit.forget();
+        entity.seldom.drop_credit.forget();
     }
     let restored = entity
         .locomotor

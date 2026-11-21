@@ -31,7 +31,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let facts = self.aircraft_guard_facts(id, rules);
         guard_mission::guard_visit(
@@ -40,7 +40,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -50,7 +50,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let facts = self.aircraft_guard_facts(id, rules);
         guard_mission::area_guard_visit(
@@ -59,7 +59,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -217,21 +217,26 @@ impl GuardHost for WorldGuard<'_> {
             self.id,
             Some(NavTargetRef::cell(x as u16, y as u16)),
             self.rules,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
     fn enter_idle_mode(&mut self) {
-        crate::sim::aircraft::enter_idle_mode_for(self.sim, self.id, self.rules, self.ctx.effects);
+        crate::sim::aircraft::enter_idle_mode_for(
+            self.sim,
+            self.id,
+            self.rules,
+            &mut self.ctx.effects,
+        );
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     fn find_dock(&mut self) -> Option<u64> {
         self.sim
-            .aircraft_find_docking_bay(self.id, self.rules, self.ctx.effects)
+            .aircraft_find_docking_bay(self.id, self.rules, &mut self.ctx.effects)
     }
 
     fn assign_dock(&mut self, dock: u64) {
@@ -239,7 +244,7 @@ impl GuardHost for WorldGuard<'_> {
             self.id,
             Some(NavTargetRef::object(dock)),
             self.rules,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
@@ -249,7 +254,7 @@ impl GuardHost for WorldGuard<'_> {
                 self.id,
                 None,
                 self.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("aircraft dispatch");
     }
@@ -257,7 +262,7 @@ impl GuardHost for WorldGuard<'_> {
     /// `Mission_Guard @ 0x0041A5C0`'s contact 0: a Building whose type is
     /// `UnitReload=` (`+0x16AA`, `0x0041A73F`).
     fn contact_reloads(&mut self) -> bool {
-        let Some(contact) = self.entity().radio_contacts.slot(0) else {
+        let Some(contact) = self.entity().seldom.radio_contacts.slot(0) else {
             return false;
         };
         self.sim
@@ -288,7 +293,7 @@ impl GuardHost for WorldGuard<'_> {
                 self.id,
                 Some(TargetKind::Entity(unit)),
                 self.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("aircraft dispatch");
         self.queue(MissionType::Attack);
@@ -312,12 +317,17 @@ impl GuardHost for WorldGuard<'_> {
     fn foot_guard(&mut self) -> i32 {
         let mission = self.current();
         mission_handlers::evaluate_foot_guard_cadence(
-            self.sim, self.rules, self.id, mission, self.ctx,
+            self.sim,
+            self.rules,
+            self.id,
+            mission,
+            &mut self.ctx,
         )
         .delay()
     }
 
     fn foot_area_guard(&mut self) -> i32 {
-        mission_handlers::evaluate_foot_area_guard(self.sim, self.id, self.rules, self.ctx).delay()
+        mission_handlers::evaluate_foot_area_guard(self.sim, self.id, self.rules, &mut self.ctx)
+            .delay()
     }
 }

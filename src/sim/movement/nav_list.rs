@@ -54,7 +54,7 @@ impl Simulation {
         target: NavTargetRef,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -67,6 +67,7 @@ impl Simulation {
             return;
         }
         let factory_contact = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .is_some_and(|contact| self.is_weapons_factory(contact, rules));
@@ -82,7 +83,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -106,7 +107,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -137,7 +138,7 @@ impl Simulation {
         id: u64,
         head: NavTargetRef,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Err(cause) = self.assign_destination_represented(id, Some(head), rules, effects) {
             log::debug!("Foot {id} navigation list head: {cause}");

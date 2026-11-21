@@ -287,7 +287,7 @@ mod tests {
             old_owner,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             !sim.entities()
@@ -303,7 +303,7 @@ mod tests {
             owner,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.entities()

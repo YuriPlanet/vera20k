@@ -122,8 +122,7 @@ pub(super) fn finish(
     if path.is_empty() {
         return Ok(Vec::new());
     }
-    let prepared_markers = foot.prepared_search_markers();
-    let markers = prepared_markers.as_deref().or(markers);
+    let markers = foot.prepared_search_markers().or(markers);
     let start = (path[0].rx as i16, path[0].ry as i16);
     let ctx = Finishing {
         cells: context.resolved_terrain.map(NativeCellQuery::canonical),
@@ -144,12 +143,9 @@ pub(super) fn finish(
             ))
         })
         .collect::<Vec<_>>();
-    let heights: Vec<i32> = path
-        .iter()
-        .take(directions.len())
-        .map(|step| i32::from(step.path_height()))
-        .collect();
-    path_smooth::finish_path(start, &mut directions, &heights, &ctx)?;
+    // The outgoing-node heights are the steps' own, one per direction.
+    let heights = &path[..directions.len()];
+    path_smooth::finish_path(start, &mut directions, heights, &ctx)?;
     // AStar_main_loop (0x0042A432) returns these words directly. Smoothing
     // can admit the native Dummy beyond the edge of VERA's PathGrid.
     Ok(directions)

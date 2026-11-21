@@ -2,7 +2,7 @@
 //! what it holds.
 //!
 //! VERA-only; gamemd has no mods folder. Two things read a mod's files this
-//! way. The pre-match check compares one digest of them ([`files_digest`]),
+//! way. The pre-match check compares one digest of them ([`FileList::digest`]),
 //! so players start a match only with the same files. And a mod can carry
 //! the list as `mod-files.txt`, written by its maker, so a player's game can
 //! say whether their copy is the mod as it was made: the Mods page's Check
@@ -85,16 +85,12 @@ impl Differences {
     }
 }
 
-/// One digest of the files in a mod's folder, for the pre-match check
-/// (`ProcessAssets::multiplayer_rules_digest`): players start a match only
-/// with the same files. Each file counts by its path below the folder
-/// ([`name_key`]) and by what it holds. The folder's own name and the order
-/// the file system lists in do not count, nor do the files in the folder
-/// itself that no match reads ([`UNCOMPARED`]). Only what can be read as a
-/// file counts: a link to nothing, a pipe or a device is none of the mod's
-/// files.
-pub(crate) fn files_digest(dir: &Path) -> std::io::Result<[u8; 32]> {
-    Ok(FileList::scan(dir, &AtomicBool::new(false))?.digest())
+/// The files in a mod's folder for the pre-match check
+/// (`ProcessAssets::multiplayer_rules_digest`), which compares their
+/// [`FileList::digest`], and what the mod's list says of them, which the
+/// rules parts report (`app::rules_parts`).
+pub(crate) fn read_for_match(dir: &Path) -> std::io::Result<Checked> {
+    check(dir, &AtomicBool::new(false))
 }
 
 impl FileList {
@@ -130,7 +126,14 @@ impl FileList {
         self.entries.len()
     }
 
-    fn digest(&self) -> [u8; 32] {
+    /// One digest of the files, for the pre-match check: players start a
+    /// match only with the same files. Each file counts by its path below the
+    /// folder ([`name_key`]) and by what it holds. The folder's own name and
+    /// the order the file system lists in do not count, nor do the files in
+    /// the folder itself that no match reads ([`UNCOMPARED`]). Only what can
+    /// be read as a file counts: a link to nothing, a pipe or a device is none
+    /// of the mod's files.
+    pub(crate) fn digest(&self) -> [u8; 32] {
         let mut all = crate::util::sha256::Sha256::new();
         all.update(b"VERA20k mod files v1\0");
         for entry in &self.entries {
@@ -475,7 +478,10 @@ pub(crate) fn start(title: String, dir: PathBuf) -> std::io::Result<PageCheck> {
         .name("mod-check".into())
         .spawn(move || {
             // The page may have gone; then nobody waits for the answer.
-            let _ = send.send(check(&thread_dir, &thread_stop));
+            let checked =
+                crate::util::mod_package::ModFolder::open(&thread_dir, Some(&thread_stop))
+                    .and_then(|dir| check(&dir, &thread_stop));
+            let _ = send.send(checked);
         })?;
     Ok(PageCheck {
         title,
@@ -521,7 +527,7 @@ mod tests {
         write("Two/.DS_Store", b"x");
         write("Two/veraui.ini", b"[Layouts]\n");
         write("Two/Mod-Files.txt", b"anything");
-        let digest = |folder: &str| files_digest(&root.join(folder)).unwrap();
+        let digest = |folder: &str| checked(&root.join(folder)).found.digest();
         assert_eq!(digest("One"), digest("Two"));
 
         // A name outside ASCII counts by its place and what it holds: a Mac

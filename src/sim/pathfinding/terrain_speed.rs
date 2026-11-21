@@ -92,7 +92,7 @@ pub fn is_at_or_below_condition_yellow(
 /// uphill and a downhill coefficient, selected by the mover's SpeedType (Track
 /// uses the tracked pair, every other SpeedType uses the wheeled pair) and by
 /// travel direction. Vanilla values are 1.0 uphill / 1.2 downhill for both.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TerrainSpeedConfig {
     /// Tracked vehicle moving uphill (`TrackedUphill=`, Rules +0x768).
     pub tracked_uphill: NativeF64Bits,

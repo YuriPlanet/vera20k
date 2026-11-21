@@ -82,7 +82,12 @@ fn mind_control_event6_destroy_target_refreshes_bullet_but_retains_tag_actor() {
     // receiver and UnInit, not a test-injected PointerExpired callback.
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     let detonation = projectile_to(&mut sim, source, ProjectileTarget::Entity(victim));
-    sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+    sim.mind_control_detonation(
+        detonation,
+        &rules,
+        Some(&overlay),
+        &mut FrameEffects::default(),
+    );
 
     let live = sim.projectiles.current_detonation(detonation);
     assert_eq!(live.source_id, source);
@@ -90,7 +95,7 @@ fn mind_control_event6_destroy_target_refreshes_bullet_but_retains_tag_actor() {
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.health.current(), 0);
     assert!(!victim.is_object_alive());
-    assert_eq!(victim.mind_control.controller(), None);
+    assert_eq!(victim.seldom.mind_control.controller(), None);
     assert!(
         sim.substrate
             .entities
@@ -153,7 +158,12 @@ fn mind_control_terrain_tags_use_object_alive_without_capturing_terrain() {
         state.set_lifecycle_for_test(lifecycle);
         let before = state.clone();
         let detonation = projectile_to(&mut sim, source, ProjectileTarget::Terrain(terrain));
-        sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+        sim.mind_control_detonation(
+            detonation,
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        );
         let expected_globals = if expected {
             BTreeSet::from([6, 44])
         } else {
@@ -200,12 +210,17 @@ fn mind_control_cell_and_null_targets_do_not_raise_nearby_object_tags() {
         sim.attach_object_trigger_tag(nearby, Some("TAG"));
         sim.attach_object_trigger_tag(source, Some("TAG"));
         let detonation = projectile_to(&mut sim, source, target);
-        sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+        sim.mind_control_detonation(
+            detonation,
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        );
         assert!(sim.trigger_runtime.globals_set.is_empty(), "{target:?}");
         let nearby = sim.substrate.entities.get(nearby).unwrap();
         assert_eq!(nearby.owner(), houses[2]);
         assert_eq!(nearby.health.current(), 100);
-        assert_eq!(nearby.mind_control.controller(), None);
+        assert_eq!(nearby.seldom.mind_control.controller(), None);
         assert!(
             sim.substrate
                 .entities
@@ -237,7 +252,13 @@ fn mind_control_sound_keeps_pre_capture_house_and_original_raw_location() {
         y: 15 * 256 + 173,
         z: 47,
     };
-    sim.foot_set_location_marked(victim, raw, &rules, Some(&overlay), FrameEffects::default());
+    sim.foot_set_location_marked(
+        victim,
+        raw,
+        &rules,
+        Some(&overlay),
+        &mut FrameEffects::default(),
+    );
     install_event_ingress_map(&mut sim, &rules, MIND_CONTROL_TAG_MAP);
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     let detonation = projectile_to(&mut sim, source, ProjectileTarget::Entity(victim));
@@ -250,11 +271,16 @@ fn mind_control_sound_keeps_pre_capture_house_and_original_raw_location() {
         )
     );
     sim.sound_events.clear_for_test();
-    sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+    sim.mind_control_detonation(
+        detonation,
+        &rules,
+        Some(&overlay),
+        &mut FrameEffects::default(),
+    );
 
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.owner(), houses[0]);
-    assert_eq!(victim.mind_control.controller(), Some(source));
+    assert_eq!(victim.seldom.mind_control.controller(), Some(source));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
     let sounds: Vec<_> = sim
         .sound_events
@@ -268,7 +294,7 @@ fn mind_control_sound_keeps_pre_capture_house_and_original_raw_location() {
                 sub_x,
                 sub_y,
                 world_z_leptons,
-            } if sound_id == "CallbackCaptureSound" => Some((
+            } if sound_id.name_in(&rules) == "CallbackCaptureSound" => Some((
                 *audible_to,
                 crate::util::lepton::absolute_lepton_axis(*rx, *sub_x),
                 crate::util::lepton::absolute_lepton_axis(*ry, *sub_y),

@@ -293,6 +293,7 @@ fn retail_engineer_ifv_offers_normal_repair_cursor_on_damaged_friend() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
     assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
@@ -345,6 +346,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
         assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
@@ -418,6 +420,7 @@ fn retail_warped_engineer_ifv_repair_click_is_accepted_then_dropped() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
         assert_eq!(sim.click_order_receivers(&[ifv], ares_way), [ifv]);
@@ -856,7 +859,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
         rules,
         ifv,
         DepartureRoute::Vehicle,
-        |sim, passenger| {
+        |sim, passenger, _| {
             let position = exit_cell_position(sim, passenger, 16, 15, 0);
             reveal_unloaded_passenger(
                 sim,
@@ -866,10 +869,10 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
                 position,
                 crate::sim::world::PlacementEvidence::MarkSucceeded,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         },
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.entities().get(ifv).unwrap().current_weapon_number(), 0);
@@ -1104,6 +1107,7 @@ fn ares_healer_infantry_heal_what_their_warhead_reaches() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::AresAction(0x5B)
     );

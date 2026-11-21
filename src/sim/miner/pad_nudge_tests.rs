@@ -72,7 +72,7 @@ fn miner_at(
 }
 
 fn nudge(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    unit_ai_nudge_off_refinery_pad(sim, id, rules, FrameEffects::default());
+    unit_ai_nudge_off_refinery_pad(sim, id, rules, &mut FrameEffects::default());
 }
 
 fn moving(sim: &Simulation, id: u64) -> bool {
@@ -98,7 +98,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
         RadioMessage::Hello,
         RadioPayload::default(),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(hello, RadioResponse::Roger);
     assert_eq!(
@@ -106,6 +106,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
             .entities
             .get(miner)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(refinery)
@@ -119,7 +120,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
 
     let unit = sim.substrate.entities.get(miner).unwrap();
     assert!(
-        unit.radio_contacts.is_empty(),
+        unit.seldom.radio_contacts.is_empty(),
         "OVER_OUT breaks the contact"
     );
     assert!(moving(&sim, miner));
@@ -172,7 +173,7 @@ fn a_moving_miner_on_the_pad_is_left_alone() {
         miner,
         Some(NavTargetRef::cell(30, 20)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         crate::sim::movement::motion_query::is_moving(sim.substrate.entities.get(miner).unwrap()),

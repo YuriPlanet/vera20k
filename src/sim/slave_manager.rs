@@ -444,7 +444,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((slave_type, count, regen, reload, owner, cell, facing, z)) =
             self.substrate.entities.get(master).and_then(|parent| {
@@ -460,7 +460,7 @@ impl Simulation {
                     object.slaves_number.max(0),
                     object.slave_regen_rate,
                     object.slave_reload_rate,
-                    self.interner.resolve(parent.owner()).to_string(),
+                    parent.owner(),
                     (parent.position.rx(), parent.position.ry()),
                     parent.body_facing_byte(self.session.binary_frame()),
                     parent.position.z(),
@@ -473,7 +473,7 @@ impl Simulation {
         for _ in 0..count {
             let slave = self.construct_resolved_object_limbo_at_height(
                 slave_type,
-                &owner,
+                owner,
                 cell.0,
                 cell.1,
                 facing,
@@ -482,7 +482,7 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(entity) = slave.and_then(|slave| self.substrate.entities.get_mut(slave)) {
-                entity.slave.owner = Some(master);
+                entity.seldom.slave.owner = Some(master);
             }
             slaves.push(slave);
         }
@@ -502,7 +502,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
         let Some(manager) = self.substrate.slave_manager_mut(master) else {
@@ -523,7 +523,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), TiberiumImageError> {
         let count = self.slave_manager(master).map_or(0, |m| m.nodes.len());
         for index in 0..count {
@@ -560,7 +560,7 @@ impl Simulation {
         node: &mut SlaveNode,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
         match node.state {
@@ -692,7 +692,7 @@ impl Simulation {
         slave: u64,
         node: &mut SlaveNode,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(drop) = self.slave_drop_cell(master, rules) else {
             return;
@@ -738,7 +738,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
         let Some(owner) = self.substrate.entities.get(master) else {
@@ -747,7 +747,7 @@ impl Simulation {
         let building = owner.category() == EntityCategory::Structure;
         let unit = owner.category() == EntityCategory::Unit;
         let driving = owner.navigation.nav_com().is_some();
-        let deploy_pending = owner.mcv_deploy_pending.is_pending();
+        let deploy_pending = owner.seldom.mcv_deploy_pending.is_pending();
         let guarding = owner.mission.current().known() == Some(MissionType::Guard);
         let constructing_or_selling = owner.constructing_or_selling();
         let built = !owner.in_construction_bstate();
@@ -899,7 +899,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.substrate
             .set_manager_state(master, ManagerState::Deployed, i32::MAX);
@@ -980,7 +980,7 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get_mut(master) else {
             return;
         };
-        owner.suppress_deploy_voice.suppress();
+        owner.seldom.suppress_deploy_voice.suppress();
         let (x, y) = owner_cell(owner);
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
@@ -1005,7 +1005,7 @@ impl Simulation {
         master: u64,
         cell: (u16, u16),
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !self.set_unit_destination(
             master,
@@ -1024,7 +1024,12 @@ impl Simulation {
     /// to Guard (`vt+0x3D0`, `TechnoClass::ResetOrdersToGuard`): the loop
     /// 0x006B0490, 0x006B0C80, 0x006B0CC0, 0x006B0D10 and
     /// HandleReturnedSlaves each run.
-    fn reset_live_slaves(&mut self, master: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
+    fn reset_live_slaves(
+        &mut self,
+        master: u64,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
         let slaves: Vec<u64> = self.slave_manager(master).map_or_else(Vec::new, |manager| {
             manager
                 .nodes
@@ -1108,7 +1113,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .slave_manager(master)
@@ -1130,7 +1135,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self.slave_manager(master).is_none() {
             return;
@@ -1154,7 +1159,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let now = Self::now_frame(&self.session);
         let Some(owner) = self.substrate.entities.get(master) else {
@@ -1292,7 +1297,7 @@ impl Simulation {
         mission: MissionType,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<i32>, TiberiumImageError> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -1346,7 +1351,7 @@ impl Simulation {
         slave: u64,
         cell: (u16, u16),
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Err(cause) = self.assign_destination_represented(
             slave,
@@ -1369,7 +1374,7 @@ impl Simulation {
         let storage = self
             .object_type(entity.type_ref(), rules)
             .map_or(0, |object| object.storage);
-        storage > 0 && entity.slave.cargo.len() as i64 == i64::from(storage)
+        storage > 0 && entity.seldom.slave.cargo.len() as i64 == i64::from(storage)
     }
 
     /// DeploySlaves (`0x006B04C0`): every node in state 0, last first. The
@@ -1384,7 +1389,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let count = self.slave_manager(master).map_or(0, |m| m.nodes.len());
         for index in (0..count).rev() {
@@ -1477,7 +1482,7 @@ impl Simulation {
             crate::util::fixed_math::SimFixed,
         ),
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let z = self.terrain_cell_level(cell.0, cell.1).unwrap_or(0);
         // DeploySlaves6B04C0's Map4ACA10 caller placement remains in
@@ -1505,7 +1510,7 @@ impl Simulation {
     }
 
     /// The slave's Limbo (`vt+0xD4`, `InfantryClass::Limbo @ 0x0051DF10`).
-    fn limbo_slave(&mut self, slave: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
+    fn limbo_slave(&mut self, slave: u64, rules: &RuleSet, frame_effects: &mut FrameEffects<'_>) {
         let _ = self.techno_limbo_with_context(
             slave,
             UninitContext::new(rules).with_effects(frame_effects),
@@ -1521,14 +1526,14 @@ impl Simulation {
         master: u64,
         node: &mut SlaveNode,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((slave_type, owner, cell, z)) =
             self.substrate.entities.get(master).and_then(|m| {
                 let manager = m.slave_manager.as_ref()?;
                 Some((
-                    self.interner.resolve(manager.slave_type).to_string(),
-                    self.interner.resolve(m.owner()).to_string(),
+                    manager.slave_type,
+                    m.owner(),
                     (m.position.rx(), m.position.ry()),
                     m.position.z(),
                 ))
@@ -1537,8 +1542,8 @@ impl Simulation {
             return;
         };
         let slave = self.construct_object_limbo_at_height(
-            &slave_type,
-            &owner,
+            slave_type,
+            owner,
             cell.0,
             cell.1,
             0,
@@ -1552,7 +1557,7 @@ impl Simulation {
         };
         self.limbo_slave(slave, rules, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(slave) {
-            entity.slave.owner = Some(master);
+            entity.seldom.slave.owner = Some(master);
         }
         node.state = SlaveState::Ready;
         node.timer.start(Self::now_frame(&self.session), 0);
@@ -1570,7 +1575,7 @@ impl Simulation {
         slave: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(i32, bool), TiberiumImageError> {
         let Some(entity) = self.substrate.entities.get(slave) else {
             return Ok((1, false));
@@ -1605,7 +1610,7 @@ impl Simulation {
                 cell,
             )? && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.add_bales(bale, 1);
+                entity.seldom.slave.add_bales(bale, 1);
             }
             return Ok((harvest_rate, false));
         }
@@ -1618,7 +1623,7 @@ impl Simulation {
         slave: u64,
         action: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // Mission_Harvest (`0x00522E87`, `0x00522EEB`, `0x00522F90`)
         // pushes force0. Cheer uses the shared Infantry virtual388 owner.
@@ -1637,7 +1642,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(slave)
-            .map(|entity| std::mem::take(&mut entity.slave.cargo))
+            .map(|entity| std::mem::take(&mut entity.seldom.slave.cargo))
         else {
             return;
         };
@@ -1668,7 +1673,7 @@ impl Simulation {
         let Some(master) = substrate
             .entities
             .get(slave)
-            .and_then(|entity| entity.slave.owner)
+            .and_then(|entity| entity.seldom.slave.owner)
         else {
             return;
         };
@@ -1685,7 +1690,7 @@ impl Simulation {
             node.timer.start(now, manager.regen_rate);
         }
         if let Some(entity) = substrate.entities.get_mut(slave) {
-            entity.slave.owner = None;
+            entity.seldom.slave.owner = None;
         }
     }
 
@@ -1704,7 +1709,7 @@ impl Simulation {
         house: Option<InternedId>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let _ = self.free_slaves_retaining_storage(
             master,
@@ -1726,7 +1731,7 @@ impl Simulation {
         house: Option<InternedId>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<SlaveManager> {
         let Some(count) = self
             .slave_manager(master)
@@ -1754,7 +1759,7 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
-            entity.slave.owner = None;
+            entity.seldom.slave.owner = None;
             if entity.lifecycle.in_limbo() {
                 self.slave_dies_inside(slave, killer, rules, frame_effects);
                 continue;
@@ -1768,11 +1773,14 @@ impl Simulation {
             self.infantry_cheer(slave, true, rules, frame_effects);
             first_freed.get_or_insert(slave);
         }
-        if let (Some(slave), Some(sound)) = (first_freed, rules.general.slaves_free_sound.clone())
+        if let (Some(slave), Some(sound)) =
+            (first_freed, rules.general.slaves_free_sound.as_deref())
             && let Some(entity) = self.substrate.entities.get(slave)
         {
-            self.sound_events
-                .emit(SimSoundEvent::voc_at(sound, &entity.position));
+            self.sound_events.emit(SimSoundEvent::voc_at(
+                rules.sound_name(sound),
+                &entity.position,
+            ));
         }
         // 6B0C67 clears the manager's owner only after callbacks and sound.
         self.substrate
@@ -1792,7 +1800,7 @@ impl Simulation {
         passive: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(mut manager) =
             self.free_slaves_retaining_storage(master, invoker, None, rules, registry, effects)
@@ -1804,7 +1812,7 @@ impl Simulation {
             if let Some(slave) = node.slave.take()
                 && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.owner = None;
+                entity.seldom.slave.owner = None;
             }
             node.state = SlaveState::Dead;
             node.timer.start(now, manager.regen_rate);
@@ -1828,7 +1836,7 @@ impl Simulation {
         slave: u64,
         killer: Option<u64>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.record_the_kill(
             slave,
@@ -1845,7 +1853,7 @@ impl Simulation {
         slave: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate
@@ -1882,7 +1890,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .slave_manager(master)
@@ -1907,7 +1915,7 @@ impl Simulation {
         deploying: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if deploying {
             self.slave_manager_hand_off(from, rules, frame_effects);
@@ -1923,7 +1931,7 @@ impl Simulation {
         self.free_slaves(to, None, None, rules, registry, frame_effects);
         for slave in manager.slaves() {
             if let Some(entity) = self.substrate.entities.get_mut(slave) {
-                entity.slave.owner = Some(to);
+                entity.seldom.slave.owner = Some(to);
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(to) {
@@ -1976,7 +1984,7 @@ mod tests {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -1993,7 +2001,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(
             sim.substrate
@@ -2019,7 +2027,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )));
         let entity = sim.substrate.entities.get(slave).unwrap();
         assert!(!entity.lifecycle.in_limbo());
@@ -2048,7 +2056,7 @@ mod tests {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -2062,7 +2070,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )));
         assert!(sim.substrate.entities.get(slave).unwrap().on_bridge());
     }

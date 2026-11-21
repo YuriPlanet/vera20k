@@ -109,7 +109,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
     let mut output = SoundEventQueue::new();
     let mut radar = |_, _, _: &RuleSet| false;
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.update_looping_sound(
             &sim,
@@ -131,7 +131,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
         "loop identity remains kept"
     );
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.update_looping_sound(&sim, 41, near);
     }
@@ -140,7 +140,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
         "audible phase resumes the kept loop"
     );
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.consume(
             &sim,
@@ -178,7 +178,9 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
         let axis = |index: usize| input["coordinate"][index].as_i64().unwrap() as i32;
         dispatch_sim_sound_events(
             [SimSoundEvent::VocAtCoord {
-                sound_id: "NativeProjectionControl".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted(
+                    "NativeProjectionControl".into(),
+                ),
                 coordinate: crate::sim::components::DriveCoord {
                     x: axis(0),
                     y: axis(1),
@@ -229,7 +231,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
     dispatch_sim_sound_events(
         [
             SimSoundEvent::VocAtCoord {
-                sound_id: "First".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("First".into()),
                 coordinate,
                 flags: 3,
             },
@@ -238,7 +240,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
                 flags: 1,
             },
             SimSoundEvent::VocAtCoord {
-                sound_id: "Later".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("Later".into()),
                 coordinate,
                 flags: 0,
             },
@@ -255,7 +257,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
         crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: first, coordinate: a, flags: 3, .. },
         crate::audio::events::GameSoundEvent::VocStopAtCoord { coordinate: b, flags: 1 },
         crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: later, coordinate: c, flags: 0, .. },
-    ] if first == "First" && later == "Later" && *a == [-257, 1537, 104] && a == b && b == c));
+    ] if first.resolve(None) == Some("First") && later.resolve(None) == Some("Later") && *a == [-257, 1537, 104] && a == b && b == c));
 }
 
 #[test]
@@ -283,7 +285,8 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
         };
         // Absent output is the ordinary headless/audio-unavailable path.
         // Cue/radar conversion still runs through the production dispatcher.
-        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &facts);
         boundary.consume(&sim, &rules, &facts);
         facts.push(SimSoundEvent::UnitVoiceVisit { owner: 41 });
@@ -328,7 +331,8 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
             admitted.push((tick, request.rx));
             true
         };
-        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &[repaired(local, 2)]);
         assert_eq!(boundary.delivered(), 1);
     }
@@ -349,14 +353,14 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         heard: &'a RefCell<Vec<(String, bool)>>,
     }
     impl SoundBoundary for Shots<'_> {
-        fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered()..] {
                 let sound_id = match event {
                     SimSoundEvent::VocAt { sound_id, .. } => sound_id,
                     SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
                     _ => continue,
                 };
-                if matches!(sound_id.as_str(), "PillboxAttack" | "ConscriptDie") {
+                if matches!(sound_id.name_in(rules), "PillboxAttack" | "ConscriptDie") {
                     // A picture-only flash such as MGUN runs as a presentation
                     // anim, outside `anims()`.
                     let muzzle_exists = sim
@@ -366,7 +370,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
                         .any(|anim| sim.interner().resolve(anim.type_id()).starts_with("MGUN"));
                     self.heard
                         .borrow_mut()
-                        .push((sound_id.clone(), muzzle_exists));
+                        .push((sound_id.name_in(rules).to_string(), muzzle_exists));
                 }
             }
             self.client.consume(sim, rules, events);
@@ -404,14 +408,14 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         gun,
         Some(TargetKind::Entity(target)),
         &rules,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     )
     .unwrap();
     let heard = RefCell::new(Vec::new());
     let mut output = SoundEventQueue::new();
     for _ in 0..300 {
         let mut admit_radar = |_, _, _: &RuleSet| false;
-        let boundary = Shots {
+        let mut boundary = Shots {
             client: FrameClientBoundary::new(
                 None,
                 Some("Americans"),
@@ -426,7 +430,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&boundary),
+                &mut FrameEffects::for_sound(&mut boundary),
             )
             .unwrap();
         // The app dispatches the suffix that was not consumed inline.
@@ -460,7 +464,6 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
 #[test]
 fn synchronous_sound_prefix_keeps_eva_text_rows() {
     use crate::app::input::messages::HudMessage;
-    use std::cell::RefCell;
 
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
@@ -484,17 +487,17 @@ fn synchronous_sound_prefix_keeps_eva_text_rows() {
         },
     ];
     let mut output = SoundEventQueue::new();
-    let rows: RefCell<Vec<HudMessage>> = RefCell::new(Vec::new());
+    let mut rows: Vec<HudMessage> = Vec::new();
     {
         let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
-        let boundary = FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
-            .with_eva_text(Some(&rows));
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+                .with_eva_text(Some(&mut rows));
         boundary.consume(&sim, &rules, &facts);
         assert_eq!(boundary.delivered(), facts.len());
     }
-    let collected = rows.borrow();
     assert_eq!(
-        *collected,
+        rows,
         vec![
             HudMessage::EvaObjectLine {
                 label: "VERA:EvaConstructionComplete",
@@ -517,7 +520,6 @@ fn under_attack_and_infiltration_keep_text_only_eva_rows() {
     use crate::app::input::messages::HudMessage;
     use crate::sim::radar::{RadarEventRequest, RadarEventType};
     use crate::sim::spy_infiltration::InfiltrationEffect;
-    use std::cell::RefCell;
 
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
@@ -556,15 +558,16 @@ fn under_attack_and_infiltration_keep_text_only_eva_rows() {
         },
     ];
     let mut output = SoundEventQueue::new();
-    let rows: RefCell<Vec<HudMessage>> = RefCell::new(Vec::new());
+    let mut rows: Vec<HudMessage> = Vec::new();
     {
         let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
-        let boundary = FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
-            .with_eva_text(Some(&rows));
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+                .with_eva_text(Some(&mut rows));
         boundary.consume(&sim, &rules, &facts);
     }
     assert_eq!(
-        *rows.borrow(),
+        rows,
         vec![
             HudMessage::EvaTextLine {
                 label: "VERA:EvaBaseUnderAttack"
@@ -641,7 +644,7 @@ fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
             matches!(events.as_slice(), [GameSoundEvent::TriggerAudio { .. }]),
             "the dispatcher keeps the authored operand"
         );
-        inputs.consume(player, &events, Some(&sim), None);
+        inputs.consume(player, &events, Some(&sim), Some(rules.sound_names()), None);
     };
 
     let eva = catalog.eva().entry_by_index(0).unwrap().name.clone();

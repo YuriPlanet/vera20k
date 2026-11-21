@@ -38,12 +38,12 @@ fn native_automatic_guard_admission_stop_order_and_signed_caller_returns() {
                     id,
                     &rules,
                     mission,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ),
                 expected
             );
         } else {
-            dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
+            dispatch_foot_mission(&mut sim, id, &rules, &mut Default::default()).unwrap();
             assert_eq!(
                 sim.substrate
                     .entities
@@ -73,7 +73,7 @@ fn pending_deploy_survives_snapshot_and_paid_head_completion() {
         .find(|row| row["input"]["name"] == "Guard_moving_paid_head")
         .unwrap();
     let (mut sim, rules, id) = native_deploy_fixture(row);
-    dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
+    dispatch_foot_mission(&mut sim, id, &rules, &mut Default::default()).unwrap();
     assert_native_deploy_state(&sim, id, row);
     let pending_hash = sim.state_hash();
     sim.substrate
@@ -109,7 +109,7 @@ fn pending_deploy_survives_snapshot_and_paid_head_completion() {
     // The existing paid-head completion owner releases Head_To and invokes
     // the original-compared Stop callback. Orders/restore add no latch reset.
     restored
-        .finish_walk_navigation(id, &rules, crate::sim::world::FrameEffects::default())
+        .finish_walk_navigation(id, &rules, &mut crate::sim::world::FrameEffects::default())
         .unwrap();
     let actor = restored.substrate.entities.get(id).unwrap();
     assert_eq!(
@@ -141,7 +141,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
         delivered: Cell<usize>,
     }
     impl SoundBoundary for Playback<'_> {
-        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 let (sound_id, position, undeploy) = match event {
                     SimSoundEvent::EntityDeployed {
@@ -269,7 +269,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     };
     let cues = RefCell::new(Vec::new());
     let advance = |runtime: &mut SimRuntime| {
-        let playback = Playback {
+        let mut playback = Playback {
             actors: [gi, guardian],
             cues: &cues,
             delivered: Cell::new(0),
@@ -278,7 +278,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
             &[],
             22,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&playback),
+            &mut FrameEffects::for_sound(&mut playback),
         )
     };
     let mut entered = [false; 2];

@@ -35,7 +35,7 @@ fn mapped_gi() -> Option<(Simulation, RuleSet, u64)> {
             crate::sim::components::NavTargetRef::cell(16, 15),
             &rules,
             Some(rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
     );
@@ -55,7 +55,7 @@ fn retail_e1_jumpjet_flag_keeps_walk_through_first_short_move() {
             &rules,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("a Walk short path must not abort the frame");
         if sim
@@ -87,7 +87,7 @@ fn retail_e1_jumpjet_flag_failed_path_receiver_preserves_foot_prefix() {
     // Original gamemd.exe Infantry+4F4 @00521DD0 only discards GetClassID
     // after Foot4DC030: Move preserves navigation; Hunt clears it.
     let before = sim.state_hash();
-    sim.walk_failed_path_receiver(id, &rules, crate::sim::world::FrameEffects::default())
+    sim.walk_failed_path_receiver(id, &rules, &mut crate::sim::world::FrameEffects::default())
         .unwrap();
     assert_eq!(sim.state_hash(), before);
     sim.substrate
@@ -97,7 +97,7 @@ fn retail_e1_jumpjet_flag_failed_path_receiver_preserves_foot_prefix() {
             sim.session.binary_frame(),
         )
         .unwrap();
-    sim.walk_failed_path_receiver(id, &rules, crate::sim::world::FrameEffects::default())
+    sim.walk_failed_path_receiver(id, &rules, &mut crate::sim::world::FrameEffects::default())
         .unwrap();
     let actor = sim.entities().get(id).unwrap();
     assert!(actor.navigation.nav_com().is_none());

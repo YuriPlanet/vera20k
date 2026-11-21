@@ -2233,7 +2233,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
                 "id": id, "type": sim.interner().resolve(entity.type_ref()),
                 "cell": [entity.position.rx(), entity.position.ry()],
                 "in_playfield": entity.in_playfield(),
-                "discovered": entity.discovery.discovered_by_current_house(),
+                "discovered": entity.seldom.discovery.discovered_by_current_house(),
                 "opened": entity.building_art.actually_placed(),
                 "ready": entity.building_ready_latch(),
                 "mission": entity.mission.current().raw(), "queued": entity.mission.queued().raw(),

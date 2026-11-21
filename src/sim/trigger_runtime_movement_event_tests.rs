@@ -146,7 +146,13 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         for frame in 0..256 {
             let trace_start = sim.trigger_runtime.dispatch_trace.len();
             let output = sim
-                .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+                .advance_app_frame(
+                    &[],
+                    &rules,
+                    67,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .unwrap();
             arrivals.extend(
                 sim.trigger_runtime.dispatch_trace[trace_start..]
@@ -184,7 +190,7 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
             "first={first_change}, second={second_change}"
         );
         assert_eq!(
-            target.capture_infantry_type_index.get(),
+            target.seldom.capture_infantry_type_index.get(),
             rules
                 .type_array_index(
                     crate::rules::object_type::ObjectCategory::Infantry,
@@ -277,7 +283,11 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         for index in entry_triggers {
             let trigger = sim.trigger_runtime.trigger(index).unwrap();
             let typ = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index];
-            let entered_index = typ.events.iter().position(|event| event.kind == 1).unwrap();
+            let entered_index = typ
+                .events
+                .iter()
+                .position(|event| event.condition.kind == 1)
+                .unwrap();
             assert_eq!(trigger.completed & (1 << entered_index), 0);
             let source = if typ.id == "T1" && first_change { 1 } else { 0 };
             assert_eq!(trigger.retained_house, Some(houses[source]));
@@ -369,7 +379,7 @@ fn team(
         sim.team_script_vm.mark_member_team_leaving_map(actor);
     }
     if !head {
-        sim.team_remove_member(id, actor, true, rules, FrameEffects::default());
+        sim.team_remove_member(id, actor, true, rules, &mut FrameEffects::default());
     }
     id
 }
@@ -661,7 +671,7 @@ fn add_infantry_map_event_team(sim: &mut Simulation, rules: &RuleSet, actor: u64
         .team_script_vm
         .construct_team(typ, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
-    assert!(sim.team_add_member(id, actor, false, rules, FrameEffects::default()));
+    assert!(sim.team_add_member(id, actor, false, rules, &mut FrameEffects::default()));
     id
 }
 
@@ -687,15 +697,15 @@ fn infantry_ai_enables_empty_team_map_action() {
             .in_playfield()
     );
     let unvisited_team = add_infantry_map_event_team(&mut sim, &rules, unvisited);
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     sim.team_remove_member(
         unvisited_team,
         unvisited,
         true,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.team_script_vm.team(unvisited_team).is_none());
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
     assert!(sim.trigger_runtime.tag(move_tag).is_some());
@@ -704,13 +714,13 @@ fn infantry_ai_enables_empty_team_map_action() {
         .unwrap();
     assert!(sim.substrate.entities.get(actor).unwrap().in_playfield());
     let id = add_infantry_map_event_team(&mut sim, &rules, actor);
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.team_script_vm.member_team_type(actor).is_some());
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
-    sim.infantry_action_turn(actor, &rules, Some(&registry), FrameEffects::default())
+    sim.infantry_action_turn(actor, &rules, Some(&registry), &mut FrameEffects::default())
         .unwrap();
-    sim.team_remove_member(id, actor, true, &rules, FrameEffects::default());
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.team_remove_member(id, actor, true, &rules, &mut FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(
         sim.trigger_runtime.globals_set.contains(&7),
         "the actual registered map action follows the Infantry producer"
@@ -735,7 +745,7 @@ fn dissolve_unfilled_infantry_team(clear_repeat: u8) -> Option<(Simulation, usiz
         .spawn_object("E1", "Americans", 16, 16, 0, &rules)
         .unwrap();
     let id = add_infantry_map_event_team(&mut sim, &rules, actor);
-    sim.infantry_action_turn(actor, &rules, Some(&registry), FrameEffects::default())
+    sim.infantry_action_turn(actor, &rules, Some(&registry), &mut FrameEffects::default())
         .unwrap();
     // Kill the sole member before the team can form; a merely removed live
     // member would be eligible for the recruit pass preceding dissolution.
@@ -756,14 +766,14 @@ fn dissolve_unfilled_infantry_team(clear_repeat: u8) -> Option<(Simulation, usiz
                 arg6: true,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let team = sim.team_script_vm.team(id).unwrap();
     assert!(!team.formed());
     assert_eq!(team.members().count(), 0);
     let delay = u32::try_from(rules.general.dissolve_unfilled_team_delay).unwrap();
     sim.session.set_binary_frame_for_test(delay);
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.team_script_vm.team(id).is_some());
     assert!(!sim.trigger_runtime.globals_set.contains(&8));
     sim.session.set_binary_frame_for_test(delay + 1);
@@ -775,11 +785,11 @@ fn dissolve_unfilled_infantry_team(clear_repeat: u8) -> Option<(Simulation, usiz
             .rule_policy()
             .with_dissolve_unfilled_teams(false),
     );
-    retained.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    retained.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(retained.team_script_vm.team(id).is_some());
     assert!(!retained.trigger_runtime.globals_set.contains(&8));
 
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(
         sim.trigger_runtime.globals_set.contains(&8),
         "timeout raises the map event before destruction"
@@ -830,7 +840,7 @@ fn empty_leaving_team_recalc_raises_before_destruction_and_cleans_one_shot_tags(
     let id = team(&mut sim, &rules, houses[0], Some("MATCH"), false, true);
     assert!(sim.team_script_vm.team(id).is_some());
     let before = rng(&sim);
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.team_script_vm.team(id).is_none());
     sim.flush_pending_delete();
     assert!(sim.trigger_runtime.tag(tag).is_none());
@@ -872,7 +882,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -881,7 +891,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -923,13 +933,14 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         infantry,
         Some(crate::sim::components::NavTargetRef::object(reactor)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
             .entities
             .get(infantry)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(reactor)
@@ -944,14 +955,14 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         },
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.per_cell_process(
         infantry,
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -1002,14 +1013,14 @@ fn arrive_at_building(
         },
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.per_cell_process(
         infantry,
         crate::sim::movement::PerCellReason::Arrival,
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -1337,7 +1348,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 &rules,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
             if sim
@@ -1387,7 +1398,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 &rules,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         }

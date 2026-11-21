@@ -93,11 +93,13 @@ The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in
 memory before the asynchronous storage transaction completes; wait for the
 saved status before closing. Clearing site data removes these copies. Persistence
-callbacks report only `/saves/`, which is what `restore_user_file` accepts. A host
-that wants replays registers `set_replay_callback((name, bytes) => ...)` before
-starting; it receives each segment a match or in-scenario load closes, and the
-engine keeps no copy. Without that callback, as on the supplied page, replays are
-discarded. Imported retail resources are not persisted; they are read again on every visit. Where the
+callbacks report only `/saves/`, which is what `restore_user_file` accepts. The
+supplied page also registers the separate `set_replay_callback((name, bytes) => ...)`
+and keeps only the latest closed diagnostic replay segment in a separate IndexedDB
+database on this origin. Download the latest from **Local diagnostic replays**;
+these files are never restored into the engine or uploaded. Normal exit waits
+for both queues. A custom host that does not register a replay callback discards
+these segments. Imported retail resources are not persisted; they are read again on every visit. Where the
 browser has the File System Access API (Chrome, Edge), the launcher keeps a read
 handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
 offers one-click Continue on the next visit; other browsers ask for the folder again.
@@ -264,12 +266,14 @@ A `start_spawn` launch skips the result-screen Continue button and campaign
 continuation. It freezes its result, completes the existing network finish/leave
 cleanup, delivers `match-ended`, and immediately requests engine shutdown;
 `engine-exited` follows. The old `spawn:finished:<json>` status notification is
-retained once for existing result consumers.
+retained once for existing result consumers. A launch refused for its `ExpectedRulesDigest` adds
+`"failure": "rules_mismatch"` and the game's `rules_parts` to that report
+([rules parts](spawn.md#rules-parts)).
 
 Once `engine-exited` has returned, the same page may call `start_spawn` again:
 import the next launch's files with `import_spawn_file`, call `prepare_audio` and
 pass a new canvas. The imported retail files stay, so `import_file` is refused
-and changing the game folder needs a new page; `restore_user_file`, `probe` and
+and changing the game folder needs a new page; `restore_user_file`, `version`, `probe` and
 `generate_map` work between launches, and each launch rereads the settings. The output
 `AudioContext` also stays, so a later launch needs no new user gesture. A launch's
 files under `/spawn` are removed when it exits. `can_start_spawn()` says whether

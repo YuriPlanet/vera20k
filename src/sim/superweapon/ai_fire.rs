@@ -166,7 +166,7 @@ pub(crate) fn try_fire(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
@@ -337,7 +337,7 @@ pub(super) fn fire_extension_automatic(
     owner: InternedId,
     sw_id: InternedId,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     manual: bool,
 ) -> bool {
     let Some(sw) = rules.super_weapon(sim.interner.resolve(sw_id)) else {

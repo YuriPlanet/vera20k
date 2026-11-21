@@ -19,6 +19,9 @@ use std::sync::{Mutex, OnceLock};
 
 use log::{LevelFilter, Log, Metadata, Record};
 
+/// Whether a panic is writing `except.txt`: the panic hook has no receiver
+/// and runs on whichever thread panicked, so the claim is a process-wide
+/// atomic.
 static EXCEPTION_DUMP_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// The file [`init_file_logger`] opened, for messages that point the player
 /// at it.
@@ -141,6 +144,8 @@ fn install(default_filter: &str, destination: Destination) -> Result<(), log::Se
 
 enum Destination {
     Stderr,
+    /// Locked because the `log` crate's logger is one process-wide `Sync`
+    /// value that every thread writes through `&self`.
     File(Mutex<RollingFile>),
 }
 

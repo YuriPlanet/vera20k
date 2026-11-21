@@ -115,7 +115,12 @@ impl Scene {
         let commands = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(output.tick.frame_committed);
         output
@@ -268,7 +273,7 @@ fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
         &scene.0.resources.rules,
         Some(scene.0.resources.rules.overlay_registry()),
         hit,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 100);
     let reload = scene.reload(infantry);
@@ -453,7 +458,7 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
         1,
         "the actual first ordinary shot debits two to one"
     );
-    assert_eq!(scene.actor(gun).rearm_timer.duration(), 1);
+    assert_eq!(scene.actor(gun).seldom.rearm_timer.duration(), 1);
     let second = scene.now();
     let output = scene.frame();
     assert!(fired(&output, gun), "ROF1 admits the next ordinary visit");
@@ -463,7 +468,7 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
         2,
         "zero refills in the same outer Building visit"
     );
-    let rearm = scene.actor(gun).rearm_timer.timer();
+    let rearm = scene.actor(gun).seldom.rearm_timer.timer();
     assert_eq!(rearm.start_frame(), second);
     assert!(rearm.duration() > 1);
     while scene.now() < rearm.start_frame() + rearm.duration() {
@@ -472,7 +477,7 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
             "refill must preserve the long cooldown"
         );
     }
-    assert_eq!(scene.actor(gun).rearm_timer.timer(), rearm);
+    assert_eq!(scene.actor(gun).seldom.rearm_timer.timer(), rearm);
     let third = scene.shot(gun, target);
     assert!(third >= rearm.start_frame() + rearm.duration());
     assert_eq!(scene.count(gun), 1);
@@ -537,7 +542,7 @@ fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_rest
         "the real returned Bullet empties the Unit"
     );
     let reload = scene.reload(tank);
-    let rearm = scene.actor(tank).rearm_timer.timer();
+    let rearm = scene.actor(tank).seldom.rearm_timer.timer();
     assert_eq!((reload.start_frame(), reload.duration()), (shot, 36));
     assert!((60..=62).contains(&rearm.duration()));
     for _ in 0..7 {
@@ -556,7 +561,7 @@ fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_rest
     let loaded = scene.restored(&bytes);
     scene.0.replace_simulation(loaded);
     assert_eq!(scene.reload(tank), reload);
-    assert_eq!(scene.actor(tank).rearm_timer.timer(), rearm);
+    assert_eq!(scene.actor(tank).seldom.rearm_timer.timer(), rearm);
     let mut saw_refill = false;
     let mut saw_next_shot = false;
     for _ in 0..80 {
@@ -570,7 +575,7 @@ fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_rest
             assert!(!shot_again);
             assert_eq!(scene.count(tank), 1);
             assert!(rearm.remaining(now) > 0, "reload never clears weapon rearm");
-            assert_eq!(scene.actor(tank).rearm_timer.timer(), rearm);
+            assert_eq!(scene.actor(tank).seldom.rearm_timer.timer(), rearm);
             saw_refill = true;
         }
         if shot_again {
@@ -616,7 +621,7 @@ fn damage_reduces_readiness_before_object_immunity_and_restarts_reload() {
             &scene.0.resources.rules,
             Some(scene.0.resources.rules.overlay_registry()),
             event,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     };
     hit(&mut scene, 100, tank);

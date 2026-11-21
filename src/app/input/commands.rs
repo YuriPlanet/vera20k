@@ -962,7 +962,6 @@ pub(crate) fn object_move_destination(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn object_move_destination_with(
     sim: &crate::sim::world::Simulation,
     control: &crate::sim::world::ControlProjection<'_>,

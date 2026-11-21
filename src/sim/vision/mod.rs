@@ -866,9 +866,65 @@ pub struct FogState {
     /// first write. Never saved or hashed.
     #[serde(skip)]
     journal: Option<Box<map_journal::MapJournal>>,
+    /// The cell buffer an area reveal walks (`Simulation::reveal_area`),
+    /// kept so a cell arrival's walks allocate none. Taken out for a walk
+    /// and put back empty after it ([`Self::take_reveal_cells`]); a nested
+    /// walk inside a receiver finds it taken and uses its own. Never saved
+    /// or hashed.
+    #[serde(skip)]
+    reveal_cells: Vec<(u16, u16)>,
+    /// The viewer buffer a sight reveal admits its maps into
+    /// (`Simulation::update_object_sight_in_view`), lent the same way
+    /// ([`Self::take_admitted_viewers`]). Never saved or hashed.
+    #[serde(skip)]
+    admitted_viewers: Vec<InternedId>,
+    /// A released sight footprint's cell buffer, kept for the next admission
+    /// to fill ([`Self::take_footprint`]), so a cell arrival's release and
+    /// re-admission allocate no footprint. Never saved or hashed.
+    #[serde(skip)]
+    spare_footprint: Vec<(u16, u16)>,
 }
 
 impl FogState {
+    /// The area-reveal cell buffer, empty, for one walk; hand it back with
+    /// [`Self::restore_reveal_cells`].
+    pub(crate) fn take_reveal_cells(&mut self) -> Vec<(u16, u16)> {
+        std::mem::take(&mut self.reveal_cells)
+    }
+
+    /// Return the buffer [`Self::take_reveal_cells`] lent, emptied.
+    pub(crate) fn restore_reveal_cells(&mut self, mut cells: Vec<(u16, u16)>) {
+        cells.clear();
+        self.reveal_cells = cells;
+    }
+
+    /// The sight-reveal viewer buffer, empty, for one reveal; hand it back
+    /// with [`Self::restore_admitted_viewers`].
+    pub(crate) fn take_admitted_viewers(&mut self) -> Vec<InternedId> {
+        std::mem::take(&mut self.admitted_viewers)
+    }
+
+    /// Return the buffer [`Self::take_admitted_viewers`] lent, emptied.
+    pub(crate) fn restore_admitted_viewers(&mut self, mut viewers: Vec<InternedId>) {
+        viewers.clear();
+        self.admitted_viewers = viewers;
+    }
+
+    /// The spare footprint buffer, empty, for one [`sight_admission`]; a
+    /// nested admission finds it taken and starts its own.
+    pub(crate) fn take_footprint(&mut self) -> Vec<(u16, u16)> {
+        std::mem::take(&mut self.spare_footprint)
+    }
+
+    /// Keep a released admission's cell buffer for the next admission, when
+    /// it holds more room than the one already kept.
+    pub(crate) fn recycle_footprint(&mut self, mut cells: Vec<(u16, u16)>) {
+        if cells.capacity() > self.spare_footprint.capacity() {
+            cells.clear();
+            self.spare_footprint = cells;
+        }
+    }
+
     /// What drawing reads of the fog, for the presentation copy of the world
     /// (`Simulation::presentation_copy`): `viewer`'s plane, fogged objects,
     /// sensors and disguise detection, the cloak words and the reveal guard.
@@ -1196,10 +1252,15 @@ impl FogState {
         } else {
             let retained = map.get_mut(&(id, viewer)).filter(|source| source.latched)?;
             retained.latched = false;
-            let admission = retained.clone();
-            //Only254/260 survive; the derived active-footprint index does not.
-            retained.cells.clear();
-            admission
+            //Only254/260 survive; the derived active-footprint index moves
+            //out with the released admission.
+            SightAdmission {
+                latched: retained.latched,
+                owner: retained.owner,
+                origin: retained.origin,
+                radius: retained.radius,
+                cells: std::mem::take(&mut retained.cells),
+            }
         };
         self.adjust_sight_sources(viewer, &admission, false);
         Some(admission)
@@ -1228,11 +1289,11 @@ impl FogState {
         );
     }
 
-    pub(crate) fn source_sight_viewers(&self, id: u64) -> Vec<InternedId> {
+    /// The logical clients holding a source cache for `id`, ascending.
+    pub(crate) fn source_sight_viewers(&self, id: u64) -> impl Iterator<Item = InternedId> + '_ {
         self.sight_sources
             .range(source_keys(id))
             .map(|(&(_, viewer), _)| viewer)
-            .collect()
     }
 
     /// Existing maps holding an alternate `RevealToAll=` contribution for
@@ -1691,7 +1752,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             self.increment_sensor_at(house, rx, ry);
         }
@@ -1706,7 +1767,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             let _ = self.decrement_sensor_at_if_positive(house, rx, ry);
         }
@@ -1716,32 +1777,21 @@ impl FogState {
     /// Exact outer-Y / inner-X strict-circle cell order shared by the four
     /// active sensor writers. Mutation stays separate so Simulation can issue
     /// each native resident callback immediately after that cell's counter.
-    pub(crate) fn sensor_circle_cells(&self, center: (u16, u16), radius: u16) -> Vec<(u16, u16)> {
+    /// The cells take no borrow of the fog, so the caller may change each
+    /// cell's counters as it reaches it.
+    pub(crate) fn sensor_circle_cells(
+        &self,
+        center: (u16, u16),
+        radius: u16,
+    ) -> impl Iterator<Item = (u16, u16)> + use<> {
         let radius = i32::from(radius);
-        if radius <= 0 || self.width == 0 || self.height == 0 {
-            return Vec::new();
-        }
-        let mut touched = Vec::new();
-        for dy in -radius..radius {
-            for dx in -radius..radius {
-                if dx * dx + dy * dy >= radius * radius {
-                    continue;
-                }
-                let cell_x = i32::from(center.0) + dx;
-                let cell_y = i32::from(center.1) + dy;
-                if cell_x < 0
-                    || cell_y < 0
-                    || cell_x >= i32::from(self.width)
-                    || cell_y >= i32::from(self.height)
-                {
-                    continue;
-                }
-                let rx = cell_x as u16;
-                let ry = cell_y as u16;
-                touched.push((rx, ry));
-            }
-        }
-        touched
+        let (width, height) = (i32::from(self.width), i32::from(self.height));
+        (-radius..radius)
+            .flat_map(move |dy| (-radius..radius).map(move |dx| (dx, dy)))
+            .filter(move |&(dx, dy)| dx * dx + dy * dy < radius * radius)
+            .map(move |(dx, dy)| (i32::from(center.0) + dx, i32::from(center.1) + dy))
+            .filter(move |&(x, y)| (0..width).contains(&x) && (0..height).contains(&y))
+            .map(|(x, y)| (x as u16, y as u16))
     }
 
     fn sensor_counter_mut(&mut self, house: InternedId, rx: u16, ry: u16) -> &mut i16 {
@@ -1854,7 +1904,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             let counter = self.disguise_detect_counter_mut(house, rx, ry);
             *counter = counter.wrapping_add(1);
@@ -1872,7 +1922,7 @@ impl FogState {
         center: (u16, u16),
         radius: u16,
     ) -> Vec<(u16, u16)> {
-        let touched = self.sensor_circle_cells(center, radius);
+        let touched: Vec<_> = self.sensor_circle_cells(center, radius).collect();
         for &(rx, ry) in &touched {
             let counter = self.disguise_detect_counter_mut(house, rx, ry);
             *counter = counter.wrapping_sub(1);
@@ -2187,7 +2237,7 @@ pub struct VisionConfig {
     /// Default true (the standard RA2/YR setting).
     reveal_by_height: bool,
     /// The map `Size=` diamond (`MapClass+0xF4/+0xF8`) that bounds a reveal's
-    /// lifted centre and each of its cells ([`collect_reveal_cells`]). A
+    /// lifted centre and each of its cells ([`extend_reveal_cells`]). A
     /// headless fixture without a map has none; the fog grid bounds it alone.
     map_size: Option<(i32, i32)>,
     /// `[AudioVisual] AllyReveal=`: an allied house's reveals map this
@@ -2195,7 +2245,38 @@ pub struct VisionConfig {
     ally_reveal: bool,
     /// The houses whose type is `MultiplayPassive=` (HouseType `+0x1A6`):
     /// no reveal of theirs passes its gates ([`holds_sight`]).
-    passive_owners: Vec<InternedId>,
+    passive_owners: PassiveOwners,
+}
+
+/// The `MultiplayPassive=` houses, in house order. A config is read for every
+/// cell arrival, so the first [`Self::INLINE`] are held inline; only a map
+/// or mod with more passive houses than that puts the rest on the heap.
+#[derive(Default, PartialEq)]
+struct PassiveOwners {
+    inline: [Option<InternedId>; Self::INLINE],
+    more: Vec<InternedId>,
+}
+
+impl PassiveOwners {
+    /// VERA's own bound: room for the retail Neutral and Special houses and
+    /// a few a map adds.
+    const INLINE: usize = 8;
+
+    fn contains(&self, owner: InternedId) -> bool {
+        self.inline.contains(&Some(owner)) || self.more.contains(&owner)
+    }
+}
+
+impl FromIterator<InternedId> for PassiveOwners {
+    fn from_iter<I: IntoIterator<Item = InternedId>>(owners: I) -> Self {
+        let mut held = Self::default();
+        let mut owners = owners.into_iter();
+        for (slot, owner) in held.inline.iter_mut().zip(&mut owners) {
+            *slot = Some(owner);
+        }
+        held.more.extend(owners);
+        held
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -2208,7 +2289,7 @@ impl Default for VisionConfig {
             reveal_by_height: true,
             map_size: None,
             ally_reveal: true,
-            passive_owners: Vec::new(),
+            passive_owners: PassiveOwners::default(),
         }
     }
 }
@@ -2220,7 +2301,7 @@ impl VisionConfig {
         rules: &crate::rules::ruleset::RuleSet,
         map_size: Option<(i32, i32)>,
         require_playfield_membership: bool,
-        passive_owners: Vec<InternedId>,
+        passive_owners: impl IntoIterator<Item = InternedId>,
     ) -> Self {
         Self {
             require_playfield_membership,
@@ -2229,7 +2310,7 @@ impl VisionConfig {
             reveal_by_height: rules.general.reveal_by_height,
             map_size,
             ally_reveal: rules.general.ally_reveal,
-            passive_owners,
+            passive_owners: passive_owners.into_iter().collect(),
         }
     }
 
@@ -2237,7 +2318,7 @@ impl VisionConfig {
     /// both reveal functions (`0x0070AF66..0x0070AF77`,
     /// `0x0070B1DF..0x0070B1F0`).
     pub(crate) fn passive_owner(&self, owner: InternedId) -> bool {
-        self.passive_owners.contains(&owner)
+        self.passive_owners.contains(owner)
     }
 
     /// Whether `entity`'s reveal under this configuration applies the
@@ -2264,20 +2345,32 @@ impl VisionConfig {
         self.require_playfield_membership
     }
 
-    /// Ordered geometry and the admitted local XYZ for the MapClass area
-    /// route. Rejected zero/Size calls differ from an admitted empty LOS walk.
-    /// The world owns synchronous receivers and current-player admission.
-    pub(crate) fn collect_area_cells(
+    /// The admitted local XYZ of the MapClass area route; `None` for a
+    /// rejected zero/Size call, which differs from an admitted empty LOS walk.
+    pub(crate) fn area_origin(
         &self,
+        cell: (u16, u16),
+        radius: u16,
+        z: i32,
+    ) -> Option<(u16, u16, i32)> {
+        reveal_area_origin((cell.0, cell.1, z), radius, self.map_size)
+            .map(|(x, y)| (x as u16, y as u16, z))
+    }
+
+    /// The area route's ordered geometry ([`extend_reveal_cells`]), appended
+    /// to `cells`. The world owns synchronous receivers and current-player
+    /// admission.
+    pub(crate) fn extend_area_cells(
+        &self,
+        cells: &mut Vec<(u16, u16)>,
         cell: (u16, u16),
         radius: u16,
         z: i32,
         line_of_sight: Option<CellLevels<'_>>,
         dimensions: (u16, u16),
-    ) -> (Vec<(u16, u16)>, Option<(u16, u16, i32)>) {
-        let origin = reveal_area_origin((cell.0, cell.1, z), radius, self.map_size)
-            .map(|(x, y)| (x as u16, y as u16, z));
-        let cells = collect_reveal_cells(
+    ) {
+        extend_reveal_cells(
+            cells,
             cell.0,
             cell.1,
             radius,
@@ -2287,7 +2380,6 @@ impl VisionConfig {
             dimensions,
             self.map_size,
         );
-        (cells, origin)
     }
 }
 
@@ -2414,7 +2506,7 @@ pub(crate) fn entity_sight_admission(
     sight_ability: bool,
     radius_override: Option<i32>,
 ) -> Option<SightAdmission> {
-    if entity.sight.is_zero() && radius_override.is_none() {
+    if entity.seldom.sight.is_zero() && radius_override.is_none() {
         return None;
     }
     let geometry = entity_sight_geometry(
@@ -2425,18 +2517,20 @@ pub(crate) fn entity_sight_admission(
         sight_ability,
         radius_override,
     );
-    sight_admission(fog, geometry, config, height_grid, terrain)
+    // A `RevealToAll=` building's reveal, once as it opens: its own buffer.
+    sight_admission(fog, geometry, config, height_grid, terrain, Vec::new())
 }
 
 /// The sight admission of a source with `geometry`: its footprint under
-/// `config` and `height_grid` ([`collect_reveal_cells`]); none on an
-/// unallocated map.
+/// `config` and `height_grid` ([`extend_reveal_cells`]), written into
+/// `cells` (emptied first); none on an unallocated map.
 pub(crate) fn sight_admission(
     fog: &FogState,
     geometry: SightGeometry,
     config: &VisionConfig,
     height_grid: Option<CellLevels<'_>>,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    mut cells: Vec<(u16, u16)>,
 ) -> Option<SightAdmission> {
     let width = fog.width;
     let height = fog.height;
@@ -2444,7 +2538,9 @@ pub(crate) fn sight_admission(
         return None;
     }
     let (rx, ry, height_leptons) = geometry.origin;
-    let cells = collect_reveal_cells(
+    cells.clear();
+    extend_reveal_cells(
+        &mut cells,
         rx,
         ry,
         geometry.radius.clamp(0, i32::from(MAX_SIGHT_RANGE)) as u16,
@@ -2459,24 +2555,20 @@ pub(crate) fn sight_admission(
     // Dummy) through reveal_map_cell. Missing native slots must not fabricate
     // source counts in unrelated rectangular storage; aliases use the actual
     // Cell's coordinates. An isolated lookup preserves the live Dummy here.
-    let cells = if let Some(terrain) = terrain {
+    if let Some(terrain) = terrain {
         let query = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
-        cells
-            .into_iter()
-            .filter_map(|(x, y)| {
-                let identity = query.lookup((x as i16, y as i16));
-                match identity {
-                    crate::map::cell_index::NativeCellIdentity::Real(_) => {
-                        let (x, y) = query.coord(identity);
-                        Some((x as u16, y as u16))
-                    }
-                    crate::map::cell_index::NativeCellIdentity::Dummy => None,
+        cells.retain_mut(|cell| {
+            let identity = query.lookup((cell.0 as i16, cell.1 as i16));
+            match identity {
+                crate::map::cell_index::NativeCellIdentity::Real(_) => {
+                    let (x, y) = query.coord(identity);
+                    *cell = (x as u16, y as u16);
+                    true
                 }
-            })
-            .collect()
-    } else {
-        cells
-    };
+                crate::map::cell_index::NativeCellIdentity::Dummy => false,
+            }
+        });
+    }
     Some(SightAdmission {
         latched: true,
         owner: geometry.owner,
@@ -2524,7 +2616,7 @@ pub(crate) fn entity_sight_geometry(
     // Elevation raises sight MULTIPLICATIVELY, off the object's world Z in
     // leptons, not additively off its terrain level:
     //   sight = trunc(Sight * (1 + 0.10 * trunc(Z_leptons / LeptonsPerSightIncrease)))
-    let base_range: i32 = entity.sight.range();
+    let base_range: i32 = entity.seldom.sight.range();
     let elev_steps: i32 = if config.leptons_per_sight_increase > 0 {
         height_leptons / config.leptons_per_sight_increase
     } else {
@@ -2710,6 +2802,10 @@ impl CellLevels<'_> {
 /// - With `RevealByHeight=` off, a caller's outline argument (arg 3, the
 ///   Techno sight callers') walks only the outer three rings
 ///   (`0x00567A77..0x00567AA5`); retail rules leave the key on.
+///
+/// Production walks fill a kept buffer ([`extend_reveal_cells`]); this
+/// owned form serves fixtures.
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn collect_reveal_cells(
     center_rx: u16,
     center_ry: u16,
@@ -2720,18 +2816,46 @@ pub(crate) fn collect_reveal_cells(
     (width, height): (u16, u16),
     map_size: Option<(i32, i32)>,
 ) -> Vec<(u16, u16)> {
+    let mut cells = Vec::new();
+    extend_reveal_cells(
+        &mut cells,
+        center_rx,
+        center_ry,
+        range,
+        viewer_height_leptons,
+        reveal_by_height,
+        height_grid,
+        (width, height),
+        map_size,
+    );
+    cells
+}
+
+/// The walk `collect_reveal_cells` documents, appended to `cells`, for a
+/// caller that reuses one buffer across walks.
+pub(crate) fn extend_reveal_cells(
+    cells: &mut Vec<(u16, u16)>,
+    center_rx: u16,
+    center_ry: u16,
+    range: u16,
+    viewer_height_leptons: i32,
+    reveal_by_height: bool,
+    height_grid: Option<CellLevels<'_>>,
+    (width, height): (u16, u16),
+    map_size: Option<(i32, i32)>,
+) {
     let Some((cx, cy)) = reveal_area_origin(
         (center_rx, center_ry, viewer_height_leptons),
         range,
         map_size,
     ) else {
-        return Vec::new();
+        return;
     };
 
     // Clamp range to MAX_SIGHT_RANGE (the original also clamps to 10).
     let clamped = (range as usize).min(MAX_SIGHT_RANGE as usize);
     let spiral_end = REVEAL_RING_SIZES[clamped];
-    let mut cells = Vec::with_capacity(spiral_end);
+    cells.reserve(spiral_end);
     let viewer_level = viewer_height_leptons / LEPTONS_PER_HEIGHT_LEVEL;
     let z_shift = iso_height_shift_cells(viewer_height_leptons);
     let w = i32::from(width);
@@ -2771,7 +2895,6 @@ pub(crate) fn collect_reveal_cells(
             cells.push((rx as u16, ry as u16));
         }
     }
-    cells
 }
 
 /// Original Map567DA0 ground-frame refresh geometry. Unlike RevealArea,

@@ -142,7 +142,7 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
                     &commands,
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             entries += frame.sound_events.iter().filter(|event| matches!(event,

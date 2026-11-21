@@ -221,10 +221,10 @@ fn offline(sim: &Simulation, id: u64) -> bool {
         .is_offline()
 }
 
-fn sounds(events: &[SimSoundEvent], name: &str) -> usize {
+fn sounds(rules: &RuleSet, events: &[SimSoundEvent], name: &str) -> usize {
     events
         .iter()
-        .filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == name))
+        .filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(rules) == name))
         .count()
 }
 
@@ -253,7 +253,7 @@ fn destroy(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             arg6: true,
         },
     );
-    sim.commit_direct_damage_receiver(rules, None, hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(rules, None, hit, &mut FrameEffects::default());
     assert!(
         sim.substrate
             .entities
@@ -327,11 +327,12 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     ));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
     assert_eq!(lines(&events, russians, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOnline"), 0);
+    assert_eq!(sounds(&rules, &events, "RobotTankOnline"), 0);
     sim.substrate
         .entities
         .get_mut(tanks[0])
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
 
@@ -347,11 +348,11 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     ));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 2);
     let guard = MissionId::from_known(MissionType::Guard);
     for id in tanks {
         let tank = sim.substrate.entities.get(id).unwrap();
-        assert!(!tank.selection.is_selected());
+        assert!(!tank.seldom.selection.is_selected());
         assert!([tank.mission.current(), tank.mission.queued()].contains(&guard));
         assert!(!sim.techno_player_controllable(id, &rules));
         assert!(!sim.techno_is_active(id, &rules));
@@ -389,7 +390,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
     ));
     assert!(sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOnline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOnline"), 2);
     assert!(sim.techno_player_controllable(tanks[0], &rules));
 }
 
@@ -425,7 +426,7 @@ fn destroying_the_center_switches_its_robot_tanks_off() {
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 2);
 }
 
 /// ChangeOwner (`0x0070158A..0x007015E6`) runs Removed_From_Game on the old
@@ -461,12 +462,12 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
     ));
 
     events.clear();
-    sim.change_owner_with_rules(center, russians, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(center, russians, &rules, None, &mut FrameEffects::default());
     events.extend(sim.sound_events.take_for_test());
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 2);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 2);
     // Working for the Russians, it does not count for them.
     run_until(&mut sim, &rules, &grid, 60, &mut events, |_| false);
     assert!(!sim.has_powered_center(russians));
@@ -505,7 +506,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
     assert!(working(&sim));
     assert_eq!(lines(&events, russians, EVA_ROBOT_TANKS_BACK_ONLINE), 1);
     assert_eq!(
-        sounds(&events, "RobotTankOnline"),
+        sounds(&rules, &events, "RobotTankOnline"),
         usize::from(rival_was_offline)
     );
     assert!(!offline(&sim, rival));
@@ -551,7 +552,7 @@ fn a_robot_tank_without_a_powered_center_goes_offline_when_it_moves() {
     ));
     assert_eq!(cell(&sim, tank), (10, 16));
     assert!(height(&sim, tank) > 0);
-    assert_eq!(sounds(&events, "RobotTankOffline"), 1);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 1);
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 0);
     run_until(&mut sim, &rules, &grid, 120, &mut events, |_| false);
     let rest = sim.substrate.entities.get(tank).unwrap().position;
@@ -565,7 +566,7 @@ fn a_robot_tank_without_a_powered_center_goes_offline_when_it_moves() {
         (rest.rx(), rest.ry(), rest.sub_x(), rest.sub_y())
     );
     assert!(offline(&sim, tank));
-    assert_eq!(sounds(&events, "RobotTankOffline"), 1);
+    assert_eq!(sounds(&rules, &events, "RobotTankOffline"), 1);
 }
 
 /// Retail ROBO through the production frame: an established hover survives
@@ -810,7 +811,7 @@ fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
     entity.infantry.as_mut().unwrap().set_fear_level_for_test(3);
     entity.deactivated.set_for_test(true);
     assert!(
-        !sim.infantry_fear_turn(offline, &rules, None, FrameEffects::default())
+        !sim.infantry_fear_turn(offline, &rules, None, &mut FrameEffects::default())
             .unwrap()
     );
     let fear = |sim: &Simulation| {
@@ -833,7 +834,7 @@ fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
             ScatterFlags::new(true, false),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         sim.scenario_rng.logical_state() != before
@@ -857,13 +858,13 @@ fn deactivate_sound_waits_for_the_ares_placement_mutex() {
     ];
     sim.sound_events.take_for_test();
     sim.with_object_placement_scope(|sim| {
-        sim.techno_deactivate(tanks[0], &rules, FrameEffects::default())
+        sim.techno_deactivate(tanks[0], &rules, &mut FrameEffects::default())
     });
-    sim.techno_deactivate(tanks[1], &rules, FrameEffects::default());
+    sim.techno_deactivate(tanks[1], &rules, &mut FrameEffects::default());
     let events = sim.sound_events.take_for_test();
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert_eq!(
-        sounds(&events, "RobotTankOffline"),
+        sounds(&rules, &events, "RobotTankOffline"),
         if rules.ares() { 1 } else { 2 }
     );
 }

@@ -72,7 +72,7 @@ fn ares_cash_timer_mut(
 ) -> &mut CdTimer {
     match slot {
         0 => &mut entity.produce_cash.timer,
-        upgrade => &mut entity.ares.cash_upgrade_timers[upgrade - 1],
+        upgrade => &mut entity.seldom.ares.cash_upgrade_timers[upgrade - 1],
     }
 }
 
@@ -283,7 +283,7 @@ fn add_produce_cash_display(
         .object_type(entity.type_ref(), rules)
         .is_some_and(|object| object.building_type_ext().produce_cash_display())
     {
-        entity.ares.bounty_display.queue(amount);
+        entity.seldom.ares.bounty_display.queue(amount);
     }
 }
 
@@ -1066,7 +1066,7 @@ mod tests {
             americans,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             credits(&sim, americans),
@@ -1118,7 +1118,7 @@ mod tests {
             soviets,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(credits(&sim, soviets), before);
         run_ticks(&mut sim, &rules, 99 * 2);
@@ -1721,14 +1721,20 @@ mod tests {
         assert_eq!(step(&mut sim, 99), 20);
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.produce_cash.timer, CdTimer::started(99, 101));
-        assert_eq!(entity.ares.cash_upgrade_timers[0], CdTimer::started(99, 11));
+        assert_eq!(
+            entity.seldom.ares.cash_upgrade_timers[0],
+            CdTimer::started(99, 11)
+        );
         assert_eq!(step(&mut sim, 108), 0);
         assert_eq!(step(&mut sim, 109), 5);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         assert_eq!(
-            entity.ares.cash_upgrade_timers[0],
+            entity.seldom.ares.cash_upgrade_timers[0],
             CdTimer::started(109, 11)
         );
-        assert_eq!(entity.ares.bounty_display.take_pending_for_test(), 25);
+        assert_eq!(
+            entity.seldom.ares.bounty_display.take_pending_for_test(),
+            25
+        );
     }
 }

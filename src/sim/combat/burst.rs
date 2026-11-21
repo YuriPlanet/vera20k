@@ -163,8 +163,8 @@ mod tests {
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(true);
-            entity.weapon_burst.complete_shot(2);
-            assert_eq!(entity.weapon_burst.index(), 1);
+            entity.seldom.weapon_burst.complete_shot(2);
+            assert_eq!(entity.seldom.weapon_burst.index(), 1);
             let command = match order {
                 0 => Command::Stop { entity_id: id },
                 1 => Command::Move {
@@ -190,11 +190,11 @@ mod tests {
             // keeps the index through the NULL assignment
             // (`mission::concrete_effects::represented_assign_target_admitted`).
             let reset = if rules.ares_form() { 1 } else { 0 };
-            assert_eq!(entity.weapon_burst.index(), reset, "{command:?}");
+            assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
             // A later non-null assignment preserves the reset value, so FLH
             // and GetROF start the new burst at its first shot.
             represented_assign_target(entity, Some(TargetKind::Cell(6, 4)), rules.ares_form());
-            assert_eq!(entity.weapon_burst.index(), reset, "{command:?}");
+            assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
         }
     }
 
@@ -262,7 +262,7 @@ mod tests {
                 actor
                     .passive_scan
                     .set_passively_acquired_target_for_test(true);
-                actor.weapon_burst.complete_shot(2);
+                actor.seldom.weapon_burst.complete_shot(2);
                 let command = match order {
                     2 => Command::PlantC4 {
                         attacker_id: id,
@@ -291,7 +291,7 @@ mod tests {
                         "{command:?}"
                     );
                     assert!(actor.passive_scan.acquired(), "{command:?}");
-                    assert_eq!(actor.weapon_burst.index(), 1, "{command:?}");
+                    assert_eq!(actor.seldom.weapon_burst.index(), 1, "{command:?}");
                 }
 
                 assert!(
@@ -303,10 +303,10 @@ mod tests {
                 assert!(!actor.passive_scan.acquired(), "{command:?}");
                 // Ares 0x6FCF53 (1005D320) never resets the index.
                 let kept = i32::from(!had_target || rules.ares_form());
-                assert_eq!(actor.weapon_burst.index(), kept, "{command:?}");
+                assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
                 // The next non-null assignment must retain the observed index.
                 represented_assign_target(actor, Some(TargetKind::Cell(7, 4)), rules.ares_form());
-                assert_eq!(actor.weapon_burst.index(), kept, "{command:?}");
+                assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
             }
         }
     }
@@ -329,7 +329,7 @@ mod tests {
         for (row, ares) in rows.iter().flat_map(|row| [(row, false), (row, true)]) {
             let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
             represented_assign_target(&mut entity, target(&row["previous"]), ares);
-            entity.weapon_burst.index = row["index"].as_i64().unwrap() as i32;
+            entity.seldom.weapon_burst.index = row["index"].as_i64().unwrap() as i32;
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(row["passive"].as_u64().unwrap() != 0);
@@ -341,7 +341,7 @@ mod tests {
                 &row["next_index"]
             };
             assert_eq!(
-                entity.weapon_burst.index(),
+                entity.seldom.weapon_burst.index(),
                 next_index.as_i64().unwrap() as i32,
                 "{row} ares={ares}"
             );

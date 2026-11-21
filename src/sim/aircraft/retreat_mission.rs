@@ -79,7 +79,7 @@ pub(super) fn retreat(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let entity = sim.substrate.entities.get(id).expect("aircraft dispatch");
     let nav_com = match entity.navigation.nav_com() {
@@ -116,7 +116,7 @@ pub(super) fn retreat(
             sim,
             id,
             rules,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
         },
     )
 }
@@ -138,7 +138,7 @@ impl RetreatHost for WorldRetreat<'_> {
             self.id,
             cell.map(|(rx, ry)| NavTargetRef::cell(rx, ry)),
             self.rules,
-            self.frame_effects,
+            &mut self.frame_effects,
         );
     }
 }

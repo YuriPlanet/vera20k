@@ -77,7 +77,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::power_system::PowerStates;
+use crate::sim::power_system::{PowerState, PowerStates};
 use crate::sim::production::find_factory;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
@@ -830,7 +830,8 @@ fn power_plant_to_splice(
     ty: &ObjectType,
 ) -> Option<i32> {
     let side = sim.houses.get(&owner)?.side_index();
-    let power = sim.power_states.get(&owner).cloned().unwrap_or_default();
+    let unpowered = PowerState::default();
+    let power = sim.power_states.get(&owner).unwrap_or(&unpowered);
     let drain = crate::sim::power_system::native_building_power_drain(ty.power);
     // `0x004FE6FC..0x004FE71D`: dword SUB, ADD and a signed compare.
     let output = power
@@ -944,7 +945,7 @@ pub(crate) fn exit_building(
     factory: u64,
     product: u64,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> BuildingExit {
     let Some(owner) = sim.substrate.entities.get(factory).map(|yard| yard.owner()) else {
         return BuildingExit::Failed;
@@ -1075,7 +1076,7 @@ fn place_building(
     product: u64,
     site: (i16, i16),
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !can_place_building_at(sim, rules, registry, ty, site, Some(owner), None, None) {
         return false;
@@ -1359,7 +1360,7 @@ pub(crate) fn node_building(
     let building = substrate.entities.get(id)?;
     ((building.position.rx(), building.position.ry()) == (rx, ry)
         && building.owner() == owner
-        && building.type_facts.base_plan_type_index() == node.type_or_control)
+        && building.seldom.type_facts.base_plan_type_index() == node.type_or_control)
         .then_some(id)
 }
 

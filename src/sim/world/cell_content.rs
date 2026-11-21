@@ -22,7 +22,7 @@ impl Simulation {
         cell: NativeCellIdentity,
         rules: &crate::rules::ruleset::RuleSet,
         registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> bool {
         if !self
             .cell_overlay(cell)

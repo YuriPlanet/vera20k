@@ -6,6 +6,17 @@
 //! Records keep their exact key: TriggerType::ReadINI (`0x0072749B`) reads
 //! the entry by the Type's own ID.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;

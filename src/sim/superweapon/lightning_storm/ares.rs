@@ -252,11 +252,12 @@ pub(super) fn start(
     }
     let sound = rules
         .super_weapon(sim.interner.resolve(sw_type))
-        .and_then(|sw| sw.presentation.activation_sound.clone())
-        .unwrap_or_else(|| general.storm_sound.clone());
+        .and_then(|sw| sw.presentation.activation_sound.as_ref())
+        .map_or(general.storm_sound.as_deref(), Option::as_deref);
     if let Some(sound_id) = sound {
-        sim.sound_events
-            .emit(SimSoundEvent::VocCentered { sound_id });
+        sim.sound_events.emit(SimSoundEvent::VocCentered {
+            sound_id: rules.sound_name(sound_id),
+        });
     }
     if launch.radar_event() {
         sim.sound_events.emit(SimSoundEvent::RadarEvent {
@@ -282,7 +283,7 @@ pub(super) fn process_lists(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let mut bridge_changed = false;
     let manifesting = std::mem::take(&mut sim.lightning_storm.clouds_manifesting);
@@ -586,7 +587,7 @@ pub(super) fn ground_strike(
     overlay_registry: Option<&OverlayTypeRegistry>,
     (super_owner, _, launch): AresStorm<'_>,
     [x, y]: [i32; 2],
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let lightning = launch.lightning();
     let general = &rules.general;
@@ -623,7 +624,7 @@ pub(super) fn ground_strike(
         }
         .to_cell_sub_z();
         sim.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sounds[pick as usize].clone(),
+            sound_id: rules.sound_name(&sounds[pick as usize]),
             audible_to: None,
             rx,
             ry,

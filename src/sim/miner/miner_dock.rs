@@ -30,7 +30,7 @@ pub(crate) fn has_contact(sim: &Simulation, refinery_sid: u64, miner_sid: u64) -
     sim.substrate
         .entities
         .get(refinery_sid)
-        .is_some_and(|refinery| refinery.radio_contacts.contains(miner_sid))
+        .is_some_and(|refinery| refinery.seldom.radio_contacts.contains(miner_sid))
 }
 
 /// Test fixtures drive the same bus the FSM does; there is no test-only store.
@@ -42,7 +42,7 @@ pub(crate) mod test_support {
         sim.substrate
             .entities
             .get(miner_sid)
-            .is_some_and(|miner| miner.tether.partner() == Some(refinery_sid))
+            .is_some_and(|miner| miner.seldom.tether.partner() == Some(refinery_sid))
     }
 
     /// Whether any miner holds a contact slot of the refinery.
@@ -50,6 +50,6 @@ pub(crate) mod test_support {
         sim.substrate
             .entities
             .get(refinery_sid)
-            .is_some_and(|refinery| !refinery.radio_contacts.is_empty())
+            .is_some_and(|refinery| !refinery.seldom.radio_contacts.is_empty())
     }
 }

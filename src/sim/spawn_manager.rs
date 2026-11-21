@@ -1035,7 +1035,7 @@ pub(crate) fn spawn_manager_ai(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1055,7 +1055,7 @@ pub(crate) fn commit_spawn_manager_pool(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1088,7 +1088,7 @@ pub(crate) fn notify_pointer_expired(
     listener_id: u64,
     expired_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1107,7 +1107,7 @@ pub(crate) fn clear_all_spawn_targets(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
@@ -1403,7 +1403,10 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         };
         requested.put_location(launch);
         requested.copy_level_from(&owner_position);
-        let context = self.context.with_unlimbo_facing(Some(launch_dir));
+        let context = self
+            .context
+            .reborrow()
+            .with_unlimbo_facing(Some(launch_dir));
         let Some((position, placement)) =
             self.sim
                 .unlimbo_class_entry(child, requested, PlacementEvidence::EvaluateMark, rules)
@@ -1423,7 +1426,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn reset_owner_burst(&mut self) {
         if let Some(owner) = self.sim.substrate.entities.get_mut(self.owner_id) {
-            owner.weapon_burst.reset();
+            owner.seldom.weapon_burst.reset();
         }
     }
 
@@ -1504,7 +1507,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child,
             target,
             self.context.rules(),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -1518,7 +1521,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .get(child)
             .is_none_or(|child| child.lifecycle.in_limbo());
         if !in_limbo {
-            self.sim.techno_limbo_with_context(child, self.context);
+            self.sim
+                .techno_limbo_with_context(child, self.context.reborrow());
         }
     }
 
@@ -1540,16 +1544,16 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let rules = self.context.rules();
         let spawn_type = self.manager().spawn_type;
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
-        let house = self.sim.interner.resolve(owner.owner()).to_string();
+        let house = owner.owner();
         let (rx, ry, z) = (owner.position.rx(), owner.position.ry(), owner.position.z());
         let facing = owner.body_facing_byte(self.sim.session.binary_frame());
-        let type_name = self.sim.interner.resolve(spawn_type).to_string();
+        let object = rules.object_in_category(
+            crate::rules::object_type::ObjectCategory::Aircraft,
+            self.sim.interner.resolve(spawn_type),
+        )?;
         self.sim.construct_resolved_object_limbo_at_height(
-            rules.object_in_category(
-                crate::rules::object_type::ObjectCategory::Aircraft,
-                &type_name,
-            )?,
-            &house,
+            object,
+            house,
             rx,
             ry,
             facing,
@@ -1561,12 +1565,12 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn adopt(&mut self, child: u64) {
         if let Some(entity) = self.sim.substrate.entities.get_mut(child) {
-            entity.spawn_owner_id.owner = Some(self.owner_id);
+            entity.seldom.spawn_owner_id.owner = Some(self.owner_id);
         }
     }
 
     fn uninit(&mut self, child: u64) {
-        self.sim.uninit_with_context(child, self.context);
+        self.sim.uninit_with_context(child, self.context.reborrow());
     }
 
     fn push(&mut self, child: u64, target: Option<TargetKind>) {
@@ -1634,7 +1638,7 @@ fn launch_coordinate(
     let obj = sim.object_type(owner.type_ref(), rules)?;
     let weapon = crate::sim::combat::combat_weapon::primary_for_tier(obj, owner.veterancy.rank())
         .and_then(|id| rules.weapon(id));
-    let burst = burst_parity.unwrap_or_else(|| owner.weapon_burst.index());
+    let burst = burst_parity.unwrap_or_else(|| owner.seldom.weapon_burst.index());
     let base = if burst == 0 {
         Default::default()
     } else {

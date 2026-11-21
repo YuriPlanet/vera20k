@@ -402,7 +402,8 @@ pub(crate) struct FerryState {
     routes: Vec<FerryRoute>,
     boarders: Vec<Boarder>,
     /// [`selected_transports`] and [`armed_preview`] as last answered with
-    /// the world home (`sim_host::home_answer`): the draw asks them.
+    /// the world home (`sim_host::home_answer`): the draw asks them through
+    /// `&AppState`, hence the cells.
     transports_seen: std::cell::RefCell<Vec<u64>>,
     preview_seen: std::cell::RefCell<Option<(Vec<Cell>, Cell, bool)>>,
 }
@@ -489,7 +490,7 @@ impl FerryState {
             let cargo = entity.passenger_role().cargo();
             // A unit the player clicked aboard shows as the transport's
             // boarding contact.
-            for id in entity.radio_contacts.iter_live() {
+            for id in entity.seldom.radio_contacts.iter_live() {
                 if on_the_way_aboard(sim, id) && !boarders.iter().any(|boarder| boarder.unit == id)
                 {
                     boarders.push(Boarder {
@@ -757,7 +758,6 @@ fn drop_cell(
 /// The units to tell aboard this look: the owner's own infantry and vehicles
 /// at rest inside the pick-up circle, nearest the transport first, while the
 /// planned hold has room and the engine's admission answers yes.
-#[allow(clippy::too_many_arguments)]
 fn board_orders(
     sim: &Simulation,
     control: &ControlProjection<'_>,
@@ -917,10 +917,11 @@ pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyC
     }
     let sound = state.rules().and_then(|rules| {
         if down {
-            rules.general.start_planning_mode_sound.clone()
+            rules.general.start_planning_mode_sound.as_deref()
         } else {
-            rules.general.end_planning_mode_sound.clone()
+            rules.general.end_planning_mode_sound.as_deref()
         }
+        .map(|name| rules.sound_name(name))
     });
     if let Some(sound_id) = sound {
         state

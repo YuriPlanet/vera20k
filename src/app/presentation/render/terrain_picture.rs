@@ -2,7 +2,7 @@
 //!
 //! VERA scheduling only; no native counterpart. Terrain tiles, smudges,
 //! remembered buildings and cell bodies are the frame's widest draws, and
-//! their pixels are a pure function of [`TerrainInputs`]. While those hold still, the layer's colour
+//! their pixels are a pure function of [`TerrainInputs`] and [`TerrainDraws`]. While those hold still, the layer's colour
 //! and depth come back by copy instead of being drawn again. The copy out
 //! waits for the second equal frame.
 //!
@@ -31,25 +31,52 @@ const COPIES: wgpu::TextureUsages =
 /// so one that changes every frame costs a fraction of a copy per frame.
 const GROUND_KEEP_INTERVAL: u32 = 4;
 
-/// What the terrain layer's pixels are drawn from.
+/// What the terrain layer's pixels are drawn from, with its [`TerrainDraws`].
 #[derive(PartialEq)]
 pub(super) struct TerrainInputs {
     /// The generation of each of [`TERRAIN_STREAMS`].
     pub(super) streams: [u64; 4],
-    pub(super) cell_bodies: Vec<CellBodyDraw>,
     pub(super) camera: CameraUniform,
     /// Group 0 of the world pipelines, and the generation of the A plane it
     /// samples.
     pub(super) camera_group: wgpu::BindGroup,
     pub(super) a_plane: u64,
     pub(super) tactical: [u32; 4],
-    /// The remembered buildings' runs, and the z-shape and atlas pages they
-    /// draw through.
-    pub(super) fogged_runs: Vec<super::draw_plan_lowering::ObjectDrawRun>,
+    /// The z-shape and atlas pages the remembered buildings' runs draw
+    /// through.
     pub(super) fogged_sources: Vec<wgpu::BindGroup>,
     pub(super) atlases: [Option<wgpu::BindGroup>; 4],
     /// The colour and depth targets it is drawn into.
     pub(super) targets: [wgpu::Texture; 2],
+}
+
+/// This frame's cell bodies and remembered buildings' runs in the terrain
+/// layer, borrowed from the frame: a frame equal to the last copies nothing.
+#[derive(Clone, Copy)]
+pub(super) struct TerrainDraws<'a> {
+    pub(super) cell_bodies: &'a [CellBodyDraw],
+    pub(super) fogged_runs: &'a [super::draw_plan_lowering::ObjectDrawRun],
+}
+
+/// The [`TerrainDraws`] of the last frame's layer, refilled in place when a
+/// frame changes them.
+#[derive(Default)]
+struct DrawnDraws {
+    cell_bodies: Vec<CellBodyDraw>,
+    fogged_runs: Vec<super::draw_plan_lowering::ObjectDrawRun>,
+}
+
+impl DrawnDraws {
+    fn matches(&self, draws: TerrainDraws<'_>) -> bool {
+        self.cell_bodies == draws.cell_bodies && self.fogged_runs == draws.fogged_runs
+    }
+
+    fn record(&mut self, draws: TerrainDraws<'_>) {
+        self.cell_bodies.clear();
+        self.cell_bodies.extend_from_slice(draws.cell_bodies);
+        self.fogged_runs.clear();
+        self.fogged_runs.extend_from_slice(draws.fogged_runs);
+    }
 }
 
 /// This frame's instances and A plane under the ground.
@@ -285,6 +312,8 @@ impl KeptGround {
 pub(crate) struct TerrainPicture {
     /// The inputs of the last frame's layer.
     drawn: Option<TerrainInputs>,
+    /// The draws of that layer; they describe it only while `drawn` is set.
+    drawn_draws: DrawnDraws,
     /// Textures for the kept colour and depth of the whole layer.
     kept: Option<[wgpu::Texture; 2]>,
     /// Whether `kept` holds the layer `drawn` describes.
@@ -302,6 +331,7 @@ impl TerrainPicture {
         &mut self,
         device: &wgpu::Device,
         inputs: TerrainInputs,
+        draws: TerrainDraws<'_>,
         ground: GroundFrame<'_>,
     ) -> TerrainStep {
         let copyable = !crate::render::gpu::webgl_fallback(device)
@@ -317,7 +347,7 @@ impl TerrainPicture {
                 keep_whole: false,
             };
         }
-        if self.drawn.as_ref() == Some(&inputs) {
+        if self.drawn.as_ref() == Some(&inputs) && self.drawn_draws.matches(draws) {
             return if self.valid {
                 TerrainStep::Restore
             } else {
@@ -334,6 +364,7 @@ impl TerrainPicture {
             .as_ref()
             .and_then(|kept| kept.shift_for(&inputs, ground));
         self.drawn = Some(inputs);
+        self.drawn_draws.record(draws);
         match shift {
             Some(shift) => TerrainStep::Shift(shift),
             None => TerrainStep::Draw {
@@ -502,6 +533,10 @@ mod tests {
         smudge: &[],
         a_plane: None,
     };
+    const NO_DRAWS: TerrainDraws<'static> = TerrainDraws {
+        cell_bodies: &[],
+        fogged_runs: &[],
+    };
     const DRAW: TerrainStep = TerrainStep::Draw {
         keep_ground: false,
         keep_whole: false,
@@ -596,7 +631,6 @@ mod tests {
         });
         let inputs = |camera_pos, native_z_pan| TerrainInputs {
             streams: [0; 4],
-            cell_bodies: Vec::new(),
             camera: CameraUniform {
                 camera_pos,
                 zoom: 1.0,
@@ -606,7 +640,6 @@ mod tests {
             camera_group: group.clone(),
             a_plane: 0,
             tactical: [0, 0, SIDE, SIDE],
-            fogged_runs: Vec::new(),
             fogged_sources: Vec::new(),
             atlases: [None, None, None, None],
             targets: [color.clone(), depth.clone()],
@@ -648,8 +681,11 @@ mod tests {
         // the right.
         let stored = |z: i32| z as f32 / 65535.0;
         let mut picture = TerrainPicture::default();
-        assert!(picture.step(&device, inputs([100.0, 200.0], 0.0), NO_GROUND) == DRAW);
-        assert!(picture.step(&device, inputs([100.0, 200.0], 0.0), NO_GROUND) == DRAW_AND_KEEP);
+        assert!(picture.step(&device, inputs([100.0, 200.0], 0.0), NO_DRAWS, NO_GROUND) == DRAW);
+        assert!(
+            picture.step(&device, inputs([100.0, 200.0], 0.0), NO_DRAWS, NO_GROUND)
+                == DRAW_AND_KEEP
+        );
         let mut encoder = device.create_command_encoder(&Default::default());
         clear_depth(&mut encoder, stored(32773));
         picture.keep_ground(&device, &mut encoder, NO_GROUND);
@@ -670,7 +706,7 @@ mod tests {
 
         // The Z seed panned with the row the view moved down, so the kept
         // depth stays (`native_z::ZSeed`).
-        let step = picture.step(&device, inputs([102.0, 201.0], 1.0), NO_GROUND);
+        let step = picture.step(&device, inputs([102.0, 201.0], 1.0), NO_DRAWS, NO_GROUND);
         let TerrainStep::Shift(shift) = step else {
             panic!("a small move of an unchanged ground reuses it");
         };
@@ -798,12 +834,10 @@ mod tests {
         });
         let inputs = |stream| TerrainInputs {
             streams: [stream, 0, 0, 0],
-            cell_bodies: Vec::new(),
             camera: CameraUniform::zeroed(),
             camera_group: group.clone(),
             a_plane: 0,
             tactical: [0, 0, 4, 4],
-            fogged_runs: Vec::new(),
             fogged_sources: Vec::new(),
             atlases: [None, None, None, None],
             targets: [color.clone(), depth.clone()],
@@ -841,13 +875,13 @@ mod tests {
         };
 
         let mut picture = TerrainPicture::default();
-        assert!(picture.step(&device, inputs(1), NO_GROUND) == DRAW);
-        assert!(picture.step(&device, inputs(1), NO_GROUND) == DRAW_AND_KEEP);
+        assert!(picture.step(&device, inputs(1), NO_DRAWS, NO_GROUND) == DRAW);
+        assert!(picture.step(&device, inputs(1), NO_DRAWS, NO_GROUND) == DRAW_AND_KEEP);
         let mut encoder = device.create_command_encoder(&Default::default());
         clear(&mut encoder, 1.0, 0.25);
         picture.keep(&device, &mut encoder);
         clear(&mut encoder, 0.0, 0.75);
-        assert!(picture.step(&device, inputs(1), NO_GROUND) == TerrainStep::Restore);
+        assert!(picture.step(&device, inputs(1), NO_DRAWS, NO_GROUND) == TerrainStep::Restore);
         picture.restore(&mut encoder);
 
         let bytes = 256 * 4;
@@ -899,6 +933,6 @@ mod tests {
             0.25_f32.to_ne_bytes()
         );
 
-        assert!(picture.step(&device, inputs(2), NO_GROUND) == DRAW);
+        assert!(picture.step(&device, inputs(2), NO_DRAWS, NO_GROUND) == DRAW);
     }
 }

@@ -44,6 +44,10 @@ pub(crate) enum NetworkSetupEvent {
         status: u8,
     },
     HostSetup(HostOptions),
+    CampaignHostSetup {
+        options: HostOptions,
+        room: campaign_room::CampaignRoom,
+    },
     StartPrompt,
     /// Accepted LAN protocol timing, independent of local input-delay settings.
     Timing {
@@ -331,7 +335,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::MapStatus { index, status } => {
             // 0x5E39C0 (the K arm, 0x5E4C39): only the host screens C2/BC
             // take it (0x5E4C3D..0x5E4C57); the local node always holds its
-            // map; K0 and K2 print the sender and map name.
+            // map; K0 and K2 print the sender and map name. VERA: only when
+            // the K is news, since online guests repeat it every revision.
             anyhow::ensure!(status <= 2, "unknown native K status");
             if !state.match_state.session.host() {
                 return Ok(());
@@ -352,16 +357,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .ok_or_else(|| anyhow::anyhow!("no participant {index}"))?
                 .name
                 .clone();
-            state
+            let news = state
                 .match_state
                 .session
-                .set_network_map_status(index, status)?;
+                .report_network_map_status(index, status)?;
             let key = match status {
                 0 => Some("GUI:HostNoMap"),
                 2 => Some("GUI:HostMapTransfer"),
                 _ => None,
             };
-            if let Some(key) = key {
+            if let Some(key) = key.filter(|_| news) {
                 let map = super::map_display_name(state)
                     .unwrap_or_default()
                     .to_owned();
@@ -374,6 +379,36 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     ],
                 );
             }
+        }
+        NetworkSetupEvent::CampaignHostSetup { options, room } => {
+            if super::start_phase(state).submitted() || crate::app::shell_wol::in_match(state) {
+                return Ok(());
+            }
+            anyhow::ensure!(
+                dialog.wol() && !dialog.host && !super::quick_match(state),
+                "invalid online campaign options receiver"
+            );
+            room.validate()?;
+            let speed = options.launch.options.game_speed;
+            let verified = campaign_room::verify_current(state, &room);
+            state.match_state.session.accept_network_host_setup(
+                options.launch,
+                options.vacancies,
+                options.map_metadata.player_capacity,
+                options.observer_row,
+                false,
+            )?;
+            if let Some(seed) = options.seed {
+                state.match_state.session.set_network_start_seed(seed)?;
+            }
+            state
+                .match_state
+                .session
+                .accept_campaign_room(Some(room), speed)?;
+            if let Err(error) = &verified {
+                log::info!("Online campaign files refused: {error:#}");
+            }
+            campaign_room::report_local_files(state, verified.is_ok())?;
         }
         NetworkSetupEvent::HostSetup(HostOptions {
             launch,
@@ -389,6 +424,12 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 && (crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted())
             {
                 return Ok(());
+            }
+            if state.match_state.session.campaign_room().is_some() {
+                state
+                    .match_state
+                    .session
+                    .accept_campaign_room(None, launch.options.game_speed)?;
             }
             // Only a Quick Match host parses options it did not author.
             let quick_match = super::quick_match(state);
@@ -1038,6 +1079,9 @@ fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {
     // title/K probe. Only this successful local-file path canonicalizes the
     // accepted filename at695451..695479.
     let session = &state.match_state.session;
+    if let Some(room) = session.campaign_room() {
+        return super::campaign_room::verify_current(state, room);
+    }
     // A direct spawn's map is the launcher's file beside spawn.ini, loaded
     // by the same owner as a relay spawn's; no host options describe it.
     if session.host() || super::external(state) {

@@ -15,6 +15,7 @@ mod type_handle_table;
 use std::fmt;
 
 use self::type_handle_table::TypeHandleTable;
+use crate::rules::art_data::{AnimConfigHandle, AnimTypeRuntimeConfig};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::util::lookup_hash::LookupMap;
@@ -54,6 +55,28 @@ impl fmt::Display for InternedId {
     }
 }
 
+/// A name a constructor is given: an id the simulation already holds, or
+/// text from outside it (a map row, a tool, a test). The constructor interns
+/// text only where it always did, after its type lookup succeeds, so an id
+/// caller builds no `String` and a text caller adds ids in the same order.
+#[derive(Clone, Copy, Debug)]
+pub enum InternKey<'a> {
+    Id(InternedId),
+    Name(&'a str),
+}
+
+impl From<InternedId> for InternKey<'_> {
+    fn from(id: InternedId) -> Self {
+        Self::Id(id)
+    }
+}
+
+impl<'a, T: AsRef<str> + ?Sized> From<&'a T> for InternKey<'a> {
+    fn from(name: &'a T) -> Self {
+        Self::Name(name.as_ref())
+    }
+}
+
 /// Bidirectional string interner with uppercase-normalized lookup.
 ///
 /// `intern("Americans")` and `intern("americans")` return the same ID, so two
@@ -70,8 +93,8 @@ pub struct StringInterner {
     to_id: Synced<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
     to_str: Synced<Vec<String>>,
-    /// Derived: each id's object, projectile and warhead handles in the
-    /// bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
+    /// Derived: each id's object, projectile, warhead, weapon and AnimType
+    /// config handles in the bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
     /// serialized; a load binds again.
     types: Synced<TypeHandleTable>,
     /// [`Self::serial`]; never serialized.
@@ -108,8 +131,10 @@ impl StringInterner {
         self.types = TypeHandleTable::build(rules, self).into();
     }
 
-    /// Bind the strings interned since [`Self::bind_types`] as well, when
-    /// `rules` is the set it bound; nothing when none are new.
+    /// Bind the strings interned since [`Self::bind_types`] as well: the
+    /// object columns when `rules` is the set it bound, the AnimType columns
+    /// for whatever set and ART layout `rules` holds. Nothing when none are
+    /// new and the AnimType columns are current.
     pub fn cover_types(&mut self, rules: &RuleSet) {
         if !self.types.lags(self, rules) {
             return;
@@ -143,9 +168,55 @@ impl StringInterner {
         self.types.warhead(self, id, rules)
     }
 
-    /// The object type `id` names in `rules`, as
-    /// `rules.object(self.resolve(id))` answers, through the bound handles
+    /// The weapon `id` names in `rules`, as
+    /// `rules.weapon(self.resolve(id))` answers, through the bound handles
     /// where they apply.
+    #[inline]
+    pub fn weapon_type<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
+        self.types.weapon(self, id, rules)
+    }
+
+    /// The handle of the AnimType runtime config `id` names in
+    /// `rules.art()`, as `rules.art().anim_config_handle(self.resolve(id))`
+    /// answers, through the bound handles where they apply.
+    #[inline]
+    pub fn anim_type_config_handle(
+        &self,
+        id: InternedId,
+        rules: &RuleSet,
+    ) -> Option<AnimConfigHandle> {
+        self.types.anim_config(self, id, rules)
+    }
+
+    /// The AnimType runtime config `id` names, as
+    /// `rules.art().anim_runtime_config(self.resolve(id))` answers, the same
+    /// way.
+    #[inline]
+    pub fn anim_type_config<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r AnimTypeRuntimeConfig> {
+        self.anim_type_config_handle(id, rules)
+            .map(|handle| rules.art().anim_config(handle))
+    }
+
+    /// Whether the AnimType config `handle` is `[General] DropZoneAnim=`'s:
+    /// as an ASCII case-insensitive compare of the two names answers for a
+    /// type that has a config, the same way.
+    #[inline]
+    pub fn is_drop_zone_anim(&self, handle: AnimConfigHandle, rules: &RuleSet) -> bool {
+        self.types.drop_zone_anim(rules) == Some(handle)
+    }
+
+    /// The object type `id` names in `rules`, as `rules.object(name)`
+    /// answers for the name `self.try_resolve(id)` gives (none for an id
+    /// this interner never made), through the bound handles where they
+    /// apply.
     #[inline]
     pub fn object_type<'r>(&self, id: InternedId, rules: &'r RuleSet) -> Option<&'r ObjectType> {
         self.types.object(self, id, rules)
@@ -167,7 +238,8 @@ impl StringInterner {
     }
 
     /// The handle of the object type `id` names in `rules`, as
-    /// `rules.type_handle(self.resolve(id))` answers, the same way.
+    /// `rules.type_handle(name)` answers for `self.try_resolve(id)`, the
+    /// same way.
     #[inline]
     pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
         self.types.handle(self, id, rules)
@@ -224,6 +296,27 @@ impl StringInterner {
             return id;
         }
         self.push(s.to_string())
+    }
+
+    /// `key`'s id: an id as it is, a name as [`Self::intern`] gives it.
+    pub fn intern_key(&mut self, key: InternKey<'_>) -> InternedId {
+        match key {
+            InternKey::Id(id) => id,
+            InternKey::Name(name) => self.intern(name),
+        }
+    }
+
+    /// The object type `key` names in `rules`: [`Self::object_type`] for an
+    /// id, `rules.object(name)` for a name, which adds no id.
+    pub fn key_object_type<'r>(
+        &self,
+        key: InternKey<'_>,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ObjectType> {
+        match key {
+            InternKey::Id(id) => self.object_type(id, rules),
+            InternKey::Name(name) => rules.object(name),
+        }
     }
 
     /// Give `s` the next id. A name equal under ASCII case folding to one

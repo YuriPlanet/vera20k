@@ -85,8 +85,20 @@ pub(crate) fn render_multiplayer_setup(
         let shown = ui.statics.paint(now, sliding);
         [
             (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),
-            (shown.game_type, layout.mode_label, ShellAlign::H_CENTER),
-            (shown.map_label, layout.map_label, ShellAlign::H_CENTER),
+            (
+                shown
+                    .game_type
+                    .filter(|_| view.combo(CAMPAIGN_SERIES).is_none()),
+                layout.mode_label,
+                ShellAlign::H_CENTER,
+            ),
+            (
+                shown
+                    .map_label
+                    .filter(|_| view.combo(CAMPAIGN_STAGE).is_none()),
+                layout.map_label,
+                ShellAlign::H_CENTER,
+            ),
         ]
         .into_iter()
         .filter_map(|(shown, rect, align)| shown.map(|shown| static_label(shown, rect, align)))
@@ -207,8 +219,19 @@ pub(crate) fn render_multiplayer_setup(
             .iter()
             .filter(|(key, _)| view.team_header || *key != "GUI:Team")
         {
+            let key = if view.campaign {
+                match *key {
+                    "GUI:Side" => &"VERA:CampaignRole",
+                    "GUI:Color" | "GUI:StartPosition" | "GUI:Team" => continue,
+                    _ => key,
+                }
+            } else {
+                key
+            };
             // Over VERA's roster, the narrow cells' labels centre on them.
-            let align = if layout.roster && !matches!(*key, "GUI:Players" | "GUI:Side") {
+            let align = if layout.roster
+                && !matches!(*key, "GUI:Players" | "GUI:Side" | "VERA:CampaignRole")
+            {
                 ShellAlign::H_CENTER
             } else {
                 ShellAlign::NONE
@@ -412,8 +435,8 @@ pub(crate) fn render_multiplayer_setup(
             }
         }
         // VERA's team bar under the roster, in its own box: the Teams count
-        // and the host's Room size (drawn with the room's trackbars), Team
-        // Starts, Team Colors and, online, Balance.
+        // and the host's Room size (drawn with the room's trackbars), and the
+        // host's two lists (drawn with the room's combos).
         if let Some(bar) = layout.team_bar.filter(|_| view.team_bar()) {
             push_rect_outline(
                 &mut controls,
@@ -422,8 +445,6 @@ pub(crate) fn render_multiplayer_setup(
                 ROSTER_BOX_RGB,
                 SHELL_CONTROL_DEPTH,
             );
-            // Its art at 78% size, its words at the roster's.
-            let small = layout.control_scale(BALANCE);
             for (id, rect, caption) in [
                 (TEAM_COUNT, layout.teams_label, "VERA:Teams"),
                 (ROOM_SIZE, layout.room_size_label, "VERA:RoomSize"),
@@ -438,41 +459,6 @@ pub(crate) fn render_multiplayer_setup(
                         ROSTER_TEXT_SCALE,
                     ));
                 }
-            }
-            for (id, rect, caption) in [
-                (TEAM_STARTS, layout.team_starts, "VERA:TeamStarts"),
-                (TEAM_COLORS, layout.team_colors, "VERA:TeamColors"),
-                (BALANCE, layout.balance, "VERA:Balance"),
-            ] {
-                let Some(rect) = rect else {
-                    continue;
-                };
-                let enabled = view.enabled(id);
-                let pressed = enabled && ui.buttons.is_pressed(id);
-                controls.extend(shell_paint::paint_modal_sprites(
-                    None,
-                    type3_button_frames(atlas),
-                    rect,
-                    &[ModalButton {
-                        rect,
-                        pressed,
-                        enabled,
-                    }],
-                    small,
-                    shell_paint::ModalDepths {
-                        background: SHELL_CONTROL_DEPTH,
-                        button: SHELL_CONTROL_DEPTH,
-                        text: SHELL_CONTROL_TEXT_DEPTH,
-                    },
-                ));
-                texts.push(sized(
-                    &crate::i18n::tr(caption),
-                    rect,
-                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                    super::text::button_label_color_for_disabled(!enabled),
-                    SHELL_CONTROL_TEXT_DEPTH,
-                    ROSTER_TEXT_SCALE,
-                ));
             }
         }
         // VERA's roster marks the local player's row with a dark band.
@@ -494,7 +480,8 @@ pub(crate) fn render_multiplayer_setup(
                 continue;
             };
             let selected = combo.selected.and_then(|index| combo.choices.get(index));
-            if layout.roster {
+            let team_bar = matches!(combo.id, TEAM_MENU | SEAT_MENU);
+            if layout.roster && !team_bar && !matches!(combo.id, CAMPAIGN_SERIES | CAMPAIGN_STAGE) {
                 push_roster_cell(
                     &mut controls,
                     &mut texts,
@@ -507,6 +494,8 @@ pub(crate) fn render_multiplayer_setup(
                 );
                 continue;
             }
+            // The team bar's lists: their words at the roster's size.
+            let size = if team_bar { roster_size } else { 1.0 };
             paint_control(
                 &mut controls,
                 &atlas.control_chrome(),
@@ -528,12 +517,13 @@ pub(crate) fn render_multiplayer_setup(
                 if let Some((_, badge)) = player_badge(atlas, &view, &layout, combo.id) {
                     face.w = badge.x - face.x;
                 }
-                texts.push(text(
+                texts.push(sized(
                     &item.text,
                     face,
                     ShellAlign::V_CENTER,
                     super::text::combo_face_text_color(!view.enabled(combo.id)),
                     SHELL_CONTROL_TEXT_DEPTH,
+                    size,
                 ));
             }
         }
@@ -620,7 +610,7 @@ pub(crate) fn render_multiplayer_setup(
                 SHELL_CONTROL_TEXT_DEPTH,
             ));
         }
-        if view.cooperative {
+        if view.cooperative || view.campaign {
             for (key, x) in [("TXT_Easy", 170), ("TXT_Normal", 295), ("TXT_Hard", 430)] {
                 texts.push(text(
                     &localized_label(state, key, key),
@@ -831,7 +821,11 @@ pub(crate) fn render_multiplayer_setup(
                             RectPx::new(rect.x + 3, rect.y, rect.w - 6, rect.h)
                         }),
                         ShellAlign::V_CENTER,
-                        label_rgb,
+                        if item.greyed {
+                            super::text::combo_face_text_color(true)
+                        } else {
+                            label_rgb
+                        },
                         SHELL_DROPDOWN_TEXT_DEPTH,
                         roster_size,
                     ));
@@ -942,7 +936,7 @@ pub(crate) fn render_multiplayer_setup(
                     path_a_reveal: None,
                 },
                 button_label(
-                    crate::i18n::tr("VERA:Download"),
+                    crate::i18n::tr(offer.button_key),
                     boxed.ok,
                     pressed(MAP_OFFER_DOWNLOAD),
                     if offer.downloading {
@@ -1166,7 +1160,6 @@ const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
 /// One cell of VERA's roster: no face, frame or arrow, only its value in
 /// the roster's small text, or a colour's swatch. A cell whose list opens
 /// lights white under the pointer and while its list is open.
-#[allow(clippy::too_many_arguments)]
 fn push_roster_cell(
     controls: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
@@ -1260,6 +1253,9 @@ fn push_option_controls(
         )
     };
     for (key, rect) in &layout.option_labels {
+        if view.campaign && *key != "GUI:GameSpeed" {
+            continue;
+        }
         texts.push(text(
             &localized_label(state, key, key),
             *rect,
@@ -1275,6 +1271,7 @@ fn push_option_controls(
     ]
     .into_iter()
     .enumerate()
+    .filter(|_| !view.campaign)
     {
         let rect = layout.checkboxes[index];
         paint_control(
@@ -1293,7 +1290,7 @@ fn push_option_controls(
         ));
     }
     // VERA's own checkboxes, only in its Game Options.
-    if layout.game_options.is_some() {
+    if layout.game_options.is_some() && !view.campaign {
         for (index, label) in crate::ui::multiplayer_setup::ROOM_CHECKBOX_LABELS
             .into_iter()
             .enumerate()

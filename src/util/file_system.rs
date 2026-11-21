@@ -19,6 +19,58 @@ pub fn try_exists(path: impl AsRef<std::path::Path>) -> std::io::Result<bool> {
     path.as_ref().try_exists()
 }
 
+/// Writes `bytes` to a new hidden file in `dir`, syncs it, and hands its path
+/// to `publish` to move it into place. The staged file is removed when the
+/// write or `publish` fails, so no partial file is published or left behind.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn write_staged(
+    dir: &std::path::Path,
+    bytes: &[u8],
+    publish: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
+    let (stage, mut file) = loop {
+        let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
+        let stage = dir.join(format!(".map-{}-{id}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage)
+        {
+            Ok(file) => break (stage, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        publish(&stage)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&stage);
+    }
+    result
+}
+
+/// Publish complete bytes under a fresh name. The filesystem claims the
+/// target so a simultaneous save, or a different spelling on a case-insensitive
+/// volume, cannot replace an existing file.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub fn write_new(path: impl AsRef<std::path::Path>, bytes: &[u8]) -> std::io::Result<()> {
+    let path = path.as_ref();
+    let directory = path.parent().unwrap_or(std::path::Path::new("."));
+    write_staged(directory, bytes, |stage| {
+        std::fs::File::create_new(path)?;
+        std::fs::rename(stage, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(path);
+        })
+    })
+}
+
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub use memory::*;
 
@@ -35,7 +87,7 @@ mod memory {
         collections::BTreeMap,
         io,
         path::{Component, Path, PathBuf},
-        sync::{Arc, Mutex, OnceLock},
+        sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError},
     };
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     type PersistenceCallbacks = (fn(&str, &[u8], u64), fn(&str));
@@ -51,9 +103,19 @@ mod memory {
         bytes: Arc<[u8]>,
         modified_ms: u64,
     }
+    /// The browser build's stand-in for the disk that `std::fs` reaches
+    /// process-wide: callers use these free functions as they would `std::fs`
+    /// and hold no file-system owner, so the store is a `static`, and a
+    /// `static` must be `Sync`, hence the lock.
     static FILES: OnceLock<Mutex<BTreeMap<PathBuf, Entry>>> = OnceLock::new();
-    fn files() -> &'static Mutex<BTreeMap<PathBuf, Entry>> {
-        FILES.get_or_init(Default::default)
+    /// The imported files. Each change to the map or the folder set is one
+    /// insert, remove or retain, so a panic elsewhere while one is locked
+    /// leaves it whole: a poisoned lock is used as it is.
+    fn files() -> MutexGuard<'static, BTreeMap<PathBuf, Entry>> {
+        FILES
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
     fn key(path: &Path) -> PathBuf {
         let mut result = PathBuf::from("/");
@@ -68,9 +130,14 @@ mod memory {
         }
         result
     }
+    /// Beside [`FILES`] for its reason.
     static DIRECTORIES: OnceLock<Mutex<std::collections::BTreeSet<PathBuf>>> = OnceLock::new();
-    fn directories() -> &'static Mutex<std::collections::BTreeSet<PathBuf>> {
-        DIRECTORIES.get_or_init(|| Mutex::new([PathBuf::from("/")].into()))
+    /// The created folders; locked as [`files`] is.
+    fn directories() -> MutexGuard<'static, std::collections::BTreeSet<PathBuf>> {
+        DIRECTORIES
+            .get_or_init(|| Mutex::new([PathBuf::from("/")].into()))
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
     pub fn is_file(path: impl AsRef<Path>) -> bool {
         metadata(path).is_ok_and(|m| m.is_file())
@@ -88,8 +155,7 @@ mod memory {
             Err(error) => Err(error),
         }
     }
-    // Network cache pins use the same normalized identity as stored bytes.
-    #[cfg(feature = "wasm-net")]
+    // Imported paths have no symlinks. The stored key is their canonical path.
     pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
         let path = key(path.as_ref());
         metadata(&path)?;
@@ -103,7 +169,7 @@ mod memory {
         restore_file(path, bytes, 0);
     }
     pub fn restore_file(path: impl AsRef<Path>, bytes: Vec<u8>, modified_ms: u64) {
-        files().lock().unwrap().insert(
+        files().insert(
             key(path.as_ref()),
             Entry {
                 bytes: bytes.into(),
@@ -114,7 +180,7 @@ mod memory {
     /// Import bytes already in shared storage, as a file assembled in parts
     /// is: the engine keeps this allocation and copies nothing.
     pub fn import_shared(path: impl AsRef<Path>, bytes: Arc<[u8]>) {
-        files().lock().unwrap().insert(
+        files().insert(
             key(path.as_ref()),
             Entry {
                 bytes,
@@ -127,19 +193,14 @@ mod memory {
     /// Returns how many files went.
     pub fn forget_tree(path: impl AsRef<Path>) -> usize {
         let path = key(path.as_ref());
-        let mut files = files().lock().unwrap();
+        let mut files = files();
         let before = files.len();
         files.retain(|file, _| !file.starts_with(&path));
-        directories()
-            .lock()
-            .unwrap()
-            .retain(|dir| !dir.starts_with(&path) || dir == Path::new("/"));
+        directories().retain(|dir| !dir.starts_with(&path) || dir == Path::new("/"));
         before - files.len()
     }
     pub fn read_shared(path: impl AsRef<Path>) -> io::Result<Arc<[u8]>> {
         files()
-            .lock()
-            .unwrap()
             .get(&key(path.as_ref()))
             .map(|entry| entry.bytes.clone())
             .ok_or_else(missing)
@@ -172,7 +233,7 @@ mod memory {
             .unwrap_or_default()
             .as_millis() as u64;
         {
-            let mut files = files().lock().unwrap();
+            let mut files = files();
             if exclusive && files.contains_key(&path) {
                 return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
@@ -195,24 +256,18 @@ mod memory {
     }
     pub fn create_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
         let path = key(path.as_ref());
-        if path
-            .ancestors()
-            .any(|p| files().lock().unwrap().contains_key(p))
-        {
+        if path.ancestors().any(|p| files().contains_key(p)) {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "path is a file",
             ));
         }
-        directories()
-            .lock()
-            .unwrap()
-            .extend(path.ancestors().map(Path::to_path_buf));
+        directories().extend(path.ancestors().map(Path::to_path_buf));
         Ok(())
     }
     pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
         let path = key(path.as_ref());
-        files().lock().unwrap().remove(&path).ok_or_else(missing)?;
+        files().remove(&path).ok_or_else(missing)?;
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         if let Some((_, remove)) = PERSISTENCE.get() {
             remove(&path.to_string_lossy());
@@ -240,7 +295,7 @@ mod memory {
     }
     pub fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
         let path = key(path.as_ref());
-        let files = files().lock().unwrap();
+        let files = files();
         if let Some(bytes) = files.get(&path) {
             return Ok(Metadata {
                 file: true,
@@ -248,9 +303,7 @@ mod memory {
                 modified_ms: bytes.modified_ms,
             });
         }
-        if directories().lock().unwrap().contains(&path)
-            || files.keys().any(|p| p.starts_with(&path))
-        {
+        if directories().contains(&path) || files.keys().any(|p| p.starts_with(&path)) {
             return Ok(Metadata {
                 file: false,
                 len: 0,
@@ -286,15 +339,13 @@ mod memory {
             ));
         }
         let mut entries: std::collections::BTreeSet<_> = files()
-            .lock()
-            .unwrap()
             .keys()
             .filter_map(|p| {
                 let relative = p.strip_prefix(&path).ok()?;
                 Some(path.join(relative.components().next()?.as_os_str()))
             })
             .collect();
-        entries.extend(directories().lock().unwrap().iter().filter_map(|p| {
+        entries.extend(directories().iter().filter_map(|p| {
             let relative = p.strip_prefix(&path).ok()?;
             Some(path.join(relative.components().next()?.as_os_str()))
         }));
@@ -331,14 +382,11 @@ mod tests {
         let first = memory::read_shared(format!("{root}/RA2MD.MIX")).unwrap();
         let second = memory::read_shared(format!("{root}/RA2MD.MIX")).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));
-        #[cfg(feature = "wasm-net")]
-        {
-            assert_eq!(
-                memory::canonicalize(format!("{root}/Taunts/../RA2MD.MIX")).unwrap(),
-                std::path::PathBuf::from(format!("{root}/RA2MD.MIX"))
-            );
-            assert!(memory::canonicalize(format!("{root}/missing.map")).is_err());
-        }
+        assert_eq!(
+            memory::canonicalize(format!("{root}/Taunts/../RA2MD.MIX")).unwrap(),
+            std::path::PathBuf::from(format!("{root}/RA2MD.MIX"))
+        );
+        assert!(memory::canonicalize(format!("{root}/missing.map")).is_err());
     }
 
     #[test]

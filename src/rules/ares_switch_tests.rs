@@ -10,8 +10,8 @@ use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::rules::ruleset::RuleSet;
 
 /// The retail install as it is. The retail fixtures ship `ares.mix` on a
-/// thread read the Ares way (`ares_switch::game_ships_ares`); the retail
-/// archives do not.
+/// thread read the Ares way (`retail_ini_fixture::retail_rules_owner`); the
+/// retail archives do not.
 fn installed(assets: &AssetManager) -> NativeRulesProcessOwner {
     assert!(!assets.ships_ares());
     retail_rules_owner(assets).with_ares_mix(false)
@@ -135,7 +135,11 @@ fn a_maps_ares_key_turns_ares_on() {
         let id = sim
             .spawn_object("GAPOWR", "Americans", 12, 12, 0, rules)
             .unwrap();
-        sim.object_ai_visit_one(id, Some(rules), crate::sim::world::ObjectAiCtx::default());
+        sim.object_ai_visit_one(
+            id,
+            Some(rules),
+            &mut crate::sim::world::ObjectAiCtx::default(),
+        );
         sim.entities().get(id).unwrap().cloak.is_some()
     };
     let stock = skirmish(
@@ -236,4 +240,98 @@ fn water_image_retains_find_only_bindings_through_layers_and_save() {
     let restored = owner.project_saved_scenario_rules(&restored).unwrap();
     assert_eq!(restored.object("ROBO").unwrap().water_image(), Some("MTNK"));
     assert_eq!(restored.object("CMIN").unwrap().water_image(), None);
+}
+
+/// Saved Rules restore only into a game read the same way: the Rules owner's
+/// own `ares.mix` answer decides, not the launch or the calling thread.
+#[test]
+fn saved_rules_restore_only_into_a_game_read_the_same_way() {
+    let owner = |ships_ares: bool| {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::empty(),
+            None,
+            IniFile::empty(),
+            std::sync::Arc::default(),
+            std::sync::Arc::default(),
+        )
+        .unwrap();
+        owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap();
+        owner
+    };
+    let (stock, ares) = (owner(false), owner(true));
+    for (from, into, restores) in [
+        (&stock, &stock, true),
+        (&ares, &ares, true),
+        (&ares, &stock, false),
+        (&stock, &ares, false),
+    ] {
+        assert_eq!(
+            into.project_saved_scenario_rules(from.saved_scenario_rules().unwrap())
+                .is_ok(),
+            restores
+        );
+    }
+}
+
+/// The reader recorder and the reading mode live on the thread that opened
+/// their scope (`ares_switch`'s module notes), so the Rules code those scopes
+/// run must read on that thread: no Rules source (test files aside) spawns a
+/// thread or uses a thread pool. The retail fixture, which opens no scope for
+/// its threads, is the one known use, and finding it shows the search works.
+#[test]
+fn rules_code_reads_on_the_thread_that_opened_its_scope() {
+    fn sources(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy();
+            if path.is_dir() {
+                if name != "tests" {
+                    sources(&path, found);
+                }
+            } else if name.ends_with(".rs") && name != "tests.rs" && !name.ends_with("_tests.rs") {
+                found.push(path);
+            }
+        }
+    }
+    let rules = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("rules");
+    let mut files = Vec::new();
+    sources(&rules, &mut files);
+    let threaded: Vec<String> = files
+        .iter()
+        .filter(|path| {
+            let text = std::fs::read_to_string(path).unwrap();
+            [
+                "rayon",
+                "par_iter",
+                "thread::spawn",
+                "thread::scope",
+                "thread::Builder",
+            ]
+            .iter()
+            .any(|pattern| text.contains(pattern))
+        })
+        .map(|path| path.strip_prefix(&rules).unwrap().display().to_string())
+        .collect();
+    assert_eq!(threaded, ["retail_ini_fixture.rs"]);
+}
+
+/// A SuperWeaponType's `Type=` is one of Ares' reads of the ordered pass, so
+/// a Rules process read the Ares way keeps the key among the Ares inputs it
+/// saves with the rules.
+#[test]
+fn a_super_weapons_type_key_stays_an_ares_input() {
+    use crate::rules::native_processing::RulesLayerStack;
+    let _way = crate::rules::ares_switch::read_ares_way(true);
+    let rules = IniFile::from_str("[SuperWeaponTypes]\n0=TESTSW\n[TESTSW]\nType=MultiMissile\n");
+    let processed = RulesLayerStack::new(rules)
+        .process_with_fixed_art(&IniFile::from_str(""))
+        .unwrap();
+    let inputs = format!("{:?}", processed.ares_inputs());
+    assert!(inputs.contains(r#"("TESTSW", "Type")"#), "{inputs}");
 }

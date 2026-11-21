@@ -283,14 +283,18 @@ fn hover_object_in_frame(
                     })
                     .map(|member| &member.id),
             );
-            debug_assert_eq!(
-                picked,
-                pick(
+            // The cross-check picks again over every drawn object: debug
+            // builds only.
+            if cfg!(debug_assertions) {
+                let unfiltered = pick(
                     &mut crate::app::presentation::instances::display_draw_ids(sim, source.rules())
-                        .iter()
-                ),
-                "the pick's pre-filter passed by the object at {world_x}, {world_y}"
-            );
+                        .iter(),
+                );
+                assert_eq!(
+                    picked, unfiltered,
+                    "the pick's pre-filter passed by the object at {world_x}, {world_y}"
+                );
+            }
             picked
         }
         None => pick(
@@ -679,7 +683,7 @@ pub(crate) fn pick_admits_object(
     };
     //6DA3FF reads retained Techno+41A. Its owner classifies this at
     // InitManagers6F3F43 and ChangeOwner70173B; save/load preserves the byte.
-    entity.discovery.owned_by_current_house()
+    entity.seldom.discovery.owned_by_current_house()
         || !entity
             .cloak
             .as_ref()
@@ -1419,7 +1423,7 @@ pub(crate) fn selection_dynamic_prefix(
     {
         return false;
     }
-    if entity.slave.owner().is_some() || entity.deactivated.is_offline() {
+    if entity.seldom.slave.owner().is_some() || entity.deactivated.is_offline() {
         return false;
     }
     let bunker_linked = if building {
@@ -1430,7 +1434,7 @@ pub(crate) fn selection_dynamic_prefix(
     if bunker_linked {
         return false;
     }
-    if entity.tether.partner().is_some()
+    if entity.seldom.tether.partner().is_some()
         && building_covers_cell(entities, entity.position.rx(), entity.position.ry())
     {
         return false;
@@ -1451,7 +1455,7 @@ pub(crate) fn is_local_player_selectable_object(
         && !entity.lifecycle.in_limbo()
         && entity.in_playfield()
         && entity.category() != EntityCategory::Structure
-        && entity.discovery.discovered_by_current_house()
+        && entity.seldom.discovery.discovered_by_current_house()
         && type_is_selectable(interner.resolve(entity.type_ref()), rules)
         && control.can_order(entity.owner())
 }
@@ -1602,7 +1606,7 @@ pub(crate) fn pick_object_at_point<'a>(
     match picked {
         CellObjectMember::Entity(id) => {
             let entity = entities.get(id)?;
-            (entity.discovery.owned_by_current_house()
+            (entity.seldom.discovery.owned_by_current_house()
                 || !source.type_invisible(entity) && !faded_out_unsensed(entity, fog, player))
             .then_some(picked)
         }
@@ -1786,6 +1790,7 @@ mod tests {
         ));
         sim.entity_mut_for_test(first)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         assert!(
@@ -1837,7 +1842,7 @@ mod tests {
         );
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(selected);
+        entity.seldom.selection.set_selected_for_test(selected);
         entity
     }
 
@@ -2446,6 +2451,7 @@ mod tests {
             let owner = if same_owner { viewer } else { other };
             let mut entity = item83_entity(1, 10, 10, owner, typ, EntityCategory::Unit, false);
             entity
+                .seldom
                 .discovery
                 .set_owned_by_current_house_for_test(retained_owned);
             let mut cloak = CloakRuntime::new(0);
@@ -2495,7 +2501,7 @@ mod tests {
             let mut plane =
                 item83_entity(1, 10, 10, owner, type_ref, EntityCategory::Aircraft, false);
             if row["mission_only"].as_bool().unwrap() {
-                plane.mission_only.mark();
+                plane.seldom.mission_only.mark();
             }
             let (x, y) = crate::render::locomotor_visual::screen_position(&plane);
             entities.insert(plane);

@@ -100,7 +100,7 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
                     flags,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
             );
@@ -249,7 +249,7 @@ fn building_receiver_is_the_object_no_op() {
             ScatterFlags::new(true, true),
             &no_rules(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -379,8 +379,15 @@ fn cell_scatter_dispatch_matches_original_execution() {
             .map(|id| id.as_u64().unwrap())
             .collect();
         let no_kidding = flag(input, "dispatch_all", false);
-        let dispatched =
-            scatter_objects_admitted(&technos, no_kidding, &rules, &entities, &houses, &interner);
+        let mut dispatched = technos.clone();
+        retain_scatter_admitted(
+            &mut dispatched,
+            no_kidding,
+            &rules,
+            &entities,
+            &houses,
+            &interner,
+        );
         let expected_technos: Vec<u64> = expected
             .iter()
             .copied()
@@ -435,7 +442,9 @@ fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
                 houses: &crate::sim::houses::Houses,
                 rules: &RuleSet,
                 cell: &[u64]| {
-        scatter_objects_admitted(cell, false, rules, entities, houses, &interner)
+        let mut admitted = cell.to_vec();
+        retain_scatter_admitted(&mut admitted, false, rules, entities, houses, &interner);
+        admitted
     };
     for (iq, rank, expected) in [(1, 0, false), (2, 0, true), (1, 100, true)] {
         houses.get_mut(&owner).unwrap().set_current_iq_for_test(iq);
@@ -505,7 +514,7 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
             flags,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -527,7 +536,7 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
             flags,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -608,7 +617,7 @@ fn unit_null_arm_matches_original_execution() {
                 flags,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -677,7 +686,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
             actor.locomotor = Some(locomotor);
         }
         if flag("tether") {
-            actor.tether.set_for_test(Some(9));
+            actor.seldom.tether.set_for_test(Some(9));
         }
         if flag("target") {
             actor
@@ -738,7 +747,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
                 retaliation,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             if !scatter {
@@ -869,7 +878,7 @@ fn unit_source_arm_matches_original_execution() {
                 flags,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         );
@@ -944,7 +953,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
             tank,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.substrate

@@ -4,11 +4,11 @@
 
 use super::shell_random_map::{RANDOM_MAP_DESCRIPTION_FALLBACK, RANDOM_MAP_DESCRIPTION_KEY};
 use super::*;
+use crate::map::rmg::saved_seeds::{SavedSeedFile, SeedWrite};
 use crate::map::rmg::{SeedDescription, saved_seeds};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose};
-use crate::util::native_file_name::{self, NativeFileName};
 
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 
@@ -103,10 +103,12 @@ impl App {
 
     fn finish_saved_seed_write(
         state: &mut AppState,
-        file_name: NativeFileName,
+        file_name: SavedSeedFile,
         description: SeedDescription,
+        action: SeedWrite,
     ) {
         let Some(dir) = Self::random_map_dir(state) else {
+            Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
             return;
         };
         let Some(modal) = state
@@ -118,15 +120,15 @@ impl App {
             return;
         };
         // MapSeed Save 0x00597804 updates the working description before file I/O.
-        // Its nonnull-filename path returns success even if the file could not open.
         modal.options.description = description;
-        if let Err(error) = crate::util::file_system::create_dir_all(&dir).and_then(|()| {
-            saved_seeds::write_browser_seed(&dir, &file_name, &modal.options, modal.ares)
-        }) {
-            log::warn!(
-                "saved seed: native-style save acknowledgment despite I/O failure for {file_name}: {error}"
-            );
+        if let Err(error) =
+            saved_seeds::write_browser_seed(&dir, &file_name, &modal.options, modal.ares, action)
+        {
+            log::warn!("saved seed: could not save {file_name}: {error}");
+            Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+            return;
         }
+        Self::refresh_saved_random_maps(state);
         let body = Self::csf_label(state, "GUI:MapSaved", "Map Saved");
         Self::show_saved_seed_prompt(state, SavedSeedPromptPurpose::Saved, body, false);
     }
@@ -161,14 +163,17 @@ impl App {
                 file_name,
                 description,
             } if affirmative => {
-                Self::finish_saved_seed_write(state, file_name, description);
+                Self::finish_saved_seed_write(state, file_name, description, SeedWrite::Overwrite);
             }
             SavedSeedPromptPurpose::Delete { file_name } if affirmative => {
                 if let Some(dir) = Self::random_map_dir(state)
-                    && let Err(error) = native_file_name::delete(&dir, &file_name)
+                    && let Err(error) = file_name.delete(&dir)
                 {
                     log::warn!("saved seed: could not delete {file_name}: {error}");
                 }
+                // As in driver 0x00558DD0 the browser drops the row after the
+                // attempt. The chooser reflects the files still on disk.
+                Self::refresh_saved_random_maps(state);
                 let layout = Self::skirmish_saved_seed_layout(state, SavedSeedMode::Delete);
                 let rows =
                     SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
@@ -179,7 +184,6 @@ impl App {
                     .saved_seed_browser
                     .as_mut()
                     .is_some_and(|browser| {
-                        // driver 0x00558DD0 removes the row regardless of DeleteFileA's result.
                         browser.remove_entry(&file_name, rows);
                         browser.entries.is_empty()
                     });
@@ -191,55 +195,95 @@ impl App {
         }
     }
 
-    fn apply_saved_seed_outcome(state: &mut AppState, outcome: SavedSeedOutcome) {
-        let Some(dir) = Self::random_map_dir(state) else {
+    fn show_saved_seed_error(state: &mut AppState, key: &str) {
+        Self::show_saved_seed_prompt(
+            state,
+            SavedSeedPromptPurpose::Error,
+            crate::i18n::tr(key),
+            false,
+        );
+    }
+
+    /// Load one saved seed. The chooser's Use Map generates it and then accepts
+    /// it in the chosen mode; Load in the generator leaves its controls open.
+    pub(super) fn load_random_map_seed(state: &mut AppState, file: &SavedSeedFile, use_map: bool) {
+        let dir = Self::random_map_dir(state);
+        let default = Self::csf_label(
+            state,
+            RANDOM_MAP_DESCRIPTION_KEY,
+            RANDOM_MAP_DESCRIPTION_FALLBACK,
+        );
+        let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_mut()
+        else {
             return;
         };
+        let loaded = dir
+            .ok_or_else(|| std::io::Error::other("no maps directory"))
+            .and_then(|dir| {
+                // The chooser plays the saved map independently of the editor:
+                // a zero-valued Advanced slider is omitted from the seed file.
+                let defaults = crate::map::rmg::RmgOptions::default();
+                let current = if use_map { &defaults } else { &modal.options };
+                saved_seeds::read_browser_seed(&dir, file, current, &default, modal.ares)
+            });
+        let mut options = match loaded {
+            Ok(options) => options,
+            Err(error) => {
+                log::warn!("saved seed: could not read {file}: {error}");
+                if use_map {
+                    modal.extras_note = Some((
+                        "VERA:RandomMapOpenFailed",
+                        "Could not open this saved map. Go back and pick another.",
+                    ));
+                } else {
+                    Self::show_saved_seed_error(state, "VERA:RandomMapOpenFailed");
+                }
+                return;
+            }
+        };
+        if use_map {
+            if options.num_players > modal.players_range.max
+                && state.frontend.shell_route.network_setup()
+            {
+                modal.extras_note = Some((
+                    "VERA:RandomMapRoomLimit",
+                    "This map has too many players for a network room.",
+                ));
+                return;
+            }
+        } else {
+            // Load 0x00596963 posts Generate with its reroll latch clear.
+            // Control readback couples height to width and stamps the default.
+            options.height = options.width;
+            options.description = default.into();
+        }
+        modal.extras_note = None;
+        modal.adopt_saved_seed(options);
+        let options = modal.options.clone();
+        modal.begin_generate();
+        if !use_map {
+            Self::close_saved_seed_browser(state);
+        }
+        if !Self::start_random_map_generation(state, &options, use_map)
+            && let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_mut()
+        {
+            modal.fail_generate();
+        }
+    }
+
+    fn apply_saved_seed_outcome(state: &mut AppState, outcome: SavedSeedOutcome) {
         match outcome {
             SavedSeedOutcome::Close => Self::close_saved_seed_browser(state),
             SavedSeedOutcome::Load(file_name) => {
-                let default = Self::csf_label(
-                    state,
-                    RANDOM_MAP_DESCRIPTION_KEY,
-                    RANDOM_MAP_DESCRIPTION_FALLBACK,
-                );
-                let Some(modal) = state
-                    .frontend
-                    .skirmish_shell_state
-                    .random_map_setup_modal
-                    .as_mut()
-                else {
-                    return;
-                };
-                match saved_seeds::read_browser_seed(
-                    &dir,
-                    &file_name,
-                    &modal.options,
-                    &default,
-                    modal.ares,
-                ) {
-                    Ok(mut options) => {
-                        // Load 0x00596963 posts Generate with its reroll latch clear.
-                        // Ordinary valid control readback preserves loaded derived
-                        // values, couples height to width, and stamps the default.
-                        options.height = options.width;
-                        options.description = default.into();
-                        modal.adopt_saved_seed(options);
-                        let options = modal.options.clone();
-                        modal.begin_generate();
-                        Self::close_saved_seed_browser(state);
-                        if !Self::start_random_map_generation(state, &options, false)
-                            && let Some(modal) = state
-                                .frontend
-                                .skirmish_shell_state
-                                .random_map_setup_modal
-                                .as_mut()
-                        {
-                            modal.fail_generate();
-                        }
-                    }
-                    Err(error) => log::warn!("saved seed: could not read {file_name}: {error}"),
-                }
+                Self::load_random_map_seed(state, &file_name, false)
             }
             SavedSeedOutcome::Save {
                 file_name,
@@ -259,17 +303,7 @@ impl App {
                     );
                     return;
                 }
-                let file_name = file_name.unwrap_or_else(|| {
-                    let assets = state.process_assets.manager();
-                    saved_seeds::allocate_seed_file_name(
-                        &mut state.frontend.legacy_crt_rng,
-                        |name| {
-                            assets.is_some_and(|assets| assets.contains(name))
-                                || native_file_name::available(&dir, &name.into())
-                        },
-                    )
-                });
-                if native_file_name::available(&dir, &file_name) {
+                if let Some(file_name) = file_name {
                     let body =
                         Self::csf_label(state, "TXT_CONFIRM_SAVE", "Overwrite existing save game?");
                     Self::show_saved_seed_prompt(
@@ -281,8 +315,25 @@ impl App {
                         body,
                         true,
                     );
-                } else {
-                    Self::finish_saved_seed_write(state, file_name, description);
+                    return;
+                }
+                let Some(dir) = Self::random_map_dir(state) else {
+                    Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+                    return;
+                };
+                let assets = state.process_assets.manager();
+                match saved_seeds::allocate_seed_file_name(
+                    &dir,
+                    &mut state.frontend.legacy_crt_rng,
+                    |name| assets.is_some_and(|assets| assets.contains(name)),
+                ) {
+                    Ok(file_name) => {
+                        Self::finish_saved_seed_write(state, file_name, description, SeedWrite::New)
+                    }
+                    Err(error) => {
+                        log::warn!("saved seed: could not create a new slot: {error}");
+                        Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+                    }
                 }
             }
             SavedSeedOutcome::Delete(file_name) => {
@@ -305,7 +356,7 @@ impl App {
         }
     }
 
-    fn apply_saved_seed_input(state: &mut AppState, result: BrowserInputResult<NativeFileName>) {
+    fn apply_saved_seed_input(state: &mut AppState, result: BrowserInputResult<SavedSeedFile>) {
         match result {
             BrowserInputResult::None => {}
             BrowserInputResult::Outcome(outcome) => Self::apply_saved_seed_outcome(state, outcome),

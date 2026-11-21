@@ -250,6 +250,7 @@ pub(crate) struct DisplayEffectInputs<'a> {
     /// This frame's Z-buffer row seed (`native_z::ZSeed`).
     pub z_seed: i32,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
+    /// The owner's cell (`MatchPresentationState::detail`), stepped per draw.
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
@@ -346,7 +347,7 @@ fn plan_effect_body(
     input: &DisplayEffectInputs<'_>,
     member: &crate::app::presentation::display_members::EffectMember,
     context: &super::particles::ParticleDrawContext,
-    objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
+    objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
     observations: &mut Option<Vec<super::particles::ParticleDrawObservation>>,
 ) {
@@ -401,7 +402,8 @@ fn passed_by_effect_plans_nothing(
             anim_draw_point(input.frame, anim, id, input.tactical_admission()).is_none()
         });
     }
-    let mut scratch = Vec::new();
+    let mut scratch =
+        crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     plan_effect_body(input, member, context, &mut scratch, order, &mut None);
     scratch.is_empty()
 }
@@ -413,15 +415,16 @@ fn passed_by_effect_plans_nothing(
 /// only at their own encounter, even when preparation produced no visible piece.
 pub(crate) fn build_display_effect_instances(
     input: &DisplayEffectInputs<'_>,
-    ground_objects: &mut Vec<
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
-    >,
+    ground_objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-    mut prepared_building_anims: BTreeMap<
-        crate::sim::anim_class::AnimId,
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
-    >,
+    prepared_building_anims: crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
 ) -> Option<Vec<super::particles::ParticleDrawObservation>> {
+    // The building slot anims planned ahead, each taken at its own encounter.
+    let (prepared, prepared_sprites) = prepared_building_anims.into_parts();
+    let mut prepared_building_anims: BTreeMap<crate::sim::anim_class::AnimId, _> = prepared
+        .into_iter()
+        .map(|parent| (parent.parent.id, parent))
+        .collect();
     let mut observations = input.observe_particles.then(Vec::new);
     let sim = input.sim;
     let context = super::particles::ParticleDrawContext::new(input);
@@ -548,7 +551,10 @@ pub(crate) fn build_display_effect_instances(
             // DrawIt queries detail before hidden/image/material rejection.
             // An absent prepared piece must not suppress that query.
             if let Some(parent) = prepared_building_anims.remove(&stable_id) {
-                ground_objects.push(parent);
+                // The copy stays: the building pass plans these pieces before
+                // Display order reaches the anim, and only an encountered
+                // anim draws, so its few pieces move into this plan here.
+                ground_objects.push_from(&prepared_sprites, parent);
             }
             continue;
         }
@@ -670,31 +676,29 @@ pub(crate) fn build_display_effect_instances(
             ..Default::default()
         };
         if let Some(parent) = ground_order.object_draw(anim.stable_id(), SpriteEncoding::Plain) {
-            ground_objects.push(
-                crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
-                    parent,
-                    super::anim_draw::anim_draw_pieces(
-                        atlas,
-                        super::anim_draw::AnimDrawInput {
-                            key: &key,
-                            entry,
-                            point: [center_x, center_y],
-                            body: instance,
-                            config,
-                            flags,
-                            lift_px,
-                            axis: input.axis,
-                            viewport: [cam_x, cam_y, sw, sh],
-                            legacy_policy: parent.policy.render_z,
-                            bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
-                                sim,
-                                anim,
-                                drawn_coord,
-                            ),
-                        },
-                    ),
-                ),
-            );
+            ground_objects.object_with(parent, |pieces| {
+                super::anim_draw::anim_draw_pieces(
+                    atlas,
+                    super::anim_draw::AnimDrawInput {
+                        key: &key,
+                        entry,
+                        point: [center_x, center_y],
+                        body: instance,
+                        config,
+                        flags,
+                        lift_px,
+                        axis: input.axis,
+                        viewport: [cam_x, cam_y, sw, sh],
+                        legacy_policy: parent.policy.render_z,
+                        bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
+                            sim,
+                            anim,
+                            drawn_coord,
+                        ),
+                    },
+                    pieces,
+                )
+            });
         }
     }
     // Ares hook 0x6D9427: its particle records after the Air layer.
@@ -825,8 +829,9 @@ pub(super) fn presentation_anim_frame_count(
     type_name: &str,
 ) -> Option<u16> {
     frame_counts.get(type_name).copied().or_else(|| {
-        let canonical = type_name.to_ascii_uppercase();
-        frame_counts.get(&canonical).copied()
+        crate::util::native_string::with_ascii_uppercase(type_name, |canonical| {
+            frame_counts.get(canonical).copied()
+        })
     })
 }
 
@@ -1219,9 +1224,7 @@ pub(crate) fn build_overlay_instances(
     sw: f32,
     sh: f32,
     bodies: &mut Vec<super::CellBody>,
-    ground_objects: &mut Vec<
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
-    >,
+    ground_objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
     let atlas = match &state.match_state.match_presentation.overlay_atlas {
@@ -1269,7 +1272,7 @@ pub(crate) fn build_overlay_instances(
     // so the bodies' order is part of the image.
     let window = overlay_body_window(terrain, atlas.art_extent(), [cam_x, cam_y], [sw, sh]);
     let overlays = &state.match_state.match_presentation.overlays;
-    let window_entries: Vec<_> = overlays.entries_in(window).cloned().collect();
+    let window_entries: Vec<_> = overlays.entries_in(window).copied().collect();
     let start = bodies.len();
     let input = CellOverlayInputs {
         entries: &window_entries,
@@ -1436,7 +1439,7 @@ pub(crate) fn build_overlay_instances(
             continue;
         };
         use crate::app::presentation::render::draw_plan_lowering::{
-            ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+            ObjectPieceInstance, ObjectTexture,
         };
         use crate::render::tactical_draw_plan::RenderZPolicy;
         use crate::render::terrain_draw::TerrainPiece;
@@ -1470,11 +1473,8 @@ pub(crate) fn build_overlay_instances(
                         palette_light,
                     ),
                 })
-            })
-            .collect();
-        let mut planned = PlannedObjectInstance::object(parent, pieces);
-        planned.static_tree = !is_animated;
-        ground_objects.push(planned);
+            });
+        ground_objects.object(parent, pieces).static_tree = !is_animated;
     }
 }
 
@@ -1526,7 +1526,7 @@ fn native_terrain_instance(
 /// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
     state: &AppState,
-    objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
+    objects: &mut crate::app::presentation::render::draw_plan_lowering::PlannedObjects,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
 ) {
     let Some(sim) = state
@@ -1573,17 +1573,13 @@ pub(crate) fn build_weapon_wave_instances(
     for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
         sim, observer, camera, ares, blend,
     ) {
-        use crate::app::presentation::render::draw_plan_lowering::{
-            ObjectBodyDraw, PlannedObjectInstance,
-        };
+        use crate::app::presentation::render::draw_plan_lowering::ObjectBodyDraw;
         let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
             continue;
         };
-        let mut planned = PlannedObjectInstance::object(parent, Vec::new());
-        planned.body_draw = Some(ObjectBodyDraw::Surface(
+        objects.object(parent, []).body_draw = Some(ObjectBodyDraw::Surface(
             crate::render::surface_line::SurfaceDraw::Wave(draw),
         ));
-        objects.push(planned);
     }
     // Live BuildingLightRuntime producers are intentionally not lowered here:
     // native DrawExtras first uses SpotlightClass type 16's zero-blend

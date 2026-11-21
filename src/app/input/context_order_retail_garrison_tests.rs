@@ -51,7 +51,7 @@ fn advance_garrison_frame(runtime: &mut crate::sim::runtime::SimRuntime) {
             &due,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 }
@@ -127,6 +127,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::Enter
     );
@@ -172,7 +173,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
                 &due,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let sim = &runtime.simulation;
@@ -215,7 +216,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
         );
         assert!(occupant.lifecycle.in_limbo());
         assert!(!occupant.lifecycle.cell_marked());
-        assert!(!occupant.in_logic_vector.is_member());
+        assert!(!occupant.seldom.in_logic_vector.is_member());
         assert!(!sim.live_object_order_snapshot().contains(&gi));
     }
     let castle_entity = sim.entities().get(castle).unwrap();
@@ -303,7 +304,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
                             occupant,
                             castle,
                             None,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         )
                         .unwrap()
                     );
@@ -342,7 +343,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             actor.navigation.nav_com()
         );
         assert!(
-            actor.lifecycle.cell_marked() && actor.in_logic_vector.is_member(),
+            actor.lifecycle.cell_marked() && actor.seldom.in_logic_vector.is_member(),
             "{control}"
         );
         assert!(
@@ -401,6 +402,7 @@ fn retail_alt_garrisons_as_its_cursor_shows() {
             modifier,
             alt,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             cursor == CursorFeedbackKind::Enter,

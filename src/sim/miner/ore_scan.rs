@@ -128,7 +128,7 @@ pub(crate) fn search_for_tiberium_and_move(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     range: i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<bool, TiberiumImageError> {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return Ok(false);
@@ -399,6 +399,7 @@ fn is_cell_harvestable(
             .substrate
             .entities
             .get(id)?
+            .seldom
             .discovery
             .owned_by_current_house()
         && let Some(viewer) = sim.session.current_house()

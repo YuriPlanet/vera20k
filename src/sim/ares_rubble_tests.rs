@@ -63,6 +63,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64, selected: bool) 
         .entities
         .get_mut(engineer)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(selected);
     sim.substrate
@@ -84,10 +85,10 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64, selected: bool) 
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let result = sim
-        .infantry_per_cell_building_entry(engineer, rules, None, FrameEffects::default())
+        .infantry_per_cell_building_entry(engineer, rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(result.return_before_foot);
     engineer
@@ -115,7 +116,7 @@ fn a_destroyed_building_turns_into_its_rubble() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, hit, &mut FrameEffects::default());
 
     let ruins = placed(&sim, "RUIN");
     assert_eq!(ruins.len(), 1, "one rubble");
@@ -174,7 +175,7 @@ fn a_selected_engineer_is_selected_again_through_select() {
 
     let entity = sim.substrate.entities.get(engineer).unwrap();
     assert!(entity.is_object_alive() && !entity.in_limbo());
-    assert!(entity.selection.is_selected());
+    assert!(entity.seldom.selection.is_selected());
     // Remove's Deselect lets the follow camera go before the Select.
     let selection: Vec<_> = sim
         .take_lifecycle_outputs_for_test()
@@ -291,6 +292,23 @@ fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
             .get(engineer)
             .is_some_and(|engineer| engineer.is_object_alive())
     );
+
+    // A lockstep MapHouses scenario retains the campaign branch of the Ares
+    // hook even though the transport mode is LAN and MultiEngineer is set.
+    sim.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Lan,
+        None,
+        crate::rules::rule_policy::RulePolicy::stock_campaign()
+            .with_counts_player_control_as_human(false),
+    );
+    assert_eq!(
+        sim.engineer_building_action(probe, building, &rules),
+        Some(EngineerBuildingAction::Capture)
+    );
+    arrive(&mut sim, &rules, building, false);
+    let captured = sim.substrate.entities.get(building).unwrap();
+    assert_eq!(captured.owner(), americans);
+    assert_eq!(captured.health.current(), 750);
 }
 
 /// Ares `InfantryClass_IsCellOccupied @ 10014D70` (hook `0x51C4C8`): an

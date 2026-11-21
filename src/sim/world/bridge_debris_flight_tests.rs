@@ -440,8 +440,13 @@ fn native_bridge_producer_primary_flight_landing_and_rng_continuation() {
             let context = format!("{input}, tick {number}");
             sim.session.set_binary_frame_for_test(1000 + number as u32);
             assert!(
-                !sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-                    .unwrap(),
+                !sim.visit_anim(
+                    id,
+                    &rules,
+                    None,
+                    &mut crate::sim::world::FrameEffects::default()
+                )
+                .unwrap(),
                 "false bridge-driver fixture: {context}"
             );
             let anim = sim

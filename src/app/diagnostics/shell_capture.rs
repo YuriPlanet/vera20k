@@ -1288,6 +1288,7 @@ impl ShellCaptureRequest {
                     && !matches!(
                         target,
                         movies::WolTarget::ModernLobby
+                            | movies::WolTarget::ModernLobbySummary { .. }
                             | movies::WolTarget::ModernCreate
                             | movies::WolTarget::ModernPlayerCard
                             | movies::WolTarget::ModernChangeCountry
@@ -1597,7 +1598,9 @@ where
         || matches!(
             checkpoint.movies_target(),
             Some(movies::MoviesTarget::Wol(
-                movies::WolTarget::ModernCreate | movies::WolTarget::ModernTeams
+                movies::WolTarget::ModernCreate
+                    | movies::WolTarget::ModernTeams
+                    | movies::WolTarget::ModernLobbySummary { .. }
             ))
         ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)

@@ -204,8 +204,7 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
                 .as_str()
                 .unwrap()
         };
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(state(first, "rng_before", "main")).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(state(first, "rng_before", "main"));
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(state(first, "rng_before", "scenario"));
         sim.mapgen_rng =

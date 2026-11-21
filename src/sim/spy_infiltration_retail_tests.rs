@@ -151,7 +151,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
                     &commands,
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             power_events += frame.sound_events.iter().filter(|event| matches!(event,

@@ -61,7 +61,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame() as i32;
         if !damage_delay_expires(frame, damage_delay_frames(rules)) {
@@ -87,6 +87,8 @@ impl Simulation {
                 rules.general.condition_yellow.to_bits(),
             ));
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
+        // A copy: the degrade damage can destroy a listed building, which
+        // leaves the House's Building vector while it is walked.
         let buildings = house.base_projection().buildings().to_vec();
         for id in buildings {
             let Some(building) = self.substrate.entities.get(id) else {
@@ -194,7 +196,7 @@ mod tests {
         for (frame, expected) in [(89, 1000), (90, 990), (91, 990), (180, 980)] {
             sim.session.set_binary_frame_for_test(frame);
             for house in [owner, calm_owner] {
-                sim.ares_degrade_buildings(house, &rules, None, FrameEffects::default());
+                sim.ares_degrade_buildings(house, &rules, None, &mut FrameEffects::default());
             }
             assert_eq!(health(&sim, lab), expected, "frame {frame}");
             assert_eq!(health(&sim, half), 500, "frame {frame}");

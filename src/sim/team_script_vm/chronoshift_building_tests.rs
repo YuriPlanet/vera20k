@@ -116,7 +116,7 @@ fn step(scene: &mut Replay) -> Vec<(String, (u16, u16))> {
     AI_FIRE_LOG.set(Some(Vec::new()));
     scene
         .sim
-        .team_step_script(scene.team, &scene.rules, None, FrameEffects::default());
+        .team_step_script(scene.team, &scene.rules, None, &mut FrameEffects::default());
     AI_FIRE_LOG
         .take()
         .unwrap()

@@ -2,7 +2,7 @@
 //! Destination Z is either a declared kernel input or original ground/body
 //! output. The latter tests bracket occlusion, not the GPU building-body port.
 
-use super::draw_plan_lowering::{PlannedObjectInstance, lower_ground_object_instances};
+use super::draw_plan_lowering::{OwnedPlannedObject, lower_ground_object_instances};
 use super::merge_passes::draw_native_object_pass;
 use crate::app::presentation::selection_brackets::building_bracket_lines;
 use crate::render::batch::BatchRenderer;
@@ -52,7 +52,7 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
                     .as_u64()
                     .unwrap() as u16,
             );
-            let mut parent = PlannedObjectInstance::building(
+            let mut parent = OwnedPlannedObject::building(
                 ObjectDraw {
                     id: 1,
                     layer: TacticalLayer(2),

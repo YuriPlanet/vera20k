@@ -324,6 +324,28 @@ fn player_at_supports_one_hundred_twenty_slots_without_constructing_countries() 
 }
 
 #[test]
+fn multiplayer_side_constructs_no_country_past_vera_bound() {
+    let mut full = NativeRulesRegistryState::default();
+    full.families.insert(
+        RulesTypeFamily::Country,
+        (0..1usize << u16::BITS)
+            .map(|index| ProcessedType::new(format!("C{index}")))
+            .collect(),
+    );
+    let settings = IniFile::from_str("[MultiPlayer]\nSide=Newcomer\n");
+    let (index, trace) = read_native_multiplayer_country(full, &IniFile::empty(), &settings, 3);
+    assert_eq!(index, 3, "the current index stays");
+    assert_eq!(
+        trace
+            .into_registry_state_discarding_events()
+            .country_projection()
+            .count(),
+        1 << u16::BITS,
+        "no Country past CountryIdx"
+    );
+}
+
+#[test]
 fn airburst_retained_flag_matches_native_reads_and_registry_restore() {
     let native = crate::test_fixture::json("tools/projectile_oracle/airburst_retained.json");
     let initial = IniFile::from_str(

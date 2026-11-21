@@ -182,6 +182,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
                     target.set_type_ref_for_test(sim.intern(name));
                     target.set_category_for_test(category);
                     target
+                        .seldom
                         .crushable_facts
                         .set_crushable_for_test(node["crushable"] == true);
                     target
@@ -537,7 +538,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         mover.set_category_for_test(EntityCategory::Unit);
         mover.set_in_playfield(flag("in_playfield"));
         if flag("mission_only") {
-            mover.mission_only.mark();
+            mover.seldom.mission_only.mark();
         }
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(mover);
@@ -614,6 +615,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     EntityCategory::Unit
                 });
                 blocker
+                    .seldom
                     .crushable_facts
                     .set_crushable_for_test(node["crushable"].as_bool().unwrap_or(false));
                 blocker.mover_facts.set_omni_crush_resistant_for_test(

@@ -86,7 +86,7 @@ fn retail_hills_ordinary_move_reserves_a_collapsing_deck_cell() {
                 &commands,
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -195,7 +195,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
         &runtime.resources.rules,
         Some(runtime.resources.rules.overlay_registry()),
         (76, 75),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         runtime.simulation.state_hash(),
@@ -221,7 +221,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
             &[command],
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     let mut arrived = false;
@@ -256,7 +256,7 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
         &runtime.resources.rules,
         Some(runtime.resources.rules.overlay_registry()),
         (76, 75),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         runtime.simulation.state_hash(),
@@ -423,7 +423,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
                 &commands,
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();

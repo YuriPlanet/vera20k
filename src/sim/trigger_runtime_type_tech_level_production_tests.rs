@@ -287,7 +287,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     // after original setup. Importing them does not assert constructor parity.
     let random = &history["rng_seed_states"];
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(random["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(random["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(random["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(random["mapgen"].as_str().unwrap());
     let mut resources = SimResources::empty();
     resources.rules = rules;
@@ -324,7 +324,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         &runtime.resources.rules,
         input["house"].as_str().unwrap(),
         "ORCA",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     let held = runtime
@@ -389,7 +389,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     // additionally commits that frame; observe the tail's pre-commit frame.
     let native_tail_frame = runtime.simulation.session.binary_frame();
     let mut output = runtime
-        .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     let commands = output.take_admitted_commands();
     let events: Vec<_> = commands
