@@ -414,9 +414,9 @@ impl WolLobbyLayout {
 
 /// VERA: the online page's body in `view`. The games fill it down to the
 /// chat edit's foot; or the chat takes its left and the player list its
-/// right above the chat edit. The lists hold whole rows, so the pointer
-/// never meets a row that is not drawn. What the other view shows has no
-/// window.
+/// right, both from the games list's top to above the chat edit. The lists
+/// hold whole rows, so the pointer never meets a row that is not drawn.
+/// What the other view shows has no window.
 fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
     let scale = layout.page.scale;
     let px = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
@@ -451,10 +451,11 @@ fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
         }
         LobbyView::Chat => {
             layout.players = whole_rows(px(441, 57, 181, 0), layout.chat_log.y + layout.chat_log.h);
-            let log = px(11, 37, 421, 0);
+            // The chat's box lines up with the players' box under the
+            // headings' row; the players' Name header has no partner.
             layout.chat_log = RectPx {
-                h: layout.players.y + layout.players.h - log.y,
-                ..log
+                h: layout.players.h,
+                ..px(11, 57, 421, 0)
             };
             layout
                 .sort_buttons
@@ -1284,6 +1285,11 @@ mod tests {
         assert_eq!(ui.activate(VIEW), Some(WolLobbyAction::View));
         let chat = ui.layout(800, 600, false);
         assert_eq!(chat.control_at(x, y), Some(CHAT_LOG));
+        // The chat's and players' boxes start where the games list did and
+        // end together.
+        let span = |rect: RectPx| (rect.y, rect.y + rect.h);
+        assert_eq!(span(chat.chat_log), span(chat.players));
+        assert_eq!(chat.chat_log.y, games.games.y);
         for id in [GAMES, SORT_ALPHA, SORT_PING, REFRESH, OBSERVER_TOGGLE] {
             assert_eq!(chat.control_rect(id), None);
         }
